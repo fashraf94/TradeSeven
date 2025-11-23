@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } from './services/LocalStorage';
 import * as battleTimer from './services/battleTimer';
+import * as challengeService from './services/challengeService';
 
 // Inline Stock API (temporary until you set up services folder)
 const FINNHUB_API_KEY = import.meta.env.VITE_FINNHUB_API_KEY;
@@ -229,6 +230,11 @@ export default function PortfolioDuel() {
   const [previousBattles, setPreviousBattles] = useState([]);
   const [showPreviousBattles, setShowPreviousBattles] = useState(false);
   const [selectedPreviousBattle, setSelectedPreviousBattle] = useState(null);
+
+  // Challenge state - UPDATED FOR TAB SYSTEM
+  const [userChallenges, setUserChallenges] = useState({ doubleDown: null, marketClose: null });
+  const [opponentChallenges, setOpponentChallenges] = useState({ doubleDown: null, marketClose: null });
+  const [openChallengePanels, setOpenChallengePanels] = useState(new Set());
 
   // ============================================
   // 2. ALL USEEFFECTS (AT TOP LEVEL)
@@ -482,6 +488,34 @@ export default function PortfolioDuel() {
     }
   }, [user, screen]);
 
+  // Load challenges for current battle
+  useEffect(() => {
+    if (screen === 'battle' && currentBattle && user) {
+      const isCreator = currentBattle.creator === user.username;
+      const opponentUsername = isCreator ? currentBattle.opponent : currentBattle.creator;
+      
+      // Load user's challenges
+      const userChalls = challengeService.getUserChallenges(currentBattle.id, user.username);
+      const userDD = userChalls.find(c => c.type === challengeService.CHALLENGE_TYPES.DOUBLE_DOWN);
+      const userMC = userChalls.find(c => c.type === challengeService.CHALLENGE_TYPES.MARKET_CLOSE);
+      
+      setUserChallenges({
+        doubleDown: userDD || null,
+        marketClose: userMC || null
+      });
+      
+      // Load opponent's challenges (only active ones)
+      const oppChalls = challengeService.getOpponentChallenges(currentBattle.id, opponentUsername);
+      const oppDD = oppChalls.find(c => c.type === challengeService.CHALLENGE_TYPES.DOUBLE_DOWN);
+      const oppMC = oppChalls.find(c => c.type === challengeService.CHALLENGE_TYPES.MARKET_CLOSE);
+      
+      setOpponentChallenges({
+        doubleDown: oppDD || null,
+        marketClose: oppMC || null
+      });
+    }
+  }, [screen, currentBattle, user, battles]);
+
   // ============================================
   // 3. HELPER FUNCTIONS
   // ============================================
@@ -619,6 +653,19 @@ export default function PortfolioDuel() {
     navigator.clipboard.writeText(text);
     alert('Challenge code copied to clipboard!');
   }
+
+  // Toggle challenge panel visibility
+  const toggleChallengePanel = (panelId) => {
+    setOpenChallengePanels(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(panelId)) {
+        newSet.delete(panelId);
+      } else {
+        newSet.add(panelId);
+      }
+      return newSet;
+    });
+  };
 
   // ============================================
   // 4. SCREEN HANDLERS
@@ -2671,7 +2718,7 @@ export default function PortfolioDuel() {
           </div>
 
           <div style={{ maxWidth: '1536px', margin: '0 auto', padding: '0 24px' }}>
-            {/* Battle Header with Scores */}
+            {/* Battle Header with Scores AND Challenge Tabs */}
             <div style={{
               background: 'white',
               borderRadius: '16px',
@@ -2681,25 +2728,95 @@ export default function PortfolioDuel() {
             }}>
               <div style={{ padding: '24px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  {/* You */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <div style={{
-                      width: '80px',
-                      height: '80px',
-                      borderRadius: '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginBottom: '8px',
-                      background: 'linear-gradient(135deg, #B2EBF2 0%, #80DEEA 100%)'
-                    }}>
-                      <Rocket style={{ height: '32px', width: '32px', color: '#00ACC1' }} />
+                  {/* You Section with Challenge Tabs */}
+                  <div style={{ display: 'flex', flexDirection: 'row', gap: '20px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <div style={{
+                        width: '80px',
+                        height: '80px',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginBottom: '8px',
+                        background: 'linear-gradient(135deg, #B2EBF2 0%, #80DEEA 100%)'
+                      }}>
+                        <Rocket style={{ height: '32px', width: '32px', color: '#00ACC1' }} />
+                      </div>
+                      <div style={{ fontWeight: '600', color: '#1F2937' }}>You</div>
+                      <div style={{ fontSize: '14px', color: '#6B7280' }}>{user.username}</div>
                     </div>
-                    <div style={{ fontWeight: '600', color: '#1F2937' }}>You</div>
-                    <div style={{ fontSize: '14px', color: '#6B7280' }}>{user.username}</div>
+
+                    {/* YOUR Challenge Tabs (to the right of avatar) */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <button
+                        onClick={() => toggleChallengePanel('user-double')}
+                        style={{
+                          background: openChallengePanels.has('user-double') 
+                            ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
+                            : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
+                          color: openChallengePanels.has('user-double') ? 'white' : '#1F2937',
+                          padding: '8px 16px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          cursor: userChallenges.doubleDown ? 'pointer' : 'not-allowed',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                          transition: 'all 0.2s',
+                          border: 'none',
+                          whiteSpace: 'nowrap',
+                          opacity: userChallenges.doubleDown ? 1 : 0.5
+                        }}
+                        disabled={!userChallenges.doubleDown}
+                        onMouseEnter={(e) => {
+                          if (userChallenges.doubleDown) {
+                            e.target.style.transform = 'translateY(-2px)';
+                            e.target.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.transform = 'translateY(0)';
+                          e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                        }}
+                      >
+                        Double Down
+                      </button>
+                      <button
+                        onClick={() => toggleChallengePanel('user-market')}
+                        style={{
+                          background: openChallengePanels.has('user-market')
+                            ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
+                            : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
+                          color: openChallengePanels.has('user-market') ? 'white' : '#1F2937',
+                          padding: '8px 16px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          cursor: userChallenges.marketClose ? 'pointer' : 'not-allowed',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                          transition: 'all 0.2s',
+                          border: 'none',
+                          whiteSpace: 'nowrap',
+                          opacity: userChallenges.marketClose ? 1 : 0.5
+                        }}
+                        disabled={!userChallenges.marketClose}
+                        onMouseEnter={(e) => {
+                          if (userChallenges.marketClose) {
+                            e.target.style.transform = 'translateY(-2px)';
+                            e.target.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.transform = 'translateY(0)';
+                          e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                        }}
+                      >
+                        Market Close
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Scores */}
+                  {/* Scores (Center) */}
                   <div style={{ flex: 1, margin: '0 32px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '24px', marginBottom: '12px' }}>
                       <div style={{ textAlign: 'center' }}>
@@ -2760,26 +2877,418 @@ export default function PortfolioDuel() {
                     </div>
                   </div>
 
-                  {/* Opponent */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <div style={{
-                      width: '80px',
-                      height: '80px',
-                      borderRadius: '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginBottom: '8px',
-                      background: 'linear-gradient(135deg, #FCE7F3 0%, #FBCFE8 100%)'
-                    }}>
-                      <Target style={{ height: '32px', width: '32px', color: '#DB2777' }} />
+                  {/* Opponent Section with Challenge Tabs */}
+                  <div style={{ display: 'flex', flexDirection: 'row', gap: '20px', alignItems: 'center' }}>
+                    {/* OPPONENT Challenge Tabs (to the left of avatar) */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <button
+                        onClick={() => toggleChallengePanel('opp-double')}
+                        style={{
+                          background: openChallengePanels.has('opp-double')
+                            ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
+                            : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
+                          color: openChallengePanels.has('opp-double') ? 'white' : '#1F2937',
+                          padding: '8px 16px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          cursor: opponentChallenges.doubleDown ? 'pointer' : 'not-allowed',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                          transition: 'all 0.2s',
+                          border: 'none',
+                          whiteSpace: 'nowrap',
+                          opacity: opponentChallenges.doubleDown ? 1 : 0.5
+                        }}
+                        disabled={!opponentChallenges.doubleDown}
+                        onMouseEnter={(e) => {
+                          if (opponentChallenges.doubleDown) {
+                            e.target.style.transform = 'translateY(-2px)';
+                            e.target.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.transform = 'translateY(0)';
+                          e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                        }}
+                      >
+                        Double Down
+                      </button>
+                      <button
+                        onClick={() => toggleChallengePanel('opp-market')}
+                        style={{
+                          background: openChallengePanels.has('opp-market')
+                            ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
+                            : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
+                          color: openChallengePanels.has('opp-market') ? 'white' : '#1F2937',
+                          padding: '8px 16px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          cursor: opponentChallenges.marketClose ? 'pointer' : 'not-allowed',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                          transition: 'all 0.2s',
+                          border: 'none',
+                          whiteSpace: 'nowrap',
+                          opacity: opponentChallenges.marketClose ? 1 : 0.5
+                        }}
+                        disabled={!opponentChallenges.marketClose}
+                        onMouseEnter={(e) => {
+                          if (opponentChallenges.marketClose) {
+                            e.target.style.transform = 'translateY(-2px)';
+                            e.target.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.transform = 'translateY(0)';
+                          e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                        }}
+                      >
+                        Market Close
+                      </button>
                     </div>
-                    <div style={{ fontWeight: '600', color: '#1F2937' }}>{opponent}</div>
-                    <div style={{ fontSize: '14px', color: '#6B7280' }}>Opponent</div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <div style={{
+                        width: '80px',
+                        height: '80px',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginBottom: '8px',
+                        background: 'linear-gradient(135deg, #FCE7F3 0%, #FBCFE8 100%)'
+                      }}>
+                        <Target style={{ height: '32px', width: '32px', color: '#DB2777' }} />
+                      </div>
+                      <div style={{ fontWeight: '600', color: '#1F2937' }}>{opponent}</div>
+                      <div style={{ fontSize: '14px', color: '#6B7280' }}>Opponent</div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* Challenge Panels - These appear BELOW the battle score box */}
+
+            {/* User's Double Down Challenge Panel */}
+            {userChallenges.doubleDown && openChallengePanels.has('user-double') && (
+              <div style={{
+                background: 'white',
+                borderRadius: '12px',
+                padding: '20px',
+                marginBottom: '20px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                border: '2px solid #FFD700'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '16px',
+                  paddingBottom: '12px',
+                  borderBottom: '2px solid #F3F4F6'
+                }}>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1F2937' }}>
+                    Your Double Down Challenge
+                  </div>
+                  <div style={{
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    padding: '4px 12px',
+                    borderRadius: '12px',
+                    background: userChallenges.doubleDown.status === 'active' ? '#FEF3C7' :
+                               userChallenges.doubleDown.status === 'won' ? '#ECFDF5' :
+                               userChallenges.doubleDown.status === 'lost' ? '#FEF2F2' : '#F3F4F6',
+                    color: userChallenges.doubleDown.status === 'active' ? '#F59E0B' :
+                          userChallenges.doubleDown.status === 'won' ? '#10B981' :
+                          userChallenges.doubleDown.status === 'lost' ? '#EF4444' : '#6B7280'
+                  }}>
+                    {userChallenges.doubleDown.status.toUpperCase()}
+                  </div>
+                </div>
+                <div style={{ background: '#F9FAFB', borderRadius: '8px', padding: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
+                    <span style={{ fontSize: '14px', color: '#6B7280' }}>Asset:</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                      {userChallenges.doubleDown.asset.name} ({userChallenges.doubleDown.asset.symbol})
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
+                    <span style={{ fontSize: '14px', color: '#6B7280' }}>Effect:</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                      2x gains/losses for 2 hours
+                    </span>
+                  </div>
+                  {userChallenges.doubleDown.startingPrice && (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
+                        <span style={{ fontSize: '14px', color: '#6B7280' }}>Starting Price:</span>
+                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                          ${userChallenges.doubleDown.startingPrice.toFixed(2)}
+                        </span>
+                      </div>
+                      {battlePrices[userChallenges.doubleDown.asset.symbol] && (
+                        <>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
+                            <span style={{ fontSize: '14px', color: '#6B7280' }}>Current Price:</span>
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                              ${battlePrices[userChallenges.doubleDown.asset.symbol].toFixed(2)}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
+                            <span style={{ fontSize: '14px', color: '#6B7280' }}>Current Effect:</span>
+                            <span style={{
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              color: battlePrices[userChallenges.doubleDown.asset.symbol] >= userChallenges.doubleDown.startingPrice ? '#10B981' : '#EF4444'
+                            }}>
+                              {((battlePrices[userChallenges.doubleDown.asset.symbol] - userChallenges.doubleDown.startingPrice) / userChallenges.doubleDown.startingPrice * 200).toFixed(2)}%
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                  {userChallenges.doubleDown.status === 'active' && (
+                    <div style={{
+                      marginTop: '12px',
+                      padding: '8px',
+                      background: 'rgba(0, 188, 212, 0.1)',
+                      borderRadius: '6px',
+                      textAlign: 'center',
+                      fontSize: '12px',
+                      color: '#00ACC1',
+                      fontWeight: '600'
+                    }}>
+                      {challengeService.formatTimeRemaining(challengeService.getChallengeTimeRemaining(userChallenges.doubleDown))} remaining
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* User's Market Close Challenge Panel */}
+            {userChallenges.marketClose && openChallengePanels.has('user-market') && (
+              <div style={{
+                background: 'white',
+                borderRadius: '12px',
+                padding: '20px',
+                marginBottom: '20px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                border: '2px solid #FFD700'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '16px',
+                  paddingBottom: '12px',
+                  borderBottom: '2px solid #F3F4F6'
+                }}>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1F2937' }}>
+                    Your Market Close Challenge
+                  </div>
+                  <div style={{
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    padding: '4px 12px',
+                    borderRadius: '12px',
+                    background: userChallenges.marketClose.status === 'active' ? '#FEF3C7' :
+                               userChallenges.marketClose.status === 'won' ? '#ECFDF5' :
+                               userChallenges.marketClose.status === 'lost' ? '#FEF2F2' : '#F3F4F6',
+                    color: userChallenges.marketClose.status === 'active' ? '#F59E0B' :
+                          userChallenges.marketClose.status === 'won' ? '#10B981' :
+                          userChallenges.marketClose.status === 'lost' ? '#EF4444' : '#6B7280'
+                  }}>
+                    {userChallenges.marketClose.status.toUpperCase()}
+                  </div>
+                </div>
+                <div style={{ background: '#F9FAFB', borderRadius: '8px', padding: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
+                    <span style={{ fontSize: '14px', color: '#6B7280' }}>Market:</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                      {userChallenges.marketClose.market}
+                    </span>
+                  </div>
+                  {userChallenges.marketClose.prediction && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
+                      <span style={{ fontSize: '14px', color: '#6B7280' }}>Your Prediction:</span>
+                      <span style={{
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: userChallenges.marketClose.prediction === 'up' ? '#10B981' : '#EF4444'
+                      }}>
+                        {userChallenges.marketClose.prediction.toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                  {userChallenges.marketClose.baselinePrice && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
+                      <span style={{ fontSize: '14px', color: '#6B7280' }}>Baseline Price:</span>
+                      <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                        ${userChallenges.marketClose.baselinePrice.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
+                    <span style={{ fontSize: '14px', color: '#6B7280' }}>Risk/Reward:</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                      +{userChallenges.marketClose.reward}% / -{userChallenges.marketClose.penalty}%
+                    </span>
+                  </div>
+                  {userChallenges.marketClose.status === 'active' && (
+                    <div style={{
+                      marginTop: '12px',
+                      padding: '8px',
+                      background: 'rgba(0, 188, 212, 0.1)',
+                      borderRadius: '6px',
+                      textAlign: 'center',
+                      fontSize: '12px',
+                      color: '#00ACC1',
+                      fontWeight: '600'
+                    }}>
+                      {challengeService.formatTimeRemaining(challengeService.getChallengeTimeRemaining(userChallenges.marketClose))} until market close
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Opponent's Double Down Challenge Panel */}
+            {opponentChallenges.doubleDown && openChallengePanels.has('opp-double') && (
+              <div style={{
+                background: 'white',
+                borderRadius: '12px',
+                padding: '20px',
+                marginBottom: '20px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                border: '2px solid #FFD700'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '16px',
+                  paddingBottom: '12px',
+                  borderBottom: '2px solid #F3F4F6'
+                }}>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1F2937' }}>
+                    Opponent's Double Down Challenge
+                  </div>
+                  <div style={{
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    padding: '4px 12px',
+                    borderRadius: '12px',
+                    background: '#FEF3C7',
+                    color: '#F59E0B'
+                  }}>
+                    ACTIVE
+                  </div>
+                </div>
+                <div style={{ background: '#F9FAFB', borderRadius: '8px', padding: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
+                    <span style={{ fontSize: '14px', color: '#6B7280' }}>Asset:</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                      {opponentChallenges.doubleDown.asset.name} ({opponentChallenges.doubleDown.asset.symbol})
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
+                    <span style={{ fontSize: '14px', color: '#6B7280' }}>Effect:</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                      2x gains/losses for 2 hours
+                    </span>
+                  </div>
+                  <div style={{
+                    marginTop: '12px',
+                    padding: '8px',
+                    background: 'rgba(0, 188, 212, 0.1)',
+                    borderRadius: '6px',
+                    textAlign: 'center',
+                    fontSize: '12px',
+                    color: '#00ACC1',
+                    fontWeight: '600'
+                  }}>
+                    {challengeService.formatTimeRemaining(challengeService.getChallengeTimeRemaining(opponentChallenges.doubleDown))} remaining
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Opponent's Market Close Challenge Panel */}
+            {opponentChallenges.marketClose && openChallengePanels.has('opp-market') && (
+              <div style={{
+                background: 'white',
+                borderRadius: '12px',
+                padding: '20px',
+                marginBottom: '20px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                border: '2px solid #FFD700'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '16px',
+                  paddingBottom: '12px',
+                  borderBottom: '2px solid #F3F4F6'
+                }}>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1F2937' }}>
+                    Opponent's Market Close Challenge
+                  </div>
+                  <div style={{
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    padding: '4px 12px',
+                    borderRadius: '12px',
+                    background: '#FEF3C7',
+                    color: '#F59E0B'
+                  }}>
+                    ACTIVE
+                  </div>
+                </div>
+                <div style={{ background: '#F9FAFB', borderRadius: '8px', padding: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
+                    <span style={{ fontSize: '14px', color: '#6B7280' }}>Market:</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                      {opponentChallenges.marketClose.market}
+                    </span>
+                  </div>
+                  {opponentChallenges.marketClose.prediction && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
+                      <span style={{ fontSize: '14px', color: '#6B7280' }}>Their Prediction:</span>
+                      <span style={{
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: opponentChallenges.marketClose.prediction === 'up' ? '#10B981' : '#EF4444'
+                      }}>
+                        {opponentChallenges.marketClose.prediction.toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                  {userChallenges.marketClose && opponentChallenges.marketClose.prediction !== userChallenges.marketClose.prediction && (
+                    <div style={{ padding: '12px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', marginTop: '12px', textAlign: 'center' }}>
+                      <strong style={{ color: '#EF4444' }}>Opposite prediction!</strong><br />
+                      <span style={{ fontSize: '12px', color: '#6B7280' }}>
+                        They predicted {opponentChallenges.marketClose.prediction.toUpperCase()}, you predicted {userChallenges.marketClose.prediction.toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                  <div style={{
+                    marginTop: '12px',
+                    padding: '8px',
+                    background: 'rgba(0, 188, 212, 0.1)',
+                    borderRadius: '6px',
+                    textAlign: 'center',
+                    fontSize: '12px',
+                    color: '#00ACC1',
+                    fontWeight: '600'
+                  }}>
+                    {challengeService.formatTimeRemaining(challengeService.getChallengeTimeRemaining(opponentChallenges.marketClose))} until market close
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Portfolio Comparison */}
             <div style={{
@@ -3381,5 +3890,10 @@ export default function PortfolioDuel() {
     );
   }
 
-  return null;
+  return (
+    <>
+      <ChallengeModal />
+      {null}
+    </>
+  );
 }
