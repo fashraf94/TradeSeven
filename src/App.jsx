@@ -2747,73 +2747,74 @@ export default function PortfolioDuel() {
                       <div style={{ fontSize: '14px', color: '#6B7280' }}>{user.username}</div>
                     </div>
 
-                    {/* YOUR Challenge Tabs (to the right of avatar) */}
+                    {/* YOUR Challenge Tabs (to the right of avatar) - Only show ACTIVE challenges */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <button
-                        onClick={() => toggleChallengePanel('user-double')}
-                        style={{
-                          background: openChallengePanels.has('user-double') 
-                            ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
-                            : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
-                          color: openChallengePanels.has('user-double') ? 'white' : '#1F2937',
-                          padding: '8px 16px',
-                          borderRadius: '8px',
-                          fontSize: '12px',
-                          fontWeight: '600',
-                          cursor: userChallenges.doubleDown ? 'pointer' : 'not-allowed',
-                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                          transition: 'all 0.2s',
-                          border: 'none',
-                          whiteSpace: 'nowrap',
-                          opacity: userChallenges.doubleDown ? 1 : 0.5
-                        }}
-                        disabled={!userChallenges.doubleDown}
-                        onMouseEnter={(e) => {
-                          if (userChallenges.doubleDown) {
+                      {userChallenges.doubleDown && userChallenges.doubleDown.status === 'active' && (
+                        <button
+                          onClick={() => toggleChallengePanel('user-double')}
+                          style={{
+                            background: openChallengePanels.has('user-double') 
+                              ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
+                              : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
+                            color: openChallengePanels.has('user-double') ? 'white' : '#1F2937',
+                            padding: '8px 16px',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            transition: 'all 0.2s',
+                            border: 'none',
+                            whiteSpace: 'nowrap'
+                          }}
+                          onMouseEnter={(e) => {
                             e.target.style.transform = 'translateY(-2px)';
                             e.target.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          e.target.style.transform = 'translateY(0)';
-                          e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
-                        }}
-                      >
-                        Double Down
-                      </button>
-                      <button
-                        onClick={() => toggleChallengePanel('user-market')}
-                        style={{
-                          background: openChallengePanels.has('user-market')
-                            ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
-                            : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
-                          color: openChallengePanels.has('user-market') ? 'white' : '#1F2937',
-                          padding: '8px 16px',
-                          borderRadius: '8px',
-                          fontSize: '12px',
-                          fontWeight: '600',
-                          cursor: userChallenges.marketClose ? 'pointer' : 'not-allowed',
-                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                          transition: 'all 0.2s',
-                          border: 'none',
-                          whiteSpace: 'nowrap',
-                          opacity: userChallenges.marketClose ? 1 : 0.5
-                        }}
-                        disabled={!userChallenges.marketClose}
-                        onMouseEnter={(e) => {
-                          if (userChallenges.marketClose) {
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.transform = 'translateY(0)';
+                            e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                          }}
+                        >
+                          Double Down
+                        </button>
+                      )}
+                      {userChallenges.marketClose && userChallenges.marketClose.status === 'active' && (
+                        <button
+                          onClick={() => toggleChallengePanel('user-market')}
+                          style={{
+                            background: openChallengePanels.has('user-market')
+                              ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
+                              : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
+                            color: openChallengePanels.has('user-market') ? 'white' : '#1F2937',
+                            padding: '8px 16px',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            transition: 'all 0.2s',
+                            border: 'none',
+                            whiteSpace: 'nowrap'
+                          }}
+                          onMouseEnter={(e) => {
                             e.target.style.transform = 'translateY(-2px)';
                             e.target.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          e.target.style.transform = 'translateY(0)';
-                          e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
-                        }}
-                      >
-                        Market Close
-                      </button>
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.transform = 'translateY(0)';
+                            e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                          }}
+                        >
+                          Market Close
+                        </button>
+                      )}
                     </div>
+
+                    {/* Spacer for alignment when no tabs */}
+                    {!userChallenges.doubleDown && !userChallenges.marketClose && (
+                      <div style={{ width: '100px' }}></div>
+                    )}
                   </div>
 
                   {/* Scores (Center) */}
@@ -2879,73 +2880,74 @@ export default function PortfolioDuel() {
 
                   {/* Opponent Section with Challenge Tabs */}
                   <div style={{ display: 'flex', flexDirection: 'row', gap: '20px', alignItems: 'center' }}>
-                    {/* OPPONENT Challenge Tabs (to the left of avatar) */}
+                    {/* OPPONENT Challenge Tabs (to the left of avatar) - Only show ACTIVE challenges */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <button
-                        onClick={() => toggleChallengePanel('opp-double')}
-                        style={{
-                          background: openChallengePanels.has('opp-double')
-                            ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
-                            : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
-                          color: openChallengePanels.has('opp-double') ? 'white' : '#1F2937',
-                          padding: '8px 16px',
-                          borderRadius: '8px',
-                          fontSize: '12px',
-                          fontWeight: '600',
-                          cursor: opponentChallenges.doubleDown ? 'pointer' : 'not-allowed',
-                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                          transition: 'all 0.2s',
-                          border: 'none',
-                          whiteSpace: 'nowrap',
-                          opacity: opponentChallenges.doubleDown ? 1 : 0.5
-                        }}
-                        disabled={!opponentChallenges.doubleDown}
-                        onMouseEnter={(e) => {
-                          if (opponentChallenges.doubleDown) {
+                      {opponentChallenges.doubleDown && opponentChallenges.doubleDown.status === 'active' && (
+                        <button
+                          onClick={() => toggleChallengePanel('opp-double')}
+                          style={{
+                            background: openChallengePanels.has('opp-double')
+                              ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
+                              : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
+                            color: openChallengePanels.has('opp-double') ? 'white' : '#1F2937',
+                            padding: '8px 16px',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            transition: 'all 0.2s',
+                            border: 'none',
+                            whiteSpace: 'nowrap'
+                          }}
+                          onMouseEnter={(e) => {
                             e.target.style.transform = 'translateY(-2px)';
                             e.target.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          e.target.style.transform = 'translateY(0)';
-                          e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
-                        }}
-                      >
-                        Double Down
-                      </button>
-                      <button
-                        onClick={() => toggleChallengePanel('opp-market')}
-                        style={{
-                          background: openChallengePanels.has('opp-market')
-                            ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
-                            : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
-                          color: openChallengePanels.has('opp-market') ? 'white' : '#1F2937',
-                          padding: '8px 16px',
-                          borderRadius: '8px',
-                          fontSize: '12px',
-                          fontWeight: '600',
-                          cursor: opponentChallenges.marketClose ? 'pointer' : 'not-allowed',
-                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                          transition: 'all 0.2s',
-                          border: 'none',
-                          whiteSpace: 'nowrap',
-                          opacity: opponentChallenges.marketClose ? 1 : 0.5
-                        }}
-                        disabled={!opponentChallenges.marketClose}
-                        onMouseEnter={(e) => {
-                          if (opponentChallenges.marketClose) {
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.transform = 'translateY(0)';
+                            e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                          }}
+                        >
+                          Double Down
+                        </button>
+                      )}
+                      {opponentChallenges.marketClose && opponentChallenges.marketClose.status === 'active' && (
+                        <button
+                          onClick={() => toggleChallengePanel('opp-market')}
+                          style={{
+                            background: openChallengePanels.has('opp-market')
+                              ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
+                              : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
+                            color: openChallengePanels.has('opp-market') ? 'white' : '#1F2937',
+                            padding: '8px 16px',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            transition: 'all 0.2s',
+                            border: 'none',
+                            whiteSpace: 'nowrap'
+                          }}
+                          onMouseEnter={(e) => {
                             e.target.style.transform = 'translateY(-2px)';
                             e.target.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          e.target.style.transform = 'translateY(0)';
-                          e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
-                        }}
-                      >
-                        Market Close
-                      </button>
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.transform = 'translateY(0)';
+                            e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                          }}
+                        >
+                          Market Close
+                        </button>
+                      )}
                     </div>
+
+                    {/* Spacer for alignment when no tabs */}
+                    {!opponentChallenges.doubleDown && !opponentChallenges.marketClose && (
+                      <div style={{ width: '100px' }}></div>
+                    )}
 
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                       <div style={{
@@ -2970,8 +2972,8 @@ export default function PortfolioDuel() {
 
             {/* Challenge Panels - These appear BELOW the battle score box */}
 
-            {/* User's Double Down Challenge Panel */}
-            {userChallenges.doubleDown && openChallengePanels.has('user-double') && (
+            {/* User's Double Down Challenge Panel - Only show ACTIVE challenges */}
+            {userChallenges.doubleDown && userChallenges.doubleDown.status === 'active' && openChallengePanels.has('user-double') && (
               <div style={{
                 background: 'white',
                 borderRadius: '12px',
@@ -3067,8 +3069,8 @@ export default function PortfolioDuel() {
               </div>
             )}
 
-            {/* User's Market Close Challenge Panel */}
-            {userChallenges.marketClose && openChallengePanels.has('user-market') && (
+            {/* User's Market Close Challenge Panel - Only show ACTIVE challenges */}
+            {userChallenges.marketClose && userChallenges.marketClose.status === 'active' && openChallengePanels.has('user-market') && (
               <div style={{
                 background: 'white',
                 borderRadius: '12px',
@@ -3154,8 +3156,8 @@ export default function PortfolioDuel() {
               </div>
             )}
 
-            {/* Opponent's Double Down Challenge Panel */}
-            {opponentChallenges.doubleDown && openChallengePanels.has('opp-double') && (
+            {/* Opponent's Double Down Challenge Panel - Only show ACTIVE challenges */}
+            {opponentChallenges.doubleDown && opponentChallenges.doubleDown.status === 'active' && openChallengePanels.has('opp-double') && (
               <div style={{
                 background: 'white',
                 borderRadius: '12px',
@@ -3215,8 +3217,8 @@ export default function PortfolioDuel() {
               </div>
             )}
 
-            {/* Opponent's Market Close Challenge Panel */}
-            {opponentChallenges.marketClose && openChallengePanels.has('opp-market') && (
+            {/* Opponent's Market Close Challenge Panel - Only show ACTIVE challenges */}
+            {opponentChallenges.marketClose && opponentChallenges.marketClose.status === 'active' && openChallengePanels.has('opp-market') && (
               <div style={{
                 background: 'white',
                 borderRadius: '12px',
