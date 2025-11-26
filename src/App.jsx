@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } from './services/LocalStorage';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
+import './firebase/config';
 
 // Inline Stock API (temporary until you set up services folder)
 const FINNHUB_API_KEY = import.meta.env.VITE_FINNHUB_API_KEY;
