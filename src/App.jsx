@@ -157,6 +157,48 @@ async function getPopularCrypto() {
 
 const stockAPI = { getStockPrice, getCryptoPrice, getPopularStocks, getPopularCrypto };
 
+// ============================================
+// UTILITY FUNCTION: GENERATE RANDOM CPU PORTFOLIO
+// ============================================
+function generateCPUPortfolio(portfolioType, stocksData, cryptoData) {
+  const assetList = portfolioType === 'stocks' ? stocksData : cryptoData;
+  
+  // Random number of assets (7-13)
+  const numAssets = Math.floor(Math.random() * 7) + 7; // 7 to 13
+  
+  // Shuffle and select random assets
+  const shuffled = [...assetList].sort(() => 0.5 - Math.random());
+  const selectedAssets = shuffled.slice(0, numAssets);
+  
+  // Generate random allocations that sum to 100%
+  const allocations = [];
+  let remaining = 100;
+  
+  for (let i = 0; i < numAssets - 1; i++) {
+    // Calculate min and max for this asset
+    const minAlloc = 7.5;
+    const maxForThisAsset = Math.min(20, remaining - (numAssets - i - 1) * 7.5);
+    
+    // Random allocation within valid range
+    const allocation = Math.floor((Math.random() * (maxForThisAsset - minAlloc) + minAlloc) * 4) / 4; // Round to 0.25
+    allocations.push(allocation);
+    remaining -= allocation;
+  }
+  
+  // Last asset gets the remaining percentage
+  allocations.push(Math.round(remaining * 100) / 100);
+  
+  // Create portfolio with allocations
+  const portfolio = selectedAssets.map((asset, index) => ({
+    symbol: asset.symbol,
+    name: asset.name,
+    price: asset.price,
+    amount: (allocations[index] / 100) * 1000000
+  }));
+  
+  return portfolio;
+}
+
 // Lucide icons
 import {
   TrendingUp,
@@ -177,7 +219,9 @@ import {
   Crown,
   Zap,
   ChevronDown,
-  Eye
+  Eye,
+  Bot,
+  GraduationCap
 } from 'lucide-react';
 
 const PERCENTAGE_OPTIONS = [7.5, 10, 12.5, 15, 17.5, 20];
@@ -457,7 +501,19 @@ export default function PortfolioDuel() {
           console.log('🔒 Ending prices captured:', endingPrices);
           
           // Process the completed battle
-          const processedBattle = battleTimer.processCompletedBattle(battle, endingPrices);
+          let processedBattle = battleTimer.processCompletedBattle(battle, endingPrices);
+          
+          // ⭐ Override XP for training battles
+          if (battle.isTrainingBattle && processedBattle.result) {
+            const creatorIsWinner = processedBattle.result.winner === battle.creator;
+            const opponentIsWinner = processedBattle.result.winner === battle.opponent;
+            
+            processedBattle.result.xpAwarded = {
+              [battle.creator]: creatorIsWinner ? 10 : 5,
+              [battle.opponent]: opponentIsWinner ? 10 : 5
+            };
+            console.log('🎯 Training battle XP:', processedBattle.result.xpAwarded);
+          }
           
           // ⭐ Store ending prices on the battle
           processedBattle.endingPrices = endingPrices;
@@ -565,10 +621,15 @@ export default function PortfolioDuel() {
     // Update user object
     const updatedUser = {
       ...user,
-      xp: user.xp + userXP,
-      wins: won ? user.wins + 1 : user.wins,
-      losses: won ? user.losses : user.losses + 1
+      xp: user.xp + userXP
     };
+    
+    // ⭐ Only update W/L for non-training battles
+    if (!battle.isTrainingBattle) {
+      updatedUser.wins = won ? user.wins + 1 : user.wins;
+      updatedUser.losses = won ? user.losses : user.losses + 1;
+    }
+    // Training battles still award XP but don't affect W/L record
     
     // Check for rank up
     const newRank = battleTimer.determineRank(updatedUser.xp);
@@ -922,6 +983,111 @@ export default function PortfolioDuel() {
   };
 
   // ============================================
+  // TRAINING MODE: CREATE TRAINING BATTLE
+  // ============================================
+  const handleCreateTrainingBattle = async () => {
+    console.log('=== CREATE TRAINING BATTLE ===');
+    
+    if (!isPortfolioValid || !portfolioName.trim()) {
+      alert('Please complete your portfolio with a name before starting training');
+      return;
+    }
+
+    // Convert user portfolio to battle format
+    const userPortfolioAssets = portfolio.map(asset => ({
+      symbol: asset.symbol,
+      name: asset.name,
+      price: asset.price,
+      amount: (asset.percentage / 100) * 1000000
+    }));
+
+    // Generate CPU opponent portfolio
+    console.log('🤖 Generating CPU opponent portfolio...');
+    const cpuPortfolio = generateCPUPortfolio(portfolioType, stocksData, cryptoData);
+    console.log('✅ CPU portfolio generated:', cpuPortfolio);
+
+    // Calculate start and end dates (1 hour for training)
+    const now = new Date();
+    const startDate = new Date(now);
+    const TRAINING_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
+    const endDate = new Date(startDate.getTime() + TRAINING_DURATION);
+
+    // Fetch starting prices for all assets
+    console.log('🔒 Fetching starting prices for training battle...');
+    const startingPrices = {};
+    
+    const allAssets = [...userPortfolioAssets, ...cpuPortfolio];
+    const uniqueSymbols = [...new Set(allAssets.map(a => a.symbol))];
+    
+    for (const symbol of uniqueSymbols) {
+      const asset = allAssets.find(a => a.symbol === symbol);
+      try {
+        const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === symbol);
+        
+        if (isCrypto) {
+          const cryptoData = POPULAR_CRYPTO.find(c => c.symbol === symbol);
+          const data = await stockAPI.getCryptoPrice(cryptoData.id);
+          startingPrices[symbol] = data.price;
+        } else {
+          const data = await stockAPI.getStockPrice(symbol);
+          startingPrices[symbol] = data.price;
+        }
+      } catch (error) {
+        console.error(`Error fetching price for ${symbol}:`, error);
+        startingPrices[symbol] = asset.price;
+      }
+    }
+    
+    console.log('✅ Starting prices locked for training battle:', startingPrices);
+
+    // Update both portfolios with locked starting prices
+    const updatedUserPortfolio = userPortfolioAssets.map(asset => ({
+      ...asset,
+      price: startingPrices[asset.symbol] || asset.price
+    }));
+    
+    const updatedCPUPortfolio = cpuPortfolio.map(asset => ({
+      ...asset,
+      price: startingPrices[asset.symbol] || asset.price
+    }));
+
+    // Create training battle object
+    const trainingBattle = {
+      id: Date.now().toString(),
+      challengeCode: 'TRAINING', // Special code for training battles
+      creator: user.username,
+      opponent: 'CPU Opponent', // ⭐ Special opponent name
+      creatorPortfolio: updatedUserPortfolio,
+      opponentPortfolio: updatedCPUPortfolio,
+      portfolioName: portfolioName.trim(),
+      portfolioType: portfolioType,
+      status: 'active', // Start immediately
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      startingPrices: startingPrices,
+      isTrainingBattle: true, // ⭐ Mark as training battle
+      createdAt: new Date().toISOString()
+    };
+
+    // Load current battles and add training battle
+    const currentBattles = loadBattlesSafe();
+    const updatedBattles = [...currentBattles, trainingBattle];
+    
+    // Save to localStorage
+    saveBattlesSafe(updatedBattles);
+    
+    // Update component state
+    setBattles(updatedBattles);
+    setActiveBattleId(trainingBattle.id);
+    setPortfolio([]);
+    setPortfolioType(null);
+    setPortfolioName('');
+    
+    console.log('✅ Training battle created:', trainingBattle);
+    setScreen('dashboard');
+  };
+
+  // ============================================
   // 5. COMPUTED VALUES
   // ============================================
 
@@ -1170,10 +1336,15 @@ export default function PortfolioDuel() {
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        background: 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)'
+                        background: battle.isTrainingBattle 
+                          ? 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)'
+                          : 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)'
                       }}>
-                        <span style={{ fontWeight: '600' }}>Active Battle</span>
-                        <span style={{ fontSize: '14px', color: '#E0F7FA' }}>{battleTimer.formatTimeRemaining(battle)}</span>
+                        <span style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {battle.isTrainingBattle && <GraduationCap style={{ height: '16px', width: '16px' }} />}
+                          {battle.isTrainingBattle ? '🎯 Training Battle' : 'Active Battle'}
+                        </span>
+                        <span style={{ fontSize: '14px', color: battle.isTrainingBattle ? '#EDE9FE' : '#E0F7FA' }}>{battleTimer.formatTimeRemaining(battle)}</span>
                       </div>
 
                       {/* Battle Content */}
@@ -1413,7 +1584,9 @@ export default function PortfolioDuel() {
                         padding: '24px',
                         marginBottom: '16px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                        border: won ? '3px solid #10B981' : '3px solid #EF4444'
+                        border: battle.isTrainingBattle 
+                          ? '3px solid #9333EA' 
+                          : won ? '3px solid #10B981' : '3px solid #EF4444'
                       }}
                     >
                       {/* Top Right Buttons */}
@@ -1434,21 +1607,27 @@ export default function PortfolioDuel() {
                             padding: '8px 16px',
                             borderRadius: '8px',
                             border: 'none',
-                            background: '#00BCD4',
+                            background: battle.isTrainingBattle ? '#9333EA' : '#00BCD4',
                             color: 'white',
                             cursor: 'pointer',
                             fontSize: '14px',
                             fontWeight: '600',
                             transition: 'all 0.2s',
-                            boxShadow: '0 2px 4px rgba(0, 188, 212, 0.3)'
+                            boxShadow: battle.isTrainingBattle 
+                              ? '0 2px 4px rgba(147, 51, 234, 0.3)'
+                              : '0 2px 4px rgba(0, 188, 212, 0.3)'
                           }}
                           onMouseEnter={(e) => {
-                            e.target.style.background = '#00ACC1';
-                            e.target.style.boxShadow = '0 4px 8px rgba(0, 188, 212, 0.4)';
+                            e.target.style.background = battle.isTrainingBattle ? '#7C3AED' : '#00ACC1';
+                            e.target.style.boxShadow = battle.isTrainingBattle 
+                              ? '0 4px 8px rgba(147, 51, 234, 0.4)'
+                              : '0 4px 8px rgba(0, 188, 212, 0.4)';
                           }}
                           onMouseLeave={(e) => {
-                            e.target.style.background = '#00BCD4';
-                            e.target.style.boxShadow = '0 2px 4px rgba(0, 188, 212, 0.3)';
+                            e.target.style.background = battle.isTrainingBattle ? '#9333EA' : '#00BCD4';
+                            e.target.style.boxShadow = battle.isTrainingBattle 
+                              ? '0 2px 4px rgba(147, 51, 234, 0.3)'
+                              : '0 2px 4px rgba(0, 188, 212, 0.3)';
                           }}
                         >
                           View Matchup
@@ -1491,15 +1670,18 @@ export default function PortfolioDuel() {
                         marginBottom: '20px'
                       }}>
                         <span style={{ fontSize: '32px' }}>
-                          {won ? '🏆' : '💔'}
+                          {battle.isTrainingBattle ? '🎯' : won ? '🏆' : '💔'}
                         </span>
-                        <span style={{
-                          fontSize: '24px',
-                          fontWeight: 'bold',
-                          color: won ? '#10B981' : '#EF4444'
-                        }}>
-                          {won ? 'Victory!' : 'Defeat'}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {battle.isTrainingBattle && <GraduationCap style={{ height: '20px', width: '20px', color: '#9333EA' }} />}
+                          <span style={{
+                            fontSize: '24px',
+                            fontWeight: 'bold',
+                            color: battle.isTrainingBattle ? '#9333EA' : won ? '#10B981' : '#EF4444'
+                          }}>
+                            {battle.isTrainingBattle ? 'Training' : won ? 'Victory!' : 'Defeat'}
+                          </span>
+                        </div>
                       </div>
                       
                       {/* Opponent */}
@@ -1582,7 +1764,9 @@ export default function PortfolioDuel() {
                         justifyContent: 'center',
                         gap: '10px',
                         padding: '16px',
-                        background: 'linear-gradient(135deg, #E0F7FA 0%, #B2EBF2 100%)',
+                        background: battle.isTrainingBattle 
+                          ? 'linear-gradient(135deg, #EDE9FE 0%, #DDD6FE 100%)'
+                          : 'linear-gradient(135deg, #E0F7FA 0%, #B2EBF2 100%)',
                         borderRadius: '12px',
                         marginBottom: '12px'
                       }}>
@@ -1590,9 +1774,9 @@ export default function PortfolioDuel() {
                         <span style={{
                           fontSize: '20px',
                           fontWeight: 'bold',
-                          color: '#00BCD4'
+                          color: battle.isTrainingBattle ? '#9333EA' : '#00BCD4'
                         }}>
-                          +{xpEarned} XP Earned
+                          +{xpEarned} XP Earned{battle.isTrainingBattle ? ' (Training)' : ''}
                         </span>
                       </div>
                       
@@ -1734,7 +1918,7 @@ export default function PortfolioDuel() {
             </div>
 
             {/* Action Buttons */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '24px' }}>
               <button
                 onClick={() => {
                   setPortfolio([]); setPortfolioType(null);
@@ -1807,6 +1991,42 @@ export default function PortfolioDuel() {
               >
                 <Swords style={{ height: '24px', width: '24px', marginBottom: '4px' }} />
                 Join Game
+              </button>
+              <button
+                onClick={() => {
+                  setPortfolio([]); setPortfolioType(null);
+                  setPortfolioName('');
+                  setAssetType('stocks');
+                  setSearchTerm('');
+                  setScreen('training');
+                }}
+                style={{
+                  height: '96px',
+                  fontSize: '18px',
+                  fontWeight: '600',
+                  color: 'white',
+                  background: 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)',
+                  border: 'none',
+                  borderRadius: '16px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'scale(1.05)';
+                  e.target.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.15)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'scale(1)';
+                  e.target.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
+                }}
+              >
+                <GraduationCap style={{ height: '24px', width: '24px', marginBottom: '4px' }} />
+                Train
               </button>
             </div>
 
@@ -2646,6 +2866,435 @@ export default function PortfolioDuel() {
     );
   }
 
+  // TRAINING MODE SCREEN
+  if (screen === 'training') {
+    return (
+      <div style={containerStyle}>
+        <div style={{
+          minHeight: '100vh',
+          paddingBottom: '32px',
+          background: 'linear-gradient(to bottom, #E0F7FA 0%, #B2EBF2 100%)'
+        }}>
+          {/* Header */}
+          <div style={{
+            color: 'white',
+            padding: '24px',
+            borderBottomLeftRadius: '24px',
+            borderBottomRightRadius: '24px',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+            marginBottom: '24px',
+            background: 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)'
+          }}>
+            <div style={{ maxWidth: '1536px', margin: '0 auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '4px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <GraduationCap style={{ height: '24px', width: '24px' }} />
+                    🎯 Training Mode
+                  </h1>
+                  <p style={{ fontSize: '14px', color: '#EDE9FE', margin: 0 }}>Practice against CPU • 1 Hour Duration • Reduced XP</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setPortfolio([]); setPortfolioType(null);
+                    setPortfolioName('');
+                    setScreen('dashboard');
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 16px',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: 'white',
+                    cursor: 'pointer',
+                    transition: 'background 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.2)'}
+                  onMouseLeave={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.1)'}
+                >
+                  <X style={{ height: '20px', width: '20px' }} />
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ maxWidth: '1536px', margin: '0 auto', padding: '0 24px' }}>
+            {/* Training Info Box */}
+            <div style={{
+              background: 'white',
+              borderRadius: '16px',
+              padding: '20px',
+              marginBottom: '24px',
+              border: '2px solid #DDD6FE',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+                <Bot style={{ height: '32px', width: '32px', color: '#9333EA', flexShrink: 0 }} />
+                <div>
+                  <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1F2937', marginBottom: '8px', marginTop: 0 }}>
+                    How Training Mode Works
+                  </h3>
+                  <ul style={{ margin: 0, paddingLeft: '20px', color: '#6B7280', lineHeight: '1.6' }}>
+                    <li>Battle against a randomly-generated CPU opponent</li>
+                    <li>Battles last <strong>1 hour</strong> (vs 24 hours for real battles)</li>
+                    <li>Win: <strong>+10 XP</strong> • Lose: <strong>+5 XP</strong> (reduced rewards)</li>
+                    <li><strong>Does NOT affect your Win/Loss record</strong></li>
+                    <li>Perfect for learning and experimenting risk-free!</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+              {/* Left: Asset Selection */}
+              <div>
+                <div style={{
+                  background: 'white',
+                  borderRadius: '16px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                  padding: '24px'
+                }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: '#1F2937' }}>Available Assets</h2>
+                  
+                  {loadingMarketData ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px' }}>
+                      <Loader2 style={{ height: '32px', width: '32px', color: '#9333EA', animation: 'spin 1s linear infinite' }} />
+                    </div>
+                  ) : (
+                    <>
+                      {/* Tabs */}
+                      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                        <button
+                          onClick={() => setAssetType('stocks')}
+                          style={{
+                            padding: '8px 24px',
+                            borderRadius: '8px',
+                            fontWeight: '600',
+                            border: 'none',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            ...(assetType === 'stocks' ? {
+                              color: 'white',
+                              background: 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)',
+                              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                            } : {
+                              color: '#6B7280',
+                              background: '#F3F4F6'
+                            })
+                          }}
+                          onMouseEnter={(e) => {
+                            if (assetType !== 'stocks') e.target.style.background = '#E5E7EB';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (assetType !== 'stocks') e.target.style.background = '#F3F4F6';
+                          }}
+                        >
+                          Stocks
+                        </button>
+                        <button
+                          onClick={() => setAssetType('crypto')}
+                          style={{
+                            padding: '8px 24px',
+                            borderRadius: '8px',
+                            fontWeight: '600',
+                            border: 'none',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            ...(assetType === 'crypto' ? {
+                              color: 'white',
+                              background: 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)',
+                              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                            } : {
+                              color: '#6B7280',
+                              background: '#F3F4F6'
+                            })
+                          }}
+                          onMouseEnter={(e) => {
+                            if (assetType !== 'crypto') e.target.style.background = '#E5E7EB';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (assetType !== 'crypto') e.target.style.background = '#F3F4F6';
+                          }}
+                        >
+                          Crypto
+                        </button>
+                      </div>
+
+                      {/* Portfolio Type Indicator */}
+                      {portfolioType && (
+                        <div style={{
+                          padding: '12px 16px',
+                          marginBottom: '16px',
+                          background: portfolioType === 'stocks' ? '#DBEAFE' : '#FCE7F3',
+                          border: `2px solid ${portfolioType === 'stocks' ? '#3B82F6' : '#EC4899'}`,
+                          borderRadius: '8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}>
+                          <span style={{ fontSize: '20px' }}>
+                            {portfolioType === 'stocks' ? '📈' : '₿'}
+                          </span>
+                          <div>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                              {portfolioType === 'stocks' ? 'Stocks Portfolio' : 'Crypto Portfolio'}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#6B7280' }}>
+                              You can only add {portfolioType === 'stocks' ? 'stocks' : 'crypto'} to this portfolio
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Search */}
+                      <input
+                        type="text"
+                        placeholder="Search assets..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '12px 16px',
+                          marginBottom: '16px',
+                          border: '2px solid',
+                          borderColor: searchTerm ? '#9333EA' : '#E5E7EB',
+                          borderRadius: '12px',
+                          outline: 'none',
+                          transition: 'border-color 0.2s',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+
+                      {/* Asset Grid */}
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: '12px',
+                        maxHeight: '384px',
+                        overflowY: 'auto'
+                      }}>
+                        {filteredAssets.map(asset => {
+                          const inPortfolio = portfolio.some(p => p.symbol === asset.symbol);
+                          return (
+                            <button
+                              key={asset.symbol}
+                              onClick={() => handleAddAsset(asset)}
+                              disabled={inPortfolio || portfolio.length >= 13}
+                              style={{
+                                padding: '16px',
+                                borderRadius: '12px',
+                                textAlign: 'left',
+                                border: inPortfolio ? 'none' : '2px solid transparent',
+                                cursor: inPortfolio || portfolio.length >= 13 ? 'not-allowed' : 'pointer',
+                                transition: 'all 0.2s',
+                                background: inPortfolio ? '#F3F4F6' : '#F9FAFB'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!inPortfolio && portfolio.length < 13) {
+                                  e.target.style.background = '#EDE9FE';
+                                  e.target.style.borderColor = '#DDD6FE';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!inPortfolio) {
+                                  e.target.style.background = '#F9FAFB';
+                                  e.target.style.borderColor = 'transparent';
+                                }
+                              }}
+                            >
+                              <div style={{ fontWeight: 'bold', color: '#1F2937', marginBottom: '4px' }}>{asset.symbol}</div>
+                              <div style={{ fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>{asset.name}</div>
+                              <div style={{ fontSize: '18px', fontWeight: '600', color: '#4B5563' }}>${asset.price.toFixed(2)}</div>
+                              {inPortfolio && (
+                                <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: '600', color: '#10B981' }}>✓ Added</div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Right: Portfolio Summary - Same as builder/join screens */}
+              <div>
+                <div style={{
+                  background: 'white',
+                  borderRadius: '16px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                  padding: '24px',
+                  position: 'sticky',
+                  top: '24px'
+                }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '8px', color: '#1F2937' }}>Your Portfolio</h2>
+                  <p style={{ fontSize: '14px', color: '#6B7280', marginBottom: '16px' }}>
+                    {portfolio.length}/13 assets • {totalPercentage.toFixed(1)}%
+                  </p>
+
+                  {/* Portfolio Name Input */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#4B5563', marginBottom: '8px' }}>
+                      Portfolio Name <span style={{ color: '#EF4444' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Enter portfolio name"
+                      value={portfolioName}
+                      onChange={(e) => setPortfolioName(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        border: '2px solid',
+                        borderColor: portfolioName ? '#9333EA' : (!portfolioName && portfolio.length > 0 ? '#EF4444' : '#E5E7EB'),
+                        background: !portfolioName && portfolio.length > 0 ? '#FEE2E2' : 'white',
+                        borderRadius: '8px',
+                        outline: 'none',
+                        transition: 'all 0.2s',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                    {!portfolioName && portfolio.length > 0 && (
+                      <div style={{ fontSize: '12px', color: '#EF4444', marginTop: '4px' }}>Portfolio name is required</div>
+                    )}
+                  </div>
+
+                  {portfolio.length === 0 ? (
+                    <div style={{ textAlign: 'center', color: '#9CA3AF', padding: '48px 0' }}>
+                      <div style={{ fontSize: '48px', marginBottom: '8px' }}>📊</div>
+                      <div>No assets selected</div>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ maxHeight: '320px', overflowY: 'auto', marginBottom: '16px' }}>
+                        {portfolio.map(asset => (
+                          <div key={asset.symbol} style={{ padding: '12px', background: '#F9FAFB', borderRadius: '12px', marginBottom: '12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <div>
+                                <div style={{ fontWeight: 'bold', color: '#1F2937' }}>{asset.symbol}</div>
+                                <div style={{ fontSize: '12px', color: '#6B7280' }}>${asset.price.toFixed(2)}</div>
+                              </div>
+                              <button
+                                onClick={() => handleRemoveAsset(asset.symbol)}
+                                style={{
+                                  color: '#9CA3AF',
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  transition: 'color 0.2s',
+                                  padding: 0
+                                }}
+                                onMouseEnter={(e) => e.target.style.color = '#EF4444'}
+                                onMouseLeave={(e) => e.target.style.color = '#9CA3AF'}
+                              >
+                                <X style={{ height: '20px', width: '20px' }} />
+                              </button>
+                            </div>
+                            
+                            {/* Percentage Dropdown */}
+                            <div style={{ position: 'relative' }}>
+                              <select
+                                value={asset.percentage}
+                                onChange={(e) => handlePercentageChange(asset.symbol, parseFloat(e.target.value))}
+                                style={{
+                                  width: '100%',
+                                  padding: '8px 12px',
+                                  border: '2px solid #9333EA',
+                                  borderRadius: '8px',
+                                  outline: 'none',
+                                  appearance: 'none',
+                                  cursor: 'pointer',
+                                  background: 'white',
+                                  fontSize: '14px',
+                                  fontWeight: '600',
+                                  color: '#1F2937',
+                                  paddingRight: '32px'
+                                }}
+                              >
+                                {PERCENTAGE_OPTIONS.map(option => (
+                                  <option key={option} value={option}>
+                                    {option}%
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown style={{
+                                position: 'absolute',
+                                right: '12px',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                height: '16px',
+                                width: '16px',
+                                color: '#9333EA',
+                                pointerEvents: 'none'
+                              }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Action Button */}
+                      <div>
+                        <button
+                          onClick={handleCreateTrainingBattle}
+                          disabled={!isPortfolioValid || !portfolioName.trim()}
+                          style={{
+                            width: '100%',
+                            padding: '14px',
+                            borderRadius: '12px',
+                            border: 'none',
+                            fontWeight: '600',
+                            fontSize: '16px',
+                            cursor: isPortfolioValid && portfolioName.trim() ? 'pointer' : 'not-allowed',
+                            transition: 'all 0.2s',
+                            background: isPortfolioValid && portfolioName.trim()
+                              ? 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)'
+                              : '#D1D5DB',
+                            color: 'white',
+                            boxShadow: isPortfolioValid && portfolioName.trim() ? '0 4px 6px -1px rgba(147, 51, 234, 0.3)' : 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (isPortfolioValid && portfolioName.trim()) {
+                              e.target.style.transform = 'scale(1.02)';
+                              e.target.style.boxShadow = '0 10px 15px -3px rgba(147, 51, 234, 0.4)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.transform = 'scale(1)';
+                            e.target.style.boxShadow = isPortfolioValid && portfolioName.trim() ? '0 4px 6px -1px rgba(147, 51, 234, 0.3)' : 'none';
+                          }}
+                        >
+                          <GraduationCap style={{ height: '20px', width: '20px' }} />
+                          Start Training Battle
+                        </button>
+
+                        {/* Validation Messages */}
+                        {!isPortfolioValid && portfolio.length > 0 && (
+                          <div style={{ marginTop: '12px', fontSize: '13px', color: '#EF4444' }}>
+                            {portfolio.length < 7 && <div>• Need at least 7 assets</div>}
+                            {portfolio.length > 13 && <div>• Maximum 13 assets</div>}
+                            {Math.abs(totalPercentage - 100) >= 0.01 && <div>• Total must equal 100%</div>}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // BATTLE VIEW SCREEN
   if (screen === 'battle' && currentBattle) {
     const isCreator = currentBattle.creator === user.username;
@@ -2719,6 +3368,27 @@ export default function PortfolioDuel() {
           </div>
 
           <div style={{ maxWidth: '1536px', margin: '0 auto', padding: '0 24px' }}>
+            {/* Training Battle Indicator */}
+            {currentBattle.isTrainingBattle && (
+              <div style={{
+                background: 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)',
+                color: 'white',
+                padding: '12px 20px',
+                borderRadius: '12px',
+                marginBottom: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                fontWeight: '600',
+                fontSize: '14px',
+                boxShadow: '0 2px 8px rgba(147, 51, 234, 0.3)'
+              }}>
+                <GraduationCap style={{ height: '18px', width: '18px' }} />
+                🎯 Training Battle • 1 Hour Duration • Reduced XP
+              </div>
+            )}
+
             {/* Battle Header with Scores AND Challenge Tabs */}
             <div style={{
               background: 'white',
@@ -3799,7 +4469,9 @@ export default function PortfolioDuel() {
                         justifyContent: 'center',
                         gap: '10px',
                         padding: '16px',
-                        background: 'linear-gradient(135deg, #E0F7FA 0%, #B2EBF2 100%)',
+                        background: battle.isTrainingBattle 
+                          ? 'linear-gradient(135deg, #EDE9FE 0%, #DDD6FE 100%)'
+                          : 'linear-gradient(135deg, #E0F7FA 0%, #B2EBF2 100%)',
                         borderRadius: '12px',
                         marginBottom: '12px'
                       }}>
@@ -3807,7 +4479,7 @@ export default function PortfolioDuel() {
                         <span style={{
                           fontSize: '20px',
                           fontWeight: 'bold',
-                          color: '#00BCD4'
+                          color: battle.isTrainingBattle ? '#9333EA' : '#00BCD4'
                         }}>
                           +{xpEarned} XP Earned
                         </span>
