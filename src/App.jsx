@@ -221,10 +221,36 @@ import {
   ChevronDown,
   Eye,
   Bot,
-  GraduationCap
+  GraduationCap,
+  Skull,
+  Shield,
+  ArrowRight,
+  User
 } from 'lucide-react';
 
 const PERCENTAGE_OPTIONS = [7.5, 10, 12.5, 15, 17.5, 20];
+
+// Dark Gaming Theme Colors
+const colors = {
+  background: '#0d1117',
+  cardBg: '#161b22',
+  cardHover: '#1c2128',
+  cardElevated: '#21262d',
+  textPrimary: '#e6edf3',
+  textSecondary: '#8b949e',
+  textMuted: '#6e7681',
+  cyan: '#00d9ff',
+  cyanDim: '#0099cc',
+  green: '#10b981',
+  greenBright: '#00ff88',
+  red: '#ef4444',
+  redBright: '#ff4466',
+  blue: '#3b82f6',
+  purple: '#9333ea',
+  gold: '#ffc107',
+  border: 'rgba(0, 217, 255, 0.2)',
+  borderSubtle: 'rgba(255, 255, 255, 0.1)'
+};
 
 // Style override to neutralize App.css
 const containerStyle = {
@@ -233,7 +259,8 @@ const containerStyle = {
   margin: 0,
   padding: 0,
   textAlign: 'left',
-  minHeight: '100vh'
+  minHeight: '100vh',
+  background: colors.background
 };
 
 export default function PortfolioDuel() {
@@ -1133,46 +1160,49 @@ export default function PortfolioDuel() {
           alignItems: 'center',
           justifyContent: 'center',
           padding: '16px',
-          background: 'linear-gradient(to bottom, #E0F7FA 0%, #B2EBF2 100%)'
+          background: colors.background
         }}>
           <div style={{
             width: '100%',
-            maxWidth: '512px',
-            background: 'white',
-            borderRadius: '24px',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-            padding: '48px'
+            maxWidth: '480px',
+            background: colors.cardBg,
+            borderRadius: '16px',
+            boxShadow: '0 0 40px rgba(0, 217, 255, 0.1), 0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+            padding: '48px',
+            border: `1px solid ${colors.border}`
           }}>
             <div style={{ textAlign: 'center' }}>
               {/* Logo */}
-              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
                 <div style={{
-                  width: '96px',
-                  height: '96px',
-                  borderRadius: '50%',
+                  width: '80px',
+                  height: '80px',
+                  borderRadius: '16px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)'
+                  background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`,
+                  boxShadow: '0 0 30px rgba(0, 217, 255, 0.4)'
                 }}>
-                  <Trophy style={{ height: '48px', width: '48px', color: 'white' }} />
+                  <Swords style={{ height: '40px', width: '40px', color: colors.background }} />
                 </div>
               </div>
 
               {/* Title */}
               <div style={{ marginBottom: '32px' }}>
                 <h1 style={{
-                  fontSize: '48px',
+                  fontSize: '42px',
                   fontWeight: 'bold',
-                  marginBottom: '12px',
-                  background: 'linear-gradient(135deg, #00BCD4 0%, #26c6da 100%)',
+                  marginBottom: '8px',
+                  margin: '0 0 8px 0',
+                  background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.greenBright} 100%)`,
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
                   backgroundClip: 'text'
                 }}>
-                  TradeSeven
+                  MarketClash
                 </h1>
-                <p style={{ color: '#6B7280', fontSize: '18px' }}>Compete. Trade. Conquer.</p>
+                <p style={{ color: colors.textSecondary, fontSize: '16px', margin: 0 }}>Compete. Trade. Conquer.</p>
               </div>
 
               {/* Input */}
@@ -1185,45 +1215,53 @@ export default function PortfolioDuel() {
                   onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
                   style={{
                     width: '100%',
-                    padding: '16px 24px',
-                    fontSize: '18px',
+                    padding: '16px 20px',
+                    fontSize: '16px',
                     border: '2px solid',
-                    borderColor: username ? '#00BCD4' : '#E5E7EB',
-                    borderRadius: '16px',
+                    borderColor: username ? colors.cyan : colors.borderSubtle,
+                    borderRadius: '12px',
                     outline: 'none',
-                    marginBottom: '24px',
-                    boxSizing: 'border-box'
+                    marginBottom: '20px',
+                    boxSizing: 'border-box',
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    color: colors.textPrimary,
+                    transition: 'all 0.2s'
                   }}
                 />
-                
+
                 <button
                   onClick={handleLogin}
                   disabled={!username.trim()}
                   style={{
                     width: '100%',
                     padding: '16px',
-                    fontSize: '18px',
+                    fontSize: '16px',
                     fontWeight: '600',
-                    color: 'white',
-                    background: username.trim() ? 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)' : '#D1D5DB',
+                    color: username.trim() ? colors.background : colors.textMuted,
+                    background: username.trim() ? `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)` : colors.cardElevated,
                     border: 'none',
-                    borderRadius: '16px',
+                    borderRadius: '12px',
                     cursor: username.trim() ? 'pointer' : 'not-allowed',
-                    transition: 'all 0.2s',
-                    boxShadow: username.trim() ? '0 4px 6px -1px rgba(0, 0, 0, 0.1)' : 'none'
+                    transition: 'all 0.3s',
+                    boxShadow: username.trim() ? '0 0 20px rgba(0, 217, 255, 0.3)' : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
                   }}
                   onMouseEnter={(e) => {
                     if (username.trim()) {
-                      e.target.style.transform = 'scale(1.02)';
-                      e.target.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.1)';
+                      e.target.style.transform = 'translateY(-2px)';
+                      e.target.style.boxShadow = '0 0 30px rgba(0, 217, 255, 0.5)';
                     }
                   }}
                   onMouseLeave={(e) => {
-                    e.target.style.transform = 'scale(1)';
-                    e.target.style.boxShadow = username.trim() ? '0 4px 6px -1px rgba(0, 0, 0, 0.1)' : 'none';
+                    e.target.style.transform = 'translateY(0)';
+                    e.target.style.boxShadow = username.trim() ? '0 0 20px rgba(0, 217, 255, 0.3)' : 'none';
                   }}
                 >
-                  Start Trading
+                  Enter Arena
+                  <ArrowRight style={{ height: '18px', width: '18px' }} />
                 </button>
               </div>
             </div>
@@ -1248,47 +1286,77 @@ export default function PortfolioDuel() {
         <div style={{
           minHeight: '100vh',
           paddingBottom: '32px',
-          background: 'linear-gradient(to bottom, #E0F7FA 0%, #B2EBF2 100%)'
+          background: colors.background
         }}>
           {/* Header */}
           <div style={{
-            color: 'white',
-            padding: '24px',
-            borderBottomLeftRadius: '24px',
-            borderBottomRightRadius: '24px',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+            padding: '20px 24px',
             marginBottom: '24px',
-            background: 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)'
+            borderBottom: `1px solid ${colors.border}`
           }}>
             <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h1 style={{ fontSize: '30px', fontWeight: 'bold', margin: 0 }}>TradeSeven</h1>
-                <button
-                  onClick={() => {
-                    setUser(null);
-                    setUsername('');
-                    setScreen('home');
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '8px 16px',
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    border: 'none',
-                    borderRadius: '8px',
-                    color: 'white',
-                    cursor: 'pointer',
-                    transition: 'background 0.2s'
-                  }}
-                  onMouseEnter={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.2)'}
-                  onMouseLeave={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.1)'}
-                >
-                  <LogOut style={{ height: '16px', width: '16px' }} />
-                  Logout
-                </button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <Swords style={{ height: '28px', width: '28px', color: colors.cyan }} />
+                  <h1 style={{
+                    fontSize: '24px',
+                    fontWeight: 'bold',
+                    margin: 0,
+                    background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.greenBright} 100%)`,
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text'
+                  }}>MarketClash</h1>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '50%',
+                      background: colors.cardBg,
+                      border: `2px solid ${colors.cyan}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <User style={{ height: '16px', width: '16px', color: colors.cyan }} />
+                    </div>
+                    <span style={{ color: colors.textPrimary, fontWeight: '500' }}>{user.username}</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setUser(null);
+                      setUsername('');
+                      setScreen('home');
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 12px',
+                      background: 'transparent',
+                      border: `1px solid ${colors.borderSubtle}`,
+                      borderRadius: '8px',
+                      color: colors.textSecondary,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      fontSize: '14px'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = colors.red;
+                      e.currentTarget.style.color = colors.red;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = colors.borderSubtle;
+                      e.currentTarget.style.color = colors.textSecondary;
+                    }}
+                  >
+                    <LogOut style={{ height: '14px', width: '14px' }} />
+                    Logout
+                  </button>
+                </div>
               </div>
-              <p style={{ color: '#E0F7FA', margin: 0 }}>Welcome back, {user.username}!</p>
             </div>
           </div>
 
@@ -1296,7 +1364,7 @@ export default function PortfolioDuel() {
             {/* Active Battles */}
             {activeBattles.length > 0 && (
               <div style={{ marginBottom: '24px' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px', color: '#1F2937' }}>Active Battles</h2>
+                <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: colors.textPrimary }}>Active Battles</h2>
                 
                 {activeBattles.map(battle => {
                   const isCreator = battle.creator === user.username;
@@ -1323,28 +1391,30 @@ export default function PortfolioDuel() {
 
                   return (
                     <div key={battle.id} style={{
-                      background: 'white',
-                      borderRadius: '16px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                      background: colors.cardBg,
+                      borderRadius: '12px',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
                       overflow: 'hidden',
-                      marginBottom: '16px'
+                      marginBottom: '16px',
+                      border: `1px solid ${colors.border}`
                     }}>
                       {/* Battle Header */}
                       <div style={{
                         color: 'white',
-                        padding: '16px',
+                        padding: '12px 16px',
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        background: battle.isTrainingBattle 
-                          ? 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)'
-                          : 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)'
+                        background: battle.isTrainingBattle
+                          ? `linear-gradient(135deg, ${colors.purple} 0%, #7C3AED 100%)`
+                          : `linear-gradient(135deg, ${colors.cyan}40 0%, ${colors.cyanDim}40 100%)`,
+                        borderBottom: `1px solid ${colors.border}`
                       }}>
-                        <span style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px', color: colors.textPrimary }}>
                           {battle.isTrainingBattle && <GraduationCap style={{ height: '16px', width: '16px' }} />}
-                          {battle.isTrainingBattle ? '🎯 Training Battle' : 'Active Battle'}
+                          {battle.isTrainingBattle ? 'Training Battle' : 'Active Battle'}
                         </span>
-                        <span style={{ fontSize: '14px', color: battle.isTrainingBattle ? '#EDE9FE' : '#E0F7FA' }}>{battleTimer.formatTimeRemaining(battle)}</span>
+                        <span style={{ fontSize: '14px', color: colors.cyan, fontFamily: 'monospace', fontWeight: '600' }}>{battleTimer.formatTimeRemaining(battle)}</span>
                       </div>
 
                       {/* Battle Content */}
@@ -1353,40 +1423,43 @@ export default function PortfolioDuel() {
                           {/* You */}
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                             <div style={{
-                              width: '80px',
-                              height: '80px',
+                              width: '64px',
+                              height: '64px',
                               borderRadius: '50%',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               marginBottom: '8px',
-                              background: 'linear-gradient(135deg, #B2EBF2 0%, #80DEEA 100%)'
+                              background: `linear-gradient(135deg, ${colors.green}30 0%, ${colors.cyan}30 100%)`,
+                              border: `2px solid ${colors.green}`
                             }}>
-                              <Rocket style={{ height: '32px', width: '32px', color: '#00ACC1' }} />
+                              <User style={{ height: '24px', width: '24px', color: colors.green }} />
                             </div>
-                            <div style={{ fontWeight: '600', color: '#1F2937' }}>You</div>
-                            <div style={{ fontSize: '14px', color: '#6B7280' }}>{user.username}</div>
+                            <div style={{ fontWeight: '600', color: colors.textPrimary }}>You</div>
+                            <div style={{ fontSize: '12px', color: colors.textSecondary }}>{user.username}</div>
                           </div>
 
                           {/* Scores */}
-                          <div style={{ flex: 1, margin: '0 32px' }}>
+                          <div style={{ flex: 1, margin: '0 24px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '24px', marginBottom: '12px' }}>
                               <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#1F2937' }}>{myGain.toFixed(1)}</div>
-                                <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>Gain %</div>
+                                <div style={{ fontSize: '32px', fontWeight: 'bold', color: myGain >= 0 ? colors.green : colors.red }}>
+                                  {myGain >= 0 ? '+' : ''}{myGain.toFixed(1)}%
+                                </div>
                               </div>
-                              <div style={{ fontSize: '30px', color: '#9CA3AF' }}>-</div>
+                              <div style={{ fontSize: '24px', color: colors.textMuted }}>vs</div>
                               <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#1F2937' }}>{theirGain.toFixed(1)}</div>
-                                <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>Gain %</div>
+                                <div style={{ fontSize: '32px', fontWeight: 'bold', color: theirGain >= 0 ? colors.green : colors.red }}>
+                                  {theirGain >= 0 ? '+' : ''}{theirGain.toFixed(1)}%
+                                </div>
                               </div>
                             </div>
 
                             {/* Progress Bar */}
                             <div style={{
                               position: 'relative',
-                              height: '12px',
-                              background: '#E5E7EB',
+                              height: '8px',
+                              background: 'rgba(255, 255, 255, 0.1)',
                               borderRadius: '9999px',
                               overflow: 'hidden',
                               marginBottom: '8px'
@@ -1403,30 +1476,31 @@ export default function PortfolioDuel() {
 
                             <div style={{
                               textAlign: 'center',
-                              fontSize: '14px',
+                              fontSize: '12px',
                               fontWeight: '600',
-                              color: isWinning ? '#10B981' : '#EF4444'
+                              color: isWinning ? colors.green : colors.red
                             }}>
-                              {isWinning ? `Winning by ${Math.abs(myGain - theirGain).toFixed(1)}%` : `Losing by ${Math.abs(myGain - theirGain).toFixed(1)}%`}
+                              {isWinning ? `LEADING BY ${Math.abs(myGain - theirGain).toFixed(1)}%` : `TRAILING BY ${Math.abs(myGain - theirGain).toFixed(1)}%`}
                             </div>
                           </div>
 
                           {/* Opponent */}
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                             <div style={{
-                              width: '80px',
-                              height: '80px',
+                              width: '64px',
+                              height: '64px',
                               borderRadius: '50%',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               marginBottom: '8px',
-                              background: 'linear-gradient(135deg, #FCE7F3 0%, #FBCFE8 100%)'
+                              background: `linear-gradient(135deg, ${colors.red}30 0%, ${colors.purple}30 100%)`,
+                              border: `2px solid ${colors.red}`
                             }}>
-                              <Target style={{ height: '32px', width: '32px', color: '#DB2777' }} />
+                              <Target style={{ height: '24px', width: '24px', color: colors.red }} />
                             </div>
-                            <div style={{ fontWeight: '600', color: '#1F2937' }}>{opponent}</div>
-                            <div style={{ fontSize: '14px', color: '#6B7280' }}>Opponent</div>
+                            <div style={{ fontWeight: '600', color: colors.textPrimary }}>{opponent}</div>
+                            <div style={{ fontSize: '12px', color: colors.textSecondary }}>Opponent</div>
                           </div>
                         </div>
 
@@ -1438,17 +1512,23 @@ export default function PortfolioDuel() {
                           style={{
                             width: '100%',
                             padding: '12px',
-                            color: 'white',
+                            color: colors.background,
                             fontWeight: '600',
-                            borderRadius: '12px',
+                            borderRadius: '8px',
                             border: 'none',
                             cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            background: 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)',
-                            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                            transition: 'all 0.3s',
+                            background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`,
+                            boxShadow: '0 0 15px rgba(0, 217, 255, 0.3)'
                           }}
-                          onMouseEnter={(e) => e.target.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.15)'}
-                          onMouseLeave={(e) => e.target.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)'}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = 'translateY(-2px)';
+                            e.currentTarget.style.boxShadow = '0 0 25px rgba(0, 217, 255, 0.5)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.boxShadow = '0 0 15px rgba(0, 217, 255, 0.3)';
+                          }}
                         >
                           View Battle Details
                         </button>
@@ -1462,28 +1542,30 @@ export default function PortfolioDuel() {
             {/* Waiting Battles */}
             {waitingBattles.length > 0 && (
               <div style={{ marginBottom: '24px' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px', color: '#1F2937' }}>Waiting for Opponent</h2>
+                <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: colors.textPrimary }}>Waiting for Opponent</h2>
                 
                 {waitingBattles.map(battle => (
                   <div key={battle.id} style={{
-                    background: 'white',
-                    borderRadius: '16px',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                    background: colors.cardBg,
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
                     overflow: 'hidden',
-                    marginBottom: '16px'
+                    marginBottom: '16px',
+                    border: `1px solid ${colors.gold}40`
                   }}>
                     <div style={{
-                      color: 'white',
-                      padding: '16px',
-                      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                      color: colors.background,
+                      padding: '12px 16px',
+                      background: `linear-gradient(135deg, ${colors.gold} 0%, #d97706 100%)`,
+                      borderBottom: `1px solid ${colors.gold}40`
                     }}>
                       <span style={{ fontWeight: '600' }}>Waiting for Opponent</span>
                     </div>
-                    
+
                     <div style={{ padding: '24px', textAlign: 'center' }}>
                       <div style={{ marginBottom: '16px' }}>
-                        <div style={{ fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>Challenge Code</div>
-                        <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#1F2937', marginBottom: '8px' }}>{battle.challengeCode}</div>
+                        <div style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>Challenge Code</div>
+                        <div style={{ fontSize: '32px', fontWeight: 'bold', color: colors.cyan, marginBottom: '12px', fontFamily: 'monospace', letterSpacing: '4px' }}>{battle.challengeCode}</div>
                         <button
                           onClick={() => copyToClipboard(battle.challengeCode)}
                           style={{
@@ -1493,20 +1575,26 @@ export default function PortfolioDuel() {
                             padding: '8px 16px',
                             fontSize: '14px',
                             background: 'transparent',
-                            border: 'none',
+                            border: `1px solid ${colors.border}`,
                             borderRadius: '8px',
-                            color: '#00BCD4',
+                            color: colors.cyan,
                             cursor: 'pointer',
-                            transition: 'background 0.2s'
+                            transition: 'all 0.2s'
                           }}
-                          onMouseEnter={(e) => e.target.style.background = '#F3F4F6'}
-                          onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = `${colors.cyan}20`;
+                            e.currentTarget.style.borderColor = colors.cyan;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'transparent';
+                            e.currentTarget.style.borderColor = colors.border;
+                          }}
                         >
                           <Copy style={{ height: '16px', width: '16px' }} />
                           Copy Code
                         </button>
                       </div>
-                      
+
                       {/* Portfolio Type Badge */}
                       <div style={{
                         display: 'inline-flex',
@@ -1517,18 +1605,19 @@ export default function PortfolioDuel() {
                         background: (() => {
                           const firstAsset = battle.creatorPortfolio[0];
                           const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === firstAsset.symbol);
-                          return isCrypto ? '#FCE7F3' : '#DBEAFE';
+                          return isCrypto ? `${colors.purple}20` : `${colors.blue}20`;
                         })(),
                         border: (() => {
                           const firstAsset = battle.creatorPortfolio[0];
                           const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === firstAsset.symbol);
-                          return `2px solid ${isCrypto ? '#EC4899' : '#3B82F6'}`;
+                          return `1px solid ${isCrypto ? colors.purple : colors.blue}`;
                         })(),
                         borderRadius: '8px',
                         fontSize: '14px',
-                        fontWeight: '600'
+                        fontWeight: '600',
+                        color: colors.textPrimary
                       }}>
-                        <span style={{ fontSize: '18px' }}>
+                        <span style={{ fontSize: '16px' }}>
                           {(() => {
                             const firstAsset = battle.creatorPortfolio[0];
                             const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === firstAsset.symbol);
@@ -1541,8 +1630,8 @@ export default function PortfolioDuel() {
                           return isCrypto ? 'Crypto Battle' : 'Stocks Battle';
                         })()}
                       </div>
-                      
-                      <div style={{ fontSize: '14px', color: '#6B7280' }}>
+
+                      <div style={{ fontSize: '13px', color: colors.textSecondary }}>
                         Share this code with your opponent to start the battle!
                       </div>
                     </div>
@@ -1554,7 +1643,7 @@ export default function PortfolioDuel() {
             {/* Completed Battles */}
             {completedBattles.length > 0 && (
               <div style={{ marginBottom: '24px' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px', color: '#1F2937' }}>
+                <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: colors.textPrimary }}>
                   Completed Battles
                 </h2>
                 
@@ -1575,18 +1664,18 @@ export default function PortfolioDuel() {
                   const xpEarned = result.xpAwarded[user.username] || 0;
                   
                   return (
-                    <div 
+                    <div
                       key={battle.id}
                       style={{
                         position: 'relative',
-                        backgroundColor: 'white',
-                        borderRadius: '16px',
+                        backgroundColor: colors.cardBg,
+                        borderRadius: '12px',
                         padding: '24px',
                         marginBottom: '16px',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                        border: battle.isTrainingBattle 
-                          ? '3px solid #9333EA' 
-                          : won ? '3px solid #10B981' : '3px solid #EF4444'
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
+                        border: battle.isTrainingBattle
+                          ? `2px solid ${colors.purple}`
+                          : won ? `2px solid ${colors.green}` : `2px solid ${colors.red}`
                       }}
                     >
                       {/* Top Right Buttons */}
@@ -1607,32 +1696,32 @@ export default function PortfolioDuel() {
                             padding: '8px 16px',
                             borderRadius: '8px',
                             border: 'none',
-                            background: battle.isTrainingBattle ? '#9333EA' : '#00BCD4',
-                            color: 'white',
+                            background: battle.isTrainingBattle ? colors.purple : colors.cyan,
+                            color: colors.background,
                             cursor: 'pointer',
-                            fontSize: '14px',
+                            fontSize: '13px',
                             fontWeight: '600',
-                            transition: 'all 0.2s',
-                            boxShadow: battle.isTrainingBattle 
-                              ? '0 2px 4px rgba(147, 51, 234, 0.3)'
-                              : '0 2px 4px rgba(0, 188, 212, 0.3)'
+                            transition: 'all 0.3s',
+                            boxShadow: battle.isTrainingBattle
+                              ? '0 0 15px rgba(147, 51, 234, 0.3)'
+                              : '0 0 15px rgba(0, 217, 255, 0.3)'
                           }}
                           onMouseEnter={(e) => {
-                            e.target.style.background = battle.isTrainingBattle ? '#7C3AED' : '#00ACC1';
-                            e.target.style.boxShadow = battle.isTrainingBattle 
-                              ? '0 4px 8px rgba(147, 51, 234, 0.4)'
-                              : '0 4px 8px rgba(0, 188, 212, 0.4)';
+                            e.currentTarget.style.transform = 'translateY(-2px)';
+                            e.currentTarget.style.boxShadow = battle.isTrainingBattle
+                              ? '0 0 25px rgba(147, 51, 234, 0.5)'
+                              : '0 0 25px rgba(0, 217, 255, 0.5)';
                           }}
                           onMouseLeave={(e) => {
-                            e.target.style.background = battle.isTrainingBattle ? '#9333EA' : '#00BCD4';
-                            e.target.style.boxShadow = battle.isTrainingBattle 
-                              ? '0 2px 4px rgba(147, 51, 234, 0.3)'
-                              : '0 2px 4px rgba(0, 188, 212, 0.3)';
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.boxShadow = battle.isTrainingBattle
+                              ? '0 0 15px rgba(147, 51, 234, 0.3)'
+                              : '0 0 15px rgba(0, 217, 255, 0.3)';
                           }}
                         >
                           View Matchup
                         </button>
-                        
+
                         {/* X Button */}
                         <button
                           onClick={() => archiveBattle(battle.id)}
@@ -1640,22 +1729,24 @@ export default function PortfolioDuel() {
                             width: '32px',
                             height: '32px',
                             borderRadius: '50%',
-                            border: 'none',
-                            background: '#F3F4F6',
+                            border: `1px solid ${colors.borderSubtle}`,
+                            background: 'transparent',
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             transition: 'all 0.2s',
-                            color: '#6B7280'
+                            color: colors.textSecondary
                           }}
                           onMouseEnter={(e) => {
-                            e.target.style.background = '#E5E7EB';
-                            e.target.style.color = '#1F2937';
+                            e.currentTarget.style.background = `${colors.red}20`;
+                            e.currentTarget.style.borderColor = colors.red;
+                            e.currentTarget.style.color = colors.red;
                           }}
                           onMouseLeave={(e) => {
-                            e.target.style.background = '#F3F4F6';
-                            e.target.style.color = '#6B7280';
+                            e.currentTarget.style.background = 'transparent';
+                            e.currentTarget.style.borderColor = colors.borderSubtle;
+                            e.currentTarget.style.color = colors.textSecondary;
                           }}
                         >
                           <X style={{ height: '18px', width: '18px' }} />
@@ -1667,124 +1758,107 @@ export default function PortfolioDuel() {
                         display: 'flex',
                         alignItems: 'center',
                         gap: '12px',
-                        marginBottom: '20px'
+                        marginBottom: '16px'
                       }}>
-                        <span style={{ fontSize: '32px' }}>
-                          {battle.isTrainingBattle ? '🎯' : won ? '🏆' : '💔'}
-                        </span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {battle.isTrainingBattle && <GraduationCap style={{ height: '20px', width: '20px', color: '#9333EA' }} />}
+                          {battle.isTrainingBattle && <GraduationCap style={{ height: '20px', width: '20px', color: colors.purple }} />}
                           <span style={{
-                            fontSize: '24px',
+                            fontSize: '22px',
                             fontWeight: 'bold',
-                            color: battle.isTrainingBattle ? '#9333EA' : won ? '#10B981' : '#EF4444'
+                            color: battle.isTrainingBattle ? colors.purple : won ? colors.green : colors.red
                           }}>
-                            {battle.isTrainingBattle ? 'Training' : won ? 'Victory!' : 'Defeat'}
+                            {battle.isTrainingBattle ? 'Training Complete' : won ? 'Victory!' : 'Defeat'}
                           </span>
                         </div>
                       </div>
-                      
+
                       {/* Opponent */}
-                      <div style={{ marginBottom: '16px', fontSize: '16px', color: '#6B7280' }}>
-                        vs. <span style={{ fontWeight: '600', color: '#1F2937', fontSize: '18px' }}>{opponent}</span>
+                      <div style={{ marginBottom: '12px', fontSize: '14px', color: colors.textSecondary }}>
+                        vs. <span style={{ fontWeight: '600', color: colors.textPrimary, fontSize: '16px' }}>{opponent}</span>
                       </div>
-                      
+
                       {/* Portfolio Name */}
-                      <div style={{ 
-                        fontSize: '14px', 
-                        color: '#6B7280',
-                        marginBottom: '20px',
+                      <div style={{
+                        fontSize: '13px',
+                        color: colors.textMuted,
+                        marginBottom: '16px',
                         fontStyle: 'italic'
                       }}>
                         "{battle.portfolioName || 'Unnamed Portfolio'}"
                       </div>
-                      
+
                       {/* Returns */}
                       <div style={{
                         display: 'grid',
                         gridTemplateColumns: '1fr 1fr',
-                        gap: '16px',
-                        marginBottom: '20px'
+                        gap: '12px',
+                        marginBottom: '16px'
                       }}>
                         <div style={{
-                          backgroundColor: '#F9FAFB',
-                          padding: '16px',
-                          borderRadius: '12px',
-                          border: '2px solid ' + (userReturn >= 0 ? '#10B981' : '#EF4444')
+                          backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                          padding: '12px',
+                          borderRadius: '8px',
+                          border: `1px solid ${userReturn >= 0 ? colors.green : colors.red}40`
                         }}>
-                          <div style={{ fontSize: '12px', color: '#6B7280', marginBottom: '6px', fontWeight: '600' }}>
+                          <div style={{ fontSize: '11px', color: colors.textSecondary, marginBottom: '4px', fontWeight: '600', textTransform: 'uppercase' }}>
                             Your Return
                           </div>
-                          <div style={{ 
-                            fontSize: '28px', 
+                          <div style={{
+                            fontSize: '24px',
                             fontWeight: 'bold',
-                            color: userReturn >= 0 ? '#10B981' : '#EF4444'
+                            color: userReturn >= 0 ? colors.green : colors.red
                           }}>
                             {userReturn >= 0 ? '+' : ''}{userReturn}%
                           </div>
                         </div>
-                        
+
                         <div style={{
-                          backgroundColor: '#F9FAFB',
-                          padding: '16px',
-                          borderRadius: '12px',
-                          border: '2px solid ' + (opponentReturn >= 0 ? '#10B981' : '#EF4444')
+                          backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                          padding: '12px',
+                          borderRadius: '8px',
+                          border: `1px solid ${opponentReturn >= 0 ? colors.green : colors.red}40`
                         }}>
-                          <div style={{ fontSize: '12px', color: '#6B7280', marginBottom: '6px', fontWeight: '600' }}>
+                          <div style={{ fontSize: '11px', color: colors.textSecondary, marginBottom: '4px', fontWeight: '600', textTransform: 'uppercase' }}>
                             Their Return
                           </div>
-                          <div style={{ 
-                            fontSize: '28px', 
+                          <div style={{
+                            fontSize: '24px',
                             fontWeight: 'bold',
-                            color: opponentReturn >= 0 ? '#10B981' : '#EF4444'
+                            color: opponentReturn >= 0 ? colors.green : colors.red
                           }}>
                             {opponentReturn >= 0 ? '+' : ''}{opponentReturn}%
                           </div>
                         </div>
                       </div>
-                      
-                      {/* Margin */}
-                      <div style={{
-                        backgroundColor: won ? '#D1FAE5' : '#FEE2E2',
-                        padding: '12px 16px',
-                        borderRadius: '8px',
-                        marginBottom: '16px',
-                        fontSize: '16px',
-                        color: '#1F2937',
-                        fontWeight: '600',
-                        textAlign: 'center'
-                      }}>
-                        Victory Margin: {result.margin}%
-                      </div>
-                      
+
                       {/* XP Earned */}
                       <div style={{
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: '10px',
-                        padding: '16px',
-                        background: battle.isTrainingBattle 
-                          ? 'linear-gradient(135deg, #EDE9FE 0%, #DDD6FE 100%)'
-                          : 'linear-gradient(135deg, #E0F7FA 0%, #B2EBF2 100%)',
-                        borderRadius: '12px',
-                        marginBottom: '12px'
+                        gap: '8px',
+                        padding: '12px',
+                        background: battle.isTrainingBattle
+                          ? `${colors.purple}20`
+                          : `${colors.cyan}20`,
+                        borderRadius: '8px',
+                        border: `1px solid ${battle.isTrainingBattle ? colors.purple : colors.cyan}40`
                       }}>
-                        <span style={{ fontSize: '24px' }}>⭐</span>
+                        <Zap style={{ height: '18px', width: '18px', color: battle.isTrainingBattle ? colors.purple : colors.cyan }} />
                         <span style={{
-                          fontSize: '20px',
+                          fontSize: '16px',
                           fontWeight: 'bold',
-                          color: battle.isTrainingBattle ? '#9333EA' : '#00BCD4'
+                          color: battle.isTrainingBattle ? colors.purple : colors.cyan
                         }}>
-                          +{xpEarned} XP Earned{battle.isTrainingBattle ? ' (Training)' : ''}
+                          +{xpEarned} XP{battle.isTrainingBattle ? ' (Training)' : ''}
                         </span>
                       </div>
                       
                       {/* Completed Time */}
                       <div style={{
                         textAlign: 'center',
-                        fontSize: '13px',
-                        color: '#9CA3AF',
+                        fontSize: '12px',
+                        color: colors.textMuted,
                         marginTop: '12px'
                       }}>
                         Completed {battleTimer.formatDate(battle.completedAt || battle.endDate)}
@@ -1804,121 +1878,160 @@ export default function PortfolioDuel() {
             }}>
               {/* Wins */}
               <div style={{
-                background: 'white',
-                borderRadius: '16px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                background: colors.cardBg,
+                borderRadius: '12px',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
                 padding: '24px',
                 textAlign: 'center',
-                border: '2px solid #D1FAE5'
-              }}>
-                <div style={{ fontSize: '48px', fontWeight: 'bold', color: '#10B981', marginBottom: '8px' }}>
+                border: `2px solid ${colors.green}`,
+                transition: 'all 0.3s',
+                cursor: 'default'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow = `0 0 20px rgba(16, 185, 129, 0.4)`;
+                e.currentTarget.style.transform = 'translateY(-2px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.3)';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+              >
+                <Trophy style={{ height: '32px', width: '32px', color: colors.green, marginBottom: '12px' }} />
+                <div style={{ fontSize: '48px', fontWeight: 'bold', color: colors.green, marginBottom: '4px' }}>
                   {user.wins}
                 </div>
-                <div style={{ fontSize: '16px', fontWeight: '600', color: '#6B7280' }}>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '1px' }}>
                   Wins
                 </div>
               </div>
 
               {/* Losses */}
               <div style={{
-                background: 'white',
-                borderRadius: '16px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                background: colors.cardBg,
+                borderRadius: '12px',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
                 padding: '24px',
                 textAlign: 'center',
-                border: '2px solid #FEE2E2'
-              }}>
-                <div style={{ fontSize: '48px', fontWeight: 'bold', color: '#EF4444', marginBottom: '8px' }}>
+                border: `2px solid ${colors.red}`,
+                transition: 'all 0.3s',
+                cursor: 'default'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow = `0 0 20px rgba(239, 68, 68, 0.4)`;
+                e.currentTarget.style.transform = 'translateY(-2px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.3)';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+              >
+                <Skull style={{ height: '32px', width: '32px', color: colors.red, marginBottom: '12px' }} />
+                <div style={{ fontSize: '48px', fontWeight: 'bold', color: colors.red, marginBottom: '4px' }}>
                   {user.losses}
                 </div>
-                <div style={{ fontSize: '16px', fontWeight: '600', color: '#6B7280' }}>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '1px' }}>
                   Losses
                 </div>
               </div>
 
-              {/* Previous Battles */}
+              {/* Battles */}
               <button
                 onClick={() => {
                   setShowPreviousBattles(true);
                   setScreen('previousBattles');
                 }}
                 style={{
-                  background: 'white',
-                  borderRadius: '16px',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                  background: colors.cardBg,
+                  borderRadius: '12px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
                   padding: '24px',
                   textAlign: 'center',
-                  border: '2px solid #E0F7FA',
+                  border: `2px solid ${colors.blue}`,
                   cursor: 'pointer',
-                  transition: 'all 0.2s'
+                  transition: 'all 0.3s'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'scale(1.02)';
-                  e.currentTarget.style.boxShadow = '0 6px 8px -1px rgba(0, 0, 0, 0.15)';
+                  e.currentTarget.style.boxShadow = `0 0 20px rgba(59, 130, 246, 0.4)`;
+                  e.currentTarget.style.transform = 'translateY(-2px)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+                  e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.3)';
+                  e.currentTarget.style.transform = 'translateY(0)';
                 }}
               >
-                <div style={{ fontSize: '48px', fontWeight: 'bold', color: '#00BCD4', marginBottom: '8px' }}>
-                  {previousBattles.length}
+                <Swords style={{ height: '32px', width: '32px', color: colors.blue, marginBottom: '12px' }} />
+                <div style={{ fontSize: '48px', fontWeight: 'bold', color: colors.blue, marginBottom: '4px' }}>
+                  {user.wins + user.losses}
                 </div>
-                <div style={{ fontSize: '16px', fontWeight: '600', color: '#6B7280' }}>
-                  Previous Battles
+                <div style={{ fontSize: '14px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  Battles
                 </div>
               </button>
             </div>
 
             {/* Rank Card */}
             <div style={{
-              background: 'white',
-              borderRadius: '16px',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+              background: colors.cardBg,
+              borderRadius: '12px',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
               padding: '24px',
-              border: '2px solid #B2EBF2',
+              border: `1px solid ${colors.border}`,
               marginBottom: '24px'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <Crown style={{ height: '32px', width: '32px', color: '#00BCD4' }} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div style={{
+                    width: '56px',
+                    height: '56px',
+                    borderRadius: '12px',
+                    background: `linear-gradient(135deg, ${colors.cyan}20 0%, ${colors.green}20 100%)`,
+                    border: `2px solid ${colors.cyan}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <Shield style={{ height: '28px', width: '28px', color: colors.cyan }} />
+                  </div>
                   <div>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1F2937' }}>Rank: {user.rank}</div>
-                    <div style={{ fontSize: '14px', color: '#6B7280' }}>Level {user.level}</div>
+                    <div style={{ fontSize: '28px', fontWeight: 'bold', color: colors.textPrimary, textTransform: 'uppercase', letterSpacing: '2px' }}>{user.rank}</div>
+                    <div style={{ fontSize: '14px', color: colors.textSecondary }}>Level {user.level} - {user.xp}/10000 XP</div>
                   </div>
                 </div>
-                <Zap style={{ height: '32px', width: '32px', color: '#10B981' }} />
+                <div style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '12px',
+                  background: `linear-gradient(135deg, ${colors.green}20 0%, ${colors.cyan}20 100%)`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Crown style={{ height: '24px', width: '24px', color: colors.green }} />
+                </div>
               </div>
 
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>
-                  <span>Progress</span>
-                  <span style={{ fontWeight: '600' }}>{user.xp} / 10,000 XP</span>
-                </div>
                 <div style={{
                   width: '100%',
-                  height: '12px',
-                  background: '#E5E7EB',
+                  height: '10px',
+                  background: 'rgba(0, 217, 255, 0.1)',
                   borderRadius: '9999px',
-                  overflow: 'hidden',
-                  marginBottom: '8px'
+                  overflow: 'hidden'
                 }}>
                   <div style={{
                     height: '100%',
                     borderRadius: '9999px',
                     transition: 'all 0.3s',
                     width: `${(user.xp / 10000) * 100}%`,
-                    background: 'linear-gradient(90deg, #4ADE80 0%, #10B981 100%)'
+                    background: `linear-gradient(90deg, ${colors.green} 0%, ${colors.cyan} 100%)`,
+                    boxShadow: '0 0 10px rgba(0, 217, 255, 0.5)'
                   }} />
-                </div>
-                <div style={{ fontSize: '14px', color: '#6B7280', textAlign: 'center' }}>
-                  {10000 - user.xp} XP to next rank
                 </div>
               </div>
             </div>
 
             {/* Action Buttons */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
               <button
                 onClick={() => {
                   setPortfolio([]); setPortfolioType(null);
@@ -1928,32 +2041,32 @@ export default function PortfolioDuel() {
                   setScreen('builder');
                 }}
                 style={{
-                  height: '96px',
-                  fontSize: '18px',
+                  height: '56px',
+                  fontSize: '16px',
                   fontWeight: '600',
-                  color: 'white',
-                  background: 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)',
+                  color: colors.background,
+                  background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`,
                   border: 'none',
-                  borderRadius: '16px',
+                  borderRadius: '12px',
                   cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                  transition: 'all 0.3s',
+                  boxShadow: '0 0 20px rgba(0, 217, 255, 0.3)',
                   display: 'flex',
-                  flexDirection: 'column',
                   alignItems: 'center',
-                  justifyContent: 'center'
+                  justifyContent: 'center',
+                  gap: '8px'
                 }}
                 onMouseEnter={(e) => {
-                  e.target.style.transform = 'scale(1.05)';
-                  e.target.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.15)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 0 30px rgba(0, 217, 255, 0.5)';
                 }}
                 onMouseLeave={(e) => {
-                  e.target.style.transform = 'scale(1)';
-                  e.target.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 0 20px rgba(0, 217, 255, 0.3)';
                 }}
               >
-                <Plus style={{ height: '24px', width: '24px', marginBottom: '4px' }} />
-                Create Game
+                CREATE GAME
+                <Plus style={{ height: '20px', width: '20px' }} />
               </button>
               <button
                 onClick={() => {
@@ -1965,70 +2078,73 @@ export default function PortfolioDuel() {
                   setScreen('join');
                 }}
                 style={{
-                  height: '96px',
-                  fontSize: '18px',
+                  height: '56px',
+                  fontSize: '16px',
                   fontWeight: '600',
-                  color: 'white',
-                  background: 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)',
+                  color: colors.background,
+                  background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`,
                   border: 'none',
-                  borderRadius: '16px',
+                  borderRadius: '12px',
                   cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                  transition: 'all 0.3s',
+                  boxShadow: '0 0 20px rgba(0, 217, 255, 0.3)',
                   display: 'flex',
-                  flexDirection: 'column',
                   alignItems: 'center',
-                  justifyContent: 'center'
+                  justifyContent: 'center',
+                  gap: '8px'
                 }}
                 onMouseEnter={(e) => {
-                  e.target.style.transform = 'scale(1.05)';
-                  e.target.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.15)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 0 30px rgba(0, 217, 255, 0.5)';
                 }}
                 onMouseLeave={(e) => {
-                  e.target.style.transform = 'scale(1)';
-                  e.target.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 0 20px rgba(0, 217, 255, 0.3)';
                 }}
               >
-                <Swords style={{ height: '24px', width: '24px', marginBottom: '4px' }} />
-                Join Game
-              </button>
-              <button
-                onClick={() => {
-                  setPortfolio([]); setPortfolioType(null);
-                  setPortfolioName('');
-                  setAssetType('stocks');
-                  setSearchTerm('');
-                  setScreen('training');
-                }}
-                style={{
-                  height: '96px',
-                  fontSize: '18px',
-                  fontWeight: '600',
-                  color: 'white',
-                  background: 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)',
-                  border: 'none',
-                  borderRadius: '16px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.transform = 'scale(1.05)';
-                  e.target.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.15)';
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.transform = 'scale(1)';
-                  e.target.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
-                }}
-              >
-                <GraduationCap style={{ height: '24px', width: '24px', marginBottom: '4px' }} />
-                Train
+                JOIN GAME
+                <ArrowRight style={{ height: '20px', width: '20px' }} />
               </button>
             </div>
+
+            {/* Training Button */}
+            <button
+              onClick={() => {
+                setPortfolio([]); setPortfolioType(null);
+                setPortfolioName('');
+                setAssetType('stocks');
+                setSearchTerm('');
+                setScreen('training');
+              }}
+              style={{
+                width: '100%',
+                height: '48px',
+                fontSize: '14px',
+                fontWeight: '600',
+                color: colors.textPrimary,
+                background: 'transparent',
+                border: `1px solid ${colors.purple}`,
+                borderRadius: '12px',
+                cursor: 'pointer',
+                transition: 'all 0.3s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                marginBottom: '24px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = `${colors.purple}20`;
+                e.currentTarget.style.boxShadow = '0 0 20px rgba(147, 51, 234, 0.3)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            >
+              <GraduationCap style={{ height: '18px', width: '18px', color: colors.purple }} />
+              TRAINING MODE
+            </button>
 
           </div>
         </div>
@@ -2043,23 +2159,23 @@ export default function PortfolioDuel() {
         <div style={{
           minHeight: '100vh',
           paddingBottom: '32px',
-          background: 'linear-gradient(to bottom, #E0F7FA 0%, #B2EBF2 100%)'
+          background: colors.background
         }}>
           {/* Header */}
           <div style={{
-            color: 'white',
             padding: '24px',
-            borderBottomLeftRadius: '24px',
-            borderBottomRightRadius: '24px',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
             marginBottom: '24px',
-            background: 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)'
+            borderBottom: `1px solid ${colors.border}`
           }}>
             <div style={{ maxWidth: '1536px', margin: '0 auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '4px', margin: 0 }}>Build Your Portfolio</h1>
-                  <p style={{ fontSize: '14px', color: '#E0F7FA', margin: 0 }}>⚠️ CREATE MODE: Select 7-13 assets • Each 7.5%-20% • Total 100%</p>
+                  <h1 style={{
+                    fontSize: '28px',
+                    fontWeight: 'bold',
+                    margin: '0 0 4px 0',
+                    color: colors.textPrimary
+                  }}>Build Your Portfolio</h1>
                 </div>
                 <button
                   onClick={() => {
@@ -2071,18 +2187,23 @@ export default function PortfolioDuel() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
-                    padding: '8px 16px',
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    border: 'none',
+                    padding: '10px 20px',
+                    background: `${colors.red}20`,
+                    border: `1px solid ${colors.red}`,
                     borderRadius: '8px',
-                    color: 'white',
+                    color: colors.red,
                     cursor: 'pointer',
-                    transition: 'background 0.2s'
+                    transition: 'all 0.2s',
+                    fontWeight: '500'
                   }}
-                  onMouseEnter={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.2)'}
-                  onMouseLeave={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.1)'}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = `${colors.red}40`;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = `${colors.red}20`;
+                  }}
                 >
-                  <X style={{ height: '20px', width: '20px' }} />
+                  <X style={{ height: '18px', width: '18px' }} />
                   Cancel
                 </button>
               </div>
@@ -2094,44 +2215,46 @@ export default function PortfolioDuel() {
               {/* Left: Asset Selection */}
               <div>
                 <div style={{
-                  background: 'white',
-                  borderRadius: '16px',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                  padding: '24px'
+                  background: colors.cardBg,
+                  borderRadius: '12px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
+                  padding: '24px',
+                  border: `1px solid ${colors.border}`
                 }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: '#1F2937' }}>Available Assets</h2>
-                  
+                  <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '16px', color: colors.textPrimary }}>Available Assets</h2>
+
                   {loadingMarketData ? (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px' }}>
-                      <Loader2 style={{ height: '32px', width: '32px', color: '#00BCD4', animation: 'spin 1s linear infinite' }} />
+                      <Loader2 style={{ height: '32px', width: '32px', color: colors.cyan, animation: 'spin 1s linear infinite' }} />
                     </div>
                   ) : (
                     <>
                       {/* Tabs */}
-                      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
                         <button
                           onClick={() => setAssetType('stocks')}
                           style={{
-                            padding: '8px 24px',
+                            padding: '10px 24px',
                             borderRadius: '8px',
                             fontWeight: '600',
-                            border: 'none',
+                            fontSize: '14px',
+                            border: assetType === 'stocks' ? 'none' : `1px solid ${colors.borderSubtle}`,
                             cursor: 'pointer',
                             transition: 'all 0.2s',
                             ...(assetType === 'stocks' ? {
-                              color: 'white',
-                              background: 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)',
-                              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                              color: colors.background,
+                              background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`,
+                              boxShadow: '0 0 15px rgba(0, 217, 255, 0.3)'
                             } : {
-                              color: '#6B7280',
-                              background: '#F3F4F6'
+                              color: colors.textSecondary,
+                              background: 'rgba(255, 255, 255, 0.05)'
                             })
                           }}
                           onMouseEnter={(e) => {
-                            if (assetType !== 'stocks') e.target.style.background = '#E5E7EB';
+                            if (assetType !== 'stocks') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
                           }}
                           onMouseLeave={(e) => {
-                            if (assetType !== 'stocks') e.target.style.background = '#F3F4F6';
+                            if (assetType !== 'stocks') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
                           }}
                         >
                           Stocks
@@ -2139,26 +2262,27 @@ export default function PortfolioDuel() {
                         <button
                           onClick={() => setAssetType('crypto')}
                           style={{
-                            padding: '8px 24px',
+                            padding: '10px 24px',
                             borderRadius: '8px',
                             fontWeight: '600',
-                            border: 'none',
+                            fontSize: '14px',
+                            border: assetType === 'crypto' ? 'none' : `1px solid ${colors.borderSubtle}`,
                             cursor: 'pointer',
                             transition: 'all 0.2s',
                             ...(assetType === 'crypto' ? {
-                              color: 'white',
-                              background: 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)',
-                              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                              color: colors.background,
+                              background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`,
+                              boxShadow: '0 0 15px rgba(0, 217, 255, 0.3)'
                             } : {
-                              color: '#6B7280',
-                              background: '#F3F4F6'
+                              color: colors.textSecondary,
+                              background: 'rgba(255, 255, 255, 0.05)'
                             })
                           }}
                           onMouseEnter={(e) => {
-                            if (assetType !== 'crypto') e.target.style.background = '#E5E7EB';
+                            if (assetType !== 'crypto') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
                           }}
                           onMouseLeave={(e) => {
-                            if (assetType !== 'crypto') e.target.style.background = '#F3F4F6';
+                            if (assetType !== 'crypto') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
                           }}
                         >
                           Crypto
@@ -2170,21 +2294,21 @@ export default function PortfolioDuel() {
                         <div style={{
                           padding: '12px 16px',
                           marginBottom: '16px',
-                          background: portfolioType === 'stocks' ? '#DBEAFE' : '#FCE7F3',
-                          border: `2px solid ${portfolioType === 'stocks' ? '#3B82F6' : '#EC4899'}`,
+                          background: portfolioType === 'stocks' ? `${colors.blue}20` : `${colors.purple}20`,
+                          border: `1px solid ${portfolioType === 'stocks' ? colors.blue : colors.purple}`,
                           borderRadius: '8px',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '8px'
                         }}>
-                          <span style={{ fontSize: '20px' }}>
+                          <span style={{ fontSize: '18px' }}>
                             {portfolioType === 'stocks' ? '📈' : '₿'}
                           </span>
                           <div>
-                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                            <div style={{ fontSize: '13px', fontWeight: '600', color: colors.textPrimary }}>
                               {portfolioType === 'stocks' ? 'Stocks Portfolio' : 'Crypto Portfolio'}
                             </div>
-                            <div style={{ fontSize: '12px', color: '#6B7280' }}>
+                            <div style={{ fontSize: '11px', color: colors.textSecondary }}>
                               You can only add {portfolioType === 'stocks' ? 'stocks' : 'crypto'} to this portfolio
                             </div>
                           </div>
@@ -2201,12 +2325,14 @@ export default function PortfolioDuel() {
                           width: '100%',
                           padding: '12px 16px',
                           marginBottom: '16px',
-                          border: '2px solid',
-                          borderColor: searchTerm ? '#00BCD4' : '#E5E7EB',
-                          borderRadius: '12px',
+                          border: `1px solid ${searchTerm ? colors.cyan : colors.borderSubtle}`,
+                          borderRadius: '8px',
                           outline: 'none',
-                          transition: 'border-color 0.2s',
-                          boxSizing: 'border-box'
+                          transition: 'all 0.2s',
+                          boxSizing: 'border-box',
+                          background: 'rgba(0, 0, 0, 0.2)',
+                          color: colors.textPrimary,
+                          fontSize: '14px'
                         }}
                       />
 
@@ -2226,32 +2352,32 @@ export default function PortfolioDuel() {
                               onClick={() => handleAddAsset(asset)}
                               disabled={inPortfolio || portfolio.length >= 13}
                               style={{
-                                padding: '16px',
-                                borderRadius: '12px',
+                                padding: '14px',
+                                borderRadius: '8px',
                                 textAlign: 'left',
-                                border: inPortfolio ? 'none' : '2px solid transparent',
+                                border: `1px solid ${inPortfolio ? colors.cyan : colors.borderSubtle}`,
                                 cursor: inPortfolio || portfolio.length >= 13 ? 'not-allowed' : 'pointer',
                                 transition: 'all 0.2s',
-                                background: inPortfolio ? '#F3F4F6' : '#F9FAFB'
+                                background: inPortfolio ? `${colors.cyan}15` : 'rgba(0, 217, 255, 0.05)'
                               }}
                               onMouseEnter={(e) => {
                                 if (!inPortfolio && portfolio.length < 13) {
-                                  e.target.style.background = '#E0F7FA';
-                                  e.target.style.borderColor = '#80DEEA';
+                                  e.currentTarget.style.background = `${colors.cyan}20`;
+                                  e.currentTarget.style.borderColor = colors.cyan;
                                 }
                               }}
                               onMouseLeave={(e) => {
                                 if (!inPortfolio) {
-                                  e.target.style.background = '#F9FAFB';
-                                  e.target.style.borderColor = 'transparent';
+                                  e.currentTarget.style.background = 'rgba(0, 217, 255, 0.05)';
+                                  e.currentTarget.style.borderColor = colors.borderSubtle;
                                 }
                               }}
                             >
-                              <div style={{ fontWeight: 'bold', color: '#1F2937', marginBottom: '4px' }}>{asset.symbol}</div>
-                              <div style={{ fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>{asset.name}</div>
-                              <div style={{ fontSize: '18px', fontWeight: '600', color: '#4B5563' }}>${asset.price.toFixed(2)}</div>
+                              <div style={{ fontWeight: 'bold', color: colors.textPrimary, marginBottom: '2px' }}>{asset.symbol}</div>
+                              <div style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '6px' }}>{asset.name}</div>
+                              <div style={{ fontSize: '16px', fontWeight: '600', color: colors.cyan }}>${asset.price.toFixed(2)}</div>
                               {inPortfolio && (
-                                <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: '600', color: '#10B981' }}>✓ Added</div>
+                                <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: '600', color: colors.green }}>✓ Added</div>
                               )}
                             </button>
                           );
@@ -2265,22 +2391,41 @@ export default function PortfolioDuel() {
               {/* Right: Portfolio Summary */}
               <div>
                 <div style={{
-                  background: 'white',
-                  borderRadius: '16px',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                  background: colors.cardBg,
+                  borderRadius: '12px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
                   padding: '24px',
                   position: 'sticky',
-                  top: '24px'
+                  top: '24px',
+                  border: `1px solid ${colors.border}`
                 }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '8px', color: '#1F2937' }}>Your Portfolio</h2>
-                  <p style={{ fontSize: '14px', color: '#6B7280', marginBottom: '16px' }}>
+                  <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '4px', color: colors.textPrimary }}>Your Portfolio</h2>
+                  <p style={{ fontSize: '13px', color: colors.textSecondary, marginBottom: '16px' }}>
                     {portfolio.length}/13 assets • {totalPercentage.toFixed(1)}%
                   </p>
 
+                  {/* Progress bar for allocation */}
+                  <div style={{
+                    width: '100%',
+                    height: '6px',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    borderRadius: '3px',
+                    marginBottom: '16px',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      width: `${Math.min(totalPercentage, 100)}%`,
+                      height: '100%',
+                      background: totalPercentage === 100 ? colors.green : colors.cyan,
+                      borderRadius: '3px',
+                      transition: 'all 0.3s'
+                    }} />
+                  </div>
+
                   {/* Portfolio Name Input */}
                   <div style={{ marginBottom: '16px' }}>
-                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#4B5563', marginBottom: '8px' }}>
-                      Portfolio Name <span style={{ color: '#EF4444' }}>*</span>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: colors.textSecondary, marginBottom: '8px' }}>
+                      Portfolio Name <span style={{ color: colors.red }}>*</span>
                     </label>
                     <input
                       type="text"
@@ -2289,31 +2434,32 @@ export default function PortfolioDuel() {
                       onChange={(e) => setPortfolioName(e.target.value)}
                       style={{
                         width: '100%',
-                        padding: '8px 12px',
-                        border: '2px solid',
-                        borderColor: portfolioName ? '#00BCD4' : (!portfolioName && portfolio.length > 0 ? '#EF4444' : '#E5E7EB'),
-                        background: !portfolioName && portfolio.length > 0 ? '#FEE2E2' : 'white',
+                        padding: '10px 12px',
+                        border: `1px solid ${portfolioName ? colors.cyan : (!portfolioName && portfolio.length > 0 ? colors.red : colors.borderSubtle)}`,
+                        background: !portfolioName && portfolio.length > 0 ? `${colors.red}10` : 'rgba(0, 0, 0, 0.2)',
                         borderRadius: '8px',
                         outline: 'none',
                         transition: 'all 0.2s',
-                        boxSizing: 'border-box'
+                        boxSizing: 'border-box',
+                        color: colors.textPrimary,
+                        fontSize: '14px'
                       }}
                     />
                     {!portfolioName && portfolio.length > 0 && (
-                      <div style={{ fontSize: '12px', color: '#EF4444', marginTop: '4px' }}>Portfolio name is required</div>
+                      <div style={{ fontSize: '11px', color: colors.red, marginTop: '4px' }}>Portfolio name is required</div>
                     )}
                   </div>
 
                   {portfolio.length === 0 ? (
-                    <div style={{ textAlign: 'center', color: '#9CA3AF', padding: '48px 0' }}>
-                      <div style={{ fontSize: '48px', marginBottom: '8px' }}>📊</div>
-                      <div>No assets selected</div>
+                    <div style={{ textAlign: 'center', color: colors.textMuted, padding: '48px 0' }}>
+                      <Wallet style={{ height: '48px', width: '48px', marginBottom: '12px', opacity: 0.4 }} />
+                      <div style={{ fontSize: '14px' }}>No assets selected</div>
                     </div>
                   ) : (
                     <>
-                      <div style={{ maxHeight: '320px', overflowY: 'auto', marginBottom: '16px' }}>
+                      <div style={{ maxHeight: '280px', overflowY: 'auto', marginBottom: '16px' }}>
                         {portfolio.map(asset => (
-                          <div key={asset.symbol} style={{ padding: '12px', background: '#F9FAFB', borderRadius: '12px', marginBottom: '12px' }}>
+                          <div key={asset.symbol} style={{ padding: '12px', background: 'rgba(0, 0, 0, 0.2)', borderRadius: '8px', marginBottom: '10px', border: `1px solid ${colors.borderSubtle}` }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                               <div>
                                 <div style={{ fontWeight: 'bold', color: '#1F2937' }}>{asset.symbol}</div>
@@ -2441,23 +2587,21 @@ export default function PortfolioDuel() {
         <div style={{
           minHeight: '100vh',
           paddingBottom: '32px',
-          background: 'linear-gradient(to bottom, #E0F7FA 0%, #B2EBF2 100%)'
+          background: colors.background
         }}>
           {/* Header */}
           <div style={{
             color: 'white',
             padding: '24px',
-            borderBottomLeftRadius: '24px',
-            borderBottomRightRadius: '24px',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+            borderBottom: `1px solid ${colors.border}`,
             marginBottom: '24px',
-            background: 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)'
+            background: colors.cardBg
           }}>
             <div style={{ maxWidth: '1536px', margin: '0 auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '4px', margin: 0 }}>Join a Battle</h1>
-                  <p style={{ fontSize: '14px', color: '#E0F7FA', margin: 0 }}>✅ JOIN MODE: Enter challenge code and build your portfolio</p>
+                  <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '4px', margin: 0, color: colors.textPrimary }}>Join a Battle</h1>
+                  <p style={{ fontSize: '14px', color: colors.cyan, margin: 0 }}>JOIN MODE: Enter challenge code and build your portfolio</p>
                 </div>
                 <button
                   onClick={() => {
@@ -2471,15 +2615,21 @@ export default function PortfolioDuel() {
                     alignItems: 'center',
                     gap: '8px',
                     padding: '8px 16px',
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    border: 'none',
+                    background: 'transparent',
+                    border: `1px solid ${colors.borderSubtle}`,
                     borderRadius: '8px',
-                    color: 'white',
+                    color: colors.textSecondary,
                     cursor: 'pointer',
-                    transition: 'background 0.2s'
+                    transition: 'all 0.2s'
                   }}
-                  onMouseEnter={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.2)'}
-                  onMouseLeave={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.1)'}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = colors.cyan;
+                    e.currentTarget.style.color = colors.cyan;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = colors.borderSubtle;
+                    e.currentTarget.style.color = colors.textSecondary;
+                  }}
                 >
                   <X style={{ height: '20px', width: '20px' }} />
                   Cancel
@@ -2491,13 +2641,14 @@ export default function PortfolioDuel() {
           <div style={{ maxWidth: '1536px', margin: '0 auto', padding: '0 24px' }}>
             {/* Challenge Code Input */}
             <div style={{
-              background: 'white',
-              borderRadius: '16px',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+              background: colors.cardBg,
+              borderRadius: '12px',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
               padding: '24px',
-              marginBottom: '24px'
+              marginBottom: '24px',
+              border: `1px solid ${colors.border}`
             }}>
-              <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: '#1F2937' }}>Challenge Code</h2>
+              <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: colors.textPrimary }}>Challenge Code</h2>
               <input
                 type="text"
                 placeholder="Enter 6-character code"
@@ -2510,13 +2661,14 @@ export default function PortfolioDuel() {
                   fontSize: '24px',
                   fontWeight: 'bold',
                   textAlign: 'center',
-                  border: '2px solid',
-                  borderColor: joinCode ? '#00BCD4' : '#E5E7EB',
+                  border: `2px solid ${joinCode ? colors.cyan : colors.borderSubtle}`,
                   borderRadius: '12px',
                   outline: 'none',
                   textTransform: 'uppercase',
                   transition: 'border-color 0.2s',
-                  boxSizing: 'border-box'
+                  boxSizing: 'border-box',
+                  background: 'rgba(0, 0, 0, 0.2)',
+                  color: colors.textPrimary
                 }}
               />
             </div>
@@ -2525,16 +2677,17 @@ export default function PortfolioDuel() {
               {/* Left: Asset Selection */}
               <div>
                 <div style={{
-                  background: 'white',
-                  borderRadius: '16px',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                  padding: '24px'
+                  background: colors.cardBg,
+                  borderRadius: '12px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
+                  padding: '24px',
+                  border: `1px solid ${colors.border}`
                 }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: '#1F2937' }}>Available Assets</h2>
-                  
+                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: colors.textPrimary }}>Available Assets</h2>
+
                   {loadingMarketData ? (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px' }}>
-                      <Loader2 style={{ height: '32px', width: '32px', color: '#00BCD4', animation: 'spin 1s linear infinite' }} />
+                      <Loader2 style={{ height: '32px', width: '32px', color: colors.cyan, animation: 'spin 1s linear infinite' }} />
                     </div>
                   ) : (
                     <>
@@ -2543,26 +2696,26 @@ export default function PortfolioDuel() {
                         <button
                           onClick={() => setAssetType('stocks')}
                           style={{
-                            padding: '8px 24px',
+                            padding: '10px 24px',
                             borderRadius: '8px',
                             fontWeight: '600',
                             border: 'none',
                             cursor: 'pointer',
                             transition: 'all 0.2s',
                             ...(assetType === 'stocks' ? {
-                              color: 'white',
-                              background: 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)',
-                              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                              color: colors.background,
+                              background: colors.cyan,
+                              boxShadow: `0 0 15px ${colors.cyan}50`
                             } : {
-                              color: '#6B7280',
-                              background: '#F3F4F6'
+                              color: colors.textSecondary,
+                              background: 'rgba(255, 255, 255, 0.1)'
                             })
                           }}
                           onMouseEnter={(e) => {
-                            if (assetType !== 'stocks') e.target.style.background = '#E5E7EB';
+                            if (assetType !== 'stocks') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
                           }}
                           onMouseLeave={(e) => {
-                            if (assetType !== 'stocks') e.target.style.background = '#F3F4F6';
+                            if (assetType !== 'stocks') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
                           }}
                         >
                           Stocks
@@ -2570,26 +2723,26 @@ export default function PortfolioDuel() {
                         <button
                           onClick={() => setAssetType('crypto')}
                           style={{
-                            padding: '8px 24px',
+                            padding: '10px 24px',
                             borderRadius: '8px',
                             fontWeight: '600',
                             border: 'none',
                             cursor: 'pointer',
                             transition: 'all 0.2s',
                             ...(assetType === 'crypto' ? {
-                              color: 'white',
-                              background: 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)',
-                              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                              color: colors.background,
+                              background: colors.cyan,
+                              boxShadow: `0 0 15px ${colors.cyan}50`
                             } : {
-                              color: '#6B7280',
-                              background: '#F3F4F6'
+                              color: colors.textSecondary,
+                              background: 'rgba(255, 255, 255, 0.1)'
                             })
                           }}
                           onMouseEnter={(e) => {
-                            if (assetType !== 'crypto') e.target.style.background = '#E5E7EB';
+                            if (assetType !== 'crypto') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
                           }}
                           onMouseLeave={(e) => {
-                            if (assetType !== 'crypto') e.target.style.background = '#F3F4F6';
+                            if (assetType !== 'crypto') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
                           }}
                         >
                           Crypto
@@ -2601,8 +2754,8 @@ export default function PortfolioDuel() {
                         <div style={{
                           padding: '12px 16px',
                           marginBottom: '16px',
-                          background: portfolioType === 'stocks' ? '#DBEAFE' : '#FCE7F3',
-                          border: `2px solid ${portfolioType === 'stocks' ? '#3B82F6' : '#EC4899'}`,
+                          background: portfolioType === 'stocks' ? `${colors.blue}20` : `${colors.purple}20`,
+                          border: `1px solid ${portfolioType === 'stocks' ? colors.blue : colors.purple}`,
                           borderRadius: '8px',
                           display: 'flex',
                           alignItems: 'center',
@@ -2612,10 +2765,10 @@ export default function PortfolioDuel() {
                             {portfolioType === 'stocks' ? '📈' : '₿'}
                           </span>
                           <div>
-                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
                               {portfolioType === 'stocks' ? 'Stocks Portfolio' : 'Crypto Portfolio'}
                             </div>
-                            <div style={{ fontSize: '12px', color: '#6B7280' }}>
+                            <div style={{ fontSize: '12px', color: colors.textSecondary }}>
                               You can only add {portfolioType === 'stocks' ? 'stocks' : 'crypto'} to this portfolio
                             </div>
                           </div>
@@ -2632,12 +2785,13 @@ export default function PortfolioDuel() {
                           width: '100%',
                           padding: '12px 16px',
                           marginBottom: '16px',
-                          border: '2px solid',
-                          borderColor: searchTerm ? '#00BCD4' : '#E5E7EB',
-                          borderRadius: '12px',
+                          border: `1px solid ${searchTerm ? colors.cyan : colors.borderSubtle}`,
+                          borderRadius: '8px',
                           outline: 'none',
                           transition: 'border-color 0.2s',
-                          boxSizing: 'border-box'
+                          boxSizing: 'border-box',
+                          background: 'rgba(0, 0, 0, 0.2)',
+                          color: colors.textPrimary
                         }}
                       />
 
@@ -2657,32 +2811,32 @@ export default function PortfolioDuel() {
                               onClick={() => handleAddAsset(asset)}
                               disabled={inPortfolio || portfolio.length >= 13}
                               style={{
-                                padding: '16px',
-                                borderRadius: '12px',
+                                padding: '14px',
+                                borderRadius: '8px',
                                 textAlign: 'left',
-                                border: inPortfolio ? 'none' : '2px solid transparent',
+                                border: `1px solid ${inPortfolio ? colors.cyan : colors.borderSubtle}`,
                                 cursor: inPortfolio || portfolio.length >= 13 ? 'not-allowed' : 'pointer',
                                 transition: 'all 0.2s',
-                                background: inPortfolio ? '#F3F4F6' : '#F9FAFB'
+                                background: inPortfolio ? `${colors.cyan}15` : 'rgba(0, 217, 255, 0.05)'
                               }}
                               onMouseEnter={(e) => {
                                 if (!inPortfolio && portfolio.length < 13) {
-                                  e.target.style.background = '#E0F7FA';
-                                  e.target.style.borderColor = '#80DEEA';
+                                  e.currentTarget.style.background = `${colors.cyan}20`;
+                                  e.currentTarget.style.borderColor = colors.cyan;
                                 }
                               }}
                               onMouseLeave={(e) => {
                                 if (!inPortfolio) {
-                                  e.target.style.background = '#F9FAFB';
-                                  e.target.style.borderColor = 'transparent';
+                                  e.currentTarget.style.background = 'rgba(0, 217, 255, 0.05)';
+                                  e.currentTarget.style.borderColor = colors.borderSubtle;
                                 }
                               }}
                             >
-                              <div style={{ fontWeight: 'bold', color: '#1F2937', marginBottom: '4px' }}>{asset.symbol}</div>
-                              <div style={{ fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>{asset.name}</div>
-                              <div style={{ fontSize: '18px', fontWeight: '600', color: '#4B5563' }}>${asset.price.toFixed(2)}</div>
+                              <div style={{ fontWeight: 'bold', color: colors.textPrimary, marginBottom: '2px' }}>{asset.symbol}</div>
+                              <div style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '6px' }}>{asset.name}</div>
+                              <div style={{ fontSize: '16px', fontWeight: '600', color: colors.cyan }}>${asset.price.toFixed(2)}</div>
                               {inPortfolio && (
-                                <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: '600', color: '#10B981' }}>✓ Added</div>
+                                <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: '600', color: colors.green }}>✓ Added</div>
                               )}
                             </button>
                           );
@@ -2696,22 +2850,41 @@ export default function PortfolioDuel() {
               {/* Right: Portfolio Summary */}
               <div>
                 <div style={{
-                  background: 'white',
-                  borderRadius: '16px',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                  background: colors.cardBg,
+                  borderRadius: '12px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
                   padding: '24px',
                   position: 'sticky',
-                  top: '24px'
+                  top: '24px',
+                  border: `1px solid ${colors.border}`
                 }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '8px', color: '#1F2937' }}>Your Portfolio</h2>
-                  <p style={{ fontSize: '14px', color: '#6B7280', marginBottom: '16px' }}>
+                  <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '4px', color: colors.textPrimary }}>Your Portfolio</h2>
+                  <p style={{ fontSize: '13px', color: colors.textSecondary, marginBottom: '16px' }}>
                     {portfolio.length}/13 assets • {totalPercentage.toFixed(1)}%
                   </p>
 
+                  {/* Progress bar for allocation */}
+                  <div style={{
+                    width: '100%',
+                    height: '6px',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    borderRadius: '3px',
+                    marginBottom: '16px',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      width: `${Math.min(totalPercentage, 100)}%`,
+                      height: '100%',
+                      background: totalPercentage === 100 ? colors.green : colors.cyan,
+                      borderRadius: '3px',
+                      transition: 'all 0.3s'
+                    }} />
+                  </div>
+
                   {/* Portfolio Name Input */}
                   <div style={{ marginBottom: '16px' }}>
-                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#4B5563', marginBottom: '8px' }}>
-                      Portfolio Name <span style={{ color: '#EF4444' }}>*</span>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: colors.textSecondary, marginBottom: '8px' }}>
+                      Portfolio Name <span style={{ color: colors.red }}>*</span>
                     </label>
                     <input
                       type="text"
@@ -2720,31 +2893,32 @@ export default function PortfolioDuel() {
                       onChange={(e) => setPortfolioName(e.target.value)}
                       style={{
                         width: '100%',
-                        padding: '8px 12px',
-                        border: '2px solid',
-                        borderColor: portfolioName ? '#00BCD4' : (!portfolioName && portfolio.length > 0 ? '#EF4444' : '#E5E7EB'),
-                        background: !portfolioName && portfolio.length > 0 ? '#FEE2E2' : 'white',
+                        padding: '10px 12px',
+                        border: `1px solid ${portfolioName ? colors.cyan : (!portfolioName && portfolio.length > 0 ? colors.red : colors.borderSubtle)}`,
+                        background: !portfolioName && portfolio.length > 0 ? `${colors.red}10` : 'rgba(0, 0, 0, 0.2)',
                         borderRadius: '8px',
                         outline: 'none',
                         transition: 'all 0.2s',
-                        boxSizing: 'border-box'
+                        boxSizing: 'border-box',
+                        color: colors.textPrimary,
+                        fontSize: '14px'
                       }}
                     />
                     {!portfolioName && portfolio.length > 0 && (
-                      <div style={{ fontSize: '12px', color: '#EF4444', marginTop: '4px' }}>Portfolio name is required</div>
+                      <div style={{ fontSize: '11px', color: colors.red, marginTop: '4px' }}>Portfolio name is required</div>
                     )}
                   </div>
 
                   {portfolio.length === 0 ? (
-                    <div style={{ textAlign: 'center', color: '#9CA3AF', padding: '48px 0' }}>
-                      <div style={{ fontSize: '48px', marginBottom: '8px' }}>📊</div>
-                      <div>No assets selected</div>
+                    <div style={{ textAlign: 'center', color: colors.textMuted, padding: '48px 0' }}>
+                      <Wallet style={{ height: '48px', width: '48px', marginBottom: '12px', opacity: 0.4 }} />
+                      <div style={{ fontSize: '14px' }}>No assets selected</div>
                     </div>
                   ) : (
                     <>
-                      <div style={{ maxHeight: '320px', overflowY: 'auto', marginBottom: '16px' }}>
+                      <div style={{ maxHeight: '280px', overflowY: 'auto', marginBottom: '16px' }}>
                         {portfolio.map(asset => (
-                          <div key={asset.symbol} style={{ padding: '12px', background: '#F9FAFB', borderRadius: '12px', marginBottom: '12px' }}>
+                          <div key={asset.symbol} style={{ padding: '12px', background: 'rgba(0, 0, 0, 0.2)', borderRadius: '8px', marginBottom: '10px', border: `1px solid ${colors.borderSubtle}` }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                               <div>
                                 <div style={{ fontWeight: 'bold', color: '#1F2937' }}>{asset.symbol}</div>
@@ -2873,26 +3047,23 @@ export default function PortfolioDuel() {
         <div style={{
           minHeight: '100vh',
           paddingBottom: '32px',
-          background: 'linear-gradient(to bottom, #E0F7FA 0%, #B2EBF2 100%)'
+          background: colors.background
         }}>
           {/* Header */}
           <div style={{
-            color: 'white',
             padding: '24px',
-            borderBottomLeftRadius: '24px',
-            borderBottomRightRadius: '24px',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+            borderBottom: `1px solid ${colors.border}`,
             marginBottom: '24px',
-            background: 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)'
+            background: colors.cardBg
           }}>
             <div style={{ maxWidth: '1536px', margin: '0 auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '4px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <GraduationCap style={{ height: '24px', width: '24px' }} />
-                    🎯 Training Mode
+                  <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '4px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: colors.textPrimary }}>
+                    <GraduationCap style={{ height: '24px', width: '24px', color: colors.purple }} />
+                    Training Mode
                   </h1>
-                  <p style={{ fontSize: '14px', color: '#EDE9FE', margin: 0 }}>Practice against CPU • 1 Hour Duration • Reduced XP</p>
+                  <p style={{ fontSize: '14px', color: colors.purple, margin: 0 }}>Practice against CPU • 1 Hour Duration • Reduced XP</p>
                 </div>
                 <button
                   onClick={() => {
@@ -2905,15 +3076,21 @@ export default function PortfolioDuel() {
                     alignItems: 'center',
                     gap: '8px',
                     padding: '8px 16px',
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    border: 'none',
+                    background: 'transparent',
+                    border: `1px solid ${colors.borderSubtle}`,
                     borderRadius: '8px',
-                    color: 'white',
+                    color: colors.textSecondary,
                     cursor: 'pointer',
-                    transition: 'background 0.2s'
+                    transition: 'all 0.2s'
                   }}
-                  onMouseEnter={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.2)'}
-                  onMouseLeave={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.1)'}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = colors.purple;
+                    e.currentTarget.style.color = colors.purple;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = colors.borderSubtle;
+                    e.currentTarget.style.color = colors.textSecondary;
+                  }}
                 >
                   <X style={{ height: '20px', width: '20px' }} />
                   Cancel
@@ -2925,24 +3102,24 @@ export default function PortfolioDuel() {
           <div style={{ maxWidth: '1536px', margin: '0 auto', padding: '0 24px' }}>
             {/* Training Info Box */}
             <div style={{
-              background: 'white',
-              borderRadius: '16px',
+              background: colors.cardBg,
+              borderRadius: '12px',
               padding: '20px',
               marginBottom: '24px',
-              border: '2px solid #DDD6FE',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+              border: `1px solid ${colors.purple}`,
+              boxShadow: `0 0 20px ${colors.purple}20`
             }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
-                <Bot style={{ height: '32px', width: '32px', color: '#9333EA', flexShrink: 0 }} />
+                <Bot style={{ height: '32px', width: '32px', color: colors.purple, flexShrink: 0 }} />
                 <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1F2937', marginBottom: '8px', marginTop: 0 }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: colors.textPrimary, marginBottom: '8px', marginTop: 0 }}>
                     How Training Mode Works
                   </h3>
-                  <ul style={{ margin: 0, paddingLeft: '20px', color: '#6B7280', lineHeight: '1.6' }}>
+                  <ul style={{ margin: 0, paddingLeft: '20px', color: colors.textSecondary, lineHeight: '1.6' }}>
                     <li>Battle against a randomly-generated CPU opponent</li>
-                    <li>Battles last <strong>1 hour</strong> (vs 24 hours for real battles)</li>
-                    <li>Win: <strong>+10 XP</strong> • Lose: <strong>+5 XP</strong> (reduced rewards)</li>
-                    <li><strong>Does NOT affect your Win/Loss record</strong></li>
+                    <li>Battles last <strong style={{ color: colors.textPrimary }}>1 hour</strong> (vs 24 hours for real battles)</li>
+                    <li>Win: <strong style={{ color: colors.green }}>+10 XP</strong> • Lose: <strong style={{ color: colors.cyan }}>+5 XP</strong> (reduced rewards)</li>
+                    <li><strong style={{ color: colors.textPrimary }}>Does NOT affect your Win/Loss record</strong></li>
                     <li>Perfect for learning and experimenting risk-free!</li>
                   </ul>
                 </div>
@@ -2953,16 +3130,17 @@ export default function PortfolioDuel() {
               {/* Left: Asset Selection */}
               <div>
                 <div style={{
-                  background: 'white',
-                  borderRadius: '16px',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                  padding: '24px'
+                  background: colors.cardBg,
+                  borderRadius: '12px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
+                  padding: '24px',
+                  border: `1px solid ${colors.border}`
                 }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: '#1F2937' }}>Available Assets</h2>
-                  
+                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: colors.textPrimary }}>Available Assets</h2>
+
                   {loadingMarketData ? (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px' }}>
-                      <Loader2 style={{ height: '32px', width: '32px', color: '#9333EA', animation: 'spin 1s linear infinite' }} />
+                      <Loader2 style={{ height: '32px', width: '32px', color: colors.purple, animation: 'spin 1s linear infinite' }} />
                     </div>
                   ) : (
                     <>
@@ -2971,7 +3149,7 @@ export default function PortfolioDuel() {
                         <button
                           onClick={() => setAssetType('stocks')}
                           style={{
-                            padding: '8px 24px',
+                            padding: '10px 24px',
                             borderRadius: '8px',
                             fontWeight: '600',
                             border: 'none',
@@ -2979,18 +3157,18 @@ export default function PortfolioDuel() {
                             transition: 'all 0.2s',
                             ...(assetType === 'stocks' ? {
                               color: 'white',
-                              background: 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)',
-                              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                              background: colors.purple,
+                              boxShadow: `0 0 15px ${colors.purple}50`
                             } : {
-                              color: '#6B7280',
-                              background: '#F3F4F6'
+                              color: colors.textSecondary,
+                              background: 'rgba(255, 255, 255, 0.1)'
                             })
                           }}
                           onMouseEnter={(e) => {
-                            if (assetType !== 'stocks') e.target.style.background = '#E5E7EB';
+                            if (assetType !== 'stocks') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
                           }}
                           onMouseLeave={(e) => {
-                            if (assetType !== 'stocks') e.target.style.background = '#F3F4F6';
+                            if (assetType !== 'stocks') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
                           }}
                         >
                           Stocks
@@ -2998,7 +3176,7 @@ export default function PortfolioDuel() {
                         <button
                           onClick={() => setAssetType('crypto')}
                           style={{
-                            padding: '8px 24px',
+                            padding: '10px 24px',
                             borderRadius: '8px',
                             fontWeight: '600',
                             border: 'none',
@@ -3006,18 +3184,18 @@ export default function PortfolioDuel() {
                             transition: 'all 0.2s',
                             ...(assetType === 'crypto' ? {
                               color: 'white',
-                              background: 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)',
-                              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                              background: colors.purple,
+                              boxShadow: `0 0 15px ${colors.purple}50`
                             } : {
-                              color: '#6B7280',
-                              background: '#F3F4F6'
+                              color: colors.textSecondary,
+                              background: 'rgba(255, 255, 255, 0.1)'
                             })
                           }}
                           onMouseEnter={(e) => {
-                            if (assetType !== 'crypto') e.target.style.background = '#E5E7EB';
+                            if (assetType !== 'crypto') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
                           }}
                           onMouseLeave={(e) => {
-                            if (assetType !== 'crypto') e.target.style.background = '#F3F4F6';
+                            if (assetType !== 'crypto') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
                           }}
                         >
                           Crypto
@@ -3327,17 +3505,14 @@ export default function PortfolioDuel() {
         <div style={{
           minHeight: '100vh',
           paddingBottom: '32px',
-          background: 'linear-gradient(to bottom, #E0F7FA 0%, #B2EBF2 100%)'
+          background: colors.background
         }}>
-          {/* Header */}
+          {/* Header - Battle Arena Timer */}
           <div style={{
-            color: 'white',
-            padding: '24px',
-            borderBottomLeftRadius: '24px',
-            borderBottomRightRadius: '24px',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+            padding: '20px 24px',
             marginBottom: '24px',
-            background: 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)'
+            borderBottom: `1px solid ${colors.border}`,
+            textAlign: 'center'
           }}>
             <div style={{ maxWidth: '1536px', margin: '0 auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -3348,21 +3523,39 @@ export default function PortfolioDuel() {
                     alignItems: 'center',
                     gap: '8px',
                     padding: '8px 16px',
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    border: 'none',
+                    background: 'transparent',
+                    border: `1px solid ${colors.borderSubtle}`,
                     borderRadius: '8px',
-                    color: 'white',
+                    color: colors.textSecondary,
                     cursor: 'pointer',
-                    transition: 'background 0.2s'
+                    transition: 'all 0.2s'
                   }}
-                  onMouseEnter={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.2)'}
-                  onMouseLeave={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.1)'}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = colors.cyan;
+                    e.currentTarget.style.color = colors.cyan;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = colors.borderSubtle;
+                    e.currentTarget.style.color = colors.textSecondary;
+                  }}
                 >
                   ← Back
                 </button>
-                <div style={{ fontSize: '14px', color: '#E0F7FA' }}>
-                  {battleTimer.formatTimeRemaining(currentBattle)}
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '12px', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>
+                    Battle Ends
+                  </div>
+                  <div style={{
+                    fontSize: '32px',
+                    fontWeight: 'bold',
+                    fontFamily: 'monospace',
+                    color: colors.cyan,
+                    textShadow: '0 0 20px rgba(0, 217, 255, 0.5)'
+                  }}>
+                    {battleTimer.formatTimeRemaining(currentBattle)}
+                  </div>
                 </div>
+                <div style={{ width: '80px' }}></div>
               </div>
             </div>
           </div>
@@ -3371,10 +3564,10 @@ export default function PortfolioDuel() {
             {/* Training Battle Indicator */}
             {currentBattle.isTrainingBattle && (
               <div style={{
-                background: 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)',
+                background: `linear-gradient(135deg, ${colors.purple} 0%, #7C3AED 100%)`,
                 color: 'white',
                 padding: '12px 20px',
-                borderRadius: '12px',
+                borderRadius: '8px',
                 marginBottom: '16px',
                 display: 'flex',
                 alignItems: 'center',
@@ -3382,20 +3575,21 @@ export default function PortfolioDuel() {
                 gap: '8px',
                 fontWeight: '600',
                 fontSize: '14px',
-                boxShadow: '0 2px 8px rgba(147, 51, 234, 0.3)'
+                boxShadow: '0 0 20px rgba(147, 51, 234, 0.3)'
               }}>
                 <GraduationCap style={{ height: '18px', width: '18px' }} />
-                🎯 Training Battle • 1 Hour Duration • Reduced XP
+                Training Battle • 1 Hour Duration • Reduced XP
               </div>
             )}
 
             {/* Battle Header with Scores AND Challenge Tabs */}
             <div style={{
-              background: 'white',
-              borderRadius: '16px',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+              background: colors.cardBg,
+              borderRadius: '12px',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
               overflow: 'hidden',
-              marginBottom: '24px'
+              marginBottom: '24px',
+              border: `1px solid ${colors.border}`
             }}>
               <div style={{ padding: '24px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -3403,19 +3597,20 @@ export default function PortfolioDuel() {
                   <div style={{ display: 'flex', flexDirection: 'row', gap: '20px', alignItems: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                       <div style={{
-                        width: '80px',
-                        height: '80px',
+                        width: '64px',
+                        height: '64px',
                         borderRadius: '50%',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         marginBottom: '8px',
-                        background: 'linear-gradient(135deg, #B2EBF2 0%, #80DEEA 100%)'
+                        background: `linear-gradient(135deg, ${colors.green}30 0%, ${colors.cyan}30 100%)`,
+                        border: `2px solid ${colors.green}`
                       }}>
-                        <Rocket style={{ height: '32px', width: '32px', color: '#00ACC1' }} />
+                        <User style={{ height: '24px', width: '24px', color: colors.green }} />
                       </div>
-                      <div style={{ fontWeight: '600', color: '#1F2937' }}>You</div>
-                      <div style={{ fontSize: '14px', color: '#6B7280' }}>{user.username}</div>
+                      <div style={{ fontWeight: '600', color: colors.textPrimary, fontSize: '14px' }}>YOU</div>
+                      <div style={{ fontSize: '12px', color: colors.textSecondary }}>{user.username}</div>
                     </div>
 
                     {/* YOUR Challenge Tabs (to the right of avatar) - Only show ACTIVE challenges */}
@@ -3492,25 +3687,25 @@ export default function PortfolioDuel() {
                   <div style={{ flex: 1, margin: '0 32px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '24px', marginBottom: '12px' }}>
                       <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '36px', fontWeight: 'bold', color: myGain >= 0 ? '#10B981' : '#EF4444' }}>
+                        <div style={{ fontSize: '36px', fontWeight: 'bold', color: myGain >= 0 ? colors.green : colors.red }}>
                           {myGain >= 0 ? '+' : ''}{myGain.toFixed(1)}%
                         </div>
-                        <div style={{ fontSize: '16px', fontWeight: '600', color: myGain >= 0 ? '#10B981' : '#EF4444', marginTop: '4px' }}>
+                        <div style={{ fontSize: '16px', fontWeight: '600', color: myGain >= 0 ? colors.green : colors.red, marginTop: '4px' }}>
                           {myGain >= 0 ? '+' : ''}${(myValue - 1000000).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </div>
-                        <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>
+                        <div style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px' }}>
                           Portfolio Value: ${myValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </div>
                       </div>
-                      <div style={{ fontSize: '30px', color: '#9CA3AF' }}>vs</div>
+                      <div style={{ fontSize: '30px', color: colors.textMuted, fontWeight: 'bold' }}>VS</div>
                       <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '36px', fontWeight: 'bold', color: theirGain >= 0 ? '#10B981' : '#EF4444' }}>
+                        <div style={{ fontSize: '36px', fontWeight: 'bold', color: theirGain >= 0 ? colors.green : colors.red }}>
                           {theirGain >= 0 ? '+' : ''}{theirGain.toFixed(1)}%
                         </div>
-                        <div style={{ fontSize: '16px', fontWeight: '600', color: theirGain >= 0 ? '#10B981' : '#EF4444', marginTop: '4px' }}>
+                        <div style={{ fontSize: '16px', fontWeight: '600', color: theirGain >= 0 ? colors.green : colors.red, marginTop: '4px' }}>
                           {theirGain >= 0 ? '+' : ''}${(theirValue - 1000000).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </div>
-                        <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>
+                        <div style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px' }}>
                           Portfolio Value: ${theirValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </div>
                       </div>
@@ -3520,7 +3715,7 @@ export default function PortfolioDuel() {
                     <div style={{
                       position: 'relative',
                       height: '12px',
-                      background: '#E5E7EB',
+                      background: 'rgba(255, 255, 255, 0.1)',
                       borderRadius: '9999px',
                       overflow: 'hidden',
                       marginBottom: '8px'
@@ -3531,7 +3726,7 @@ export default function PortfolioDuel() {
                         borderRadius: '9999px',
                         transition: 'all 0.3s',
                         width: `${(myValue / (myValue + theirValue)) * 100}%`,
-                        background: isWinning ? 'linear-gradient(90deg, #4ADE80 0%, #10B981 100%)' : 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)'
+                        background: isWinning ? `linear-gradient(90deg, ${colors.greenBright} 0%, ${colors.green} 100%)` : `linear-gradient(90deg, ${colors.red} 0%, ${colors.redBright} 100%)`
                       }} />
                     </div>
 
@@ -3540,9 +3735,9 @@ export default function PortfolioDuel() {
                       textAlign: 'center',
                       fontSize: '14px',
                       fontWeight: '600',
-                      color: isWinning ? '#10B981' : '#EF4444'
+                      color: isWinning ? colors.green : colors.red
                     }}>
-                      {isWinning 
+                      {isWinning
                         ? `Winning by ${difference.toFixed(1)}% ($${Math.abs(myValue - theirValue).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})`
                         : `Losing by ${difference.toFixed(1)}% ($${Math.abs(myValue - theirValue).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})`
                       }
@@ -3622,19 +3817,20 @@ export default function PortfolioDuel() {
 
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                       <div style={{
-                        width: '80px',
-                        height: '80px',
+                        width: '64px',
+                        height: '64px',
                         borderRadius: '50%',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         marginBottom: '8px',
-                        background: 'linear-gradient(135deg, #FCE7F3 0%, #FBCFE8 100%)'
+                        background: `linear-gradient(135deg, ${colors.red}30 0%, ${colors.redBright}30 100%)`,
+                        border: `2px solid ${colors.red}`
                       }}>
-                        <Target style={{ height: '32px', width: '32px', color: '#DB2777' }} />
+                        <Skull style={{ height: '24px', width: '24px', color: colors.red }} />
                       </div>
-                      <div style={{ fontWeight: '600', color: '#1F2937' }}>{opponent}</div>
-                      <div style={{ fontSize: '14px', color: '#6B7280' }}>Opponent</div>
+                      <div style={{ fontWeight: '600', color: colors.textPrimary, fontSize: '14px' }}>{opponent}</div>
+                      <div style={{ fontSize: '12px', color: colors.textSecondary }}>Opponent</div>
                     </div>
                   </div>
                 </div>
@@ -3646,12 +3842,12 @@ export default function PortfolioDuel() {
             {/* User's Double Down Challenge Panel - Only show ACTIVE challenges */}
             {userChallenges.doubleDown && userChallenges.doubleDown.status === 'active' && openChallengePanels.has('user-double') && (
               <div style={{
-                background: 'white',
+                background: colors.cardBg,
                 borderRadius: '12px',
                 padding: '20px',
                 marginBottom: '20px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                border: '2px solid #FFD700'
+                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                border: `2px solid ${colors.gold}`
               }}>
                 <div style={{
                   display: 'flex',
@@ -3659,9 +3855,9 @@ export default function PortfolioDuel() {
                   justifyContent: 'space-between',
                   marginBottom: '16px',
                   paddingBottom: '12px',
-                  borderBottom: '2px solid #F3F4F6'
+                  borderBottom: `1px solid ${colors.borderSubtle}`
                 }}>
-                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1F2937' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: colors.textPrimary }}>
                     Your Double Down Challenge
                   </div>
                   <div style={{
@@ -3669,51 +3865,51 @@ export default function PortfolioDuel() {
                     fontWeight: '600',
                     padding: '4px 12px',
                     borderRadius: '12px',
-                    background: userChallenges.doubleDown.status === 'active' ? '#FEF3C7' :
-                               userChallenges.doubleDown.status === 'won' ? '#ECFDF5' :
-                               userChallenges.doubleDown.status === 'lost' ? '#FEF2F2' : '#F3F4F6',
-                    color: userChallenges.doubleDown.status === 'active' ? '#F59E0B' :
-                          userChallenges.doubleDown.status === 'won' ? '#10B981' :
-                          userChallenges.doubleDown.status === 'lost' ? '#EF4444' : '#6B7280'
+                    background: userChallenges.doubleDown.status === 'active' ? `${colors.gold}30` :
+                               userChallenges.doubleDown.status === 'won' ? `${colors.green}30` :
+                               userChallenges.doubleDown.status === 'lost' ? `${colors.red}30` : 'rgba(255,255,255,0.1)',
+                    color: userChallenges.doubleDown.status === 'active' ? colors.gold :
+                          userChallenges.doubleDown.status === 'won' ? colors.green :
+                          userChallenges.doubleDown.status === 'lost' ? colors.red : colors.textMuted
                   }}>
                     {userChallenges.doubleDown.status.toUpperCase()}
                   </div>
                 </div>
-                <div style={{ background: '#F9FAFB', borderRadius: '8px', padding: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
-                    <span style={{ fontSize: '14px', color: '#6B7280' }}>Asset:</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                <div style={{ background: 'rgba(0, 0, 0, 0.2)', borderRadius: '8px', padding: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                    <span style={{ fontSize: '14px', color: colors.textSecondary }}>Asset:</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
                       {userChallenges.doubleDown.asset.name} ({userChallenges.doubleDown.asset.symbol})
                     </span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
-                    <span style={{ fontSize: '14px', color: '#6B7280' }}>Effect:</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                    <span style={{ fontSize: '14px', color: colors.textSecondary }}>Effect:</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
                       2x gains/losses for 2 hours
                     </span>
                   </div>
                   {userChallenges.doubleDown.startingPrice && (
                     <>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
-                        <span style={{ fontSize: '14px', color: '#6B7280' }}>Starting Price:</span>
-                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                        <span style={{ fontSize: '14px', color: colors.textSecondary }}>Starting Price:</span>
+                        <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
                           ${userChallenges.doubleDown.startingPrice.toFixed(2)}
                         </span>
                       </div>
                       {battlePrices[userChallenges.doubleDown.asset.symbol] && (
                         <>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
-                            <span style={{ fontSize: '14px', color: '#6B7280' }}>Current Price:</span>
-                            <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                            <span style={{ fontSize: '14px', color: colors.textSecondary }}>Current Price:</span>
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
                               ${battlePrices[userChallenges.doubleDown.asset.symbol].toFixed(2)}
                             </span>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
-                            <span style={{ fontSize: '14px', color: '#6B7280' }}>Current Effect:</span>
+                            <span style={{ fontSize: '14px', color: colors.textSecondary }}>Current Effect:</span>
                             <span style={{
                               fontSize: '14px',
                               fontWeight: '600',
-                              color: battlePrices[userChallenges.doubleDown.asset.symbol] >= userChallenges.doubleDown.startingPrice ? '#10B981' : '#EF4444'
+                              color: battlePrices[userChallenges.doubleDown.asset.symbol] >= userChallenges.doubleDown.startingPrice ? colors.green : colors.red
                             }}>
                               {((battlePrices[userChallenges.doubleDown.asset.symbol] - userChallenges.doubleDown.startingPrice) / userChallenges.doubleDown.startingPrice * 200).toFixed(2)}%
                             </span>
@@ -3726,11 +3922,11 @@ export default function PortfolioDuel() {
                     <div style={{
                       marginTop: '12px',
                       padding: '8px',
-                      background: 'rgba(0, 188, 212, 0.1)',
+                      background: `${colors.cyan}20`,
                       borderRadius: '6px',
                       textAlign: 'center',
                       fontSize: '12px',
-                      color: '#00ACC1',
+                      color: colors.cyan,
                       fontWeight: '600'
                     }}>
                       {challengeService.formatTimeRemaining(challengeService.getChallengeTimeRemaining(userChallenges.doubleDown))} remaining
@@ -3743,12 +3939,12 @@ export default function PortfolioDuel() {
             {/* User's Market Close Challenge Panel - Only show ACTIVE challenges */}
             {userChallenges.marketClose && userChallenges.marketClose.status === 'active' && openChallengePanels.has('user-market') && (
               <div style={{
-                background: 'white',
+                background: colors.cardBg,
                 borderRadius: '12px',
                 padding: '20px',
                 marginBottom: '20px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                border: '2px solid #FFD700'
+                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                border: `2px solid ${colors.gold}`
               }}>
                 <div style={{
                   display: 'flex',
@@ -3756,9 +3952,9 @@ export default function PortfolioDuel() {
                   justifyContent: 'space-between',
                   marginBottom: '16px',
                   paddingBottom: '12px',
-                  borderBottom: '2px solid #F3F4F6'
+                  borderBottom: `1px solid ${colors.borderSubtle}`
                 }}>
-                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1F2937' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: colors.textPrimary }}>
                     Your Market Close Challenge
                   </div>
                   <div style={{
@@ -3766,46 +3962,46 @@ export default function PortfolioDuel() {
                     fontWeight: '600',
                     padding: '4px 12px',
                     borderRadius: '12px',
-                    background: userChallenges.marketClose.status === 'active' ? '#FEF3C7' :
-                               userChallenges.marketClose.status === 'won' ? '#ECFDF5' :
-                               userChallenges.marketClose.status === 'lost' ? '#FEF2F2' : '#F3F4F6',
-                    color: userChallenges.marketClose.status === 'active' ? '#F59E0B' :
-                          userChallenges.marketClose.status === 'won' ? '#10B981' :
-                          userChallenges.marketClose.status === 'lost' ? '#EF4444' : '#6B7280'
+                    background: userChallenges.marketClose.status === 'active' ? `${colors.gold}30` :
+                               userChallenges.marketClose.status === 'won' ? `${colors.green}30` :
+                               userChallenges.marketClose.status === 'lost' ? `${colors.red}30` : 'rgba(255,255,255,0.1)',
+                    color: userChallenges.marketClose.status === 'active' ? colors.gold :
+                          userChallenges.marketClose.status === 'won' ? colors.green :
+                          userChallenges.marketClose.status === 'lost' ? colors.red : colors.textMuted
                   }}>
                     {userChallenges.marketClose.status.toUpperCase()}
                   </div>
                 </div>
-                <div style={{ background: '#F9FAFB', borderRadius: '8px', padding: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
-                    <span style={{ fontSize: '14px', color: '#6B7280' }}>Market:</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                <div style={{ background: 'rgba(0, 0, 0, 0.2)', borderRadius: '8px', padding: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                    <span style={{ fontSize: '14px', color: colors.textSecondary }}>Market:</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
                       {userChallenges.marketClose.market}
                     </span>
                   </div>
                   {userChallenges.marketClose.prediction && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
-                      <span style={{ fontSize: '14px', color: '#6B7280' }}>Your Prediction:</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                      <span style={{ fontSize: '14px', color: colors.textSecondary }}>Your Prediction:</span>
                       <span style={{
                         fontSize: '14px',
                         fontWeight: '600',
-                        color: userChallenges.marketClose.prediction === 'up' ? '#10B981' : '#EF4444'
+                        color: userChallenges.marketClose.prediction === 'up' ? colors.green : colors.red
                       }}>
                         {userChallenges.marketClose.prediction.toUpperCase()}
                       </span>
                     </div>
                   )}
                   {userChallenges.marketClose.baselinePrice && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
-                      <span style={{ fontSize: '14px', color: '#6B7280' }}>Baseline Price:</span>
-                      <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                      <span style={{ fontSize: '14px', color: colors.textSecondary }}>Baseline Price:</span>
+                      <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
                         ${userChallenges.marketClose.baselinePrice.toFixed(2)}
                       </span>
                     </div>
                   )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
-                    <span style={{ fontSize: '14px', color: '#6B7280' }}>Risk/Reward:</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                    <span style={{ fontSize: '14px', color: colors.textSecondary }}>Risk/Reward:</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
                       +{userChallenges.marketClose.reward}% / -{userChallenges.marketClose.penalty}%
                     </span>
                   </div>
@@ -3813,11 +4009,11 @@ export default function PortfolioDuel() {
                     <div style={{
                       marginTop: '12px',
                       padding: '8px',
-                      background: 'rgba(0, 188, 212, 0.1)',
+                      background: `${colors.cyan}20`,
                       borderRadius: '6px',
                       textAlign: 'center',
                       fontSize: '12px',
-                      color: '#00ACC1',
+                      color: colors.cyan,
                       fontWeight: '600'
                     }}>
                       {challengeService.formatTimeRemaining(challengeService.getChallengeTimeRemaining(userChallenges.marketClose))} until market close
@@ -3830,12 +4026,12 @@ export default function PortfolioDuel() {
             {/* Opponent's Double Down Challenge Panel - Only show ACTIVE challenges */}
             {opponentChallenges.doubleDown && opponentChallenges.doubleDown.status === 'active' && openChallengePanels.has('opp-double') && (
               <div style={{
-                background: 'white',
+                background: colors.cardBg,
                 borderRadius: '12px',
                 padding: '20px',
                 marginBottom: '20px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                border: '2px solid #FFD700'
+                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                border: `2px solid ${colors.gold}`
               }}>
                 <div style={{
                   display: 'flex',
@@ -3843,9 +4039,9 @@ export default function PortfolioDuel() {
                   justifyContent: 'space-between',
                   marginBottom: '16px',
                   paddingBottom: '12px',
-                  borderBottom: '2px solid #F3F4F6'
+                  borderBottom: `1px solid ${colors.borderSubtle}`
                 }}>
-                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1F2937' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: colors.textPrimary }}>
                     Opponent's Double Down Challenge
                   </div>
                   <div style={{
@@ -3853,33 +4049,33 @@ export default function PortfolioDuel() {
                     fontWeight: '600',
                     padding: '4px 12px',
                     borderRadius: '12px',
-                    background: '#FEF3C7',
-                    color: '#F59E0B'
+                    background: `${colors.gold}30`,
+                    color: colors.gold
                   }}>
                     ACTIVE
                   </div>
                 </div>
-                <div style={{ background: '#F9FAFB', borderRadius: '8px', padding: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
-                    <span style={{ fontSize: '14px', color: '#6B7280' }}>Asset:</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                <div style={{ background: 'rgba(0, 0, 0, 0.2)', borderRadius: '8px', padding: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                    <span style={{ fontSize: '14px', color: colors.textSecondary }}>Asset:</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
                       {opponentChallenges.doubleDown.asset.name} ({opponentChallenges.doubleDown.asset.symbol})
                     </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
-                    <span style={{ fontSize: '14px', color: '#6B7280' }}>Effect:</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                    <span style={{ fontSize: '14px', color: colors.textSecondary }}>Effect:</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
                       2x gains/losses for 2 hours
                     </span>
                   </div>
                   <div style={{
                     marginTop: '12px',
                     padding: '8px',
-                    background: 'rgba(0, 188, 212, 0.1)',
+                    background: `${colors.cyan}20`,
                     borderRadius: '6px',
                     textAlign: 'center',
                     fontSize: '12px',
-                    color: '#00ACC1',
+                    color: colors.cyan,
                     fontWeight: '600'
                   }}>
                     {challengeService.formatTimeRemaining(challengeService.getChallengeTimeRemaining(opponentChallenges.doubleDown))} remaining
@@ -3891,12 +4087,12 @@ export default function PortfolioDuel() {
             {/* Opponent's Market Close Challenge Panel - Only show ACTIVE challenges */}
             {opponentChallenges.marketClose && opponentChallenges.marketClose.status === 'active' && openChallengePanels.has('opp-market') && (
               <div style={{
-                background: 'white',
+                background: colors.cardBg,
                 borderRadius: '12px',
                 padding: '20px',
                 marginBottom: '20px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                border: '2px solid #FFD700'
+                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                border: `2px solid ${colors.gold}`
               }}>
                 <div style={{
                   display: 'flex',
@@ -3904,9 +4100,9 @@ export default function PortfolioDuel() {
                   justifyContent: 'space-between',
                   marginBottom: '16px',
                   paddingBottom: '12px',
-                  borderBottom: '2px solid #F3F4F6'
+                  borderBottom: `1px solid ${colors.borderSubtle}`
                 }}>
-                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1F2937' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: colors.textPrimary }}>
                     Opponent's Market Close Challenge
                   </div>
                   <div style={{
@@ -3914,35 +4110,35 @@ export default function PortfolioDuel() {
                     fontWeight: '600',
                     padding: '4px 12px',
                     borderRadius: '12px',
-                    background: '#FEF3C7',
-                    color: '#F59E0B'
+                    background: `${colors.gold}30`,
+                    color: colors.gold
                   }}>
                     ACTIVE
                   </div>
                 </div>
-                <div style={{ background: '#F9FAFB', borderRadius: '8px', padding: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
-                    <span style={{ fontSize: '14px', color: '#6B7280' }}>Market:</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                <div style={{ background: 'rgba(0, 0, 0, 0.2)', borderRadius: '8px', padding: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                    <span style={{ fontSize: '14px', color: colors.textSecondary }}>Market:</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
                       {opponentChallenges.marketClose.market}
                     </span>
                   </div>
                   {opponentChallenges.marketClose.prediction && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E5E7EB' }}>
-                      <span style={{ fontSize: '14px', color: '#6B7280' }}>Their Prediction:</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
+                      <span style={{ fontSize: '14px', color: colors.textSecondary }}>Their Prediction:</span>
                       <span style={{
                         fontSize: '14px',
                         fontWeight: '600',
-                        color: opponentChallenges.marketClose.prediction === 'up' ? '#10B981' : '#EF4444'
+                        color: opponentChallenges.marketClose.prediction === 'up' ? colors.green : colors.red
                       }}>
                         {opponentChallenges.marketClose.prediction.toUpperCase()}
                       </span>
                     </div>
                   )}
                   {userChallenges.marketClose && opponentChallenges.marketClose.prediction !== userChallenges.marketClose.prediction && (
-                    <div style={{ padding: '12px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', marginTop: '12px', textAlign: 'center' }}>
-                      <strong style={{ color: '#EF4444' }}>Opposite prediction!</strong><br />
-                      <span style={{ fontSize: '12px', color: '#6B7280' }}>
+                    <div style={{ padding: '12px', background: `${colors.red}20`, borderRadius: '8px', marginTop: '12px', textAlign: 'center' }}>
+                      <strong style={{ color: colors.red }}>Opposite prediction!</strong><br />
+                      <span style={{ fontSize: '12px', color: colors.textSecondary }}>
                         They predicted {opponentChallenges.marketClose.prediction.toUpperCase()}, you predicted {userChallenges.marketClose.prediction.toUpperCase()}
                       </span>
                     </div>
@@ -3950,11 +4146,11 @@ export default function PortfolioDuel() {
                   <div style={{
                     marginTop: '12px',
                     padding: '8px',
-                    background: 'rgba(0, 188, 212, 0.1)',
+                    background: `${colors.cyan}20`,
                     borderRadius: '6px',
                     textAlign: 'center',
                     fontSize: '12px',
-                    color: '#00ACC1',
+                    color: colors.cyan,
                     fontWeight: '600'
                   }}>
                     {challengeService.formatTimeRemaining(challengeService.getChallengeTimeRemaining(opponentChallenges.marketClose))} until market close
@@ -3965,10 +4161,11 @@ export default function PortfolioDuel() {
 
             {/* Portfolio Comparison */}
             <div style={{
-              background: 'white',
-              borderRadius: '16px',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-              overflow: 'hidden'
+              background: colors.cardBg,
+              borderRadius: '12px',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
+              overflow: 'hidden',
+              border: `1px solid ${colors.border}`
             }}>
               <div style={{ padding: '24px' }}>
                 {/* Column Headers */}
@@ -3979,7 +4176,7 @@ export default function PortfolioDuel() {
                   marginBottom: '16px',
                   fontSize: '12px',
                   fontWeight: '600',
-                  color: '#6B7280',
+                  color: colors.textSecondary,
                   textTransform: 'uppercase'
                 }}>
                   <div>Your Portfolio</div>
@@ -3992,7 +4189,7 @@ export default function PortfolioDuel() {
                   <div style={{ textAlign: 'right' }}>Their Portfolio</div>
                 </div>
 
-                <div style={{ borderTop: '2px solid #E5E7EB', paddingTop: '16px' }}>
+                <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: '16px' }}>
                   {/* Portfolio Items */}
                   {myPortfolio.map((myAsset, idx) => {
                     const theirAsset = theirPortfolio[idx] || null;
@@ -4029,36 +4226,36 @@ export default function PortfolioDuel() {
                         gap: '12px',
                         alignItems: 'center',
                         padding: '12px 0',
-                        borderBottom: '1px solid #F3F4F6'
+                        borderBottom: `1px solid ${colors.borderSubtle}`
                       }}>
                         {/* Your Asset */}
                         <div>
-                          <div style={{ fontWeight: '600', color: '#1F2937', marginBottom: '4px' }}>{myAsset.symbol}</div>
-                          <div style={{ fontSize: '11px', color: '#6B7280' }}>
+                          <div style={{ fontWeight: '600', color: colors.textPrimary, marginBottom: '4px' }}>{myAsset.symbol}</div>
+                          <div style={{ fontSize: '11px', color: colors.textSecondary }}>
                             Start: ${(currentBattle.startingPrices?.[myAsset.symbol] || myAsset.price).toFixed(2)}
                           </div>
-                          <div style={{ 
+                          <div style={{
                             fontSize: '11px',
                             fontWeight: '600',
                             marginTop: '2px',
-                            color: myCurrentPrice > (currentBattle.startingPrices?.[myAsset.symbol] || myAsset.price) ? '#10B981' : 
-                                   myCurrentPrice < (currentBattle.startingPrices?.[myAsset.symbol] || myAsset.price) ? '#EF4444' : '#6B7280'
+                            color: myCurrentPrice > (currentBattle.startingPrices?.[myAsset.symbol] || myAsset.price) ? colors.green :
+                                   myCurrentPrice < (currentBattle.startingPrices?.[myAsset.symbol] || myAsset.price) ? colors.red : colors.textSecondary
                           }}>
                             Now: ${myCurrentPrice.toFixed(2)}
                           </div>
                         </div>
 
                         {/* Your Weight */}
-                        <div style={{ textAlign: 'center', fontWeight: '600', color: '#00BCD4' }}>
+                        <div style={{ textAlign: 'center', fontWeight: '600', color: colors.cyan }}>
                           {myWeight.toFixed(0)}%
                         </div>
 
                         {/* Your Amount */}
                         <div style={{ textAlign: 'center', fontSize: '13px' }}>
-                          <div style={{ fontWeight: '600', color: '#1F2937' }}>
+                          <div style={{ fontWeight: '600', color: colors.textPrimary }}>
                             ${myAsset.amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </div>
-                          <div style={{ fontSize: '11px', color: myGainLoss >= 0 ? '#10B981' : '#EF4444' }}>
+                          <div style={{ fontSize: '11px', color: myGainLoss >= 0 ? colors.green : colors.red }}>
                             {myGainLoss >= 0 ? '+' : ''}${myGainLoss.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </div>
                         </div>
@@ -4070,7 +4267,7 @@ export default function PortfolioDuel() {
                           alignItems: 'center',
                           justifyContent: 'center',
                           gap: '4px',
-                          color: myReturn >= 0 ? '#10B981' : '#EF4444'
+                          color: myReturn >= 0 ? colors.green : colors.red
                         }}>
                           {myReturn >= 0 ? <TrendingUp style={{ height: '16px', width: '16px' }} /> : <TrendingDown style={{ height: '16px', width: '16px' }} />}
                           <span style={{ fontWeight: '600' }}>
@@ -4087,7 +4284,7 @@ export default function PortfolioDuel() {
                               alignItems: 'center',
                               justifyContent: 'center',
                               gap: '4px',
-                              color: theirReturn >= 0 ? '#10B981' : '#EF4444'
+                              color: theirReturn >= 0 ? colors.green : colors.red
                             }}>
                               {theirReturn >= 0 ? <TrendingUp style={{ height: '16px', width: '16px' }} /> : <TrendingDown style={{ height: '16px', width: '16px' }} />}
                               <span style={{ fontWeight: '600' }}>
@@ -4097,31 +4294,31 @@ export default function PortfolioDuel() {
 
                             {/* Their Amount */}
                             <div style={{ textAlign: 'center', fontSize: '13px' }}>
-                              <div style={{ fontWeight: '600', color: '#1F2937' }}>
+                              <div style={{ fontWeight: '600', color: colors.textPrimary }}>
                                 ${theirAsset.amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                               </div>
-                              <div style={{ fontSize: '11px', color: theirGainLoss >= 0 ? '#10B981' : '#EF4444' }}>
+                              <div style={{ fontSize: '11px', color: theirGainLoss >= 0 ? colors.green : colors.red }}>
                                 {theirGainLoss >= 0 ? '+' : ''}${theirGainLoss.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                               </div>
                             </div>
 
                             {/* Their Weight */}
-                            <div style={{ textAlign: 'center', fontWeight: '600', color: '#DB2777' }}>
+                            <div style={{ textAlign: 'center', fontWeight: '600', color: colors.red }}>
                               {theirWeight.toFixed(0)}%
                             </div>
 
                             {/* Their Asset */}
                             <div style={{ textAlign: 'right' }}>
-                              <div style={{ fontWeight: '600', color: '#1F2937', marginBottom: '4px' }}>{theirAsset.symbol}</div>
-                              <div style={{ fontSize: '11px', color: '#6B7280' }}>
+                              <div style={{ fontWeight: '600', color: colors.textPrimary, marginBottom: '4px' }}>{theirAsset.symbol}</div>
+                              <div style={{ fontSize: '11px', color: colors.textSecondary }}>
                                 Start: ${theirStartingPrice.toFixed(2)}
                               </div>
-                              <div style={{ 
+                              <div style={{
                                 fontSize: '11px',
                                 fontWeight: '600',
                                 marginTop: '2px',
-                                color: theirCurrentPrice > theirStartingPrice ? '#10B981' : 
-                                       theirCurrentPrice < theirStartingPrice ? '#EF4444' : '#6B7280'
+                                color: theirCurrentPrice > theirStartingPrice ? colors.green :
+                                       theirCurrentPrice < theirStartingPrice ? colors.red : colors.textSecondary
                               }}>
                                 Now: ${theirCurrentPrice.toFixed(2)}
                               </div>
@@ -4129,10 +4326,10 @@ export default function PortfolioDuel() {
                           </>
                         ) : (
                           <>
-                            <div style={{ textAlign: 'center', color: '#9CA3AF' }}>-</div>
-                            <div style={{ textAlign: 'center', color: '#9CA3AF' }}>-</div>
-                            <div style={{ textAlign: 'center', color: '#9CA3AF' }}>-</div>
-                            <div style={{ textAlign: 'right', color: '#9CA3AF' }}>-</div>
+                            <div style={{ textAlign: 'center', color: colors.textMuted }}>-</div>
+                            <div style={{ textAlign: 'center', color: colors.textMuted }}>-</div>
+                            <div style={{ textAlign: 'center', color: colors.textMuted }}>-</div>
+                            <div style={{ textAlign: 'right', color: colors.textMuted }}>-</div>
                           </>
                         )}
                       </div>
@@ -4158,19 +4355,19 @@ export default function PortfolioDuel() {
                             gap: '12px',
                             alignItems: 'center',
                             padding: '12px 0',
-                            borderBottom: '1px solid #F3F4F6'
+                            borderBottom: `1px solid ${colors.borderSubtle}`
                           }}>
-                            <div style={{ color: '#9CA3AF' }}>-</div>
-                            <div style={{ textAlign: 'center', color: '#9CA3AF' }}>-</div>
-                            <div style={{ textAlign: 'center', color: '#9CA3AF' }}>-</div>
-                            <div style={{ textAlign: 'center', color: '#9CA3AF' }}>-</div>
+                            <div style={{ color: colors.textMuted }}>-</div>
+                            <div style={{ textAlign: 'center', color: colors.textMuted }}>-</div>
+                            <div style={{ textAlign: 'center', color: colors.textMuted }}>-</div>
+                            <div style={{ textAlign: 'center', color: colors.textMuted }}>-</div>
                             <div style={{
                               textAlign: 'center',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               gap: '4px',
-                              color: theirReturn >= 0 ? '#10B981' : '#EF4444'
+                              color: theirReturn >= 0 ? colors.green : colors.red
                             }}>
                               {theirReturn >= 0 ? <TrendingUp style={{ height: '16px', width: '16px' }} /> : <TrendingDown style={{ height: '16px', width: '16px' }} />}
                               <span style={{ fontWeight: '600' }}>
@@ -4178,27 +4375,27 @@ export default function PortfolioDuel() {
                               </span>
                             </div>
                             <div style={{ textAlign: 'center', fontSize: '13px' }}>
-                              <div style={{ fontWeight: '600', color: '#1F2937' }}>
+                              <div style={{ fontWeight: '600', color: colors.textPrimary }}>
                                 ${theirAsset.amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                               </div>
-                              <div style={{ fontSize: '11px', color: theirGainLoss >= 0 ? '#10B981' : '#EF4444' }}>
+                              <div style={{ fontSize: '11px', color: theirGainLoss >= 0 ? colors.green : colors.red }}>
                                 {theirGainLoss >= 0 ? '+' : ''}${theirGainLoss.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                               </div>
                             </div>
-                            <div style={{ textAlign: 'center', fontWeight: '600', color: '#DB2777' }}>
+                            <div style={{ textAlign: 'center', fontWeight: '600', color: colors.red }}>
                               {theirWeight.toFixed(0)}%
                             </div>
                             <div style={{ textAlign: 'right' }}>
-                              <div style={{ fontWeight: '600', color: '#1F2937', marginBottom: '4px' }}>{theirAsset.symbol}</div>
-                              <div style={{ fontSize: '11px', color: '#6B7280' }}>
+                              <div style={{ fontWeight: '600', color: colors.textPrimary, marginBottom: '4px' }}>{theirAsset.symbol}</div>
+                              <div style={{ fontSize: '11px', color: colors.textSecondary }}>
                                 Start: ${theirStartingPrice.toFixed(2)}
                               </div>
-                              <div style={{ 
+                              <div style={{
                                 fontSize: '11px',
                                 fontWeight: '600',
                                 marginTop: '2px',
-                                color: theirCurrentPrice > theirStartingPrice ? '#10B981' : 
-                                       theirCurrentPrice < theirStartingPrice ? '#EF4444' : '#6B7280'
+                                color: theirCurrentPrice > theirStartingPrice ? colors.green :
+                                       theirCurrentPrice < theirStartingPrice ? colors.red : colors.textSecondary
                               }}>
                                 Now: ${theirCurrentPrice.toFixed(2)}
                               </div>
@@ -4224,58 +4421,62 @@ export default function PortfolioDuel() {
         <div style={{
           minHeight: '100vh',
           paddingBottom: '32px',
-          background: 'linear-gradient(to bottom, #E0F7FA 0%, #B2EBF2 100%)'
+          background: colors.background
         }}>
           {/* Header */}
           <div style={{
-            color: 'white',
             padding: '24px',
-            borderBottomLeftRadius: '24px',
-            borderBottomRightRadius: '24px',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+            borderBottom: `1px solid ${colors.border}`,
             marginBottom: '24px',
-            background: 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)'
+            background: colors.cardBg
           }}>
             <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
                 <button
                   onClick={() => setScreen('dashboard')}
                   style={{
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    border: 'none',
+                    background: 'transparent',
+                    border: `1px solid ${colors.borderSubtle}`,
                     borderRadius: '8px',
                     padding: '8px',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    color: 'white',
-                    transition: 'background 0.2s'
+                    color: colors.textSecondary,
+                    transition: 'all 0.2s'
                   }}
-                  onMouseEnter={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.2)'}
-                  onMouseLeave={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.1)'}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = colors.cyan;
+                    e.currentTarget.style.color = colors.cyan;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = colors.borderSubtle;
+                    e.currentTarget.style.color = colors.textSecondary;
+                  }}
                 >
                   <ChevronDown style={{ height: '20px', width: '20px', transform: 'rotate(90deg)' }} />
                 </button>
-                <h1 style={{ fontSize: '30px', fontWeight: 'bold', margin: 0 }}>Previous Battles</h1>
+                <h1 style={{ fontSize: '30px', fontWeight: 'bold', margin: 0, color: colors.textPrimary }}>Previous Battles</h1>
               </div>
-              <p style={{ color: '#E0F7FA', margin: 0 }}>Review your battle history</p>
+              <p style={{ color: colors.textSecondary, margin: 0 }}>Review your battle history</p>
             </div>
           </div>
 
           <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 24px' }}>
             {previousBattles.length === 0 ? (
               <div style={{
-                background: 'white',
-                borderRadius: '16px',
+                background: colors.cardBg,
+                borderRadius: '12px',
                 padding: '48px',
                 textAlign: 'center',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
+                border: `1px solid ${colors.border}`
               }}>
-                <Trophy style={{ height: '64px', width: '64px', color: '#D1D5DB', margin: '0 auto 16px' }} />
-                <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1F2937', marginBottom: '8px' }}>
+                <Trophy style={{ height: '64px', width: '64px', color: colors.textMuted, margin: '0 auto 16px' }} />
+                <h3 style={{ fontSize: '20px', fontWeight: '600', color: colors.textPrimary, marginBottom: '8px' }}>
                   No Previous Battles
                 </h3>
-                <p style={{ color: '#6B7280' }}>
+                <p style={{ color: colors.textSecondary }}>
                   Complete some battles to see your history here!
                 </p>
               </div>
@@ -4288,20 +4489,26 @@ export default function PortfolioDuel() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
-                    background: 'white',
-                    border: 'none',
+                    background: colors.cardBg,
+                    border: `1px solid ${colors.border}`,
                     borderRadius: '8px',
                     padding: '12px 16px',
                     marginBottom: '16px',
                     cursor: 'pointer',
                     fontSize: '14px',
                     fontWeight: '600',
-                    color: '#00BCD4',
-                    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                    color: colors.cyan,
+                    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
                     transition: 'all 0.2s'
                   }}
-                  onMouseEnter={(e) => e.target.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.15)'}
-                  onMouseLeave={(e) => e.target.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)'}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.3)';
+                    e.currentTarget.style.borderColor = colors.cyan;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+                    e.currentTarget.style.borderColor = colors.border;
+                  }}
                 >
                   <ChevronDown style={{ height: '16px', width: '16px', transform: 'rotate(90deg)' }} />
                   Back to List
@@ -4318,26 +4525,26 @@ export default function PortfolioDuel() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '8px',
-                    background: 'linear-gradient(135deg, #00BCD4 0%, #00ACC1 100%)',
+                    background: colors.cyan,
                     border: 'none',
-                    borderRadius: '12px',
+                    borderRadius: '8px',
                     padding: '16px 24px',
                     marginBottom: '16px',
                     cursor: 'pointer',
                     fontSize: '16px',
                     fontWeight: '600',
-                    color: 'white',
+                    color: colors.background,
                     width: '100%',
-                    boxShadow: '0 2px 4px rgba(0, 188, 212, 0.3)',
+                    boxShadow: `0 0 20px ${colors.cyan}40`,
                     transition: 'all 0.2s'
                   }}
                   onMouseEnter={(e) => {
-                    e.target.style.boxShadow = '0 4px 8px rgba(0, 188, 212, 0.4)';
-                    e.target.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = `0 0 30px ${colors.cyan}60`;
+                    e.currentTarget.style.transform = 'translateY(-2px)';
                   }}
                   onMouseLeave={(e) => {
-                    e.target.style.boxShadow = '0 2px 4px rgba(0, 188, 212, 0.3)';
-                    e.target.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = `0 0 20px ${colors.cyan}40`;
+                    e.currentTarget.style.transform = 'translateY(0)';
                   }}
                 >
                   <Eye style={{ height: '20px', width: '20px' }} />
@@ -4364,11 +4571,11 @@ export default function PortfolioDuel() {
                   
                   return (
                     <div style={{
-                      backgroundColor: 'white',
-                      borderRadius: '16px',
+                      backgroundColor: colors.cardBg,
+                      borderRadius: '12px',
                       padding: '24px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                      border: won ? '3px solid #10B981' : '3px solid #EF4444'
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
+                      border: `2px solid ${won ? colors.green : colors.red}`
                     }}>
                       {/* Winner Announcement */}
                       <div style={{
@@ -4383,27 +4590,27 @@ export default function PortfolioDuel() {
                         <span style={{
                           fontSize: '24px',
                           fontWeight: 'bold',
-                          color: won ? '#10B981' : '#EF4444'
+                          color: won ? colors.green : colors.red
                         }}>
                           {won ? 'Victory!' : 'Defeat'}
                         </span>
                       </div>
                       
                       {/* Opponent */}
-                      <div style={{ marginBottom: '16px', fontSize: '16px', color: '#6B7280' }}>
-                        vs. <span style={{ fontWeight: '600', color: '#1F2937', fontSize: '18px' }}>{opponent}</span>
+                      <div style={{ marginBottom: '16px', fontSize: '16px', color: colors.textSecondary }}>
+                        vs. <span style={{ fontWeight: '600', color: colors.textPrimary, fontSize: '18px' }}>{opponent}</span>
                       </div>
-                      
+
                       {/* Portfolio Name */}
-                      <div style={{ 
-                        fontSize: '14px', 
-                        color: '#6B7280',
+                      <div style={{
+                        fontSize: '14px',
+                        color: colors.textSecondary,
                         marginBottom: '20px',
                         fontStyle: 'italic'
                       }}>
                         "{battle.portfolioName || 'Unnamed Portfolio'}"
                       </div>
-                      
+
                       {/* Returns */}
                       <div style={{
                         display: 'grid',
@@ -4412,56 +4619,56 @@ export default function PortfolioDuel() {
                         marginBottom: '20px'
                       }}>
                         <div style={{
-                          backgroundColor: '#F9FAFB',
+                          backgroundColor: 'rgba(0, 0, 0, 0.2)',
                           padding: '16px',
-                          borderRadius: '12px',
-                          border: '2px solid ' + (userReturn >= 0 ? '#10B981' : '#EF4444')
+                          borderRadius: '8px',
+                          border: `1px solid ${userReturn >= 0 ? colors.green : colors.red}`
                         }}>
-                          <div style={{ fontSize: '12px', color: '#6B7280', marginBottom: '6px', fontWeight: '600' }}>
+                          <div style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '6px', fontWeight: '600' }}>
                             Your Return
                           </div>
-                          <div style={{ 
-                            fontSize: '28px', 
+                          <div style={{
+                            fontSize: '28px',
                             fontWeight: 'bold',
-                            color: userReturn >= 0 ? '#10B981' : '#EF4444'
+                            color: userReturn >= 0 ? colors.green : colors.red
                           }}>
                             {userReturn >= 0 ? '+' : ''}{userReturn}%
                           </div>
                         </div>
-                        
+
                         <div style={{
-                          backgroundColor: '#F9FAFB',
+                          backgroundColor: 'rgba(0, 0, 0, 0.2)',
                           padding: '16px',
-                          borderRadius: '12px',
-                          border: '2px solid ' + (opponentReturn >= 0 ? '#10B981' : '#EF4444')
+                          borderRadius: '8px',
+                          border: `1px solid ${opponentReturn >= 0 ? colors.green : colors.red}`
                         }}>
-                          <div style={{ fontSize: '12px', color: '#6B7280', marginBottom: '6px', fontWeight: '600' }}>
+                          <div style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '6px', fontWeight: '600' }}>
                             Their Return
                           </div>
-                          <div style={{ 
-                            fontSize: '28px', 
+                          <div style={{
+                            fontSize: '28px',
                             fontWeight: 'bold',
-                            color: opponentReturn >= 0 ? '#10B981' : '#EF4444'
+                            color: opponentReturn >= 0 ? colors.green : colors.red
                           }}>
                             {opponentReturn >= 0 ? '+' : ''}{opponentReturn}%
                           </div>
                         </div>
                       </div>
-                      
+
                       {/* Margin */}
                       <div style={{
-                        backgroundColor: won ? '#D1FAE5' : '#FEE2E2',
+                        backgroundColor: `${won ? colors.green : colors.red}20`,
                         padding: '12px 16px',
                         borderRadius: '8px',
                         marginBottom: '16px',
                         fontSize: '16px',
-                        color: '#1F2937',
+                        color: won ? colors.green : colors.red,
                         fontWeight: '600',
                         textAlign: 'center'
                       }}>
                         Victory Margin: {result.margin}%
                       </div>
-                      
+
                       {/* XP Earned */}
                       <div style={{
                         display: 'flex',
@@ -4469,27 +4676,27 @@ export default function PortfolioDuel() {
                         justifyContent: 'center',
                         gap: '10px',
                         padding: '16px',
-                        background: battle.isTrainingBattle 
-                          ? 'linear-gradient(135deg, #EDE9FE 0%, #DDD6FE 100%)'
-                          : 'linear-gradient(135deg, #E0F7FA 0%, #B2EBF2 100%)',
-                        borderRadius: '12px',
+                        background: battle.isTrainingBattle
+                          ? `${colors.purple}20`
+                          : `${colors.cyan}20`,
+                        borderRadius: '8px',
                         marginBottom: '12px'
                       }}>
                         <span style={{ fontSize: '24px' }}>⭐</span>
                         <span style={{
                           fontSize: '20px',
                           fontWeight: 'bold',
-                          color: battle.isTrainingBattle ? '#9333EA' : '#00BCD4'
+                          color: battle.isTrainingBattle ? colors.purple : colors.cyan
                         }}>
                           +{xpEarned} XP Earned
                         </span>
                       </div>
-                      
+
                       {/* Completed Time */}
                       <div style={{
                         textAlign: 'center',
                         fontSize: '13px',
-                        color: '#9CA3AF',
+                        color: colors.textMuted,
                         marginTop: '12px'
                       }}>
                         Completed {battleTimer.formatDate(battle.completedAt || battle.archivedAt)}
@@ -4504,54 +4711,54 @@ export default function PortfolioDuel() {
                 {previousBattles.map(battle => {
                   const result = battle.result;
                   if (!result) return null;
-                  
+
                   const won = result.winner === user.username;
-                  
+
                   return (
                     <button
                       key={battle.id}
                       onClick={() => setSelectedPreviousBattle(battle)}
                       style={{
                         width: '100%',
-                        background: 'white',
-                        borderRadius: '16px',
+                        background: colors.cardBg,
+                        borderRadius: '12px',
                         padding: '20px',
                         marginBottom: '12px',
-                        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-                        border: won ? '2px solid #10B981' : '2px solid #EF4444',
+                        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+                        border: `1px solid ${won ? colors.green : colors.red}`,
                         cursor: 'pointer',
                         transition: 'all 0.2s',
                         textAlign: 'left'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = 'scale(1.01)';
-                        e.currentTarget.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.15)';
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = `0 0 20px ${won ? colors.green : colors.red}30`;
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = 'scale(1)';
-                        e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                         <div style={{
                           fontSize: '18px',
                           fontWeight: 'bold',
-                          color: '#1F2937'
+                          color: colors.textPrimary
                         }}>
                           "{battle.portfolioName || 'Unnamed Portfolio'}"
                         </div>
                         <div style={{
                           fontSize: '16px',
                           fontWeight: 'bold',
-                          color: won ? '#10B981' : '#EF4444'
+                          color: won ? colors.green : colors.red
                         }}>
                           {won ? '🏆 Victory' : '💔 Defeat'}
                         </div>
                       </div>
-                      <div style={{ fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>
+                      <div style={{ fontSize: '14px', color: colors.textSecondary, marginBottom: '8px' }}>
                         {battleTimer.formatDate(battle.completedAt || battle.archivedAt)}
                       </div>
-                      <div style={{ fontSize: '14px', color: '#00BCD4', fontWeight: '600' }}>
+                      <div style={{ fontSize: '14px', color: colors.cyan, fontWeight: '600' }}>
                         Click to view details →
                       </div>
                     </button>
