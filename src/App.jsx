@@ -3,6 +3,7 @@ import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } f
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 import './firebase/config';
+import { motion } from 'framer-motion';
 
 // Inline Stock API (temporary until you set up services folder)
 const FINNHUB_API_KEY = import.meta.env.VITE_FINNHUB_API_KEY;
@@ -1162,34 +1163,70 @@ export default function PortfolioDuel() {
           padding: '16px',
           background: colors.background
         }}>
-          <div style={{
-            width: '100%',
-            maxWidth: '480px',
-            background: colors.cardBg,
-            borderRadius: '16px',
-            boxShadow: '0 0 40px rgba(0, 217, 255, 0.1), 0 20px 25px -5px rgba(0, 0, 0, 0.3)',
-            padding: '48px',
-            border: `1px solid ${colors.border}`
-          }}>
+          {/* Animated Card Container */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+            style={{
+              width: '100%',
+              maxWidth: '480px',
+              background: colors.cardBg,
+              borderRadius: '16px',
+              boxShadow: '0 0 40px rgba(0, 217, 255, 0.1), 0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+              padding: '48px',
+              border: `1px solid ${colors.border}`
+            }}
+          >
             <div style={{ textAlign: 'center' }}>
-              {/* Logo */}
-              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
-                <div style={{
-                  width: '80px',
-                  height: '80px',
-                  borderRadius: '16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`,
-                  boxShadow: '0 0 30px rgba(0, 217, 255, 0.4)'
-                }}>
+              {/* Animated Logo */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{
+                  delay: 0.2,
+                  duration: 0.5,
+                  type: "spring",
+                  stiffness: 200,
+                  damping: 15
+                }}
+                style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}
+              >
+                <motion.div
+                  animate={{
+                    y: [0, -8, 0],
+                    boxShadow: [
+                      '0 0 30px rgba(0, 217, 255, 0.4)',
+                      '0 0 50px rgba(0, 217, 255, 0.6)',
+                      '0 0 30px rgba(0, 217, 255, 0.4)'
+                    ]
+                  }}
+                  transition={{
+                    duration: 3,
+                    repeat: Infinity,
+                    ease: "easeInOut"
+                  }}
+                  style={{
+                    width: '80px',
+                    height: '80px',
+                    borderRadius: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`
+                  }}
+                >
                   <Swords style={{ height: '40px', width: '40px', color: colors.background }} />
-                </div>
-              </div>
+                </motion.div>
+              </motion.div>
 
-              {/* Title */}
-              <div style={{ marginBottom: '32px' }}>
+              {/* Animated Title */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4, duration: 0.5 }}
+                style={{ marginBottom: '32px' }}
+              >
                 <h1 style={{
                   fontSize: '42px',
                   fontWeight: 'bold',
@@ -1202,11 +1239,22 @@ export default function PortfolioDuel() {
                 }}>
                   MarketClash
                 </h1>
-                <p style={{ color: colors.textSecondary, fontSize: '16px', margin: 0 }}>Compete. Trade. Conquer.</p>
-              </div>
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.6, duration: 0.5 }}
+                  style={{ color: colors.textSecondary, fontSize: '16px', margin: 0 }}
+                >
+                  Compete. Trade. Conquer.
+                </motion.p>
+              </motion.div>
 
-              {/* Input */}
-              <div>
+              {/* Animated Input Section */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.7, duration: 0.5 }}
+              >
                 <input
                   type="text"
                   placeholder="Enter your username"
@@ -1225,13 +1273,25 @@ export default function PortfolioDuel() {
                     boxSizing: 'border-box',
                     background: 'rgba(0, 0, 0, 0.3)',
                     color: colors.textPrimary,
-                    transition: 'all 0.2s'
+                    transition: 'all 0.3s ease'
                   }}
                 />
 
-                <button
+                <motion.button
                   onClick={handleLogin}
                   disabled={!username.trim()}
+                  whileHover={username.trim() ? { scale: 1.02, y: -2 } : {}}
+                  whileTap={username.trim() ? { scale: 0.98 } : {}}
+                  animate={username.trim() ? {
+                    boxShadow: [
+                      '0 0 20px rgba(0, 217, 255, 0.3)',
+                      '0 0 40px rgba(0, 217, 255, 0.5)',
+                      '0 0 20px rgba(0, 217, 255, 0.3)'
+                    ]
+                  } : {}}
+                  transition={username.trim() ? {
+                    boxShadow: { duration: 2, repeat: Infinity, ease: "easeInOut" }
+                  } : {}}
                   style={{
                     width: '100%',
                     padding: '16px',
@@ -1242,30 +1302,19 @@ export default function PortfolioDuel() {
                     border: 'none',
                     borderRadius: '12px',
                     cursor: username.trim() ? 'pointer' : 'not-allowed',
-                    transition: 'all 0.3s',
-                    boxShadow: username.trim() ? '0 0 20px rgba(0, 217, 255, 0.3)' : 'none',
+                    transition: 'background 0.3s ease',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '8px'
                   }}
-                  onMouseEnter={(e) => {
-                    if (username.trim()) {
-                      e.target.style.transform = 'translateY(-2px)';
-                      e.target.style.boxShadow = '0 0 30px rgba(0, 217, 255, 0.5)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.transform = 'translateY(0)';
-                    e.target.style.boxShadow = username.trim() ? '0 0 20px rgba(0, 217, 255, 0.3)' : 'none';
-                  }}
                 >
                   Enter Arena
                   <ArrowRight style={{ height: '18px', width: '18px' }} />
-                </button>
-              </div>
+                </motion.button>
+              </motion.div>
             </div>
-          </div>
+          </motion.div>
         </div>
       </div>
     );
