@@ -264,6 +264,49 @@ const containerStyle = {
   background: colors.background
 };
 
+// Mini Sparkline Chart Component
+const MiniSparkline = ({ isPositive, width = 70, height = 24 }) => {
+  // Generate a simple trend line based on positive/negative
+  const generatePath = () => {
+    const points = [];
+    const numPoints = 12;
+    let y = height / 2;
+
+    for (let i = 0; i <= numPoints; i++) {
+      const x = (i / numPoints) * width;
+      // Create a gentle trend line
+      const noise = Math.sin(i * 0.8) * (height * 0.15);
+      const trend = isPositive
+        ? (height * 0.6) - (i / numPoints) * (height * 0.4) + noise
+        : (height * 0.3) + (i / numPoints) * (height * 0.4) + noise;
+      points.push(`${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${Math.max(2, Math.min(height - 2, trend)).toFixed(1)}`);
+    }
+    return points.join(' ');
+  };
+
+  const color = isPositive ? colors.green : colors.red;
+  const gradientId = `sparkline-${isPositive ? 'green' : 'red'}-${Math.random().toString(36).substr(2, 9)}`;
+
+  return (
+    <svg width={width} height={height} style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id={gradientId} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path
+        d={generatePath()}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+};
+
 export default function PortfolioDuel() {
   // ============================================
   // 1. ALL STATE DECLARATIONS
@@ -3548,6 +3591,7 @@ export default function PortfolioDuel() {
     const theirGain = ((theirValue - 1000000) / 1000000) * 100;
     const isWinning = myGain > theirGain;
     const difference = Math.abs(myGain - theirGain);
+    const valueDifference = Math.abs(myValue - theirValue);
 
     return (
       <div style={containerStyle}>
@@ -3556,14 +3600,18 @@ export default function PortfolioDuel() {
           paddingBottom: '32px',
           background: colors.background
         }}>
-          {/* Header - Battle Arena Timer */}
-          <div style={{
-            padding: '20px 24px',
-            marginBottom: '24px',
-            borderBottom: `1px solid ${colors.border}`,
-            textAlign: 'center'
-          }}>
-            <div style={{ maxWidth: '1536px', margin: '0 auto' }}>
+          {/* BATTLE HEADER - Large Timer */}
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            style={{
+              padding: '24px',
+              textAlign: 'center',
+              borderBottom: `1px solid #30363d`
+            }}
+          >
+            <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <button
                   onClick={() => setScreen('dashboard')}
@@ -3571,12 +3619,14 @@ export default function PortfolioDuel() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
-                    padding: '8px 16px',
-                    background: 'transparent',
-                    border: `1px solid ${colors.borderSubtle}`,
+                    padding: '10px 20px',
+                    background: colors.cardBg,
+                    border: `1px solid #30363d`,
                     borderRadius: '8px',
                     color: colors.textSecondary,
                     cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '500',
                     transition: 'all 0.2s'
                   }}
                   onMouseEnter={(e) => {
@@ -3584,30 +3634,49 @@ export default function PortfolioDuel() {
                     e.currentTarget.style.color = colors.cyan;
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = colors.borderSubtle;
+                    e.currentTarget.style.borderColor = '#30363d';
                     e.currentTarget.style.color = colors.textSecondary;
                   }}
                 >
-                  ← Back
+                  ← Back to Dashboard
                 </button>
+
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '12px', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>
-                    Battle Ends
-                  </div>
                   <div style={{
-                    fontSize: '32px',
-                    fontWeight: 'bold',
-                    fontFamily: 'monospace',
-                    color: colors.cyan,
-                    textShadow: '0 0 20px rgba(0, 217, 255, 0.5)'
+                    fontSize: '11px',
+                    color: colors.textMuted,
+                    textTransform: 'uppercase',
+                    letterSpacing: '3px',
+                    marginBottom: '8px',
+                    fontWeight: '600'
                   }}>
-                    {battleTimer.formatTimeRemaining(currentBattle)}
+                    BATTLE ENDS
                   </div>
+                  <motion.div
+                    animate={{
+                      textShadow: [
+                        '0 0 20px rgba(0, 217, 255, 0.4)',
+                        '0 0 40px rgba(0, 217, 255, 0.6)',
+                        '0 0 20px rgba(0, 217, 255, 0.4)'
+                      ]
+                    }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                    style={{
+                      fontSize: '52px',
+                      fontWeight: 'bold',
+                      fontFamily: "'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace",
+                      color: colors.cyan,
+                      letterSpacing: '4px'
+                    }}
+                  >
+                    {battleTimer.formatTimeRemaining(currentBattle)}
+                  </motion.div>
                 </div>
-                <div style={{ width: '80px' }}></div>
+
+                <div style={{ width: '160px' }}></div>
               </div>
             </div>
-          </div>
+          </motion.div>
 
           <div style={{ maxWidth: '1536px', margin: '0 auto', padding: '0 24px' }}>
             {/* Training Battle Indicator */}
@@ -3631,259 +3700,244 @@ export default function PortfolioDuel() {
               </div>
             )}
 
-            {/* Battle Header with Scores AND Challenge Tabs */}
-            <div style={{
-              background: colors.cardBg,
-              borderRadius: '12px',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-              overflow: 'hidden',
-              marginBottom: '24px',
-              border: `1px solid ${colors.border}`
-            }}>
-              <div style={{ padding: '24px' }}>
+            {/* PLAYER COMPARISON SECTION */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.1 }}
+              style={{
+                background: colors.cardBg,
+                borderRadius: '16px',
+                overflow: 'hidden',
+                marginBottom: '24px',
+                border: `1px solid #30363d`
+              }}
+            >
+              <div style={{ padding: '32px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  {/* You Section with Challenge Tabs */}
-                  <div style={{ display: 'flex', flexDirection: 'row', gap: '20px', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      <div style={{
-                        width: '64px',
-                        height: '64px',
+                  {/* YOU Section */}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <div style={{
+                      fontSize: '11px',
+                      color: colors.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '2px',
+                      marginBottom: '12px'
+                    }}>
+                      YOU <span style={{ color: colors.textSecondary }}>({user.username})</span>
+                    </div>
+                    <motion.div
+                      initial={{ scale: 0.8 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: "spring", stiffness: 200, damping: 15 }}
+                      style={{
+                        width: '80px',
+                        height: '80px',
                         borderRadius: '50%',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        marginBottom: '8px',
-                        background: `linear-gradient(135deg, ${colors.green}30 0%, ${colors.cyan}30 100%)`,
-                        border: `2px solid ${colors.green}`
-                      }}>
-                        <User style={{ height: '24px', width: '24px', color: colors.green }} />
-                      </div>
-                      <div style={{ fontWeight: '600', color: colors.textPrimary, fontSize: '14px' }}>YOU</div>
-                      <div style={{ fontSize: '12px', color: colors.textSecondary }}>{user.username}</div>
+                        marginBottom: '16px',
+                        background: `linear-gradient(135deg, ${colors.cyan}20 0%, ${colors.green}20 100%)`,
+                        border: `3px solid ${myGain >= 0 ? colors.green : colors.red}`,
+                        boxShadow: `0 0 20px ${myGain >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                      }}
+                    >
+                      <User style={{ height: '32px', width: '32px', color: myGain >= 0 ? colors.green : colors.red }} />
+                    </motion.div>
+                    <div style={{
+                      fontSize: '42px',
+                      fontWeight: 'bold',
+                      color: myGain >= 0 ? colors.green : colors.red,
+                      marginBottom: '4px'
+                    }}>
+                      {myGain >= 0 ? '+' : ''}{myGain.toFixed(1)}%
                     </div>
-
-                    {/* YOUR Challenge Tabs (to the right of avatar) - Only show ACTIVE challenges */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {userChallenges.doubleDown && userChallenges.doubleDown.status === 'active' && (
-                        <button
-                          onClick={() => toggleChallengePanel('user-double')}
-                          style={{
-                            background: openChallengePanels.has('user-double') 
-                              ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
-                              : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
-                            color: openChallengePanels.has('user-double') ? 'white' : '#1F2937',
-                            padding: '8px 16px',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                            transition: 'all 0.2s',
-                            border: 'none',
-                            whiteSpace: 'nowrap'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.target.style.transform = 'translateY(-2px)';
-                            e.target.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.target.style.transform = 'translateY(0)';
-                            e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
-                          }}
-                        >
-                          Double Down
-                        </button>
-                      )}
-                      {userChallenges.marketClose && userChallenges.marketClose.status === 'active' && (
-                        <button
-                          onClick={() => toggleChallengePanel('user-market')}
-                          style={{
-                            background: openChallengePanels.has('user-market')
-                              ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
-                              : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
-                            color: openChallengePanels.has('user-market') ? 'white' : '#1F2937',
-                            padding: '8px 16px',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                            transition: 'all 0.2s',
-                            border: 'none',
-                            whiteSpace: 'nowrap'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.target.style.transform = 'translateY(-2px)';
-                            e.target.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.target.style.transform = 'translateY(0)';
-                            e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
-                          }}
-                        >
-                          Market Close
-                        </button>
-                      )}
+                    <div style={{
+                      fontSize: '18px',
+                      color: colors.textSecondary,
+                      fontWeight: '500'
+                    }}>
+                      ${myValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     </div>
-
-                    {/* Spacer for alignment when no tabs */}
-                    {!userChallenges.doubleDown && !userChallenges.marketClose && (
-                      <div style={{ width: '100px' }}></div>
-                    )}
                   </div>
 
-                  {/* Scores (Center) */}
-                  <div style={{ flex: 1, margin: '0 32px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '24px', marginBottom: '12px' }}>
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '36px', fontWeight: 'bold', color: myGain >= 0 ? colors.green : colors.red }}>
-                          {myGain >= 0 ? '+' : ''}{myGain.toFixed(1)}%
-                        </div>
-                        <div style={{ fontSize: '16px', fontWeight: '600', color: myGain >= 0 ? colors.green : colors.red, marginTop: '4px' }}>
-                          {myGain >= 0 ? '+' : ''}${(myValue - 1000000).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        </div>
-                        <div style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px' }}>
-                          Portfolio Value: ${myValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        </div>
-                      </div>
-                      <div style={{ fontSize: '30px', color: colors.textMuted, fontWeight: 'bold' }}>VS</div>
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '36px', fontWeight: 'bold', color: theirGain >= 0 ? colors.green : colors.red }}>
-                          {theirGain >= 0 ? '+' : ''}{theirGain.toFixed(1)}%
-                        </div>
-                        <div style={{ fontSize: '16px', fontWeight: '600', color: theirGain >= 0 ? colors.green : colors.red, marginTop: '4px' }}>
-                          {theirGain >= 0 ? '+' : ''}${(theirValue - 1000000).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        </div>
-                        <div style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px' }}>
-                          Portfolio Value: ${theirValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        </div>
-                      </div>
-                    </div>
-
+                  {/* CENTER - Progress Bar & Status */}
+                  <div style={{ flex: 1.5, padding: '0 40px' }}>
                     {/* Progress Bar */}
                     <div style={{
                       position: 'relative',
-                      height: '12px',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      borderRadius: '9999px',
+                      height: '16px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      borderRadius: '8px',
                       overflow: 'hidden',
-                      marginBottom: '8px'
+                      marginBottom: '16px',
+                      border: '1px solid #30363d'
                     }}>
-                      <div style={{
-                        position: 'absolute',
-                        height: '100%',
-                        borderRadius: '9999px',
-                        transition: 'all 0.3s',
-                        width: `${(myValue / (myValue + theirValue)) * 100}%`,
-                        background: isWinning ? `linear-gradient(90deg, ${colors.greenBright} 0%, ${colors.green} 100%)` : `linear-gradient(90deg, ${colors.red} 0%, ${colors.redBright} 100%)`
-                      }} />
+                      <motion.div
+                        initial={{ width: '50%' }}
+                        animate={{ width: `${Math.max(10, Math.min(90, (myValue / (myValue + theirValue)) * 100))}%` }}
+                        transition={{ duration: 0.5 }}
+                        style={{
+                          position: 'absolute',
+                          height: '100%',
+                          borderRadius: '8px',
+                          background: isWinning
+                            ? `linear-gradient(90deg, ${colors.green} 0%, ${colors.greenBright} 100%)`
+                            : `linear-gradient(90deg, ${colors.red} 0%, ${colors.redBright} 100%)`,
+                          boxShadow: isWinning
+                            ? '0 0 10px rgba(16, 185, 129, 0.5)'
+                            : '0 0 10px rgba(239, 68, 68, 0.5)'
+                        }}
+                      />
                     </div>
 
-                    {/* Winning Status */}
+                    {/* Status Text */}
                     <div style={{
                       textAlign: 'center',
                       fontSize: '14px',
                       fontWeight: '600',
-                      color: isWinning ? colors.green : colors.red
+                      color: isWinning ? colors.green : colors.red,
+                      textTransform: 'uppercase',
+                      letterSpacing: '1px'
                     }}>
-                      {isWinning
-                        ? `Winning by ${difference.toFixed(1)}% ($${Math.abs(myValue - theirValue).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})`
-                        : `Losing by ${difference.toFixed(1)}% ($${Math.abs(myValue - theirValue).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})`
-                      }
+                      {isWinning ? 'LEADING' : 'TRAILING'} BY +{difference.toFixed(1)}% (${valueDifference.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})
                     </div>
                   </div>
 
-                  {/* Opponent Section with Challenge Tabs */}
-                  <div style={{ display: 'flex', flexDirection: 'row', gap: '20px', alignItems: 'center' }}>
-                    {/* OPPONENT Challenge Tabs (to the left of avatar) - Only show ACTIVE challenges */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {opponentChallenges.doubleDown && opponentChallenges.doubleDown.status === 'active' && (
-                        <button
-                          onClick={() => toggleChallengePanel('opp-double')}
-                          style={{
-                            background: openChallengePanels.has('opp-double')
-                              ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
-                              : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
-                            color: openChallengePanels.has('opp-double') ? 'white' : '#1F2937',
-                            padding: '8px 16px',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                            transition: 'all 0.2s',
-                            border: 'none',
-                            whiteSpace: 'nowrap'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.target.style.transform = 'translateY(-2px)';
-                            e.target.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.target.style.transform = 'translateY(0)';
-                            e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
-                          }}
-                        >
-                          Double Down
-                        </button>
-                      )}
-                      {opponentChallenges.marketClose && opponentChallenges.marketClose.status === 'active' && (
-                        <button
-                          onClick={() => toggleChallengePanel('opp-market')}
-                          style={{
-                            background: openChallengePanels.has('opp-market')
-                              ? 'linear-gradient(135deg, #FF6F00 0%, #FF8F00 100%)'
-                              : 'linear-gradient(135deg, #FFD700 0%, #FFC107 100%)',
-                            color: openChallengePanels.has('opp-market') ? 'white' : '#1F2937',
-                            padding: '8px 16px',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                            transition: 'all 0.2s',
-                            border: 'none',
-                            whiteSpace: 'nowrap'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.target.style.transform = 'translateY(-2px)';
-                            e.target.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.target.style.transform = 'translateY(0)';
-                            e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
-                          }}
-                        >
-                          Market Close
-                        </button>
-                      )}
+                  {/* OPPONENT Section */}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <div style={{
+                      fontSize: '11px',
+                      color: colors.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '2px',
+                      marginBottom: '12px'
+                    }}>
+                      OPPONENT <span style={{ color: colors.textSecondary }}>({opponent})</span>
                     </div>
-
-                    {/* Spacer for alignment when no tabs */}
-                    {!opponentChallenges.doubleDown && !opponentChallenges.marketClose && (
-                      <div style={{ width: '100px' }}></div>
-                    )}
-
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      <div style={{
-                        width: '64px',
-                        height: '64px',
+                    <motion.div
+                      initial={{ scale: 0.8 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: "spring", stiffness: 200, damping: 15, delay: 0.1 }}
+                      style={{
+                        width: '80px',
+                        height: '80px',
                         borderRadius: '50%',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        marginBottom: '8px',
-                        background: `linear-gradient(135deg, ${colors.red}30 0%, ${colors.redBright}30 100%)`,
-                        border: `2px solid ${colors.red}`
-                      }}>
-                        <Skull style={{ height: '24px', width: '24px', color: colors.red }} />
-                      </div>
-                      <div style={{ fontWeight: '600', color: colors.textPrimary, fontSize: '14px' }}>{opponent}</div>
-                      <div style={{ fontSize: '12px', color: colors.textSecondary }}>Opponent</div>
+                        marginBottom: '16px',
+                        background: `linear-gradient(135deg, ${colors.red}20 0%, ${colors.redBright}20 100%)`,
+                        border: `3px solid ${theirGain >= 0 ? colors.green : colors.red}`,
+                        boxShadow: `0 0 20px ${theirGain >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                      }}
+                    >
+                      <Skull style={{ height: '32px', width: '32px', color: theirGain >= 0 ? colors.green : colors.red }} />
+                    </motion.div>
+                    <div style={{
+                      fontSize: '42px',
+                      fontWeight: 'bold',
+                      color: theirGain >= 0 ? colors.green : colors.red,
+                      marginBottom: '4px'
+                    }}>
+                      {theirGain >= 0 ? '+' : ''}{theirGain.toFixed(1)}%
+                    </div>
+                    <div style={{
+                      fontSize: '18px',
+                      color: colors.textSecondary,
+                      fontWeight: '500'
+                    }}>
+                      ${theirValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     </div>
                   </div>
                 </div>
               </div>
+            </motion.div>
+
+            {/* CHALLENGE TABS - Keep existing functionality but style updated */}
+            <div style={{ marginBottom: '24px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              {/* User Challenge Tabs */}
+              {userChallenges.doubleDown && userChallenges.doubleDown.status === 'active' && (
+                <button
+                  onClick={() => toggleChallengePanel('user-double')}
+                  style={{
+                    background: openChallengePanels.has('user-double')
+                      ? `linear-gradient(135deg, ${colors.gold} 0%, #FF8F00 100%)`
+                      : colors.cardBg,
+                    color: openChallengePanels.has('user-double') ? '#0d1117' : colors.gold,
+                    padding: '10px 20px',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    border: `1px solid ${colors.gold}`,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Your Double Down
+                </button>
+              )}
+              {userChallenges.marketClose && userChallenges.marketClose.status === 'active' && (
+                <button
+                  onClick={() => toggleChallengePanel('user-market')}
+                  style={{
+                    background: openChallengePanels.has('user-market')
+                      ? `linear-gradient(135deg, ${colors.gold} 0%, #FF8F00 100%)`
+                      : colors.cardBg,
+                    color: openChallengePanels.has('user-market') ? '#0d1117' : colors.gold,
+                    padding: '10px 20px',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    border: `1px solid ${colors.gold}`,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Your Market Close
+                </button>
+              )}
+              {opponentChallenges.doubleDown && opponentChallenges.doubleDown.status === 'active' && (
+                <button
+                  onClick={() => toggleChallengePanel('opp-double')}
+                  style={{
+                    background: openChallengePanels.has('opp-double')
+                      ? `linear-gradient(135deg, ${colors.gold} 0%, #FF8F00 100%)`
+                      : colors.cardBg,
+                    color: openChallengePanels.has('opp-double') ? '#0d1117' : colors.gold,
+                    padding: '10px 20px',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    border: `1px solid ${colors.gold}`,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Opponent's Double Down
+                </button>
+              )}
+              {opponentChallenges.marketClose && opponentChallenges.marketClose.status === 'active' && (
+                <button
+                  onClick={() => toggleChallengePanel('opp-market')}
+                  style={{
+                    background: openChallengePanels.has('opp-market')
+                      ? `linear-gradient(135deg, ${colors.gold} 0%, #FF8F00 100%)`
+                      : colors.cardBg,
+                    color: openChallengePanels.has('opp-market') ? '#0d1117' : colors.gold,
+                    padding: '10px 20px',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    border: `1px solid ${colors.gold}`,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Opponent's Market Close
+                </button>
+              )}
             </div>
 
             {/* Challenge Panels - These appear BELOW the battle score box */}
@@ -4208,255 +4262,297 @@ export default function PortfolioDuel() {
               </div>
             )}
 
-            {/* Portfolio Comparison */}
-            <div style={{
-              background: colors.cardBg,
-              borderRadius: '12px',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-              overflow: 'hidden',
-              border: `1px solid ${colors.border}`
-            }}>
-              <div style={{ padding: '24px' }}>
+            {/* PORTFOLIO TABLES - Side by Side */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.2 }}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '24px'
+              }}
+            >
+              {/* YOUR PORTFOLIO TABLE */}
+              <div style={{
+                background: colors.cardBg,
+                borderRadius: '16px',
+                overflow: 'hidden',
+                border: `1px solid #30363d`
+              }}>
+                {/* Table Header */}
+                <div style={{
+                  padding: '16px 20px',
+                  borderBottom: `1px solid #30363d`,
+                  background: 'rgba(0, 217, 255, 0.05)'
+                }}>
+                  <div style={{
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    color: colors.cyan,
+                    textTransform: 'uppercase',
+                    letterSpacing: '2px'
+                  }}>
+                    YOUR PORTFOLIO
+                  </div>
+                </div>
+
                 {/* Column Headers */}
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr 2fr',
-                  gap: '12px',
-                  marginBottom: '16px',
-                  fontSize: '12px',
+                  gridTemplateColumns: '1.2fr 1fr 1fr 0.8fr',
+                  gap: '8px',
+                  padding: '12px 20px',
+                  borderBottom: `1px solid #30363d`,
+                  fontSize: '10px',
                   fontWeight: '600',
-                  color: colors.textSecondary,
-                  textTransform: 'uppercase'
+                  color: colors.textMuted,
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px'
                 }}>
-                  <div>Your Portfolio</div>
-                  <div style={{ textAlign: 'center' }}>WT%</div>
-                  <div style={{ textAlign: 'center' }}>Amount</div>
-                  <div style={{ textAlign: 'center' }}>RET%</div>
-                  <div style={{ textAlign: 'center' }}>RET%</div>
-                  <div style={{ textAlign: 'center' }}>Amount</div>
-                  <div style={{ textAlign: 'center' }}>WT%</div>
-                  <div style={{ textAlign: 'right' }}>Their Portfolio</div>
+                  <div>ASSET</div>
+                  <div style={{ textAlign: 'center' }}>PERFORMANCE</div>
+                  <div style={{ textAlign: 'right' }}>PRICE</div>
+                  <div style={{ textAlign: 'right' }}>WT</div>
                 </div>
 
-                <div style={{ borderTop: `1px solid ${colors.borderSubtle}`, paddingTop: '16px' }}>
-                  {/* Portfolio Items */}
-                  {myPortfolio.map((myAsset, idx) => {
-                    const theirAsset = theirPortfolio[idx] || null;
-
-                    // Get the correct starting price from battle.startingPrices
-                    const myStartingPrice = currentBattle.startingPrices?.[myAsset.symbol] || myAsset.price;
-                    const myShares = myAsset.amount / myStartingPrice;
-                    const myCurrentPrice = battlePrices[myAsset.symbol] || myStartingPrice;
-                    const myCurrentValue = myShares * myCurrentPrice;
-                    const myGainLoss = myCurrentValue - myAsset.amount;
-                    const myReturn = ((myCurrentPrice - myStartingPrice) / myStartingPrice) * 100;
-                    const myWeight = (myAsset.amount / 1000000) * 100;
-
-                    let theirWeight = 0;
-                    let theirReturn = 0;
-                    let theirCurrentValue = 0;
-                    let theirGainLoss = 0;
-                    let theirCurrentPrice = 0;
-                    let theirStartingPrice = 0;
-                    if (theirAsset) {
-                      theirStartingPrice = currentBattle.startingPrices?.[theirAsset.symbol] || theirAsset.price;
-                      const theirShares = theirAsset.amount / theirStartingPrice;
-                      theirCurrentPrice = battlePrices[theirAsset.symbol] || theirStartingPrice;
-                      theirCurrentValue = theirShares * theirCurrentPrice;
-                      theirGainLoss = theirCurrentValue - theirAsset.amount;
-                      theirReturn = ((theirCurrentPrice - theirStartingPrice) / theirStartingPrice) * 100;
-                      theirWeight = (theirAsset.amount / 1000000) * 100;
-                    }
+                {/* Portfolio Items */}
+                <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                  {myPortfolio.map((asset, idx) => {
+                    const startingPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
+                    const currentPrice = battlePrices[asset.symbol] || startingPrice;
+                    const returnPct = ((currentPrice - startingPrice) / startingPrice) * 100;
+                    const weight = (asset.amount / 1000000) * 100;
+                    const isPositive = returnPct >= 0;
 
                     return (
-                      <div key={idx} style={{
-                        display: 'grid',
-                        gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr 2fr',
-                        gap: '12px',
-                        alignItems: 'center',
-                        padding: '12px 0',
-                        borderBottom: `1px solid ${colors.borderSubtle}`
-                      }}>
-                        {/* Your Asset */}
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1.2fr 1fr 1fr 0.8fr',
+                          gap: '8px',
+                          padding: '16px 20px',
+                          borderBottom: `1px solid #30363d`,
+                          alignItems: 'center',
+                          transition: 'background 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0, 217, 255, 0.03)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        {/* Asset Info */}
                         <div>
-                          <div style={{ fontWeight: '600', color: colors.textPrimary, marginBottom: '4px' }}>{myAsset.symbol}</div>
-                          <div style={{ fontSize: '11px', color: colors.textSecondary }}>
-                            Start: ${(currentBattle.startingPrices?.[myAsset.symbol] || myAsset.price).toFixed(2)}
+                          <div style={{
+                            fontSize: '15px',
+                            fontWeight: '700',
+                            color: colors.textPrimary,
+                            marginBottom: '2px'
+                          }}>
+                            {asset.symbol}
                           </div>
                           <div style={{
                             fontSize: '11px',
-                            fontWeight: '600',
-                            marginTop: '2px',
-                            color: myCurrentPrice > (currentBattle.startingPrices?.[myAsset.symbol] || myAsset.price) ? colors.green :
-                                   myCurrentPrice < (currentBattle.startingPrices?.[myAsset.symbol] || myAsset.price) ? colors.red : colors.textSecondary
+                            color: colors.textMuted
                           }}>
-                            Now: ${myCurrentPrice.toFixed(2)}
+                            WT: {weight.toFixed(0)}%
                           </div>
                         </div>
 
-                        {/* Your Weight */}
-                        <div style={{ textAlign: 'center', fontWeight: '600', color: colors.cyan }}>
-                          {myWeight.toFixed(0)}%
-                        </div>
-
-                        {/* Your Amount */}
-                        <div style={{ textAlign: 'center', fontSize: '13px' }}>
-                          <div style={{ fontWeight: '600', color: colors.textPrimary }}>
-                            ${myAsset.amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </div>
-                          <div style={{ fontSize: '11px', color: myGainLoss >= 0 ? colors.green : colors.red }}>
-                            {myGainLoss >= 0 ? '+' : ''}${myGainLoss.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </div>
-                        </div>
-
-                        {/* Your Return */}
+                        {/* Sparkline + Performance */}
                         <div style={{
-                          textAlign: 'center',
                           display: 'flex',
+                          flexDirection: 'column',
                           alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '4px',
-                          color: myReturn >= 0 ? colors.green : colors.red
+                          gap: '4px'
                         }}>
-                          {myReturn >= 0 ? <TrendingUp style={{ height: '16px', width: '16px' }} /> : <TrendingDown style={{ height: '16px', width: '16px' }} />}
-                          <span style={{ fontWeight: '600' }}>
-                            {myReturn >= 0 ? '+' : ''}{myReturn.toFixed(1)}%
-                          </span>
+                          <MiniSparkline isPositive={isPositive} width={60} height={20} />
+                          <div style={{
+                            fontSize: '14px',
+                            fontWeight: '700',
+                            color: isPositive ? colors.green : colors.red
+                          }}>
+                            {isPositive ? '+' : ''}{returnPct.toFixed(1)}%
+                          </div>
                         </div>
 
-                        {/* Their Return */}
-                        {theirAsset ? (
-                          <>
-                            <div style={{
-                              textAlign: 'center',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '4px',
-                              color: theirReturn >= 0 ? colors.green : colors.red
-                            }}>
-                              {theirReturn >= 0 ? <TrendingUp style={{ height: '16px', width: '16px' }} /> : <TrendingDown style={{ height: '16px', width: '16px' }} />}
-                              <span style={{ fontWeight: '600' }}>
-                                {theirReturn >= 0 ? '+' : ''}{theirReturn.toFixed(1)}%
-                              </span>
-                            </div>
+                        {/* Price Info */}
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            color: colors.textPrimary,
+                            marginBottom: '2px'
+                          }}>
+                            ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div style={{
+                            fontSize: '10px',
+                            color: colors.textMuted
+                          }}>
+                            Start: ${startingPrice.toFixed(2)}
+                          </div>
+                        </div>
 
-                            {/* Their Amount */}
-                            <div style={{ textAlign: 'center', fontSize: '13px' }}>
-                              <div style={{ fontWeight: '600', color: colors.textPrimary }}>
-                                ${theirAsset.amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                              </div>
-                              <div style={{ fontSize: '11px', color: theirGainLoss >= 0 ? colors.green : colors.red }}>
-                                {theirGainLoss >= 0 ? '+' : ''}${theirGainLoss.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                              </div>
-                            </div>
-
-                            {/* Their Weight */}
-                            <div style={{ textAlign: 'center', fontWeight: '600', color: colors.red }}>
-                              {theirWeight.toFixed(0)}%
-                            </div>
-
-                            {/* Their Asset */}
-                            <div style={{ textAlign: 'right' }}>
-                              <div style={{ fontWeight: '600', color: colors.textPrimary, marginBottom: '4px' }}>{theirAsset.symbol}</div>
-                              <div style={{ fontSize: '11px', color: colors.textSecondary }}>
-                                Start: ${theirStartingPrice.toFixed(2)}
-                              </div>
-                              <div style={{
-                                fontSize: '11px',
-                                fontWeight: '600',
-                                marginTop: '2px',
-                                color: theirCurrentPrice > theirStartingPrice ? colors.green :
-                                       theirCurrentPrice < theirStartingPrice ? colors.red : colors.textSecondary
-                              }}>
-                                Now: ${theirCurrentPrice.toFixed(2)}
-                              </div>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div style={{ textAlign: 'center', color: colors.textMuted }}>-</div>
-                            <div style={{ textAlign: 'center', color: colors.textMuted }}>-</div>
-                            <div style={{ textAlign: 'center', color: colors.textMuted }}>-</div>
-                            <div style={{ textAlign: 'right', color: colors.textMuted }}>-</div>
-                          </>
-                        )}
+                        {/* Weight Badge */}
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{
+                            display: 'inline-block',
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            background: `${colors.cyan}15`,
+                            color: colors.cyan,
+                            fontSize: '12px',
+                            fontWeight: '600'
+                          }}>
+                            {weight.toFixed(0)}%
+                          </div>
+                        </div>
                       </div>
                     );
                   })}
-
-                  {/* If opponent has more assets */}
-                  {theirPortfolio.length > myPortfolio.length && (
-                    <>
-                      {theirPortfolio.slice(myPortfolio.length).map((theirAsset, idx) => {
-                        const theirStartingPrice = currentBattle.startingPrices?.[theirAsset.symbol] || theirAsset.price;
-                        const theirShares = theirAsset.amount / theirStartingPrice;
-                        const theirCurrentPrice = battlePrices[theirAsset.symbol] || theirStartingPrice;
-                        const theirCurrentValue = theirShares * theirCurrentPrice;
-                        const theirGainLoss = theirCurrentValue - theirAsset.amount;
-                        const theirReturn = ((theirCurrentPrice - theirStartingPrice) / theirStartingPrice) * 100;
-                        const theirWeight = (theirAsset.amount / 1000000) * 100;
-
-                        return (
-                          <div key={`their-${idx}`} style={{
-                            display: 'grid',
-                            gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr 2fr',
-                            gap: '12px',
-                            alignItems: 'center',
-                            padding: '12px 0',
-                            borderBottom: `1px solid ${colors.borderSubtle}`
-                          }}>
-                            <div style={{ color: colors.textMuted }}>-</div>
-                            <div style={{ textAlign: 'center', color: colors.textMuted }}>-</div>
-                            <div style={{ textAlign: 'center', color: colors.textMuted }}>-</div>
-                            <div style={{ textAlign: 'center', color: colors.textMuted }}>-</div>
-                            <div style={{
-                              textAlign: 'center',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '4px',
-                              color: theirReturn >= 0 ? colors.green : colors.red
-                            }}>
-                              {theirReturn >= 0 ? <TrendingUp style={{ height: '16px', width: '16px' }} /> : <TrendingDown style={{ height: '16px', width: '16px' }} />}
-                              <span style={{ fontWeight: '600' }}>
-                                {theirReturn >= 0 ? '+' : ''}{theirReturn.toFixed(1)}%
-                              </span>
-                            </div>
-                            <div style={{ textAlign: 'center', fontSize: '13px' }}>
-                              <div style={{ fontWeight: '600', color: colors.textPrimary }}>
-                                ${theirAsset.amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                              </div>
-                              <div style={{ fontSize: '11px', color: theirGainLoss >= 0 ? colors.green : colors.red }}>
-                                {theirGainLoss >= 0 ? '+' : ''}${theirGainLoss.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                              </div>
-                            </div>
-                            <div style={{ textAlign: 'center', fontWeight: '600', color: colors.red }}>
-                              {theirWeight.toFixed(0)}%
-                            </div>
-                            <div style={{ textAlign: 'right' }}>
-                              <div style={{ fontWeight: '600', color: colors.textPrimary, marginBottom: '4px' }}>{theirAsset.symbol}</div>
-                              <div style={{ fontSize: '11px', color: colors.textSecondary }}>
-                                Start: ${theirStartingPrice.toFixed(2)}
-                              </div>
-                              <div style={{
-                                fontSize: '11px',
-                                fontWeight: '600',
-                                marginTop: '2px',
-                                color: theirCurrentPrice > theirStartingPrice ? colors.green :
-                                       theirCurrentPrice < theirStartingPrice ? colors.red : colors.textSecondary
-                              }}>
-                                Now: ${theirCurrentPrice.toFixed(2)}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </>
-                  )}
                 </div>
               </div>
-            </div>
+
+              {/* OPPONENT'S PORTFOLIO TABLE */}
+              <div style={{
+                background: colors.cardBg,
+                borderRadius: '16px',
+                overflow: 'hidden',
+                border: `1px solid #30363d`
+              }}>
+                {/* Table Header */}
+                <div style={{
+                  padding: '16px 20px',
+                  borderBottom: `1px solid #30363d`,
+                  background: 'rgba(239, 68, 68, 0.05)'
+                }}>
+                  <div style={{
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    color: colors.red,
+                    textTransform: 'uppercase',
+                    letterSpacing: '2px'
+                  }}>
+                    OPPONENT'S PORTFOLIO
+                  </div>
+                </div>
+
+                {/* Column Headers */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1.2fr 1fr 1fr 0.8fr',
+                  gap: '8px',
+                  padding: '12px 20px',
+                  borderBottom: `1px solid #30363d`,
+                  fontSize: '10px',
+                  fontWeight: '600',
+                  color: colors.textMuted,
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px'
+                }}>
+                  <div>ASSET</div>
+                  <div style={{ textAlign: 'center' }}>PERFORMANCE</div>
+                  <div style={{ textAlign: 'right' }}>PRICE</div>
+                  <div style={{ textAlign: 'right' }}>WT</div>
+                </div>
+
+                {/* Portfolio Items */}
+                <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                  {theirPortfolio.map((asset, idx) => {
+                    const startingPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
+                    const currentPrice = battlePrices[asset.symbol] || startingPrice;
+                    const returnPct = ((currentPrice - startingPrice) / startingPrice) * 100;
+                    const weight = (asset.amount / 1000000) * 100;
+                    const isPositive = returnPct >= 0;
+
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1.2fr 1fr 1fr 0.8fr',
+                          gap: '8px',
+                          padding: '16px 20px',
+                          borderBottom: `1px solid #30363d`,
+                          alignItems: 'center',
+                          transition: 'background 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.03)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        {/* Asset Info */}
+                        <div>
+                          <div style={{
+                            fontSize: '15px',
+                            fontWeight: '700',
+                            color: colors.textPrimary,
+                            marginBottom: '2px'
+                          }}>
+                            {asset.symbol}
+                          </div>
+                          <div style={{
+                            fontSize: '11px',
+                            color: colors.textMuted
+                          }}>
+                            WT: {weight.toFixed(0)}%
+                          </div>
+                        </div>
+
+                        {/* Sparkline + Performance */}
+                        <div style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}>
+                          <MiniSparkline isPositive={isPositive} width={60} height={20} />
+                          <div style={{
+                            fontSize: '14px',
+                            fontWeight: '700',
+                            color: isPositive ? colors.green : colors.red
+                          }}>
+                            {isPositive ? '+' : ''}{returnPct.toFixed(1)}%
+                          </div>
+                        </div>
+
+                        {/* Price Info */}
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            color: colors.textPrimary,
+                            marginBottom: '2px'
+                          }}>
+                            ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div style={{
+                            fontSize: '10px',
+                            color: colors.textMuted
+                          }}>
+                            Start: ${startingPrice.toFixed(2)}
+                          </div>
+                        </div>
+
+                        {/* Weight Badge */}
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{
+                            display: 'inline-block',
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            background: `${colors.red}15`,
+                            color: colors.red,
+                            fontSize: '12px',
+                            fontWeight: '600'
+                          }}>
+                            {weight.toFixed(0)}%
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </motion.div>
           </div>
         </div>
       </div>
