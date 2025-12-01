@@ -226,7 +226,9 @@ import {
   Skull,
   Shield,
   ArrowRight,
-  User
+  User,
+  Flame,
+  Brain
 } from 'lucide-react';
 
 const PERCENTAGE_OPTIONS = [7.5, 10, 12.5, 15, 17.5, 20];
@@ -351,6 +353,9 @@ export default function PortfolioDuel() {
   const [userChallenges, setUserChallenges] = useState({ doubleDown: null, marketClose: null });
   const [opponentChallenges, setOpponentChallenges] = useState({ doubleDown: null, marketClose: null });
   const [openChallengePanels, setOpenChallengePanels] = useState(new Set());
+
+  // XP Progress Modal state
+  const [showXPModal, setShowXPModal] = useState(false);
 
   // ============================================
   // 2. ALL USEEFFECTS (AT TOP LEVEL)
@@ -1363,7 +1368,7 @@ export default function PortfolioDuel() {
     );
   }
 
-  // DASHBOARD SCREEN
+  // DASHBOARD SCREEN - New Flowing Card Layout
   if (screen === 'dashboard') {
     // Debug logging
     console.log('📊 DASHBOARD RENDER');
@@ -1372,50 +1377,239 @@ export default function PortfolioDuel() {
     console.log('User battles:', userBattles.length);
     console.log('Active battles:', activeBattles.length, activeBattles.map(b => ({code: b.challengeCode, creator: b.creator, opponent: b.opponent, status: b.status})));
     console.log('Waiting battles:', waitingBattles.length, waitingBattles.map(b => ({code: b.challengeCode, creator: b.creator, opponent: b.opponent, status: b.status})));
-    
+
+    // Get first active battle for preview card
+    const primaryActiveBattle = activeBattles[0];
+    const hasActiveBattle = activeBattles.length > 0;
+
+    // Calculate battle stats for preview
+    let battlePreviewData = null;
+    if (primaryActiveBattle) {
+      const isCreator = primaryActiveBattle.creator === user.username;
+      const opponent = isCreator ? primaryActiveBattle.opponent : primaryActiveBattle.creator;
+      const myPortfolio = isCreator ? primaryActiveBattle.creatorPortfolio : primaryActiveBattle.opponentPortfolio;
+      const theirPortfolio = isCreator ? primaryActiveBattle.opponentPortfolio : primaryActiveBattle.creatorPortfolio;
+
+      let myValue = 0;
+      myPortfolio.forEach(asset => {
+        const shares = asset.amount / asset.price;
+        myValue += shares * asset.price;
+      });
+
+      let theirValue = 0;
+      theirPortfolio.forEach(asset => {
+        const shares = asset.amount / asset.price;
+        theirValue += shares * asset.price;
+      });
+
+      const myGain = ((myValue - 1000000) / 1000000) * 100;
+      const theirGain = ((theirValue - 1000000) / 1000000) * 100;
+      const isWinning = myGain > theirGain;
+      const leadBy = Math.abs(myGain - theirGain);
+
+      battlePreviewData = { opponent, myGain, theirGain, isWinning, leadBy, myValue, theirValue };
+    }
+
+    // XP calculation for modal
+    const xpForNextLevel = 10000;
+    const xpProgress = (user.xp / xpForNextLevel) * 100;
+    const xpNeeded = xpForNextLevel - user.xp;
+    const ranks = ['Rookie', 'Apprentice', 'Trader', 'Expert', 'Master', 'Legend'];
+    const currentRankIndex = ranks.indexOf(user.rank);
+    const nextRank = currentRankIndex < ranks.length - 1 ? ranks[currentRankIndex + 1] : 'Max Rank';
+
     return (
       <div style={containerStyle}>
         <div style={{
           minHeight: '100vh',
-          paddingBottom: '32px',
+          display: 'flex',
+          flexDirection: 'column',
           background: colors.background
         }}>
-          {/* Header */}
-          <div style={{
-            padding: '20px 24px',
-            marginBottom: '24px',
-            borderBottom: `1px solid ${colors.border}`
-          }}>
-            <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <Swords style={{ height: '28px', width: '28px', color: colors.cyan }} />
-                  <h1 style={{
-                    fontSize: '24px',
+          {/* XP Progress Modal */}
+          {showXPModal && (
+            <div
+              onClick={() => setShowXPModal(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(0, 0, 0, 0.8)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000,
+                backdropFilter: 'blur(4px)'
+              }}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.2 }}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  background: colors.cardBg,
+                  borderRadius: '20px',
+                  padding: '32px',
+                  width: '90%',
+                  maxWidth: '400px',
+                  border: `1px solid ${colors.border}`,
+                  boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                  position: 'relative'
+                }}
+              >
+                {/* Close button */}
+                <button
+                  onClick={() => setShowXPModal(false)}
+                  style={{
+                    position: 'absolute',
+                    top: '16px',
+                    right: '16px',
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    border: `1px solid ${colors.borderSubtle}`,
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: colors.textSecondary,
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = `${colors.red}20`;
+                    e.currentTarget.style.borderColor = colors.red;
+                    e.currentTarget.style.color = colors.red;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.borderColor = colors.borderSubtle;
+                    e.currentTarget.style.color = colors.textSecondary;
+                  }}
+                >
+                  <X style={{ height: '18px', width: '18px' }} />
+                </button>
+
+                {/* Rank Icon */}
+                <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                  <div style={{
+                    width: '80px',
+                    height: '80px',
+                    margin: '0 auto 16px',
+                    borderRadius: '20px',
+                    background: `linear-gradient(135deg, ${colors.cyan}20 0%, ${colors.green}20 100%)`,
+                    border: `3px solid ${colors.cyan}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: `0 0 30px ${colors.cyan}40`
+                  }}>
+                    <Shield style={{ height: '40px', width: '40px', color: colors.cyan }} />
+                  </div>
+                  <h2 style={{
+                    fontSize: '28px',
                     fontWeight: 'bold',
-                    margin: 0,
+                    color: colors.textPrimary,
+                    margin: '0 0 4px 0',
+                    textTransform: 'uppercase',
+                    letterSpacing: '2px'
+                  }}>
+                    {user.rank}
+                  </h2>
+                  <p style={{ fontSize: '14px', color: colors.textSecondary, margin: 0 }}>
+                    Level {user.level}
+                  </p>
+                </div>
+
+                {/* XP Progress */}
+                <div style={{ marginBottom: '24px' }}>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginBottom: '8px',
+                    fontSize: '14px'
+                  }}>
+                    <span style={{ color: colors.textSecondary }}>Experience Points</span>
+                    <span style={{ color: colors.cyan, fontWeight: '600' }}>{user.xp} / {xpForNextLevel} XP</span>
+                  </div>
+                  <div style={{
+                    width: '100%',
+                    height: '12px',
+                    background: 'rgba(0, 217, 255, 0.1)',
+                    borderRadius: '9999px',
+                    overflow: 'hidden'
+                  }}>
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${xpProgress}%` }}
+                      transition={{ duration: 0.8, ease: 'easeOut' }}
+                      style={{
+                        height: '100%',
+                        borderRadius: '9999px',
+                        background: `linear-gradient(90deg, ${colors.green} 0%, ${colors.cyan} 100%)`,
+                        boxShadow: `0 0 10px ${colors.cyan}60`
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Next Rank Info */}
+                <div style={{
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  textAlign: 'center'
+                }}>
+                  <p style={{ fontSize: '14px', color: colors.textSecondary, margin: '0 0 8px 0' }}>
+                    {xpNeeded} XP to next rank
+                  </p>
+                  <p style={{ fontSize: '18px', fontWeight: '600', color: colors.green, margin: 0 }}>
+                    {nextRank}
+                  </p>
+                </div>
+              </motion.div>
+            </div>
+          )}
+
+          {/* Header Bar */}
+          <div style={{
+            padding: '12px 24px',
+            background: 'transparent',
+            borderBottom: `1px solid ${colors.borderSubtle}`
+          }}>
+            <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                {/* Logo */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Flame style={{ height: '24px', width: '24px', color: colors.cyan }} />
+                  <span style={{
+                    fontSize: '20px',
+                    fontWeight: 'bold',
                     background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.greenBright} 100%)`,
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
                     backgroundClip: 'text'
-                  }}>MarketClash</h1>
+                  }}>MarketClash</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '50%',
-                      background: colors.cardBg,
-                      border: `2px solid ${colors.cyan}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      <User style={{ height: '16px', width: '16px', color: colors.cyan }} />
-                    </div>
-                    <span style={{ color: colors.textPrimary, fontWeight: '500' }}>{user.username}</span>
+
+                {/* User & Logout */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    background: colors.cardBg,
+                    border: `2px solid ${colors.cyan}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <User style={{ height: '14px', width: '14px', color: colors.cyan }} />
                   </div>
+                  <span style={{ color: colors.textPrimary, fontWeight: '500', fontSize: '14px' }}>{user.username}</span>
                   <button
                     onClick={() => {
                       setUser(null);
@@ -1426,14 +1620,14 @@ export default function PortfolioDuel() {
                       display: 'flex',
                       alignItems: 'center',
                       gap: '6px',
-                      padding: '8px 12px',
+                      padding: '6px 12px',
                       background: 'transparent',
                       border: `1px solid ${colors.borderSubtle}`,
                       borderRadius: '8px',
                       color: colors.textSecondary,
                       cursor: 'pointer',
                       transition: 'all 0.2s',
-                      fontSize: '14px'
+                      fontSize: '13px'
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.borderColor = colors.red;
@@ -1452,679 +1646,289 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 24px' }}>
-            {/* Active Battles */}
-            {activeBattles.length > 0 && (
-              <div style={{ marginBottom: '24px' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: colors.textPrimary }}>Active Battles</h2>
-                
-                {activeBattles.map(battle => {
-                  const isCreator = battle.creator === user.username;
-                  const opponent = isCreator ? battle.opponent : battle.creator;
-                  const myPortfolio = isCreator ? battle.creatorPortfolio : battle.opponentPortfolio;
-                  const theirPortfolio = isCreator ? battle.opponentPortfolio : battle.creatorPortfolio;
-
-                  // Calculate current values and gains
-                  let myValue = 0;
-                  myPortfolio.forEach(asset => {
-                    const shares = asset.amount / asset.price;
-                    myValue += shares * asset.price;
-                  });
-
-                  let theirValue = 0;
-                  theirPortfolio.forEach(asset => {
-                    const shares = asset.amount / asset.price;
-                    theirValue += shares * asset.price;
-                  });
-
-                  const myGain = ((myValue - 1000000) / 1000000) * 100;
-                  const theirGain = ((theirValue - 1000000) / 1000000) * 100;
-                  const isWinning = myGain > theirGain;
-
-                  return (
-                    <div key={battle.id} style={{
-                      background: colors.cardBg,
-                      borderRadius: '12px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-                      overflow: 'hidden',
-                      marginBottom: '16px',
-                      border: `1px solid ${colors.border}`
-                    }}>
-                      {/* Battle Header */}
-                      <div style={{
-                        color: 'white',
-                        padding: '12px 16px',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        background: battle.isTrainingBattle
-                          ? `linear-gradient(135deg, ${colors.purple} 0%, #7C3AED 100%)`
-                          : `linear-gradient(135deg, ${colors.cyan}40 0%, ${colors.cyanDim}40 100%)`,
-                        borderBottom: `1px solid ${colors.border}`
-                      }}>
-                        <span style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px', color: colors.textPrimary }}>
-                          {battle.isTrainingBattle && <GraduationCap style={{ height: '16px', width: '16px' }} />}
-                          {battle.isTrainingBattle ? 'Training Battle' : 'Active Battle'}
-                        </span>
-                        <span style={{ fontSize: '14px', color: colors.cyan, fontFamily: 'monospace', fontWeight: '600' }}>{battleTimer.formatTimeRemaining(battle)}</span>
-                      </div>
-
-                      {/* Battle Content */}
-                      <div style={{ padding: '24px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                          {/* You */}
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                            <div style={{
-                              width: '64px',
-                              height: '64px',
-                              borderRadius: '50%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              marginBottom: '8px',
-                              background: `linear-gradient(135deg, ${colors.green}30 0%, ${colors.cyan}30 100%)`,
-                              border: `2px solid ${colors.green}`
-                            }}>
-                              <User style={{ height: '24px', width: '24px', color: colors.green }} />
-                            </div>
-                            <div style={{ fontWeight: '600', color: colors.textPrimary }}>You</div>
-                            <div style={{ fontSize: '12px', color: colors.textSecondary }}>{user.username}</div>
-                          </div>
-
-                          {/* Scores */}
-                          <div style={{ flex: 1, margin: '0 24px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '24px', marginBottom: '12px' }}>
-                              <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '32px', fontWeight: 'bold', color: myGain >= 0 ? colors.green : colors.red }}>
-                                  {myGain >= 0 ? '+' : ''}{myGain.toFixed(1)}%
-                                </div>
-                              </div>
-                              <div style={{ fontSize: '24px', color: colors.textMuted }}>vs</div>
-                              <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '32px', fontWeight: 'bold', color: theirGain >= 0 ? colors.green : colors.red }}>
-                                  {theirGain >= 0 ? '+' : ''}{theirGain.toFixed(1)}%
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Progress Bar */}
-                            <div style={{
-                              position: 'relative',
-                              height: '8px',
-                              background: 'rgba(255, 255, 255, 0.1)',
-                              borderRadius: '9999px',
-                              overflow: 'hidden',
-                              marginBottom: '8px'
-                            }}>
-                              <div style={{
-                                position: 'absolute',
-                                height: '100%',
-                                borderRadius: '9999px',
-                                transition: 'all 0.3s',
-                                width: `${(myValue / (myValue + theirValue)) * 100}%`,
-                                background: isWinning ? 'linear-gradient(90deg, #4ADE80 0%, #10B981 100%)' : 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)'
-                              }} />
-                            </div>
-
-                            <div style={{
-                              textAlign: 'center',
-                              fontSize: '12px',
-                              fontWeight: '600',
-                              color: isWinning ? colors.green : colors.red
-                            }}>
-                              {isWinning ? `LEADING BY ${Math.abs(myGain - theirGain).toFixed(1)}%` : `TRAILING BY ${Math.abs(myGain - theirGain).toFixed(1)}%`}
-                            </div>
-                          </div>
-
-                          {/* Opponent */}
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                            <div style={{
-                              width: '64px',
-                              height: '64px',
-                              borderRadius: '50%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              marginBottom: '8px',
-                              background: `linear-gradient(135deg, ${colors.red}30 0%, ${colors.purple}30 100%)`,
-                              border: `2px solid ${colors.red}`
-                            }}>
-                              <Target style={{ height: '24px', width: '24px', color: colors.red }} />
-                            </div>
-                            <div style={{ fontWeight: '600', color: colors.textPrimary }}>{opponent}</div>
-                            <div style={{ fontSize: '12px', color: colors.textSecondary }}>Opponent</div>
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={() => {
-                            setCurrentBattle(battle);
-                            setScreen('battle');
-                          }}
-                          style={{
-                            width: '100%',
-                            padding: '12px',
-                            color: colors.background,
-                            fontWeight: '600',
-                            borderRadius: '8px',
-                            border: 'none',
-                            cursor: 'pointer',
-                            transition: 'all 0.3s',
-                            background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`,
-                            boxShadow: '0 0 15px rgba(0, 217, 255, 0.3)'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.transform = 'translateY(-2px)';
-                            e.currentTarget.style.boxShadow = '0 0 25px rgba(0, 217, 255, 0.5)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = 'translateY(0)';
-                            e.currentTarget.style.boxShadow = '0 0 15px rgba(0, 217, 255, 0.3)';
-                          }}
-                        >
-                          View Battle Details
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Waiting Battles */}
-            {waitingBattles.length > 0 && (
-              <div style={{ marginBottom: '24px' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: colors.textPrimary }}>Waiting for Opponent</h2>
-                
-                {waitingBattles.map(battle => (
-                  <div key={battle.id} style={{
-                    background: colors.cardBg,
-                    borderRadius: '12px',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-                    overflow: 'hidden',
-                    marginBottom: '16px',
-                    border: `1px solid ${colors.gold}40`
-                  }}>
-                    <div style={{
-                      color: colors.background,
-                      padding: '12px 16px',
-                      background: `linear-gradient(135deg, ${colors.gold} 0%, #d97706 100%)`,
-                      borderBottom: `1px solid ${colors.gold}40`
-                    }}>
-                      <span style={{ fontWeight: '600' }}>Waiting for Opponent</span>
-                    </div>
-
-                    <div style={{ padding: '24px', textAlign: 'center' }}>
-                      <div style={{ marginBottom: '16px' }}>
-                        <div style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>Challenge Code</div>
-                        <div style={{ fontSize: '32px', fontWeight: 'bold', color: colors.cyan, marginBottom: '12px', fontFamily: 'monospace', letterSpacing: '4px' }}>{battle.challengeCode}</div>
-                        <button
-                          onClick={() => copyToClipboard(battle.challengeCode)}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '8px 16px',
-                            fontSize: '14px',
-                            background: 'transparent',
-                            border: `1px solid ${colors.border}`,
-                            borderRadius: '8px',
-                            color: colors.cyan,
-                            cursor: 'pointer',
-                            transition: 'all 0.2s'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = `${colors.cyan}20`;
-                            e.currentTarget.style.borderColor = colors.cyan;
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'transparent';
-                            e.currentTarget.style.borderColor = colors.border;
-                          }}
-                        >
-                          <Copy style={{ height: '16px', width: '16px' }} />
-                          Copy Code
-                        </button>
-                      </div>
-
-                      {/* Portfolio Type Badge */}
-                      <div style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '8px 16px',
-                        marginBottom: '12px',
-                        background: (() => {
-                          const firstAsset = battle.creatorPortfolio[0];
-                          const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === firstAsset.symbol);
-                          return isCrypto ? `${colors.purple}20` : `${colors.blue}20`;
-                        })(),
-                        border: (() => {
-                          const firstAsset = battle.creatorPortfolio[0];
-                          const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === firstAsset.symbol);
-                          return `1px solid ${isCrypto ? colors.purple : colors.blue}`;
-                        })(),
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        color: colors.textPrimary
-                      }}>
-                        <span style={{ fontSize: '16px' }}>
-                          {(() => {
-                            const firstAsset = battle.creatorPortfolio[0];
-                            const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === firstAsset.symbol);
-                            return isCrypto ? '₿' : '📈';
-                          })()}
-                        </span>
-                        {(() => {
-                          const firstAsset = battle.creatorPortfolio[0];
-                          const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === firstAsset.symbol);
-                          return isCrypto ? 'Crypto Battle' : 'Stocks Battle';
-                        })()}
-                      </div>
-
-                      <div style={{ fontSize: '13px', color: colors.textSecondary }}>
-                        Share this code with your opponent to start the battle!
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Completed Battles */}
-            {completedBattles.length > 0 && (
-              <div style={{ marginBottom: '24px' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: colors.textPrimary }}>
-                  Completed Battles
-                </h2>
-                
-                {completedBattles.map(battle => {
-                  const result = battle.result;
-                  if (!result) return null;
-                  
-                  const won = result.winner === user.username;
-                  const userReturn = battle.creator === user.username 
-                    ? result.creatorReturn 
-                    : result.opponentReturn;
-                  const opponentReturn = battle.creator === user.username 
-                    ? result.opponentReturn 
-                    : result.creatorReturn;
-                  const opponent = battle.creator === user.username 
-                    ? battle.opponent 
-                    : battle.creator;
-                  const xpEarned = result.xpAwarded[user.username] || 0;
-                  
-                  return (
-                    <div
-                      key={battle.id}
-                      style={{
-                        position: 'relative',
-                        backgroundColor: colors.cardBg,
-                        borderRadius: '12px',
-                        padding: '24px',
-                        marginBottom: '16px',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-                        border: battle.isTrainingBattle
-                          ? `2px solid ${colors.purple}`
-                          : won ? `2px solid ${colors.green}` : `2px solid ${colors.red}`
-                      }}
-                    >
-                      {/* Top Right Buttons */}
-                      <div style={{
-                        position: 'absolute',
-                        top: '16px',
-                        right: '16px',
-                        display: 'flex',
-                        gap: '8px'
-                      }}>
-                        {/* View Matchup Button */}
-                        <button
-                          onClick={() => {
-                            setCurrentBattle(battle);
-                            setScreen('battle');
-                          }}
-                          style={{
-                            padding: '8px 16px',
-                            borderRadius: '8px',
-                            border: 'none',
-                            background: battle.isTrainingBattle ? colors.purple : colors.cyan,
-                            color: colors.background,
-                            cursor: 'pointer',
-                            fontSize: '13px',
-                            fontWeight: '600',
-                            transition: 'all 0.3s',
-                            boxShadow: battle.isTrainingBattle
-                              ? '0 0 15px rgba(147, 51, 234, 0.3)'
-                              : '0 0 15px rgba(0, 217, 255, 0.3)'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.transform = 'translateY(-2px)';
-                            e.currentTarget.style.boxShadow = battle.isTrainingBattle
-                              ? '0 0 25px rgba(147, 51, 234, 0.5)'
-                              : '0 0 25px rgba(0, 217, 255, 0.5)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = 'translateY(0)';
-                            e.currentTarget.style.boxShadow = battle.isTrainingBattle
-                              ? '0 0 15px rgba(147, 51, 234, 0.3)'
-                              : '0 0 15px rgba(0, 217, 255, 0.3)';
-                          }}
-                        >
-                          View Matchup
-                        </button>
-
-                        {/* X Button */}
-                        <button
-                          onClick={() => archiveBattle(battle.id)}
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: '50%',
-                            border: `1px solid ${colors.borderSubtle}`,
-                            background: 'transparent',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'all 0.2s',
-                            color: colors.textSecondary
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = `${colors.red}20`;
-                            e.currentTarget.style.borderColor = colors.red;
-                            e.currentTarget.style.color = colors.red;
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'transparent';
-                            e.currentTarget.style.borderColor = colors.borderSubtle;
-                            e.currentTarget.style.color = colors.textSecondary;
-                          }}
-                        >
-                          <X style={{ height: '18px', width: '18px' }} />
-                        </button>
-                      </div>
-
-                      {/* Winner Announcement */}
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        marginBottom: '16px'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {battle.isTrainingBattle && <GraduationCap style={{ height: '20px', width: '20px', color: colors.purple }} />}
-                          <span style={{
-                            fontSize: '22px',
-                            fontWeight: 'bold',
-                            color: battle.isTrainingBattle ? colors.purple : won ? colors.green : colors.red
-                          }}>
-                            {battle.isTrainingBattle ? 'Training Complete' : won ? 'Victory!' : 'Defeat'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Opponent */}
-                      <div style={{ marginBottom: '12px', fontSize: '14px', color: colors.textSecondary }}>
-                        vs. <span style={{ fontWeight: '600', color: colors.textPrimary, fontSize: '16px' }}>{opponent}</span>
-                      </div>
-
-                      {/* Portfolio Name */}
-                      <div style={{
-                        fontSize: '13px',
-                        color: colors.textMuted,
-                        marginBottom: '16px',
-                        fontStyle: 'italic'
-                      }}>
-                        "{battle.portfolioName || 'Unnamed Portfolio'}"
-                      </div>
-
-                      {/* Returns */}
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 1fr',
-                        gap: '12px',
-                        marginBottom: '16px'
-                      }}>
-                        <div style={{
-                          backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                          padding: '12px',
-                          borderRadius: '8px',
-                          border: `1px solid ${userReturn >= 0 ? colors.green : colors.red}40`
-                        }}>
-                          <div style={{ fontSize: '11px', color: colors.textSecondary, marginBottom: '4px', fontWeight: '600', textTransform: 'uppercase' }}>
-                            Your Return
-                          </div>
-                          <div style={{
-                            fontSize: '24px',
-                            fontWeight: 'bold',
-                            color: userReturn >= 0 ? colors.green : colors.red
-                          }}>
-                            {userReturn >= 0 ? '+' : ''}{userReturn}%
-                          </div>
-                        </div>
-
-                        <div style={{
-                          backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                          padding: '12px',
-                          borderRadius: '8px',
-                          border: `1px solid ${opponentReturn >= 0 ? colors.green : colors.red}40`
-                        }}>
-                          <div style={{ fontSize: '11px', color: colors.textSecondary, marginBottom: '4px', fontWeight: '600', textTransform: 'uppercase' }}>
-                            Their Return
-                          </div>
-                          <div style={{
-                            fontSize: '24px',
-                            fontWeight: 'bold',
-                            color: opponentReturn >= 0 ? colors.green : colors.red
-                          }}>
-                            {opponentReturn >= 0 ? '+' : ''}{opponentReturn}%
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* XP Earned */}
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                        padding: '12px',
-                        background: battle.isTrainingBattle
-                          ? `${colors.purple}20`
-                          : `${colors.cyan}20`,
-                        borderRadius: '8px',
-                        border: `1px solid ${battle.isTrainingBattle ? colors.purple : colors.cyan}40`
-                      }}>
-                        <Zap style={{ height: '18px', width: '18px', color: battle.isTrainingBattle ? colors.purple : colors.cyan }} />
-                        <span style={{
-                          fontSize: '16px',
-                          fontWeight: 'bold',
-                          color: battle.isTrainingBattle ? colors.purple : colors.cyan
-                        }}>
-                          +{xpEarned} XP{battle.isTrainingBattle ? ' (Training)' : ''}
-                        </span>
-                      </div>
-                      
-                      {/* Completed Time */}
-                      <div style={{
-                        textAlign: 'center',
-                        fontSize: '12px',
-                        color: colors.textMuted,
-                        marginTop: '12px'
-                      }}>
-                        Completed {battleTimer.formatDate(battle.completedAt || battle.endDate)}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Stats Section */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: '16px',
-              marginBottom: '24px'
-            }}>
-              {/* Wins */}
-              <div style={{
-                background: colors.cardBg,
-                borderRadius: '12px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-                padding: '24px',
-                textAlign: 'center',
-                border: `2px solid ${colors.green}`,
-                transition: 'all 0.3s',
-                cursor: 'default'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow = `0 0 20px rgba(16, 185, 129, 0.4)`;
-                e.currentTarget.style.transform = 'translateY(-2px)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.3)';
-                e.currentTarget.style.transform = 'translateY(0)';
-              }}
-              >
-                <Trophy style={{ height: '32px', width: '32px', color: colors.green, marginBottom: '12px' }} />
-                <div style={{ fontSize: '48px', fontWeight: 'bold', color: colors.green, marginBottom: '4px' }}>
-                  {user.wins}
-                </div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  Wins
-                </div>
-              </div>
-
-              {/* Losses */}
-              <div style={{
-                background: colors.cardBg,
-                borderRadius: '12px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-                padding: '24px',
-                textAlign: 'center',
-                border: `2px solid ${colors.red}`,
-                transition: 'all 0.3s',
-                cursor: 'default'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow = `0 0 20px rgba(239, 68, 68, 0.4)`;
-                e.currentTarget.style.transform = 'translateY(-2px)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.3)';
-                e.currentTarget.style.transform = 'translateY(0)';
-              }}
-              >
-                <Skull style={{ height: '32px', width: '32px', color: colors.red, marginBottom: '12px' }} />
-                <div style={{ fontSize: '48px', fontWeight: 'bold', color: colors.red, marginBottom: '4px' }}>
-                  {user.losses}
-                </div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  Losses
-                </div>
-              </div>
-
-              {/* Battles */}
-              <button
-                onClick={() => {
-                  setShowPreviousBattles(true);
-                  setScreen('previousBattles');
-                }}
+          {/* Main Content Area */}
+          <div style={{
+            flex: 1,
+            maxWidth: '900px',
+            margin: '0 auto',
+            padding: '32px 24px',
+            paddingBottom: '80px' // Space for bottom stats bar
+          }}>
+            {/* Active Battle Preview Card - Only shows when user has active battle */}
+            {hasActiveBattle && primaryActiveBattle && battlePreviewData && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
                 style={{
                   background: colors.cardBg,
-                  borderRadius: '12px',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-                  padding: '24px',
-                  textAlign: 'center',
-                  border: `2px solid ${colors.blue}`,
+                  borderRadius: '16px',
+                  padding: '20px 24px',
+                  marginBottom: '24px',
+                  border: `1px solid ${colors.border}`,
                   cursor: 'pointer',
                   transition: 'all 0.3s'
                 }}
+                onClick={() => {
+                  setCurrentBattle(primaryActiveBattle);
+                  setScreen('battle');
+                }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.boxShadow = `0 0 20px rgba(59, 130, 246, 0.4)`;
-                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.borderColor = colors.cyan;
+                  e.currentTarget.style.boxShadow = `0 0 20px ${colors.cyan}30`;
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.3)';
-                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.borderColor = colors.border;
+                  e.currentTarget.style.boxShadow = 'none';
                 }}
               >
-                <Swords style={{ height: '32px', width: '32px', color: colors.blue, marginBottom: '12px' }} />
-                <div style={{ fontSize: '48px', fontWeight: 'bold', color: colors.blue, marginBottom: '4px' }}>
-                  {user.wins + user.losses}
-                </div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  Battles
-                </div>
-              </button>
-            </div>
-
-            {/* Rank Card */}
-            <div style={{
-              background: colors.cardBg,
-              borderRadius: '12px',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-              padding: '24px',
-              border: `1px solid ${colors.border}`,
-              marginBottom: '24px'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <div style={{
-                    width: '56px',
-                    height: '56px',
-                    borderRadius: '12px',
-                    background: `linear-gradient(135deg, ${colors.cyan}20 0%, ${colors.green}20 100%)`,
-                    border: `2px solid ${colors.cyan}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    <Shield style={{ height: '28px', width: '28px', color: colors.cyan }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '28px', fontWeight: 'bold', color: colors.textPrimary, textTransform: 'uppercase', letterSpacing: '2px' }}>{user.rank}</div>
-                    <div style={{ fontSize: '14px', color: colors.textSecondary }}>Level {user.level} - {user.xp}/10000 XP</div>
-                  </div>
-                </div>
+                {/* Battle Header */}
                 <div style={{
-                  width: '48px',
-                  height: '48px',
-                  borderRadius: '12px',
-                  background: `linear-gradient(135deg, ${colors.green}20 0%, ${colors.cyan}20 100%)`,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '20px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {primaryActiveBattle.isTrainingBattle && <GraduationCap style={{ height: '16px', width: '16px', color: colors.purple }} />}
+                    <span style={{
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      color: colors.textSecondary,
+                      textTransform: 'uppercase',
+                      letterSpacing: '1px'
+                    }}>
+                      {primaryActiveBattle.isTrainingBattle ? 'TRAINING BATTLE' : 'ACTIVE BATTLE'}: vs {battlePreviewData.opponent}
+                    </span>
+                  </div>
+                  <span style={{
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: colors.cyan,
+                    fontFamily: "'SF Mono', 'Monaco', monospace"
+                  }}>
+                    {battleTimer.formatTimeRemaining(primaryActiveBattle)} left
+                  </span>
+                </div>
+
+                {/* Player Comparison */}
+                <div style={{
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center'
+                  justifyContent: 'space-between',
+                  marginBottom: '16px'
                 }}>
-                  <Crown style={{ height: '24px', width: '24px', color: colors.green }} />
-                </div>
-              </div>
+                  {/* You */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{
+                      width: '48px',
+                      height: '48px',
+                      borderRadius: '50%',
+                      background: `linear-gradient(135deg, ${colors.green}30 0%, ${colors.cyan}30 100%)`,
+                      border: `2px solid ${colors.green}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <User style={{ height: '20px', width: '20px', color: colors.green }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '13px', color: colors.textSecondary }}>YOU ({user.username})</div>
+                      <div style={{
+                        fontSize: '24px',
+                        fontWeight: 'bold',
+                        color: battlePreviewData.myGain >= 0 ? colors.green : colors.red
+                      }}>
+                        {battlePreviewData.myGain >= 0 ? '+' : ''}{battlePreviewData.myGain.toFixed(1)}%
+                      </div>
+                    </div>
+                  </div>
 
-              <div>
+                  {/* Opponent */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexDirection: 'row-reverse' }}>
+                    <div style={{
+                      width: '48px',
+                      height: '48px',
+                      borderRadius: '50%',
+                      background: `linear-gradient(135deg, ${colors.red}30 0%, ${colors.purple}30 100%)`,
+                      border: `2px solid ${colors.red}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <Target style={{ height: '20px', width: '20px', color: colors.red }} />
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '13px', color: colors.textSecondary }}>OPPONENT</div>
+                      <div style={{
+                        fontSize: '24px',
+                        fontWeight: 'bold',
+                        color: battlePreviewData.theirGain >= 0 ? colors.green : colors.red
+                      }}>
+                        {battlePreviewData.theirGain >= 0 ? '+' : ''}{battlePreviewData.theirGain.toFixed(1)}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
                 <div style={{
-                  width: '100%',
-                  height: '10px',
-                  background: 'rgba(0, 217, 255, 0.1)',
+                  position: 'relative',
+                  height: '8px',
+                  background: 'rgba(255, 255, 255, 0.1)',
                   borderRadius: '9999px',
-                  overflow: 'hidden'
+                  overflow: 'hidden',
+                  marginBottom: '12px'
                 }}>
-                  <div style={{
-                    height: '100%',
-                    borderRadius: '9999px',
-                    transition: 'all 0.3s',
-                    width: `${(user.xp / 10000) * 100}%`,
-                    background: `linear-gradient(90deg, ${colors.green} 0%, ${colors.cyan} 100%)`,
-                    boxShadow: '0 0 10px rgba(0, 217, 255, 0.5)'
-                  }} />
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(battlePreviewData.myValue / (battlePreviewData.myValue + battlePreviewData.theirValue)) * 100}%` }}
+                    transition={{ duration: 0.6, ease: 'easeOut' }}
+                    style={{
+                      position: 'absolute',
+                      height: '100%',
+                      borderRadius: '9999px',
+                      background: battlePreviewData.isWinning
+                        ? 'linear-gradient(90deg, #4ADE80 0%, #10B981 100%)'
+                        : 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)'
+                    }}
+                  />
                 </div>
-              </div>
-            </div>
 
-            {/* Action Buttons */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-              <button
+                {/* Status & Button */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <span style={{
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    color: battlePreviewData.isWinning ? colors.green : colors.red
+                  }}>
+                    {battlePreviewData.isWinning ? `LEADING BY +${battlePreviewData.leadBy.toFixed(1)}%` : `TRAILING BY -${battlePreviewData.leadBy.toFixed(1)}%`}
+                  </span>
+                  <button
+                    style={{
+                      padding: '8px 16px',
+                      background: primaryActiveBattle.isTrainingBattle ? colors.purple : colors.cyan,
+                      border: 'none',
+                      borderRadius: '8px',
+                      color: colors.background,
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'scale(1.05)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'scale(1)';
+                    }}
+                  >
+                    VIEW BATTLE
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Waiting Battles - Compact */}
+            {waitingBattles.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.1 }}
+                style={{
+                  background: colors.cardBg,
+                  borderRadius: '16px',
+                  padding: '20px 24px',
+                  marginBottom: '24px',
+                  border: `1px solid ${colors.gold}40`
+                }}
+              >
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  marginBottom: '16px'
+                }}>
+                  <Clock style={{ height: '20px', width: '20px', color: colors.gold }} />
+                  <span style={{
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: colors.gold,
+                    textTransform: 'uppercase',
+                    letterSpacing: '1px'
+                  }}>
+                    Waiting for Opponent
+                  </span>
+                </div>
+                {waitingBattles.map(battle => (
+                  <div key={battle.id} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    background: 'rgba(0, 0, 0, 0.2)',
+                    borderRadius: '12px',
+                    marginBottom: waitingBattles.indexOf(battle) < waitingBattles.length - 1 ? '8px' : 0
+                  }}>
+                    <div style={{
+                      fontSize: '24px',
+                      fontWeight: 'bold',
+                      color: colors.cyan,
+                      fontFamily: "'SF Mono', monospace",
+                      letterSpacing: '3px'
+                    }}>
+                      {battle.challengeCode}
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        copyToClipboard(battle.challengeCode);
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '8px 14px',
+                        background: 'transparent',
+                        border: `1px solid ${colors.cyan}`,
+                        borderRadius: '8px',
+                        color: colors.cyan,
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = `${colors.cyan}20`;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'transparent';
+                      }}
+                    >
+                      <Copy style={{ height: '14px', width: '14px' }} />
+                      Copy
+                    </button>
+                  </div>
+                ))}
+              </motion.div>
+            )}
+
+            {/* Create & Join Battle Cards - Side by Side */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: hasActiveBattle ? '1fr 1fr' : '1fr 1fr',
+              gap: '20px',
+              marginBottom: '20px'
+            }}>
+              {/* CREATE BATTLE Card */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.2 }}
                 onClick={() => {
                   setPortfolio([]); setPortfolioType(null);
                   setPortfolioName('');
@@ -2133,34 +1937,108 @@ export default function PortfolioDuel() {
                   setScreen('builder');
                 }}
                 style={{
-                  height: '56px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  color: colors.background,
-                  background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`,
-                  border: 'none',
-                  borderRadius: '12px',
+                  position: 'relative',
+                  background: colors.cardBg,
+                  borderRadius: '16px',
+                  padding: hasActiveBattle ? '28px 24px' : '40px 32px',
+                  border: `1px solid ${colors.border}`,
                   cursor: 'pointer',
-                  transition: 'all 0.3s',
-                  boxShadow: '0 0 20px rgba(0, 217, 255, 0.3)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px'
+                  overflow: 'hidden',
+                  transition: 'all 0.3s'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 0 30px rgba(0, 217, 255, 0.5)';
+                  e.currentTarget.style.borderColor = colors.cyan;
+                  e.currentTarget.style.boxShadow = `0 0 30px ${colors.cyan}30`;
+                  e.currentTarget.style.transform = 'translateY(-4px)';
                 }}
                 onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = colors.border;
+                  e.currentTarget.style.boxShadow = 'none';
                   e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 0 20px rgba(0, 217, 255, 0.3)';
                 }}
               >
-                CREATE GAME
-                <Plus style={{ height: '20px', width: '20px' }} />
-              </button>
-              <button
+                {/* Background Pattern - Chart Lines */}
+                <div style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  opacity: 0.08,
+                  background: `
+                    linear-gradient(90deg, transparent 0%, ${colors.cyan}20 50%, transparent 100%),
+                    repeating-linear-gradient(
+                      0deg,
+                      transparent,
+                      transparent 20px,
+                      ${colors.cyan}10 20px,
+                      ${colors.cyan}10 21px
+                    )
+                  `,
+                  pointerEvents: 'none'
+                }} />
+
+                {/* Gradient Overlay */}
+                <div style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '40%',
+                  height: '100%',
+                  background: `linear-gradient(90deg, ${colors.cyan}10 0%, transparent 100%)`,
+                  pointerEvents: 'none'
+                }} />
+
+                {/* Content */}
+                <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
+                  <Trophy style={{
+                    height: hasActiveBattle ? '40px' : '56px',
+                    width: hasActiveBattle ? '40px' : '56px',
+                    color: colors.cyan,
+                    marginBottom: '16px'
+                  }} />
+                  <h3 style={{
+                    fontSize: hasActiveBattle ? '20px' : '24px',
+                    fontWeight: 'bold',
+                    color: colors.textPrimary,
+                    margin: '0 0 8px 0',
+                    textTransform: 'uppercase',
+                    letterSpacing: '2px'
+                  }}>
+                    Create Battle
+                  </h3>
+                  <p style={{
+                    fontSize: '14px',
+                    color: colors.textSecondary,
+                    margin: '0 0 20px 0'
+                  }}>
+                    Start a new battle & set the rules.
+                  </p>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 20px',
+                    background: 'transparent',
+                    border: `2px solid ${colors.cyan}`,
+                    borderRadius: '10px',
+                    color: colors.cyan,
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    textTransform: 'uppercase',
+                    letterSpacing: '1px'
+                  }}>
+                    CREATE BATTLE
+                    <Plus style={{ height: '16px', width: '16px' }} />
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* JOIN BATTLE Card */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.3 }}
                 onClick={() => {
                   setPortfolio([]); setPortfolioType(null);
                   setPortfolioName('');
@@ -2170,37 +2048,114 @@ export default function PortfolioDuel() {
                   setScreen('join');
                 }}
                 style={{
-                  height: '56px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  color: colors.background,
-                  background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`,
-                  border: 'none',
-                  borderRadius: '12px',
+                  position: 'relative',
+                  background: colors.cardBg,
+                  borderRadius: '16px',
+                  padding: hasActiveBattle ? '28px 24px' : '40px 32px',
+                  border: `1px solid ${colors.border}`,
                   cursor: 'pointer',
-                  transition: 'all 0.3s',
-                  boxShadow: '0 0 20px rgba(0, 217, 255, 0.3)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px'
+                  overflow: 'hidden',
+                  transition: 'all 0.3s'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 0 30px rgba(0, 217, 255, 0.5)';
+                  e.currentTarget.style.borderColor = colors.purple;
+                  e.currentTarget.style.boxShadow = `0 0 30px ${colors.purple}30`;
+                  e.currentTarget.style.transform = 'translateY(-4px)';
                 }}
                 onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = colors.border;
+                  e.currentTarget.style.boxShadow = 'none';
                   e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 0 20px rgba(0, 217, 255, 0.3)';
                 }}
               >
-                JOIN GAME
-                <ArrowRight style={{ height: '20px', width: '20px' }} />
-              </button>
+                {/* Background Pattern - Target/Crosshair */}
+                <div style={{
+                  position: 'absolute',
+                  top: '50%',
+                  right: '10%',
+                  transform: 'translateY(-50%)',
+                  width: '120px',
+                  height: '120px',
+                  opacity: 0.06,
+                  border: `3px solid ${colors.purple}`,
+                  borderRadius: '50%',
+                  pointerEvents: 'none'
+                }} />
+                <div style={{
+                  position: 'absolute',
+                  top: '50%',
+                  right: 'calc(10% + 30px)',
+                  transform: 'translateY(-50%)',
+                  width: '60px',
+                  height: '60px',
+                  opacity: 0.08,
+                  border: `2px solid ${colors.purple}`,
+                  borderRadius: '50%',
+                  pointerEvents: 'none'
+                }} />
+
+                {/* Gradient Overlay */}
+                <div style={{
+                  position: 'absolute',
+                  top: 0,
+                  right: 0,
+                  width: '40%',
+                  height: '100%',
+                  background: `linear-gradient(270deg, ${colors.purple}10 0%, transparent 100%)`,
+                  pointerEvents: 'none'
+                }} />
+
+                {/* Content */}
+                <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
+                  <Swords style={{
+                    height: hasActiveBattle ? '40px' : '56px',
+                    width: hasActiveBattle ? '40px' : '56px',
+                    color: colors.purple,
+                    marginBottom: '16px'
+                  }} />
+                  <h3 style={{
+                    fontSize: hasActiveBattle ? '20px' : '24px',
+                    fontWeight: 'bold',
+                    color: colors.textPrimary,
+                    margin: '0 0 8px 0',
+                    textTransform: 'uppercase',
+                    letterSpacing: '2px'
+                  }}>
+                    Join Battle
+                  </h3>
+                  <p style={{
+                    fontSize: '14px',
+                    color: colors.textSecondary,
+                    margin: '0 0 20px 0'
+                  }}>
+                    Find an open match & compete.
+                  </p>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 20px',
+                    background: 'transparent',
+                    border: `2px solid ${colors.purple}`,
+                    borderRadius: '10px',
+                    color: colors.purple,
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    textTransform: 'uppercase',
+                    letterSpacing: '1px'
+                  }}>
+                    JOIN BATTLE
+                    <ArrowRight style={{ height: '16px', width: '16px' }} />
+                  </div>
+                </div>
+              </motion.div>
             </div>
 
-            {/* Training Button */}
-            <button
+            {/* Training Mode Banner */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.4 }}
               onClick={() => {
                 setPortfolio([]); setPortfolioType(null);
                 setPortfolioName('');
@@ -2209,35 +2164,235 @@ export default function PortfolioDuel() {
                 setScreen('training');
               }}
               style={{
-                width: '100%',
-                height: '48px',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: colors.textPrimary,
-                background: 'transparent',
-                border: `1px solid ${colors.purple}`,
-                borderRadius: '12px',
-                cursor: 'pointer',
-                transition: 'all 0.3s',
+                background: `linear-gradient(135deg, #f59e0b 0%, #d97706 100%)`,
+                borderRadius: '14px',
+                padding: '16px 24px',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
+                gap: '16px',
+                cursor: 'pointer',
+                transition: 'all 0.3s',
                 marginBottom: '24px'
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = `${colors.purple}20`;
-                e.currentTarget.style.boxShadow = '0 0 20px rgba(147, 51, 234, 0.3)';
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 8px 30px rgba(245, 158, 11, 0.4)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.transform = 'translateY(0)';
                 e.currentTarget.style.boxShadow = 'none';
               }}
             >
-              <GraduationCap style={{ height: '18px', width: '18px', color: colors.purple }} />
-              TRAINING MODE
-            </button>
+              <Brain style={{ height: '28px', width: '28px', color: colors.background }} />
+              <div style={{ flex: 1 }}>
+                <span style={{
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  color: colors.background,
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px'
+                }}>
+                  Training Mode
+                </span>
+                <span style={{
+                  fontSize: '14px',
+                  color: 'rgba(0, 0, 0, 0.7)',
+                  marginLeft: '12px'
+                }}>
+                  Practice your strategy
+                </span>
+              </div>
+              <ArrowRight style={{ height: '20px', width: '20px', color: colors.background }} />
+            </motion.div>
 
+            {/* Completed Battles - Compact List */}
+            {completedBattles.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.5 }}
+                style={{ marginBottom: '24px' }}
+              >
+                <h3 style={{
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: colors.textSecondary,
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px',
+                  marginBottom: '12px'
+                }}>
+                  Recent Battles
+                </h3>
+                {completedBattles.slice(0, 3).map(battle => {
+                  const result = battle.result;
+                  if (!result) return null;
+                  const won = result.winner === user.username;
+                  const userReturn = battle.creator === user.username ? result.creatorReturn : result.opponentReturn;
+                  const opponent = battle.creator === user.username ? battle.opponent : battle.creator;
+
+                  return (
+                    <div
+                      key={battle.id}
+                      onClick={() => {
+                        setCurrentBattle(battle);
+                        setScreen('battle');
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '14px 18px',
+                        background: colors.cardBg,
+                        borderRadius: '12px',
+                        marginBottom: '8px',
+                        border: `1px solid ${won ? colors.green : colors.red}30`,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = colors.cardHover;
+                        e.currentTarget.style.borderColor = won ? colors.green : colors.red;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = colors.cardBg;
+                        e.currentTarget.style.borderColor = `${won ? colors.green : colors.red}30`;
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                          width: '36px',
+                          height: '36px',
+                          borderRadius: '50%',
+                          background: won ? `${colors.green}20` : `${colors.red}20`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          {won ? (
+                            <Trophy style={{ height: '18px', width: '18px', color: colors.green }} />
+                          ) : (
+                            <Skull style={{ height: '18px', width: '18px', color: colors.red }} />
+                          )}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
+                            vs {opponent}
+                          </div>
+                          <div style={{ fontSize: '12px', color: colors.textSecondary }}>
+                            {battle.isTrainingBattle ? 'Training' : battleTimer.formatDate(battle.completedAt || battle.endDate)}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{
+                        fontSize: '16px',
+                        fontWeight: 'bold',
+                        color: userReturn >= 0 ? colors.green : colors.red
+                      }}>
+                        {userReturn >= 0 ? '+' : ''}{userReturn}%
+                      </div>
+                    </div>
+                  );
+                })}
+                {completedBattles.length > 3 && (
+                  <button
+                    onClick={() => {
+                      setShowPreviousBattles(true);
+                      setScreen('previousBattles');
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      background: 'transparent',
+                      border: `1px solid ${colors.borderSubtle}`,
+                      borderRadius: '10px',
+                      color: colors.textSecondary,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = colors.cyan;
+                      e.currentTarget.style.color = colors.cyan;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = colors.borderSubtle;
+                      e.currentTarget.style.color = colors.textSecondary;
+                    }}
+                  >
+                    View All Battles ({completedBattles.length})
+                  </button>
+                )}
+              </motion.div>
+            )}
+          </div>
+
+          {/* Bottom Stats Bar - Fixed */}
+          <div style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '56px',
+            background: colors.cardBg,
+            borderTop: `1px solid ${colors.border}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '32px',
+            zIndex: 100
+          }}>
+            {/* Wins */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Trophy style={{ height: '18px', width: '18px', color: colors.gold }} />
+              <span style={{ fontSize: '14px', color: colors.textSecondary }}>Wins:</span>
+              <span style={{ fontSize: '16px', fontWeight: '600', color: colors.green }}>{user.wins}</span>
+            </div>
+
+            {/* Losses */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Skull style={{ height: '18px', width: '18px', color: colors.textMuted }} />
+              <span style={{ fontSize: '14px', color: colors.textSecondary }}>Losses:</span>
+              <span style={{ fontSize: '16px', fontWeight: '600', color: colors.red }}>{user.losses}</span>
+            </div>
+
+            {/* Battles */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Swords style={{ height: '18px', width: '18px', color: colors.cyan }} />
+              <span style={{ fontSize: '14px', color: colors.textSecondary }}>Battles:</span>
+              <span style={{ fontSize: '16px', fontWeight: '600', color: colors.cyan }}>{user.wins + user.losses}</span>
+            </div>
+
+            {/* Rank - Clickable */}
+            <button
+              onClick={() => setShowXPModal(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 12px',
+                background: 'transparent',
+                border: `1px solid ${colors.borderSubtle}`,
+                borderRadius: '8px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = colors.cyan;
+                e.currentTarget.style.background = `${colors.cyan}10`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = colors.borderSubtle;
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              <Shield style={{ height: '18px', width: '18px', color: colors.cyan }} />
+              <span style={{ fontSize: '14px', color: colors.textPrimary, fontWeight: '500' }}>
+                {user.rank}
+              </span>
+              <span style={{ fontSize: '12px', color: colors.textSecondary }}>
+                (Lvl {user.level})
+              </span>
+            </button>
           </div>
         </div>
       </div>
