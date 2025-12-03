@@ -4,6 +4,7 @@ import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 import './firebase/config';
 import { motion } from 'framer-motion';
+import { Sparklines, SparklinesLine } from 'react-sparklines';
 
 // Inline Stock API (temporary until you set up services folder)
 const FINNHUB_API_KEY = import.meta.env.VITE_FINNHUB_API_KEY;
@@ -71,48 +72,86 @@ async function getStockPrice(symbol) {
 async function getCryptoPrice(cryptoId) {
   // Try 1: Direct API call (might work in some browsers/environments)
   try {
-    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${cryptoId}&vs_currencies=usd&include_24hr_change=true`;
-    
+    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${cryptoId}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true&include_24hr_vol=true`;
+
     console.log(`🔍 Fetching crypto price for ${cryptoId} (direct)...`);
     const response = await fetch(url);
-    
+
     if (response.ok) {
       const data = await response.json();
       if (data[cryptoId]) {
         console.log(`✅ Got price for ${cryptoId}: $${data[cryptoId].usd} (direct)`);
-        return { id: cryptoId, price: data[cryptoId].usd || 0, change24h: data[cryptoId].usd_24h_change || 0 };
+        return {
+          id: cryptoId,
+          price: data[cryptoId].usd || 0,
+          change24h: data[cryptoId].usd_24h_change || 0,
+          marketCap: data[cryptoId].usd_market_cap || 0,
+          volume24h: data[cryptoId].usd_24h_vol || 0
+        };
       }
     }
   } catch (error) {
     console.log(`⚠️ Direct API failed for ${cryptoId}, trying proxy...`);
   }
-  
+
   // Try 2: CORS proxy
   try {
-    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${cryptoId}&vs_currencies=usd&include_24hr_change=true`;
+    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${cryptoId}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true&include_24hr_vol=true`;
     const proxiedUrl = CORS_PROXY + encodeURIComponent(url);
-    
+
     console.log(`🔍 Fetching crypto price for ${cryptoId} (proxy)...`);
     const response = await fetch(proxiedUrl);
-    
+
     if (!response.ok) {
       console.error(`❌ HTTP error for ${cryptoId}! status: ${response.status}`);
       throw new Error(`HTTP error! status: ${response.status}`);
     }
-    
+
     const data = await response.json();
-    
+
     if (!data[cryptoId]) {
       console.error(`❌ No data returned for ${cryptoId}:`, data);
       throw new Error('Crypto data not found');
     }
-    
+
     console.log(`✅ Got price for ${cryptoId}: $${data[cryptoId].usd} (proxy)`);
-    return { id: cryptoId, price: data[cryptoId].usd || 0, change24h: data[cryptoId].usd_24h_change || 0 };
+    return {
+      id: cryptoId,
+      price: data[cryptoId].usd || 0,
+      change24h: data[cryptoId].usd_24h_change || 0,
+      marketCap: data[cryptoId].usd_market_cap || 0,
+      volume24h: data[cryptoId].usd_24h_vol || 0
+    };
   } catch (error) {
     console.warn(`⚠️ All API attempts failed for ${cryptoId}, using fallback ($${FALLBACK_CRYPTO_PRICES[cryptoId]}):`, error.message);
-    return { id: cryptoId, price: FALLBACK_CRYPTO_PRICES[cryptoId] || 100, change24h: 0 };
+    return { id: cryptoId, price: FALLBACK_CRYPTO_PRICES[cryptoId] || 100, change24h: 0, marketCap: 0, volume24h: 0 };
   }
+}
+
+// Helper function to calculate volatility from price array
+function calculateVolatility(prices) {
+  if (!prices || prices.length < 2) return 'low';
+  const returns = [];
+  for (let i = 1; i < prices.length; i++) {
+    const returnVal = (prices[i] - prices[i-1]) / prices[i-1];
+    returns.push(returnVal);
+  }
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const variance = returns.reduce((sum, ret) => sum + Math.pow(ret - mean, 2), 0) / returns.length;
+  const stdDev = Math.sqrt(variance) * 100;
+  if (stdDev < 2) return 'low';
+  if (stdDev < 5) return 'medium';
+  return 'high';
+}
+
+// Helper function to generate simulated historical prices
+function generateHistoricalPrices(basePrice, days = 7) {
+  const prices = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const variation = (Math.random() - 0.5) * 0.06; // ±3%
+    prices.push(basePrice * (1 + variation));
+  }
+  return prices;
 }
 
 async function getPopularStocks() {
@@ -120,13 +159,43 @@ async function getPopularStocks() {
     const stocksWithPrices = await Promise.all(
       POPULAR_STOCKS.map(async (stock) => {
         const priceData = await getStockPrice(stock.symbol);
-        return { symbol: stock.symbol, name: stock.name, price: priceData.price, change: priceData.change, percentChange: priceData.percentChange };
+        const historicalPrices = generateHistoricalPrices(priceData.price);
+        const volatility = calculateVolatility(historicalPrices);
+        const price7dAgo = historicalPrices[0];
+        const price30dAgo = price7dAgo * (1 - (Math.random() - 0.5) * 0.1);
+        const priceChange7d = ((priceData.price - price7dAgo) / price7dAgo) * 100;
+        const priceChange30d = ((priceData.price - price30dAgo) / price30dAgo) * 100;
+        return {
+          symbol: stock.symbol,
+          name: stock.name,
+          price: priceData.price,
+          change: priceData.change,
+          percentChange: priceData.percentChange,
+          priceChange7d,
+          priceChange30d,
+          volatility,
+          historicalPrices,
+          marketCap: 0,
+          volume24h: 0
+        };
       })
     );
     return stocksWithPrices;
   } catch (error) {
     console.error('Error fetching popular stocks:', error);
-    return POPULAR_STOCKS.map(stock => ({ symbol: stock.symbol, name: stock.name, price: 100, change: 0, percentChange: 0 }));
+    return POPULAR_STOCKS.map(stock => ({
+      symbol: stock.symbol,
+      name: stock.name,
+      price: 100,
+      change: 0,
+      percentChange: 0,
+      priceChange7d: 0,
+      priceChange30d: 0,
+      volatility: 'low',
+      historicalPrices: Array(7).fill(100),
+      marketCap: 0,
+      volume24h: 0
+    }));
   }
 }
 
@@ -141,7 +210,25 @@ async function getPopularCrypto() {
     for (const batch of batches) {
       const batchPromises = batch.map(async (crypto) => {
         const priceData = await getCryptoPrice(crypto.id);
-        return { symbol: crypto.symbol, name: crypto.name, price: priceData.price, change24h: priceData.change24h };
+        const historicalPrices = generateHistoricalPrices(priceData.price);
+        const volatility = calculateVolatility(historicalPrices);
+        const price7dAgo = historicalPrices[0];
+        const price30dAgo = price7dAgo * (1 - (Math.random() - 0.5) * 0.1);
+        const priceChange7d = ((priceData.price - price7dAgo) / price7dAgo) * 100;
+        const priceChange30d = ((priceData.price - price30dAgo) / price30dAgo) * 100;
+        return {
+          symbol: crypto.symbol,
+          name: crypto.name,
+          price: priceData.price,
+          change24h: priceData.change24h,
+          percentChange: priceData.change24h,
+          priceChange7d,
+          priceChange30d,
+          volatility,
+          historicalPrices,
+          marketCap: priceData.marketCap || 0,
+          volume24h: priceData.volume24h || 0
+        };
       });
       const batchResults = await Promise.all(batchPromises);
       allCryptoWithPrices.push(...batchResults);
@@ -152,7 +239,19 @@ async function getPopularCrypto() {
     return allCryptoWithPrices;
   } catch (error) {
     console.error('Error fetching popular crypto:', error);
-    return POPULAR_CRYPTO.map(crypto => ({ symbol: crypto.symbol, name: crypto.name, price: FALLBACK_CRYPTO_PRICES[crypto.id] || 100, change24h: 0 }));
+    return POPULAR_CRYPTO.map(crypto => ({
+      symbol: crypto.symbol,
+      name: crypto.name,
+      price: FALLBACK_CRYPTO_PRICES[crypto.id] || 100,
+      change24h: 0,
+      percentChange: 0,
+      priceChange7d: 0,
+      priceChange30d: 0,
+      volatility: 'low',
+      historicalPrices: Array(7).fill(FALLBACK_CRYPTO_PRICES[crypto.id] || 100),
+      marketCap: 0,
+      volume24h: 0
+    }));
   }
 }
 
@@ -356,6 +455,22 @@ export default function PortfolioDuel() {
 
   // XP Progress Modal state
   const [showXPModal, setShowXPModal] = useState(false);
+
+  // Track which assets are expanded in portfolio builder
+  const [expandedAssets, setExpandedAssets] = useState(new Set());
+
+  // Toggle asset expansion
+  const toggleAssetExpansion = (symbol) => {
+    setExpandedAssets(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(symbol)) {
+        newSet.delete(symbol);
+      } else {
+        newSet.add(symbol);
+      }
+      return newSet;
+    });
+  };
 
   // ============================================
   // 2. ALL USEEFFECTS (AT TOP LEVEL)
@@ -2593,40 +2708,145 @@ export default function PortfolioDuel() {
                       }}>
                         {filteredAssets.map(asset => {
                           const inPortfolio = portfolio.some(p => p.symbol === asset.symbol);
+                          const isExpanded = expandedAssets.has(asset.symbol);
+
                           return (
-                            <button
+                            <div
                               key={asset.symbol}
-                              onClick={() => handleAddAsset(asset)}
-                              disabled={inPortfolio || portfolio.length >= 13}
                               style={{
-                                padding: '14px',
                                 borderRadius: '8px',
-                                textAlign: 'left',
                                 border: `1px solid ${inPortfolio ? colors.cyan : colors.borderSubtle}`,
-                                cursor: inPortfolio || portfolio.length >= 13 ? 'not-allowed' : 'pointer',
+                                background: inPortfolio ? `${colors.cyan}15` : 'rgba(0, 217, 255, 0.05)',
                                 transition: 'all 0.2s',
-                                background: inPortfolio ? `${colors.cyan}15` : 'rgba(0, 217, 255, 0.05)'
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!inPortfolio && portfolio.length < 13) {
-                                  e.currentTarget.style.background = `${colors.cyan}20`;
-                                  e.currentTarget.style.borderColor = colors.cyan;
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!inPortfolio) {
-                                  e.currentTarget.style.background = 'rgba(0, 217, 255, 0.05)';
-                                  e.currentTarget.style.borderColor = colors.borderSubtle;
-                                }
+                                overflow: 'hidden'
                               }}
                             >
-                              <div style={{ fontWeight: 'bold', color: colors.textPrimary, marginBottom: '2px' }}>{asset.symbol}</div>
-                              <div style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '6px' }}>{asset.name}</div>
-                              <div style={{ fontSize: '16px', fontWeight: '600', color: colors.cyan }}>${asset.price.toFixed(2)}</div>
-                              {inPortfolio && (
-                                <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: '600', color: colors.green }}>✓ Added</div>
+                              {/* Main Card - Always Visible */}
+                              <div
+                                style={{ padding: '14px', cursor: 'pointer' }}
+                                onClick={(e) => {
+                                  // Toggle expansion on card click
+                                  toggleAssetExpansion(asset.symbol);
+                                }}
+                              >
+                                {/* Symbol & Volatility Badge */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                                  <span style={{ fontWeight: 'bold', color: colors.textPrimary }}>{asset.symbol}</span>
+                                  {asset.volatility && (
+                                    <span style={{
+                                      fontSize: '9px',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      background: asset.volatility === 'high' ? `${colors.red}30` :
+                                                 asset.volatility === 'medium' ? `${colors.yellow}30` : `${colors.green}30`,
+                                      color: asset.volatility === 'high' ? colors.red :
+                                            asset.volatility === 'medium' ? colors.yellow : colors.green,
+                                      fontWeight: '600',
+                                      textTransform: 'uppercase'
+                                    }}>
+                                      {asset.volatility}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Name */}
+                                <div style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '6px' }}>{asset.name}</div>
+
+                                {/* Price & 24h Change */}
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                                  <span style={{ fontSize: '16px', fontWeight: '600', color: colors.cyan }}>
+                                    ${asset.price.toFixed(2)}
+                                  </span>
+                                  {(asset.percentChange !== undefined || asset.change24h !== undefined) && (
+                                    <span style={{
+                                      fontSize: '11px',
+                                      color: (asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
+                                    }}>
+                                      {(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{(asset.percentChange || asset.change24h || 0).toFixed(2)}%
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Add Button */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAddAsset(asset);
+                                  }}
+                                  disabled={inPortfolio || portfolio.length >= 13}
+                                  style={{
+                                    marginTop: '10px',
+                                    width: '100%',
+                                    padding: '6px 10px',
+                                    borderRadius: '6px',
+                                    fontSize: '12px',
+                                    fontWeight: '600',
+                                    border: 'none',
+                                    cursor: inPortfolio || portfolio.length >= 13 ? 'not-allowed' : 'pointer',
+                                    background: inPortfolio ? colors.green : colors.cyan,
+                                    color: '#000'
+                                  }}
+                                >
+                                  {inPortfolio ? '✓ Added' : 'Add to Portfolio'}
+                                </button>
+                              </div>
+
+                              {/* Expanded Details */}
+                              {isExpanded && (
+                                <div style={{
+                                  padding: '12px 14px',
+                                  borderTop: `1px solid ${colors.borderSubtle}`,
+                                  background: 'rgba(0, 0, 0, 0.2)'
+                                }}>
+                                  {/* Mini Chart */}
+                                  {asset.historicalPrices && asset.historicalPrices.length > 0 && (
+                                    <div style={{ marginBottom: '12px' }}>
+                                      <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '4px' }}>7-Day Chart</div>
+                                      <Sparklines data={asset.historicalPrices} height={40} margin={2}>
+                                        <SparklinesLine
+                                          color={asset.historicalPrices[asset.historicalPrices.length - 1] >= asset.historicalPrices[0] ? colors.green : colors.red}
+                                          style={{ strokeWidth: 2, fill: 'none' }}
+                                        />
+                                      </Sparklines>
+                                    </div>
+                                  )}
+
+                                  {/* Performance */}
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                                    <div>
+                                      <div style={{ fontSize: '10px', color: colors.textSecondary }}>7d</div>
+                                      <div style={{
+                                        fontSize: '13px',
+                                        fontWeight: '600',
+                                        color: (asset.priceChange7d || 0) >= 0 ? colors.green : colors.red
+                                      }}>
+                                        {(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(2)}%
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: '10px', color: colors.textSecondary }}>30d</div>
+                                      <div style={{
+                                        fontSize: '13px',
+                                        fontWeight: '600',
+                                        color: (asset.priceChange30d || 0) >= 0 ? colors.green : colors.red
+                                      }}>
+                                        {(asset.priceChange30d || 0) >= 0 ? '+' : ''}{(asset.priceChange30d || 0).toFixed(2)}%
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Market Data */}
+                                  <div style={{ fontSize: '11px', color: colors.textSecondary }}>
+                                    {asset.marketCap > 0 && (
+                                      <div>Mkt Cap: ${(asset.marketCap / 1e9).toFixed(2)}B</div>
+                                    )}
+                                    {asset.volume24h > 0 && (
+                                      <div>24h Vol: ${(asset.volume24h / 1e6).toFixed(2)}M</div>
+                                    )}
+                                  </div>
+                                </div>
                               )}
-                            </button>
+                            </div>
                           );
                         })}
                       </div>
@@ -3052,40 +3272,145 @@ export default function PortfolioDuel() {
                       }}>
                         {filteredAssets.map(asset => {
                           const inPortfolio = portfolio.some(p => p.symbol === asset.symbol);
+                          const isExpanded = expandedAssets.has(asset.symbol);
+
                           return (
-                            <button
+                            <div
                               key={asset.symbol}
-                              onClick={() => handleAddAsset(asset)}
-                              disabled={inPortfolio || portfolio.length >= 13}
                               style={{
-                                padding: '14px',
                                 borderRadius: '8px',
-                                textAlign: 'left',
                                 border: `1px solid ${inPortfolio ? colors.cyan : colors.borderSubtle}`,
-                                cursor: inPortfolio || portfolio.length >= 13 ? 'not-allowed' : 'pointer',
+                                background: inPortfolio ? `${colors.cyan}15` : 'rgba(0, 217, 255, 0.05)',
                                 transition: 'all 0.2s',
-                                background: inPortfolio ? `${colors.cyan}15` : 'rgba(0, 217, 255, 0.05)'
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!inPortfolio && portfolio.length < 13) {
-                                  e.currentTarget.style.background = `${colors.cyan}20`;
-                                  e.currentTarget.style.borderColor = colors.cyan;
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!inPortfolio) {
-                                  e.currentTarget.style.background = 'rgba(0, 217, 255, 0.05)';
-                                  e.currentTarget.style.borderColor = colors.borderSubtle;
-                                }
+                                overflow: 'hidden'
                               }}
                             >
-                              <div style={{ fontWeight: 'bold', color: colors.textPrimary, marginBottom: '2px' }}>{asset.symbol}</div>
-                              <div style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '6px' }}>{asset.name}</div>
-                              <div style={{ fontSize: '16px', fontWeight: '600', color: colors.cyan }}>${asset.price.toFixed(2)}</div>
-                              {inPortfolio && (
-                                <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: '600', color: colors.green }}>✓ Added</div>
+                              {/* Main Card - Always Visible */}
+                              <div
+                                style={{ padding: '14px', cursor: 'pointer' }}
+                                onClick={(e) => {
+                                  // Toggle expansion on card click
+                                  toggleAssetExpansion(asset.symbol);
+                                }}
+                              >
+                                {/* Symbol & Volatility Badge */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                                  <span style={{ fontWeight: 'bold', color: colors.textPrimary }}>{asset.symbol}</span>
+                                  {asset.volatility && (
+                                    <span style={{
+                                      fontSize: '9px',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      background: asset.volatility === 'high' ? `${colors.red}30` :
+                                                 asset.volatility === 'medium' ? `${colors.yellow}30` : `${colors.green}30`,
+                                      color: asset.volatility === 'high' ? colors.red :
+                                            asset.volatility === 'medium' ? colors.yellow : colors.green,
+                                      fontWeight: '600',
+                                      textTransform: 'uppercase'
+                                    }}>
+                                      {asset.volatility}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Name */}
+                                <div style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '6px' }}>{asset.name}</div>
+
+                                {/* Price & 24h Change */}
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                                  <span style={{ fontSize: '16px', fontWeight: '600', color: colors.cyan }}>
+                                    ${asset.price.toFixed(2)}
+                                  </span>
+                                  {(asset.percentChange !== undefined || asset.change24h !== undefined) && (
+                                    <span style={{
+                                      fontSize: '11px',
+                                      color: (asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
+                                    }}>
+                                      {(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{(asset.percentChange || asset.change24h || 0).toFixed(2)}%
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Add Button */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAddAsset(asset);
+                                  }}
+                                  disabled={inPortfolio || portfolio.length >= 13}
+                                  style={{
+                                    marginTop: '10px',
+                                    width: '100%',
+                                    padding: '6px 10px',
+                                    borderRadius: '6px',
+                                    fontSize: '12px',
+                                    fontWeight: '600',
+                                    border: 'none',
+                                    cursor: inPortfolio || portfolio.length >= 13 ? 'not-allowed' : 'pointer',
+                                    background: inPortfolio ? colors.green : colors.cyan,
+                                    color: '#000'
+                                  }}
+                                >
+                                  {inPortfolio ? '✓ Added' : 'Add to Portfolio'}
+                                </button>
+                              </div>
+
+                              {/* Expanded Details */}
+                              {isExpanded && (
+                                <div style={{
+                                  padding: '12px 14px',
+                                  borderTop: `1px solid ${colors.borderSubtle}`,
+                                  background: 'rgba(0, 0, 0, 0.2)'
+                                }}>
+                                  {/* Mini Chart */}
+                                  {asset.historicalPrices && asset.historicalPrices.length > 0 && (
+                                    <div style={{ marginBottom: '12px' }}>
+                                      <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '4px' }}>7-Day Chart</div>
+                                      <Sparklines data={asset.historicalPrices} height={40} margin={2}>
+                                        <SparklinesLine
+                                          color={asset.historicalPrices[asset.historicalPrices.length - 1] >= asset.historicalPrices[0] ? colors.green : colors.red}
+                                          style={{ strokeWidth: 2, fill: 'none' }}
+                                        />
+                                      </Sparklines>
+                                    </div>
+                                  )}
+
+                                  {/* Performance */}
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                                    <div>
+                                      <div style={{ fontSize: '10px', color: colors.textSecondary }}>7d</div>
+                                      <div style={{
+                                        fontSize: '13px',
+                                        fontWeight: '600',
+                                        color: (asset.priceChange7d || 0) >= 0 ? colors.green : colors.red
+                                      }}>
+                                        {(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(2)}%
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: '10px', color: colors.textSecondary }}>30d</div>
+                                      <div style={{
+                                        fontSize: '13px',
+                                        fontWeight: '600',
+                                        color: (asset.priceChange30d || 0) >= 0 ? colors.green : colors.red
+                                      }}>
+                                        {(asset.priceChange30d || 0) >= 0 ? '+' : ''}{(asset.priceChange30d || 0).toFixed(2)}%
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Market Data */}
+                                  <div style={{ fontSize: '11px', color: colors.textSecondary }}>
+                                    {asset.marketCap > 0 && (
+                                      <div>Mkt Cap: ${(asset.marketCap / 1e9).toFixed(2)}B</div>
+                                    )}
+                                    {asset.volume24h > 0 && (
+                                      <div>24h Vol: ${(asset.volume24h / 1e6).toFixed(2)}M</div>
+                                    )}
+                                  </div>
+                                </div>
                               )}
-                            </button>
+                            </div>
                           );
                         })}
                       </div>
