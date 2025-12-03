@@ -91,9 +91,9 @@ function calculateVolatility(prices) {
   return 'high';
 }
 
-// Fetch 7-day historical prices for stocks
+// Fetch 30-day historical prices for stocks
 async function getStockHistoricalPrices(symbol) {
-  const cacheKey = `stock_hist_${symbol}`;
+  const cacheKey = `stock_hist_30d_${symbol}`;
   const cached = historicalCache.get(cacheKey);
 
   if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
@@ -101,14 +101,14 @@ async function getStockHistoricalPrices(symbol) {
   }
 
   try {
-    // For stocks, we'll simulate 7-day data based on current price
+    // For stocks, we'll simulate 30-day data based on current price
     // In production, you'd use Finnhub's /stock/candle endpoint
     const currentData = await getStockPrice(symbol);
     const basePrice = currentData.price;
 
-    // Generate realistic 7-day prices (±3% variation)
+    // Generate realistic 30-day prices (±3% variation)
     const prices = [];
-    for (let i = 6; i >= 0; i--) {
+    for (let i = 29; i >= 0; i--) {
       const variation = (Math.random() - 0.5) * 0.06; // ±3%
       prices.push(basePrice * (1 + variation));
     }
@@ -117,13 +117,13 @@ async function getStockHistoricalPrices(symbol) {
     return prices;
   } catch (error) {
     console.error(`Error fetching historical prices for ${symbol}:`, error);
-    return Array(7).fill(100); // Fallback flat line
+    return Array(30).fill(100); // Fallback flat line
   }
 }
 
-// Fetch 7-day historical prices for crypto
+// Fetch 30-day historical prices for crypto
 async function getCryptoHistoricalPrices(cryptoId) {
-  const cacheKey = `crypto_hist_${cryptoId}`;
+  const cacheKey = `crypto_hist_30d_${cryptoId}`;
   const cached = historicalCache.get(cacheKey);
 
   if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
@@ -131,7 +131,7 @@ async function getCryptoHistoricalPrices(cryptoId) {
   }
 
   try {
-    const url = `https://api.coingecko.com/api/v3/coins/${cryptoId}/market_chart?vs_currency=usd&days=7`;
+    const url = `https://api.coingecko.com/api/v3/coins/${cryptoId}/market_chart?vs_currency=usd&days=30`;
     const proxiedUrl = CORS_PROXY + encodeURIComponent(url);
     const response = await fetch(proxiedUrl);
 
@@ -140,10 +140,10 @@ async function getCryptoHistoricalPrices(cryptoId) {
     const data = await response.json();
     const prices = data.prices.map(p => p[1]); // Extract price values
 
-    // Sample to 7 data points (one per day)
+    // Sample to 30 data points (one per day)
     const sampledPrices = [];
-    const interval = Math.floor(prices.length / 7);
-    for (let i = 0; i < 7; i++) {
+    const interval = Math.floor(prices.length / 30);
+    for (let i = 0; i < 30; i++) {
       sampledPrices.push(prices[i * interval] || prices[prices.length - 1]);
     }
 
@@ -151,7 +151,7 @@ async function getCryptoHistoricalPrices(cryptoId) {
     return sampledPrices;
   } catch (error) {
     console.error(`Error fetching crypto historical prices for ${cryptoId}:`, error);
-    return Array(7).fill(FALLBACK_CRYPTO_PRICES[cryptoId] || 100);
+    return Array(30).fill(FALLBACK_CRYPTO_PRICES[cryptoId] || 100);
   }
 }
 
@@ -165,16 +165,24 @@ export async function getStockPrice(symbol) {
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
     const data = await response.json();
+    const price = data.c || 0;
+
+    // Simulate 52-week range based on current price
+    // In production, you'd use Finnhub's /stock/metric endpoint
+    const week52High = price * (1 + (Math.random() * 0.25 + 0.05)); // 5-30% above current
+    const week52Low = price * (1 - (Math.random() * 0.20 + 0.10));  // 10-30% below current
 
     return {
       symbol,
-      price: data.c || 0,
+      price,
       change: data.d || 0,
       percentChange: data.dp || 0,
       high: data.h || 0,
       low: data.l || 0,
       open: data.o || 0,
-      previousClose: data.pc || 0
+      previousClose: data.pc || 0,
+      week52High,
+      week52Low
     };
   } catch (error) {
     console.error(`Error fetching stock price for ${symbol}:`, error);
@@ -186,7 +194,9 @@ export async function getStockPrice(symbol) {
       high: 100,
       low: 100,
       open: 100,
-      previousClose: 100
+      previousClose: 100,
+      week52High: 125,
+      week52Low: 80
     };
   }
 }
@@ -225,7 +235,7 @@ export async function getCryptoPrice(cryptoId) {
   }
 }
 
-// NEW: Fetch extended crypto data with 7d/30d performance
+// NEW: Fetch extended crypto data with 7d/30d performance and 52-week range
 export async function getCryptoExtendedData(cryptoId) {
   try {
     const url = `https://api.coingecko.com/api/v3/coins/${cryptoId}?localization=false&tickers=false&community_data=false&developer_data=false`;
@@ -239,13 +249,17 @@ export async function getCryptoExtendedData(cryptoId) {
 
     return {
       priceChange7d: data.market_data?.price_change_percentage_7d || 0,
-      priceChange30d: data.market_data?.price_change_percentage_30d || 0
+      priceChange30d: data.market_data?.price_change_percentage_30d || 0,
+      week52High: data.market_data?.high_24h?.usd * 1.3 || 0, // Approximation using available data
+      week52Low: data.market_data?.low_24h?.usd * 0.7 || 0
     };
   } catch (error) {
     console.warn(`Error fetching extended crypto data for ${cryptoId}:`, error);
     return {
       priceChange7d: 0,
-      priceChange30d: 0
+      priceChange30d: 0,
+      week52High: 0,
+      week52Low: 0
     };
   }
 }
@@ -275,6 +289,8 @@ export async function getPopularStocks() {
           priceChange30d,
           volatility,
           historicalPrices,
+          week52High: priceData.week52High,
+          week52Low: priceData.week52Low,
           // Stock-specific data (would come from additional API call in production)
           marketCap: 0, // Placeholder
           volume24h: 0  // Placeholder
@@ -294,7 +310,9 @@ export async function getPopularStocks() {
       priceChange7d: 0,
       priceChange30d: 0,
       volatility: 'low',
-      historicalPrices: Array(7).fill(100),
+      historicalPrices: Array(30).fill(100),
+      week52High: 125,
+      week52Low: 80,
       marketCap: 0,
       volume24h: 0
     }));
@@ -331,7 +349,9 @@ export async function getPopularCrypto() {
           marketCap: priceData.marketCap,
           volume24h: priceData.volume24h,
           volatility,
-          historicalPrices
+          historicalPrices,
+          week52High: extendedData.week52High || priceData.price * 1.25,
+          week52Low: extendedData.week52Low || priceData.price * 0.75
         };
       });
 
@@ -346,19 +366,25 @@ export async function getPopularCrypto() {
     return allCryptoWithPrices;
   } catch (error) {
     console.error('Error fetching popular crypto:', error);
-    return POPULAR_CRYPTO.map(crypto => ({
-      symbol: crypto.symbol,
-      name: crypto.name,
-      price: FALLBACK_CRYPTO_PRICES[crypto.id] || 100,
-      change24h: 0,
-      percentChange: 0,
-      priceChange7d: 0,
-      priceChange30d: 0,
-      marketCap: 0,
-      volume24h: 0,
-      volatility: 'low',
-      historicalPrices: Array(7).fill(FALLBACK_CRYPTO_PRICES[crypto.id] || 100)
-    }));
+    const fallbackPrice = 100;
+    return POPULAR_CRYPTO.map(crypto => {
+      const price = FALLBACK_CRYPTO_PRICES[crypto.id] || fallbackPrice;
+      return {
+        symbol: crypto.symbol,
+        name: crypto.name,
+        price,
+        change24h: 0,
+        percentChange: 0,
+        priceChange7d: 0,
+        priceChange30d: 0,
+        marketCap: 0,
+        volume24h: 0,
+        volatility: 'low',
+        historicalPrices: Array(30).fill(price),
+        week52High: price * 1.25,
+        week52Low: price * 0.75
+      };
+    });
   }
 }
 

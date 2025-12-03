@@ -319,6 +319,7 @@ import {
   Crown,
   Zap,
   ChevronDown,
+  ChevronUp,
   Eye,
   Bot,
   GraduationCap,
@@ -2735,16 +2736,16 @@ export default function PortfolioDuel() {
                                   {asset.volatility && (
                                     <span style={{
                                       fontSize: '9px',
-                                      padding: '2px 6px',
+                                      padding: '3px 8px',
                                       borderRadius: '4px',
-                                      background: asset.volatility === 'high' ? `${colors.red}30` :
-                                                 asset.volatility === 'medium' ? `${colors.yellow}30` : `${colors.green}30`,
+                                      background: asset.volatility === 'high' ? `${colors.red}20` :
+                                                 asset.volatility === 'medium' ? `${colors.gold}20` : `${colors.green}20`,
                                       color: asset.volatility === 'high' ? colors.red :
-                                            asset.volatility === 'medium' ? colors.yellow : colors.green,
-                                      fontWeight: '600',
-                                      textTransform: 'uppercase'
+                                            asset.volatility === 'medium' ? colors.gold : colors.green,
+                                      fontWeight: '600'
                                     }}>
-                                      {asset.volatility}
+                                      {asset.volatility === 'low' ? 'Low Vol' :
+                                       asset.volatility === 'medium' ? 'Med Vol' : 'High Vol'}
                                     </span>
                                   )}
                                 </div>
@@ -2769,6 +2770,7 @@ export default function PortfolioDuel() {
 
                                 {/* Add Button */}
                                 <button
+                                  className="add-button"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleAddAsset(asset);
@@ -2789,6 +2791,27 @@ export default function PortfolioDuel() {
                                 >
                                   {inPortfolio ? '✓ Added' : 'Add to Portfolio'}
                                 </button>
+
+                                {/* Click for Details Hint */}
+                                <div style={{
+                                  marginTop: '12px',
+                                  paddingTop: '8px',
+                                  borderTop: `1px solid ${colors.borderSubtle}`,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                  fontSize: '11px',
+                                  color: colors.textMuted,
+                                  fontWeight: '500'
+                                }}>
+                                  {isExpanded ? (
+                                    <ChevronUp style={{ height: '14px', width: '14px' }} />
+                                  ) : (
+                                    <ChevronDown style={{ height: '14px', width: '14px' }} />
+                                  )}
+                                  {isExpanded ? 'Click to collapse' : 'Click for details'}
+                                </div>
                               </div>
 
                               {/* Expanded Details */}
@@ -2801,7 +2824,7 @@ export default function PortfolioDuel() {
                                   {/* Mini Chart */}
                                   {asset.historicalPrices && asset.historicalPrices.length > 0 && (
                                     <div style={{ marginBottom: '12px' }}>
-                                      <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '4px' }}>7-Day Chart</div>
+                                      <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '4px' }}>30-Day Trend</div>
                                       <Sparklines data={asset.historicalPrices} height={40} margin={2}>
                                         <SparklinesLine
                                           color={asset.historicalPrices[asset.historicalPrices.length - 1] >= asset.historicalPrices[0] ? colors.green : colors.red}
@@ -2844,6 +2867,52 @@ export default function PortfolioDuel() {
                                       <div>24h Vol: ${(asset.volume24h / 1e6).toFixed(2)}M</div>
                                     )}
                                   </div>
+
+                                  {/* 52-Week Range */}
+                                  {asset.week52Low && asset.week52High && (
+                                    <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `1px solid ${colors.borderSubtle}` }}>
+                                      <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        fontSize: '11px',
+                                        marginBottom: '6px'
+                                      }}>
+                                        <span style={{ color: colors.textMuted }}>52-Week Range:</span>
+                                        <span style={{ color: colors.textPrimary, fontWeight: '500' }}>
+                                          ${asset.week52Low.toFixed(2)} - ${asset.week52High.toFixed(2)}
+                                        </span>
+                                      </div>
+                                      <div style={{
+                                        height: '4px',
+                                        background: colors.borderSubtle,
+                                        borderRadius: '2px',
+                                        position: 'relative',
+                                        overflow: 'visible'
+                                      }}>
+                                        <div style={{
+                                          position: 'absolute',
+                                          left: `${Math.min(Math.max(((asset.price - asset.week52Low) / (asset.week52High - asset.week52Low)) * 100, 0), 100)}%`,
+                                          top: '-2px',
+                                          width: '8px',
+                                          height: '8px',
+                                          background: colors.cyan,
+                                          borderRadius: '50%',
+                                          transform: 'translateX(-50%)',
+                                          boxShadow: `0 0 6px ${colors.cyan}`
+                                        }} />
+                                      </div>
+                                      <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        fontSize: '9px',
+                                        color: colors.textMuted,
+                                        marginTop: '4px'
+                                      }}>
+                                        <span>Low</span>
+                                        <span>High</span>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -3299,16 +3368,16 @@ export default function PortfolioDuel() {
                                   {asset.volatility && (
                                     <span style={{
                                       fontSize: '9px',
-                                      padding: '2px 6px',
+                                      padding: '3px 8px',
                                       borderRadius: '4px',
-                                      background: asset.volatility === 'high' ? `${colors.red}30` :
-                                                 asset.volatility === 'medium' ? `${colors.yellow}30` : `${colors.green}30`,
+                                      background: asset.volatility === 'high' ? `${colors.red}20` :
+                                                 asset.volatility === 'medium' ? `${colors.gold}20` : `${colors.green}20`,
                                       color: asset.volatility === 'high' ? colors.red :
-                                            asset.volatility === 'medium' ? colors.yellow : colors.green,
-                                      fontWeight: '600',
-                                      textTransform: 'uppercase'
+                                            asset.volatility === 'medium' ? colors.gold : colors.green,
+                                      fontWeight: '600'
                                     }}>
-                                      {asset.volatility}
+                                      {asset.volatility === 'low' ? 'Low Vol' :
+                                       asset.volatility === 'medium' ? 'Med Vol' : 'High Vol'}
                                     </span>
                                   )}
                                 </div>
@@ -3333,6 +3402,7 @@ export default function PortfolioDuel() {
 
                                 {/* Add Button */}
                                 <button
+                                  className="add-button"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleAddAsset(asset);
@@ -3353,6 +3423,27 @@ export default function PortfolioDuel() {
                                 >
                                   {inPortfolio ? '✓ Added' : 'Add to Portfolio'}
                                 </button>
+
+                                {/* Click for Details Hint */}
+                                <div style={{
+                                  marginTop: '12px',
+                                  paddingTop: '8px',
+                                  borderTop: `1px solid ${colors.borderSubtle}`,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                  fontSize: '11px',
+                                  color: colors.textMuted,
+                                  fontWeight: '500'
+                                }}>
+                                  {isExpanded ? (
+                                    <ChevronUp style={{ height: '14px', width: '14px' }} />
+                                  ) : (
+                                    <ChevronDown style={{ height: '14px', width: '14px' }} />
+                                  )}
+                                  {isExpanded ? 'Click to collapse' : 'Click for details'}
+                                </div>
                               </div>
 
                               {/* Expanded Details */}
@@ -3365,7 +3456,7 @@ export default function PortfolioDuel() {
                                   {/* Mini Chart */}
                                   {asset.historicalPrices && asset.historicalPrices.length > 0 && (
                                     <div style={{ marginBottom: '12px' }}>
-                                      <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '4px' }}>7-Day Chart</div>
+                                      <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '4px' }}>30-Day Trend</div>
                                       <Sparklines data={asset.historicalPrices} height={40} margin={2}>
                                         <SparklinesLine
                                           color={asset.historicalPrices[asset.historicalPrices.length - 1] >= asset.historicalPrices[0] ? colors.green : colors.red}
@@ -3408,6 +3499,52 @@ export default function PortfolioDuel() {
                                       <div>24h Vol: ${(asset.volume24h / 1e6).toFixed(2)}M</div>
                                     )}
                                   </div>
+
+                                  {/* 52-Week Range */}
+                                  {asset.week52Low && asset.week52High && (
+                                    <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `1px solid ${colors.borderSubtle}` }}>
+                                      <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        fontSize: '11px',
+                                        marginBottom: '6px'
+                                      }}>
+                                        <span style={{ color: colors.textMuted }}>52-Week Range:</span>
+                                        <span style={{ color: colors.textPrimary, fontWeight: '500' }}>
+                                          ${asset.week52Low.toFixed(2)} - ${asset.week52High.toFixed(2)}
+                                        </span>
+                                      </div>
+                                      <div style={{
+                                        height: '4px',
+                                        background: colors.borderSubtle,
+                                        borderRadius: '2px',
+                                        position: 'relative',
+                                        overflow: 'visible'
+                                      }}>
+                                        <div style={{
+                                          position: 'absolute',
+                                          left: `${Math.min(Math.max(((asset.price - asset.week52Low) / (asset.week52High - asset.week52Low)) * 100, 0), 100)}%`,
+                                          top: '-2px',
+                                          width: '8px',
+                                          height: '8px',
+                                          background: colors.cyan,
+                                          borderRadius: '50%',
+                                          transform: 'translateX(-50%)',
+                                          boxShadow: `0 0 6px ${colors.cyan}`
+                                        }} />
+                                      </div>
+                                      <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        fontSize: '9px',
+                                        color: colors.textMuted,
+                                        marginTop: '4px'
+                                      }}>
+                                        <span>Low</span>
+                                        <span>High</span>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -3779,8 +3916,8 @@ export default function PortfolioDuel() {
                         <div style={{
                           padding: '12px 16px',
                           marginBottom: '16px',
-                          background: portfolioType === 'stocks' ? '#DBEAFE' : '#FCE7F3',
-                          border: `2px solid ${portfolioType === 'stocks' ? '#3B82F6' : '#EC4899'}`,
+                          background: `${colors.purple}15`,
+                          border: `1px solid ${colors.purple}`,
                           borderRadius: '8px',
                           display: 'flex',
                           alignItems: 'center',
@@ -3790,10 +3927,10 @@ export default function PortfolioDuel() {
                             {portfolioType === 'stocks' ? '📈' : '₿'}
                           </span>
                           <div>
-                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#1F2937' }}>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
                               {portfolioType === 'stocks' ? 'Stocks Portfolio' : 'Crypto Portfolio'}
                             </div>
-                            <div style={{ fontSize: '12px', color: '#6B7280' }}>
+                            <div style={{ fontSize: '12px', color: colors.textSecondary }}>
                               You can only add {portfolioType === 'stocks' ? 'stocks' : 'crypto'} to this portfolio
                             </div>
                           </div>
@@ -3810,12 +3947,14 @@ export default function PortfolioDuel() {
                           width: '100%',
                           padding: '12px 16px',
                           marginBottom: '16px',
-                          border: '2px solid',
-                          borderColor: searchTerm ? '#9333EA' : '#E5E7EB',
-                          borderRadius: '12px',
+                          border: `1px solid ${searchTerm ? colors.purple : colors.borderSubtle}`,
+                          borderRadius: '8px',
                           outline: 'none',
                           transition: 'border-color 0.2s',
-                          boxSizing: 'border-box'
+                          boxSizing: 'border-box',
+                          background: 'rgba(0, 0, 0, 0.2)',
+                          color: colors.textPrimary,
+                          fontSize: '14px'
                         }}
                       />
 
@@ -3829,40 +3968,213 @@ export default function PortfolioDuel() {
                       }}>
                         {filteredAssets.map(asset => {
                           const inPortfolio = portfolio.some(p => p.symbol === asset.symbol);
+                          const isExpanded = expandedAssets.has(asset.symbol);
+
                           return (
-                            <button
+                            <div
                               key={asset.symbol}
-                              onClick={() => handleAddAsset(asset)}
-                              disabled={inPortfolio || portfolio.length >= 13}
                               style={{
-                                padding: '16px',
-                                borderRadius: '12px',
-                                textAlign: 'left',
-                                border: inPortfolio ? 'none' : '2px solid transparent',
-                                cursor: inPortfolio || portfolio.length >= 13 ? 'not-allowed' : 'pointer',
+                                borderRadius: '8px',
+                                border: `1px solid ${inPortfolio ? colors.purple : colors.borderSubtle}`,
+                                background: inPortfolio ? `${colors.purple}15` : colors.cardBg,
                                 transition: 'all 0.2s',
-                                background: inPortfolio ? '#F3F4F6' : '#F9FAFB'
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!inPortfolio && portfolio.length < 13) {
-                                  e.target.style.background = '#EDE9FE';
-                                  e.target.style.borderColor = '#DDD6FE';
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!inPortfolio) {
-                                  e.target.style.background = '#F9FAFB';
-                                  e.target.style.borderColor = 'transparent';
-                                }
+                                overflow: 'hidden'
                               }}
                             >
-                              <div style={{ fontWeight: 'bold', color: '#1F2937', marginBottom: '4px' }}>{asset.symbol}</div>
-                              <div style={{ fontSize: '14px', color: '#6B7280', marginBottom: '8px' }}>{asset.name}</div>
-                              <div style={{ fontSize: '18px', fontWeight: '600', color: '#4B5563' }}>${asset.price.toFixed(2)}</div>
-                              {inPortfolio && (
-                                <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: '600', color: '#10B981' }}>✓ Added</div>
+                              {/* Main Card - Always Visible */}
+                              <div
+                                style={{ padding: '14px', cursor: 'pointer' }}
+                                onClick={(e) => {
+                                  // Toggle expansion on card click
+                                  toggleAssetExpansion(asset.symbol);
+                                }}
+                              >
+                                {/* Symbol & Volatility Badge */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                                  <span style={{ fontWeight: 'bold', color: colors.textPrimary }}>{asset.symbol}</span>
+                                  {asset.volatility && (
+                                    <span style={{
+                                      fontSize: '9px',
+                                      padding: '3px 8px',
+                                      borderRadius: '4px',
+                                      background: asset.volatility === 'high' ? `${colors.red}20` :
+                                                 asset.volatility === 'medium' ? `${colors.gold}20` : `${colors.green}20`,
+                                      color: asset.volatility === 'high' ? colors.red :
+                                            asset.volatility === 'medium' ? colors.gold : colors.green,
+                                      fontWeight: '600'
+                                    }}>
+                                      {asset.volatility === 'low' ? 'Low Vol' :
+                                       asset.volatility === 'medium' ? 'Med Vol' : 'High Vol'}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Name */}
+                                <div style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '6px' }}>{asset.name}</div>
+
+                                {/* Price & 24h Change */}
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                                  <span style={{ fontSize: '16px', fontWeight: '600', color: colors.purple }}>
+                                    ${asset.price.toFixed(2)}
+                                  </span>
+                                  {(asset.percentChange !== undefined || asset.change24h !== undefined) && (
+                                    <span style={{
+                                      fontSize: '11px',
+                                      color: (asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
+                                    }}>
+                                      {(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{(asset.percentChange || asset.change24h || 0).toFixed(2)}%
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Add Button */}
+                                <button
+                                  className="add-button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAddAsset(asset);
+                                  }}
+                                  disabled={inPortfolio || portfolio.length >= 13}
+                                  style={{
+                                    marginTop: '10px',
+                                    width: '100%',
+                                    padding: '6px 10px',
+                                    borderRadius: '6px',
+                                    fontSize: '12px',
+                                    fontWeight: '600',
+                                    border: 'none',
+                                    cursor: inPortfolio || portfolio.length >= 13 ? 'not-allowed' : 'pointer',
+                                    background: inPortfolio ? colors.green : colors.purple,
+                                    color: 'white'
+                                  }}
+                                >
+                                  {inPortfolio ? '✓ Added' : 'Add to Portfolio'}
+                                </button>
+
+                                {/* Click for Details Hint */}
+                                <div style={{
+                                  marginTop: '12px',
+                                  paddingTop: '8px',
+                                  borderTop: `1px solid ${colors.borderSubtle}`,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                  fontSize: '11px',
+                                  color: colors.textMuted,
+                                  fontWeight: '500'
+                                }}>
+                                  {isExpanded ? (
+                                    <ChevronUp style={{ height: '14px', width: '14px' }} />
+                                  ) : (
+                                    <ChevronDown style={{ height: '14px', width: '14px' }} />
+                                  )}
+                                  {isExpanded ? 'Click to collapse' : 'Click for details'}
+                                </div>
+                              </div>
+
+                              {/* Expanded Details */}
+                              {isExpanded && (
+                                <div style={{
+                                  padding: '12px 14px',
+                                  borderTop: `1px solid ${colors.borderSubtle}`,
+                                  background: 'rgba(0, 0, 0, 0.2)'
+                                }}>
+                                  {/* Mini Chart */}
+                                  {asset.historicalPrices && asset.historicalPrices.length > 0 && (
+                                    <div style={{ marginBottom: '12px' }}>
+                                      <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '4px' }}>30-Day Trend</div>
+                                      <Sparklines data={asset.historicalPrices} height={40} margin={2}>
+                                        <SparklinesLine
+                                          color={asset.historicalPrices[asset.historicalPrices.length - 1] >= asset.historicalPrices[0] ? colors.green : colors.red}
+                                          style={{ strokeWidth: 2, fill: 'none' }}
+                                        />
+                                      </Sparklines>
+                                    </div>
+                                  )}
+
+                                  {/* Performance */}
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                                    <div>
+                                      <div style={{ fontSize: '10px', color: colors.textSecondary }}>7d</div>
+                                      <div style={{
+                                        fontSize: '13px',
+                                        fontWeight: '600',
+                                        color: (asset.priceChange7d || 0) >= 0 ? colors.green : colors.red
+                                      }}>
+                                        {(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(2)}%
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: '10px', color: colors.textSecondary }}>30d</div>
+                                      <div style={{
+                                        fontSize: '13px',
+                                        fontWeight: '600',
+                                        color: (asset.priceChange30d || 0) >= 0 ? colors.green : colors.red
+                                      }}>
+                                        {(asset.priceChange30d || 0) >= 0 ? '+' : ''}{(asset.priceChange30d || 0).toFixed(2)}%
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Market Data */}
+                                  <div style={{ fontSize: '11px', color: colors.textSecondary }}>
+                                    {asset.marketCap > 0 && (
+                                      <div>Mkt Cap: ${(asset.marketCap / 1e9).toFixed(2)}B</div>
+                                    )}
+                                    {asset.volume24h > 0 && (
+                                      <div>24h Vol: ${(asset.volume24h / 1e6).toFixed(2)}M</div>
+                                    )}
+                                  </div>
+
+                                  {/* 52-Week Range */}
+                                  {asset.week52Low && asset.week52High && (
+                                    <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `1px solid ${colors.borderSubtle}` }}>
+                                      <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        fontSize: '11px',
+                                        marginBottom: '6px'
+                                      }}>
+                                        <span style={{ color: colors.textMuted }}>52-Week Range:</span>
+                                        <span style={{ color: colors.textPrimary, fontWeight: '500' }}>
+                                          ${asset.week52Low.toFixed(2)} - ${asset.week52High.toFixed(2)}
+                                        </span>
+                                      </div>
+                                      <div style={{
+                                        height: '4px',
+                                        background: colors.borderSubtle,
+                                        borderRadius: '2px',
+                                        position: 'relative',
+                                        overflow: 'visible'
+                                      }}>
+                                        <div style={{
+                                          position: 'absolute',
+                                          left: `${Math.min(Math.max(((asset.price - asset.week52Low) / (asset.week52High - asset.week52Low)) * 100, 0), 100)}%`,
+                                          top: '-2px',
+                                          width: '8px',
+                                          height: '8px',
+                                          background: colors.purple,
+                                          borderRadius: '50%',
+                                          transform: 'translateX(-50%)',
+                                          boxShadow: `0 0 6px ${colors.purple}`
+                                        }} />
+                                      </div>
+                                      <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        fontSize: '9px',
+                                        color: colors.textMuted,
+                                        marginTop: '4px'
+                                      }}>
+                                        <span>Low</span>
+                                        <span>High</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                               )}
-                            </button>
+                            </div>
                           );
                         })}
                       </div>
@@ -3874,22 +4186,23 @@ export default function PortfolioDuel() {
               {/* Right: Portfolio Summary - Same as builder/join screens */}
               <div>
                 <div style={{
-                  background: 'white',
-                  borderRadius: '16px',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                  background: colors.cardBg,
+                  borderRadius: '12px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
                   padding: '24px',
                   position: 'sticky',
-                  top: '24px'
+                  top: '24px',
+                  border: `1px solid ${colors.border}`
                 }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '8px', color: '#1F2937' }}>Your Portfolio</h2>
-                  <p style={{ fontSize: '14px', color: '#6B7280', marginBottom: '16px' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '8px', color: colors.textPrimary }}>Your Portfolio</h2>
+                  <p style={{ fontSize: '14px', color: colors.textSecondary, marginBottom: '16px' }}>
                     {portfolio.length}/13 assets • {totalPercentage.toFixed(1)}%
                   </p>
 
                   {/* Portfolio Name Input */}
                   <div style={{ marginBottom: '16px' }}>
-                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#4B5563', marginBottom: '8px' }}>
-                      Portfolio Name <span style={{ color: '#EF4444' }}>*</span>
+                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: colors.textSecondary, marginBottom: '8px' }}>
+                      Portfolio Name <span style={{ color: colors.red }}>*</span>
                     </label>
                     <input
                       type="text"
@@ -3899,22 +4212,22 @@ export default function PortfolioDuel() {
                       style={{
                         width: '100%',
                         padding: '8px 12px',
-                        border: '2px solid',
-                        borderColor: portfolioName ? '#9333EA' : (!portfolioName && portfolio.length > 0 ? '#EF4444' : '#E5E7EB'),
-                        background: !portfolioName && portfolio.length > 0 ? '#FEE2E2' : 'white',
+                        border: `1px solid ${portfolioName ? colors.purple : (!portfolioName && portfolio.length > 0 ? colors.red : colors.borderSubtle)}`,
+                        background: !portfolioName && portfolio.length > 0 ? `${colors.red}15` : colors.cardBg,
                         borderRadius: '8px',
                         outline: 'none',
                         transition: 'all 0.2s',
-                        boxSizing: 'border-box'
+                        boxSizing: 'border-box',
+                        color: colors.textPrimary
                       }}
                     />
                     {!portfolioName && portfolio.length > 0 && (
-                      <div style={{ fontSize: '12px', color: '#EF4444', marginTop: '4px' }}>Portfolio name is required</div>
+                      <div style={{ fontSize: '12px', color: colors.red, marginTop: '4px' }}>Portfolio name is required</div>
                     )}
                   </div>
 
                   {portfolio.length === 0 ? (
-                    <div style={{ textAlign: 'center', color: '#9CA3AF', padding: '48px 0' }}>
+                    <div style={{ textAlign: 'center', color: colors.textMuted, padding: '48px 0' }}>
                       <div style={{ fontSize: '48px', marginBottom: '8px' }}>📊</div>
                       <div>No assets selected</div>
                     </div>
@@ -3922,29 +4235,29 @@ export default function PortfolioDuel() {
                     <>
                       <div style={{ maxHeight: '320px', overflowY: 'auto', marginBottom: '16px' }}>
                         {portfolio.map(asset => (
-                          <div key={asset.symbol} style={{ padding: '12px', background: '#F9FAFB', borderRadius: '12px', marginBottom: '12px' }}>
+                          <div key={asset.symbol} style={{ padding: '12px', background: 'rgba(147, 51, 234, 0.1)', borderRadius: '12px', marginBottom: '12px', border: `1px solid ${colors.borderSubtle}` }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                               <div>
-                                <div style={{ fontWeight: 'bold', color: '#1F2937' }}>{asset.symbol}</div>
-                                <div style={{ fontSize: '12px', color: '#6B7280' }}>${asset.price.toFixed(2)}</div>
+                                <div style={{ fontWeight: 'bold', color: colors.textPrimary }}>{asset.symbol}</div>
+                                <div style={{ fontSize: '12px', color: colors.textSecondary }}>${asset.price.toFixed(2)}</div>
                               </div>
                               <button
                                 onClick={() => handleRemoveAsset(asset.symbol)}
                                 style={{
-                                  color: '#9CA3AF',
+                                  color: colors.textMuted,
                                   background: 'none',
                                   border: 'none',
                                   cursor: 'pointer',
                                   transition: 'color 0.2s',
                                   padding: 0
                                 }}
-                                onMouseEnter={(e) => e.target.style.color = '#EF4444'}
-                                onMouseLeave={(e) => e.target.style.color = '#9CA3AF'}
+                                onMouseEnter={(e) => e.currentTarget.style.color = colors.red}
+                                onMouseLeave={(e) => e.currentTarget.style.color = colors.textMuted}
                               >
                                 <X style={{ height: '20px', width: '20px' }} />
                               </button>
                             </div>
-                            
+
                             {/* Percentage Dropdown */}
                             <div style={{ position: 'relative' }}>
                               <select
@@ -3953,15 +4266,15 @@ export default function PortfolioDuel() {
                                 style={{
                                   width: '100%',
                                   padding: '8px 12px',
-                                  border: '2px solid #9333EA',
+                                  border: `1px solid ${colors.purple}`,
                                   borderRadius: '8px',
                                   outline: 'none',
                                   appearance: 'none',
                                   cursor: 'pointer',
-                                  background: 'white',
+                                  background: colors.cardBg,
                                   fontSize: '14px',
                                   fontWeight: '600',
-                                  color: '#1F2937',
+                                  color: colors.textPrimary,
                                   paddingRight: '32px'
                                 }}
                               >
@@ -3978,7 +4291,7 @@ export default function PortfolioDuel() {
                                 transform: 'translateY(-50%)',
                                 height: '16px',
                                 width: '16px',
-                                color: '#9333EA',
+                                color: colors.purple,
                                 pointerEvents: 'none'
                               }} />
                             </div>
@@ -4002,7 +4315,7 @@ export default function PortfolioDuel() {
                             transition: 'all 0.2s',
                             background: isPortfolioValid && portfolioName.trim()
                               ? 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)'
-                              : '#D1D5DB',
+                              : colors.borderSubtle,
                             color: 'white',
                             boxShadow: isPortfolioValid && portfolioName.trim() ? '0 4px 6px -1px rgba(147, 51, 234, 0.3)' : 'none',
                             display: 'flex',
@@ -4012,8 +4325,8 @@ export default function PortfolioDuel() {
                           }}
                           onMouseEnter={(e) => {
                             if (isPortfolioValid && portfolioName.trim()) {
-                              e.target.style.transform = 'scale(1.02)';
-                              e.target.style.boxShadow = '0 10px 15px -3px rgba(147, 51, 234, 0.4)';
+                              e.currentTarget.style.transform = 'scale(1.02)';
+                              e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(147, 51, 234, 0.4)';
                             }
                           }}
                           onMouseLeave={(e) => {
