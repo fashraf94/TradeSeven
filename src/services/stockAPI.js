@@ -93,7 +93,8 @@ function calculateVolatility(prices) {
 
 // ✨ SIMPLIFIED: Generate historical prices that GUARANTEE chart matches returns
 function getStockHistoricalPrices(symbol, currentPrice, priceChange7d, priceChange30d) {
-  const cacheKey = `stock_hist_30d_${symbol}`;
+  // Include return values in cache key so cached data matches current returns
+  const cacheKey = `stock_hist_30d_${symbol}_${priceChange30d.toFixed(2)}`;
   const cached = historicalCache.get(cacheKey);
 
   if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
@@ -102,10 +103,19 @@ function getStockHistoricalPrices(symbol, currentPrice, priceChange7d, priceChan
 
   try {
     // Calculate starting price based on 30d return
-    // If 30d is +1.91%, then price 30 days ago was LOWER
-    // If 30d is -1.85%, then price 30 days ago was HIGHER
+    // DIVISION: If 30d is +2%, price30dAgo = current / 1.02 (LOWER) → chart goes UP
+    // DIVISION: If 30d is -2%, price30dAgo = current / 0.98 (HIGHER) → chart goes DOWN
     const price30dAgo = currentPrice / (1 + priceChange30d / 100);
     const price7dAgo = currentPrice / (1 + priceChange7d / 100);
+
+    // Debug logging
+    const direction = priceChange30d >= 0 ? 'UP ⬆️' : 'DOWN ⬇️';
+    console.log(`📊 ${symbol} Chart:`, {
+      current: currentPrice.toFixed(2),
+      change30d: priceChange30d.toFixed(2) + '%',
+      price30dAgo: price30dAgo.toFixed(2),
+      direction: direction
+    });
 
     const prices = [];
     const totalDays = 30;
