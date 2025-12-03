@@ -2827,7 +2827,7 @@ export default function PortfolioDuel() {
                                       <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '4px' }}>30-Day Trend</div>
                                       <Sparklines data={asset.historicalPrices} height={40} margin={2}>
                                         <SparklinesLine
-                                          color={asset.historicalPrices[asset.historicalPrices.length - 1] >= asset.historicalPrices[0] ? colors.green : colors.red}
+                                          color={(asset.priceChange30d || 0) >= 0 ? colors.green : colors.red}
                                           style={{ strokeWidth: 2, fill: 'none' }}
                                         />
                                       </Sparklines>
@@ -3459,7 +3459,7 @@ export default function PortfolioDuel() {
                                       <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '4px' }}>30-Day Trend</div>
                                       <Sparklines data={asset.historicalPrices} height={40} margin={2}>
                                         <SparklinesLine
-                                          color={asset.historicalPrices[asset.historicalPrices.length - 1] >= asset.historicalPrices[0] ? colors.green : colors.red}
+                                          color={(asset.priceChange30d || 0) >= 0 ? colors.green : colors.red}
                                           style={{ strokeWidth: 2, fill: 'none' }}
                                         />
                                       </Sparklines>
@@ -4086,7 +4086,7 @@ export default function PortfolioDuel() {
                                       <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '4px' }}>30-Day Trend</div>
                                       <Sparklines data={asset.historicalPrices} height={40} margin={2}>
                                         <SparklinesLine
-                                          color={asset.historicalPrices[asset.historicalPrices.length - 1] >= asset.historicalPrices[0] ? colors.green : colors.red}
+                                          color={(asset.priceChange30d || 0) >= 0 ? colors.green : colors.red}
                                           style={{ strokeWidth: 2, fill: 'none' }}
                                         />
                                       </Sparklines>

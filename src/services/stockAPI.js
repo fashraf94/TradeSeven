@@ -91,9 +91,9 @@ function calculateVolatility(prices) {
   return 'high';
 }
 
-// ✨ FIXED: Generate historical prices that match the displayed returns
+// ✨ SIMPLIFIED: Generate historical prices that GUARANTEE chart matches returns
 function getStockHistoricalPrices(symbol, currentPrice, priceChange7d, priceChange30d) {
-  const cacheKey = `stock_hist_30d_${symbol}_${currentPrice}_${priceChange7d}_${priceChange30d}`;
+  const cacheKey = `stock_hist_30d_${symbol}`;
   const cached = historicalCache.get(cacheKey);
 
   if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
@@ -101,49 +101,43 @@ function getStockHistoricalPrices(symbol, currentPrice, priceChange7d, priceChan
   }
 
   try {
-    // Calculate historical prices based on returns (work backward from current price)
-
-    // Price 7 days ago (from 7d return)
+    // Calculate starting price based on 30d return
+    // If 30d is +1.91%, then price 30 days ago was LOWER
+    // If 30d is -1.85%, then price 30 days ago was HIGHER
+    const price30dAgo = currentPrice / (1 + priceChange30d / 100);
     const price7dAgo = currentPrice / (1 + priceChange7d / 100);
 
-    // Price 30 days ago (from 30d return)
-    const price30dAgo = currentPrice / (1 + priceChange30d / 100);
-
     const prices = [];
+    const totalDays = 30;
 
-    // Generate 30 data points
-    for (let i = 0; i < 30; i++) {
-      if (i === 0) {
-        // Day 0 (30 days ago)
-        prices.push(price30dAgo);
-      } else if (i === 23) {
-        // Day 23 (7 days ago)
-        prices.push(price7dAgo);
-      } else if (i === 29) {
-        // Day 29 (today)
-        prices.push(currentPrice);
+    // Generate smooth progression from 30d ago to today
+    for (let day = 0; day < totalDays; day++) {
+      let basePrice;
+
+      if (day <= 23) {
+        // Days 0-23: Interpolate from 30d price to 7d price
+        const progress = day / 23;
+        basePrice = price30dAgo + (price7dAgo - price30dAgo) * progress;
       } else {
-        // Intermediate days - interpolate with some randomness
-        let basePrice;
-
-        if (i < 23) {
-          // Between day 0 and day 23: interpolate from 30d to 7d price
-          const progress = i / 23;
-          basePrice = price30dAgo + (price7dAgo - price30dAgo) * progress;
-        } else {
-          // Between day 23 and day 29: interpolate from 7d to current price
-          const progress = (i - 23) / 6;
-          basePrice = price7dAgo + (currentPrice - price7dAgo) * progress;
-        }
-
-        // Add small random variation (±1%) for realism
-        const variation = (Math.random() - 0.5) * 0.02;
-        prices.push(basePrice * (1 + variation));
+        // Days 24-29: Interpolate from 7d price to current price
+        const progress = (day - 23) / 6;
+        basePrice = price7dAgo + (currentPrice - price7dAgo) * progress;
       }
+
+      // Add very small random variation (±0.5%) for visual realism
+      const variation = (Math.random() - 0.5) * 0.01;
+      const price = basePrice * (1 + variation);
+
+      prices.push(price);
     }
+
+    // CRITICAL: Force first and last points to be exact
+    prices[0] = price30dAgo;                    // Ensure 30 days ago is exact
+    prices[prices.length - 1] = currentPrice;   // Ensure today is exact
 
     historicalCache.set(cacheKey, { data: prices, timestamp: Date.now() });
     return prices;
+
   } catch (error) {
     console.error(`Error generating historical prices for ${symbol}:`, error);
     return Array(30).fill(currentPrice || 100);
