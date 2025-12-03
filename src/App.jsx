@@ -4,7 +4,6 @@ import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 import './firebase/config';
 import { motion } from 'framer-motion';
-import { Sparklines, SparklinesLine } from 'react-sparklines';
 
 // Inline Stock API (temporary until you set up services folder)
 const FINNHUB_API_KEY = import.meta.env.VITE_FINNHUB_API_KEY;
@@ -2768,6 +2767,63 @@ export default function PortfolioDuel() {
                                   )}
                                 </div>
 
+                                {/* Community Quick Stats */}
+                                {asset.communityData && (
+                                  <div style={{
+                                    display: 'flex',
+                                    gap: '8px',
+                                    marginTop: '8px',
+                                    flexWrap: 'wrap'
+                                  }}>
+                                    {asset.communityData.isHot && (
+                                      <span style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        fontSize: '9px',
+                                        padding: '2px 6px',
+                                        borderRadius: '4px',
+                                        background: `${colors.red}25`,
+                                        color: colors.red,
+                                        fontWeight: '600'
+                                      }}>
+                                        <Flame style={{ width: '10px', height: '10px' }} />
+                                        HOT
+                                      </span>
+                                    )}
+                                    {asset.communityData.championPick && (
+                                      <span style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        fontSize: '9px',
+                                        padding: '2px 6px',
+                                        borderRadius: '4px',
+                                        background: `${colors.gold}25`,
+                                        color: colors.gold,
+                                        fontWeight: '600'
+                                      }}>
+                                        <Trophy style={{ width: '10px', height: '10px' }} />
+                                        CHAMP
+                                      </span>
+                                    )}
+                                    <span style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      fontSize: '9px',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      background: `${colors.cyan}15`,
+                                      color: colors.cyan,
+                                      fontWeight: '500'
+                                    }}>
+                                      <Users style={{ width: '10px', height: '10px' }} />
+                                      {asset.communityData.picksThisWeek.toLocaleString()}
+                                    </span>
+                                  </div>
+                                )}
+
                                 {/* Add Button */}
                                 <button
                                   className="add-button"
@@ -2821,16 +2877,100 @@ export default function PortfolioDuel() {
                                   borderTop: `1px solid ${colors.borderSubtle}`,
                                   background: 'rgba(0, 0, 0, 0.2)'
                                 }}>
-                                  {/* Mini Chart */}
-                                  {asset.historicalPrices && asset.historicalPrices.length > 0 && (
+                                  {/* Community Activity Section */}
+                                  {asset.communityData && (
                                     <div style={{ marginBottom: '12px' }}>
-                                      <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '4px' }}>30-Day Trend</div>
-                                      <Sparklines data={asset.historicalPrices} height={40} margin={2}>
-                                        <SparklinesLine
-                                          color={(asset.priceChange30d || 0) >= 0 ? colors.green : colors.red}
-                                          style={{ strokeWidth: 2, fill: 'none' }}
-                                        />
-                                      </Sparklines>
+                                      {/* Trending Badge */}
+                                      {asset.communityData.isTrending && (
+                                        <div style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '6px',
+                                          padding: '6px 10px',
+                                          borderRadius: '6px',
+                                          background: `linear-gradient(135deg, ${colors.cyan}20, ${colors.purple}20)`,
+                                          border: `1px solid ${colors.cyan}40`,
+                                          marginBottom: '10px'
+                                        }}>
+                                          <TrendingUp style={{ width: '14px', height: '14px', color: colors.cyan }} />
+                                          <span style={{ fontSize: '11px', fontWeight: '600', color: colors.cyan }}>
+                                            TRENDING +{asset.communityData.trendPercentage}%
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {/* Community Picks */}
+                                      <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        marginBottom: '8px'
+                                      }}>
+                                        <Users style={{ width: '14px', height: '14px', color: colors.textSecondary }} />
+                                        <span style={{ fontSize: '12px', color: colors.textPrimary, fontWeight: '600' }}>
+                                          {asset.communityData.picksThisWeek.toLocaleString()} picks this week
+                                        </span>
+                                        {asset.communityData.popularityRank <= 3 && (
+                                          <span style={{
+                                            fontSize: '10px',
+                                            padding: '2px 6px',
+                                            borderRadius: '4px',
+                                            background: colors.gold,
+                                            color: '#000',
+                                            fontWeight: '700'
+                                          }}>
+                                            #{asset.communityData.popularityRank}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Champion's Choice */}
+                                      {asset.communityData.championPick && (
+                                        <div style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '6px',
+                                          padding: '6px 10px',
+                                          borderRadius: '6px',
+                                          background: `${colors.gold}15`,
+                                          border: `1px solid ${colors.gold}30`,
+                                          marginBottom: '10px'
+                                        }}>
+                                          <Trophy style={{ width: '14px', height: '14px', color: colors.gold }} />
+                                          <span style={{ fontSize: '11px', color: colors.gold, fontWeight: '600' }}>
+                                            Champion's Choice - {asset.communityData.championPercentage}% of top players pick this
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {/* Battle Performance */}
+                                      <div style={{
+                                        padding: '8px 10px',
+                                        borderRadius: '6px',
+                                        background: 'rgba(0, 0, 0, 0.3)',
+                                        border: `1px solid ${colors.borderSubtle}`
+                                      }}>
+                                        <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '6px', fontWeight: '600' }}>
+                                          BATTLE PERFORMANCE
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                                          <div>
+                                            <span style={{ color: colors.textSecondary }}>Win Rate: </span>
+                                            <span style={{ color: asset.communityData.winRate >= 55 ? colors.green : colors.textPrimary, fontWeight: '600' }}>
+                                              {asset.communityData.winRate}%
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span style={{ color: colors.textSecondary }}>Avg Return: </span>
+                                            <span style={{ color: colors.green, fontWeight: '600' }}>
+                                              +{asset.communityData.avgReturnWhenWinning}%
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <div style={{ fontSize: '10px', color: colors.textMuted, marginTop: '4px' }}>
+                                          {asset.communityData.totalBattles.toLocaleString()} battles ({asset.communityData.wins}W - {asset.communityData.losses}L)
+                                        </div>
+                                      </div>
                                     </div>
                                   )}
 
@@ -3400,6 +3540,63 @@ export default function PortfolioDuel() {
                                   )}
                                 </div>
 
+                                {/* Community Quick Stats */}
+                                {asset.communityData && (
+                                  <div style={{
+                                    display: 'flex',
+                                    gap: '8px',
+                                    marginTop: '8px',
+                                    flexWrap: 'wrap'
+                                  }}>
+                                    {asset.communityData.isHot && (
+                                      <span style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        fontSize: '9px',
+                                        padding: '2px 6px',
+                                        borderRadius: '4px',
+                                        background: `${colors.red}25`,
+                                        color: colors.red,
+                                        fontWeight: '600'
+                                      }}>
+                                        <Flame style={{ width: '10px', height: '10px' }} />
+                                        HOT
+                                      </span>
+                                    )}
+                                    {asset.communityData.championPick && (
+                                      <span style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        fontSize: '9px',
+                                        padding: '2px 6px',
+                                        borderRadius: '4px',
+                                        background: `${colors.gold}25`,
+                                        color: colors.gold,
+                                        fontWeight: '600'
+                                      }}>
+                                        <Trophy style={{ width: '10px', height: '10px' }} />
+                                        CHAMP
+                                      </span>
+                                    )}
+                                    <span style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      fontSize: '9px',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      background: `${colors.cyan}15`,
+                                      color: colors.cyan,
+                                      fontWeight: '500'
+                                    }}>
+                                      <Users style={{ width: '10px', height: '10px' }} />
+                                      {asset.communityData.picksThisWeek.toLocaleString()}
+                                    </span>
+                                  </div>
+                                )}
+
                                 {/* Add Button */}
                                 <button
                                   className="add-button"
@@ -3453,16 +3650,100 @@ export default function PortfolioDuel() {
                                   borderTop: `1px solid ${colors.borderSubtle}`,
                                   background: 'rgba(0, 0, 0, 0.2)'
                                 }}>
-                                  {/* Mini Chart */}
-                                  {asset.historicalPrices && asset.historicalPrices.length > 0 && (
+                                  {/* Community Activity Section */}
+                                  {asset.communityData && (
                                     <div style={{ marginBottom: '12px' }}>
-                                      <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '4px' }}>30-Day Trend</div>
-                                      <Sparklines data={asset.historicalPrices} height={40} margin={2}>
-                                        <SparklinesLine
-                                          color={(asset.priceChange30d || 0) >= 0 ? colors.green : colors.red}
-                                          style={{ strokeWidth: 2, fill: 'none' }}
-                                        />
-                                      </Sparklines>
+                                      {/* Trending Badge */}
+                                      {asset.communityData.isTrending && (
+                                        <div style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '6px',
+                                          padding: '6px 10px',
+                                          borderRadius: '6px',
+                                          background: `linear-gradient(135deg, ${colors.cyan}20, ${colors.purple}20)`,
+                                          border: `1px solid ${colors.cyan}40`,
+                                          marginBottom: '10px'
+                                        }}>
+                                          <TrendingUp style={{ width: '14px', height: '14px', color: colors.cyan }} />
+                                          <span style={{ fontSize: '11px', fontWeight: '600', color: colors.cyan }}>
+                                            TRENDING +{asset.communityData.trendPercentage}%
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {/* Community Picks */}
+                                      <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        marginBottom: '8px'
+                                      }}>
+                                        <Users style={{ width: '14px', height: '14px', color: colors.textSecondary }} />
+                                        <span style={{ fontSize: '12px', color: colors.textPrimary, fontWeight: '600' }}>
+                                          {asset.communityData.picksThisWeek.toLocaleString()} picks this week
+                                        </span>
+                                        {asset.communityData.popularityRank <= 3 && (
+                                          <span style={{
+                                            fontSize: '10px',
+                                            padding: '2px 6px',
+                                            borderRadius: '4px',
+                                            background: colors.gold,
+                                            color: '#000',
+                                            fontWeight: '700'
+                                          }}>
+                                            #{asset.communityData.popularityRank}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Champion's Choice */}
+                                      {asset.communityData.championPick && (
+                                        <div style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '6px',
+                                          padding: '6px 10px',
+                                          borderRadius: '6px',
+                                          background: `${colors.gold}15`,
+                                          border: `1px solid ${colors.gold}30`,
+                                          marginBottom: '10px'
+                                        }}>
+                                          <Trophy style={{ width: '14px', height: '14px', color: colors.gold }} />
+                                          <span style={{ fontSize: '11px', color: colors.gold, fontWeight: '600' }}>
+                                            Champion's Choice - {asset.communityData.championPercentage}% of top players pick this
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {/* Battle Performance */}
+                                      <div style={{
+                                        padding: '8px 10px',
+                                        borderRadius: '6px',
+                                        background: 'rgba(0, 0, 0, 0.3)',
+                                        border: `1px solid ${colors.borderSubtle}`
+                                      }}>
+                                        <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '6px', fontWeight: '600' }}>
+                                          BATTLE PERFORMANCE
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                                          <div>
+                                            <span style={{ color: colors.textSecondary }}>Win Rate: </span>
+                                            <span style={{ color: asset.communityData.winRate >= 55 ? colors.green : colors.textPrimary, fontWeight: '600' }}>
+                                              {asset.communityData.winRate}%
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span style={{ color: colors.textSecondary }}>Avg Return: </span>
+                                            <span style={{ color: colors.green, fontWeight: '600' }}>
+                                              +{asset.communityData.avgReturnWhenWinning}%
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <div style={{ fontSize: '10px', color: colors.textMuted, marginTop: '4px' }}>
+                                          {asset.communityData.totalBattles.toLocaleString()} battles ({asset.communityData.wins}W - {asset.communityData.losses}L)
+                                        </div>
+                                      </div>
                                     </div>
                                   )}
 
@@ -4080,16 +4361,100 @@ export default function PortfolioDuel() {
                                   borderTop: `1px solid ${colors.borderSubtle}`,
                                   background: 'rgba(0, 0, 0, 0.2)'
                                 }}>
-                                  {/* Mini Chart */}
-                                  {asset.historicalPrices && asset.historicalPrices.length > 0 && (
+                                  {/* Community Activity Section */}
+                                  {asset.communityData && (
                                     <div style={{ marginBottom: '12px' }}>
-                                      <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '4px' }}>30-Day Trend</div>
-                                      <Sparklines data={asset.historicalPrices} height={40} margin={2}>
-                                        <SparklinesLine
-                                          color={(asset.priceChange30d || 0) >= 0 ? colors.green : colors.red}
-                                          style={{ strokeWidth: 2, fill: 'none' }}
-                                        />
-                                      </Sparklines>
+                                      {/* Trending Badge */}
+                                      {asset.communityData.isTrending && (
+                                        <div style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '6px',
+                                          padding: '6px 10px',
+                                          borderRadius: '6px',
+                                          background: `linear-gradient(135deg, ${colors.cyan}20, ${colors.purple}20)`,
+                                          border: `1px solid ${colors.cyan}40`,
+                                          marginBottom: '10px'
+                                        }}>
+                                          <TrendingUp style={{ width: '14px', height: '14px', color: colors.cyan }} />
+                                          <span style={{ fontSize: '11px', fontWeight: '600', color: colors.cyan }}>
+                                            TRENDING +{asset.communityData.trendPercentage}%
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {/* Community Picks */}
+                                      <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        marginBottom: '8px'
+                                      }}>
+                                        <Users style={{ width: '14px', height: '14px', color: colors.textSecondary }} />
+                                        <span style={{ fontSize: '12px', color: colors.textPrimary, fontWeight: '600' }}>
+                                          {asset.communityData.picksThisWeek.toLocaleString()} picks this week
+                                        </span>
+                                        {asset.communityData.popularityRank <= 3 && (
+                                          <span style={{
+                                            fontSize: '10px',
+                                            padding: '2px 6px',
+                                            borderRadius: '4px',
+                                            background: colors.gold,
+                                            color: '#000',
+                                            fontWeight: '700'
+                                          }}>
+                                            #{asset.communityData.popularityRank}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Champion's Choice */}
+                                      {asset.communityData.championPick && (
+                                        <div style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '6px',
+                                          padding: '6px 10px',
+                                          borderRadius: '6px',
+                                          background: `${colors.gold}15`,
+                                          border: `1px solid ${colors.gold}30`,
+                                          marginBottom: '10px'
+                                        }}>
+                                          <Trophy style={{ width: '14px', height: '14px', color: colors.gold }} />
+                                          <span style={{ fontSize: '11px', color: colors.gold, fontWeight: '600' }}>
+                                            Champion's Choice - {asset.communityData.championPercentage}% of top players pick this
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {/* Battle Performance */}
+                                      <div style={{
+                                        padding: '8px 10px',
+                                        borderRadius: '6px',
+                                        background: 'rgba(0, 0, 0, 0.3)',
+                                        border: `1px solid ${colors.borderSubtle}`
+                                      }}>
+                                        <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '6px', fontWeight: '600' }}>
+                                          BATTLE PERFORMANCE
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                                          <div>
+                                            <span style={{ color: colors.textSecondary }}>Win Rate: </span>
+                                            <span style={{ color: asset.communityData.winRate >= 55 ? colors.green : colors.textPrimary, fontWeight: '600' }}>
+                                              {asset.communityData.winRate}%
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span style={{ color: colors.textSecondary }}>Avg Return: </span>
+                                            <span style={{ color: colors.green, fontWeight: '600' }}>
+                                              +{asset.communityData.avgReturnWhenWinning}%
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <div style={{ fontSize: '10px', color: colors.textMuted, marginTop: '4px' }}>
+                                          {asset.communityData.totalBattles.toLocaleString()} battles ({asset.communityData.wins}W - {asset.communityData.losses}L)
+                                        </div>
+                                      </div>
                                     </div>
                                   )}
 

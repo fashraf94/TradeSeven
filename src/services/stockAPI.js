@@ -91,6 +91,54 @@ function calculateVolatility(prices) {
   return 'high';
 }
 
+// Generate mock community data for social proof
+function generateCommunityData(symbol, price, percentChange, volatility) {
+  const volatilityMultiplier = volatility === 'high' ? 1.3 : volatility === 'medium' ? 1.1 : 0.9;
+  const priceMultiplier = price > 1000 ? 0.7 : price > 100 ? 1.0 : 1.2;
+  const momentumMultiplier = Math.abs(percentChange) > 3 ? 1.5 : 1.0;
+
+  const basePicks = Math.floor(500 + Math.random() * 3500);
+  const adjustedPicks = Math.floor(basePicks * volatilityMultiplier * priceMultiplier * momentumMultiplier);
+
+  const isHot = adjustedPicks > 2500;
+  const trendPercentage = Math.floor(-50 + Math.random() * 250);
+  const championPercentage = Math.floor(40 + Math.random() * 45);
+  const isChampionPick = championPercentage > 60;
+
+  const masterPicks = Math.floor(adjustedPicks * 0.15);
+  const expertPicks = Math.floor(adjustedPicks * 0.25);
+  const veteranPicks = Math.floor(adjustedPicks * 0.35);
+  const beginnerPicks = adjustedPicks - masterPicks - expertPicks - veteranPicks;
+
+  const winRate = Math.floor(50 + Math.random() * 20);
+  const totalBattles = Math.floor(adjustedPicks * 0.6);
+  const wins = Math.floor(totalBattles * (winRate / 100));
+  const losses = totalBattles - wins;
+  const avgReturnWhenWinning = +(3 + Math.random() * 12).toFixed(1);
+
+  return {
+    picksThisWeek: adjustedPicks,
+    trendPercentage,
+    isHot,
+    isTrending: trendPercentage > 50,
+    championPick: isChampionPick,
+    championPercentage,
+    rankDistribution: {
+      beginner: beginnerPicks,
+      veteran: veteranPicks,
+      expert: expertPicks,
+      master: masterPicks
+    },
+    winRate,
+    totalBattles,
+    wins,
+    losses,
+    avgReturnWhenWinning,
+    popularityRank: 0,
+    recentActivity: trendPercentage > 100 ? `+${trendPercentage}% today` : null
+  };
+}
+
 // ✨ SIMPLIFIED: Generate historical prices that GUARANTEE chart matches returns
 function getStockHistoricalPrices(symbol, currentPrice, priceChange7d, priceChange30d) {
   // Include return values in cache key so cached data matches current returns
@@ -297,26 +345,19 @@ export async function getCryptoExtendedData(cryptoId) {
   }
 }
 
-// ✨ ENHANCED: Get stocks with all extended metrics (chart matches numbers)
+// ✨ ENHANCED: Get stocks with community data for social proof
 export async function getPopularStocks() {
   try {
     const stocksWithPrices = await Promise.all(
       POPULAR_STOCKS.map(async (stock) => {
         const priceData = await getStockPrice(stock.symbol);
 
-        // Generate 7d and 30d returns FIRST (would come from API in production)
+        // Generate 7d and 30d returns (would come from API in production)
         const priceChange7d = (Math.random() - 0.5) * 10; // ±5%
         const priceChange30d = (Math.random() - 0.5) * 30; // ±15%
 
-        // THEN generate historical prices based on these returns
-        const historicalPrices = getStockHistoricalPrices(
-          stock.symbol,
-          priceData.price,
-          priceChange7d,
-          priceChange30d
-        );
-
-        const volatility = calculateVolatility(historicalPrices);
+        // Calculate volatility based on price movement
+        const volatility = Math.abs(priceChange30d) > 10 ? 'high' : Math.abs(priceChange30d) > 5 ? 'medium' : 'low';
 
         return {
           symbol: stock.symbol,
@@ -327,19 +368,25 @@ export async function getPopularStocks() {
           priceChange7d,
           priceChange30d,
           volatility,
-          historicalPrices,
           week52High: priceData.week52High,
           week52Low: priceData.week52Low,
           marketCap: 0,
-          volume24h: 0
+          volume24h: 0,
+          communityData: generateCommunityData(stock.symbol, priceData.price, priceData.percentChange, volatility)
         };
       })
     );
 
+    // Set popularity rankings
+    stocksWithPrices.sort((a, b) => b.communityData.picksThisWeek - a.communityData.picksThisWeek);
+    stocksWithPrices.forEach((stock, index) => {
+      stock.communityData.popularityRank = index + 1;
+    });
+
     return stocksWithPrices;
   } catch (error) {
     console.error('Error fetching popular stocks:', error);
-    return POPULAR_STOCKS.map(stock => ({
+    return POPULAR_STOCKS.map((stock, index) => ({
       symbol: stock.symbol,
       name: stock.name,
       price: 100,
@@ -348,16 +395,31 @@ export async function getPopularStocks() {
       priceChange7d: 0,
       priceChange30d: 0,
       volatility: 'low',
-      historicalPrices: Array(30).fill(100),
       week52High: 125,
       week52Low: 80,
       marketCap: 0,
-      volume24h: 0
+      volume24h: 0,
+      communityData: {
+        picksThisWeek: 500,
+        trendPercentage: 0,
+        isHot: false,
+        isTrending: false,
+        championPick: false,
+        championPercentage: 50,
+        rankDistribution: { beginner: 125, veteran: 175, expert: 125, master: 75 },
+        winRate: 50,
+        totalBattles: 300,
+        wins: 150,
+        losses: 150,
+        avgReturnWhenWinning: 5.0,
+        popularityRank: index + 1,
+        recentActivity: null
+      }
     }));
   }
 }
 
-// ✨ ENHANCED: Get crypto with all extended metrics (chart matches numbers)
+// ✨ ENHANCED: Get crypto with community data for social proof
 export async function getPopularCrypto() {
   try {
     const batchSize = 6;
@@ -373,20 +435,15 @@ export async function getPopularCrypto() {
       const batchPromises = batch.map(async (crypto) => {
         const priceData = await getCryptoPrice(crypto.id);
         const extendedData = await getCryptoExtendedData(crypto.id);
-        const historicalPrices = await getCryptoHistoricalPrices(crypto.id);
-        const volatility = calculateVolatility(historicalPrices);
 
-        // Calculate actual returns from historical data for consistency
         const currentPrice = priceData.price;
-        const price7dAgo = historicalPrices[historicalPrices.length - 8] || currentPrice;
-        const price30dAgo = historicalPrices[0] || currentPrice;
 
-        const actualPriceChange7d = ((currentPrice - price7dAgo) / price7dAgo) * 100;
-        const actualPriceChange30d = ((currentPrice - price30dAgo) / price30dAgo) * 100;
+        // Use extended data for returns
+        const priceChange7d = extendedData.priceChange7d || (Math.random() - 0.5) * 10;
+        const priceChange30d = extendedData.priceChange30d || (Math.random() - 0.5) * 30;
 
-        // Use calculated returns (more accurate than API's sometimes stale data)
-        const priceChange7d = isFinite(actualPriceChange7d) ? actualPriceChange7d : extendedData.priceChange7d;
-        const priceChange30d = isFinite(actualPriceChange30d) ? actualPriceChange30d : extendedData.priceChange30d;
+        // Calculate volatility based on price movements
+        const volatility = Math.abs(priceChange30d) > 10 ? 'high' : Math.abs(priceChange30d) > 5 ? 'medium' : 'low';
 
         return {
           symbol: crypto.symbol,
@@ -399,9 +456,9 @@ export async function getPopularCrypto() {
           marketCap: priceData.marketCap,
           volume24h: priceData.volume24h,
           volatility,
-          historicalPrices,
           week52High: extendedData.week52High || currentPrice * 1.5,
-          week52Low: extendedData.week52Low || currentPrice * 0.5
+          week52Low: extendedData.week52Low || currentPrice * 0.5,
+          communityData: generateCommunityData(crypto.symbol, priceData.price, priceData.change24h, volatility)
         };
       });
 
@@ -413,11 +470,17 @@ export async function getPopularCrypto() {
       }
     }
 
+    // Set popularity rankings
+    allCryptoWithPrices.sort((a, b) => b.communityData.picksThisWeek - a.communityData.picksThisWeek);
+    allCryptoWithPrices.forEach((crypto, index) => {
+      crypto.communityData.popularityRank = index + 1;
+    });
+
     return allCryptoWithPrices;
   } catch (error) {
     console.error('Error fetching popular crypto:', error);
     const fallbackPrice = 100;
-    return POPULAR_CRYPTO.map(crypto => {
+    return POPULAR_CRYPTO.map((crypto, index) => {
       const price = FALLBACK_CRYPTO_PRICES[crypto.id] || fallbackPrice;
       return {
         symbol: crypto.symbol,
@@ -430,9 +493,24 @@ export async function getPopularCrypto() {
         marketCap: 0,
         volume24h: 0,
         volatility: 'low',
-        historicalPrices: Array(30).fill(price),
         week52High: price * 1.25,
-        week52Low: price * 0.75
+        week52Low: price * 0.75,
+        communityData: {
+          picksThisWeek: 500,
+          trendPercentage: 0,
+          isHot: false,
+          isTrending: false,
+          championPick: false,
+          championPercentage: 50,
+          rankDistribution: { beginner: 125, veteran: 175, expert: 125, master: 75 },
+          winRate: 50,
+          totalBattles: 300,
+          wins: 150,
+          losses: 150,
+          avgReturnWhenWinning: 5.0,
+          popularityRank: index + 1,
+          recentActivity: null
+        }
       };
     });
   }
