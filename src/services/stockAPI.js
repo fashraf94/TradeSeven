@@ -91,9 +91,9 @@ function calculateVolatility(prices) {
   return 'high';
 }
 
-// Fetch 30-day historical prices for stocks
-async function getStockHistoricalPrices(symbol) {
-  const cacheKey = `stock_hist_30d_${symbol}`;
+// ✨ FIXED: Generate historical prices that match the displayed returns
+function getStockHistoricalPrices(symbol, currentPrice, priceChange7d, priceChange30d) {
+  const cacheKey = `stock_hist_30d_${symbol}_${currentPrice}_${priceChange7d}_${priceChange30d}`;
   const cached = historicalCache.get(cacheKey);
 
   if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
@@ -101,23 +101,52 @@ async function getStockHistoricalPrices(symbol) {
   }
 
   try {
-    // For stocks, we'll simulate 30-day data based on current price
-    // In production, you'd use Finnhub's /stock/candle endpoint
-    const currentData = await getStockPrice(symbol);
-    const basePrice = currentData.price;
+    // Calculate historical prices based on returns (work backward from current price)
 
-    // Generate realistic 30-day prices (±3% variation)
+    // Price 7 days ago (from 7d return)
+    const price7dAgo = currentPrice / (1 + priceChange7d / 100);
+
+    // Price 30 days ago (from 30d return)
+    const price30dAgo = currentPrice / (1 + priceChange30d / 100);
+
     const prices = [];
-    for (let i = 29; i >= 0; i--) {
-      const variation = (Math.random() - 0.5) * 0.06; // ±3%
-      prices.push(basePrice * (1 + variation));
+
+    // Generate 30 data points
+    for (let i = 0; i < 30; i++) {
+      if (i === 0) {
+        // Day 0 (30 days ago)
+        prices.push(price30dAgo);
+      } else if (i === 23) {
+        // Day 23 (7 days ago)
+        prices.push(price7dAgo);
+      } else if (i === 29) {
+        // Day 29 (today)
+        prices.push(currentPrice);
+      } else {
+        // Intermediate days - interpolate with some randomness
+        let basePrice;
+
+        if (i < 23) {
+          // Between day 0 and day 23: interpolate from 30d to 7d price
+          const progress = i / 23;
+          basePrice = price30dAgo + (price7dAgo - price30dAgo) * progress;
+        } else {
+          // Between day 23 and day 29: interpolate from 7d to current price
+          const progress = (i - 23) / 6;
+          basePrice = price7dAgo + (currentPrice - price7dAgo) * progress;
+        }
+
+        // Add small random variation (±1%) for realism
+        const variation = (Math.random() - 0.5) * 0.02;
+        prices.push(basePrice * (1 + variation));
+      }
     }
 
     historicalCache.set(cacheKey, { data: prices, timestamp: Date.now() });
     return prices;
   } catch (error) {
-    console.error(`Error fetching historical prices for ${symbol}:`, error);
-    return Array(30).fill(100); // Fallback flat line
+    console.error(`Error generating historical prices for ${symbol}:`, error);
+    return Array(30).fill(currentPrice || 100);
   }
 }
 
@@ -264,20 +293,26 @@ export async function getCryptoExtendedData(cryptoId) {
   }
 }
 
-// ENHANCED: Get stocks with all extended metrics
+// ✨ ENHANCED: Get stocks with all extended metrics (chart matches numbers)
 export async function getPopularStocks() {
   try {
     const stocksWithPrices = await Promise.all(
       POPULAR_STOCKS.map(async (stock) => {
         const priceData = await getStockPrice(stock.symbol);
-        const historicalPrices = await getStockHistoricalPrices(stock.symbol);
-        const volatility = calculateVolatility(historicalPrices);
 
-        // Calculate 7d and 30d performance (simulated for stocks)
-        const price7dAgo = historicalPrices[0];
-        const price30dAgo = price7dAgo * (1 - (Math.random() - 0.5) * 0.1); // Simulate ±5%
-        const priceChange7d = ((priceData.price - price7dAgo) / price7dAgo) * 100;
-        const priceChange30d = ((priceData.price - price30dAgo) / price30dAgo) * 100;
+        // Generate 7d and 30d returns FIRST (would come from API in production)
+        const priceChange7d = (Math.random() - 0.5) * 10; // ±5%
+        const priceChange30d = (Math.random() - 0.5) * 30; // ±15%
+
+        // THEN generate historical prices based on these returns
+        const historicalPrices = getStockHistoricalPrices(
+          stock.symbol,
+          priceData.price,
+          priceChange7d,
+          priceChange30d
+        );
+
+        const volatility = calculateVolatility(historicalPrices);
 
         return {
           symbol: stock.symbol,
@@ -291,9 +326,8 @@ export async function getPopularStocks() {
           historicalPrices,
           week52High: priceData.week52High,
           week52Low: priceData.week52Low,
-          // Stock-specific data (would come from additional API call in production)
-          marketCap: 0, // Placeholder
-          volume24h: 0  // Placeholder
+          marketCap: 0,
+          volume24h: 0
         };
       })
     );
@@ -319,7 +353,7 @@ export async function getPopularStocks() {
   }
 }
 
-// ENHANCED: Get crypto with all extended metrics
+// ✨ ENHANCED: Get crypto with all extended metrics (chart matches numbers)
 export async function getPopularCrypto() {
   try {
     const batchSize = 6;
@@ -338,20 +372,32 @@ export async function getPopularCrypto() {
         const historicalPrices = await getCryptoHistoricalPrices(crypto.id);
         const volatility = calculateVolatility(historicalPrices);
 
+        // Calculate actual returns from historical data for consistency
+        const currentPrice = priceData.price;
+        const price7dAgo = historicalPrices[historicalPrices.length - 8] || currentPrice;
+        const price30dAgo = historicalPrices[0] || currentPrice;
+
+        const actualPriceChange7d = ((currentPrice - price7dAgo) / price7dAgo) * 100;
+        const actualPriceChange30d = ((currentPrice - price30dAgo) / price30dAgo) * 100;
+
+        // Use calculated returns (more accurate than API's sometimes stale data)
+        const priceChange7d = isFinite(actualPriceChange7d) ? actualPriceChange7d : extendedData.priceChange7d;
+        const priceChange30d = isFinite(actualPriceChange30d) ? actualPriceChange30d : extendedData.priceChange30d;
+
         return {
           symbol: crypto.symbol,
           name: crypto.name,
           price: priceData.price,
           change24h: priceData.change24h,
-          percentChange: priceData.change24h, // Alias for consistency
-          priceChange7d: extendedData.priceChange7d,
-          priceChange30d: extendedData.priceChange30d,
+          percentChange: priceData.change24h,
+          priceChange7d,
+          priceChange30d,
           marketCap: priceData.marketCap,
           volume24h: priceData.volume24h,
           volatility,
           historicalPrices,
-          week52High: extendedData.week52High || priceData.price * 1.25,
-          week52Low: extendedData.week52Low || priceData.price * 0.75
+          week52High: extendedData.week52High || currentPrice * 1.5,
+          week52Low: extendedData.week52Low || currentPrice * 0.5
         };
       });
 
