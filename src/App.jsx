@@ -327,7 +327,9 @@ import {
   ArrowRight,
   User,
   Flame,
-  Brain
+  Brain,
+  Briefcase,
+  Settings
 } from 'lucide-react';
 
 const PERCENTAGE_OPTIONS = [7.5, 10, 12.5, 15, 17.5, 20];
@@ -466,6 +468,9 @@ export default function PortfolioDuel() {
 
   // Mobile battle view tab state
   const [battleViewTab, setBattleViewTab] = useState('yours');
+
+  // Portfolio Manager Modal state
+  const [showPortfolioManager, setShowPortfolioManager] = useState(false);
 
   // Toggle asset expansion
   const toggleAssetExpansion = (symbol) => {
@@ -2414,48 +2419,57 @@ export default function PortfolioDuel() {
             )}
           </div>
 
-          {/* MOBILE: Bottom Navigation - Action buttons for mobile */}
+          {/* MOBILE: Bottom Navigation - Wins, Losses, Profile, Settings */}
           <div
             className="md:hidden fixed bottom-0 left-0 right-0 z-50"
             style={{
               background: colors.cardBg,
               borderTop: `1px solid ${colors.border}`,
-              padding: '12px 16px',
+              padding: '8px 16px 12px',
               boxShadow: '0 -2px 8px rgba(0,0,0,0.3)'
             }}
           >
-            <div className="flex items-center justify-around">
+            <div className="flex items-center justify-around max-w-md mx-auto">
+              {/* Wins Tab */}
               <button
-                onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setAssetType('stocks'); setSearchTerm(''); setScreen('builder'); }}
-                className="flex flex-col items-center gap-1 px-4 py-2"
-                style={{ color: colors.cyan }}
+                onClick={() => setScreen('wins')}
+                className="flex flex-col items-center gap-1 min-w-[60px] py-1"
               >
-                <Plus className="w-6 h-6" />
-                <span className="text-xs font-semibold">Create</span>
+                <div className="text-2xl">🏆</div>
+                <span className={`text-xs font-semibold ${screen === 'wins' ? 'text-green-500' : 'text-gray-400'}`}>Wins</span>
+                {user.wins > 0 && (
+                  <span className="text-xs font-bold text-green-500">{user.wins}</span>
+                )}
               </button>
+
+              {/* Losses Tab */}
               <button
-                onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setAssetType('stocks'); setSearchTerm(''); setJoinCode(''); setScreen('join'); }}
-                className="flex flex-col items-center gap-1 px-4 py-2"
-                style={{ color: colors.textSecondary }}
+                onClick={() => setScreen('losses')}
+                className="flex flex-col items-center gap-1 min-w-[60px] py-1"
               >
-                <Users className="w-6 h-6" />
-                <span className="text-xs font-semibold">Join</span>
+                <div className="text-2xl">💀</div>
+                <span className={`text-xs font-semibold ${screen === 'losses' ? 'text-red-500' : 'text-gray-400'}`}>Losses</span>
+                {user.losses > 0 && (
+                  <span className="text-xs font-bold text-red-500">{user.losses}</span>
+                )}
               </button>
+
+              {/* Profile Tab */}
               <button
-                onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setAssetType('stocks'); setSearchTerm(''); setScreen('training'); }}
-                className="flex flex-col items-center gap-1 px-4 py-2"
-                style={{ color: colors.purple }}
+                onClick={() => setScreen('profile')}
+                className="flex flex-col items-center gap-1 min-w-[60px] py-1"
               >
-                <GraduationCap className="w-6 h-6" />
-                <span className="text-xs font-semibold">Train</span>
+                <div className="text-2xl">👤</div>
+                <span className={`text-xs font-semibold ${screen === 'profile' ? 'text-cyan-500' : 'text-gray-400'}`}>Profile</span>
               </button>
+
+              {/* Settings Tab */}
               <button
-                onClick={() => setShowXPModal(true)}
-                className="flex flex-col items-center gap-1 px-4 py-2"
-                style={{ color: colors.gold }}
+                onClick={() => setScreen('settings')}
+                className="flex flex-col items-center gap-1 min-w-[60px] py-1"
               >
-                <Trophy className="w-6 h-6" />
-                <span className="text-xs font-semibold">{user.wins}W</span>
+                <div className="text-2xl">⚙️</div>
+                <span className={`text-xs font-semibold ${screen === 'settings' ? 'text-purple-500' : 'text-gray-400'}`}>Settings</span>
               </button>
             </div>
           </div>
@@ -2541,7 +2555,23 @@ export default function PortfolioDuel() {
               <h1 className="text-base md:text-xl font-bold text-white">
                 Create Battle
               </h1>
-              <div className="w-16 md:w-20"></div>
+
+              {/* Portfolio Icon with Badge */}
+              <button
+                onClick={() => setShowPortfolioManager(true)}
+                className="relative"
+              >
+                <div className="w-11 h-11 md:w-12 md:h-12 bg-white/20 hover:bg-white/30 rounded-lg flex items-center justify-center transition-colors">
+                  <Briefcase className="w-6 h-6 md:w-7 md:h-7 text-white" />
+                </div>
+
+                {/* Red Badge with Count */}
+                {portfolio.length > 0 && (
+                  <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 md:w-6 md:h-6 flex items-center justify-center border-2 border-[#0d1117]">
+                    {portfolio.length}
+                  </div>
+                )}
+              </button>
             </div>
           </div>
 
@@ -3191,6 +3221,236 @@ export default function PortfolioDuel() {
             </div>
           </div>
         </div>
+
+        {/* Portfolio Manager Modal - Full Screen */}
+        {showPortfolioManager && (
+          <div className="fixed inset-0 bg-[#0d1117] z-50 overflow-y-auto">
+            {/* Header */}
+            <div className="bg-[#161b22] border-b border-gray-800 p-4 sticky top-0 z-10">
+              <div className="max-w-6xl mx-auto flex items-center justify-between">
+                <button
+                  onClick={() => setShowPortfolioManager(false)}
+                  className="flex items-center gap-2 text-cyan-500 hover:text-cyan-400 font-semibold"
+                >
+                  <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
+                  <span>Back to Assets</span>
+                </button>
+
+                <h1 className="text-xl font-bold text-white">Your Portfolio</h1>
+
+                <div className="w-24"></div>
+              </div>
+            </div>
+
+            <div className="max-w-4xl mx-auto p-4">
+
+              {/* Portfolio Summary */}
+              <div className="bg-[#161b22] border-2 border-cyan-500 rounded-xl p-6 mb-6">
+                <h2 className="text-2xl font-bold text-white mb-4">Portfolio Summary</h2>
+
+                {/* Progress */}
+                <div className="mb-6">
+                  <div className="flex justify-between mb-2">
+                    <span className="text-gray-400">Assets Selected</span>
+                    <span className={`font-bold ${
+                      portfolio.length >= 7 && portfolio.length <= 13
+                        ? 'text-green-500'
+                        : 'text-yellow-500'
+                    }`}>
+                      {portfolio.length}/13
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between mb-2">
+                    <span className="text-gray-400">Total Allocation</span>
+                    <span className={`font-bold ${
+                      Math.abs(totalPercentage - 100) < 0.01
+                        ? 'text-green-500'
+                        : totalPercentage > 100
+                        ? 'text-red-500'
+                        : 'text-yellow-500'
+                    }`}>
+                      {totalPercentage.toFixed(1)}%
+                    </span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="w-full bg-gray-700 h-4 rounded-full overflow-hidden mt-3">
+                    <div
+                      className={`h-full transition-all duration-300 ${
+                        Math.abs(totalPercentage - 100) < 0.01
+                          ? 'bg-green-500'
+                          : totalPercentage > 100
+                          ? 'bg-red-500'
+                          : 'bg-cyan-500'
+                      }`}
+                      style={{ width: `${Math.min(100, totalPercentage)}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Validation Messages */}
+                <div className="space-y-2 text-sm">
+                  {portfolio.length === 0 && (
+                    <div className="text-yellow-500 flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>Add at least 7 assets to create a portfolio</span>
+                    </div>
+                  )}
+                  {portfolio.length > 0 && portfolio.length < 7 && (
+                    <div className="text-yellow-500 flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>Need {7 - portfolio.length} more asset{7 - portfolio.length !== 1 ? 's' : ''}</span>
+                    </div>
+                  )}
+                  {portfolio.length > 13 && (
+                    <div className="text-red-500 flex items-center gap-2">
+                      <span>❌</span>
+                      <span>Maximum 13 assets allowed</span>
+                    </div>
+                  )}
+                  {totalPercentage < 100 && portfolio.length >= 7 && (
+                    <div className="text-yellow-500 flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>Total allocation must equal 100% (currently {totalPercentage.toFixed(1)}%)</span>
+                    </div>
+                  )}
+                  {totalPercentage > 100 && (
+                    <div className="text-red-500 flex items-center gap-2">
+                      <span>❌</span>
+                      <span>Total allocation exceeds 100% (currently {totalPercentage.toFixed(1)}%)</span>
+                    </div>
+                  )}
+                  {portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && (
+                    <div className="text-green-500 flex items-center gap-2 font-semibold">
+                      <span>✓</span>
+                      <span>Portfolio is ready to battle!</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Selected Assets List */}
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-white mb-3">Selected Assets</h3>
+
+                {portfolio.length === 0 ? (
+                  <div className="bg-[#161b22] border border-gray-700 rounded-xl p-12 text-center">
+                    <div className="text-6xl mb-4">📂</div>
+                    <p className="text-gray-400">No assets selected yet</p>
+                    <p className="text-sm text-gray-500 mt-2">Go back and add assets to your portfolio</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {portfolio.map(asset => {
+                      const percentage = (asset.amount / 1000000) * 100;
+                      return (
+                        <div
+                          key={asset.symbol}
+                          className="bg-[#161b22] border border-gray-700 rounded-xl p-4"
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h4 className="text-lg font-bold text-white">{asset.symbol}</h4>
+                              </div>
+                              <p className="text-sm text-gray-400">{asset.name}</p>
+                              <p className="text-cyan-500 font-semibold mt-1">
+                                ${asset.price?.toFixed(2)}
+                              </p>
+                            </div>
+
+                            <button
+                              onClick={() => handleRemoveAsset(asset.symbol)}
+                              className="bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white w-10 h-10 rounded-lg flex items-center justify-center transition-colors font-bold text-xl"
+                            >
+                              ×
+                            </button>
+                          </div>
+
+                          {/* Allocation Slider */}
+                          <div>
+                            <div className="flex justify-between mb-2 text-sm">
+                              <span className="text-gray-400">Allocation</span>
+                              <span className="font-bold text-cyan-500">{percentage.toFixed(1)}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="7.5"
+                              max="20"
+                              step="0.5"
+                              value={percentage}
+                              onChange={(e) => {
+                                const newPercentage = parseFloat(e.target.value);
+                                const newAmount = (newPercentage / 100) * 1000000;
+                                setPortfolio(prev => prev.map(a =>
+                                  a.symbol === asset.symbol ? { ...a, amount: newAmount } : a
+                                ));
+                              }}
+                              className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                            />
+                            <div className="flex justify-between text-xs text-gray-500 mt-1">
+                              <span>7.5%</span>
+                              <span>20%</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Portfolio Name */}
+              <div className="mb-6">
+                <label className="block text-sm font-semibold text-white mb-2">
+                  Portfolio Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={portfolioName}
+                  onChange={(e) => setPortfolioName(e.target.value)}
+                  placeholder="Enter a name for your portfolio"
+                  className="w-full bg-[#161b22] border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-cyan-500 focus:outline-none"
+                />
+                {!portfolioName && portfolio.length > 0 && (
+                  <p className="text-red-500 text-xs mt-1">Portfolio name is required</p>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col gap-3 pb-6">
+                <button
+                  onClick={() => setShowPortfolioManager(false)}
+                  className="w-full bg-gray-700 hover:bg-gray-600 text-white font-semibold py-4 rounded-lg transition-colors"
+                >
+                  ← Continue Browsing Assets
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleCreateBattle();
+                    setShowPortfolioManager(false);
+                  }}
+                  disabled={portfolio.length < 7 || portfolio.length > 13 || Math.abs(totalPercentage - 100) >= 0.01 || !portfolioName}
+                  className={`w-full font-bold py-4 rounded-lg transition-colors ${
+                    portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && portfolioName
+                      ? 'bg-cyan-500 hover:bg-cyan-400 text-black'
+                      : 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  {portfolio.length < 7
+                    ? `Add ${7 - portfolio.length} More Asset${7 - portfolio.length !== 1 ? 's' : ''}`
+                    : Math.abs(totalPercentage - 100) >= 0.01
+                    ? `Adjust Allocation (${totalPercentage.toFixed(1)}%)`
+                    : !portfolioName
+                    ? 'Enter Portfolio Name'
+                    : 'Create Battle ⚔️'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -3220,7 +3480,23 @@ export default function PortfolioDuel() {
               <h1 className="text-base md:text-xl font-bold text-white">
                 Join Battle
               </h1>
-              <div className="w-16 md:w-20"></div>
+
+              {/* Portfolio Icon with Badge */}
+              <button
+                onClick={() => setShowPortfolioManager(true)}
+                className="relative"
+              >
+                <div className="w-11 h-11 md:w-12 md:h-12 bg-white/20 hover:bg-white/30 rounded-lg flex items-center justify-center transition-colors">
+                  <Briefcase className="w-6 h-6 md:w-7 md:h-7 text-white" />
+                </div>
+
+                {/* Red Badge with Count */}
+                {portfolio.length > 0 && (
+                  <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 md:w-6 md:h-6 flex items-center justify-center border-2 border-[#0d1117]">
+                    {portfolio.length}
+                  </div>
+                )}
+              </button>
             </div>
           </div>
 
@@ -3926,6 +4202,218 @@ export default function PortfolioDuel() {
             </div>
           </div>
         </div>
+
+        {/* Portfolio Manager Modal - Full Screen (Join) */}
+        {showPortfolioManager && (
+          <div className="fixed inset-0 bg-[#0d1117] z-50 overflow-y-auto">
+            {/* Header */}
+            <div className="bg-[#161b22] border-b border-gray-800 p-4 sticky top-0 z-10">
+              <div className="max-w-6xl mx-auto flex items-center justify-between">
+                <button
+                  onClick={() => setShowPortfolioManager(false)}
+                  className="flex items-center gap-2 text-green-500 hover:text-green-400 font-semibold"
+                >
+                  <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
+                  <span>Back to Assets</span>
+                </button>
+
+                <h1 className="text-xl font-bold text-white">Your Portfolio</h1>
+
+                <div className="w-24"></div>
+              </div>
+            </div>
+
+            <div className="max-w-4xl mx-auto p-4">
+
+              {/* Portfolio Summary */}
+              <div className="bg-[#161b22] border-2 border-green-500 rounded-xl p-6 mb-6">
+                <h2 className="text-2xl font-bold text-white mb-4">Portfolio Summary</h2>
+
+                {/* Progress */}
+                <div className="mb-6">
+                  <div className="flex justify-between mb-2">
+                    <span className="text-gray-400">Assets Selected</span>
+                    <span className={`font-bold ${
+                      portfolio.length >= 7 && portfolio.length <= 13
+                        ? 'text-green-500'
+                        : 'text-yellow-500'
+                    }`}>
+                      {portfolio.length}/13
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between mb-2">
+                    <span className="text-gray-400">Total Allocation</span>
+                    <span className={`font-bold ${
+                      Math.abs(totalPercentage - 100) < 0.01
+                        ? 'text-green-500'
+                        : totalPercentage > 100
+                        ? 'text-red-500'
+                        : 'text-yellow-500'
+                    }`}>
+                      {totalPercentage.toFixed(1)}%
+                    </span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="w-full bg-gray-700 h-4 rounded-full overflow-hidden mt-3">
+                    <div
+                      className={`h-full transition-all duration-300 ${
+                        Math.abs(totalPercentage - 100) < 0.01
+                          ? 'bg-green-500'
+                          : totalPercentage > 100
+                          ? 'bg-red-500'
+                          : 'bg-green-500'
+                      }`}
+                      style={{ width: `${Math.min(100, totalPercentage)}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Validation Messages */}
+                <div className="space-y-2 text-sm">
+                  {!joinCode.trim() && (
+                    <div className="text-yellow-500 flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>Enter a challenge code to join a battle</span>
+                    </div>
+                  )}
+                  {portfolio.length === 0 && (
+                    <div className="text-yellow-500 flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>Add at least 7 assets to create a portfolio</span>
+                    </div>
+                  )}
+                  {portfolio.length > 0 && portfolio.length < 7 && (
+                    <div className="text-yellow-500 flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>Need {7 - portfolio.length} more asset{7 - portfolio.length !== 1 ? 's' : ''}</span>
+                    </div>
+                  )}
+                  {portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && joinCode.trim() && (
+                    <div className="text-green-500 flex items-center gap-2 font-semibold">
+                      <span>✓</span>
+                      <span>Ready to join battle!</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Selected Assets List */}
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-white mb-3">Selected Assets</h3>
+
+                {portfolio.length === 0 ? (
+                  <div className="bg-[#161b22] border border-gray-700 rounded-xl p-12 text-center">
+                    <div className="text-6xl mb-4">📂</div>
+                    <p className="text-gray-400">No assets selected yet</p>
+                    <p className="text-sm text-gray-500 mt-2">Go back and add assets to your portfolio</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {portfolio.map(asset => {
+                      const percentage = (asset.amount / 1000000) * 100;
+                      return (
+                        <div
+                          key={asset.symbol}
+                          className="bg-[#161b22] border border-gray-700 rounded-xl p-4"
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <h4 className="text-lg font-bold text-white">{asset.symbol}</h4>
+                              <p className="text-sm text-gray-400">{asset.name}</p>
+                              <p className="text-green-500 font-semibold mt-1">${asset.price?.toFixed(2)}</p>
+                            </div>
+                            <button
+                              onClick={() => handleRemoveAsset(asset.symbol)}
+                              className="bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white w-10 h-10 rounded-lg flex items-center justify-center transition-colors font-bold text-xl"
+                            >
+                              ×
+                            </button>
+                          </div>
+
+                          {/* Allocation Slider */}
+                          <div>
+                            <div className="flex justify-between mb-2 text-sm">
+                              <span className="text-gray-400">Allocation</span>
+                              <span className="font-bold text-green-500">{percentage.toFixed(1)}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="7.5"
+                              max="20"
+                              step="0.5"
+                              value={percentage}
+                              onChange={(e) => {
+                                const newPercentage = parseFloat(e.target.value);
+                                const newAmount = (newPercentage / 100) * 1000000;
+                                setPortfolio(prev => prev.map(a =>
+                                  a.symbol === asset.symbol ? { ...a, amount: newAmount } : a
+                                ));
+                              }}
+                              className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
+                            />
+                            <div className="flex justify-between text-xs text-gray-500 mt-1">
+                              <span>7.5%</span>
+                              <span>20%</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Portfolio Name */}
+              <div className="mb-6">
+                <label className="block text-sm font-semibold text-white mb-2">
+                  Portfolio Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={portfolioName}
+                  onChange={(e) => setPortfolioName(e.target.value)}
+                  placeholder="Enter a name for your portfolio"
+                  className="w-full bg-[#161b22] border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-green-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col gap-3 pb-6">
+                <button
+                  onClick={() => setShowPortfolioManager(false)}
+                  className="w-full bg-gray-700 hover:bg-gray-600 text-white font-semibold py-4 rounded-lg transition-colors"
+                >
+                  ← Continue Browsing Assets
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleJoinBattle();
+                    setShowPortfolioManager(false);
+                  }}
+                  disabled={portfolio.length < 7 || portfolio.length > 13 || Math.abs(totalPercentage - 100) >= 0.01 || !portfolioName || !joinCode.trim()}
+                  className={`w-full font-bold py-4 rounded-lg transition-colors ${
+                    portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && portfolioName && joinCode.trim()
+                      ? 'bg-green-500 hover:bg-green-400 text-black'
+                      : 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  {!joinCode.trim()
+                    ? 'Enter Challenge Code'
+                    : portfolio.length < 7
+                    ? `Add ${7 - portfolio.length} More Asset${7 - portfolio.length !== 1 ? 's' : ''}`
+                    : Math.abs(totalPercentage - 100) >= 0.01
+                    ? `Adjust Allocation (${totalPercentage.toFixed(1)}%)`
+                    : !portfolioName
+                    ? 'Enter Portfolio Name'
+                    : 'Join Battle ⚔️'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -3956,7 +4444,23 @@ export default function PortfolioDuel() {
                 <GraduationCap className="w-5 h-5" />
                 Training
               </h1>
-              <div className="w-16 md:w-20"></div>
+
+              {/* Portfolio Icon with Badge */}
+              <button
+                onClick={() => setShowPortfolioManager(true)}
+                className="relative"
+              >
+                <div className="w-11 h-11 md:w-12 md:h-12 bg-white/20 hover:bg-white/30 rounded-lg flex items-center justify-center transition-colors">
+                  <Briefcase className="w-6 h-6 md:w-7 md:h-7 text-white" />
+                </div>
+
+                {/* Red Badge with Count */}
+                {portfolio.length > 0 && (
+                  <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 md:w-6 md:h-6 flex items-center justify-center border-2 border-[#0d1117]">
+                    {portfolio.length}
+                  </div>
+                )}
+              </button>
             </div>
           </div>
 
@@ -4556,6 +5060,210 @@ export default function PortfolioDuel() {
             </div>
           </div>
         </div>
+
+        {/* Portfolio Manager Modal - Full Screen (Training) */}
+        {showPortfolioManager && (
+          <div className="fixed inset-0 bg-[#0d1117] z-50 overflow-y-auto">
+            {/* Header */}
+            <div className="bg-[#161b22] border-b border-gray-800 p-4 sticky top-0 z-10">
+              <div className="max-w-6xl mx-auto flex items-center justify-between">
+                <button
+                  onClick={() => setShowPortfolioManager(false)}
+                  className="flex items-center gap-2 text-purple-500 hover:text-purple-400 font-semibold"
+                >
+                  <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
+                  <span>Back to Assets</span>
+                </button>
+
+                <h1 className="text-xl font-bold text-white">Your Portfolio</h1>
+
+                <div className="w-24"></div>
+              </div>
+            </div>
+
+            <div className="max-w-4xl mx-auto p-4">
+
+              {/* Portfolio Summary */}
+              <div className="bg-[#161b22] border-2 border-purple-500 rounded-xl p-6 mb-6">
+                <h2 className="text-2xl font-bold text-white mb-4">Portfolio Summary</h2>
+
+                {/* Progress */}
+                <div className="mb-6">
+                  <div className="flex justify-between mb-2">
+                    <span className="text-gray-400">Assets Selected</span>
+                    <span className={`font-bold ${
+                      portfolio.length >= 7 && portfolio.length <= 13
+                        ? 'text-green-500'
+                        : 'text-yellow-500'
+                    }`}>
+                      {portfolio.length}/13
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between mb-2">
+                    <span className="text-gray-400">Total Allocation</span>
+                    <span className={`font-bold ${
+                      Math.abs(totalPercentage - 100) < 0.01
+                        ? 'text-green-500'
+                        : totalPercentage > 100
+                        ? 'text-red-500'
+                        : 'text-yellow-500'
+                    }`}>
+                      {totalPercentage.toFixed(1)}%
+                    </span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="w-full bg-gray-700 h-4 rounded-full overflow-hidden mt-3">
+                    <div
+                      className={`h-full transition-all duration-300 ${
+                        Math.abs(totalPercentage - 100) < 0.01
+                          ? 'bg-green-500'
+                          : totalPercentage > 100
+                          ? 'bg-red-500'
+                          : 'bg-purple-500'
+                      }`}
+                      style={{ width: `${Math.min(100, totalPercentage)}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Validation Messages */}
+                <div className="space-y-2 text-sm">
+                  {portfolio.length === 0 && (
+                    <div className="text-yellow-500 flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>Add at least 7 assets to create a portfolio</span>
+                    </div>
+                  )}
+                  {portfolio.length > 0 && portfolio.length < 7 && (
+                    <div className="text-yellow-500 flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>Need {7 - portfolio.length} more asset{7 - portfolio.length !== 1 ? 's' : ''}</span>
+                    </div>
+                  )}
+                  {portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && (
+                    <div className="text-green-500 flex items-center gap-2 font-semibold">
+                      <span>✓</span>
+                      <span>Ready to start training!</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Selected Assets List */}
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-white mb-3">Selected Assets</h3>
+
+                {portfolio.length === 0 ? (
+                  <div className="bg-[#161b22] border border-gray-700 rounded-xl p-12 text-center">
+                    <div className="text-6xl mb-4">📂</div>
+                    <p className="text-gray-400">No assets selected yet</p>
+                    <p className="text-sm text-gray-500 mt-2">Go back and add assets to your portfolio</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {portfolio.map(asset => {
+                      const percentage = (asset.amount / 1000000) * 100;
+                      return (
+                        <div
+                          key={asset.symbol}
+                          className="bg-[#161b22] border border-gray-700 rounded-xl p-4"
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <h4 className="text-lg font-bold text-white">{asset.symbol}</h4>
+                              <p className="text-sm text-gray-400">{asset.name}</p>
+                              <p className="text-purple-500 font-semibold mt-1">${asset.price?.toFixed(2)}</p>
+                            </div>
+                            <button
+                              onClick={() => handleRemoveAsset(asset.symbol)}
+                              className="bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white w-10 h-10 rounded-lg flex items-center justify-center transition-colors font-bold text-xl"
+                            >
+                              ×
+                            </button>
+                          </div>
+
+                          {/* Allocation Slider */}
+                          <div>
+                            <div className="flex justify-between mb-2 text-sm">
+                              <span className="text-gray-400">Allocation</span>
+                              <span className="font-bold text-purple-500">{percentage.toFixed(1)}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="7.5"
+                              max="20"
+                              step="0.5"
+                              value={percentage}
+                              onChange={(e) => {
+                                const newPercentage = parseFloat(e.target.value);
+                                const newAmount = (newPercentage / 100) * 1000000;
+                                setPortfolio(prev => prev.map(a =>
+                                  a.symbol === asset.symbol ? { ...a, amount: newAmount } : a
+                                ));
+                              }}
+                              className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                            />
+                            <div className="flex justify-between text-xs text-gray-500 mt-1">
+                              <span>7.5%</span>
+                              <span>20%</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Portfolio Name */}
+              <div className="mb-6">
+                <label className="block text-sm font-semibold text-white mb-2">
+                  Portfolio Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={portfolioName}
+                  onChange={(e) => setPortfolioName(e.target.value)}
+                  placeholder="Enter a name for your portfolio"
+                  className="w-full bg-[#161b22] border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col gap-3 pb-6">
+                <button
+                  onClick={() => setShowPortfolioManager(false)}
+                  className="w-full bg-gray-700 hover:bg-gray-600 text-white font-semibold py-4 rounded-lg transition-colors"
+                >
+                  ← Continue Browsing Assets
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleCreateTrainingBattle();
+                    setShowPortfolioManager(false);
+                  }}
+                  disabled={portfolio.length < 7 || portfolio.length > 13 || Math.abs(totalPercentage - 100) >= 0.01 || !portfolioName}
+                  className={`w-full font-bold py-4 rounded-lg transition-colors ${
+                    portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && portfolioName
+                      ? 'bg-purple-500 hover:bg-purple-400 text-white'
+                      : 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  {portfolio.length < 7
+                    ? `Add ${7 - portfolio.length} More Asset${7 - portfolio.length !== 1 ? 's' : ''}`
+                    : Math.abs(totalPercentage - 100) >= 0.01
+                    ? `Adjust Allocation (${totalPercentage.toFixed(1)}%)`
+                    : !portfolioName
+                    ? 'Enter Portfolio Name'
+                    : 'Start Training 🎓'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -5227,22 +5935,23 @@ export default function PortfolioDuel() {
               <div>
                 <div className="rounded-2xl overflow-hidden" style={{
                   background: colors.cardBg,
-                  border: `1px solid #30363d`
+                  border: `2px solid ${colors.cyan}`
                 }}>
-                {/* Table Header */}
-                <div style={{
+                {/* Table Header - Sticky */}
+                <div className="sticky top-0 z-10" style={{
                   padding: '16px 20px',
                   borderBottom: `1px solid #30363d`,
-                  background: 'rgba(0, 217, 255, 0.05)'
+                  background: colors.cyan
                 }}>
-                  <div style={{
-                    fontSize: '13px',
+                  <div className="flex items-center justify-center gap-2" style={{
+                    fontSize: '14px',
                     fontWeight: '700',
-                    color: colors.cyan,
+                    color: colors.background,
                     textTransform: 'uppercase',
                     letterSpacing: '2px'
                   }}>
-                    YOUR PORTFOLIO
+                    <span>👤</span>
+                    <span>YOU</span>
                   </div>
                 </div>
 
@@ -5367,22 +6076,23 @@ export default function PortfolioDuel() {
               <div>
                 <div className="rounded-2xl overflow-hidden" style={{
                   background: colors.cardBg,
-                  border: `1px solid #30363d`
+                  border: `2px solid ${colors.purple}`
                 }}>
-                {/* Table Header */}
-                <div style={{
+                {/* Table Header - Sticky */}
+                <div className="sticky top-0 z-10" style={{
                   padding: '16px 20px',
                   borderBottom: `1px solid #30363d`,
-                  background: 'rgba(239, 68, 68, 0.05)'
+                  background: colors.purple
                 }}>
-                  <div style={{
-                    fontSize: '13px',
+                  <div className="flex items-center justify-center gap-2" style={{
+                    fontSize: '14px',
                     fontWeight: '700',
-                    color: colors.red,
+                    color: 'white',
                     textTransform: 'uppercase',
                     letterSpacing: '2px'
                   }}>
-                    OPPONENT'S PORTFOLIO
+                    <span>{currentBattle.isTrainingBattle ? '🤖' : '👤'}</span>
+                    <span>{opponent ? opponent.toUpperCase() : 'OPPONENT'}</span>
                   </div>
                 </div>
 
@@ -5861,6 +6571,518 @@ export default function PortfolioDuel() {
                 })}
               </div>
             )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // WINS SCREEN
+  if (screen === 'wins') {
+    const wonBattles = previousBattles.filter(b => b.result && b.result.winner === user.username);
+
+    return (
+      <div style={containerStyle}>
+        <div className="min-h-screen pb-20" style={{ background: colors.background }}>
+          {/* Header */}
+          <div className="bg-[#161b22] border-b border-gray-800 p-4">
+            <div className="max-w-6xl mx-auto flex items-center justify-between">
+              <button
+                onClick={() => setScreen('dashboard')}
+                className="flex items-center gap-2 text-cyan-500 hover:text-cyan-400"
+              >
+                <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
+                <span>Back</span>
+              </button>
+              <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2 text-white">
+                <span className="text-green-500">🏆</span>
+                Your Wins
+              </h1>
+              <div className="w-16"></div>
+            </div>
+          </div>
+
+          <div className="max-w-6xl mx-auto p-4">
+            {/* Stats Summary */}
+            <div className="bg-gradient-to-r from-green-600 to-green-800 rounded-xl p-6 mb-6 text-center text-white">
+              <div className="text-6xl mb-2 font-bold">{user.wins || 0}</div>
+              <div className="text-xl font-semibold">Total Wins</div>
+              {(user.wins + user.losses) > 0 && (
+                <div className="text-sm mt-2 opacity-90">
+                  Win Rate: {(((user.wins || 0) / ((user.wins || 0) + (user.losses || 0))) * 100).toFixed(1)}%
+                </div>
+              )}
+            </div>
+
+            {/* Won Battles List */}
+            <h2 className="text-lg font-bold mb-4 text-white">Battle History</h2>
+
+            {wonBattles.length > 0 ? (
+              <div className="space-y-3">
+                {wonBattles.map(battle => {
+                  const result = battle.result;
+                  const userReturn = battle.creator === user.username ? result.creatorReturn : result.opponentReturn;
+                  const opponentReturn = battle.creator === user.username ? result.opponentReturn : result.creatorReturn;
+                  const opponent = battle.creator === user.username ? battle.opponent : battle.creator;
+                  const xpEarned = result.xpAwarded[user.username] || 0;
+
+                  return (
+                    <div
+                      key={battle.id}
+                      onClick={() => { setSelectedPreviousBattle(battle); setScreen('previousBattles'); }}
+                      className="bg-[#161b22] border border-green-500/30 rounded-xl p-4 cursor-pointer hover:border-green-500 transition-colors"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-bold text-white">{battle.portfolioName || 'Unnamed Portfolio'}</h3>
+                        <span className="bg-green-500 text-black text-xs font-bold px-3 py-1 rounded-full">WIN</span>
+                      </div>
+                      <div className="flex justify-between text-sm text-gray-400 mb-2">
+                        <span>vs. {opponent}</span>
+                        <span>{battleTimer.formatDate(battle.completedAt || battle.archivedAt)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-green-500 font-semibold">You: {userReturn >= 0 ? '+' : ''}{userReturn?.toFixed(2)}%</span>
+                        <span className="text-red-500 font-semibold">Them: {opponentReturn >= 0 ? '+' : ''}{opponentReturn?.toFixed(2)}%</span>
+                      </div>
+                      {xpEarned > 0 && (
+                        <div className="text-xs text-yellow-500 mt-2">+{xpEarned} XP</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="bg-[#161b22] border border-gray-700 rounded-xl p-12 text-center">
+                <div className="text-6xl mb-4">🏆</div>
+                <p className="text-gray-400 mb-2">No wins yet</p>
+                <p className="text-sm text-gray-500">Create your first battle to start winning!</p>
+                <button
+                  onClick={() => setScreen('dashboard')}
+                  className="mt-4 bg-cyan-500 hover:bg-cyan-400 text-black font-semibold px-6 py-2 rounded-lg transition-colors"
+                >
+                  Go to Dashboard
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Mobile Bottom Nav */}
+          <div
+            className="md:hidden fixed bottom-0 left-0 right-0 z-50"
+            style={{ background: colors.cardBg, borderTop: `1px solid ${colors.border}`, padding: '8px 16px 12px' }}
+          >
+            <div className="flex items-center justify-around max-w-md mx-auto">
+              <button onClick={() => setScreen('wins')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">🏆</div>
+                <span className="text-xs font-semibold text-green-500">Wins</span>
+              </button>
+              <button onClick={() => setScreen('losses')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">💀</div>
+                <span className="text-xs font-semibold text-gray-400">Losses</span>
+              </button>
+              <button onClick={() => setScreen('profile')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">👤</div>
+                <span className="text-xs font-semibold text-gray-400">Profile</span>
+              </button>
+              <button onClick={() => setScreen('settings')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">⚙️</div>
+                <span className="text-xs font-semibold text-gray-400">Settings</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // LOSSES SCREEN
+  if (screen === 'losses') {
+    const lostBattles = previousBattles.filter(b => b.result && b.result.winner !== user.username);
+
+    return (
+      <div style={containerStyle}>
+        <div className="min-h-screen pb-20" style={{ background: colors.background }}>
+          {/* Header */}
+          <div className="bg-[#161b22] border-b border-gray-800 p-4">
+            <div className="max-w-6xl mx-auto flex items-center justify-between">
+              <button
+                onClick={() => setScreen('dashboard')}
+                className="flex items-center gap-2 text-cyan-500 hover:text-cyan-400"
+              >
+                <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
+                <span>Back</span>
+              </button>
+              <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2 text-white">
+                <span className="text-red-500">💀</span>
+                Your Losses
+              </h1>
+              <div className="w-16"></div>
+            </div>
+          </div>
+
+          <div className="max-w-6xl mx-auto p-4">
+            {/* Stats Summary */}
+            <div className="bg-gradient-to-r from-red-600 to-red-800 rounded-xl p-6 mb-6 text-center text-white">
+              <div className="text-6xl mb-2 font-bold">{user.losses || 0}</div>
+              <div className="text-xl font-semibold">Total Losses</div>
+              <div className="text-sm mt-2 opacity-90">Every loss is a learning opportunity 💪</div>
+            </div>
+
+            {/* Lost Battles List */}
+            <h2 className="text-lg font-bold mb-4 text-white">Battle History</h2>
+
+            {lostBattles.length > 0 ? (
+              <div className="space-y-3">
+                {lostBattles.map(battle => {
+                  const result = battle.result;
+                  const userReturn = battle.creator === user.username ? result.creatorReturn : result.opponentReturn;
+                  const opponentReturn = battle.creator === user.username ? result.opponentReturn : result.creatorReturn;
+                  const opponent = battle.creator === user.username ? battle.opponent : battle.creator;
+                  const xpEarned = result.xpAwarded[user.username] || 0;
+
+                  return (
+                    <div
+                      key={battle.id}
+                      onClick={() => { setSelectedPreviousBattle(battle); setScreen('previousBattles'); }}
+                      className="bg-[#161b22] border border-red-500/30 rounded-xl p-4 cursor-pointer hover:border-red-500 transition-colors"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-bold text-white">{battle.portfolioName || 'Unnamed Portfolio'}</h3>
+                        <span className="bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-full">LOSS</span>
+                      </div>
+                      <div className="flex justify-between text-sm text-gray-400 mb-2">
+                        <span>vs. {opponent}</span>
+                        <span>{battleTimer.formatDate(battle.completedAt || battle.archivedAt)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-red-500 font-semibold">You: {userReturn >= 0 ? '+' : ''}{userReturn?.toFixed(2)}%</span>
+                        <span className="text-green-500 font-semibold">Them: {opponentReturn >= 0 ? '+' : ''}{opponentReturn?.toFixed(2)}%</span>
+                      </div>
+                      {xpEarned > 0 && (
+                        <div className="text-xs text-yellow-500 mt-2">+{xpEarned} XP</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="bg-[#161b22] border border-gray-700 rounded-xl p-12 text-center">
+                <div className="text-6xl mb-4">🎯</div>
+                <p className="text-gray-400 mb-2">No losses yet</p>
+                <p className="text-sm text-gray-500">You're undefeated! Keep it up!</p>
+              </div>
+            )}
+          </div>
+
+          {/* Mobile Bottom Nav */}
+          <div
+            className="md:hidden fixed bottom-0 left-0 right-0 z-50"
+            style={{ background: colors.cardBg, borderTop: `1px solid ${colors.border}`, padding: '8px 16px 12px' }}
+          >
+            <div className="flex items-center justify-around max-w-md mx-auto">
+              <button onClick={() => setScreen('wins')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">🏆</div>
+                <span className="text-xs font-semibold text-gray-400">Wins</span>
+              </button>
+              <button onClick={() => setScreen('losses')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">💀</div>
+                <span className="text-xs font-semibold text-red-500">Losses</span>
+              </button>
+              <button onClick={() => setScreen('profile')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">👤</div>
+                <span className="text-xs font-semibold text-gray-400">Profile</span>
+              </button>
+              <button onClick={() => setScreen('settings')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">⚙️</div>
+                <span className="text-xs font-semibold text-gray-400">Settings</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // PROFILE SCREEN
+  if (screen === 'profile') {
+    const totalBattles = (user.wins || 0) + (user.losses || 0);
+    const winRate = totalBattles > 0 ? ((user.wins || 0) / totalBattles) * 100 : 0;
+    const rank = user.xp >= 5000 ? 'Master' : user.xp >= 2000 ? 'Expert' : user.xp >= 500 ? 'Veteran' : 'Beginner';
+
+    return (
+      <div style={containerStyle}>
+        <div className="min-h-screen pb-20" style={{ background: colors.background }}>
+          {/* Header */}
+          <div className="bg-[#161b22] border-b border-gray-800 p-4">
+            <div className="max-w-6xl mx-auto flex items-center justify-between">
+              <button
+                onClick={() => setScreen('dashboard')}
+                className="flex items-center gap-2 text-cyan-500 hover:text-cyan-400"
+              >
+                <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
+                <span>Back</span>
+              </button>
+              <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2 text-white">
+                <span className="text-cyan-500">👤</span>
+                Profile
+              </h1>
+              <div className="w-16"></div>
+            </div>
+          </div>
+
+          <div className="max-w-6xl mx-auto p-4">
+            {/* User Info Card */}
+            <div className="bg-[#161b22] border-2 border-cyan-500 rounded-xl p-6 mb-6">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-20 h-20 bg-cyan-500 rounded-full flex items-center justify-center text-4xl">
+                  👤
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">{user.username}</h2>
+                  <p className="text-gray-400">Rank: {rank}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Rank & XP */}
+            <div className="bg-gradient-to-r from-yellow-600 to-orange-600 rounded-xl p-6 mb-6 text-white">
+              <div className="text-center mb-4">
+                <div className="text-5xl mb-2">
+                  {rank === 'Beginner' && '🥉'}
+                  {rank === 'Veteran' && '🥈'}
+                  {rank === 'Expert' && '🥇'}
+                  {rank === 'Master' && '👑'}
+                </div>
+                <h3 className="text-3xl font-bold mb-1">{rank}</h3>
+                <p className="text-sm opacity-90">Current Rank</p>
+              </div>
+
+              {/* XP Progress */}
+              <div>
+                <div className="flex justify-between text-sm mb-2">
+                  <span>Experience Points</span>
+                  <span className="font-bold">{user.xp || 0} XP</span>
+                </div>
+                <div className="w-full bg-black/30 h-3 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-white transition-all duration-500"
+                    style={{ width: `${(((user.xp || 0) % 1000) / 10)}%` }}
+                  />
+                </div>
+                <p className="text-xs mt-1 opacity-75">
+                  {1000 - ((user.xp || 0) % 1000)} XP to next level
+                </p>
+              </div>
+            </div>
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="bg-[#161b22] border border-gray-700 rounded-xl p-4 text-center">
+                <div className="text-3xl font-bold text-green-500">{user.wins || 0}</div>
+                <div className="text-sm text-gray-400 mt-1">Wins</div>
+              </div>
+              <div className="bg-[#161b22] border border-gray-700 rounded-xl p-4 text-center">
+                <div className="text-3xl font-bold text-red-500">{user.losses || 0}</div>
+                <div className="text-sm text-gray-400 mt-1">Losses</div>
+              </div>
+              <div className="bg-[#161b22] border border-gray-700 rounded-xl p-4 text-center">
+                <div className="text-3xl font-bold text-cyan-500">{totalBattles}</div>
+                <div className="text-sm text-gray-400 mt-1">Total Battles</div>
+              </div>
+              <div className="bg-[#161b22] border border-gray-700 rounded-xl p-4 text-center">
+                <div className="text-3xl font-bold text-purple-500">{winRate.toFixed(0)}%</div>
+                <div className="text-sm text-gray-400 mt-1">Win Rate</div>
+              </div>
+            </div>
+
+            {/* Achievements */}
+            <div className="bg-[#161b22] border border-gray-700 rounded-xl p-6">
+              <h3 className="text-lg font-bold mb-4 text-white">Achievements</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div className={`text-center p-4 rounded-lg ${(user.wins || 0) >= 1 ? 'bg-green-500/20' : 'bg-gray-800 opacity-50'}`}>
+                  <div className="text-3xl mb-1">🏆</div>
+                  <div className="text-xs text-gray-300">First Win</div>
+                </div>
+                <div className={`text-center p-4 rounded-lg ${(user.wins || 0) >= 10 ? 'bg-green-500/20' : 'bg-gray-800 opacity-50'}`}>
+                  <div className="text-3xl mb-1">🔥</div>
+                  <div className="text-xs text-gray-300">10 Wins</div>
+                </div>
+                <div className={`text-center p-4 rounded-lg ${totalBattles >= 50 ? 'bg-purple-500/20' : 'bg-gray-800 opacity-50'}`}>
+                  <div className="text-3xl mb-1">⚔️</div>
+                  <div className="text-xs text-gray-300">50 Battles</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile Bottom Nav */}
+          <div
+            className="md:hidden fixed bottom-0 left-0 right-0 z-50"
+            style={{ background: colors.cardBg, borderTop: `1px solid ${colors.border}`, padding: '8px 16px 12px' }}
+          >
+            <div className="flex items-center justify-around max-w-md mx-auto">
+              <button onClick={() => setScreen('wins')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">🏆</div>
+                <span className="text-xs font-semibold text-gray-400">Wins</span>
+              </button>
+              <button onClick={() => setScreen('losses')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">💀</div>
+                <span className="text-xs font-semibold text-gray-400">Losses</span>
+              </button>
+              <button onClick={() => setScreen('profile')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">👤</div>
+                <span className="text-xs font-semibold text-cyan-500">Profile</span>
+              </button>
+              <button onClick={() => setScreen('settings')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">⚙️</div>
+                <span className="text-xs font-semibold text-gray-400">Settings</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // SETTINGS SCREEN
+  if (screen === 'settings') {
+    return (
+      <div style={containerStyle}>
+        <div className="min-h-screen pb-20" style={{ background: colors.background }}>
+          {/* Header */}
+          <div className="bg-[#161b22] border-b border-gray-800 p-4">
+            <div className="max-w-6xl mx-auto flex items-center justify-between">
+              <button
+                onClick={() => setScreen('dashboard')}
+                className="flex items-center gap-2 text-cyan-500 hover:text-cyan-400"
+              >
+                <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
+                <span>Back</span>
+              </button>
+              <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2 text-white">
+                <span className="text-purple-500">⚙️</span>
+                Settings
+              </h1>
+              <div className="w-16"></div>
+            </div>
+          </div>
+
+          <div className="max-w-6xl mx-auto p-4">
+            {/* Account Section */}
+            <div className="mb-6">
+              <h2 className="text-lg font-bold mb-3 text-white">Account</h2>
+              <div className="bg-[#161b22] border border-gray-700 rounded-xl divide-y divide-gray-700">
+                <div className="p-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <div className="font-semibold text-white">Username</div>
+                      <div className="text-sm text-gray-400">{user.username}</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <div className="font-semibold text-white">XP</div>
+                      <div className="text-sm text-gray-400">{user.xp || 0} points</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Stats Section */}
+            <div className="mb-6">
+              <h2 className="text-lg font-bold mb-3 text-white">Statistics</h2>
+              <div className="bg-[#161b22] border border-gray-700 rounded-xl divide-y divide-gray-700">
+                <div className="p-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-white">Total Wins</span>
+                    <span className="font-bold text-green-500">{user.wins || 0}</span>
+                  </div>
+                </div>
+                <div className="p-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-white">Total Losses</span>
+                    <span className="font-bold text-red-500">{user.losses || 0}</span>
+                  </div>
+                </div>
+                <div className="p-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-white">Win Rate</span>
+                    <span className="font-bold text-cyan-500">
+                      {(user.wins + user.losses) > 0
+                        ? (((user.wins || 0) / ((user.wins || 0) + (user.losses || 0))) * 100).toFixed(1)
+                        : 0}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* App Section */}
+            <div className="mb-6">
+              <h2 className="text-lg font-bold mb-3 text-white">App</h2>
+              <div className="bg-[#161b22] border border-gray-700 rounded-xl divide-y divide-gray-700">
+                <div className="p-4">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-white">Version</span>
+                    <span className="text-gray-400">1.0.0</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setScreen('previousBattles')}
+                  className="w-full p-4 text-left hover:bg-[#1a1f26] transition-colors"
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-white">Battle History</span>
+                    <span className="text-gray-400">→</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Danger Zone */}
+            <div>
+              <h2 className="text-lg font-bold mb-3 text-red-500">Danger Zone</h2>
+              <div className="bg-[#161b22] border border-red-500/30 rounded-xl">
+                <button
+                  onClick={() => {
+                    setUser(null);
+                    setScreen('home');
+                    localStorage.removeItem('user');
+                  }}
+                  className="w-full p-4 text-left hover:bg-red-500/10 transition-colors"
+                >
+                  <span className="font-semibold text-red-500">Logout</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile Bottom Nav */}
+          <div
+            className="md:hidden fixed bottom-0 left-0 right-0 z-50"
+            style={{ background: colors.cardBg, borderTop: `1px solid ${colors.border}`, padding: '8px 16px 12px' }}
+          >
+            <div className="flex items-center justify-around max-w-md mx-auto">
+              <button onClick={() => setScreen('wins')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">🏆</div>
+                <span className="text-xs font-semibold text-gray-400">Wins</span>
+              </button>
+              <button onClick={() => setScreen('losses')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">💀</div>
+                <span className="text-xs font-semibold text-gray-400">Losses</span>
+              </button>
+              <button onClick={() => setScreen('profile')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">👤</div>
+                <span className="text-xs font-semibold text-gray-400">Profile</span>
+              </button>
+              <button onClick={() => setScreen('settings')} className="flex flex-col items-center gap-1 min-w-[60px] py-1">
+                <div className="text-2xl">⚙️</div>
+                <span className="text-xs font-semibold text-purple-500">Settings</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
