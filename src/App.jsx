@@ -338,20 +338,25 @@ const colors = {
   cardBg: '#161b22',
   cardHover: '#1c2128',
   cardElevated: '#21262d',
+  elevated: '#21262d',
   textPrimary: '#e6edf3',
   textSecondary: '#8b949e',
   textMuted: '#6e7681',
   cyan: '#00d9ff',
   cyanDim: '#0099cc',
+  cyanDark: '#0099cc',
   green: '#10b981',
   greenBright: '#00ff88',
+  greenLight: '#34d399',
   red: '#ef4444',
   redBright: '#ff4466',
+  redLight: '#f87171',
   blue: '#3b82f6',
   purple: '#9333ea',
   gold: '#ffc107',
   border: 'rgba(0, 217, 255, 0.2)',
-  borderSubtle: 'rgba(255, 255, 255, 0.1)'
+  borderSubtle: 'rgba(255, 255, 255, 0.1)',
+  borderFocus: '#00d9ff'
 };
 
 // Style override to neutralize App.css
@@ -1314,34 +1319,24 @@ export default function PortfolioDuel() {
   // 6. SCREEN RENDERS
   // ============================================
 
-  // LOGIN SCREEN
+  // LOGIN SCREEN - Mobile-first responsive
   if (screen === 'home') {
     return (
       <div style={containerStyle}>
-        <div style={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '16px',
-          background: colors.background
-        }}>
-          {/* Animated Card Container */}
+        <div className="min-h-screen flex items-center justify-center p-4" style={{ background: colors.background }}>
+          {/* Animated Card Container - Mobile-first with responsive padding */}
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ duration: 0.5, ease: "easeOut" }}
+            className="w-full max-w-md rounded-2xl p-6 md:p-12"
             style={{
-              width: '100%',
-              maxWidth: '480px',
               background: colors.cardBg,
-              borderRadius: '16px',
               boxShadow: '0 0 40px rgba(0, 217, 255, 0.1), 0 20px 25px -5px rgba(0, 0, 0, 0.3)',
-              padding: '48px',
               border: `1px solid ${colors.border}`
             }}
           >
-            <div style={{ textAlign: 'center' }}>
+            <div className="text-center">
               {/* Animated Logo */}
               <motion.div
                 initial={{ opacity: 0, scale: 0.5 }}
@@ -1353,7 +1348,7 @@ export default function PortfolioDuel() {
                   stiffness: 200,
                   damping: 15
                 }}
-                style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}
+                className="flex justify-center mb-6"
               >
                 <motion.div
                   animate={{
@@ -1369,32 +1364,23 @@ export default function PortfolioDuel() {
                     repeat: Infinity,
                     ease: "easeInOut"
                   }}
+                  className="w-16 h-16 md:w-20 md:h-20 rounded-2xl flex items-center justify-center"
                   style={{
-                    width: '80px',
-                    height: '80px',
-                    borderRadius: '16px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
                     background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`
                   }}
                 >
-                  <Swords style={{ height: '40px', width: '40px', color: colors.background }} />
+                  <Swords className="w-8 h-8 md:w-10 md:h-10" style={{ color: colors.background }} />
                 </motion.div>
               </motion.div>
 
-              {/* Animated Title */}
+              {/* Animated Title - Responsive font sizes */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.4, duration: 0.5 }}
-                style={{ marginBottom: '32px' }}
+                className="mb-8"
               >
-                <h1 style={{
-                  fontSize: '42px',
-                  fontWeight: 'bold',
-                  marginBottom: '8px',
-                  margin: '0 0 8px 0',
+                <h1 className="text-3xl md:text-4xl font-bold mb-2" style={{
                   background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.greenBright} 100%)`,
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
@@ -1406,7 +1392,8 @@ export default function PortfolioDuel() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: 0.6, duration: 0.5 }}
-                  style={{ color: colors.textSecondary, fontSize: '16px', margin: 0 }}
+                  className="text-sm md:text-base"
+                  style={{ color: colors.textSecondary }}
                 >
                   Compete. Trade. Conquer.
                 </motion.p>
@@ -1424,18 +1411,13 @@ export default function PortfolioDuel() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                  className="w-full px-4 py-4 text-base rounded-xl mb-5"
                   style={{
-                    width: '100%',
-                    padding: '16px 20px',
-                    fontSize: '16px',
-                    border: '2px solid',
-                    borderColor: username ? colors.cyan : colors.borderSubtle,
-                    borderRadius: '12px',
-                    outline: 'none',
-                    marginBottom: '20px',
-                    boxSizing: 'border-box',
+                    border: `2px solid ${username ? colors.cyan : colors.borderSubtle}`,
                     background: 'rgba(0, 0, 0, 0.3)',
                     color: colors.textPrimary,
+                    outline: 'none',
+                    minHeight: '50px',
                     transition: 'all 0.3s ease'
                   }}
                 />
@@ -1455,25 +1437,18 @@ export default function PortfolioDuel() {
                   transition={username.trim() ? {
                     boxShadow: { duration: 2, repeat: Infinity, ease: "easeInOut" }
                   } : {}}
+                  className="w-full py-4 text-base md:text-lg font-semibold rounded-xl flex items-center justify-center gap-2"
                   style={{
-                    width: '100%',
-                    padding: '16px',
-                    fontSize: '16px',
-                    fontWeight: '600',
                     color: username.trim() ? colors.background : colors.textMuted,
                     background: username.trim() ? `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)` : colors.cardElevated,
                     border: 'none',
-                    borderRadius: '12px',
                     cursor: username.trim() ? 'pointer' : 'not-allowed',
-                    transition: 'background 0.3s ease',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px'
+                    minHeight: '50px',
+                    transition: 'background 0.3s ease'
                   }}
                 >
                   Enter Arena
-                  <ArrowRight style={{ height: '18px', width: '18px' }} />
+                  <ArrowRight className="w-5 h-5" />
                 </motion.button>
               </motion.div>
             </div>
@@ -1689,20 +1664,48 @@ export default function PortfolioDuel() {
             </div>
           )}
 
-          {/* Header Bar */}
-          <div style={{
-            padding: '12px 24px',
-            background: 'transparent',
-            borderBottom: `1px solid ${colors.borderSubtle}`
-          }}>
-            <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          {/* MOBILE: Top Header - Fixed position */}
+          <div
+            className="md:hidden fixed top-0 left-0 right-0 z-50"
+            style={{
+              background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDark} 100%)`,
+              padding: '12px 16px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Flame className="w-5 h-5" style={{ color: 'white' }} />
+                <span className="text-lg font-bold" style={{ color: 'white' }}>
+                  MarketClash
+                </span>
+              </div>
+              <button
+                onClick={() => { setUser(null); setUsername(''); setScreen('home'); }}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm"
+                style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}
+              >
+                <LogOut className="w-4 h-4" />
+                Exit
+              </button>
+            </div>
+          </div>
+
+          {/* DESKTOP: Top Header - Static */}
+          <div
+            className="hidden md:block"
+            style={{
+              padding: '12px 24px',
+              background: 'transparent',
+              borderBottom: `1px solid ${colors.borderSubtle}`
+            }}
+          >
+            <div className="max-w-5xl mx-auto">
+              <div className="flex justify-between items-center">
                 {/* Logo */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <Flame style={{ height: '24px', width: '24px', color: colors.cyan }} />
-                  <span style={{
-                    fontSize: '20px',
-                    fontWeight: 'bold',
+                <div className="flex items-center gap-2.5">
+                  <Flame className="w-6 h-6" style={{ color: colors.cyan }} />
+                  <span className="text-xl font-bold" style={{
                     background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.greenBright} 100%)`,
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
@@ -1711,49 +1714,20 @@ export default function PortfolioDuel() {
                 </div>
 
                 {/* User & Logout */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    background: colors.cardBg,
-                    border: `2px solid ${colors.cyan}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    <User style={{ height: '14px', width: '14px', color: colors.cyan }} />
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center"
+                    style={{ background: colors.cardBg, border: `2px solid ${colors.cyan}` }}>
+                    <User className="w-3.5 h-3.5" style={{ color: colors.cyan }} />
                   </div>
-                  <span style={{ color: colors.textPrimary, fontWeight: '500', fontSize: '14px' }}>{user.username}</span>
+                  <span className="text-sm font-medium" style={{ color: colors.textPrimary }}>{user.username}</span>
                   <button
-                    onClick={() => {
-                      setUser(null);
-                      setUsername('');
-                      setScreen('home');
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '6px 12px',
-                      background: 'transparent',
-                      border: `1px solid ${colors.borderSubtle}`,
-                      borderRadius: '8px',
-                      color: colors.textSecondary,
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      fontSize: '13px'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = colors.red;
-                      e.currentTarget.style.color = colors.red;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = colors.borderSubtle;
-                      e.currentTarget.style.color = colors.textSecondary;
-                    }}
+                    onClick={() => { setUser(null); setUsername(''); setScreen('home'); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-all"
+                    style={{ background: 'transparent', border: `1px solid ${colors.borderSubtle}`, color: colors.textSecondary }}
+                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = colors.red; e.currentTarget.style.color = colors.red; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = colors.borderSubtle; e.currentTarget.style.color = colors.textSecondary; }}
                   >
-                    <LogOut style={{ height: '14px', width: '14px' }} />
+                    <LogOut className="w-3.5 h-3.5" />
                     Logout
                   </button>
                 </div>
@@ -1761,14 +1735,15 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* Main Content Area */}
-          <div style={{
-            flex: 1,
-            maxWidth: '900px',
-            margin: '0 auto',
-            padding: '32px 24px',
-            paddingBottom: '80px' // Space for bottom stats bar
-          }}>
+          {/* Main Content Area - Mobile-first with responsive padding */}
+          <div
+            className="pt-16 md:pt-0 pb-28 md:pb-20 px-4 md:px-6"
+            style={{
+              flex: 1,
+              maxWidth: '900px',
+              margin: '0 auto'
+            }}
+          >
             {/* Active Battle Preview Card - Only shows when user has active battle */}
             {hasActiveBattle && primaryActiveBattle && battlePreviewData && (
               <motion.div
@@ -2032,13 +2007,10 @@ export default function PortfolioDuel() {
               </motion.div>
             )}
 
-            {/* Create & Join Battle Cards - Side by Side */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: hasActiveBattle ? '1fr 1fr' : '1fr 1fr',
-              gap: '20px',
-              marginBottom: '20px'
-            }}>
+            {/* Create & Join Battle Cards - Hidden on mobile (uses bottom nav), shown on desktop */}
+            <div
+              className="hidden md:grid md:grid-cols-2 gap-5 mb-5"
+            >
               {/* CREATE BATTLE Card */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -2266,11 +2238,12 @@ export default function PortfolioDuel() {
               </motion.div>
             </div>
 
-            {/* Training Mode Banner */}
+            {/* Training Mode Banner - Hidden on mobile (uses bottom nav) */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.4 }}
+              className="hidden md:flex"
               onClick={() => {
                 setPortfolio([]); setPortfolioType(null);
                 setPortfolioName('');
@@ -2282,7 +2255,6 @@ export default function PortfolioDuel() {
                 background: `linear-gradient(135deg, #f59e0b 0%, #d97706 100%)`,
                 borderRadius: '14px',
                 padding: '16px 24px',
-                display: 'flex',
                 alignItems: 'center',
                 gap: '16px',
                 cursor: 'pointer',
@@ -2441,72 +2413,101 @@ export default function PortfolioDuel() {
             )}
           </div>
 
-          {/* Bottom Stats Bar - Fixed */}
-          <div style={{
-            position: 'fixed',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: '56px',
-            background: colors.cardBg,
-            borderTop: `1px solid ${colors.border}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '32px',
-            zIndex: 100
-          }}>
+          {/* MOBILE: Bottom Navigation - Action buttons for mobile */}
+          <div
+            className="md:hidden fixed bottom-0 left-0 right-0 z-50"
+            style={{
+              background: colors.cardBg,
+              borderTop: `1px solid ${colors.border}`,
+              padding: '12px 16px',
+              boxShadow: '0 -2px 8px rgba(0,0,0,0.3)'
+            }}
+          >
+            <div className="flex items-center justify-around">
+              <button
+                onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setAssetType('stocks'); setSearchTerm(''); setScreen('builder'); }}
+                className="flex flex-col items-center gap-1 px-4 py-2"
+                style={{ color: colors.cyan }}
+              >
+                <Plus className="w-6 h-6" />
+                <span className="text-xs font-semibold">Create</span>
+              </button>
+              <button
+                onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setAssetType('stocks'); setSearchTerm(''); setJoinCode(''); setScreen('join'); }}
+                className="flex flex-col items-center gap-1 px-4 py-2"
+                style={{ color: colors.textSecondary }}
+              >
+                <Users className="w-6 h-6" />
+                <span className="text-xs font-semibold">Join</span>
+              </button>
+              <button
+                onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setAssetType('stocks'); setSearchTerm(''); setScreen('training'); }}
+                className="flex flex-col items-center gap-1 px-4 py-2"
+                style={{ color: colors.purple }}
+              >
+                <GraduationCap className="w-6 h-6" />
+                <span className="text-xs font-semibold">Train</span>
+              </button>
+              <button
+                onClick={() => setShowXPModal(true)}
+                className="flex flex-col items-center gap-1 px-4 py-2"
+                style={{ color: colors.gold }}
+              >
+                <Trophy className="w-6 h-6" />
+                <span className="text-xs font-semibold">{user.wins}W</span>
+              </button>
+            </div>
+          </div>
+
+          {/* DESKTOP: Bottom Stats Bar - Fixed */}
+          <div
+            className="hidden md:flex"
+            style={{
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: '56px',
+              background: colors.cardBg,
+              borderTop: `1px solid ${colors.border}`,
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '32px',
+              zIndex: 100
+            }}
+          >
             {/* Wins */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Trophy style={{ height: '18px', width: '18px', color: colors.gold }} />
-              <span style={{ fontSize: '14px', color: colors.textSecondary }}>Wins:</span>
-              <span style={{ fontSize: '16px', fontWeight: '600', color: colors.green }}>{user.wins}</span>
+            <div className="flex items-center gap-2">
+              <Trophy className="w-4 h-4" style={{ color: colors.gold }} />
+              <span className="text-sm" style={{ color: colors.textSecondary }}>Wins:</span>
+              <span className="text-base font-semibold" style={{ color: colors.green }}>{user.wins}</span>
             </div>
 
             {/* Losses */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Skull style={{ height: '18px', width: '18px', color: colors.textMuted }} />
-              <span style={{ fontSize: '14px', color: colors.textSecondary }}>Losses:</span>
-              <span style={{ fontSize: '16px', fontWeight: '600', color: colors.red }}>{user.losses}</span>
+            <div className="flex items-center gap-2">
+              <Skull className="w-4 h-4" style={{ color: colors.textMuted }} />
+              <span className="text-sm" style={{ color: colors.textSecondary }}>Losses:</span>
+              <span className="text-base font-semibold" style={{ color: colors.red }}>{user.losses}</span>
             </div>
 
             {/* Battles */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Swords style={{ height: '18px', width: '18px', color: colors.cyan }} />
-              <span style={{ fontSize: '14px', color: colors.textSecondary }}>Battles:</span>
-              <span style={{ fontSize: '16px', fontWeight: '600', color: colors.cyan }}>{user.wins + user.losses}</span>
+            <div className="flex items-center gap-2">
+              <Swords className="w-4 h-4" style={{ color: colors.cyan }} />
+              <span className="text-sm" style={{ color: colors.textSecondary }}>Battles:</span>
+              <span className="text-base font-semibold" style={{ color: colors.cyan }}>{user.wins + user.losses}</span>
             </div>
 
             {/* Rank - Clickable */}
             <button
               onClick={() => setShowXPModal(true)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '6px 12px',
-                background: 'transparent',
-                border: `1px solid ${colors.borderSubtle}`,
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = colors.cyan;
-                e.currentTarget.style.background = `${colors.cyan}10`;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = colors.borderSubtle;
-                e.currentTarget.style.background = 'transparent';
-              }}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all"
+              style={{ background: 'transparent', border: `1px solid ${colors.borderSubtle}` }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = colors.cyan; e.currentTarget.style.background = `${colors.cyan}10`; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = colors.borderSubtle; e.currentTarget.style.background = 'transparent'; }}
             >
-              <Shield style={{ height: '18px', width: '18px', color: colors.cyan }} />
-              <span style={{ fontSize: '14px', color: colors.textPrimary, fontWeight: '500' }}>
-                {user.rank}
-              </span>
-              <span style={{ fontSize: '12px', color: colors.textSecondary }}>
-                (Lvl {user.level})
-              </span>
+              <Shield className="w-4 h-4" style={{ color: colors.cyan }} />
+              <span className="text-sm font-medium" style={{ color: colors.textPrimary }}>{user.rank}</span>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>(Lvl {user.level})</span>
             </button>
           </div>
         </div>
@@ -2518,69 +2519,38 @@ export default function PortfolioDuel() {
   if (screen === 'builder') {
     return (
       <div style={containerStyle}>
-        <div style={{
-          minHeight: '100vh',
-          paddingBottom: '32px',
-          background: colors.background
-        }}>
-          {/* Header */}
-          <div style={{
-            padding: '24px',
-            marginBottom: '24px',
-            borderBottom: `1px solid ${colors.border}`
-          }}>
-            <div style={{ maxWidth: '1536px', margin: '0 auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h1 style={{
-                    fontSize: '28px',
-                    fontWeight: 'bold',
-                    margin: '0 0 4px 0',
-                    color: colors.textPrimary
-                  }}>Build Your Portfolio</h1>
-                </div>
-                <button
-                  onClick={() => {
-                    setPortfolio([]); setPortfolioType(null);
-                    setPortfolioName('');
-                    setScreen('dashboard');
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '10px 20px',
-                    background: `${colors.red}20`,
-                    border: `1px solid ${colors.red}`,
-                    borderRadius: '8px',
-                    color: colors.red,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    fontWeight: '500'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = `${colors.red}40`;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = `${colors.red}20`;
-                  }}
-                >
-                  <X style={{ height: '18px', width: '18px' }} />
-                  Cancel
-                </button>
-              </div>
+        <div className="min-h-screen pb-8" style={{ background: colors.background }}>
+          {/* Sticky Header - Mobile-first */}
+          <div
+            className="sticky top-0 z-40"
+            style={{
+              background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDark} 100%)`,
+              padding: '12px 16px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            }}
+          >
+            <div className="max-w-7xl mx-auto flex items-center justify-between">
+              <button
+                onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setScreen('dashboard'); }}
+                className="flex items-center gap-2 text-white"
+              >
+                <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
+                <span className="font-semibold text-sm md:text-base">Back</span>
+              </button>
+              <h1 className="text-base md:text-xl font-bold text-white">
+                Create Battle
+              </h1>
+              <div className="w-16 md:w-20"></div>
             </div>
           </div>
 
-          <div style={{ maxWidth: '1536px', margin: '0 auto', padding: '0 24px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
-              {/* Left: Asset Selection */}
-              <div>
-                <div style={{
+          <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+              {/* Left: Asset Selection (takes 2/3 on desktop) */}
+              <div className="lg:col-span-2">
+                <div className="rounded-xl p-4 md:p-6" style={{
                   background: colors.cardBg,
-                  borderRadius: '12px',
                   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-                  padding: '24px',
                   border: `1px solid ${colors.border}`
                 }}>
                   <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '16px', color: colors.textPrimary }}>Available Assets</h2>
@@ -2591,63 +2561,41 @@ export default function PortfolioDuel() {
                     </div>
                   ) : (
                     <>
-                      {/* Tabs */}
-                      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                      {/* Asset Type Tabs - Mobile-first responsive */}
+                      <div className="grid grid-cols-2 gap-3 mb-4">
                         <button
                           onClick={() => setAssetType('stocks')}
+                          disabled={portfolioType === 'crypto'}
+                          className="py-3 md:py-2.5 rounded-lg font-semibold text-sm md:text-base transition-all"
                           style={{
-                            padding: '10px 24px',
-                            borderRadius: '8px',
-                            fontWeight: '600',
-                            fontSize: '14px',
-                            border: assetType === 'stocks' ? 'none' : `1px solid ${colors.borderSubtle}`,
-                            cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            ...(assetType === 'stocks' ? {
-                              color: colors.background,
-                              background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`,
-                              boxShadow: '0 0 15px rgba(0, 217, 255, 0.3)'
-                            } : {
-                              color: colors.textSecondary,
-                              background: 'rgba(255, 255, 255, 0.05)'
-                            })
-                          }}
-                          onMouseEnter={(e) => {
-                            if (assetType !== 'stocks') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                          }}
-                          onMouseLeave={(e) => {
-                            if (assetType !== 'stocks') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                            background: assetType === 'stocks'
+                              ? `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`
+                              : colors.elevated,
+                            color: assetType === 'stocks' ? colors.background : colors.textSecondary,
+                            border: `2px solid ${assetType === 'stocks' ? colors.cyan : colors.borderSubtle}`,
+                            opacity: portfolioType === 'crypto' ? 0.4 : 1,
+                            cursor: portfolioType === 'crypto' ? 'not-allowed' : 'pointer',
+                            minHeight: '44px'
                           }}
                         >
-                          Stocks
+                          📈 Stocks
                         </button>
                         <button
                           onClick={() => setAssetType('crypto')}
+                          disabled={portfolioType === 'stocks'}
+                          className="py-3 md:py-2.5 rounded-lg font-semibold text-sm md:text-base transition-all"
                           style={{
-                            padding: '10px 24px',
-                            borderRadius: '8px',
-                            fontWeight: '600',
-                            fontSize: '14px',
-                            border: assetType === 'crypto' ? 'none' : `1px solid ${colors.borderSubtle}`,
-                            cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            ...(assetType === 'crypto' ? {
-                              color: colors.background,
-                              background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`,
-                              boxShadow: '0 0 15px rgba(0, 217, 255, 0.3)'
-                            } : {
-                              color: colors.textSecondary,
-                              background: 'rgba(255, 255, 255, 0.05)'
-                            })
-                          }}
-                          onMouseEnter={(e) => {
-                            if (assetType !== 'crypto') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                          }}
-                          onMouseLeave={(e) => {
-                            if (assetType !== 'crypto') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                            background: assetType === 'crypto'
+                              ? `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`
+                              : colors.elevated,
+                            color: assetType === 'crypto' ? colors.background : colors.textSecondary,
+                            border: `2px solid ${assetType === 'crypto' ? colors.cyan : colors.borderSubtle}`,
+                            opacity: portfolioType === 'stocks' ? 0.4 : 1,
+                            cursor: portfolioType === 'stocks' ? 'not-allowed' : 'pointer',
+                            minHeight: '44px'
                           }}
                         >
-                          Crypto
+                          ₿ Crypto
                         </button>
                       </div>
 
@@ -2698,14 +2646,8 @@ export default function PortfolioDuel() {
                         }}
                       />
 
-                      {/* Asset Grid */}
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 1fr',
-                        gap: '12px',
-                        maxHeight: '384px',
-                        overflowY: 'auto'
-                      }}>
+                      {/* Asset Grid - Responsive: 1 col mobile, 2 col tablet+ */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
                         {filteredAssets.map(asset => {
                           const inPortfolio = portfolio.some(p => p.symbol === asset.symbol);
                           const isExpanded = expandedAssets.has(asset.symbol);
@@ -3064,15 +3006,11 @@ export default function PortfolioDuel() {
                 </div>
               </div>
 
-              {/* Right: Portfolio Summary */}
-              <div>
-                <div style={{
+              {/* Right: Portfolio Summary - Sticky on desktop */}
+              <div className="lg:sticky lg:top-20">
+                <div className="rounded-xl p-4 md:p-6" style={{
                   background: colors.cardBg,
-                  borderRadius: '12px',
                   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-                  padding: '24px',
-                  position: 'sticky',
-                  top: '24px',
                   border: `1px solid ${colors.border}`
                 }}>
                   <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '4px', color: colors.textPrimary }}>Your Portfolio</h2>
@@ -3260,61 +3198,32 @@ export default function PortfolioDuel() {
   if (screen === 'join') {
     return (
       <div style={containerStyle}>
-        <div style={{
-          minHeight: '100vh',
-          paddingBottom: '32px',
-          background: colors.background
-        }}>
-          {/* Header */}
-          <div style={{
-            color: 'white',
-            padding: '24px',
-            borderBottom: `1px solid ${colors.border}`,
-            marginBottom: '24px',
-            background: colors.cardBg
-          }}>
-            <div style={{ maxWidth: '1536px', margin: '0 auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '4px', margin: 0, color: colors.textPrimary }}>Join a Battle</h1>
-                  <p style={{ fontSize: '14px', color: colors.cyan, margin: 0 }}>JOIN MODE: Enter challenge code and build your portfolio</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setPortfolio([]); setPortfolioType(null);
-                    setPortfolioName('');
-                    setJoinCode('');
-                    setScreen('dashboard');
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '8px 16px',
-                    background: 'transparent',
-                    border: `1px solid ${colors.borderSubtle}`,
-                    borderRadius: '8px',
-                    color: colors.textSecondary,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = colors.cyan;
-                    e.currentTarget.style.color = colors.cyan;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = colors.borderSubtle;
-                    e.currentTarget.style.color = colors.textSecondary;
-                  }}
-                >
-                  <X style={{ height: '20px', width: '20px' }} />
-                  Cancel
-                </button>
-              </div>
+        <div className="min-h-screen pb-8" style={{ background: colors.background }}>
+          {/* Sticky Header - Mobile-first */}
+          <div
+            className="sticky top-0 z-40"
+            style={{
+              background: `linear-gradient(135deg, ${colors.green} 0%, #059669 100%)`,
+              padding: '12px 16px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            }}
+          >
+            <div className="max-w-7xl mx-auto flex items-center justify-between">
+              <button
+                onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setJoinCode(''); setScreen('dashboard'); }}
+                className="flex items-center gap-2 text-white"
+              >
+                <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
+                <span className="font-semibold text-sm md:text-base">Back</span>
+              </button>
+              <h1 className="text-base md:text-xl font-bold text-white">
+                Join Battle
+              </h1>
+              <div className="w-16 md:w-20"></div>
             </div>
           </div>
 
-          <div style={{ maxWidth: '1536px', margin: '0 auto', padding: '0 24px' }}>
+          <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
             {/* Challenge Code Input */}
             <div style={{
               background: colors.cardBg,
@@ -3471,14 +3380,8 @@ export default function PortfolioDuel() {
                         }}
                       />
 
-                      {/* Asset Grid */}
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 1fr',
-                        gap: '12px',
-                        maxHeight: '384px',
-                        overflowY: 'auto'
-                      }}>
+                      {/* Asset Grid - Responsive: 1 col mobile, 2 col tablet+ */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
                         {filteredAssets.map(asset => {
                           const inPortfolio = portfolio.some(p => p.symbol === asset.symbol);
                           const isExpanded = expandedAssets.has(asset.symbol);
@@ -3837,15 +3740,11 @@ export default function PortfolioDuel() {
                 </div>
               </div>
 
-              {/* Right: Portfolio Summary */}
-              <div>
-                <div style={{
+              {/* Right: Portfolio Summary - Sticky on desktop */}
+              <div className="lg:sticky lg:top-20">
+                <div className="rounded-xl p-4 md:p-6" style={{
                   background: colors.cardBg,
-                  borderRadius: '12px',
                   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-                  padding: '24px',
-                  position: 'sticky',
-                  top: '24px',
                   border: `1px solid ${colors.border}`
                 }}>
                   <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '4px', color: colors.textPrimary }}>Your Portfolio</h2>
@@ -4034,62 +3933,33 @@ export default function PortfolioDuel() {
   if (screen === 'training') {
     return (
       <div style={containerStyle}>
-        <div style={{
-          minHeight: '100vh',
-          paddingBottom: '32px',
-          background: colors.background
-        }}>
-          {/* Header */}
-          <div style={{
-            padding: '24px',
-            borderBottom: `1px solid ${colors.border}`,
-            marginBottom: '24px',
-            background: colors.cardBg
-          }}>
-            <div style={{ maxWidth: '1536px', margin: '0 auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '4px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: colors.textPrimary }}>
-                    <GraduationCap style={{ height: '24px', width: '24px', color: colors.purple }} />
-                    Training Mode
-                  </h1>
-                  <p style={{ fontSize: '14px', color: colors.purple, margin: 0 }}>Practice against CPU • 1 Hour Duration • Reduced XP</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setPortfolio([]); setPortfolioType(null);
-                    setPortfolioName('');
-                    setScreen('dashboard');
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '8px 16px',
-                    background: 'transparent',
-                    border: `1px solid ${colors.borderSubtle}`,
-                    borderRadius: '8px',
-                    color: colors.textSecondary,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = colors.purple;
-                    e.currentTarget.style.color = colors.purple;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = colors.borderSubtle;
-                    e.currentTarget.style.color = colors.textSecondary;
-                  }}
-                >
-                  <X style={{ height: '20px', width: '20px' }} />
-                  Cancel
-                </button>
-              </div>
+        <div className="min-h-screen pb-8" style={{ background: colors.background }}>
+          {/* Sticky Header - Mobile-first */}
+          <div
+            className="sticky top-0 z-40"
+            style={{
+              background: `linear-gradient(135deg, ${colors.purple} 0%, #7C3AED 100%)`,
+              padding: '12px 16px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            }}
+          >
+            <div className="max-w-7xl mx-auto flex items-center justify-between">
+              <button
+                onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setScreen('dashboard'); }}
+                className="flex items-center gap-2 text-white"
+              >
+                <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
+                <span className="font-semibold text-sm md:text-base">Back</span>
+              </button>
+              <h1 className="text-base md:text-xl font-bold text-white flex items-center gap-2">
+                <GraduationCap className="w-5 h-5" />
+                Training
+              </h1>
+              <div className="w-16 md:w-20"></div>
             </div>
           </div>
 
-          <div style={{ maxWidth: '1536px', margin: '0 auto', padding: '0 24px' }}>
+          <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
             {/* Training Info Box */}
             <div style={{
               background: colors.cardBg,
@@ -4116,79 +3986,53 @@ export default function PortfolioDuel() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
-              {/* Left: Asset Selection */}
-              <div>
-                <div style={{
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+              {/* Left: Asset Selection (takes 2/3 on desktop) */}
+              <div className="lg:col-span-2">
+                <div className="rounded-xl p-4 md:p-6" style={{
                   background: colors.cardBg,
-                  borderRadius: '12px',
                   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-                  padding: '24px',
                   border: `1px solid ${colors.border}`
                 }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: colors.textPrimary }}>Available Assets</h2>
+                  <h2 className="text-lg md:text-xl font-bold mb-4" style={{ color: colors.textPrimary }}>Available Assets</h2>
 
                   {loadingMarketData ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px' }}>
-                      <Loader2 style={{ height: '32px', width: '32px', color: colors.purple, animation: 'spin 1s linear infinite' }} />
+                    <div className="flex items-center justify-center p-12">
+                      <Loader2 className="w-8 h-8 animate-spin" style={{ color: colors.purple }} />
                     </div>
                   ) : (
                     <>
-                      {/* Tabs */}
-                      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                      {/* Asset Type Tabs - Mobile-first responsive */}
+                      <div className="grid grid-cols-2 gap-3 mb-4">
                         <button
                           onClick={() => setAssetType('stocks')}
+                          disabled={portfolioType === 'crypto'}
+                          className="py-3 md:py-2.5 rounded-lg font-semibold text-sm md:text-base transition-all"
                           style={{
-                            padding: '10px 24px',
-                            borderRadius: '8px',
-                            fontWeight: '600',
-                            border: 'none',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            ...(assetType === 'stocks' ? {
-                              color: 'white',
-                              background: colors.purple,
-                              boxShadow: `0 0 15px ${colors.purple}50`
-                            } : {
-                              color: colors.textSecondary,
-                              background: 'rgba(255, 255, 255, 0.1)'
-                            })
-                          }}
-                          onMouseEnter={(e) => {
-                            if (assetType !== 'stocks') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                          }}
-                          onMouseLeave={(e) => {
-                            if (assetType !== 'stocks') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                            background: assetType === 'stocks' ? colors.purple : colors.elevated,
+                            color: assetType === 'stocks' ? 'white' : colors.textSecondary,
+                            border: `2px solid ${assetType === 'stocks' ? colors.purple : colors.borderSubtle}`,
+                            opacity: portfolioType === 'crypto' ? 0.4 : 1,
+                            cursor: portfolioType === 'crypto' ? 'not-allowed' : 'pointer',
+                            minHeight: '44px'
                           }}
                         >
-                          Stocks
+                          📈 Stocks
                         </button>
                         <button
                           onClick={() => setAssetType('crypto')}
+                          disabled={portfolioType === 'stocks'}
+                          className="py-3 md:py-2.5 rounded-lg font-semibold text-sm md:text-base transition-all"
                           style={{
-                            padding: '10px 24px',
-                            borderRadius: '8px',
-                            fontWeight: '600',
-                            border: 'none',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            ...(assetType === 'crypto' ? {
-                              color: 'white',
-                              background: colors.purple,
-                              boxShadow: `0 0 15px ${colors.purple}50`
-                            } : {
-                              color: colors.textSecondary,
-                              background: 'rgba(255, 255, 255, 0.1)'
-                            })
-                          }}
-                          onMouseEnter={(e) => {
-                            if (assetType !== 'crypto') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                          }}
-                          onMouseLeave={(e) => {
-                            if (assetType !== 'crypto') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                            background: assetType === 'crypto' ? colors.purple : colors.elevated,
+                            color: assetType === 'crypto' ? 'white' : colors.textSecondary,
+                            border: `2px solid ${assetType === 'crypto' ? colors.purple : colors.borderSubtle}`,
+                            opacity: portfolioType === 'stocks' ? 0.4 : 1,
+                            cursor: portfolioType === 'stocks' ? 'not-allowed' : 'pointer',
+                            minHeight: '44px'
                           }}
                         >
-                          Crypto
+                          ₿ Crypto
                         </button>
                       </div>
 
@@ -4239,14 +4083,8 @@ export default function PortfolioDuel() {
                         }}
                       />
 
-                      {/* Asset Grid */}
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 1fr',
-                        gap: '12px',
-                        maxHeight: '384px',
-                        overflowY: 'auto'
-                      }}>
+                      {/* Asset Grid - Responsive: 1 col mobile, 2 col tablet+ */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
                         {filteredAssets.map(asset => {
                           const inPortfolio = portfolio.some(p => p.symbol === asset.symbol);
                           const isExpanded = expandedAssets.has(asset.symbol);
