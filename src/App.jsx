@@ -2010,10 +2010,8 @@ export default function PortfolioDuel() {
               </motion.div>
             )}
 
-            {/* Create & Join Battle Cards - Hidden on mobile (uses bottom nav), shown on desktop */}
-            <div
-              className="hidden md:grid md:grid-cols-2 gap-5 mb-5"
-            >
+            {/* Create & Join Battle Cards - Visible on all screens */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5 mb-5">
               {/* CREATE BATTLE Card */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -2241,12 +2239,12 @@ export default function PortfolioDuel() {
               </motion.div>
             </div>
 
-            {/* Training Mode Banner - Hidden on mobile (uses bottom nav) */}
+            {/* Training Mode Banner - Visible on all screens */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.4 }}
-              className="hidden md:flex"
+              className="flex"
               onClick={() => {
                 setPortfolio([]); setPortfolioType(null);
                 setPortfolioName('');
@@ -3009,8 +3007,8 @@ export default function PortfolioDuel() {
                 </div>
               </div>
 
-              {/* Right: Portfolio Summary - Sticky on desktop */}
-              <div className="lg:sticky lg:top-20">
+              {/* Right: Portfolio Summary - Sticky on all screen sizes */}
+              <div className="sticky top-[140px] md:top-20 z-30">
                 <div className="rounded-xl p-4 md:p-6" style={{
                   background: colors.cardBg,
                   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
@@ -3743,8 +3741,8 @@ export default function PortfolioDuel() {
                 </div>
               </div>
 
-              {/* Right: Portfolio Summary - Sticky on desktop */}
-              <div className="lg:sticky lg:top-20">
+              {/* Right: Portfolio Summary - Sticky on all screen sizes */}
+              <div className="sticky top-[140px] md:top-20 z-30">
                 <div className="rounded-xl p-4 md:p-6" style={{
                   background: colors.cardBg,
                   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
@@ -4389,15 +4387,13 @@ export default function PortfolioDuel() {
                 </div>
               </div>
 
-              {/* Right: Portfolio Summary - Same as builder/join screens */}
-              <div>
+              {/* Right: Portfolio Summary - Sticky on all screen sizes */}
+              <div className="sticky top-[140px] md:top-20 z-30">
                 <div style={{
                   background: colors.cardBg,
                   borderRadius: '12px',
                   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
                   padding: '24px',
-                  position: 'sticky',
-                  top: '24px',
                   border: `1px solid ${colors.border}`
                 }}>
                   <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '8px', color: colors.textPrimary }}>Your Portfolio</h2>
@@ -5220,43 +5216,15 @@ export default function PortfolioDuel() {
               </div>
             )}
 
-            {/* MOBILE: Portfolio Tabs */}
-            <div className="md:hidden mb-4">
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setBattleViewTab('yours')}
-                  className="py-3 rounded-lg font-semibold transition-all"
-                  style={{
-                    background: battleViewTab === 'yours' ? colors.cyan : colors.elevated,
-                    color: battleViewTab === 'yours' ? colors.background : colors.textSecondary,
-                    border: `2px solid ${battleViewTab === 'yours' ? colors.cyan : colors.borderSubtle}`
-                  }}
-                >
-                  Your Portfolio
-                </button>
-                <button
-                  onClick={() => setBattleViewTab('theirs')}
-                  className="py-3 rounded-lg font-semibold transition-all"
-                  style={{
-                    background: battleViewTab === 'theirs' ? colors.red : colors.elevated,
-                    color: battleViewTab === 'theirs' ? 'white' : colors.textSecondary,
-                    border: `2px solid ${battleViewTab === 'theirs' ? colors.red : colors.borderSubtle}`
-                  }}
-                >
-                  {opponent}'s Portfolio
-                </button>
-              </div>
-            </div>
-
-            {/* PORTFOLIO TABLES - Responsive */}
+            {/* PORTFOLIO TABLES - ESPN-style head-to-head, both always visible */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.2 }}
               className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6"
             >
-              {/* YOUR PORTFOLIO TABLE - Hidden on mobile if not selected */}
-              <div className={battleViewTab === 'yours' ? 'block' : 'hidden md:block'}>
+              {/* YOUR PORTFOLIO TABLE - Always visible */}
+              <div>
                 <div className="rounded-2xl overflow-hidden" style={{
                   background: colors.cardBg,
                   border: `1px solid #30363d`
@@ -5395,8 +5363,8 @@ export default function PortfolioDuel() {
                 </div>
               </div>
 
-              {/* OPPONENT'S PORTFOLIO TABLE - Hidden on mobile if not selected */}
-              <div className={battleViewTab === 'theirs' ? 'block' : 'hidden md:block'}>
+              {/* OPPONENT'S PORTFOLIO TABLE - Always visible */}
+              <div>
                 <div className="rounded-2xl overflow-hidden" style={{
                   background: colors.cardBg,
                   border: `1px solid #30363d`
