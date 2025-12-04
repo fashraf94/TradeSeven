@@ -464,6 +464,9 @@ export default function PortfolioDuel() {
   // Track which assets are expanded in portfolio builder
   const [expandedAssets, setExpandedAssets] = useState(new Set());
 
+  // Mobile battle view tab state
+  const [battleViewTab, setBattleViewTab] = useState('yours');
+
   // Toggle asset expansion
   const toggleAssetExpansion = (symbol) => {
     setExpandedAssets(prev => {
@@ -4591,90 +4594,49 @@ export default function PortfolioDuel() {
 
     return (
       <div style={containerStyle}>
-        <div style={{
-          minHeight: '100vh',
-          paddingBottom: '32px',
-          background: colors.background
-        }}>
-          {/* BATTLE HEADER - Large Timer */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
+        <div className="min-h-screen pb-8" style={{ background: colors.background }}>
+          {/* BATTLE HEADER - Mobile-first sticky */}
+          <div
+            className="sticky top-0 z-40"
             style={{
-              padding: '24px',
-              textAlign: 'center',
-              borderBottom: `1px solid #30363d`
+              background: isWinning
+                ? `linear-gradient(135deg, ${colors.green} 0%, #059669 100%)`
+                : `linear-gradient(135deg, ${colors.red} 0%, #DC2626 100%)`,
+              padding: '12px 16px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
             }}
           >
-            <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <button
-                  onClick={() => setScreen('dashboard')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '10px 20px',
-                    background: colors.cardBg,
-                    border: `1px solid #30363d`,
-                    borderRadius: '8px',
-                    color: colors.textSecondary,
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = colors.cyan;
-                    e.currentTarget.style.color = colors.cyan;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = '#30363d';
-                    e.currentTarget.style.color = colors.textSecondary;
-                  }}
-                >
-                  ← Back to Dashboard
-                </button>
+            <div className="max-w-7xl mx-auto flex items-center justify-between">
+              <button
+                onClick={() => setScreen('dashboard')}
+                className="flex items-center gap-2 text-white"
+              >
+                <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
+                <span className="font-semibold text-sm md:text-base">Back</span>
+              </button>
 
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{
-                    fontSize: '11px',
-                    color: colors.textMuted,
-                    textTransform: 'uppercase',
-                    letterSpacing: '3px',
-                    marginBottom: '8px',
-                    fontWeight: '600'
-                  }}>
-                    BATTLE ENDS
-                  </div>
-                  <motion.div
-                    animate={{
-                      textShadow: [
-                        '0 0 20px rgba(0, 217, 255, 0.4)',
-                        '0 0 40px rgba(0, 217, 255, 0.6)',
-                        '0 0 20px rgba(0, 217, 255, 0.4)'
-                      ]
-                    }}
-                    transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                    style={{
-                      fontSize: '52px',
-                      fontWeight: 'bold',
-                      fontFamily: "'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace",
-                      color: colors.cyan,
-                      letterSpacing: '4px'
-                    }}
-                  >
-                    {battleTimer.formatTimeRemaining(currentBattle)}
-                  </motion.div>
+              <div className="text-center">
+                <div className="text-xs text-white opacity-80 uppercase tracking-wider mb-1">
+                  {isWinning ? 'LEADING' : 'TRAILING'}
                 </div>
+                <motion.div
+                  animate={{ scale: [1, 1.05, 1] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                  className="text-xl md:text-2xl font-bold text-white font-mono"
+                >
+                  {battleTimer.formatTimeRemaining(currentBattle)}
+                </motion.div>
+              </div>
 
-                <div style={{ width: '160px' }}></div>
+              <div className="w-16 md:w-20 text-right">
+                <span className="text-white text-sm font-semibold">
+                  {isWinning ? '+' : ''}{myGain.toFixed(1)}%
+                </span>
               </div>
             </div>
-          </motion.div>
+          </div>
 
-          <div style={{ maxWidth: '1536px', margin: '0 auto', padding: '0 24px' }}>
+          <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
             {/* Training Battle Indicator */}
             {currentBattle.isTrainingBattle && (
               <div style={{
@@ -5258,24 +5220,47 @@ export default function PortfolioDuel() {
               </div>
             )}
 
-            {/* PORTFOLIO TABLES - Side by Side */}
+            {/* MOBILE: Portfolio Tabs */}
+            <div className="md:hidden mb-4">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setBattleViewTab('yours')}
+                  className="py-3 rounded-lg font-semibold transition-all"
+                  style={{
+                    background: battleViewTab === 'yours' ? colors.cyan : colors.elevated,
+                    color: battleViewTab === 'yours' ? colors.background : colors.textSecondary,
+                    border: `2px solid ${battleViewTab === 'yours' ? colors.cyan : colors.borderSubtle}`
+                  }}
+                >
+                  Your Portfolio
+                </button>
+                <button
+                  onClick={() => setBattleViewTab('theirs')}
+                  className="py-3 rounded-lg font-semibold transition-all"
+                  style={{
+                    background: battleViewTab === 'theirs' ? colors.red : colors.elevated,
+                    color: battleViewTab === 'theirs' ? 'white' : colors.textSecondary,
+                    border: `2px solid ${battleViewTab === 'theirs' ? colors.red : colors.borderSubtle}`
+                  }}
+                >
+                  {opponent}'s Portfolio
+                </button>
+              </div>
+            </div>
+
+            {/* PORTFOLIO TABLES - Responsive */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.2 }}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '24px'
-              }}
+              className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6"
             >
-              {/* YOUR PORTFOLIO TABLE */}
-              <div style={{
-                background: colors.cardBg,
-                borderRadius: '16px',
-                overflow: 'hidden',
-                border: `1px solid #30363d`
-              }}>
+              {/* YOUR PORTFOLIO TABLE - Hidden on mobile if not selected */}
+              <div className={battleViewTab === 'yours' ? 'block' : 'hidden md:block'}>
+                <div className="rounded-2xl overflow-hidden" style={{
+                  background: colors.cardBg,
+                  border: `1px solid #30363d`
+                }}>
                 {/* Table Header */}
                 <div style={{
                   padding: '16px 20px',
@@ -5407,15 +5392,15 @@ export default function PortfolioDuel() {
                     );
                   })}
                 </div>
+                </div>
               </div>
 
-              {/* OPPONENT'S PORTFOLIO TABLE */}
-              <div style={{
-                background: colors.cardBg,
-                borderRadius: '16px',
-                overflow: 'hidden',
-                border: `1px solid #30363d`
-              }}>
+              {/* OPPONENT'S PORTFOLIO TABLE - Hidden on mobile if not selected */}
+              <div className={battleViewTab === 'theirs' ? 'block' : 'hidden md:block'}>
+                <div className="rounded-2xl overflow-hidden" style={{
+                  background: colors.cardBg,
+                  border: `1px solid #30363d`
+                }}>
                 {/* Table Header */}
                 <div style={{
                   padding: '16px 20px',
@@ -5546,6 +5531,7 @@ export default function PortfolioDuel() {
                       </div>
                     );
                   })}
+                </div>
                 </div>
               </div>
             </motion.div>
