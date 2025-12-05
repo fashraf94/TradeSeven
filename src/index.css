@@ -2,6 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Prevent iOS auto-zoom on input focus */
+input,
+select,
+textarea,
+button {
+  font-size: 16px !important;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="number"] {
+  font-size: 16px !important;
+}
+
 /* Dark Gaming Theme for MarketClash */
 @layer base {
   :root {
