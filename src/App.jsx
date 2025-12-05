@@ -1672,34 +1672,7 @@ export default function PortfolioDuel() {
             </div>
           )}
 
-          {/* MOBILE: Top Header - Fixed position */}
-          <div
-            className="md:hidden fixed top-0 left-0 right-0 z-50"
-            style={{
-              background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDark} 100%)`,
-              padding: '12px 16px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-            }}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Flame className="w-5 h-5" style={{ color: 'white' }} />
-                <span className="text-lg font-bold" style={{ color: 'white' }}>
-                  MarketClash
-                </span>
-              </div>
-              <button
-                onClick={() => { setUser(null); setUsername(''); setScreen('home'); }}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm"
-                style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}
-              >
-                <LogOut className="w-4 h-4" />
-                Exit
-              </button>
-            </div>
-          </div>
-
-          {/* DESKTOP: Top Header - Static */}
+          {/* DESKTOP ONLY: Top Header - Static */}
           <div
             className="hidden md:block"
             style={{
@@ -1745,7 +1718,7 @@ export default function PortfolioDuel() {
 
           {/* Main Content Area - Mobile-first with responsive padding */}
           <div
-            className="pt-16 md:pt-0 pb-28 md:pb-20 px-4 md:px-6"
+            className="pt-4 md:pt-0 pb-28 md:pb-20 px-4 md:px-6"
             style={{
               flex: 1,
               maxWidth: '900px',
@@ -2015,8 +1988,8 @@ export default function PortfolioDuel() {
               </motion.div>
             )}
 
-            {/* Create & Join Battle Cards - Visible on all screens */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5 mb-5">
+            {/* Create & Join Battle Cards - TRUE SIDE-BY-SIDE on all screens */}
+            <div className="grid grid-cols-2 gap-3 mb-5">
               {/* CREATE BATTLE Card */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -2419,57 +2392,49 @@ export default function PortfolioDuel() {
             )}
           </div>
 
-          {/* MOBILE: Bottom Navigation - Wins, Losses, Profile, Settings */}
-          <div
-            className="md:hidden fixed bottom-0 left-0 right-0 z-50"
-            style={{
-              background: colors.cardBg,
-              borderTop: `1px solid ${colors.border}`,
-              padding: '8px 16px 12px',
-              boxShadow: '0 -2px 8px rgba(0,0,0,0.3)'
-            }}
-          >
-            <div className="flex items-center justify-around max-w-md mx-auto">
+          {/* MOBILE: Bottom Navigation - Dark theme */}
+          <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#161b22] border-t border-[#30363d]">
+            <div className="flex items-center justify-around py-2">
               {/* Wins Tab */}
               <button
                 onClick={() => setScreen('wins')}
-                className="flex flex-col items-center gap-1 min-w-[60px] py-1"
+                className="flex flex-col items-center gap-0.5 min-w-[60px] py-2"
               >
-                <div className="text-2xl">🏆</div>
-                <span className={`text-xs font-semibold ${screen === 'wins' ? 'text-green-500' : 'text-gray-400'}`}>Wins</span>
+                <Trophy className="w-5 h-5" style={{ color: screen === 'wins' ? '#10B981' : '#8b949e' }} />
+                <span className="text-[10px] font-medium" style={{ color: screen === 'wins' ? '#10B981' : '#8b949e' }}>Wins</span>
                 {user.wins > 0 && (
-                  <span className="text-xs font-bold text-green-500">{user.wins}</span>
+                  <span className="text-[10px] font-bold text-green-500">{user.wins}</span>
                 )}
               </button>
 
               {/* Losses Tab */}
               <button
                 onClick={() => setScreen('losses')}
-                className="flex flex-col items-center gap-1 min-w-[60px] py-1"
+                className="flex flex-col items-center gap-0.5 min-w-[60px] py-2"
               >
-                <div className="text-2xl">💀</div>
-                <span className={`text-xs font-semibold ${screen === 'losses' ? 'text-red-500' : 'text-gray-400'}`}>Losses</span>
+                <Skull className="w-5 h-5" style={{ color: screen === 'losses' ? '#EF4444' : '#8b949e' }} />
+                <span className="text-[10px] font-medium" style={{ color: screen === 'losses' ? '#EF4444' : '#8b949e' }}>Losses</span>
                 {user.losses > 0 && (
-                  <span className="text-xs font-bold text-red-500">{user.losses}</span>
+                  <span className="text-[10px] font-bold text-red-500">{user.losses}</span>
                 )}
               </button>
 
               {/* Profile Tab */}
               <button
                 onClick={() => setScreen('profile')}
-                className="flex flex-col items-center gap-1 min-w-[60px] py-1"
+                className="flex flex-col items-center gap-0.5 min-w-[60px] py-2"
               >
-                <div className="text-2xl">👤</div>
-                <span className={`text-xs font-semibold ${screen === 'profile' ? 'text-cyan-500' : 'text-gray-400'}`}>Profile</span>
+                <User className="w-5 h-5" style={{ color: screen === 'profile' ? '#00D9FF' : '#8b949e' }} />
+                <span className="text-[10px] font-medium" style={{ color: screen === 'profile' ? '#00D9FF' : '#8b949e' }}>Profile</span>
               </button>
 
               {/* Settings Tab */}
               <button
                 onClick={() => setScreen('settings')}
-                className="flex flex-col items-center gap-1 min-w-[60px] py-1"
+                className="flex flex-col items-center gap-0.5 min-w-[60px] py-2"
               >
-                <div className="text-2xl">⚙️</div>
-                <span className={`text-xs font-semibold ${screen === 'settings' ? 'text-purple-500' : 'text-gray-400'}`}>Settings</span>
+                <Settings className="w-5 h-5" style={{ color: screen === 'settings' ? '#A855F7' : '#8b949e' }} />
+                <span className="text-[10px] font-medium" style={{ color: screen === 'settings' ? '#A855F7' : '#8b949e' }}>Settings</span>
               </button>
             </div>
           </div>
@@ -2556,13 +2521,13 @@ export default function PortfolioDuel() {
                 Create Battle
               </h1>
 
-              {/* Portfolio Icon with Badge */}
+              {/* Portfolio Icon with Badge - Dark Theme */}
               <button
                 onClick={() => setShowPortfolioManager(true)}
-                className="relative"
+                className="relative min-h-[44px] min-w-[44px]"
               >
-                <div className="w-11 h-11 md:w-12 md:h-12 bg-white/20 hover:bg-white/30 rounded-lg flex items-center justify-center transition-colors">
-                  <Briefcase className="w-6 h-6 md:w-7 md:h-7 text-white" />
+                <div className="w-11 h-11 md:w-12 md:h-12 bg-[#161b22] hover:bg-[#21262d] rounded-lg flex items-center justify-center transition-colors border border-[#30363d]">
+                  <Briefcase className="w-6 h-6 md:w-7 md:h-7 text-cyan-400" />
                 </div>
 
                 {/* Red Badge with Count */}
@@ -3481,13 +3446,13 @@ export default function PortfolioDuel() {
                 Join Battle
               </h1>
 
-              {/* Portfolio Icon with Badge */}
+              {/* Portfolio Icon with Badge - Dark Theme */}
               <button
                 onClick={() => setShowPortfolioManager(true)}
-                className="relative"
+                className="relative min-h-[44px] min-w-[44px]"
               >
-                <div className="w-11 h-11 md:w-12 md:h-12 bg-white/20 hover:bg-white/30 rounded-lg flex items-center justify-center transition-colors">
-                  <Briefcase className="w-6 h-6 md:w-7 md:h-7 text-white" />
+                <div className="w-11 h-11 md:w-12 md:h-12 bg-[#161b22] hover:bg-[#21262d] rounded-lg flex items-center justify-center transition-colors border border-[#30363d]">
+                  <Briefcase className="w-6 h-6 md:w-7 md:h-7 text-purple-400" />
                 </div>
 
                 {/* Red Badge with Count */}
@@ -4445,13 +4410,13 @@ export default function PortfolioDuel() {
                 Training
               </h1>
 
-              {/* Portfolio Icon with Badge */}
+              {/* Portfolio Icon with Badge - Dark Theme */}
               <button
                 onClick={() => setShowPortfolioManager(true)}
-                className="relative"
+                className="relative min-h-[44px] min-w-[44px]"
               >
-                <div className="w-11 h-11 md:w-12 md:h-12 bg-white/20 hover:bg-white/30 rounded-lg flex items-center justify-center transition-colors">
-                  <Briefcase className="w-6 h-6 md:w-7 md:h-7 text-white" />
+                <div className="w-11 h-11 md:w-12 md:h-12 bg-[#161b22] hover:bg-[#21262d] rounded-lg flex items-center justify-center transition-colors border border-[#30363d]">
+                  <Briefcase className="w-6 h-6 md:w-7 md:h-7 text-amber-400" />
                 </div>
 
                 {/* Red Badge with Count */}
@@ -5924,13 +5889,8 @@ export default function PortfolioDuel() {
               </div>
             )}
 
-            {/* PORTFOLIO TABLES - ESPN-style head-to-head, both always visible */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.2 }}
-              className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6"
-            >
+            {/* PORTFOLIO TABLES - ESPN-style head-to-head, TRUE SIDE-BY-SIDE */}
+            <div className="grid grid-cols-2 gap-0">
               {/* YOUR PORTFOLIO TABLE - Always visible */}
               <div>
                 <div className="rounded-2xl overflow-hidden" style={{
@@ -6212,7 +6172,7 @@ export default function PortfolioDuel() {
                 </div>
                 </div>
               </div>
-            </motion.div>
+            </div>
           </div>
         </div>
       </div>
