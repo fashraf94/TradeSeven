@@ -2271,6 +2271,59 @@ export default function PortfolioDuel() {
               <ArrowRight style={{ height: '20px', width: '20px', color: colors.background }} />
             </motion.div>
 
+            {/* Navigation Buttons Grid - Below Training Mode */}
+            <div className="grid grid-cols-2 gap-3 mb-6">
+              {/* Wins Button */}
+              <button
+                onClick={() => setScreen('wins')}
+                className="bg-[#161b22] border-2 border-green-500 rounded-xl p-4 hover:bg-[#1a1f26] transition-colors"
+              >
+                <div className="text-center">
+                  <div className="text-3xl mb-2">🏆</div>
+                  <div className="font-bold text-sm text-green-500">WINS</div>
+                  {user.wins > 0 && (
+                    <div className="text-xl font-bold text-green-500 mt-1">{user.wins}</div>
+                  )}
+                </div>
+              </button>
+
+              {/* Losses Button */}
+              <button
+                onClick={() => setScreen('losses')}
+                className="bg-[#161b22] border-2 border-red-500 rounded-xl p-4 hover:bg-[#1a1f26] transition-colors"
+              >
+                <div className="text-center">
+                  <div className="text-3xl mb-2">💀</div>
+                  <div className="font-bold text-sm text-red-500">LOSSES</div>
+                  {user.losses > 0 && (
+                    <div className="text-xl font-bold text-red-500 mt-1">{user.losses}</div>
+                  )}
+                </div>
+              </button>
+
+              {/* Profile Button */}
+              <button
+                onClick={() => setScreen('profile')}
+                className="bg-[#161b22] border-2 border-cyan-500 rounded-xl p-4 hover:bg-[#1a1f26] transition-colors"
+              >
+                <div className="text-center">
+                  <div className="text-3xl mb-2">👤</div>
+                  <div className="font-bold text-sm text-cyan-500">PROFILE</div>
+                </div>
+              </button>
+
+              {/* Settings Button */}
+              <button
+                onClick={() => setScreen('settings')}
+                className="bg-[#161b22] border-2 border-purple-500 rounded-xl p-4 hover:bg-[#1a1f26] transition-colors"
+              >
+                <div className="text-center">
+                  <div className="text-3xl mb-2">⚙️</div>
+                  <div className="font-bold text-sm text-purple-500">SETTINGS</div>
+                </div>
+              </button>
+            </div>
+
             {/* Completed Battles - Compact List */}
             {completedBattles.length > 0 && (
               <motion.div
@@ -2392,42 +2445,6 @@ export default function PortfolioDuel() {
             )}
           </div>
 
-          {/* MOBILE: Bottom Navigation - Dark theme with emojis */}
-          <nav className="md:hidden fixed bottom-0 left-0 right-0 w-full bg-[#161b22] border-t-2 border-gray-800 z-50">
-            <div className="max-w-6xl mx-auto px-4 py-3 flex justify-around items-center">
-              <button
-                onClick={() => setScreen('wins')}
-                className={`flex flex-col items-center gap-1 min-w-[70px] transition-colors ${screen === 'wins' ? 'text-green-500' : 'text-gray-400'}`}
-              >
-                <span className="text-2xl">🏆</span>
-                <span className="text-xs font-semibold">Wins</span>
-                {user.wins > 0 && <span className="text-[10px] font-bold text-green-500">{user.wins}</span>}
-              </button>
-              <button
-                onClick={() => setScreen('losses')}
-                className={`flex flex-col items-center gap-1 min-w-[70px] transition-colors ${screen === 'losses' ? 'text-red-500' : 'text-gray-400'}`}
-              >
-                <span className="text-2xl">💀</span>
-                <span className="text-xs font-semibold">Losses</span>
-                {user.losses > 0 && <span className="text-[10px] font-bold text-red-500">{user.losses}</span>}
-              </button>
-              <button
-                onClick={() => setScreen('profile')}
-                className={`flex flex-col items-center gap-1 min-w-[70px] transition-colors ${screen === 'profile' ? 'text-cyan-500' : 'text-gray-400'}`}
-              >
-                <span className="text-2xl">👤</span>
-                <span className="text-xs font-semibold">Profile</span>
-              </button>
-              <button
-                onClick={() => setScreen('settings')}
-                className={`flex flex-col items-center gap-1 min-w-[70px] transition-colors ${screen === 'settings' ? 'text-purple-500' : 'text-gray-400'}`}
-              >
-                <span className="text-2xl">⚙️</span>
-                <span className="text-xs font-semibold">Settings</span>
-              </button>
-            </div>
-          </nav>
-
           {/* DESKTOP: Bottom Stats Bar - Fixed */}
           <div
             className="hidden md:flex"
@@ -2489,14 +2506,14 @@ export default function PortfolioDuel() {
     return (
       <div style={containerStyle}>
         <div className="min-h-screen pb-20" style={{ background: colors.background }}>
-          {/* Portfolio Builder Header - DARK THEME */}
-          <header className="bg-[#161b22] border-b border-gray-800 p-4 sticky top-0 z-40">
-            <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+          {/* Portfolio Builder Header - NO CART BUTTON */}
+          <div className="bg-[#161b22] border-b border-gray-800 p-4">
+            <div className="max-w-6xl mx-auto flex items-center justify-between">
 
-              {/* Back Button - CYAN TEXT, NO WHITE BACKGROUND */}
+              {/* Back Button - Cyan text, transparent bg */}
               <button
                 onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setScreen('dashboard'); }}
-                className="flex items-center gap-2 text-cyan-500 hover:text-cyan-400 font-semibold transition-colors bg-transparent"
+                className="flex items-center gap-2 text-cyan-500 hover:text-cyan-400 font-semibold bg-transparent"
               >
                 <span className="text-xl">←</span>
                 <span className="text-sm">Back</span>
@@ -2505,23 +2522,39 @@ export default function PortfolioDuel() {
               {/* Centered Title */}
               <h1 className="text-lg font-bold text-center flex-1">Build Portfolio</h1>
 
-              {/* Cart Button - CYAN BACKGROUND, BLACK ICON */}
-              <button
-                onClick={() => setShowPortfolioManager(true)}
-                className="relative bg-cyan-500 hover:bg-cyan-400 rounded-lg p-2 transition-colors flex-shrink-0"
-                aria-label="View Portfolio"
-              >
-                <Briefcase className="w-6 h-6 text-black" />
-
-                {/* Red Badge with Count */}
-                {portfolio.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center border-2 border-[#161b22]">
-                    {portfolio.length}
-                  </span>
-                )}
-              </button>
+              {/* Empty spacer for centering */}
+              <div className="w-20"></div>
             </div>
-          </header>
+          </div>
+
+          {/* FLOATING CART BUTTON - FIXED POSITION */}
+          <button
+            onClick={() => setShowPortfolioManager(true)}
+            className="fixed top-20 right-4 z-50 bg-green-400 hover:bg-green-300 rounded-xl p-3 shadow-lg transition-colors"
+            aria-label="View Portfolio"
+          >
+            {/* Cart Icon */}
+            <svg
+              className="w-7 h-7 text-black"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth="2.5"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+              />
+            </svg>
+
+            {/* RED Badge - TOP RIGHT corner */}
+            {portfolio && portfolio.length > 0 && (
+              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full min-w-[24px] h-6 flex items-center justify-center px-1.5 border-2 border-[#0d1117]">
+                {portfolio.length}
+              </span>
+            )}
+          </button>
 
           <div className="max-w-6xl mx-auto px-4 md:px-6 pt-4">
             {/* Asset Selection - Full Width (portfolio management in cart modal only) */}
@@ -3224,9 +3257,9 @@ export default function PortfolioDuel() {
     return (
       <div style={containerStyle}>
         <div className="min-h-screen pb-20" style={{ background: colors.background }}>
-          {/* Join Battle Header - DARK THEME */}
-          <header className="bg-[#161b22] border-b border-gray-800 p-4 sticky top-0 z-40">
-            <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+          {/* Join Battle Header - NO CART BUTTON */}
+          <div className="bg-[#161b22] border-b border-gray-800 p-4">
+            <div className="max-w-6xl mx-auto flex items-center justify-between">
 
               {/* Back Button - PURPLE TEXT */}
               <button
@@ -3240,23 +3273,39 @@ export default function PortfolioDuel() {
               {/* Centered Title */}
               <h1 className="text-lg font-bold text-center flex-1">Join Battle</h1>
 
-              {/* Cart Button - PURPLE BACKGROUND, BLACK ICON */}
-              <button
-                onClick={() => setShowPortfolioManager(true)}
-                className="relative bg-purple-500 hover:bg-purple-400 rounded-lg p-2 transition-colors flex-shrink-0"
-                aria-label="View Portfolio"
-              >
-                <Briefcase className="w-6 h-6 text-black" />
-
-                {/* Red Badge with Count */}
-                {portfolio.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center border-2 border-[#161b22]">
-                    {portfolio.length}
-                  </span>
-                )}
-              </button>
+              {/* Empty spacer for centering */}
+              <div className="w-20"></div>
             </div>
-          </header>
+          </div>
+
+          {/* FLOATING CART BUTTON - FIXED POSITION */}
+          <button
+            onClick={() => setShowPortfolioManager(true)}
+            className="fixed top-20 right-4 z-50 bg-green-400 hover:bg-green-300 rounded-xl p-3 shadow-lg transition-colors"
+            aria-label="View Portfolio"
+          >
+            {/* Cart Icon */}
+            <svg
+              className="w-7 h-7 text-black"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth="2.5"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+              />
+            </svg>
+
+            {/* RED Badge - TOP RIGHT corner */}
+            {portfolio && portfolio.length > 0 && (
+              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full min-w-[24px] h-6 flex items-center justify-center px-1.5 border-2 border-[#0d1117]">
+                {portfolio.length}
+              </span>
+            )}
+          </button>
 
           <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
             {/* Challenge Code Input */}
@@ -3996,9 +4045,9 @@ export default function PortfolioDuel() {
     return (
       <div style={containerStyle}>
         <div className="min-h-screen pb-20" style={{ background: colors.background }}>
-          {/* Training Header - DARK THEME */}
-          <header className="bg-[#161b22] border-b border-gray-800 p-4 sticky top-0 z-40">
-            <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+          {/* Training Header - NO CART BUTTON */}
+          <div className="bg-[#161b22] border-b border-gray-800 p-4">
+            <div className="max-w-6xl mx-auto flex items-center justify-between">
 
               {/* Back Button - AMBER TEXT */}
               <button
@@ -4015,23 +4064,39 @@ export default function PortfolioDuel() {
                 Training
               </h1>
 
-              {/* Cart Button - AMBER BACKGROUND, BLACK ICON */}
-              <button
-                onClick={() => setShowPortfolioManager(true)}
-                className="relative bg-amber-500 hover:bg-amber-400 rounded-lg p-2 transition-colors flex-shrink-0"
-                aria-label="View Portfolio"
-              >
-                <Briefcase className="w-6 h-6 text-black" />
-
-                {/* Red Badge with Count */}
-                {portfolio.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center border-2 border-[#161b22]">
-                    {portfolio.length}
-                  </span>
-                )}
-              </button>
+              {/* Empty spacer for centering */}
+              <div className="w-20"></div>
             </div>
-          </header>
+          </div>
+
+          {/* FLOATING CART BUTTON - FIXED POSITION */}
+          <button
+            onClick={() => setShowPortfolioManager(true)}
+            className="fixed top-20 right-4 z-50 bg-green-400 hover:bg-green-300 rounded-xl p-3 shadow-lg transition-colors"
+            aria-label="View Portfolio"
+          >
+            {/* Cart Icon */}
+            <svg
+              className="w-7 h-7 text-black"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth="2.5"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+              />
+            </svg>
+
+            {/* RED Badge - TOP RIGHT corner */}
+            {portfolio && portfolio.length > 0 && (
+              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full min-w-[24px] h-6 flex items-center justify-center px-1.5 border-2 border-[#0d1117]">
+                {portfolio.length}
+              </span>
+            )}
+          </button>
 
           <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
             {/* Training Info Box */}
