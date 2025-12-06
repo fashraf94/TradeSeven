@@ -144,12 +144,39 @@ function calculateVolatility(prices) {
 }
 
 // Helper function to generate simulated historical prices
-function generateHistoricalPrices(basePrice, days = 7) {
+// ✨ FIXED: Generate prices that MATCH the 30d return direction
+function generateHistoricalPrices(currentPrice, priceChange7d, priceChange30d, days = 30) {
+  // CRITICAL: Use DIVISION to calculate past prices correctly
+  // If 30d return is NEGATIVE, price30dAgo was HIGHER (chart goes DOWN)
+  // If 30d return is POSITIVE, price30dAgo was LOWER (chart goes UP)
+  const price30dAgo = currentPrice / (1 + priceChange30d / 100);
+  const price7dAgo = currentPrice / (1 + priceChange7d / 100);
+
   const prices = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const variation = (Math.random() - 0.5) * 0.06; // ±3%
+
+  // Generate 30 data points
+  for (let day = 0; day < days; day++) {
+    let basePrice;
+
+    if (day <= 22) {
+      // Days 0-22: Interpolate from 30d price to 7d price
+      const progress = day / 22;
+      basePrice = price30dAgo + (price7dAgo - price30dAgo) * progress;
+    } else {
+      // Days 23-29: Interpolate from 7d price to current price
+      const progress = (day - 22) / 7;
+      basePrice = price7dAgo + (currentPrice - price7dAgo) * progress;
+    }
+
+    // Add very small random variation (±0.5%) for visual realism
+    const variation = (Math.random() - 0.5) * 0.01;
     prices.push(basePrice * (1 + variation));
   }
+
+  // CRITICAL: Force first and last points to be exact
+  prices[0] = price30dAgo;                    // 30 days ago (start)
+  prices[prices.length - 1] = currentPrice;   // Today (end)
+
   return prices;
 }
 
@@ -158,12 +185,15 @@ async function getPopularStocks() {
     const stocksWithPrices = await Promise.all(
       POPULAR_STOCKS.map(async (stock) => {
         const priceData = await getStockPrice(stock.symbol);
-        const historicalPrices = generateHistoricalPrices(priceData.price);
+
+        // Generate 7d and 30d returns FIRST (would come from API in production)
+        const priceChange7d = (Math.random() - 0.5) * 10; // ±5%
+        const priceChange30d = (Math.random() - 0.5) * 30; // ±15%
+
+        // Generate historical prices BASED ON the return percentages
+        const historicalPrices = generateHistoricalPrices(priceData.price, priceChange7d, priceChange30d);
         const volatility = calculateVolatility(historicalPrices);
-        const price7dAgo = historicalPrices[0];
-        const price30dAgo = price7dAgo * (1 - (Math.random() - 0.5) * 0.1);
-        const priceChange7d = ((priceData.price - price7dAgo) / price7dAgo) * 100;
-        const priceChange30d = ((priceData.price - price30dAgo) / price30dAgo) * 100;
+
         return {
           symbol: stock.symbol,
           name: stock.name,
@@ -191,7 +221,7 @@ async function getPopularStocks() {
       priceChange7d: 0,
       priceChange30d: 0,
       volatility: 'low',
-      historicalPrices: Array(7).fill(100),
+      historicalPrices: Array(30).fill(100),
       marketCap: 0,
       volume24h: 0
     }));
@@ -209,12 +239,15 @@ async function getPopularCrypto() {
     for (const batch of batches) {
       const batchPromises = batch.map(async (crypto) => {
         const priceData = await getCryptoPrice(crypto.id);
-        const historicalPrices = generateHistoricalPrices(priceData.price);
+
+        // Generate 7d and 30d returns FIRST (would come from API in production)
+        const priceChange7d = (Math.random() - 0.5) * 15; // ±7.5% (crypto more volatile)
+        const priceChange30d = (Math.random() - 0.5) * 40; // ±20%
+
+        // Generate historical prices BASED ON the return percentages
+        const historicalPrices = generateHistoricalPrices(priceData.price, priceChange7d, priceChange30d);
         const volatility = calculateVolatility(historicalPrices);
-        const price7dAgo = historicalPrices[0];
-        const price30dAgo = price7dAgo * (1 - (Math.random() - 0.5) * 0.1);
-        const priceChange7d = ((priceData.price - price7dAgo) / price7dAgo) * 100;
-        const priceChange30d = ((priceData.price - price30dAgo) / price30dAgo) * 100;
+
         return {
           symbol: crypto.symbol,
           name: crypto.name,
@@ -247,7 +280,7 @@ async function getPopularCrypto() {
       priceChange7d: 0,
       priceChange30d: 0,
       volatility: 'low',
-      historicalPrices: Array(7).fill(FALLBACK_CRYPTO_PRICES[crypto.id] || 100),
+      historicalPrices: Array(30).fill(FALLBACK_CRYPTO_PRICES[crypto.id] || 100),
       marketCap: 0,
       volume24h: 0
     }));
