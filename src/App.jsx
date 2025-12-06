@@ -472,6 +472,9 @@ export default function PortfolioDuel() {
   // Portfolio Manager Modal state
   const [showPortfolioManager, setShowPortfolioManager] = useState(false);
 
+  // Sidebar navigation state
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   // Toggle asset expansion
   const toggleAssetExpansion = (symbol) => {
     setExpandedAssets(prev => {
@@ -1716,6 +1719,32 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
+          {/* Dashboard Header with Hamburger Menu */}
+          <header className="bg-[#161b22] border-b border-gray-800 p-4 sticky top-0 z-40">
+            <div className="max-w-6xl mx-auto flex items-center justify-between">
+
+              {/* Hamburger Menu Button - LEFT */}
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="text-cyan-500 hover:text-cyan-400 p-2 transition-colors"
+                aria-label="Open menu"
+              >
+                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+
+              {/* App Title - CENTER */}
+              <h1 className="text-xl font-bold text-center flex-1">
+                <span className="text-cyan-500">Market</span>
+                <span className="text-white">Clash</span>
+              </h1>
+
+              {/* Spacer for balance - RIGHT */}
+              <div className="w-11"></div>
+            </div>
+          </header>
+
           {/* Main Content Area - Mobile-first with responsive padding */}
           <div
             className="pt-4 md:pt-0 pb-28 md:pb-20 px-4 md:px-6"
@@ -2271,59 +2300,6 @@ export default function PortfolioDuel() {
               <ArrowRight style={{ height: '20px', width: '20px', color: colors.background }} />
             </motion.div>
 
-            {/* Navigation Buttons Grid - Below Training Mode */}
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              {/* Wins Button */}
-              <button
-                onClick={() => setScreen('wins')}
-                className="bg-[#161b22] border-2 border-green-500 rounded-xl p-4 hover:bg-[#1a1f26] transition-colors"
-              >
-                <div className="text-center">
-                  <div className="text-3xl mb-2">🏆</div>
-                  <div className="font-bold text-sm text-green-500">WINS</div>
-                  {user.wins > 0 && (
-                    <div className="text-xl font-bold text-green-500 mt-1">{user.wins}</div>
-                  )}
-                </div>
-              </button>
-
-              {/* Losses Button */}
-              <button
-                onClick={() => setScreen('losses')}
-                className="bg-[#161b22] border-2 border-red-500 rounded-xl p-4 hover:bg-[#1a1f26] transition-colors"
-              >
-                <div className="text-center">
-                  <div className="text-3xl mb-2">💀</div>
-                  <div className="font-bold text-sm text-red-500">LOSSES</div>
-                  {user.losses > 0 && (
-                    <div className="text-xl font-bold text-red-500 mt-1">{user.losses}</div>
-                  )}
-                </div>
-              </button>
-
-              {/* Profile Button */}
-              <button
-                onClick={() => setScreen('profile')}
-                className="bg-[#161b22] border-2 border-cyan-500 rounded-xl p-4 hover:bg-[#1a1f26] transition-colors"
-              >
-                <div className="text-center">
-                  <div className="text-3xl mb-2">👤</div>
-                  <div className="font-bold text-sm text-cyan-500">PROFILE</div>
-                </div>
-              </button>
-
-              {/* Settings Button */}
-              <button
-                onClick={() => setScreen('settings')}
-                className="bg-[#161b22] border-2 border-purple-500 rounded-xl p-4 hover:bg-[#1a1f26] transition-colors"
-              >
-                <div className="text-center">
-                  <div className="text-3xl mb-2">⚙️</div>
-                  <div className="font-bold text-sm text-purple-500">SETTINGS</div>
-                </div>
-              </button>
-            </div>
-
             {/* Completed Battles - Compact List */}
             {completedBattles.length > 0 && (
               <motion.div
@@ -2497,6 +2473,198 @@ export default function PortfolioDuel() {
             </button>
           </div>
         </div>
+
+        {/* Sliding Sidebar - Like Claude.ai */}
+        {sidebarOpen && (
+          <>
+            {/* Backdrop/Overlay */}
+            <div
+              className="fixed inset-0 bg-black/60 z-[70] backdrop-blur-sm"
+              onClick={() => setSidebarOpen(false)}
+            />
+
+            {/* Sidebar Panel */}
+            <div className="fixed top-0 left-0 h-full w-72 bg-[#161b22] border-r border-gray-800 z-[80] shadow-2xl animate-slide-in">
+
+              {/* Sidebar Header */}
+              <div className="bg-[#0d1117] border-b border-gray-800 p-4 flex items-center justify-between">
+                <h2 className="text-lg font-bold">
+                  <span className="text-cyan-500">Market</span>
+                  <span className="text-white">Clash</span>
+                </h2>
+                <button
+                  onClick={() => setSidebarOpen(false)}
+                  className="text-gray-400 hover:text-white p-1 transition-colors"
+                  aria-label="Close menu"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* User Info Section */}
+              <div className="bg-gradient-to-r from-cyan-600 to-cyan-800 p-4 border-b border-gray-800">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-12 h-12 bg-cyan-500 rounded-full flex items-center justify-center text-2xl">
+                    👤
+                  </div>
+                  <div>
+                    <div className="font-bold text-white">{user?.username || 'Player'}</div>
+                    <div className="text-sm text-cyan-100">{user?.rank || 'Beginner'}</div>
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-cyan-100 mt-2">
+                  <span>XP: {user?.xp || 0}</span>
+                  <span>Win Rate: {(user?.wins + user?.losses) > 0
+                    ? `${((user.wins / (user.wins + user.losses)) * 100).toFixed(0)}%`
+                    : '0%'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Navigation Menu */}
+              <nav className="p-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+
+                {/* Dashboard */}
+                <button
+                  onClick={() => {
+                    setScreen('dashboard');
+                    setSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors mb-1 ${
+                    screen === 'dashboard'
+                      ? 'bg-cyan-500 text-black'
+                      : 'text-gray-300 hover:bg-[#1a1f26]'
+                  }`}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                  </svg>
+                  <span className="font-semibold">Dashboard</span>
+                </button>
+
+                {/* Wins */}
+                <button
+                  onClick={() => {
+                    setScreen('wins');
+                    setSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors mb-1 ${
+                    screen === 'wins'
+                      ? 'bg-green-500 text-black'
+                      : 'text-gray-300 hover:bg-[#1a1f26]'
+                  }`}
+                >
+                  <span className="text-xl">🏆</span>
+                  <div className="flex-1 text-left">
+                    <div className="font-semibold">Wins</div>
+                    {user?.wins > 0 && (
+                      <div className="text-xs opacity-80">{user.wins} victories</div>
+                    )}
+                  </div>
+                </button>
+
+                {/* Losses */}
+                <button
+                  onClick={() => {
+                    setScreen('losses');
+                    setSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors mb-1 ${
+                    screen === 'losses'
+                      ? 'bg-red-500 text-black'
+                      : 'text-gray-300 hover:bg-[#1a1f26]'
+                  }`}
+                >
+                  <span className="text-xl">💀</span>
+                  <div className="flex-1 text-left">
+                    <div className="font-semibold">Losses</div>
+                    {user?.losses > 0 && (
+                      <div className="text-xs opacity-80">{user.losses} defeats</div>
+                    )}
+                  </div>
+                </button>
+
+                {/* Profile */}
+                <button
+                  onClick={() => {
+                    setScreen('profile');
+                    setSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors mb-1 ${
+                    screen === 'profile'
+                      ? 'bg-cyan-500 text-black'
+                      : 'text-gray-300 hover:bg-[#1a1f26]'
+                  }`}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span className="font-semibold">Profile</span>
+                </button>
+
+                {/* Divider */}
+                <div className="border-t border-gray-700 my-3"></div>
+
+                {/* Training Mode */}
+                <button
+                  onClick={() => {
+                    setScreen('training');
+                    setSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors mb-1 ${
+                    screen === 'training'
+                      ? 'bg-orange-500 text-black'
+                      : 'text-gray-300 hover:bg-[#1a1f26]'
+                  }`}
+                >
+                  <span className="text-xl">🧠</span>
+                  <span className="font-semibold">Training Mode</span>
+                </button>
+
+                {/* Settings */}
+                <button
+                  onClick={() => {
+                    setScreen('settings');
+                    setSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors mb-1 ${
+                    screen === 'settings'
+                      ? 'bg-purple-500 text-black'
+                      : 'text-gray-300 hover:bg-[#1a1f26]'
+                  }`}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <span className="font-semibold">Settings</span>
+                </button>
+
+                {/* Divider */}
+                <div className="border-t border-gray-700 my-3"></div>
+
+                {/* Logout */}
+                <button
+                  onClick={() => {
+                    setUser(null);
+                    setScreen('home');
+                    localStorage.removeItem('user');
+                    setSidebarOpen(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  <span className="font-semibold">Logout</span>
+                </button>
+
+              </nav>
+            </div>
+          </>
+        )}
       </div>
     );
   }
