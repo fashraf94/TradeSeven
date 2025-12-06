@@ -1758,13 +1758,28 @@ export default function PortfolioDuel() {
 
               {/* Hamburger Menu Button - LEFT */}
               <button
-                onClick={() => setSidebarOpen(true)}
-                className="text-cyan-500 hover:text-cyan-400 p-2 transition-colors"
+                onClick={() => {
+                  console.log('🍔 HAMBURGER CLICKED!');
+                  console.log('Current sidebarOpen:', sidebarOpen);
+                  setSidebarOpen(true);
+                  console.log('Set sidebarOpen to TRUE');
+                }}
+                className="text-cyan-500 hover:text-cyan-400 transition-colors"
+                style={{
+                  padding: '12px',
+                  minWidth: '48px',
+                  minHeight: '48px',
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'transparent'
+                }}
                 aria-label="Open menu"
               >
-                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
+                {/* Three horizontal lines */}
+                <div className="space-y-1.5">
+                  <div className="w-6 h-0.5 bg-cyan-500"></div>
+                  <div className="w-6 h-0.5 bg-cyan-500"></div>
+                  <div className="w-6 h-0.5 bg-cyan-500"></div>
+                </div>
               </button>
 
               {/* App Title - CENTER */}
@@ -1774,7 +1789,7 @@ export default function PortfolioDuel() {
               </h1>
 
               {/* Spacer for balance - RIGHT */}
-              <div className="w-11"></div>
+              <div className="w-12"></div>
             </div>
           </header>
 
@@ -2512,12 +2527,38 @@ export default function PortfolioDuel() {
           <>
             {/* Backdrop/Overlay */}
             <div
-              className="fixed inset-0 bg-black/60 z-[70] backdrop-blur-sm"
-              onClick={() => setSidebarOpen(false)}
+              onClick={() => {
+                console.log('🎯 BACKDROP CLICKED - CLOSING SIDEBAR');
+                setSidebarOpen(false);
+              }}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                zIndex: 100,
+                backdropFilter: 'blur(4px)'
+              }}
             />
 
             {/* Sidebar Panel */}
-            <div className="fixed top-0 left-0 h-full w-72 bg-[#161b22] border-r border-gray-800 z-[80] shadow-2xl animate-slide-in">
+            <div
+              className="animate-slide-in"
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                height: '100%',
+                width: '320px',
+                backgroundColor: '#161b22',
+                borderRight: '1px solid rgba(255, 255, 255, 0.1)',
+                zIndex: 110,
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                overflowY: 'auto'
+              }}
+            >
 
               {/* Sidebar Header */}
               <div className="bg-[#0d1117] border-b border-gray-800 p-4 flex items-center justify-between">
@@ -2526,8 +2567,11 @@ export default function PortfolioDuel() {
                   <span className="text-white">Clash</span>
                 </h2>
                 <button
-                  onClick={() => setSidebarOpen(false)}
-                  className="text-gray-400 hover:text-white p-1 transition-colors"
+                  onClick={() => {
+                    console.log('❌ CLOSE BUTTON CLICKED');
+                    setSidebarOpen(false);
+                  }}
+                  className="text-gray-400 hover:text-white p-2 hover:bg-white/10 rounded-lg transition-colors"
                   aria-label="Close menu"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2728,15 +2772,36 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* FLOATING CART BUTTON - FIXED POSITION */}
+          {/* FLOATING CART BUTTON - RIGHT SIDE!!! */}
           <button
-            onClick={() => setShowPortfolioManager(true)}
-            className="fixed top-20 right-4 z-50 bg-green-400 hover:bg-green-300 rounded-xl p-3 shadow-lg transition-colors"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('🛒 CART CLICKED!');
+              console.log('Portfolio length:', portfolio?.length);
+              console.log('Current showPortfolioManager:', showPortfolioManager);
+              setShowPortfolioManager(true);
+              console.log('Set showPortfolioManager to TRUE');
+            }}
+            className="bg-green-400 hover:bg-green-300 rounded-xl shadow-2xl"
+            style={{
+              position: 'fixed',
+              top: '80px',
+              right: '16px',
+              zIndex: 50,
+              width: '64px',
+              height: '64px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              touchAction: 'manipulation',
+              WebkitTapHighlightColor: 'transparent'
+            }}
             aria-label="View Portfolio"
           >
             {/* Cart Icon */}
             <svg
-              className="w-7 h-7 text-black"
+              className="w-8 h-8 text-black"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -2751,7 +2816,18 @@ export default function PortfolioDuel() {
 
             {/* RED Badge - TOP RIGHT corner */}
             {portfolio && portfolio.length > 0 && (
-              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full min-w-[24px] h-6 flex items-center justify-center px-1.5 border-2 border-[#0d1117]">
+              <span
+                className="bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center"
+                style={{
+                  position: 'absolute',
+                  top: '-8px',
+                  right: '-8px',
+                  minWidth: '24px',
+                  height: '24px',
+                  padding: '0 6px',
+                  border: '2px solid #0d1117'
+                }}
+              >
                 {portfolio.length}
               </span>
             )}
@@ -3479,15 +3555,36 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* FLOATING CART BUTTON - FIXED POSITION */}
+          {/* FLOATING CART BUTTON - RIGHT SIDE!!! */}
           <button
-            onClick={() => setShowPortfolioManager(true)}
-            className="fixed top-20 right-4 z-50 bg-green-400 hover:bg-green-300 rounded-xl p-3 shadow-lg transition-colors"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('🛒 CART CLICKED!');
+              console.log('Portfolio length:', portfolio?.length);
+              console.log('Current showPortfolioManager:', showPortfolioManager);
+              setShowPortfolioManager(true);
+              console.log('Set showPortfolioManager to TRUE');
+            }}
+            className="bg-green-400 hover:bg-green-300 rounded-xl shadow-2xl"
+            style={{
+              position: 'fixed',
+              top: '80px',
+              right: '16px',
+              zIndex: 50,
+              width: '64px',
+              height: '64px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              touchAction: 'manipulation',
+              WebkitTapHighlightColor: 'transparent'
+            }}
             aria-label="View Portfolio"
           >
             {/* Cart Icon */}
             <svg
-              className="w-7 h-7 text-black"
+              className="w-8 h-8 text-black"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -3502,7 +3599,18 @@ export default function PortfolioDuel() {
 
             {/* RED Badge - TOP RIGHT corner */}
             {portfolio && portfolio.length > 0 && (
-              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full min-w-[24px] h-6 flex items-center justify-center px-1.5 border-2 border-[#0d1117]">
+              <span
+                className="bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center"
+                style={{
+                  position: 'absolute',
+                  top: '-8px',
+                  right: '-8px',
+                  minWidth: '24px',
+                  height: '24px',
+                  padding: '0 6px',
+                  border: '2px solid #0d1117'
+                }}
+              >
                 {portfolio.length}
               </span>
             )}
@@ -4270,15 +4378,36 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* FLOATING CART BUTTON - FIXED POSITION */}
+          {/* FLOATING CART BUTTON - RIGHT SIDE!!! */}
           <button
-            onClick={() => setShowPortfolioManager(true)}
-            className="fixed top-20 right-4 z-50 bg-green-400 hover:bg-green-300 rounded-xl p-3 shadow-lg transition-colors"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('🛒 CART CLICKED!');
+              console.log('Portfolio length:', portfolio?.length);
+              console.log('Current showPortfolioManager:', showPortfolioManager);
+              setShowPortfolioManager(true);
+              console.log('Set showPortfolioManager to TRUE');
+            }}
+            className="bg-green-400 hover:bg-green-300 rounded-xl shadow-2xl"
+            style={{
+              position: 'fixed',
+              top: '80px',
+              right: '16px',
+              zIndex: 50,
+              width: '64px',
+              height: '64px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              touchAction: 'manipulation',
+              WebkitTapHighlightColor: 'transparent'
+            }}
             aria-label="View Portfolio"
           >
             {/* Cart Icon */}
             <svg
-              className="w-7 h-7 text-black"
+              className="w-8 h-8 text-black"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -4293,7 +4422,18 @@ export default function PortfolioDuel() {
 
             {/* RED Badge - TOP RIGHT corner */}
             {portfolio && portfolio.length > 0 && (
-              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full min-w-[24px] h-6 flex items-center justify-center px-1.5 border-2 border-[#0d1117]">
+              <span
+                className="bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center"
+                style={{
+                  position: 'absolute',
+                  top: '-8px',
+                  right: '-8px',
+                  minWidth: '24px',
+                  height: '24px',
+                  padding: '0 6px',
+                  border: '2px solid #0d1117'
+                }}
+              >
                 {portfolio.length}
               </span>
             )}
