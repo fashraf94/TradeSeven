@@ -448,6 +448,260 @@ const MiniSparkline = ({ isPositive, width = 70, height = 24 }) => {
   );
 };
 
+// Battle History Card Component
+const BattleHistoryCard = ({ battle, userId }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  // Determine if user won
+  const userWon = battle.winnerId === userId;
+  const userPlayer = battle.player1?.odUserId === userId ? battle.player1 : battle.player2;
+  const opponentPlayer = battle.player1?.odUserId === userId ? battle.player2 : battle.player1;
+
+  // Format date
+  const battleDate = new Date(battle.endTime || battle.createdAt || Date.now());
+  const dateStr = battleDate.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+  const timeStr = battleDate.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+
+  // Calculate returns if not provided
+  const userReturn = userPlayer?.finalReturn || userPlayer?.totalReturn || 0;
+  const opponentReturn = opponentPlayer?.finalReturn || opponentPlayer?.totalReturn || 0;
+
+  return (
+    <div style={{
+      backgroundColor: '#161b22',
+      border: `2px solid ${userWon ? '#22c55e' : '#ef4444'}`,
+      borderRadius: '12px',
+      overflow: 'hidden'
+    }}>
+      {/* Card Header - Clickable */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          width: '100%',
+          padding: '16px',
+          textAlign: 'left',
+          backgroundColor: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          transition: 'background-color 0.2s'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+          {/* Result Badge */}
+          <div style={{
+            padding: '4px 12px',
+            borderRadius: '8px',
+            fontWeight: 'bold',
+            fontSize: '12px',
+            backgroundColor: userWon ? '#22c55e' : '#ef4444',
+            color: userWon ? '#000000' : '#ffffff'
+          }}>
+            {userWon ? '🏆 VICTORY' : '💀 DEFEAT'}
+          </div>
+
+          {/* Date/Time */}
+          <div style={{ fontSize: '13px', color: '#8b949e' }}>
+            {dateStr} • {timeStr}
+          </div>
+        </div>
+
+        {/* Score Summary */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* User Score */}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '4px' }}>Your Performance</div>
+            <div style={{
+              fontSize: '24px',
+              fontWeight: 'bold',
+              color: userReturn >= 0 ? '#22c55e' : '#ef4444'
+            }}>
+              {userReturn >= 0 ? '+' : ''}{userReturn.toFixed(2)}%
+            </div>
+          </div>
+
+          {/* VS */}
+          <div style={{ padding: '0 16px', color: '#6b7280', fontWeight: 'bold' }}>VS</div>
+
+          {/* Opponent Score */}
+          <div style={{ flex: 1, textAlign: 'right' }}>
+            <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '4px' }}>Opponent</div>
+            <div style={{
+              fontSize: '24px',
+              fontWeight: 'bold',
+              color: opponentReturn >= 0 ? '#22c55e' : '#ef4444'
+            }}>
+              {opponentReturn >= 0 ? '+' : ''}{opponentReturn.toFixed(2)}%
+            </div>
+          </div>
+        </div>
+
+        {/* Expand Indicator */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginTop: '12px',
+          color: '#6b7280',
+          fontSize: '13px'
+        }}>
+          <span>{expanded ? 'Hide Details' : 'View Portfolios'}</span>
+          <svg
+            style={{
+              width: '16px',
+              height: '16px',
+              marginLeft: '8px',
+              transition: 'transform 0.2s',
+              transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)'
+            }}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+
+      {/* Expanded Details */}
+      {expanded && (
+        <div style={{
+          borderTop: '1px solid #21262d',
+          padding: '16px',
+          backgroundColor: '#0d1117'
+        }}>
+          {/* Battle Info */}
+          <div style={{
+            marginBottom: '16px',
+            paddingBottom: '16px',
+            borderBottom: '1px solid #21262d'
+          }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '13px' }}>
+              <div>
+                <span style={{ color: '#8b949e' }}>Battle Type:</span>
+                <span style={{ marginLeft: '8px', color: '#ffffff', fontWeight: '600' }}>
+                  {battle.battleType === 'stocks' ? '📈 Stocks' : '₿ Crypto'}
+                </span>
+              </div>
+              <div>
+                <span style={{ color: '#8b949e' }}>Duration:</span>
+                <span style={{ marginLeft: '8px', color: '#ffffff', fontWeight: '600' }}>24 hours</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Portfolios Side by Side */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            {/* Your Portfolio */}
+            <div>
+              <h3 style={{
+                fontSize: '13px',
+                fontWeight: 'bold',
+                color: '#00d9ff',
+                marginBottom: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span>👤</span>
+                Your Portfolio
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {(userPlayer?.portfolio || []).map((asset, idx) => (
+                  <div key={idx} style={{
+                    backgroundColor: '#161b22',
+                    border: '1px solid #21262d',
+                    borderRadius: '8px',
+                    padding: '8px'
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '4px'
+                    }}>
+                      <span style={{ fontWeight: 'bold', color: '#ffffff', fontSize: '13px' }}>{asset.symbol}</span>
+                      <span style={{ fontSize: '11px', color: '#8b949e' }}>{asset.allocation}%</span>
+                    </div>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: '11px'
+                    }}>
+                      <span style={{ color: '#6b7280' }}>
+                        ${(asset.startPrice || asset.price || 0).toFixed(2)} → ${(asset.endPrice || asset.price || 0).toFixed(2)}
+                      </span>
+                      <span style={{ color: (asset.return || 0) >= 0 ? '#22c55e' : '#ef4444' }}>
+                        {(asset.return || 0) >= 0 ? '+' : ''}{(asset.return || 0).toFixed(2)}%
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Opponent Portfolio */}
+            <div>
+              <h3 style={{
+                fontSize: '13px',
+                fontWeight: 'bold',
+                color: '#a855f7',
+                marginBottom: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span>🎯</span>
+                Opponent Portfolio
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {(opponentPlayer?.portfolio || []).map((asset, idx) => (
+                  <div key={idx} style={{
+                    backgroundColor: '#161b22',
+                    border: '1px solid #21262d',
+                    borderRadius: '8px',
+                    padding: '8px'
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '4px'
+                    }}>
+                      <span style={{ fontWeight: 'bold', color: '#ffffff', fontSize: '13px' }}>{asset.symbol}</span>
+                      <span style={{ fontSize: '11px', color: '#8b949e' }}>{asset.allocation}%</span>
+                    </div>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: '11px'
+                    }}>
+                      <span style={{ color: '#6b7280' }}>
+                        ${(asset.startPrice || asset.price || 0).toFixed(2)} → ${(asset.endPrice || asset.price || 0).toFixed(2)}
+                      </span>
+                      <span style={{ color: (asset.return || 0) >= 0 ? '#22c55e' : '#ef4444' }}>
+                        {(asset.return || 0) >= 0 ? '+' : ''}{(asset.return || 0).toFixed(2)}%
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function PortfolioDuel() {
   // ============================================
   // 1. ALL STATE DECLARATIONS
@@ -2583,34 +2837,96 @@ export default function PortfolioDuel() {
                 </button>
               </div>
 
-              {/* User Info Section */}
-              <div className="bg-gradient-to-r from-cyan-600 to-cyan-800 p-4 border-b border-gray-800">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-12 h-12 bg-cyan-500 rounded-full flex items-center justify-center text-2xl">
+              {/* User Info Section - THEMED */}
+              <div style={{
+                background: 'linear-gradient(135deg, #161b22 0%, #0d1117 100%)',
+                padding: '16px',
+                borderBottom: '1px solid #21262d'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                  {/* Profile Avatar */}
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '24px',
+                    border: '2px solid #00d9ff',
+                    boxShadow: '0 0 20px rgba(0, 217, 255, 0.3)'
+                  }}>
                     👤
                   </div>
-                  <div>
-                    <div className="font-bold text-white">{user?.username || 'Player'}</div>
-                    <div className="text-sm text-cyan-100">{user?.rank || 'Beginner'}</div>
+
+                  <div style={{ flex: 1 }}>
+                    {/* Username */}
+                    <div style={{
+                      fontSize: '16px',
+                      fontWeight: 'bold',
+                      color: '#ffffff',
+                      marginBottom: '4px'
+                    }}>
+                      {user?.username || 'Player'}
+                    </div>
+
+                    {/* Rank */}
+                    <div style={{
+                      fontSize: '13px',
+                      color: '#00d9ff',
+                      fontWeight: '600'
+                    }}>
+                      {user?.rank || 'Beginner'}
+                    </div>
                   </div>
                 </div>
-                <div className="flex justify-between text-xs text-cyan-100 mt-2">
-                  <span>XP: {user?.xp || 0}</span>
-                  <span>Win Rate: {(user?.wins + user?.losses) > 0
-                    ? `${((user.wins / (user.wins + user.losses)) * 100).toFixed(0)}%`
-                    : '0%'}
-                  </span>
+
+                {/* Stats Row */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  marginTop: '12px',
+                  paddingTop: '12px',
+                  borderTop: '1px solid #21262d'
+                }}>
+                  {/* XP */}
+                  <div style={{ flex: 1, textAlign: 'center' }}>
+                    <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '2px' }}>XP</div>
+                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#00d9ff' }}>
+                      {user?.xp || 0}
+                    </div>
+                  </div>
+
+                  {/* Win Rate */}
+                  <div style={{ flex: 1, textAlign: 'center' }}>
+                    <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '2px' }}>Win Rate</div>
+                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#22c55e' }}>
+                      {(user?.wins + user?.losses) > 0
+                        ? `${Math.round((user.wins / (user.wins + user.losses)) * 100)}%`
+                        : '0%'}
+                    </div>
+                  </div>
+
+                  {/* Total Battles */}
+                  <div style={{ flex: 1, textAlign: 'center' }}>
+                    <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '2px' }}>Battles</div>
+                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#ffffff' }}>
+                      {(user?.wins || 0) + (user?.losses || 0)}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Navigation Menu - ALL INLINE STYLES */}
+              {/* Navigation Menu - REFINED */}
               <div style={{ padding: '12px', backgroundColor: 'transparent' }}>
 
-                {/* DASHBOARD */}
+                {/* BATTLE HISTORY (replaces Wins + Losses) */}
                 <button
                   onClick={() => {
-                    console.log('📊 Dashboard clicked');
-                    setScreen('dashboard');
+                    console.log('📜 Battle History clicked');
+                    setScreen('battleHistory');
                     setSidebarOpen(false);
                   }}
                   style={{
@@ -2620,82 +2936,24 @@ export default function PortfolioDuel() {
                     gap: '12px',
                     padding: '12px 16px',
                     borderRadius: '8px',
-                    backgroundColor: screen === 'dashboard' ? '#00d9ff' : 'transparent',
-                    color: screen === 'dashboard' ? '#000000' : '#d1d5db',
+                    backgroundColor: screen === 'battleHistory' ? '#8b5cf6' : 'transparent',
+                    color: screen === 'battleHistory' ? '#000000' : '#d1d5db',
                     border: 'none',
                     marginBottom: '8px',
                     cursor: 'pointer',
                     transition: 'all 0.2s'
                   }}
                 >
+                  {/* History icon SVG */}
                   <svg style={{ width: '20px', height: '20px', flexShrink: 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                  </svg>
-                  <span style={{ fontWeight: '600', fontSize: '14px' }}>Dashboard</span>
-                </button>
-
-                {/* WINS */}
-                <button
-                  onClick={() => {
-                    console.log('🏆 Wins clicked');
-                    setScreen('wins');
-                    setSidebarOpen(false);
-                  }}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px 16px',
-                    borderRadius: '8px',
-                    backgroundColor: screen === 'wins' ? '#22c55e' : 'transparent',
-                    color: screen === 'wins' ? '#000000' : '#d1d5db',
-                    border: 'none',
-                    marginBottom: '8px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <svg style={{ width: '20px', height: '20px', flexShrink: 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <div style={{ flex: 1, textAlign: 'left' }}>
-                    <div style={{ fontWeight: '600', fontSize: '14px' }}>Wins</div>
-                    {user?.wins > 0 && (
-                      <div style={{ fontSize: '12px', opacity: 0.7 }}>{user.wins} victories</div>
-                    )}
-                  </div>
-                </button>
-
-                {/* LOSSES */}
-                <button
-                  onClick={() => {
-                    console.log('💀 Losses clicked');
-                    setScreen('losses');
-                    setSidebarOpen(false);
-                  }}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px 16px',
-                    borderRadius: '8px',
-                    backgroundColor: screen === 'losses' ? '#ef4444' : 'transparent',
-                    color: screen === 'losses' ? '#000000' : '#d1d5db',
-                    border: 'none',
-                    marginBottom: '8px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <svg style={{ width: '20px', height: '20px', flexShrink: 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  <div style={{ flex: 1, textAlign: 'left' }}>
-                    <div style={{ fontWeight: '600', fontSize: '14px' }}>Losses</div>
-                    {user?.losses > 0 && (
-                      <div style={{ fontSize: '12px', opacity: 0.7 }}>{user.losses} defeats</div>
+                    <div style={{ fontWeight: '600', fontSize: '14px' }}>Battle History</div>
+                    {((user?.wins || 0) + (user?.losses || 0)) > 0 && (
+                      <div style={{ fontSize: '12px', opacity: 0.7 }}>
+                        {user?.wins || 0}W - {user?.losses || 0}L
+                      </div>
                     )}
                   </div>
                 </button>
@@ -2730,34 +2988,6 @@ export default function PortfolioDuel() {
 
                 {/* DIVIDER */}
                 <div style={{ borderTop: '1px solid #374151', margin: '16px 0' }}></div>
-
-                {/* TRAINING MODE */}
-                <button
-                  onClick={() => {
-                    console.log('🧠 Training clicked');
-                    setScreen('training');
-                    setSidebarOpen(false);
-                  }}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px 16px',
-                    borderRadius: '8px',
-                    backgroundColor: screen === 'training' ? '#f97316' : 'transparent',
-                    color: screen === 'training' ? '#000000' : '#d1d5db',
-                    border: 'none',
-                    marginBottom: '8px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <svg style={{ width: '20px', height: '20px', flexShrink: 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                  </svg>
-                  <span style={{ fontWeight: '600', fontSize: '14px' }}>Training Mode</span>
-                </button>
 
                 {/* SETTINGS */}
                 <button
@@ -6524,6 +6754,145 @@ export default function PortfolioDuel() {
               </button>
             </div>
           </nav>
+        </div>
+      </div>
+    );
+  }
+
+  // BATTLE HISTORY SCREEN
+  if (screen === 'battleHistory') {
+    // Get completed battles from user data or localStorage
+    const completedBattles = user?.completedBattles || [];
+
+    return (
+      <div style={containerStyle}>
+        <div className="min-h-screen" style={{ background: colors.background }}>
+          {/* Header */}
+          <div style={{
+            backgroundColor: '#161b22',
+            borderBottom: '1px solid #21262d',
+            padding: '16px',
+            position: 'sticky',
+            top: 0,
+            zIndex: 10
+          }}>
+            <div style={{ maxWidth: '896px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <button
+                onClick={() => setScreen('dashboard')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  color: '#00d9ff',
+                  fontWeight: '600',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+                <span>Back</span>
+              </button>
+              <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#ffffff' }}>Battle History</h1>
+              <div style={{ width: '64px' }}></div>
+            </div>
+          </div>
+
+          <div style={{ maxWidth: '896px', margin: '0 auto', padding: '16px' }}>
+            {/* Stats Summary */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px' }}>
+              {/* Total Battles */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '1px solid #21262d',
+                borderRadius: '12px',
+                padding: '16px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '28px', marginBottom: '8px' }}>⚔️</div>
+                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ffffff' }}>
+                  {(user?.wins || 0) + (user?.losses || 0)}
+                </div>
+                <div style={{ fontSize: '13px', color: '#8b949e' }}>Total Battles</div>
+              </div>
+
+              {/* Wins */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '2px solid #22c55e',
+                borderRadius: '12px',
+                padding: '16px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '28px', marginBottom: '8px' }}>🏆</div>
+                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#22c55e' }}>
+                  {user?.wins || 0}
+                </div>
+                <div style={{ fontSize: '13px', color: '#8b949e' }}>Wins</div>
+              </div>
+
+              {/* Losses */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '2px solid #ef4444',
+                borderRadius: '12px',
+                padding: '16px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '28px', marginBottom: '8px' }}>💀</div>
+                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
+                  {user?.losses || 0}
+                </div>
+                <div style={{ fontSize: '13px', color: '#8b949e' }}>Losses</div>
+              </div>
+            </div>
+
+            {/* Battle List */}
+            <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff', marginBottom: '16px' }}>Past Battles</h2>
+
+            {completedBattles.length === 0 ? (
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '1px solid #21262d',
+                borderRadius: '12px',
+                padding: '48px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '64px', marginBottom: '16px' }}>🎮</div>
+                <p style={{ color: '#8b949e', fontSize: '18px', marginBottom: '8px' }}>No battles yet</p>
+                <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '16px' }}>
+                  Create your first battle to start your history!
+                </p>
+                <button
+                  onClick={() => setScreen('dashboard')}
+                  style={{
+                    backgroundColor: '#00d9ff',
+                    color: '#000000',
+                    fontWeight: 'bold',
+                    padding: '12px 24px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s'
+                  }}
+                >
+                  Go to Dashboard
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {completedBattles.map((battle, index) => (
+                  <BattleHistoryCard
+                    key={battle.battleId || index}
+                    battle={battle}
+                    userId={user?.odUserId}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
