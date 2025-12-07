@@ -4673,214 +4673,264 @@ export default function PortfolioDuel() {
           </div>
         </div>
 
-        {/* Portfolio Manager Modal - Full Screen (Join) */}
+        {/* PORTFOLIO MANAGER MODAL - REDESIGNED (Join) */}
         {showPortfolioManager && (
-          <div style={{ position: 'fixed', inset: 0, backgroundColor: '#0d1117', zIndex: 60, overflowY: 'auto' }}>{console.log('✅ JOIN MODAL IS RENDERING!')}
-            {/* Header */}
-            <div className="bg-[#161b22] border-b border-gray-800 p-4 sticky top-0 z-10">
-              <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: '#0d1117',
+            zIndex: 60,
+            overflowY: 'auto'
+          }}>
+
+            {/* MODAL HEADER */}
+            <div style={{
+              backgroundColor: '#161b22',
+              borderBottom: '1px solid #21262d',
+              padding: '16px',
+              position: 'sticky',
+              top: 0,
+              zIndex: 10
+            }}>
+              <div style={{
+                maxWidth: '600px',
+                margin: '0 auto',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
                 <button
                   onClick={() => setShowPortfolioManager(false)}
-                  className="flex items-center gap-2 text-green-500 hover:text-green-400 font-semibold"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: '#22c55e',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '8px'
+                  }}
                 >
-                  <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
-                  <span>Back to Assets</span>
+                  <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                  <span>Back</span>
                 </button>
 
-                <h1 className="text-xl font-bold text-white">Your Portfolio</h1>
+                <h1 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff' }}>
+                  Your Portfolio
+                </h1>
 
-                <div className="w-24"></div>
+                <div style={{ width: '60px' }}></div>
               </div>
             </div>
 
-            <div className="max-w-4xl mx-auto p-4">
+            <div style={{
+              maxWidth: '600px',
+              margin: '0 auto',
+              padding: '16px',
+              paddingBottom: '120px'
+            }}>
 
-              {/* Portfolio Summary */}
-              <div className="bg-[#161b22] border-2 border-green-500 rounded-xl p-6 mb-6">
-                <h2 className="text-2xl font-bold text-white mb-4">Portfolio Summary</h2>
-
-                {/* Progress */}
-                <div className="mb-6">
-                  <div className="flex justify-between mb-2">
-                    <span className="text-gray-400">Assets Selected</span>
-                    <span className={`font-bold ${
-                      portfolio.length >= 7 && portfolio.length <= 13
-                        ? 'text-green-500'
-                        : 'text-yellow-500'
-                    }`}>
-                      {portfolio.length}/13
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between mb-2">
-                    <span className="text-gray-400">Total Allocation</span>
-                    <span className={`font-bold ${
-                      Math.abs(totalPercentage - 100) < 0.01
-                        ? 'text-green-500'
-                        : totalPercentage > 100
-                        ? 'text-red-500'
-                        : 'text-yellow-500'
-                    }`}>
-                      {totalPercentage.toFixed(1)}%
-                    </span>
-                  </div>
-
-                  {/* Progress Bar */}
-                  <div className="w-full bg-gray-700 h-4 rounded-full overflow-hidden mt-3">
-                    <div
-                      className={`h-full transition-all duration-300 ${
-                        Math.abs(totalPercentage - 100) < 0.01
-                          ? 'bg-green-500'
-                          : totalPercentage > 100
-                          ? 'bg-red-500'
-                          : 'bg-green-500'
-                      }`}
-                      style={{ width: `${Math.min(100, totalPercentage)}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Validation Messages */}
-                <div className="space-y-2 text-sm">
-                  {!joinCode.trim() && (
-                    <div className="text-yellow-500 flex items-center gap-2">
-                      <span>⚠️</span>
-                      <span>Enter a challenge code to join a battle</span>
-                    </div>
-                  )}
-                  {portfolio.length === 0 && (
-                    <div className="text-yellow-500 flex items-center gap-2">
-                      <span>⚠️</span>
-                      <span>Add at least 7 assets to create a portfolio</span>
-                    </div>
-                  )}
-                  {portfolio.length > 0 && portfolio.length < 7 && (
-                    <div className="text-yellow-500 flex items-center gap-2">
-                      <span>⚠️</span>
-                      <span>Need {7 - portfolio.length} more asset{7 - portfolio.length !== 1 ? 's' : ''}</span>
-                    </div>
-                  )}
-                  {portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && joinCode.trim() && (
-                    <div className="text-green-500 flex items-center gap-2 font-semibold">
-                      <span>✓</span>
-                      <span>Ready to join battle!</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Selected Assets List */}
-              <div className="mb-6">
-                <h3 className="text-lg font-bold text-white mb-3">Selected Assets</h3>
-
-                {portfolio.length === 0 ? (
-                  <div className="bg-[#161b22] border border-gray-700 rounded-xl p-12 text-center">
-                    <div className="text-6xl mb-4">📂</div>
-                    <p className="text-gray-400">No assets selected yet</p>
-                    <p className="text-sm text-gray-500 mt-2">Go back and add assets to your portfolio</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {portfolio.map(asset => {
-                      const percentage = (asset.amount / 1000000) * 100;
-                      return (
-                        <div
-                          key={asset.symbol}
-                          className="bg-[#161b22] border border-gray-700 rounded-xl p-4"
-                        >
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex-1">
-                              <h4 className="text-lg font-bold text-white">{asset.symbol}</h4>
-                              <p className="text-sm text-gray-400">{asset.name}</p>
-                              <p className="text-green-500 font-semibold mt-1">${asset.price?.toFixed(2)}</p>
-                            </div>
-                            <button
-                              onClick={() => handleRemoveAsset(asset.symbol)}
-                              className="bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white w-10 h-10 rounded-lg flex items-center justify-center transition-colors font-bold text-xl"
-                            >
-                              ×
-                            </button>
-                          </div>
-
-                          {/* Allocation Slider */}
-                          <div>
-                            <div className="flex justify-between mb-2 text-sm">
-                              <span className="text-gray-400">Allocation</span>
-                              <span className="font-bold text-green-500">{percentage.toFixed(1)}%</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="7.5"
-                              max="20"
-                              step="0.5"
-                              value={percentage}
-                              onChange={(e) => {
-                                const newPercentage = parseFloat(e.target.value);
-                                const newAmount = (newPercentage / 100) * 1000000;
-                                setPortfolio(prev => prev.map(a =>
-                                  a.symbol === asset.symbol ? { ...a, amount: newAmount } : a
-                                ));
-                              }}
-                              className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
-                            />
-                            <div className="flex justify-between text-xs text-gray-500 mt-1">
-                              <span>7.5%</span>
-                              <span>20%</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Portfolio Name */}
-              <div className="mb-6">
-                <label className="block text-sm font-semibold text-white mb-2">
-                  Portfolio Name <span className="text-red-500">*</span>
+              {/* PORTFOLIO NAME - AT TOP */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#8b949e',
+                  marginBottom: '8px'
+                }}>
+                  Portfolio Name <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <input
                   type="text"
                   value={portfolioName}
                   onChange={(e) => setPortfolioName(e.target.value)}
-                  placeholder="Enter a name for your portfolio"
-                  className="w-full bg-[#161b22] border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-green-500 focus:outline-none"
-                />
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-col gap-3 pb-6">
-                <button
-                  onClick={() => setShowPortfolioManager(false)}
-                  className="w-full bg-gray-700 hover:bg-gray-600 text-white font-semibold py-4 rounded-lg transition-colors"
-                >
-                  ← Continue Browsing Assets
-                </button>
-
-                <button
-                  onClick={() => {
-                    handleJoinBattle();
-                    setShowPortfolioManager(false);
+                  placeholder="Enter portfolio name"
+                  style={{
+                    width: '100%',
+                    backgroundColor: '#161b22',
+                    border: portfolioName ? '1px solid #30363d' : '2px solid #ef4444',
+                    borderRadius: '8px',
+                    padding: '12px 16px',
+                    color: '#ffffff',
+                    fontSize: '15px',
+                    outline: 'none',
+                    boxSizing: 'border-box'
                   }}
-                  disabled={portfolio.length < 7 || portfolio.length > 13 || Math.abs(totalPercentage - 100) >= 0.01 || !portfolioName || !joinCode.trim()}
-                  className={`w-full font-bold py-4 rounded-lg transition-colors ${
-                    portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && portfolioName && joinCode.trim()
-                      ? 'bg-green-500 hover:bg-green-400 text-black'
-                      : 'bg-gray-800 text-gray-500 cursor-not-allowed'
-                  }`}
-                >
-                  {!joinCode.trim()
-                    ? 'Enter Challenge Code'
-                    : portfolio.length < 7
-                    ? `Add ${7 - portfolio.length} More Asset${7 - portfolio.length !== 1 ? 's' : ''}`
-                    : Math.abs(totalPercentage - 100) >= 0.01
-                    ? `Adjust Allocation (${totalPercentage.toFixed(1)}%)`
-                    : !portfolioName
-                    ? 'Enter Portfolio Name'
-                    : 'Join Battle ⚔️'}
-                </button>
+                />
+                {!portfolioName && (
+                  <p style={{ color: '#ef4444', fontSize: '12px', marginTop: '6px' }}>
+                    Portfolio name is required
+                  </p>
+                )}
               </div>
+
+              {/* SUMMARY CARD */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '1px solid #30363d',
+                borderRadius: '12px',
+                padding: '16px',
+                marginBottom: '20px'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '8px'
+                }}>
+                  <span style={{ color: '#8b949e', fontSize: '14px' }}>
+                    {portfolio.length}/13 assets
+                  </span>
+                  <span style={{
+                    color: Math.abs(totalPercentage - 100) < 0.01 ? '#22c55e' : totalPercentage > 100 ? '#ef4444' : '#fbbf24',
+                    fontSize: '18px',
+                    fontWeight: 'bold'
+                  }}>
+                    {totalPercentage.toFixed(1)}%
+                  </span>
+                </div>
+
+                {/* Progress Bar */}
+                <div style={{
+                  width: '100%',
+                  height: '8px',
+                  backgroundColor: '#21262d',
+                  borderRadius: '4px',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${Math.min(100, totalPercentage)}%`,
+                    backgroundColor: Math.abs(totalPercentage - 100) < 0.01 ? '#22c55e' : totalPercentage > 100 ? '#ef4444' : '#22c55e',
+                    transition: 'all 0.3s ease'
+                  }} />
+                </div>
+              </div>
+
+              {/* ASSETS LIST */}
+              {portfolio.length === 0 ? (
+                <div style={{
+                  backgroundColor: '#161b22',
+                  border: '1px solid #30363d',
+                  borderRadius: '12px',
+                  padding: '48px 16px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '56px', marginBottom: '16px' }}>📂</div>
+                  <p style={{ color: '#8b949e', fontSize: '16px', marginBottom: '8px' }}>
+                    No assets selected
+                  </p>
+                  <p style={{ color: '#6e7681', fontSize: '14px' }}>
+                    Go back and add assets to your portfolio
+                  </p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {portfolio.map((asset, index) => (
+                    <AssetWeightCard
+                      key={`${asset.symbol}-${index}`}
+                      asset={{
+                        ...asset,
+                        allocation: asset.percentage || ((asset.amount / 1000000) * 100)
+                      }}
+                      onWeightChange={(newWeight) => {
+                        const newAmount = (newWeight / 100) * 1000000;
+                        setPortfolio(prev => prev.map(a =>
+                          a.symbol === asset.symbol
+                            ? { ...a, amount: newAmount, percentage: newWeight }
+                            : a
+                        ));
+                      }}
+                      onRemove={() => handleRemoveAsset(asset.symbol)}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* VALIDATION MESSAGES */}
+              {portfolio.length > 0 && (
+                <div style={{ marginTop: '16px' }}>
+                  {!joinCode.trim() && (
+                    <p style={{ color: '#ef4444', fontSize: '13px', marginBottom: '4px' }}>
+                      • Enter a challenge code to join
+                    </p>
+                  )}
+                  {portfolio.length < 7 && (
+                    <p style={{ color: '#ef4444', fontSize: '13px', marginBottom: '4px' }}>
+                      • Need at least 7 assets (have {portfolio.length})
+                    </p>
+                  )}
+                  {Math.abs(totalPercentage - 100) >= 0.01 && (
+                    <p style={{ color: '#ef4444', fontSize: '13px' }}>
+                      • Total must equal 100% (currently {totalPercentage.toFixed(1)}%)
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* SUBMIT BUTTON */}
+              <button
+                onClick={() => {
+                  handleJoinBattle();
+                  setShowPortfolioManager(false);
+                }}
+                disabled={
+                  !portfolioName ||
+                  !joinCode.trim() ||
+                  portfolio.length < 7 ||
+                  portfolio.length > 13 ||
+                  Math.abs(totalPercentage - 100) >= 0.01
+                }
+                style={{
+                  width: '100%',
+                  backgroundColor: portfolioName && joinCode.trim() && portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01
+                    ? '#22c55e'
+                    : '#21262d',
+                  color: portfolioName && joinCode.trim() && portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01
+                    ? '#000000'
+                    : '#6e7681',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: portfolioName && joinCode.trim() && portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01
+                    ? 'pointer'
+                    : 'not-allowed',
+                  marginTop: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                {!joinCode.trim()
+                  ? 'Enter Challenge Code'
+                  : !portfolioName
+                  ? 'Enter Portfolio Name'
+                  : portfolio.length === 0
+                  ? 'Add Assets'
+                  : portfolio.length < 7
+                  ? `Need ${7 - portfolio.length} More Assets`
+                  : portfolio.length > 13
+                  ? `Remove ${portfolio.length - 13} Assets`
+                  : Math.abs(totalPercentage - 100) >= 0.01
+                  ? `Adjust to 100% (${totalPercentage.toFixed(1)}%)`
+                  : 'Join Battle ⚔️'}
+              </button>
             </div>
           </div>
         )}
@@ -5413,181 +5463,193 @@ export default function PortfolioDuel() {
           </div>
         </div>
 
-        {/* Portfolio Manager Modal - Full Screen (Training) */}
+        {/* Portfolio Manager Modal - Full Screen (Training) - REDESIGNED */}
         {showPortfolioManager && (
-          <div style={{ position: 'fixed', inset: 0, backgroundColor: '#0d1117', zIndex: 60, overflowY: 'auto' }}>{console.log('✅ TRAINING MODAL IS RENDERING!')}
+          <div style={{ position: 'fixed', inset: 0, backgroundColor: '#0d1117', zIndex: 60, overflowY: 'auto' }}>
             {/* Header */}
-            <div className="bg-[#161b22] border-b border-gray-800 p-4 sticky top-0 z-10">
-              <div className="max-w-6xl mx-auto flex items-center justify-between">
+            <div style={{
+              background: '#161b22',
+              borderBottom: '1px solid #21262d',
+              padding: '16px',
+              position: 'sticky',
+              top: 0,
+              zIndex: 10
+            }}>
+              <div style={{ maxWidth: '600px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <button
                   onClick={() => setShowPortfolioManager(false)}
-                  className="flex items-center gap-2 text-purple-500 hover:text-purple-400 font-semibold"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: '#f59e0b',
+                    fontWeight: '600',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '14px'
+                  }}
                 >
-                  <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
-                  <span>Back to Assets</span>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M15 18l-6-6 6-6" />
+                  </svg>
+                  Back to Assets
                 </button>
-
-                <h1 className="text-xl font-bold text-white">Your Portfolio</h1>
-
-                <div className="w-24"></div>
+                <h1 style={{ fontSize: '18px', fontWeight: '700', color: '#e6edf3' }}>Finalize Portfolio</h1>
+                <div style={{ width: '100px' }}></div>
               </div>
             </div>
 
-            <div className="max-w-4xl mx-auto p-4">
-
-              {/* Portfolio Summary */}
-              <div className="bg-[#161b22] border-2 border-purple-500 rounded-xl p-6 mb-6">
-                <h2 className="text-2xl font-bold text-white mb-4">Portfolio Summary</h2>
-
-                {/* Progress */}
-                <div className="mb-6">
-                  <div className="flex justify-between mb-2">
-                    <span className="text-gray-400">Assets Selected</span>
-                    <span className={`font-bold ${
-                      portfolio.length >= 7 && portfolio.length <= 13
-                        ? 'text-green-500'
-                        : 'text-yellow-500'
-                    }`}>
-                      {portfolio.length}/13
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between mb-2">
-                    <span className="text-gray-400">Total Allocation</span>
-                    <span className={`font-bold ${
-                      Math.abs(totalPercentage - 100) < 0.01
-                        ? 'text-green-500'
-                        : totalPercentage > 100
-                        ? 'text-red-500'
-                        : 'text-yellow-500'
-                    }`}>
-                      {totalPercentage.toFixed(1)}%
-                    </span>
-                  </div>
-
-                  {/* Progress Bar */}
-                  <div className="w-full bg-gray-700 h-4 rounded-full overflow-hidden mt-3">
-                    <div
-                      className={`h-full transition-all duration-300 ${
-                        Math.abs(totalPercentage - 100) < 0.01
-                          ? 'bg-green-500'
-                          : totalPercentage > 100
-                          ? 'bg-red-500'
-                          : 'bg-purple-500'
-                      }`}
-                      style={{ width: `${Math.min(100, totalPercentage)}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Validation Messages */}
-                <div className="space-y-2 text-sm">
-                  {portfolio.length === 0 && (
-                    <div className="text-yellow-500 flex items-center gap-2">
-                      <span>⚠️</span>
-                      <span>Add at least 7 assets to create a portfolio</span>
-                    </div>
-                  )}
-                  {portfolio.length > 0 && portfolio.length < 7 && (
-                    <div className="text-yellow-500 flex items-center gap-2">
-                      <span>⚠️</span>
-                      <span>Need {7 - portfolio.length} more asset{7 - portfolio.length !== 1 ? 's' : ''}</span>
-                    </div>
-                  )}
-                  {portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && (
-                    <div className="text-green-500 flex items-center gap-2 font-semibold">
-                      <span>✓</span>
-                      <span>Ready to start training!</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Selected Assets List */}
-              <div className="mb-6">
-                <h3 className="text-lg font-bold text-white mb-3">Selected Assets</h3>
-
-                {portfolio.length === 0 ? (
-                  <div className="bg-[#161b22] border border-gray-700 rounded-xl p-12 text-center">
-                    <div className="text-6xl mb-4">📂</div>
-                    <p className="text-gray-400">No assets selected yet</p>
-                    <p className="text-sm text-gray-500 mt-2">Go back and add assets to your portfolio</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {portfolio.map(asset => {
-                      const percentage = (asset.amount / 1000000) * 100;
-                      return (
-                        <div
-                          key={asset.symbol}
-                          className="bg-[#161b22] border border-gray-700 rounded-xl p-4"
-                        >
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex-1">
-                              <h4 className="text-lg font-bold text-white">{asset.symbol}</h4>
-                              <p className="text-sm text-gray-400">{asset.name}</p>
-                              <p className="text-purple-500 font-semibold mt-1">${asset.price?.toFixed(2)}</p>
-                            </div>
-                            <button
-                              onClick={() => handleRemoveAsset(asset.symbol)}
-                              className="bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white w-10 h-10 rounded-lg flex items-center justify-center transition-colors font-bold text-xl"
-                            >
-                              ×
-                            </button>
-                          </div>
-
-                          {/* Allocation Slider */}
-                          <div>
-                            <div className="flex justify-between mb-2 text-sm">
-                              <span className="text-gray-400">Allocation</span>
-                              <span className="font-bold text-purple-500">{percentage.toFixed(1)}%</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="7.5"
-                              max="20"
-                              step="0.5"
-                              value={percentage}
-                              onChange={(e) => {
-                                const newPercentage = parseFloat(e.target.value);
-                                const newAmount = (newPercentage / 100) * 1000000;
-                                setPortfolio(prev => prev.map(a =>
-                                  a.symbol === asset.symbol ? { ...a, amount: newAmount } : a
-                                ));
-                              }}
-                              className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                            />
-                            <div className="flex justify-between text-xs text-gray-500 mt-1">
-                              <span>7.5%</span>
-                              <span>20%</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Portfolio Name */}
-              <div className="mb-6">
-                <label className="block text-sm font-semibold text-white mb-2">
-                  Portfolio Name <span className="text-red-500">*</span>
+            <div style={{ maxWidth: '600px', margin: '0 auto', padding: '16px' }}>
+              {/* Portfolio Name - AT THE TOP */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#e6edf3', marginBottom: '8px' }}>
+                  Portfolio Name <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <input
                   type="text"
                   value={portfolioName}
                   onChange={(e) => setPortfolioName(e.target.value)}
                   placeholder="Enter a name for your portfolio"
-                  className="w-full bg-[#161b22] border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+                  style={{
+                    width: '100%',
+                    background: '#161b22',
+                    border: portfolioName.trim() ? '2px solid #21262d' : '2px solid #ef4444',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    color: '#e6edf3',
+                    fontSize: '16px',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
                 />
+                {!portfolioName.trim() && (
+                  <p style={{ color: '#ef4444', fontSize: '12px', marginTop: '6px' }}>Portfolio name is required</p>
+                )}
+              </div>
+
+              {/* Portfolio Summary Card */}
+              <div style={{
+                background: 'linear-gradient(135deg, #161b22 0%, #1c2128 100%)',
+                border: '2px solid #f59e0b',
+                borderRadius: '16px',
+                padding: '20px',
+                marginBottom: '20px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#e6edf3' }}>Portfolio Summary</h2>
+                  <div style={{
+                    background: portfolio.length >= 7 && portfolio.length <= 13 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                    color: portfolio.length >= 7 && portfolio.length <= 13 ? '#10b981' : '#f59e0b',
+                    padding: '4px 12px',
+                    borderRadius: '20px',
+                    fontSize: '13px',
+                    fontWeight: '600'
+                  }}>
+                    {portfolio.length}/13 assets
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ color: '#8b949e', fontSize: '13px' }}>Total Allocation</span>
+                    <span style={{
+                      color: Math.abs(totalPercentage - 100) < 0.01 ? '#10b981' : totalPercentage > 100 ? '#ef4444' : '#f59e0b',
+                      fontSize: '14px',
+                      fontWeight: '700'
+                    }}>
+                      {totalPercentage.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div style={{
+                    width: '100%',
+                    height: '10px',
+                    background: '#21262d',
+                    borderRadius: '5px',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      width: `${Math.min(100, totalPercentage)}%`,
+                      height: '100%',
+                      background: Math.abs(totalPercentage - 100) < 0.01
+                        ? 'linear-gradient(90deg, #10b981 0%, #34d399 100%)'
+                        : totalPercentage > 100
+                        ? 'linear-gradient(90deg, #ef4444 0%, #f87171 100%)'
+                        : 'linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%)',
+                      transition: 'width 0.3s ease'
+                    }} />
+                  </div>
+                </div>
+
+                {/* Status Message */}
+                {portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && portfolioName.trim() && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontSize: '14px', fontWeight: '600' }}>
+                    <span>✓</span>
+                    <span>Ready to start training!</span>
+                  </div>
+                )}
+                {portfolio.length < 7 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f59e0b', fontSize: '14px' }}>
+                    <span>⚠️</span>
+                    <span>Need {7 - portfolio.length} more asset{7 - portfolio.length !== 1 ? 's' : ''}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Selected Assets with Weight Cards */}
+              <div style={{ marginBottom: '20px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#e6edf3', marginBottom: '12px' }}>
+                  Adjust Weights
+                </h3>
+
+                {portfolio.length === 0 ? (
+                  <div style={{
+                    background: '#161b22',
+                    border: '1px solid #21262d',
+                    borderRadius: '16px',
+                    padding: '48px 24px',
+                    textAlign: 'center'
+                  }}>
+                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>📂</div>
+                    <p style={{ color: '#8b949e' }}>No assets selected yet</p>
+                    <p style={{ color: '#6e7681', fontSize: '14px', marginTop: '8px' }}>Go back and add assets to your portfolio</p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {portfolio.map(asset => (
+                      <AssetWeightCard
+                        key={asset.symbol}
+                        asset={asset}
+                        onWeightChange={(newPercentage) => {
+                          setPortfolio(prev => prev.map(a =>
+                            a.symbol === asset.symbol
+                              ? { ...a, amount: (newPercentage / 100) * 1000000, percentage: newPercentage }
+                              : a
+                          ));
+                        }}
+                        onRemove={() => handleRemoveAsset(asset.symbol)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-col gap-3 pb-6">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '24px' }}>
                 <button
                   onClick={() => setShowPortfolioManager(false)}
-                  className="w-full bg-gray-700 hover:bg-gray-600 text-white font-semibold py-4 rounded-lg transition-colors"
+                  style={{
+                    width: '100%',
+                    background: '#21262d',
+                    color: '#e6edf3',
+                    fontWeight: '600',
+                    padding: '16px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '16px'
+                  }}
                 >
                   ← Continue Browsing Assets
                 </button>
@@ -5597,18 +5659,33 @@ export default function PortfolioDuel() {
                     handleCreateTrainingBattle();
                     setShowPortfolioManager(false);
                   }}
-                  disabled={portfolio.length < 7 || portfolio.length > 13 || Math.abs(totalPercentage - 100) >= 0.01 || !portfolioName}
-                  className={`w-full font-bold py-4 rounded-lg transition-colors ${
-                    portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && portfolioName
-                      ? 'bg-purple-500 hover:bg-purple-400 text-white'
-                      : 'bg-gray-800 text-gray-500 cursor-not-allowed'
-                  }`}
+                  disabled={portfolio.length < 7 || portfolio.length > 13 || Math.abs(totalPercentage - 100) >= 0.01 || !portfolioName.trim()}
+                  style={{
+                    width: '100%',
+                    background: portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && portfolioName.trim()
+                      ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                      : '#21262d',
+                    color: portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && portfolioName.trim()
+                      ? '#000000'
+                      : '#6e7681',
+                    fontWeight: '700',
+                    padding: '18px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    cursor: portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && portfolioName.trim()
+                      ? 'pointer'
+                      : 'not-allowed',
+                    fontSize: '16px',
+                    boxShadow: portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && portfolioName.trim()
+                      ? '0 4px 20px rgba(245, 158, 11, 0.4)'
+                      : 'none'
+                  }}
                 >
                   {portfolio.length < 7
                     ? `Add ${7 - portfolio.length} More Asset${7 - portfolio.length !== 1 ? 's' : ''}`
                     : Math.abs(totalPercentage - 100) >= 0.01
                     ? `Adjust Allocation (${totalPercentage.toFixed(1)}%)`
-                    : !portfolioName
+                    : !portfolioName.trim()
                     ? 'Enter Portfolio Name'
                     : 'Start Training 🎓'}
                 </button>
