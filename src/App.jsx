@@ -83,7 +83,7 @@ const MarketClashLogo = ({ size = 'large' }) => {
         </linearGradient>
       </defs>
 
-      <rect width="450" height="350" fill="#0d1117"/>
+      <rect width="450" height="350" fill="transparent"/>
 
       <g transform="translate(200, 140)">
 
@@ -2011,29 +2011,12 @@ export default function PortfolioDuel() {
           padding: '20px'
         }}>
 
-          {/* LOGO */}
+          {/* LOGO ONLY - CENTERED */}
           <div style={{
-            marginBottom: '30px',
+            marginBottom: '40px',
             textAlign: 'center'
           }}>
             <MarketClashLogo size="large" />
-            <h1 style={{
-              fontSize: '28px',
-              fontWeight: 'bold',
-              background: 'linear-gradient(90deg, #00d9ff 0%, #ff8c00 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              marginTop: '20px',
-              marginBottom: '8px'
-            }}>
-              Welcome to the Arena
-            </h1>
-            <p style={{
-              fontSize: '14px',
-              color: '#8b949e'
-            }}>
-              Where bulls feast on bear market honey
-            </p>
           </div>
 
           {/* LOGIN FORM */}
@@ -3428,10 +3411,10 @@ export default function PortfolioDuel() {
           <div className="bg-[#161b22] border-b border-gray-800 p-4">
             <div className="max-w-6xl mx-auto flex items-center justify-between">
 
-              {/* Back Button - Cyan text, transparent bg */}
+              {/* Back Button - White text, transparent bg */}
               <button
                 onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setScreen('dashboard'); }}
-                className="flex items-center gap-2 text-cyan-500 hover:text-cyan-400 font-semibold bg-transparent"
+                className="flex items-center gap-2 text-white hover:text-gray-300 font-semibold bg-transparent"
               >
                 <span className="text-xl">←</span>
                 <span className="text-sm">Back</span>
@@ -3514,6 +3497,45 @@ export default function PortfolioDuel() {
           </button>
 
           <div className="max-w-6xl mx-auto px-4 md:px-6 pt-4">
+            {/* GAME RULES BOX */}
+            <div style={{
+              backgroundColor: '#161b22',
+              border: '2px solid #00d9ff',
+              borderRadius: '12px',
+              padding: '20px',
+              marginBottom: '24px'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                marginBottom: '16px'
+              }}>
+                <span style={{ fontSize: '24px' }}>🎮</span>
+                <h3 style={{
+                  fontSize: '18px',
+                  fontWeight: 'bold',
+                  color: '#ffffff',
+                  margin: 0
+                }}>
+                  MarketClash Rules
+                </h3>
+              </div>
+
+              <ul style={{
+                margin: 0,
+                paddingLeft: '20px',
+                color: '#e6edf3',
+                fontSize: '14px',
+                lineHeight: '1.8'
+              }}>
+                <li>Build a portfolio with 7-13 assets (stocks or crypto)</li>
+                <li>Each asset must be 7.5-20% of your $1M portfolio</li>
+                <li>Battles last 24 hours using real market prices</li>
+                <li>Winner has the highest portfolio percentage gain</li>
+              </ul>
+            </div>
+
             {/* Asset Selection - Full Width (portfolio management in cart modal only) */}
             <div>
                 <div className="rounded-xl p-4 md:p-6" style={{
@@ -4242,10 +4264,10 @@ export default function PortfolioDuel() {
           <div className="bg-[#161b22] border-b border-gray-800 p-4">
             <div className="max-w-6xl mx-auto flex items-center justify-between">
 
-              {/* Back Button - PURPLE TEXT */}
+              {/* Back Button - WHITE TEXT */}
               <button
                 onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setJoinCode(''); setScreen('dashboard'); }}
-                className="flex items-center gap-2 text-purple-500 hover:text-purple-400 font-semibold transition-colors bg-transparent"
+                className="flex items-center gap-2 text-white hover:text-gray-300 font-semibold transition-colors bg-transparent"
               >
                 <span className="text-xl">←</span>
                 <span className="text-sm">Back</span>
@@ -4328,6 +4350,45 @@ export default function PortfolioDuel() {
           </button>
 
           <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
+            {/* GAME RULES BOX */}
+            <div style={{
+              backgroundColor: '#161b22',
+              border: '2px solid #8b5cf6',
+              borderRadius: '12px',
+              padding: '20px',
+              marginBottom: '24px'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                marginBottom: '16px'
+              }}>
+                <span style={{ fontSize: '24px' }}>🎮</span>
+                <h3 style={{
+                  fontSize: '18px',
+                  fontWeight: 'bold',
+                  color: '#ffffff',
+                  margin: 0
+                }}>
+                  MarketClash Rules
+                </h3>
+              </div>
+
+              <ul style={{
+                margin: 0,
+                paddingLeft: '20px',
+                color: '#e6edf3',
+                fontSize: '14px',
+                lineHeight: '1.8'
+              }}>
+                <li>Build a portfolio with 7-13 assets (stocks or crypto)</li>
+                <li>Each asset must be 7.5-20% of your $1M portfolio</li>
+                <li>Battles last 24 hours using real market prices</li>
+                <li>Winner has the highest portfolio percentage gain</li>
+              </ul>
+            </div>
+
             {/* Challenge Code Input */}
             <div style={{
               background: colors.cardBg,
@@ -5119,10 +5180,10 @@ export default function PortfolioDuel() {
           <div className="bg-[#161b22] border-b border-gray-800 p-4">
             <div className="max-w-6xl mx-auto flex items-center justify-between">
 
-              {/* Back Button - AMBER TEXT */}
+              {/* Back Button - WHITE TEXT */}
               <button
                 onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setScreen('dashboard'); }}
-                className="flex items-center gap-2 text-amber-500 hover:text-amber-400 font-semibold transition-colors bg-transparent"
+                className="flex items-center gap-2 text-white hover:text-gray-300 font-semibold transition-colors bg-transparent"
               >
                 <span className="text-xl">←</span>
                 <span className="text-sm">Back</span>
@@ -5208,30 +5269,90 @@ export default function PortfolioDuel() {
           </button>
 
           <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
-            {/* Training Info Box */}
+            {/* TRAINING INFO - TWO COLUMNS */}
             <div style={{
-              background: colors.cardBg,
-              borderRadius: '12px',
-              padding: '20px',
-              marginBottom: '24px',
-              border: `1px solid ${colors.purple}`,
-              boxShadow: `0 0 20px ${colors.purple}20`
+              display: 'grid',
+              gridTemplateColumns: window.innerWidth > 768 ? '1fr 1fr' : '1fr',
+              gap: '16px',
+              marginBottom: '24px'
             }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
-                <Bot style={{ height: '32px', width: '32px', color: colors.purple, flexShrink: 0 }} />
-                <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: colors.textPrimary, marginBottom: '8px', marginTop: 0 }}>
+
+              {/* LEFT: HOW TRAINING MODE WORKS */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '2px solid #8b5cf6',
+                borderRadius: '12px',
+                padding: '20px'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  marginBottom: '16px'
+                }}>
+                  <span style={{ fontSize: '24px' }}>🤖</span>
+                  <h3 style={{
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    color: '#ffffff',
+                    margin: 0
+                  }}>
                     How Training Mode Works
                   </h3>
-                  <ul style={{ margin: 0, paddingLeft: '20px', color: colors.textSecondary, lineHeight: '1.6' }}>
-                    <li>Battle against a randomly-generated CPU opponent</li>
-                    <li>Battles last <strong style={{ color: colors.textPrimary }}>1 hour</strong> (vs 24 hours for real battles)</li>
-                    <li>Win: <strong style={{ color: colors.green }}>+10 XP</strong> • Lose: <strong style={{ color: colors.cyan }}>+5 XP</strong> (reduced rewards)</li>
-                    <li><strong style={{ color: colors.textPrimary }}>Does NOT affect your Win/Loss record</strong></li>
-                    <li>Perfect for learning and experimenting risk-free!</li>
-                  </ul>
                 </div>
+
+                <ul style={{
+                  margin: 0,
+                  paddingLeft: '20px',
+                  color: '#e6edf3',
+                  fontSize: '14px',
+                  lineHeight: '1.8'
+                }}>
+                  <li>Battle against a randomly-generated CPU opponent</li>
+                  <li>Win: +10 XP • Lose: +5 XP (reduced rewards)</li>
+                  <li>Does NOT affect your Win/Loss record</li>
+                  <li>Perfect for learning and experimenting risk-free!</li>
+                </ul>
               </div>
+
+              {/* RIGHT: MARKETCLASH RULES */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '2px solid #00d9ff',
+                borderRadius: '12px',
+                padding: '20px'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  marginBottom: '16px'
+                }}>
+                  <span style={{ fontSize: '24px' }}>🎮</span>
+                  <h3 style={{
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    color: '#ffffff',
+                    margin: 0
+                  }}>
+                    MarketClash Rules
+                  </h3>
+                </div>
+
+                <ul style={{
+                  margin: 0,
+                  paddingLeft: '20px',
+                  color: '#e6edf3',
+                  fontSize: '14px',
+                  lineHeight: '1.8'
+                }}>
+                  <li>Build a portfolio with 7-13 assets (stocks or crypto)</li>
+                  <li>Each asset must be 7.5-20% of your $1M portfolio</li>
+                  <li>Battles last 24 hours using real market prices</li>
+                  <li>Winner has the highest portfolio percentage gain</li>
+                </ul>
+              </div>
+
             </div>
 
             {/* Asset Selection - Full Width (portfolio management in cart modal only) */}
