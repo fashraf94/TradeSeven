@@ -1806,140 +1806,125 @@ export default function PortfolioDuel() {
   // 6. SCREEN RENDERS
   // ============================================
 
-  // LOGIN SCREEN - Mobile-first responsive
+  // LOGIN SCREEN - Mobile-first responsive with Logo
   if (screen === 'home') {
     return (
       <div style={containerStyle}>
-        <div className="min-h-screen flex items-center justify-center p-4" style={{ background: colors.background }}>
-          {/* Animated Card Container - Mobile-first with responsive padding */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-            className="w-full max-w-md rounded-2xl p-6 md:p-12"
-            style={{
-              background: colors.cardBg,
-              boxShadow: '0 0 40px rgba(0, 217, 255, 0.1), 0 20px 25px -5px rgba(0, 0, 0, 0.3)',
-              border: `1px solid ${colors.border}`
-            }}
-          >
-            <div className="text-center">
-              {/* Animated Logo */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.5 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{
-                  delay: 0.2,
-                  duration: 0.5,
-                  type: "spring",
-                  stiffness: 200,
-                  damping: 15
+        <div style={{
+          minHeight: '100vh',
+          backgroundColor: '#0d1117',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+
+          {/* LOGO */}
+          <div style={{
+            marginBottom: '40px',
+            textAlign: 'center'
+          }}>
+            <img
+              src="/src/assets/marketclash-logo.png"
+              alt="MarketClash"
+              style={{
+                width: '280px',
+                height: 'auto',
+                maxWidth: '90vw',
+                filter: 'drop-shadow(0 0 20px rgba(0, 217, 255, 0.5))',
+                marginBottom: '20px'
+              }}
+            />
+            <h1 style={{
+              fontSize: '28px',
+              fontWeight: 'bold',
+              background: 'linear-gradient(90deg, #00d9ff 0%, #ff8c00 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              marginBottom: '8px'
+            }}>
+              Welcome to the Arena
+            </h1>
+            <p style={{
+              fontSize: '14px',
+              color: '#8b949e'
+            }}>
+              Compete. Trade. Conquer.
+            </p>
+          </div>
+
+          {/* LOGIN FORM */}
+          <div style={{
+            width: '100%',
+            maxWidth: '400px',
+            backgroundColor: '#161b22',
+            border: '2px solid #21262d',
+            borderRadius: '16px',
+            padding: '32px',
+            boxShadow: '0 10px 40px rgba(0, 0, 0, 0.3)'
+          }}>
+
+            {/* Username Input */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '14px',
+                fontWeight: '600',
+                color: '#ffffff',
+                marginBottom: '8px'
+              }}>
+                Username
+              </label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                placeholder="Enter your username"
+                style={{
+                  width: '100%',
+                  padding: '14px 16px',
+                  fontSize: '14px',
+                  backgroundColor: '#0d1117',
+                  border: `2px solid ${username ? '#00d9ff' : '#21262d'}`,
+                  borderRadius: '8px',
+                  color: '#ffffff',
+                  outline: 'none',
+                  transition: 'border-color 0.2s',
+                  boxSizing: 'border-box'
                 }}
-                className="flex justify-center mb-6"
-              >
-                <motion.div
-                  animate={{
-                    y: [0, -8, 0],
-                    boxShadow: [
-                      '0 0 30px rgba(0, 217, 255, 0.4)',
-                      '0 0 50px rgba(0, 217, 255, 0.6)',
-                      '0 0 30px rgba(0, 217, 255, 0.4)'
-                    ]
-                  }}
-                  transition={{
-                    duration: 3,
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                  }}
-                  className="w-16 h-16 md:w-20 md:h-20 rounded-2xl flex items-center justify-center"
-                  style={{
-                    background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`
-                  }}
-                >
-                  <Swords className="w-8 h-8 md:w-10 md:h-10" style={{ color: colors.background }} />
-                </motion.div>
-              </motion.div>
-
-              {/* Animated Title - Responsive font sizes */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4, duration: 0.5 }}
-                className="mb-8"
-              >
-                <h1 className="text-3xl md:text-4xl font-bold mb-2" style={{
-                  background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.greenBright} 100%)`,
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text'
-                }}>
-                  MarketClash
-                </h1>
-                <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.6, duration: 0.5 }}
-                  className="text-sm md:text-base"
-                  style={{ color: colors.textSecondary }}
-                >
-                  Compete. Trade. Conquer.
-                </motion.p>
-              </motion.div>
-
-              {/* Animated Input Section */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.7, duration: 0.5 }}
-              >
-                <input
-                  type="text"
-                  placeholder="Enter your username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-                  className="w-full px-4 py-4 text-base rounded-xl mb-5"
-                  style={{
-                    border: `2px solid ${username ? colors.cyan : colors.borderSubtle}`,
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    color: colors.textPrimary,
-                    outline: 'none',
-                    minHeight: '50px',
-                    transition: 'all 0.3s ease'
-                  }}
-                />
-
-                <motion.button
-                  onClick={handleLogin}
-                  disabled={!username.trim()}
-                  whileHover={username.trim() ? { scale: 1.02, y: -2 } : {}}
-                  whileTap={username.trim() ? { scale: 0.98 } : {}}
-                  animate={username.trim() ? {
-                    boxShadow: [
-                      '0 0 20px rgba(0, 217, 255, 0.3)',
-                      '0 0 40px rgba(0, 217, 255, 0.5)',
-                      '0 0 20px rgba(0, 217, 255, 0.3)'
-                    ]
-                  } : {}}
-                  transition={username.trim() ? {
-                    boxShadow: { duration: 2, repeat: Infinity, ease: "easeInOut" }
-                  } : {}}
-                  className="w-full py-4 text-base md:text-lg font-semibold rounded-xl flex items-center justify-center gap-2"
-                  style={{
-                    color: username.trim() ? colors.background : colors.textMuted,
-                    background: username.trim() ? `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)` : colors.cardElevated,
-                    border: 'none',
-                    cursor: username.trim() ? 'pointer' : 'not-allowed',
-                    minHeight: '50px',
-                    transition: 'background 0.3s ease'
-                  }}
-                >
-                  Enter Arena
-                  <ArrowRight className="w-5 h-5" />
-                </motion.button>
-              </motion.div>
+              />
             </div>
-          </motion.div>
+
+            {/* Enter Arena Button */}
+            <button
+              onClick={handleLogin}
+              disabled={!username.trim()}
+              style={{
+                width: '100%',
+                padding: '14px',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                color: username.trim() ? '#0d1117' : '#6e7681',
+                background: username.trim()
+                  ? 'linear-gradient(90deg, #00d9ff 0%, #0099cc 100%)'
+                  : '#21262d',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: username.trim() ? 'pointer' : 'not-allowed',
+                transition: 'transform 0.2s, box-shadow 0.2s',
+                boxShadow: username.trim() ? '0 4px 12px rgba(0, 217, 255, 0.3)' : 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px'
+              }}
+            >
+              Enter Arena
+              <ArrowRight style={{ width: '20px', height: '20px' }} />
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -2195,11 +2180,24 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* Dashboard Header with Hamburger Menu */}
-          <header className="bg-[#161b22] border-b border-gray-800 p-4 sticky top-0 z-40">
-            <div className="max-w-6xl mx-auto flex items-center justify-between">
+          {/* Dashboard Header with Hamburger Menu and Logo */}
+          <header style={{
+            background: 'linear-gradient(180deg, #161b22 0%, #0d1117 100%)',
+            borderBottom: '2px solid #21262d',
+            padding: '12px 16px',
+            position: 'sticky',
+            top: 0,
+            zIndex: 40
+          }}>
+            <div style={{
+              maxWidth: '900px',
+              margin: '0 auto',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
 
-              {/* Hamburger Menu Button - LEFT - ALL INLINE STYLES */}
+              {/* Hamburger Menu Button - LEFT */}
               <button
                 onClick={() => {
                   console.log('🍔 HAMBURGER CLICKED!');
@@ -2222,20 +2220,53 @@ export default function PortfolioDuel() {
                 }}
                 aria-label="Open menu"
               >
-                {/* Three horizontal cyan lines - INLINE STYLES */}
+                {/* Three horizontal cyan lines */}
                 <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
                 <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
                 <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
               </button>
 
-              {/* App Title - CENTER */}
-              <h1 className="text-xl font-bold text-center flex-1">
-                <span className="text-cyan-500">Market</span>
-                <span className="text-white">Clash</span>
-              </h1>
+              {/* Center - Logo and App Name */}
+              <div style={{
+                position: 'absolute',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <img
+                  src="/src/assets/marketclash-logo.png"
+                  alt="MarketClash"
+                  style={{
+                    height: '32px',
+                    width: 'auto',
+                    filter: 'drop-shadow(0 0 10px rgba(0, 217, 255, 0.4))'
+                  }}
+                />
+              </div>
 
-              {/* Spacer for balance - RIGHT */}
-              <div className="w-12"></div>
+              {/* Right Side - User Info */}
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-end',
+                fontSize: '12px'
+              }}>
+                <span style={{
+                  color: '#ffffff',
+                  fontWeight: '600',
+                  fontSize: '13px'
+                }}>
+                  {user?.username || 'Player'}
+                </span>
+                <span style={{
+                  color: '#8b949e',
+                  fontSize: '11px'
+                }}>
+                  {user?.rank || 'Rookie'}
+                </span>
+              </div>
             </div>
           </header>
 
