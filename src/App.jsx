@@ -3178,38 +3178,6 @@ export default function PortfolioDuel() {
                 {/* DIVIDER */}
                 <div style={{ borderTop: '1px solid #374151', margin: '16px 0' }}></div>
 
-                {/* SETTINGS */}
-                <button
-                  onClick={() => {
-                    console.log('⚙️ Settings clicked');
-                    setScreen('settings');
-                    setSidebarOpen(false);
-                  }}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px 16px',
-                    borderRadius: '8px',
-                    backgroundColor: screen === 'settings' ? '#a855f7' : 'transparent',
-                    color: screen === 'settings' ? '#000000' : '#d1d5db',
-                    border: 'none',
-                    marginBottom: '8px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <svg style={{ width: '20px', height: '20px', flexShrink: 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  <span style={{ fontWeight: '600', fontSize: '14px' }}>Settings</span>
-                </button>
-
-                {/* DIVIDER */}
-                <div style={{ borderTop: '1px solid #374151', margin: '16px 0' }}></div>
-
                 {/* LOGOUT */}
                 <button
                   onClick={() => {
@@ -6933,10 +6901,6 @@ export default function PortfolioDuel() {
                 <span className="text-2xl">👤</span>
                 <span className="text-xs font-semibold">Profile</span>
               </button>
-              <button onClick={() => setScreen('settings')} className="flex flex-col items-center gap-1 min-w-[70px] transition-colors text-gray-400">
-                <span className="text-2xl">⚙️</span>
-                <span className="text-xs font-semibold">Settings</span>
-              </button>
             </div>
           </nav>
         </div>
@@ -7037,10 +7001,6 @@ export default function PortfolioDuel() {
               <button onClick={() => setScreen('profile')} className="flex flex-col items-center gap-1 min-w-[70px] transition-colors text-gray-400">
                 <span className="text-2xl">👤</span>
                 <span className="text-xs font-semibold">Profile</span>
-              </button>
-              <button onClick={() => setScreen('settings')} className="flex flex-col items-center gap-1 min-w-[70px] transition-colors text-gray-400">
-                <span className="text-2xl">⚙️</span>
-                <span className="text-xs font-semibold">Settings</span>
               </button>
             </div>
           </nav>
@@ -7188,281 +7148,458 @@ export default function PortfolioDuel() {
     );
   }
 
-  // PROFILE SCREEN
+  // PROFILE SCREEN - REDESIGNED
   if (screen === 'profile') {
-    const totalBattles = (user.wins || 0) + (user.losses || 0);
-    const winRate = totalBattles > 0 ? ((user.wins || 0) / totalBattles) * 100 : 0;
-    const rank = user.xp >= 5000 ? 'Master' : user.xp >= 2000 ? 'Expert' : user.xp >= 500 ? 'Veteran' : 'Beginner';
+    const userStats = {
+      xp: user.xp || 0,
+      wins: user.wins || 0,
+      losses: user.losses || 0,
+      totalBattles: (user.wins || 0) + (user.losses || 0),
+      rank: (user.xp || 0) >= 5000 ? 'Master' : (user.xp || 0) >= 2000 ? 'Expert' : (user.xp || 0) >= 500 ? 'Veteran' : 'Beginner'
+    };
 
     return (
       <div style={containerStyle}>
-        <div className="min-h-screen pb-20" style={{ background: colors.background }}>
-          {/* Header */}
-          <div className="bg-[#161b22] border-b border-gray-800 p-4">
-            <div className="max-w-6xl mx-auto flex items-center justify-between">
+        <div style={{ minHeight: '100vh', backgroundColor: '#0d1117' }}>
+
+          {/* HEADER */}
+          <div style={{
+            background: 'linear-gradient(180deg, #161b22 0%, #0d1117 100%)',
+            borderBottom: '1px solid #21262d',
+            padding: '16px',
+            position: 'sticky',
+            top: 0,
+            zIndex: 10
+          }}>
+            <div style={{
+              maxWidth: '600px',
+              margin: '0 auto',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
               <button
                 onClick={() => setScreen('dashboard')}
-                className="flex items-center gap-2 text-cyan-500 hover:text-cyan-400"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  color: '#00d9ff',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '8px'
+                }}
               >
-                <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
                 <span>Back</span>
               </button>
-              <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2 text-white">
-                <span className="text-cyan-500">👤</span>
+
+              <h1 style={{
+                fontSize: '20px',
+                fontWeight: 'bold',
+                color: '#ffffff'
+              }}>
                 Profile
               </h1>
-              <div className="w-16"></div>
+
+              <div style={{ width: '60px' }}></div>
             </div>
           </div>
 
-          <div className="max-w-6xl mx-auto p-4">
-            {/* User Info Card */}
-            <div className="bg-[#161b22] border-2 border-cyan-500 rounded-xl p-6 mb-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-20 h-20 bg-cyan-500 rounded-full flex items-center justify-center text-4xl">
+          <div style={{
+            maxWidth: '600px',
+            margin: '0 auto',
+            padding: '0 16px 40px 16px'
+          }}>
+
+            {/* USER CARD */}
+            <div style={{
+              background: 'linear-gradient(135deg, #161b22 0%, #0d1117 100%)',
+              border: '2px solid #00d9ff',
+              borderRadius: '16px',
+              padding: '24px',
+              marginTop: '24px',
+              marginBottom: '24px',
+              boxShadow: '0 10px 40px rgba(0, 217, 255, 0.1)'
+            }}>
+              {/* Avatar and Username */}
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                marginBottom: '20px'
+              }}>
+                <div style={{
+                  width: '80px',
+                  height: '80px',
+                  background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '40px',
+                  border: '3px solid #00d9ff',
+                  boxShadow: '0 0 30px rgba(0, 217, 255, 0.4)',
+                  marginBottom: '16px'
+                }}>
                   👤
                 </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-white">{user.username}</h2>
-                  <p className="text-gray-400">Rank: {rank}</p>
+
+                <h2 style={{
+                  fontSize: '24px',
+                  fontWeight: 'bold',
+                  color: '#ffffff',
+                  marginBottom: '8px'
+                }}>
+                  {user?.username || 'Player'}
+                </h2>
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  backgroundColor: '#8b5cf6',
+                  padding: '6px 16px',
+                  borderRadius: '20px'
+                }}>
+                  <span style={{ fontSize: '18px' }}>🏅</span>
+                  <span style={{
+                    fontSize: '16px',
+                    fontWeight: 'bold',
+                    color: '#ffffff'
+                  }}>
+                    {userStats.rank}
+                  </span>
+                </div>
+              </div>
+
+              {/* Stats Grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '12px',
+                marginTop: '20px'
+              }}>
+                {/* XP */}
+                <div style={{
+                  backgroundColor: '#161b22',
+                  border: '1px solid #21262d',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{
+                    fontSize: '12px',
+                    color: '#8b949e',
+                    marginBottom: '6px',
+                    fontWeight: '600'
+                  }}>
+                    EXPERIENCE
+                  </div>
+                  <div style={{
+                    fontSize: '24px',
+                    fontWeight: 'bold',
+                    color: '#00d9ff',
+                    marginBottom: '4px'
+                  }}>
+                    {userStats.xp}
+                  </div>
+                  <div style={{
+                    fontSize: '11px',
+                    color: '#6e7681'
+                  }}>
+                    {1000 - (userStats.xp % 1000)} to next level
+                  </div>
+                </div>
+
+                {/* Win Rate */}
+                <div style={{
+                  backgroundColor: '#161b22',
+                  border: '1px solid #21262d',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{
+                    fontSize: '12px',
+                    color: '#8b949e',
+                    marginBottom: '6px',
+                    fontWeight: '600'
+                  }}>
+                    WIN RATE
+                  </div>
+                  <div style={{
+                    fontSize: '24px',
+                    fontWeight: 'bold',
+                    color: userStats.totalBattles > 0 && (userStats.wins / userStats.totalBattles) >= 0.5 ? '#22c55e' : '#ef4444',
+                    marginBottom: '4px'
+                  }}>
+                    {userStats.totalBattles > 0
+                      ? `${Math.round((userStats.wins / userStats.totalBattles) * 100)}%`
+                      : '0%'}
+                  </div>
+                  <div style={{
+                    fontSize: '11px',
+                    color: '#6e7681'
+                  }}>
+                    {userStats.totalBattles} battles
+                  </div>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div style={{ marginTop: '20px' }}>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginBottom: '8px'
+                }}>
+                  <span style={{ fontSize: '12px', color: '#8b949e', fontWeight: '600' }}>
+                    LEVEL PROGRESS
+                  </span>
+                  <span style={{ fontSize: '12px', color: '#00d9ff', fontWeight: 'bold' }}>
+                    {Math.floor(((userStats.xp % 1000) / 1000) * 100)}%
+                  </span>
+                </div>
+                <div style={{
+                  width: '100%',
+                  height: '8px',
+                  backgroundColor: '#21262d',
+                  borderRadius: '4px',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${((userStats.xp % 1000) / 1000) * 100}%`,
+                    background: 'linear-gradient(90deg, #00d9ff 0%, #0099cc 100%)',
+                    transition: 'width 0.3s ease'
+                  }} />
                 </div>
               </div>
             </div>
 
-            {/* Rank & XP */}
-            <div className="bg-gradient-to-r from-yellow-600 to-orange-600 rounded-xl p-6 mb-6 text-white">
-              <div className="text-center mb-4">
-                <div className="text-5xl mb-2">
-                  {rank === 'Beginner' && '🥉'}
-                  {rank === 'Veteran' && '🥈'}
-                  {rank === 'Expert' && '🥇'}
-                  {rank === 'Master' && '👑'}
+            {/* BATTLE RECORD */}
+            <h3 style={{
+              fontSize: '16px',
+              fontWeight: 'bold',
+              color: '#ffffff',
+              marginBottom: '12px',
+              marginTop: '24px'
+            }}>
+              Battle Record
+            </h3>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr 1fr',
+              gap: '12px',
+              marginBottom: '24px'
+            }}>
+              {/* Wins */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '2px solid #22c55e',
+                borderRadius: '12px',
+                padding: '16px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '28px', marginBottom: '8px' }}>🏆</div>
+                <div style={{
+                  fontSize: '24px',
+                  fontWeight: 'bold',
+                  color: '#22c55e',
+                  marginBottom: '4px'
+                }}>
+                  {userStats.wins}
                 </div>
-                <h3 className="text-3xl font-bold mb-1">{rank}</h3>
-                <p className="text-sm opacity-90">Current Rank</p>
+                <div style={{ fontSize: '12px', color: '#8b949e' }}>Wins</div>
               </div>
 
-              {/* XP Progress */}
-              <div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span>Experience Points</span>
-                  <span className="font-bold">{user.xp || 0} XP</span>
+              {/* Losses */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '2px solid #ef4444',
+                borderRadius: '12px',
+                padding: '16px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '28px', marginBottom: '8px' }}>💀</div>
+                <div style={{
+                  fontSize: '24px',
+                  fontWeight: 'bold',
+                  color: '#ef4444',
+                  marginBottom: '4px'
+                }}>
+                  {userStats.losses}
                 </div>
-                <div className="w-full bg-black/30 h-3 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-white transition-all duration-500"
-                    style={{ width: `${(((user.xp || 0) % 1000) / 10)}%` }}
-                  />
+                <div style={{ fontSize: '12px', color: '#8b949e' }}>Losses</div>
+              </div>
+
+              {/* Total */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '2px solid #8b5cf6',
+                borderRadius: '12px',
+                padding: '16px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '28px', marginBottom: '8px' }}>⚔️</div>
+                <div style={{
+                  fontSize: '24px',
+                  fontWeight: 'bold',
+                  color: '#8b5cf6',
+                  marginBottom: '4px'
+                }}>
+                  {userStats.totalBattles}
                 </div>
-                <p className="text-xs mt-1 opacity-75">
-                  {1000 - ((user.xp || 0) % 1000)} XP to next level
-                </p>
+                <div style={{ fontSize: '12px', color: '#8b949e' }}>Total</div>
               </div>
             </div>
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="bg-[#161b22] border border-gray-700 rounded-xl p-4 text-center">
-                <div className="text-3xl font-bold text-green-500">{user.wins || 0}</div>
-                <div className="text-sm text-gray-400 mt-1">Wins</div>
+            {/* ACHIEVEMENTS */}
+            <h3 style={{
+              fontSize: '16px',
+              fontWeight: 'bold',
+              color: '#ffffff',
+              marginBottom: '12px'
+            }}>
+              Achievements
+            </h3>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '12px'
+            }}>
+              {/* First Win */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: `2px solid ${userStats.wins >= 1 ? '#fbbf24' : '#21262d'}`,
+                borderRadius: '12px',
+                padding: '16px',
+                textAlign: 'center',
+                opacity: userStats.wins >= 1 ? 1 : 0.5
+              }}>
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>
+                  {userStats.wins >= 1 ? '🏆' : '🔒'}
+                </div>
+                <div style={{
+                  fontSize: '11px',
+                  color: userStats.wins >= 1 ? '#fbbf24' : '#6e7681',
+                  fontWeight: '600'
+                }}>
+                  First Win
+                </div>
               </div>
-              <div className="bg-[#161b22] border border-gray-700 rounded-xl p-4 text-center">
-                <div className="text-3xl font-bold text-red-500">{user.losses || 0}</div>
-                <div className="text-sm text-gray-400 mt-1">Losses</div>
+
+              {/* 10 Wins */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: `2px solid ${userStats.wins >= 10 ? '#fbbf24' : '#21262d'}`,
+                borderRadius: '12px',
+                padding: '16px',
+                textAlign: 'center',
+                opacity: userStats.wins >= 10 ? 1 : 0.5
+              }}>
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>
+                  {userStats.wins >= 10 ? '🔥' : '🔒'}
+                </div>
+                <div style={{
+                  fontSize: '11px',
+                  color: userStats.wins >= 10 ? '#fbbf24' : '#6e7681',
+                  fontWeight: '600'
+                }}>
+                  10 Wins
+                </div>
               </div>
-              <div className="bg-[#161b22] border border-gray-700 rounded-xl p-4 text-center">
-                <div className="text-3xl font-bold text-cyan-500">{totalBattles}</div>
-                <div className="text-sm text-gray-400 mt-1">Total Battles</div>
+
+              {/* 50 Battles */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: `2px solid ${userStats.totalBattles >= 50 ? '#fbbf24' : '#21262d'}`,
+                borderRadius: '12px',
+                padding: '16px',
+                textAlign: 'center',
+                opacity: userStats.totalBattles >= 50 ? 1 : 0.5
+              }}>
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>
+                  {userStats.totalBattles >= 50 ? '⚔️' : '🔒'}
+                </div>
+                <div style={{
+                  fontSize: '11px',
+                  color: userStats.totalBattles >= 50 ? '#fbbf24' : '#6e7681',
+                  fontWeight: '600'
+                }}>
+                  50 Battles
+                </div>
               </div>
-              <div className="bg-[#161b22] border border-gray-700 rounded-xl p-4 text-center">
-                <div className="text-3xl font-bold text-purple-500">{winRate.toFixed(0)}%</div>
-                <div className="text-sm text-gray-400 mt-1">Win Rate</div>
+
+              {/* Master Rank */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: `2px solid ${userStats.rank === 'Master' ? '#fbbf24' : '#21262d'}`,
+                borderRadius: '12px',
+                padding: '16px',
+                textAlign: 'center',
+                opacity: userStats.rank === 'Master' ? 1 : 0.5
+              }}>
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>
+                  {userStats.rank === 'Master' ? '👑' : '🔒'}
+                </div>
+                <div style={{
+                  fontSize: '11px',
+                  color: userStats.rank === 'Master' ? '#fbbf24' : '#6e7681',
+                  fontWeight: '600'
+                }}>
+                  Master Rank
+                </div>
+              </div>
+
+              {/* Perfect Week */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '2px solid #21262d',
+                borderRadius: '12px',
+                padding: '16px',
+                textAlign: 'center',
+                opacity: 0.5
+              }}>
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>🔒</div>
+                <div style={{
+                  fontSize: '11px',
+                  color: '#6e7681',
+                  fontWeight: '600'
+                }}>
+                  Perfect Week
+                </div>
+              </div>
+
+              {/* Comeback King */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '2px solid #21262d',
+                borderRadius: '12px',
+                padding: '16px',
+                textAlign: 'center',
+                opacity: 0.5
+              }}>
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>🔒</div>
+                <div style={{
+                  fontSize: '11px',
+                  color: '#6e7681',
+                  fontWeight: '600'
+                }}>
+                  Comeback
+                </div>
               </div>
             </div>
 
-            {/* Achievements */}
-            <div className="bg-[#161b22] border border-gray-700 rounded-xl p-6">
-              <h3 className="text-lg font-bold mb-4 text-white">Achievements</h3>
-              <div className="grid grid-cols-3 gap-4">
-                <div className={`text-center p-4 rounded-lg ${(user.wins || 0) >= 1 ? 'bg-green-500/20' : 'bg-gray-800 opacity-50'}`}>
-                  <div className="text-3xl mb-1">🏆</div>
-                  <div className="text-xs text-gray-300">First Win</div>
-                </div>
-                <div className={`text-center p-4 rounded-lg ${(user.wins || 0) >= 10 ? 'bg-green-500/20' : 'bg-gray-800 opacity-50'}`}>
-                  <div className="text-3xl mb-1">🔥</div>
-                  <div className="text-xs text-gray-300">10 Wins</div>
-                </div>
-                <div className={`text-center p-4 rounded-lg ${totalBattles >= 50 ? 'bg-purple-500/20' : 'bg-gray-800 opacity-50'}`}>
-                  <div className="text-3xl mb-1">⚔️</div>
-                  <div className="text-xs text-gray-300">50 Battles</div>
-                </div>
-              </div>
-            </div>
           </div>
-
-          {/* Mobile Bottom Nav - Profile Screen */}
-          <nav className="md:hidden fixed bottom-0 left-0 right-0 w-full bg-[#161b22] border-t-2 border-gray-800 z-50">
-            <div className="max-w-6xl mx-auto px-4 py-3 flex justify-around items-center">
-              <button onClick={() => setScreen('wins')} className="flex flex-col items-center gap-1 min-w-[70px] transition-colors text-gray-400">
-                <span className="text-2xl">🏆</span>
-                <span className="text-xs font-semibold">Wins</span>
-              </button>
-              <button onClick={() => setScreen('losses')} className="flex flex-col items-center gap-1 min-w-[70px] transition-colors text-gray-400">
-                <span className="text-2xl">💀</span>
-                <span className="text-xs font-semibold">Losses</span>
-              </button>
-              <button onClick={() => setScreen('profile')} className="flex flex-col items-center gap-1 min-w-[70px] transition-colors text-cyan-500">
-                <span className="text-2xl">👤</span>
-                <span className="text-xs font-semibold">Profile</span>
-              </button>
-              <button onClick={() => setScreen('settings')} className="flex flex-col items-center gap-1 min-w-[70px] transition-colors text-gray-400">
-                <span className="text-2xl">⚙️</span>
-                <span className="text-xs font-semibold">Settings</span>
-              </button>
-            </div>
-          </nav>
-        </div>
-      </div>
-    );
-  }
-
-  // SETTINGS SCREEN
-  if (screen === 'settings') {
-    return (
-      <div style={containerStyle}>
-        <div className="min-h-screen pb-20" style={{ background: colors.background }}>
-          {/* Header */}
-          <div className="bg-[#161b22] border-b border-gray-800 p-4">
-            <div className="max-w-6xl mx-auto flex items-center justify-between">
-              <button
-                onClick={() => setScreen('dashboard')}
-                className="flex items-center gap-2 text-cyan-500 hover:text-cyan-400"
-              >
-                <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
-                <span>Back</span>
-              </button>
-              <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2 text-white">
-                <span className="text-purple-500">⚙️</span>
-                Settings
-              </h1>
-              <div className="w-16"></div>
-            </div>
-          </div>
-
-          <div className="max-w-6xl mx-auto p-4">
-            {/* Account Section */}
-            <div className="mb-6">
-              <h2 className="text-lg font-bold mb-3 text-white">Account</h2>
-              <div className="bg-[#161b22] border border-gray-700 rounded-xl divide-y divide-gray-700">
-                <div className="p-4">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <div className="font-semibold text-white">Username</div>
-                      <div className="text-sm text-gray-400">{user.username}</div>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-4">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <div className="font-semibold text-white">XP</div>
-                      <div className="text-sm text-gray-400">{user.xp || 0} points</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Stats Section */}
-            <div className="mb-6">
-              <h2 className="text-lg font-bold mb-3 text-white">Statistics</h2>
-              <div className="bg-[#161b22] border border-gray-700 rounded-xl divide-y divide-gray-700">
-                <div className="p-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-white">Total Wins</span>
-                    <span className="font-bold text-green-500">{user.wins || 0}</span>
-                  </div>
-                </div>
-                <div className="p-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-white">Total Losses</span>
-                    <span className="font-bold text-red-500">{user.losses || 0}</span>
-                  </div>
-                </div>
-                <div className="p-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-white">Win Rate</span>
-                    <span className="font-bold text-cyan-500">
-                      {(user.wins + user.losses) > 0
-                        ? (((user.wins || 0) / ((user.wins || 0) + (user.losses || 0))) * 100).toFixed(1)
-                        : 0}%
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* App Section */}
-            <div className="mb-6">
-              <h2 className="text-lg font-bold mb-3 text-white">App</h2>
-              <div className="bg-[#161b22] border border-gray-700 rounded-xl divide-y divide-gray-700">
-                <div className="p-4">
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold text-white">Version</span>
-                    <span className="text-gray-400">1.0.0</span>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setScreen('previousBattles')}
-                  className="w-full p-4 text-left hover:bg-[#1a1f26] transition-colors"
-                >
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold text-white">Battle History</span>
-                    <span className="text-gray-400">→</span>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            {/* Danger Zone */}
-            <div>
-              <h2 className="text-lg font-bold mb-3 text-red-500">Danger Zone</h2>
-              <div className="bg-[#161b22] border border-red-500/30 rounded-xl">
-                <button
-                  onClick={() => {
-                    setUser(null);
-                    setScreen('home');
-                    localStorage.removeItem('user');
-                  }}
-                  className="w-full p-4 text-left hover:bg-red-500/10 transition-colors"
-                >
-                  <span className="font-semibold text-red-500">Logout</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Mobile Bottom Nav - Settings Screen */}
-          <nav className="md:hidden fixed bottom-0 left-0 right-0 w-full bg-[#161b22] border-t-2 border-gray-800 z-50">
-            <div className="max-w-6xl mx-auto px-4 py-3 flex justify-around items-center">
-              <button onClick={() => setScreen('wins')} className="flex flex-col items-center gap-1 min-w-[70px] transition-colors text-gray-400">
-                <span className="text-2xl">🏆</span>
-                <span className="text-xs font-semibold">Wins</span>
-              </button>
-              <button onClick={() => setScreen('losses')} className="flex flex-col items-center gap-1 min-w-[70px] transition-colors text-gray-400">
-                <span className="text-2xl">💀</span>
-                <span className="text-xs font-semibold">Losses</span>
-              </button>
-              <button onClick={() => setScreen('profile')} className="flex flex-col items-center gap-1 min-w-[70px] transition-colors text-gray-400">
-                <span className="text-2xl">👤</span>
-                <span className="text-xs font-semibold">Profile</span>
-              </button>
-              <button onClick={() => setScreen('settings')} className="flex flex-col items-center gap-1 min-w-[70px] transition-colors text-purple-500">
-                <span className="text-2xl">⚙️</span>
-                <span className="text-xs font-semibold">Settings</span>
-              </button>
-            </div>
-          </nav>
         </div>
       </div>
     );
