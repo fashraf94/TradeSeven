@@ -1826,14 +1826,17 @@ export default function PortfolioDuel() {
             textAlign: 'center'
           }}>
             <img
-              src="/src/assets/marketclash-logo.png"
-              alt="MarketClash"
+              src="/marketclash-logo.png"
+              alt="MarketClash Logo"
               style={{
                 width: '280px',
                 height: 'auto',
                 maxWidth: '90vw',
                 filter: 'drop-shadow(0 0 20px rgba(0, 217, 255, 0.5))',
                 marginBottom: '20px'
+              }}
+              onError={(e) => {
+                e.target.style.display = 'none';
               }}
             />
             <h1 style={{
@@ -2236,12 +2239,15 @@ export default function PortfolioDuel() {
                 gap: '8px'
               }}>
                 <img
-                  src="/src/assets/marketclash-logo.png"
+                  src="/marketclash-logo.png"
                   alt="MarketClash"
                   style={{
                     height: '32px',
                     width: 'auto',
                     filter: 'drop-shadow(0 0 10px rgba(0, 217, 255, 0.4))'
+                  }}
+                  onError={(e) => {
+                    e.target.style.display = 'none';
                   }}
                 />
               </div>
