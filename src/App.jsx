@@ -5724,6 +5724,75 @@ export default function PortfolioDuel() {
     const difference = Math.abs(myGain - theirGain);
     const valueDifference = Math.abs(myValue - theirValue);
 
+    // Pre-calculate gain percentages for highlighting
+    const myPortfolioWithGains = myPortfolio.map(asset => {
+      const startingPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
+      const currentPrice = battlePrices[asset.symbol] || startingPrice;
+      const gainPercent = ((currentPrice - startingPrice) / startingPrice) * 100;
+      return { ...asset, gainPercent };
+    });
+
+    const theirPortfolioWithGains = theirPortfolio.map(asset => {
+      const startingPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
+      const currentPrice = battlePrices[asset.symbol] || startingPrice;
+      const gainPercent = ((currentPrice - startingPrice) / startingPrice) * 100;
+      return { ...asset, gainPercent };
+    });
+
+    // Helper function to determine border highlighting for portfolio assets
+    const getAssetBorderStyle = (portfolio, currentAsset) => {
+      // Sort portfolio by gain percentage (descending)
+      const sortedByGain = [...portfolio].sort((a, b) => {
+        const gainA = a.gainPercent || 0;
+        const gainB = b.gainPercent || 0;
+        return gainB - gainA;
+      });
+
+      const currentGainPercent = currentAsset.gainPercent || 0;
+      const currentIndex = sortedByGain.findIndex(a => a.symbol === currentAsset.symbol);
+
+      // Separate positive and negative performers
+      const positivePerformers = sortedByGain.filter(a => (a.gainPercent || 0) > 0);
+      const negativePerformers = sortedByGain.filter(a => (a.gainPercent || 0) < 0);
+
+      // TOP 3 WINNERS (Green) - Must be positive
+      if (currentGainPercent > 0 && currentIndex < 3) {
+        return {
+          border: '3px solid #22c55e',
+          boxShadow: '0 0 12px rgba(34, 197, 94, 0.3)',
+          backgroundColor: 'rgba(34, 197, 94, 0.05)'
+        };
+      }
+
+      // TOP 3 LOSERS (Red) - Must be negative
+      if (currentGainPercent < 0 && currentIndex >= sortedByGain.length - 3) {
+        return {
+          border: '3px solid #ef4444',
+          boxShadow: '0 0 12px rgba(239, 68, 68, 0.3)',
+          backgroundColor: 'rgba(239, 68, 68, 0.05)'
+        };
+      }
+
+      // BIGGEST LAGGARD (Orange) - Lowest positive gain
+      if (positivePerformers.length > 0 && negativePerformers.length > 0) {
+        const smallestPositiveGain = positivePerformers[positivePerformers.length - 1];
+        if (currentAsset.symbol === smallestPositiveGain.symbol && currentGainPercent > 0) {
+          return {
+            border: '3px solid #ff8c00',
+            boxShadow: '0 0 12px rgba(255, 140, 0, 0.3)',
+            backgroundColor: 'rgba(255, 140, 0, 0.05)'
+          };
+        }
+      }
+
+      // DEFAULT - No highlighting
+      return {
+        border: '2px solid #21262d',
+        boxShadow: 'none',
+        backgroundColor: 'transparent'
+      };
+    };
+
     return (
       <div style={containerStyle}>
         <div style={{
@@ -6057,20 +6126,24 @@ export default function PortfolioDuel() {
                 borderBottomLeftRadius: '12px',
                 borderBottomRightRadius: '12px',
                 overflow: 'auto',
-                flex: 1
+                flex: 1,
+                padding: '4px'
               }}>
-                {myPortfolio.map((asset, index) => {
-                  const startingPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
-                  const currentPrice = battlePrices[asset.symbol] || startingPrice;
-                  const gainPercent = ((currentPrice - startingPrice) / startingPrice) * 100;
+                {myPortfolioWithGains.map((asset, index) => {
+                  const currentPrice = battlePrices[asset.symbol] || asset.price;
+                  const gainPercent = asset.gainPercent;
                   const weight = (asset.amount / 1000000) * 100;
+                  const borderStyle = getAssetBorderStyle(myPortfolioWithGains, asset);
 
                   return (
                     <div
                       key={index}
                       style={{
                         padding: '12px',
-                        borderBottom: index < myPortfolio.length - 1 ? '1px solid #21262d' : 'none'
+                        marginBottom: '4px',
+                        borderRadius: '8px',
+                        transition: 'all 0.3s ease',
+                        ...borderStyle
                       }}
                     >
                       {/* Symbol and Gain */}
@@ -6159,20 +6232,24 @@ export default function PortfolioDuel() {
                 borderBottomLeftRadius: '12px',
                 borderBottomRightRadius: '12px',
                 overflow: 'auto',
-                flex: 1
+                flex: 1,
+                padding: '4px'
               }}>
-                {theirPortfolio.map((asset, index) => {
-                  const startingPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
-                  const currentPrice = battlePrices[asset.symbol] || startingPrice;
-                  const gainPercent = ((currentPrice - startingPrice) / startingPrice) * 100;
+                {theirPortfolioWithGains.map((asset, index) => {
+                  const currentPrice = battlePrices[asset.symbol] || asset.price;
+                  const gainPercent = asset.gainPercent;
                   const weight = (asset.amount / 1000000) * 100;
+                  const borderStyle = getAssetBorderStyle(theirPortfolioWithGains, asset);
 
                   return (
                     <div
                       key={index}
                       style={{
                         padding: '12px',
-                        borderBottom: index < theirPortfolio.length - 1 ? '1px solid #21262d' : 'none'
+                        marginBottom: '4px',
+                        borderRadius: '8px',
+                        transition: 'all 0.3s ease',
+                        ...borderStyle
                       }}
                     >
                       {/* Symbol and Gain */}
