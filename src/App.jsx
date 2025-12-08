@@ -5665,7 +5665,7 @@ export default function PortfolioDuel() {
     );
   }
 
-  // BATTLE VIEW SCREEN
+  // BATTLE VIEW SCREEN - ESPN STYLE REDESIGN
   if (screen === 'battle' && currentBattle) {
     const isCreator = currentBattle.creator === user.username;
     const opponent = isCreator ? currentBattle.opponent : currentBattle.creator;
@@ -5695,742 +5695,500 @@ export default function PortfolioDuel() {
 
     return (
       <div style={containerStyle}>
-        <div className="min-h-screen pb-20" style={{ background: colors.background }}>
-          {/* BATTLE HEADER - Mobile-first sticky */}
-          <div
-            className="sticky top-0 z-40"
-            style={{
-              background: isWinning
-                ? `linear-gradient(135deg, ${colors.green} 0%, #059669 100%)`
-                : `linear-gradient(135deg, ${colors.red} 0%, #DC2626 100%)`,
-              padding: '12px 16px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-            }}
-          >
-            <div className="max-w-7xl mx-auto flex items-center justify-between">
+        <div style={{
+          minHeight: '100vh',
+          backgroundColor: '#0d1117',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          {/* COMPACT DARK HEADER */}
+          <div style={{
+            background: 'linear-gradient(180deg, #161b22 0%, #0d1117 100%)',
+            borderBottom: '2px solid #21262d',
+            padding: '12px 16px',
+            position: 'sticky',
+            top: 0,
+            zIndex: 100
+          }}>
+            <div style={{
+              maxWidth: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '8px'
+            }}>
+              {/* Back Button */}
               <button
                 onClick={() => setScreen('dashboard')}
-                className="flex items-center gap-2 text-white"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  color: '#00d9ff',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '6px'
+                }}
               >
-                <ChevronUp className="w-5 h-5 rotate-[-90deg]" />
-                <span className="font-semibold text-sm md:text-base">Back</span>
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+                <span>Back</span>
               </button>
 
-              <div className="text-center">
-                <div className="text-xs text-white opacity-80 uppercase tracking-wider mb-1">
+              {/* Status and Score Diff */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px'
+              }}>
+                <span style={{
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  color: isWinning ? '#22c55e' : '#ef4444'
+                }}>
                   {isWinning ? 'LEADING' : 'TRAILING'}
+                </span>
+                <span style={{
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  color: isWinning ? '#22c55e' : '#ef4444'
+                }}>
+                  {isWinning ? '+' : '-'}{difference.toFixed(2)}%
+                </span>
+              </div>
+            </div>
+
+            {/* Time Remaining */}
+            <div style={{
+              textAlign: 'center',
+              fontSize: '12px',
+              color: '#8b949e',
+              fontWeight: '500'
+            }}>
+              {battleTimer.formatTimeRemaining(currentBattle)} remaining
+            </div>
+          </div>
+
+          {/* Training Battle Indicator */}
+          {currentBattle.isTrainingBattle && (
+            <div style={{
+              background: 'linear-gradient(135deg, #8b5cf6 0%, #7C3AED 100%)',
+              color: 'white',
+              padding: '10px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              fontWeight: '600',
+              fontSize: '13px'
+            }}>
+              <span>🎓</span>
+              Training Battle • 1 Hour • Reduced XP
+            </div>
+          )}
+
+          {/* COMPARISON CARD */}
+          <div style={{ padding: '16px', backgroundColor: '#0d1117' }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #161b22 0%, #0d1117 100%)',
+              border: '2px solid #21262d',
+              borderRadius: '16px',
+              padding: '20px 16px',
+              marginBottom: '16px'
+            }}>
+              {/* Players Row */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '16px'
+              }}>
+                {/* YOU */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  flex: 1
+                }}>
+                  <div style={{
+                    width: '50px',
+                    height: '50px',
+                    background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '24px',
+                    border: '2px solid #00d9ff',
+                    marginBottom: '8px'
+                  }}>
+                    👤
+                  </div>
+                  <span style={{
+                    fontSize: '11px',
+                    color: '#8b949e',
+                    fontWeight: '600'
+                  }}>
+                    YOU
+                  </span>
                 </div>
-                <motion.div
-                  animate={{ scale: [1, 1.05, 1] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                  className="text-xl md:text-2xl font-bold text-white font-mono"
-                >
-                  {battleTimer.formatTimeRemaining(currentBattle)}
-                </motion.div>
+
+                {/* VS */}
+                <div style={{
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  color: '#6e7681',
+                  padding: '0 16px'
+                }}>
+                  VS
+                </div>
+
+                {/* OPPONENT */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  flex: 1
+                }}>
+                  <div style={{
+                    width: '50px',
+                    height: '50px',
+                    background: currentBattle.isTrainingBattle
+                      ? 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)'
+                      : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '24px',
+                    border: `2px solid ${currentBattle.isTrainingBattle ? '#8b5cf6' : '#ef4444'}`,
+                    marginBottom: '8px'
+                  }}>
+                    {currentBattle.isTrainingBattle ? '🤖' : '👤'}
+                  </div>
+                  <span style={{
+                    fontSize: '11px',
+                    color: '#8b949e',
+                    fontWeight: '600'
+                  }}>
+                    {currentBattle.isTrainingBattle ? 'CPU' : 'OPP'}
+                  </span>
+                </div>
               </div>
 
-              <div className="w-16 md:w-20 text-right">
-                <span className="text-white text-sm font-semibold">
-                  {isWinning ? '+' : ''}{myGain.toFixed(1)}%
-                </span>
+              {/* Scores Row */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '12px'
+              }}>
+                <div style={{
+                  fontSize: '28px',
+                  fontWeight: 'bold',
+                  color: myGain >= 0 ? '#22c55e' : '#ef4444',
+                  flex: 1,
+                  textAlign: 'center'
+                }}>
+                  {myGain >= 0 ? '+' : ''}{myGain.toFixed(2)}%
+                </div>
+
+                <div style={{
+                  fontSize: '28px',
+                  fontWeight: 'bold',
+                  color: theirGain >= 0 ? '#22c55e' : '#ef4444',
+                  flex: 1,
+                  textAlign: 'center'
+                }}>
+                  {theirGain >= 0 ? '+' : ''}{theirGain.toFixed(2)}%
+                </div>
+              </div>
+
+              {/* Visual Bar */}
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{
+                  width: '100%',
+                  height: '8px',
+                  backgroundColor: '#21262d',
+                  borderRadius: '4px',
+                  overflow: 'hidden',
+                  display: 'flex'
+                }}>
+                  <div style={{
+                    height: '100%',
+                    width: '50%',
+                    background: isWinning
+                      ? 'linear-gradient(90deg, #22c55e 0%, #16a34a 100%)'
+                      : '#21262d',
+                    transition: 'all 0.3s ease'
+                  }} />
+                  <div style={{
+                    height: '100%',
+                    width: '50%',
+                    background: !isWinning
+                      ? 'linear-gradient(90deg, #dc2626 0%, #ef4444 100%)'
+                      : '#21262d',
+                    transition: 'all 0.3s ease'
+                  }} />
+                </div>
+
+                {/* Leading By Text */}
+                <div style={{
+                  textAlign: 'center',
+                  marginTop: '8px',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  color: isWinning ? '#22c55e' : '#ef4444'
+                }}>
+                  {isWinning
+                    ? `LEADING BY ${difference.toFixed(2)}%`
+                    : `TRAILING BY ${difference.toFixed(2)}%`
+                  }
+                  {' '}
+                  <span style={{ color: '#8b949e' }}>
+                    (${valueDifference.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                  </span>
+                </div>
+              </div>
+
+              {/* Portfolio Values */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div style={{
+                  fontSize: '14px',
+                  color: '#8b949e',
+                  flex: 1,
+                  textAlign: 'center'
+                }}>
+                  ${myValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+
+                <div style={{
+                  fontSize: '14px',
+                  color: '#8b949e',
+                  flex: 1,
+                  textAlign: 'center'
+                }}>
+                  ${theirValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
-            {/* Training Battle Indicator */}
-            {currentBattle.isTrainingBattle && (
+          {/* SIDE-BY-SIDE PORTFOLIOS */}
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            padding: '0 16px 24px 16px',
+            flex: 1,
+            overflow: 'hidden'
+          }}>
+            {/* YOUR PORTFOLIO */}
+            <div style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              minWidth: 0
+            }}>
+              {/* Header */}
               <div style={{
-                background: `linear-gradient(135deg, ${colors.purple} 0%, #7C3AED 100%)`,
-                color: 'white',
-                padding: '12px 20px',
-                borderRadius: '8px',
-                marginBottom: '16px',
+                backgroundColor: '#00d9ff',
+                padding: '10px 12px',
+                borderTopLeftRadius: '12px',
+                borderTopRightRadius: '12px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '8px',
-                fontWeight: '600',
-                fontSize: '14px',
-                boxShadow: '0 0 20px rgba(147, 51, 234, 0.3)'
+                gap: '6px'
               }}>
-                <GraduationCap style={{ height: '18px', width: '18px' }} />
-                Training Battle • 1 Hour Duration • Reduced XP
-              </div>
-            )}
-
-            {/* PLAYER COMPARISON SECTION */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.1 }}
-              style={{
-                background: colors.cardBg,
-                borderRadius: '16px',
-                overflow: 'hidden',
-                marginBottom: '24px',
-                border: `1px solid #30363d`
-              }}
-            >
-              <div style={{ padding: '32px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  {/* YOU Section */}
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <div style={{
-                      fontSize: '11px',
-                      color: colors.textMuted,
-                      textTransform: 'uppercase',
-                      letterSpacing: '2px',
-                      marginBottom: '12px'
-                    }}>
-                      YOU <span style={{ color: colors.textSecondary }}>({user.username})</span>
-                    </div>
-                    <motion.div
-                      initial={{ scale: 0.8 }}
-                      animate={{ scale: 1 }}
-                      transition={{ type: "spring", stiffness: 200, damping: 15 }}
-                      style={{
-                        width: '80px',
-                        height: '80px',
-                        borderRadius: '50%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        marginBottom: '16px',
-                        background: `linear-gradient(135deg, ${colors.cyan}20 0%, ${colors.green}20 100%)`,
-                        border: `3px solid ${myGain >= 0 ? colors.green : colors.red}`,
-                        boxShadow: `0 0 20px ${myGain >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
-                      }}
-                    >
-                      <User style={{ height: '32px', width: '32px', color: myGain >= 0 ? colors.green : colors.red }} />
-                    </motion.div>
-                    <div style={{
-                      fontSize: '42px',
-                      fontWeight: 'bold',
-                      color: myGain >= 0 ? colors.green : colors.red,
-                      marginBottom: '4px'
-                    }}>
-                      {myGain >= 0 ? '+' : ''}{myGain.toFixed(1)}%
-                    </div>
-                    <div style={{
-                      fontSize: '18px',
-                      color: colors.textSecondary,
-                      fontWeight: '500'
-                    }}>
-                      ${myValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                    </div>
-                  </div>
-
-                  {/* CENTER - Progress Bar & Status */}
-                  <div style={{ flex: 1.5, padding: '0 40px' }}>
-                    {/* Progress Bar */}
-                    <div style={{
-                      position: 'relative',
-                      height: '16px',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      borderRadius: '8px',
-                      overflow: 'hidden',
-                      marginBottom: '16px',
-                      border: '1px solid #30363d'
-                    }}>
-                      <motion.div
-                        initial={{ width: '50%' }}
-                        animate={{ width: `${Math.max(10, Math.min(90, (myValue / (myValue + theirValue)) * 100))}%` }}
-                        transition={{ duration: 0.5 }}
-                        style={{
-                          position: 'absolute',
-                          height: '100%',
-                          borderRadius: '8px',
-                          background: isWinning
-                            ? `linear-gradient(90deg, ${colors.green} 0%, ${colors.greenBright} 100%)`
-                            : `linear-gradient(90deg, ${colors.red} 0%, ${colors.redBright} 100%)`,
-                          boxShadow: isWinning
-                            ? '0 0 10px rgba(16, 185, 129, 0.5)'
-                            : '0 0 10px rgba(239, 68, 68, 0.5)'
-                        }}
-                      />
-                    </div>
-
-                    {/* Status Text */}
-                    <div style={{
-                      textAlign: 'center',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      color: isWinning ? colors.green : colors.red,
-                      textTransform: 'uppercase',
-                      letterSpacing: '1px'
-                    }}>
-                      {isWinning ? 'LEADING' : 'TRAILING'} BY +{difference.toFixed(1)}% (${valueDifference.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})
-                    </div>
-                  </div>
-
-                  {/* OPPONENT Section */}
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <div style={{
-                      fontSize: '11px',
-                      color: colors.textMuted,
-                      textTransform: 'uppercase',
-                      letterSpacing: '2px',
-                      marginBottom: '12px'
-                    }}>
-                      OPPONENT <span style={{ color: colors.textSecondary }}>({opponent})</span>
-                    </div>
-                    <motion.div
-                      initial={{ scale: 0.8 }}
-                      animate={{ scale: 1 }}
-                      transition={{ type: "spring", stiffness: 200, damping: 15, delay: 0.1 }}
-                      style={{
-                        width: '80px',
-                        height: '80px',
-                        borderRadius: '50%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        marginBottom: '16px',
-                        background: `linear-gradient(135deg, ${colors.red}20 0%, ${colors.redBright}20 100%)`,
-                        border: `3px solid ${theirGain >= 0 ? colors.green : colors.red}`,
-                        boxShadow: `0 0 20px ${theirGain >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
-                      }}
-                    >
-                      <Skull style={{ height: '32px', width: '32px', color: theirGain >= 0 ? colors.green : colors.red }} />
-                    </motion.div>
-                    <div style={{
-                      fontSize: '42px',
-                      fontWeight: 'bold',
-                      color: theirGain >= 0 ? colors.green : colors.red,
-                      marginBottom: '4px'
-                    }}>
-                      {theirGain >= 0 ? '+' : ''}{theirGain.toFixed(1)}%
-                    </div>
-                    <div style={{
-                      fontSize: '18px',
-                      color: colors.textSecondary,
-                      fontWeight: '500'
-                    }}>
-                      ${theirValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-
-            {/* CHALLENGE TABS - Keep existing functionality but style updated */}
-            <div style={{ marginBottom: '24px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-              {/* User Challenge Tabs */}
-              {userChallenges.doubleDown && userChallenges.doubleDown.status === 'active' && (
-                <button
-                  onClick={() => toggleChallengePanel('user-double')}
-                  style={{
-                    background: openChallengePanels.has('user-double')
-                      ? `linear-gradient(135deg, ${colors.gold} 0%, #FF8F00 100%)`
-                      : colors.cardBg,
-                    color: openChallengePanels.has('user-double') ? '#0d1117' : colors.gold,
-                    padding: '10px 20px',
-                    borderRadius: '8px',
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    border: `1px solid ${colors.gold}`,
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  Your Double Down
-                </button>
-              )}
-              {userChallenges.marketClose && userChallenges.marketClose.status === 'active' && (
-                <button
-                  onClick={() => toggleChallengePanel('user-market')}
-                  style={{
-                    background: openChallengePanels.has('user-market')
-                      ? `linear-gradient(135deg, ${colors.gold} 0%, #FF8F00 100%)`
-                      : colors.cardBg,
-                    color: openChallengePanels.has('user-market') ? '#0d1117' : colors.gold,
-                    padding: '10px 20px',
-                    borderRadius: '8px',
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    border: `1px solid ${colors.gold}`,
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  Your Market Close
-                </button>
-              )}
-              {opponentChallenges.doubleDown && opponentChallenges.doubleDown.status === 'active' && (
-                <button
-                  onClick={() => toggleChallengePanel('opp-double')}
-                  style={{
-                    background: openChallengePanels.has('opp-double')
-                      ? `linear-gradient(135deg, ${colors.gold} 0%, #FF8F00 100%)`
-                      : colors.cardBg,
-                    color: openChallengePanels.has('opp-double') ? '#0d1117' : colors.gold,
-                    padding: '10px 20px',
-                    borderRadius: '8px',
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    border: `1px solid ${colors.gold}`,
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  Opponent's Double Down
-                </button>
-              )}
-              {opponentChallenges.marketClose && opponentChallenges.marketClose.status === 'active' && (
-                <button
-                  onClick={() => toggleChallengePanel('opp-market')}
-                  style={{
-                    background: openChallengePanels.has('opp-market')
-                      ? `linear-gradient(135deg, ${colors.gold} 0%, #FF8F00 100%)`
-                      : colors.cardBg,
-                    color: openChallengePanels.has('opp-market') ? '#0d1117' : colors.gold,
-                    padding: '10px 20px',
-                    borderRadius: '8px',
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    border: `1px solid ${colors.gold}`,
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  Opponent's Market Close
-                </button>
-              )}
-            </div>
-
-            {/* Challenge Panels - These appear BELOW the battle score box */}
-
-            {/* User's Double Down Challenge Panel - Only show ACTIVE challenges */}
-            {userChallenges.doubleDown && userChallenges.doubleDown.status === 'active' && openChallengePanels.has('user-double') && (
-              <div style={{
-                background: colors.cardBg,
-                borderRadius: '12px',
-                padding: '20px',
-                marginBottom: '20px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                border: `2px solid ${colors.gold}`
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '16px',
-                  paddingBottom: '12px',
-                  borderBottom: `1px solid ${colors.borderSubtle}`
+                <span style={{ fontSize: '16px' }}>👤</span>
+                <span style={{
+                  fontSize: '13px',
+                  fontWeight: 'bold',
+                  color: '#0d1117'
                 }}>
-                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: colors.textPrimary }}>
-                    Your Double Down Challenge
-                  </div>
-                  <div style={{
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    padding: '4px 12px',
-                    borderRadius: '12px',
-                    background: userChallenges.doubleDown.status === 'active' ? `${colors.gold}30` :
-                               userChallenges.doubleDown.status === 'won' ? `${colors.green}30` :
-                               userChallenges.doubleDown.status === 'lost' ? `${colors.red}30` : 'rgba(255,255,255,0.1)',
-                    color: userChallenges.doubleDown.status === 'active' ? colors.gold :
-                          userChallenges.doubleDown.status === 'won' ? colors.green :
-                          userChallenges.doubleDown.status === 'lost' ? colors.red : colors.textMuted
-                  }}>
-                    {userChallenges.doubleDown.status.toUpperCase()}
-                  </div>
-                </div>
-                <div style={{ background: 'rgba(0, 0, 0, 0.2)', borderRadius: '8px', padding: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-                    <span style={{ fontSize: '14px', color: colors.textSecondary }}>Asset:</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
-                      {userChallenges.doubleDown.asset.name} ({userChallenges.doubleDown.asset.symbol})
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-                    <span style={{ fontSize: '14px', color: colors.textSecondary }}>Effect:</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
-                      2x gains/losses for 2 hours
-                    </span>
-                  </div>
-                  {userChallenges.doubleDown.startingPrice && (
-                    <>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-                        <span style={{ fontSize: '14px', color: colors.textSecondary }}>Starting Price:</span>
-                        <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
-                          ${userChallenges.doubleDown.startingPrice.toFixed(2)}
+                  YOU
+                </span>
+              </div>
+
+              {/* Portfolio List */}
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '2px solid #21262d',
+                borderTop: 'none',
+                borderBottomLeftRadius: '12px',
+                borderBottomRightRadius: '12px',
+                overflow: 'auto',
+                flex: 1
+              }}>
+                {myPortfolio.map((asset, index) => {
+                  const startingPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
+                  const currentPrice = battlePrices[asset.symbol] || startingPrice;
+                  const gainPercent = ((currentPrice - startingPrice) / startingPrice) * 100;
+                  const weight = (asset.amount / 1000000) * 100;
+
+                  return (
+                    <div
+                      key={index}
+                      style={{
+                        padding: '12px',
+                        borderBottom: index < myPortfolio.length - 1 ? '1px solid #21262d' : 'none'
+                      }}
+                    >
+                      {/* Symbol and Gain */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '4px'
+                      }}>
+                        <span style={{
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          color: '#ffffff'
+                        }}>
+                          {asset.symbol}
+                        </span>
+                        <span style={{
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          color: gainPercent >= 0 ? '#22c55e' : '#ef4444'
+                        }}>
+                          {gainPercent >= 0 ? '+' : ''}{gainPercent.toFixed(2)}%
                         </span>
                       </div>
-                      {battlePrices[userChallenges.doubleDown.asset.symbol] && (
-                        <>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-                            <span style={{ fontSize: '14px', color: colors.textSecondary }}>Current Price:</span>
-                            <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
-                              ${battlePrices[userChallenges.doubleDown.asset.symbol].toFixed(2)}
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
-                            <span style={{ fontSize: '14px', color: colors.textSecondary }}>Current Effect:</span>
-                            <span style={{
-                              fontSize: '14px',
-                              fontWeight: '600',
-                              color: battlePrices[userChallenges.doubleDown.asset.symbol] >= userChallenges.doubleDown.startingPrice ? colors.green : colors.red
-                            }}>
-                              {((battlePrices[userChallenges.doubleDown.asset.symbol] - userChallenges.doubleDown.startingPrice) / userChallenges.doubleDown.startingPrice * 200).toFixed(2)}%
-                            </span>
-                          </div>
-                        </>
-                      )}
-                    </>
-                  )}
-                  {userChallenges.doubleDown.status === 'active' && (
-                    <div style={{
-                      marginTop: '12px',
-                      padding: '8px',
-                      background: `${colors.cyan}20`,
-                      borderRadius: '6px',
-                      textAlign: 'center',
-                      fontSize: '12px',
-                      color: colors.cyan,
-                      fontWeight: '600'
-                    }}>
-                      {challengeService.formatTimeRemaining(challengeService.getChallengeTimeRemaining(userChallenges.doubleDown))} remaining
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
 
-            {/* User's Market Close Challenge Panel - Only show ACTIVE challenges */}
-            {userChallenges.marketClose && userChallenges.marketClose.status === 'active' && openChallengePanels.has('user-market') && (
-              <div style={{
-                background: colors.cardBg,
-                borderRadius: '12px',
-                padding: '20px',
-                marginBottom: '20px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                border: `2px solid ${colors.gold}`
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '16px',
-                  paddingBottom: '12px',
-                  borderBottom: `1px solid ${colors.borderSubtle}`
-                }}>
-                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: colors.textPrimary }}>
-                    Your Market Close Challenge
-                  </div>
-                  <div style={{
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    padding: '4px 12px',
-                    borderRadius: '12px',
-                    background: userChallenges.marketClose.status === 'active' ? `${colors.gold}30` :
-                               userChallenges.marketClose.status === 'won' ? `${colors.green}30` :
-                               userChallenges.marketClose.status === 'lost' ? `${colors.red}30` : 'rgba(255,255,255,0.1)',
-                    color: userChallenges.marketClose.status === 'active' ? colors.gold :
-                          userChallenges.marketClose.status === 'won' ? colors.green :
-                          userChallenges.marketClose.status === 'lost' ? colors.red : colors.textMuted
-                  }}>
-                    {userChallenges.marketClose.status.toUpperCase()}
-                  </div>
-                </div>
-                <div style={{ background: 'rgba(0, 0, 0, 0.2)', borderRadius: '8px', padding: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-                    <span style={{ fontSize: '14px', color: colors.textSecondary }}>Market:</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
-                      {userChallenges.marketClose.market}
-                    </span>
-                  </div>
-                  {userChallenges.marketClose.prediction && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-                      <span style={{ fontSize: '14px', color: colors.textSecondary }}>Your Prediction:</span>
-                      <span style={{
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        color: userChallenges.marketClose.prediction === 'up' ? colors.green : colors.red
+                      {/* Allocation and Price */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
                       }}>
-                        {userChallenges.marketClose.prediction.toUpperCase()}
-                      </span>
+                        <span style={{
+                          fontSize: '12px',
+                          color: '#8b949e'
+                        }}>
+                          {weight.toFixed(1)}%
+                        </span>
+                        <span style={{
+                          fontSize: '12px',
+                          color: '#8b949e'
+                        }}>
+                          ${currentPrice.toFixed(2)}
+                        </span>
+                      </div>
                     </div>
-                  )}
-                  {userChallenges.marketClose.baselinePrice && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-                      <span style={{ fontSize: '14px', color: colors.textSecondary }}>Baseline Price:</span>
-                      <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
-                        ${userChallenges.marketClose.baselinePrice.toFixed(2)}
-                      </span>
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
-                    <span style={{ fontSize: '14px', color: colors.textSecondary }}>Risk/Reward:</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
-                      +{userChallenges.marketClose.reward}% / -{userChallenges.marketClose.penalty}%
-                    </span>
-                  </div>
-                  {userChallenges.marketClose.status === 'active' && (
-                    <div style={{
-                      marginTop: '12px',
-                      padding: '8px',
-                      background: `${colors.cyan}20`,
-                      borderRadius: '6px',
-                      textAlign: 'center',
-                      fontSize: '12px',
-                      color: colors.cyan,
-                      fontWeight: '600'
-                    }}>
-                      {challengeService.formatTimeRemaining(challengeService.getChallengeTimeRemaining(userChallenges.marketClose))} until market close
-                    </div>
-                  )}
-                </div>
+                  );
+                })}
               </div>
-            )}
+            </div>
 
-            {/* Opponent's Double Down Challenge Panel - Only show ACTIVE challenges */}
-            {opponentChallenges.doubleDown && opponentChallenges.doubleDown.status === 'active' && openChallengePanels.has('opp-double') && (
+            {/* OPPONENT PORTFOLIO */}
+            <div style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              minWidth: 0
+            }}>
+              {/* Header */}
               <div style={{
-                background: colors.cardBg,
-                borderRadius: '12px',
-                padding: '20px',
-                marginBottom: '20px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                border: `2px solid ${colors.gold}`
+                backgroundColor: currentBattle.isTrainingBattle ? '#8b5cf6' : '#ef4444',
+                padding: '10px 12px',
+                borderTopLeftRadius: '12px',
+                borderTopRightRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px'
               }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '16px',
-                  paddingBottom: '12px',
-                  borderBottom: `1px solid ${colors.borderSubtle}`
+                <span style={{ fontSize: '16px' }}>
+                  {currentBattle.isTrainingBattle ? '🤖' : '👤'}
+                </span>
+                <span style={{
+                  fontSize: '13px',
+                  fontWeight: 'bold',
+                  color: '#ffffff'
                 }}>
-                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: colors.textPrimary }}>
-                    Opponent's Double Down Challenge
-                  </div>
-                  <div style={{
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    padding: '4px 12px',
-                    borderRadius: '12px',
-                    background: `${colors.gold}30`,
-                    color: colors.gold
-                  }}>
-                    ACTIVE
-                  </div>
-                </div>
-                <div style={{ background: 'rgba(0, 0, 0, 0.2)', borderRadius: '8px', padding: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-                    <span style={{ fontSize: '14px', color: colors.textSecondary }}>Asset:</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
-                      {opponentChallenges.doubleDown.asset.name} ({opponentChallenges.doubleDown.asset.symbol})
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
-                    <span style={{ fontSize: '14px', color: colors.textSecondary }}>Effect:</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
-                      2x gains/losses for 2 hours
-                    </span>
-                  </div>
-                  <div style={{
-                    marginTop: '12px',
-                    padding: '8px',
-                    background: `${colors.cyan}20`,
-                    borderRadius: '6px',
-                    textAlign: 'center',
-                    fontSize: '12px',
-                    color: colors.cyan,
-                    fontWeight: '600'
-                  }}>
-                    {challengeService.formatTimeRemaining(challengeService.getChallengeTimeRemaining(opponentChallenges.doubleDown))} remaining
-                  </div>
-                </div>
+                  {currentBattle.isTrainingBattle ? 'CPU' : 'OPP'}
+                </span>
               </div>
-            )}
 
-            {/* Opponent's Market Close Challenge Panel - Only show ACTIVE challenges */}
-            {opponentChallenges.marketClose && opponentChallenges.marketClose.status === 'active' && openChallengePanels.has('opp-market') && (
+              {/* Portfolio List */}
               <div style={{
-                background: colors.cardBg,
-                borderRadius: '12px',
-                padding: '20px',
-                marginBottom: '20px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                border: `2px solid ${colors.gold}`
+                backgroundColor: '#161b22',
+                border: '2px solid #21262d',
+                borderTop: 'none',
+                borderBottomLeftRadius: '12px',
+                borderBottomRightRadius: '12px',
+                overflow: 'auto',
+                flex: 1
               }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '16px',
-                  paddingBottom: '12px',
-                  borderBottom: `1px solid ${colors.borderSubtle}`
-                }}>
-                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: colors.textPrimary }}>
-                    Opponent's Market Close Challenge
-                  </div>
-                  <div style={{
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    padding: '4px 12px',
-                    borderRadius: '12px',
-                    background: `${colors.gold}30`,
-                    color: colors.gold
-                  }}>
-                    ACTIVE
-                  </div>
-                </div>
-                <div style={{ background: 'rgba(0, 0, 0, 0.2)', borderRadius: '8px', padding: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-                    <span style={{ fontSize: '14px', color: colors.textSecondary }}>Market:</span>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
-                      {opponentChallenges.marketClose.market}
-                    </span>
-                  </div>
-                  {opponentChallenges.marketClose.prediction && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderSubtle}` }}>
-                      <span style={{ fontSize: '14px', color: colors.textSecondary }}>Their Prediction:</span>
-                      <span style={{
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        color: opponentChallenges.marketClose.prediction === 'up' ? colors.green : colors.red
+                {theirPortfolio.map((asset, index) => {
+                  const startingPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
+                  const currentPrice = battlePrices[asset.symbol] || startingPrice;
+                  const gainPercent = ((currentPrice - startingPrice) / startingPrice) * 100;
+                  const weight = (asset.amount / 1000000) * 100;
+
+                  return (
+                    <div
+                      key={index}
+                      style={{
+                        padding: '12px',
+                        borderBottom: index < theirPortfolio.length - 1 ? '1px solid #21262d' : 'none'
+                      }}
+                    >
+                      {/* Symbol and Gain */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '4px'
                       }}>
-                        {opponentChallenges.marketClose.prediction.toUpperCase()}
-                      </span>
-                    </div>
-                  )}
-                  {userChallenges.marketClose && opponentChallenges.marketClose.prediction !== userChallenges.marketClose.prediction && (
-                    <div style={{ padding: '12px', background: `${colors.red}20`, borderRadius: '8px', marginTop: '12px', textAlign: 'center' }}>
-                      <strong style={{ color: colors.red }}>Opposite prediction!</strong><br />
-                      <span style={{ fontSize: '12px', color: colors.textSecondary }}>
-                        They predicted {opponentChallenges.marketClose.prediction.toUpperCase()}, you predicted {userChallenges.marketClose.prediction.toUpperCase()}
-                      </span>
-                    </div>
-                  )}
-                  <div style={{
-                    marginTop: '12px',
-                    padding: '8px',
-                    background: `${colors.cyan}20`,
-                    borderRadius: '6px',
-                    textAlign: 'center',
-                    fontSize: '12px',
-                    color: colors.cyan,
-                    fontWeight: '600'
-                  }}>
-                    {challengeService.formatTimeRemaining(challengeService.getChallengeTimeRemaining(opponentChallenges.marketClose))} until market close
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* PORTFOLIO TABLES - ESPN-style head-to-head, TRUE SIDE-BY-SIDE */}
-            <div className="grid grid-cols-2 gap-0">
-              {/* YOUR PORTFOLIO TABLE - Always visible */}
-              <div>
-                <div className="rounded-2xl overflow-hidden" style={{
-                  background: colors.cardBg,
-                  border: `2px solid ${colors.cyan}`
-                }}>
-                {/* Table Header - Sticky */}
-                <div className="sticky top-0 z-10" style={{
-                  padding: '8px 12px',
-                  borderBottom: `1px solid #30363d`,
-                  background: colors.cyan
-                }}>
-                  <div className="flex items-center justify-center gap-1" style={{
-                    fontSize: '11px',
-                    fontWeight: '700',
-                    color: colors.background,
-                    textTransform: 'uppercase',
-                    letterSpacing: '1px'
-                  }}>
-                    <span>👤</span>
-                    <span>YOU</span>
-                  </div>
-                </div>
-
-                {/* Portfolio Items - Compact for mobile */}
-                <div style={{ overflow: 'hidden' }}>
-                  {myPortfolio.map((asset, idx) => {
-                    const startingPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
-                    const currentPrice = battlePrices[asset.symbol] || startingPrice;
-                    const returnPct = ((currentPrice - startingPrice) / startingPrice) * 100;
-                    const weight = (asset.amount / 1000000) * 100;
-                    const isPositive = returnPct >= 0;
-
-                    return (
-                      <div
-                        key={idx}
-                        className="border-b border-gray-800 p-2"
-                      >
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="font-bold text-[11px] truncate pr-1">{asset.symbol}</span>
-                          <span className={`font-bold text-[11px] flex-shrink-0 ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                            {isPositive ? '+' : ''}{returnPct.toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-[9px] text-gray-400">
-                          <span>{weight.toFixed(0)}%</span>
-                          <span>${currentPrice.toFixed(2)}</span>
-                        </div>
+                        <span style={{
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          color: '#ffffff'
+                        }}>
+                          {asset.symbol}
+                        </span>
+                        <span style={{
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          color: gainPercent >= 0 ? '#22c55e' : '#ef4444'
+                        }}>
+                          {gainPercent >= 0 ? '+' : ''}{gainPercent.toFixed(2)}%
+                        </span>
                       </div>
-                    );
-                  })}
-                </div>
-                </div>
-              </div>
 
-              {/* OPPONENT'S PORTFOLIO TABLE - Always visible */}
-              <div className="overflow-hidden">
-                <div className="rounded-2xl overflow-hidden" style={{
-                  background: colors.cardBg,
-                  border: `2px solid ${colors.purple}`
-                }}>
-                {/* Table Header - Sticky */}
-                <div className="sticky top-0 z-10" style={{
-                  padding: '8px 12px',
-                  borderBottom: `1px solid #30363d`,
-                  background: colors.purple
-                }}>
-                  <div className="flex items-center justify-center gap-1" style={{
-                    fontSize: '11px',
-                    fontWeight: '700',
-                    color: 'white',
-                    textTransform: 'uppercase',
-                    letterSpacing: '1px'
-                  }}>
-                    <span>{currentBattle.isTrainingBattle ? '🤖' : '👤'}</span>
-                    <span>OPP</span>
-                  </div>
-                </div>
-
-                {/* Portfolio Items - Compact for mobile */}
-                <div style={{ overflow: 'hidden' }}>
-                  {theirPortfolio.map((asset, idx) => {
-                    const startingPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
-                    const currentPrice = battlePrices[asset.symbol] || startingPrice;
-                    const returnPct = ((currentPrice - startingPrice) / startingPrice) * 100;
-                    const weight = (asset.amount / 1000000) * 100;
-                    const isPositive = returnPct >= 0;
-
-                    return (
-                      <div
-                        key={idx}
-                        className="border-b border-gray-800 p-2"
-                      >
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="font-bold text-[11px] truncate pr-1">{asset.symbol}</span>
-                          <span className={`font-bold text-[11px] flex-shrink-0 ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                            {isPositive ? '+' : ''}{returnPct.toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-[9px] text-gray-400">
-                          <span>{weight.toFixed(0)}%</span>
-                          <span>${currentPrice.toFixed(2)}</span>
-                        </div>
+                      {/* Allocation and Price */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}>
+                        <span style={{
+                          fontSize: '12px',
+                          color: '#8b949e'
+                        }}>
+                          {weight.toFixed(1)}%
+                        </span>
+                        <span style={{
+                          fontSize: '12px',
+                          color: '#8b949e'
+                        }}>
+                          ${currentPrice.toFixed(2)}
+                        </span>
                       </div>
-                    );
-                  })}
-                </div>
-                </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
