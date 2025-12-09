@@ -1151,6 +1151,12 @@ export default function PortfolioDuel() {
   const [currentDraft, setCurrentDraft] = useState(null);
   const [draftJoinCode, setDraftJoinCode] = useState('');
 
+  // Draft Lobby/Room state - Phase 3
+  const [draftState, setDraftState] = useState(null);
+  const [draftCopied, setDraftCopied] = useState(false);
+  const [selectedDraftCategory, setSelectedDraftCategory] = useState('steady');
+  const [draftTimeRemaining, setDraftTimeRemaining] = useState(120);
+
   // Toggle asset expansion
   const toggleAssetExpansion = (symbol) => {
     setExpandedAssets(prev => {
@@ -1455,6 +1461,81 @@ export default function PortfolioDuel() {
       });
     }
   }, [screen, currentBattle, user, battles]);
+
+  // Draft subscription - Phase 3
+  useEffect(() => {
+    if (!currentDraft?.id) return;
+    if (screen !== 'draftLobby' && screen !== 'draftRoom') return;
+
+    let unsubscribe = null;
+
+    const loadDraftService = async () => {
+      try {
+        const draftService = await import('./services/draftService');
+        unsubscribe = draftService.subscribeToDraft(currentDraft.id, (draft) => {
+          if (draft) {
+            setDraftState(draft);
+            // Auto-navigate based on status changes
+            if (draft.status === 'active' && screen === 'draftLobby') {
+              setCurrentDraft(draft);
+              setScreen('draftRoom');
+            }
+            if (draft.status === 'completed' && screen === 'draftRoom') {
+              setCurrentDraft(draft);
+              setScreen('draftResults');
+            }
+            if (draft.status === 'cancelled') {
+              setScreen('dashboard');
+            }
+          }
+        });
+      } catch (error) {
+        console.error('Failed to subscribe to draft:', error);
+      }
+    };
+
+    loadDraftService();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [currentDraft?.id, screen]);
+
+  // Draft timer countdown - Phase 3
+  useEffect(() => {
+    if (screen !== 'draftRoom' || !draftState?.pickDeadline) return;
+
+    const updateTimer = () => {
+      const deadline = draftState.pickDeadline.toDate
+        ? draftState.pickDeadline.toDate()
+        : new Date(draftState.pickDeadline);
+      const remaining = Math.max(0, Math.floor((deadline - Date.now()) / 1000));
+      setDraftTimeRemaining(remaining);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [screen, draftState?.pickDeadline, draftState?.currentPlayerId]);
+
+  // CPU turn trigger for training drafts - Phase 3
+  useEffect(() => {
+    if (screen !== 'draftRoom') return;
+    if (!draftState || draftState.status !== 'active' || !draftState.isTraining) return;
+
+    const currentPlayer = draftState.players?.find(p => p.odUserId === draftState.currentPlayerId);
+    if (currentPlayer?.isCPU) {
+      const triggerCPU = async () => {
+        try {
+          const draftService = await import('./services/draftService');
+          draftService.processCPUTurn(draftState.id);
+        } catch (error) {
+          console.error('CPU turn failed:', error);
+        }
+      };
+      triggerCPU();
+    }
+  }, [screen, draftState?.currentPlayerId, draftState?.status, draftState?.isTraining]);
 
   // ============================================
   // 3. HELPER FUNCTIONS
@@ -6507,6 +6588,729 @@ export default function PortfolioDuel() {
             >
               START TRAINING DRAFT
             </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // DRAFT LOBBY SCREEN - Phase 3
+  if (screen === 'draftLobby') {
+    const lobbyDraft = draftState || currentDraft;
+    const isHost = lobbyDraft?.hostId === (user.odUserId || user.username);
+    const playerCount = lobbyDraft?.players?.length || 0;
+    const canStart = playerCount === 4;
+
+    const handleCopyCode = async () => {
+      try {
+        await navigator.clipboard.writeText(lobbyDraft.code);
+        setDraftCopied(true);
+        setTimeout(() => setDraftCopied(false), 2000);
+      } catch (err) {
+        console.error('Copy failed:', err);
+      }
+    };
+
+    const handleStartDraft = async () => {
+      if (!canStart) return;
+      try {
+        const draftService = await import('./services/draftService');
+        await draftService.startDraft(lobbyDraft.id);
+      } catch (error) {
+        console.error('Failed to start draft:', error);
+        alert('Failed to start draft');
+      }
+    };
+
+    const handleLeaveLobby = async () => {
+      try {
+        const draftService = await import('./services/draftService');
+        if (isHost) {
+          await draftService.cancelDraft(lobbyDraft.id);
+        } else {
+          await draftService.leaveDraft(lobbyDraft.id, user.odUserId || user.username);
+        }
+        setScreen('dashboard');
+      } catch (error) {
+        console.error('Failed to leave:', error);
+      }
+    };
+
+    return (
+      <div style={containerStyle}>
+        <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+          {/* Header */}
+          <div style={{
+            background: '#161b22',
+            borderBottom: '2px solid #21262d',
+            padding: '16px'
+          }}>
+            <div style={{
+              maxWidth: '600px',
+              margin: '0 auto',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <button
+                onClick={() => setScreen('dashboard')}
+                style={{
+                  color: '#00d9ff',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600'
+                }}
+              >
+                ← Back
+              </button>
+              <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#ffffff' }}>
+                Draft Lobby
+              </h1>
+              <div style={{ width: '60px' }}></div>
+            </div>
+          </div>
+
+          <div style={{ maxWidth: '600px', margin: '0 auto', padding: '24px 16px' }}>
+            {/* Draft Type Badge */}
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <span style={{
+                display: 'inline-block',
+                padding: '8px 16px',
+                background: 'rgba(139, 92, 246, 0.2)',
+                border: '1px solid #8b5cf6',
+                borderRadius: '20px',
+                color: '#8b5cf6',
+                fontSize: '14px',
+                fontWeight: '600',
+                textTransform: 'capitalize'
+              }}>
+                {lobbyDraft?.type} Draft
+              </span>
+            </div>
+
+            {/* Code Display */}
+            <div style={{
+              background: '#161b22',
+              border: '2px solid #8b5cf6',
+              borderRadius: '16px',
+              padding: '24px',
+              textAlign: 'center',
+              marginBottom: '24px'
+            }}>
+              <p style={{ color: '#8b949e', marginBottom: '12px', fontSize: '14px' }}>
+                Share this code with friends:
+              </p>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '16px'
+              }}>
+                <div style={{
+                  fontSize: '32px',
+                  fontWeight: 'bold',
+                  color: '#ffffff',
+                  letterSpacing: '4px',
+                  fontFamily: "'SF Mono', monospace"
+                }}>
+                  {lobbyDraft?.code}
+                </div>
+                <button
+                  onClick={handleCopyCode}
+                  style={{
+                    padding: '10px 16px',
+                    background: draftCopied ? '#10b981' : 'transparent',
+                    border: `2px solid ${draftCopied ? '#10b981' : '#8b5cf6'}`,
+                    borderRadius: '8px',
+                    color: draftCopied ? '#ffffff' : '#8b5cf6',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {draftCopied ? '✓ Copied!' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
+            {/* Players Grid */}
+            <div style={{ marginBottom: '24px' }}>
+              <h3 style={{ color: '#8b949e', fontSize: '14px', marginBottom: '16px', textAlign: 'center' }}>
+                Players ({playerCount}/4)
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+                {[0, 1, 2, 3].map(index => {
+                  const player = lobbyDraft?.players?.[index];
+                  const isMe = player?.odUserId === (user.odUserId || user.username);
+                  const isPlayerHost = player?.odUserId === lobbyDraft?.hostId;
+
+                  return (
+                    <div
+                      key={index}
+                      style={{
+                        background: '#161b22',
+                        border: player
+                          ? isMe ? '2px solid #00d9ff' : '2px solid #10b981'
+                          : '2px dashed #21262d',
+                        borderRadius: '12px',
+                        padding: '16px 8px',
+                        textAlign: 'center'
+                      }}
+                    >
+                      {player ? (
+                        <>
+                          <div style={{ fontSize: '24px', marginBottom: '8px' }}>
+                            {player.isCPU ? '🤖' : '👤'}
+                          </div>
+                          <div style={{
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            color: isMe ? '#00d9ff' : '#ffffff',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {isMe ? 'YOU' : player.displayName}
+                          </div>
+                          {isPlayerHost && (
+                            <div style={{ fontSize: '10px', color: '#f59e0b', marginTop: '4px' }}>
+                              Host
+                            </div>
+                          )}
+                          <div style={{ color: '#10b981', marginTop: '8px' }}>✓</div>
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: '24px', marginBottom: '8px', opacity: 0.3 }}>👤</div>
+                          <div style={{ fontSize: '12px', color: '#6e7681' }}>Waiting...</div>
+                          <div style={{ color: '#6e7681', marginTop: '8px' }}>○</div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {isHost ? (
+                <button
+                  onClick={handleStartDraft}
+                  disabled={!canStart}
+                  style={{
+                    width: '100%',
+                    padding: '18px',
+                    background: canStart
+                      ? 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)'
+                      : '#21262d',
+                    color: canStart ? '#ffffff' : '#6e7681',
+                    fontWeight: 'bold',
+                    fontSize: '16px',
+                    border: 'none',
+                    borderRadius: '12px',
+                    cursor: canStart ? 'pointer' : 'not-allowed'
+                  }}
+                >
+                  {canStart ? 'START DRAFT' : `Waiting for ${4 - playerCount} more player${4 - playerCount !== 1 ? 's' : ''}...`}
+                </button>
+              ) : (
+                <div style={{
+                  padding: '18px',
+                  background: '#161b22',
+                  border: '1px solid #21262d',
+                  borderRadius: '12px',
+                  textAlign: 'center',
+                  color: '#8b949e'
+                }}>
+                  Waiting for host to start the draft...
+                </div>
+              )}
+
+              <button
+                onClick={handleLeaveLobby}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: 'transparent',
+                  border: '1px solid #21262d',
+                  borderRadius: '12px',
+                  color: '#8b949e',
+                  cursor: 'pointer',
+                  fontSize: '14px'
+                }}
+              >
+                {isHost ? 'Cancel Draft' : '← Leave Lobby'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // DRAFT ROOM SCREEN - Phase 3
+  if (screen === 'draftRoom') {
+    const roomDraft = draftState || currentDraft;
+    const currentUserId = user.odUserId || user.username;
+    const isMyTurn = roomDraft?.currentPlayerId === currentUserId;
+    const myPlayer = roomDraft?.players?.find(p => p.odUserId === currentUserId);
+    const currentRound = Math.floor((roomDraft?.currentPickIndex || 0) / 4) + 1;
+
+    const handlePick = async (asset) => {
+      if (!isMyTurn) return;
+      try {
+        const draftService = await import('./services/draftService');
+        await draftService.makePick(roomDraft.id, currentUserId, {
+          ...asset,
+          category: selectedDraftCategory
+        });
+      } catch (error) {
+        console.error('Pick failed:', error);
+        alert(error.message || 'Failed to make pick');
+      }
+    };
+
+    const handleAutopick = async () => {
+      try {
+        const draftService = await import('./services/draftService');
+        await draftService.handleAutopick(roomDraft.id, currentUserId);
+      } catch (error) {
+        console.error('Autopick failed:', error);
+      }
+    };
+
+    const getTimerColor = () => {
+      if (draftTimeRemaining > 60) return '#10b981';
+      if (draftTimeRemaining > 30) return '#f59e0b';
+      return '#ef4444';
+    };
+
+    const formatTime = (seconds) => {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    const availableAssets = roomDraft?.availableAssets?.[selectedDraftCategory] || [];
+    const canPickFromCategory = (cat) => (myPlayer?.categories?.[cat] || 0) < 3;
+
+    // Handle autopick when timer hits 0
+    if (draftTimeRemaining === 0 && isMyTurn) {
+      handleAutopick();
+    }
+
+    return (
+      <div style={containerStyle}>
+        <div style={{ minHeight: '100vh', background: '#0d1117', display: 'flex', flexDirection: 'column' }}>
+          {/* Header */}
+          <div style={{
+            background: '#161b22',
+            borderBottom: '2px solid #21262d',
+            padding: '12px 16px',
+            position: 'sticky',
+            top: 0,
+            zIndex: 100
+          }}>
+            <div style={{
+              maxWidth: '900px',
+              margin: '0 auto',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ color: '#8b949e', fontSize: '14px' }}>
+                Round {currentRound}/9
+              </div>
+              <div style={{
+                fontSize: '24px',
+                fontWeight: 'bold',
+                color: getTimerColor(),
+                fontFamily: "'SF Mono', monospace"
+              }}>
+                {formatTime(draftTimeRemaining)}
+              </div>
+              <div style={{ color: '#8b949e', fontSize: '14px' }}>
+                {roomDraft?.code}
+              </div>
+            </div>
+
+            {/* Turn Indicator */}
+            <div style={{
+              textAlign: 'center',
+              marginTop: '8px',
+              padding: '8px',
+              background: isMyTurn ? 'rgba(0, 217, 255, 0.2)' : 'transparent',
+              borderRadius: '8px'
+            }}>
+              <span style={{
+                color: isMyTurn ? '#00d9ff' : '#8b949e',
+                fontWeight: isMyTurn ? 'bold' : 'normal',
+                fontSize: '14px'
+              }}>
+                {isMyTurn
+                  ? 'YOUR TURN - Pick an asset!'
+                  : `Waiting for ${roomDraft?.players?.find(p => p.odUserId === roomDraft?.currentPlayerId)?.displayName || 'opponent'}...`
+                }
+              </span>
+            </div>
+          </div>
+
+          {/* Players Board */}
+          <div style={{
+            background: '#161b22',
+            padding: '12px 16px',
+            borderBottom: '1px solid #21262d'
+          }}>
+            <div style={{
+              maxWidth: '900px',
+              margin: '0 auto',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: '8px'
+            }}>
+              {roomDraft?.players?.map((player) => {
+                const isCurrentPicker = player.odUserId === roomDraft.currentPlayerId;
+                const isMe = player.odUserId === currentUserId;
+
+                return (
+                  <div
+                    key={player.odUserId}
+                    style={{
+                      background: isCurrentPicker ? 'rgba(0, 217, 255, 0.1)' : '#0d1117',
+                      border: isCurrentPicker ? '2px solid #00d9ff' : '1px solid #21262d',
+                      borderRadius: '8px',
+                      padding: '10px',
+                      textAlign: 'center'
+                    }}
+                  >
+                    <div style={{
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: isMe ? '#00d9ff' : '#ffffff',
+                      marginBottom: '6px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {isMe ? 'YOU' : player.displayName}
+                      {player.isCPU && ' 🤖'}
+                      {isCurrentPicker && ' ★'}
+                    </div>
+
+                    {/* Category Progress */}
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '4px', fontSize: '10px' }}>
+                      <span style={{ color: '#10b981' }}>S:{player.categories?.steady || 0}</span>
+                      <span style={{ color: '#f59e0b' }}>R:{player.categories?.risky || 0}</span>
+                      <span style={{ color: '#3b82f6' }}>D:{player.categories?.defensive || 0}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Category Tabs */}
+          <div style={{
+            background: '#0d1117',
+            padding: '12px 16px',
+            borderBottom: '1px solid #21262d'
+          }}>
+            <div style={{
+              maxWidth: '900px',
+              margin: '0 auto',
+              display: 'flex',
+              gap: '8px'
+            }}>
+              {['steady', 'risky', 'defensive'].map(cat => {
+                const catColors = {
+                  steady: '#10b981',
+                  risky: '#f59e0b',
+                  defensive: '#3b82f6'
+                };
+                const count = roomDraft?.availableAssets?.[cat]?.length || 0;
+                const userCount = myPlayer?.categories?.[cat] || 0;
+                const isFull = userCount >= 3;
+
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => !isFull && setSelectedDraftCategory(cat)}
+                    disabled={isFull}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '10px',
+                      border: selectedDraftCategory === cat ? `2px solid ${catColors[cat]}` : '2px solid #21262d',
+                      background: selectedDraftCategory === cat ? `${catColors[cat]}20` : 'transparent',
+                      color: isFull ? '#6e7681' : selectedDraftCategory === cat ? catColors[cat] : '#8b949e',
+                      fontWeight: '600',
+                      fontSize: '13px',
+                      cursor: isFull ? 'not-allowed' : 'pointer',
+                      opacity: isFull ? 0.5 : 1,
+                      textTransform: 'capitalize'
+                    }}
+                  >
+                    {cat} ({count})
+                    {isFull && ' ✓'}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Asset Grid */}
+          <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
+            <div style={{
+              maxWidth: '900px',
+              margin: '0 auto',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+              gap: '12px'
+            }}>
+              {availableAssets.map(asset => (
+                <button
+                  key={asset.symbol}
+                  onClick={() => handlePick(asset)}
+                  disabled={!isMyTurn || !canPickFromCategory(selectedDraftCategory)}
+                  style={{
+                    background: '#161b22',
+                    border: '1px solid #21262d',
+                    borderRadius: '12px',
+                    padding: '16px 12px',
+                    textAlign: 'center',
+                    cursor: isMyTurn && canPickFromCategory(selectedDraftCategory) ? 'pointer' : 'not-allowed',
+                    opacity: isMyTurn && canPickFromCategory(selectedDraftCategory) ? 1 : 0.5,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{
+                    fontSize: '16px',
+                    fontWeight: 'bold',
+                    color: '#ffffff',
+                    marginBottom: '4px'
+                  }}>
+                    {asset.symbol}
+                  </div>
+                  <div style={{
+                    fontSize: '11px',
+                    color: '#8b949e',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {asset.name}
+                  </div>
+                  {isMyTurn && canPickFromCategory(selectedDraftCategory) && (
+                    <div style={{
+                      marginTop: '8px',
+                      padding: '6px 12px',
+                      background: '#00d9ff',
+                      color: '#000000',
+                      fontWeight: 'bold',
+                      fontSize: '11px',
+                      borderRadius: '6px'
+                    }}>
+                      PICK
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* My Portfolio Summary - Fixed Bottom */}
+          <div style={{
+            background: '#161b22',
+            borderTop: '2px solid #21262d',
+            padding: '12px 16px',
+            position: 'sticky',
+            bottom: 0
+          }}>
+            <div style={{
+              maxWidth: '900px',
+              margin: '0 auto'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '8px'
+              }}>
+                <span style={{ color: '#ffffff', fontWeight: '600' }}>
+                  Your Portfolio ({myPlayer?.picks?.length || 0}/9)
+                </span>
+                <span style={{ color: '#8b949e', fontSize: '13px' }}>
+                  Need: {3 - (myPlayer?.categories?.steady || 0)}S, {3 - (myPlayer?.categories?.risky || 0)}R, {3 - (myPlayer?.categories?.defensive || 0)}D
+                </span>
+              </div>
+              <div style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '6px'
+              }}>
+                {myPlayer?.picks?.map((symbol, idx) => (
+                  <span
+                    key={idx}
+                    style={{
+                      padding: '4px 10px',
+                      background: '#0d1117',
+                      border: '1px solid #21262d',
+                      borderRadius: '6px',
+                      color: '#ffffff',
+                      fontSize: '12px',
+                      fontWeight: '500'
+                    }}
+                  >
+                    {symbol}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // DRAFT RESULTS SCREEN - Phase 3
+  if (screen === 'draftResults') {
+    const draftData = currentDraft;
+    const currentUserId = user.odUserId || user.username;
+    const myPlayer = draftData?.players?.find(p => p.odUserId === currentUserId);
+
+    const handleCreateBattle = async () => {
+      alert('Draft complete! Battle creation coming soon.');
+      setScreen('dashboard');
+    };
+
+    return (
+      <div style={containerStyle}>
+        <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+          {/* Header */}
+          <div style={{
+            background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+            padding: '24px 16px',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: '12px' }}>🎉</div>
+            <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#ffffff', marginBottom: '8px' }}>
+              Draft Complete!
+            </h1>
+            <p style={{ color: 'rgba(255,255,255,0.8)' }}>
+              All players have made their picks
+            </p>
+          </div>
+
+          <div style={{ maxWidth: '600px', margin: '0 auto', padding: '24px 16px' }}>
+            {/* Your Portfolio */}
+            <div style={{
+              background: '#161b22',
+              border: '2px solid #00d9ff',
+              borderRadius: '16px',
+              padding: '20px',
+              marginBottom: '24px'
+            }}>
+              <h2 style={{ color: '#00d9ff', fontSize: '18px', fontWeight: 'bold', marginBottom: '16px' }}>
+                Your Portfolio
+              </h2>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {myPlayer?.picks?.map((symbol, i) => (
+                  <span key={i} style={{
+                    padding: '8px 14px',
+                    background: '#0d1117',
+                    border: '1px solid #21262d',
+                    borderRadius: '8px',
+                    color: '#ffffff',
+                    fontSize: '14px',
+                    fontWeight: '600'
+                  }}>
+                    {symbol}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* All Players Summary */}
+            <div style={{
+              background: '#161b22',
+              border: '1px solid #21262d',
+              borderRadius: '16px',
+              padding: '20px',
+              marginBottom: '24px'
+            }}>
+              <h2 style={{ color: '#ffffff', fontSize: '18px', fontWeight: 'bold', marginBottom: '16px' }}>
+                All Portfolios
+              </h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {draftData?.players?.map((player) => {
+                  const isMe = player.odUserId === currentUserId;
+                  return (
+                    <div
+                      key={player.odUserId}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '12px',
+                        background: isMe ? 'rgba(0, 217, 255, 0.1)' : '#0d1117',
+                        borderRadius: '8px',
+                        border: isMe ? '1px solid #00d9ff' : '1px solid #21262d'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '20px' }}>{player.isCPU ? '🤖' : '👤'}</span>
+                        <span style={{ color: isMe ? '#00d9ff' : '#ffffff', fontWeight: '600' }}>
+                          {isMe ? 'You' : player.displayName}
+                        </span>
+                      </div>
+                      <div style={{ color: '#8b949e', fontSize: '13px' }}>
+                        {player.picks?.length || 0} picks
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {!draftData?.isTraining && (
+                <button
+                  onClick={handleCreateBattle}
+                  style={{
+                    width: '100%',
+                    padding: '18px',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: '#ffffff',
+                    fontWeight: 'bold',
+                    fontSize: '16px',
+                    border: 'none',
+                    borderRadius: '12px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  START BATTLE
+                </button>
+              )}
+
+              <button
+                onClick={() => setScreen('dashboard')}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: 'transparent',
+                  border: '1px solid #21262d',
+                  borderRadius: '12px',
+                  color: '#8b949e',
+                  cursor: 'pointer'
+                }}
+              >
+                ← Back to Dashboard
+              </button>
+            </div>
           </div>
         </div>
       </div>
