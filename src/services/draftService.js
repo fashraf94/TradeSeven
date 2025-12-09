@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getAssetPool, generateSnakeOrder, generateDraftCode, shuffleArray } from './draftAssets';
+import { initializeFreeAgents, calculateBattleEndTime } from './freeAgencyService';
 
 // ============================================
 // DRAFT CREATION
@@ -341,19 +342,47 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
     nextDeadline = Timestamp.fromDate(new Date(Date.now() + 2 * 60 * 1000));
   }
 
-  await updateDoc(doc(db, 'drafts', draftId), {
+  // Build update object
+  const updateData = {
     players: updatedPlayers,
     picks: arrayUnion(pick),
     availableAssets: updatedAvailable,
     currentPickIndex: nextPickIndex,
     currentPlayerId: nextPlayerId,
     pickDeadline: nextDeadline,
-    currentRound: Math.floor(nextPickIndex / 4) + 1,
-    ...(isComplete && {
-      status: 'completed',
-      completedAt: serverTimestamp()
-    })
-  });
+    currentRound: Math.floor(nextPickIndex / 4) + 1
+  };
+
+  // If draft is complete, initialize battle
+  if (isComplete) {
+    const now = new Date().toISOString();
+
+    // Initialize free agents (undrafted assets)
+    const freeAgents = initializeFreeAgents({
+      ...draft,
+      players: updatedPlayers
+    });
+
+    // Calculate battle end time
+    const battleEndTime = calculateBattleEndTime(draft.type, now);
+
+    // Store original picks for each player (before any swaps)
+    const playersWithOriginalPicks = updatedPlayers.map(player => ({
+      ...player,
+      originalPicks: [...player.picks]
+    }));
+
+    updateData.players = playersWithOriginalPicks;
+    updateData.status = 'battle';
+    updateData.completedAt = serverTimestamp();
+    updateData.battleStartTime = now;
+    updateData.battleEndTime = battleEndTime;
+    updateData.freeAgents = freeAgents;
+    updateData.swapHistory = [];
+    updateData.dailySwaps = {};
+  }
+
+  await updateDoc(doc(db, 'drafts', draftId), updateData);
 
   return { pick, isComplete };
 }
@@ -473,14 +502,14 @@ export async function archiveDraft(draftId) {
 }
 
 /**
- * Get user's draft history
+ * Get user's draft history (includes completed and battle status)
  */
 export async function getUserDraftHistory(userId, limitCount = 20) {
   try {
     const draftsRef = collection(db, 'drafts');
     const q = query(
       draftsRef,
-      where('status', '==', 'completed')
+      where('status', 'in', ['completed', 'battle'])
     );
 
     const snapshot = await getDocs(q);
