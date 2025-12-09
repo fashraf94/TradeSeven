@@ -296,7 +296,7 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
     throw new Error(`Already have 3 ${asset.category} picks`);
   }
 
-  // Create pick record
+  // Create pick record - use ISO string for timestamp since this goes into arrayUnion
   const pick = {
     pickNumber: draft.currentPickIndex + 1,
     round: Math.floor(draft.currentPickIndex / 4) + 1,
@@ -307,7 +307,7 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
       name: asset.name,
       category: asset.category
     },
-    timestamp: serverTimestamp(),
+    timestamp: new Date().toISOString(),
     isAutopick
   };
 
