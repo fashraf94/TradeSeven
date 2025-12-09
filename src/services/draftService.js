@@ -20,6 +20,28 @@ import { getAssetPool, generateSnakeOrder, generateDraftCode, shuffleArray } fro
 import { initializeFreeAgents, calculateBattleEndTime } from './freeAgencyService';
 
 // ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+// Remove undefined values from an object (Firebase doesn't allow undefined)
+const removeUndefined = (obj) => {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(item => removeUndefined(item));
+  }
+  if (typeof obj === 'object' && !(obj instanceof Date) && !(obj instanceof Timestamp)) {
+    const cleaned = {};
+    Object.keys(obj).forEach(key => {
+      if (obj[key] !== undefined) {
+        cleaned[key] = removeUndefined(obj[key]);
+      }
+    });
+    return cleaned;
+  }
+  return obj;
+};
+
+// ============================================
 // DRAFT CREATION
 // ============================================
 
@@ -231,7 +253,7 @@ export async function startDraft(draftId) {
 
   const pickDeadline = Timestamp.fromDate(new Date(Date.now() + 2 * 60 * 1000));
 
-  await updateDoc(doc(db, 'drafts', draftId), {
+  await updateDoc(doc(db, 'drafts', draftId), removeUndefined({
     status: 'active',
     players: shuffledPlayers,
     currentRound: 1,
@@ -239,7 +261,7 @@ export async function startDraft(draftId) {
     currentPlayerId: firstPlayerId,
     pickDeadline,
     startedAt: serverTimestamp()
-  });
+  }));
 }
 
 /**
@@ -382,7 +404,7 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
     updateData.dailySwaps = {};
   }
 
-  await updateDoc(doc(db, 'drafts', draftId), updateData);
+  await updateDoc(doc(db, 'drafts', draftId), removeUndefined(updateData));
 
   return { pick, isComplete };
 }
@@ -490,10 +512,10 @@ export function subscribeToDraft(draftId, callback) {
 export async function archiveDraft(draftId) {
   try {
     const draftRef = doc(db, 'drafts', draftId);
-    await updateDoc(draftRef, {
+    await updateDoc(draftRef, removeUndefined({
       archived: true,
       archivedAt: serverTimestamp()
-    });
+    }));
     return { success: true };
   } catch (error) {
     console.error('Error archiving draft:', error);
@@ -580,10 +602,10 @@ export async function handlePlayerDisconnect(draftId, playerId) {
         : p
     );
 
-    await updateDoc(draftRef, {
+    await updateDoc(draftRef, removeUndefined({
       players: updatedPlayers,
       updatedAt: serverTimestamp()
-    });
+    }));
 
     return { success: true };
   } catch (error) {
@@ -610,11 +632,11 @@ export async function checkDraftHealth(draftId) {
 
     // If more than half of humans disconnected, cancel draft
     if (disconnectedCount > humanCount / 2) {
-      await updateDoc(draftRef, {
+      await updateDoc(draftRef, removeUndefined({
         status: 'cancelled',
         cancelReason: 'Too many players disconnected',
         cancelledAt: serverTimestamp()
-      });
+      }));
       return { healthy: false, cancelled: true };
     }
 
@@ -646,9 +668,9 @@ export async function updatePlayerPresence(draftId, playerId) {
         : p
     );
 
-    await updateDoc(draftRef, {
+    await updateDoc(draftRef, removeUndefined({
       players: updatedPlayers
-    });
+    }));
   } catch (error) {
     console.error('Error updating presence:', error);
   }
@@ -677,9 +699,9 @@ export async function checkAbsentPlayers(draftId) {
       return { ...p, isAbsent };
     });
 
-    await updateDoc(draftRef, {
+    await updateDoc(draftRef, removeUndefined({
       players: updatedPlayers
-    });
+    }));
 
     return updatedPlayers;
   } catch (error) {

@@ -1166,6 +1166,8 @@ export default function PortfolioDuel() {
   const [isRosterExpanded, setIsRosterExpanded] = useState(false);
   const [rosterTouchStart, setRosterTouchStart] = useState(null);
   const [rosterTouchEnd, setRosterTouchEnd] = useState(null);
+  const [lastDraftPick, setLastDraftPick] = useState(null);
+  const [previousPickCount, setPreviousPickCount] = useState(0);
 
   // Toggle asset expansion
   const toggleAssetExpansion = (symbol) => {
@@ -1478,13 +1480,38 @@ export default function PortfolioDuel() {
     if (screen !== 'draftLobby' && screen !== 'draftRoom') return;
 
     let unsubscribe = null;
+    let prevPickCount = 0;
 
     const loadDraftService = async () => {
       try {
         const draftService = await import('./services/draftService');
         unsubscribe = draftService.subscribeToDraft(currentDraft.id, (draft) => {
           if (draft) {
+            // Calculate total picks made
+            const totalPicks = draft.players?.reduce((sum, p) => sum + (p.picks?.length || 0), 0) || 0;
+
+            // If a new pick was made, find out what it was
+            if (totalPicks > prevPickCount && prevPickCount > 0) {
+              // Find the most recent pick from the picks array
+              const allPicks = draft.picks || [];
+              if (allPicks.length > 0) {
+                const lastPick = allPicks[allPicks.length - 1];
+                const pickerPlayer = draft.players?.find(p => p.odUserId === lastPick.playerId);
+
+                if (pickerPlayer && lastPick.asset) {
+                  setLastDraftPick({
+                    playerName: pickerPlayer.displayName,
+                    symbol: lastPick.asset.symbol,
+                    category: lastPick.asset.category,
+                    isCPU: pickerPlayer.isCPU
+                  });
+                }
+              }
+            }
+
+            prevPickCount = totalPicks;
             setDraftState(draft);
+
             // Auto-navigate based on status changes
             if (draft.status === 'active' && screen === 'draftLobby') {
               setCurrentDraft(draft);
@@ -1508,6 +1535,7 @@ export default function PortfolioDuel() {
 
     return () => {
       if (unsubscribe) unsubscribe();
+      setLastDraftPick(null); // Clear last pick when leaving
     };
   }, [currentDraft?.id, screen]);
 
@@ -7210,40 +7238,99 @@ export default function PortfolioDuel() {
               alignItems: 'center',
               justifyContent: 'space-between'
             }}>
+              {/* EXIT BUTTON - Left side */}
+              <button
+                onClick={() => {
+                  if (window.confirm('Leave draft? Your turns will be auto-picked while you\'re away. You can rejoin anytime.')) {
+                    setScreen('dashboard');
+                  }
+                }}
+                style={{
+                  color: '#8b949e',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  padding: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                ← Exit
+              </button>
+
+              {/* Round info - Center */}
               <div style={{ color: '#8b949e', fontSize: '14px' }}>
                 Round {currentRound}/9
               </div>
+
+              {/* Timer - Right */}
               <div style={{
-                fontSize: '24px',
+                fontSize: '20px',
                 fontWeight: 'bold',
                 color: getTimerColor(),
                 fontFamily: "'SF Mono', monospace"
               }}>
-                {formatTime(draftTimeRemaining)}
-              </div>
-              <div style={{ color: '#8b949e', fontSize: '14px' }}>
-                {roomDraft?.code}
+                ⏱️ {formatTime(draftTimeRemaining)}
               </div>
             </div>
 
-            {/* Turn Indicator */}
+            {/* Draft Code */}
+            <div style={{
+              textAlign: 'center',
+              marginTop: '4px',
+              color: '#6e7681',
+              fontSize: '12px'
+            }}>
+              Code: {roomDraft?.code}
+            </div>
+
+            {/* Turn Indicator - Shows last pick OR your turn */}
             <div style={{
               textAlign: 'center',
               marginTop: '8px',
               padding: '8px',
-              background: isMyTurn ? 'rgba(0, 217, 255, 0.2)' : 'transparent',
+              background: isMyTurn ? 'rgba(0, 217, 255, 0.2)' : 'rgba(139, 92, 246, 0.1)',
               borderRadius: '8px'
             }}>
-              <span style={{
-                color: isMyTurn ? '#00d9ff' : '#8b949e',
-                fontWeight: isMyTurn ? 'bold' : 'normal',
-                fontSize: '14px'
-              }}>
-                {isMyTurn
-                  ? 'YOUR TURN - Pick an asset!'
-                  : `Waiting for ${roomDraft?.players?.find(p => p.odUserId === roomDraft?.currentPlayerId)?.displayName || 'opponent'}...`
-                }
-              </span>
+              {isMyTurn ? (
+                <span style={{
+                  color: '#00d9ff',
+                  fontWeight: 'bold',
+                  fontSize: '14px'
+                }}>
+                  🎯 YOUR TURN - Pick an asset!
+                </span>
+              ) : lastDraftPick ? (
+                <div>
+                  <span style={{ color: '#8b949e', fontSize: '13px' }}>
+                    {lastDraftPick.isCPU ? '🤖' : '👤'} {lastDraftPick.playerName} picked
+                  </span>
+                  <span style={{
+                    color: lastDraftPick.category === 'steady' ? '#10b981'
+                         : lastDraftPick.category === 'risky' ? '#f59e0b'
+                         : '#3b82f6',
+                    fontWeight: 'bold',
+                    fontSize: '16px',
+                    marginLeft: '8px'
+                  }}>
+                    {lastDraftPick.symbol}
+                  </span>
+                  <span style={{
+                    color: '#6e7681',
+                    fontSize: '12px',
+                    marginLeft: '8px',
+                    textTransform: 'capitalize'
+                  }}>
+                    ({lastDraftPick.category})
+                  </span>
+                </div>
+              ) : (
+                <span style={{ color: '#8b949e', fontSize: '14px' }}>
+                  Waiting for {roomDraft?.players?.find(p => p.odUserId === roomDraft?.currentPlayerId)?.displayName || 'opponent'}...
+                </span>
+              )}
             </div>
 
             {/* Autopick Countdown - Draft Fixes */}
