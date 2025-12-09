@@ -36,14 +36,18 @@ export async function createMultiplayerDraft(userId, username, type) {
     code,
     isTraining: false,
     players: [{
-      odUserId: odUserId,
-      odUsername: odUsername,
+      odUserId: userId,
+      odUsername: username,
       displayName: username,
       isHost: true,
       isCPU: false,
       picks: [],
-      categories: { steady: 0, risky: 0, defensive: 0 }
+      pickCategories: [],
+      categories: { steady: 0, risky: 0, defensive: 0 },
+      lastSeen: new Date().toISOString(),
+      isAbsent: false
     }],
+    playerIds: [userId], // For querying active drafts
     hostId: userId,
     currentRound: 0,
     currentPickIndex: -1,
@@ -81,6 +85,7 @@ export async function createTrainingDraft(userId, username, type) {
     isHost: false,
     isCPU: true,
     picks: [],
+    pickCategories: [],
     categories: { steady: 0, risky: 0, defensive: 0 }
   }));
 
@@ -93,7 +98,10 @@ export async function createTrainingDraft(userId, username, type) {
       isHost: true,
       isCPU: false,
       picks: [],
-      categories: { steady: 0, risky: 0, defensive: 0 }
+      pickCategories: [],
+      categories: { steady: 0, risky: 0, defensive: 0 },
+      lastSeen: new Date().toISOString(),
+      isAbsent: false
     },
     ...cpuPlayers
   ];
@@ -115,6 +123,7 @@ export async function createTrainingDraft(userId, username, type) {
     code,
     isTraining: true,
     players: shuffledPlayers,
+    playerIds: [userId], // For querying active drafts
     hostId: userId,
     currentRound: 1,
     currentPickIndex: 0,
@@ -131,9 +140,9 @@ export async function createTrainingDraft(userId, username, type) {
 
   await setDoc(doc(db, 'drafts', draftId), draft);
 
-  // If first picker is CPU, trigger their pick
+  // If first picker is CPU, trigger their pick after 3 seconds
   if (shuffledPlayers[firstPlayerIndex].isCPU) {
-    setTimeout(() => processCPUTurn(draftId), 2000);
+    setTimeout(() => processCPUTurn(draftId), 3000);
   }
 
   return draft;
@@ -175,11 +184,15 @@ export async function joinDraftByCode(code, userId, username) {
     isHost: false,
     isCPU: false,
     picks: [],
-    categories: { steady: 0, risky: 0, defensive: 0 }
+    pickCategories: [],
+    categories: { steady: 0, risky: 0, defensive: 0 },
+    lastSeen: new Date().toISOString(),
+    isAbsent: false
   };
 
   await updateDoc(doc(db, 'drafts', draft.id), {
-    players: arrayUnion(newPlayer)
+    players: arrayUnion(newPlayer),
+    playerIds: arrayUnion(userId)
   });
 
   return { ...draft, players: [...draft.players, newPlayer] };
@@ -298,14 +311,15 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
     isAutopick
   };
 
-  // Update player
+  // Update player with pickCategories for roster display
   const updatedPlayers = [...draft.players];
   updatedPlayers[playerIndex] = {
     ...player,
-    picks: [...player.picks, asset.symbol],
+    picks: [...(player.picks || []), asset.symbol],
+    pickCategories: [...(player.pickCategories || []), asset.category],
     categories: {
       ...player.categories,
-      [asset.category]: player.categories[asset.category] + 1
+      [asset.category]: (player.categories?.[asset.category] || 0) + 1
     }
   };
 
@@ -380,11 +394,11 @@ export async function handleAutopick(draftId, userId) {
 // ============================================
 
 /**
- * Process CPU turn with realistic delay
+ * Process CPU turn with 3-second delay
  */
 export async function processCPUTurn(draftId) {
-  // Thinking delay
-  await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 3000));
+  // 3-second delay for CPU/absent players
+  await new Promise(resolve => setTimeout(resolve, 3000));
 
   const draft = await getDraft(draftId);
   if (!draft || draft.status !== 'active') return;
@@ -582,6 +596,121 @@ export async function checkDraftHealth(draftId) {
   }
 }
 
+// ============================================
+// PRESENCE & REJOIN (Draft Fixes)
+// ============================================
+
+/**
+ * Update player presence (call periodically from client)
+ */
+export async function updatePlayerPresence(draftId, playerId) {
+  try {
+    const draftRef = doc(db, 'drafts', draftId);
+    const draftSnap = await getDoc(draftRef);
+
+    if (!draftSnap.exists()) return;
+
+    const draft = draftSnap.data();
+    const updatedPlayers = draft.players.map(p =>
+      p.odUserId === playerId
+        ? { ...p, lastSeen: new Date().toISOString(), isAbsent: false, disconnected: false }
+        : p
+    );
+
+    await updateDoc(draftRef, {
+      players: updatedPlayers
+    });
+  } catch (error) {
+    console.error('Error updating presence:', error);
+  }
+}
+
+/**
+ * Check and mark absent players (no activity for 30+ seconds)
+ */
+export async function checkAbsentPlayers(draftId) {
+  try {
+    const draftRef = doc(db, 'drafts', draftId);
+    const draftSnap = await getDoc(draftRef);
+
+    if (!draftSnap.exists()) return null;
+
+    const draft = draftSnap.data();
+    const now = Date.now();
+    const ABSENT_THRESHOLD = 30 * 1000; // 30 seconds
+
+    const updatedPlayers = draft.players.map(p => {
+      if (p.isCPU) return p; // CPUs are always "present"
+
+      const lastSeen = p.lastSeen ? new Date(p.lastSeen).getTime() : 0;
+      const isAbsent = (now - lastSeen) > ABSENT_THRESHOLD;
+
+      return { ...p, isAbsent };
+    });
+
+    await updateDoc(draftRef, {
+      players: updatedPlayers
+    });
+
+    return updatedPlayers;
+  } catch (error) {
+    console.error('Error checking absent players:', error);
+    return null;
+  }
+}
+
+/**
+ * Get user's active draft (if any) for rejoin functionality
+ */
+export async function getUserActiveDraft(userId) {
+  try {
+    const draftsRef = collection(db, 'drafts');
+
+    // Query for drafts where user is a player and status is waiting or active
+    const q = query(
+      draftsRef,
+      where('status', 'in', ['waiting', 'active'])
+    );
+
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) return null;
+
+    // Filter locally to find drafts where user is a player
+    const drafts = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(draft =>
+        draft.playerIds?.includes(userId) ||
+        draft.players?.some(p => p.odUserId === userId)
+      );
+
+    if (drafts.length === 0) return null;
+
+    // Prefer 'active' over 'waiting'
+    const activeDraft = drafts.find(d => d.status === 'active');
+    if (activeDraft) return activeDraft;
+
+    return drafts[0]; // Return waiting draft if no active
+  } catch (error) {
+    console.error('Error fetching active draft:', error);
+    return null;
+  }
+}
+
+/**
+ * Check if current player needs autopick (CPU or absent)
+ */
+export function shouldAutoPickForPlayer(draft, playerId) {
+  if (!draft || draft.status !== 'active') return false;
+  if (draft.currentPlayerId !== playerId) return false;
+
+  const player = draft.players?.find(p => p.odUserId === playerId);
+  if (!player) return false;
+
+  // Autopick if CPU or disconnected/absent
+  return player.isCPU || player.disconnected || player.isAbsent;
+}
+
 export default {
   createMultiplayerDraft,
   createTrainingDraft,
@@ -598,5 +727,9 @@ export default {
   getUserDraftHistory,
   getUserDraftStats,
   handlePlayerDisconnect,
-  checkDraftHealth
+  checkDraftHealth,
+  updatePlayerPresence,
+  checkAbsentPlayers,
+  getUserActiveDraft,
+  shouldAutoPickForPlayer
 };

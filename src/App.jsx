@@ -1160,6 +1160,13 @@ export default function PortfolioDuel() {
   // Draft Battle state - Phase 4
   const [draftBattleOpponent, setDraftBattleOpponent] = useState(null);
 
+  // Draft Fixes state
+  const [activeDraftBanner, setActiveDraftBanner] = useState(null);
+  const [autopickCountdown, setAutopickCountdown] = useState(null);
+  const [isRosterExpanded, setIsRosterExpanded] = useState(false);
+  const [rosterTouchStart, setRosterTouchStart] = useState(null);
+  const [rosterTouchEnd, setRosterTouchEnd] = useState(null);
+
   // Toggle asset expansion
   const toggleAssetExpansion = (symbol) => {
     setExpandedAssets(prev => {
@@ -1521,24 +1528,121 @@ export default function PortfolioDuel() {
     return () => clearInterval(interval);
   }, [screen, draftState?.pickDeadline, draftState?.currentPlayerId]);
 
-  // CPU turn trigger for training drafts - Phase 3
+  // CPU/Absent player autopick with 3-second countdown - Draft Fixes
   useEffect(() => {
     if (screen !== 'draftRoom') return;
-    if (!draftState || draftState.status !== 'active' || !draftState.isTraining) return;
+    if (!draftState || draftState.status !== 'active') return;
 
     const currentPlayer = draftState.players?.find(p => p.odUserId === draftState.currentPlayerId);
-    if (currentPlayer?.isCPU) {
-      const triggerCPU = async () => {
+    const needsAutopick = currentPlayer?.isCPU || currentPlayer?.disconnected || currentPlayer?.isAbsent;
+
+    if (needsAutopick) {
+      // Show 3-second countdown
+      setAutopickCountdown(3);
+
+      const countdownInterval = setInterval(() => {
+        setAutopickCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(countdownInterval);
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      // Trigger autopick after 3 seconds
+      const autopickTimer = setTimeout(async () => {
         try {
           const draftService = await import('./services/draftService');
-          draftService.processCPUTurn(draftState.id);
+          await draftService.handleAutopick(draftState.id, draftState.currentPlayerId);
         } catch (error) {
-          console.error('CPU turn failed:', error);
+          console.error('Autopick failed:', error);
         }
+      }, 3000);
+
+      return () => {
+        clearInterval(countdownInterval);
+        clearTimeout(autopickTimer);
+        setAutopickCountdown(null);
       };
-      triggerCPU();
+    } else {
+      setAutopickCountdown(null);
     }
-  }, [screen, draftState?.currentPlayerId, draftState?.status, draftState?.isTraining]);
+  }, [screen, draftState?.currentPlayerId, draftState?.status, draftState?.players]);
+
+  // Presence heartbeat - let server know we're still here
+  useEffect(() => {
+    if (screen !== 'draftRoom' && screen !== 'draftLobby') return;
+    if (!draftState?.id || draftState.status !== 'active') return;
+
+    const currentUserId = user?.odUserId || user?.username;
+    if (!currentUserId) return;
+
+    const sendPresence = async () => {
+      try {
+        const draftService = await import('./services/draftService');
+        await draftService.updatePlayerPresence(draftState.id, currentUserId);
+      } catch (error) {
+        console.error('Presence update failed:', error);
+      }
+    };
+
+    // Send presence immediately and every 10 seconds
+    sendPresence();
+    const presenceInterval = setInterval(sendPresence, 10000);
+
+    return () => clearInterval(presenceInterval);
+  }, [screen, draftState?.id, draftState?.status, user]);
+
+  // Check for absent players periodically (only host runs this to avoid duplicates)
+  useEffect(() => {
+    if (screen !== 'draftRoom') return;
+    if (!draftState?.id || draftState.status !== 'active') return;
+
+    const currentUserId = user?.odUserId || user?.username;
+    const isHost = draftState.hostId === currentUserId;
+    if (!isHost) return;
+
+    const checkAbsent = async () => {
+      try {
+        const draftService = await import('./services/draftService');
+        await draftService.checkAbsentPlayers(draftState.id);
+      } catch (error) {
+        console.error('Absent check failed:', error);
+      }
+    };
+
+    const absentCheckInterval = setInterval(checkAbsent, 15000);
+
+    return () => clearInterval(absentCheckInterval);
+  }, [screen, draftState?.id, draftState?.status, draftState?.hostId, user]);
+
+  // Check for active draft on dashboard (rejoin functionality)
+  useEffect(() => {
+    if (screen !== 'dashboard') return;
+
+    const checkActiveDraft = async () => {
+      try {
+        const draftService = await import('./services/draftService');
+        const userId = user?.odUserId || user?.username;
+
+        if (!userId) return;
+
+        const activeDraft = await draftService.getUserActiveDraft(userId);
+        setActiveDraftBanner(activeDraft);
+      } catch (error) {
+        console.error('Error checking active draft:', error);
+        setActiveDraftBanner(null);
+      }
+    };
+
+    checkActiveDraft();
+
+    // Also check periodically in case draft status changes
+    const checkInterval = setInterval(checkActiveDraft, 30000);
+
+    return () => clearInterval(checkInterval);
+  }, [screen, user]);
 
   // Browser close warning for active draft - Phase 4
   useEffect(() => {
@@ -2451,6 +2555,70 @@ export default function PortfolioDuel() {
               </div>
             </div>
           </div>
+
+          {/* Active Draft Banner - Show when user has an ongoing draft */}
+          {activeDraftBanner && (
+            <div
+              onClick={() => {
+                setCurrentDraft(activeDraftBanner);
+                setActiveDraftBanner(null);
+                if (activeDraftBanner.status === 'waiting') {
+                  setScreen('draftLobby');
+                } else if (activeDraftBanner.status === 'active') {
+                  setScreen('draftRoom');
+                }
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                padding: '16px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  background: 'rgba(255,255,255,0.2)',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '20px'
+                }}>
+                  ⚠️
+                </div>
+                <div>
+                  <div style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '16px' }}>
+                    Active Draft in Progress!
+                  </div>
+                  <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '13px' }}>
+                    {activeDraftBanner.code} • {activeDraftBanner.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'} •
+                    {activeDraftBanner.status === 'waiting' ? ' Waiting for players' : ' Draft in progress'}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                style={{
+                  padding: '10px 20px',
+                  background: '#ffffff',
+                  color: '#d97706',
+                  fontWeight: 'bold',
+                  fontSize: '14px',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                REJOIN →
+              </button>
+            </div>
+          )}
 
           {/* Dashboard Header with Hamburger Menu and Logo */}
           <header style={{
@@ -7038,6 +7206,22 @@ export default function PortfolioDuel() {
                 }
               </span>
             </div>
+
+            {/* Autopick Countdown - Draft Fixes */}
+            {autopickCountdown !== null && (
+              <div style={{
+                textAlign: 'center',
+                marginTop: '8px',
+                padding: '8px 16px',
+                background: 'rgba(245, 158, 11, 0.2)',
+                borderRadius: '8px',
+                color: '#f59e0b',
+                fontSize: '14px',
+                fontWeight: '600'
+              }}>
+                🤖 Auto-picking in {autopickCountdown}...
+              </div>
+            )}
           </div>
 
           {/* Players Board */}
@@ -7205,54 +7389,267 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* My Portfolio Summary - Fixed Bottom */}
-          <div style={{
-            background: '#161b22',
-            borderTop: '2px solid #21262d',
-            padding: '12px 16px',
-            position: 'sticky',
-            bottom: 0
-          }}>
+          {/* Swipeable Portfolio Drawer - Draft Fixes */}
+          <div
+            onTouchStart={(e) => {
+              setRosterTouchEnd(null);
+              setRosterTouchStart(e.targetTouches[0].clientY);
+            }}
+            onTouchMove={(e) => {
+              setRosterTouchEnd(e.targetTouches[0].clientY);
+            }}
+            onTouchEnd={() => {
+              if (!rosterTouchStart || !rosterTouchEnd) return;
+              const distance = rosterTouchStart - rosterTouchEnd;
+              const minSwipeDistance = 50;
+              if (distance > minSwipeDistance && !isRosterExpanded) {
+                setIsRosterExpanded(true);
+              } else if (distance < -minSwipeDistance && isRosterExpanded) {
+                setIsRosterExpanded(false);
+              }
+            }}
+            onClick={() => setIsRosterExpanded(!isRosterExpanded)}
+            style={{
+              background: '#161b22',
+              borderTop: '2px solid #21262d',
+              position: 'sticky',
+              bottom: 0,
+              transition: 'all 0.3s ease-out',
+              maxHeight: isRosterExpanded ? '70vh' : '80px',
+              overflow: 'hidden',
+              cursor: 'pointer'
+            }}
+          >
+            {/* Drag Handle */}
             <div style={{
-              maxWidth: '900px',
-              margin: '0 auto'
+              display: 'flex',
+              justifyContent: 'center',
+              padding: '8px 0 4px 0'
             }}>
               <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '8px'
-              }}>
+                width: '40px',
+                height: '4px',
+                background: '#6e7681',
+                borderRadius: '2px'
+              }} />
+            </div>
+
+            {/* Collapsed Header */}
+            <div style={{
+              padding: '8px 16px 12px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '18px' }}>📊</span>
                 <span style={{ color: '#ffffff', fontWeight: '600' }}>
-                  Your Portfolio ({myPlayer?.picks?.length || 0}/9)
-                </span>
-                <span style={{ color: '#8b949e', fontSize: '13px' }}>
-                  Need: {3 - (myPlayer?.categories?.steady || 0)}S, {3 - (myPlayer?.categories?.risky || 0)}R, {3 - (myPlayer?.categories?.defensive || 0)}D
+                  YOUR ROSTER ({myPlayer?.picks?.length || 0}/9)
                 </span>
               </div>
-              <div style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '6px'
-              }}>
-                {myPlayer?.picks?.map((symbol, idx) => (
-                  <span
-                    key={idx}
-                    style={{
-                      padding: '4px 10px',
-                      background: '#0d1117',
-                      border: '1px solid #21262d',
-                      borderRadius: '6px',
-                      color: '#ffffff',
-                      fontSize: '12px',
-                      fontWeight: '500'
-                    }}
-                  >
-                    {symbol}
-                  </span>
-                ))}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ color: '#8b949e', fontSize: '13px' }}>
+                  {3 - (myPlayer?.categories?.steady || 0)}S, {3 - (myPlayer?.categories?.risky || 0)}R, {3 - (myPlayer?.categories?.defensive || 0)}D needed
+                </span>
+                <span style={{
+                  color: '#8b949e',
+                  transform: isRosterExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.3s'
+                }}>
+                  ▲
+                </span>
               </div>
             </div>
+
+            {/* Expanded Roster View */}
+            {isRosterExpanded && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  padding: '0 16px 24px 16px',
+                  maxWidth: '600px',
+                  margin: '0 auto'
+                }}
+              >
+                {/* STEADY Section */}
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{
+                      width: '12px',
+                      height: '12px',
+                      borderRadius: '50%',
+                      background: '#10b981'
+                    }} />
+                    <span style={{ color: '#10b981', fontWeight: '600', fontSize: '14px' }}>
+                      STEADY ({myPlayer?.categories?.steady || 0}/3)
+                    </span>
+                    {(myPlayer?.categories?.steady || 0) >= 3 && (
+                      <span style={{ color: '#10b981' }}>✓</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {[0, 1, 2].map(slot => {
+                      const steadyPicks = myPlayer?.picks?.filter((symbol, idx) =>
+                        myPlayer?.pickCategories?.[idx] === 'steady'
+                      ) || [];
+                      const symbol = steadyPicks[slot];
+                      return (
+                        <div
+                          key={`steady-${slot}`}
+                          style={{
+                            flex: 1,
+                            padding: '12px 8px',
+                            background: symbol ? 'rgba(16, 185, 129, 0.1)' : '#0d1117',
+                            border: symbol ? '2px solid #10b981' : '2px dashed #21262d',
+                            borderRadius: '8px',
+                            textAlign: 'center',
+                            minHeight: '50px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          {symbol ? (
+                            <span style={{ color: '#ffffff', fontWeight: '600', fontSize: '14px' }}>
+                              {symbol}
+                            </span>
+                          ) : (
+                            <span style={{ color: '#6e7681', fontSize: '20px' }}>—</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* RISKY Section */}
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{
+                      width: '12px',
+                      height: '12px',
+                      borderRadius: '50%',
+                      background: '#f59e0b'
+                    }} />
+                    <span style={{ color: '#f59e0b', fontWeight: '600', fontSize: '14px' }}>
+                      RISKY ({myPlayer?.categories?.risky || 0}/3)
+                    </span>
+                    {(myPlayer?.categories?.risky || 0) >= 3 && (
+                      <span style={{ color: '#f59e0b' }}>✓</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {[0, 1, 2].map(slot => {
+                      const riskyPicks = myPlayer?.picks?.filter((symbol, idx) =>
+                        myPlayer?.pickCategories?.[idx] === 'risky'
+                      ) || [];
+                      const symbol = riskyPicks[slot];
+                      return (
+                        <div
+                          key={`risky-${slot}`}
+                          style={{
+                            flex: 1,
+                            padding: '12px 8px',
+                            background: symbol ? 'rgba(245, 158, 11, 0.1)' : '#0d1117',
+                            border: symbol ? '2px solid #f59e0b' : '2px dashed #21262d',
+                            borderRadius: '8px',
+                            textAlign: 'center',
+                            minHeight: '50px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          {symbol ? (
+                            <span style={{ color: '#ffffff', fontWeight: '600', fontSize: '14px' }}>
+                              {symbol}
+                            </span>
+                          ) : (
+                            <span style={{ color: '#6e7681', fontSize: '20px' }}>—</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* DEFENSIVE Section */}
+                <div>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{
+                      width: '12px',
+                      height: '12px',
+                      borderRadius: '50%',
+                      background: '#3b82f6'
+                    }} />
+                    <span style={{ color: '#3b82f6', fontWeight: '600', fontSize: '14px' }}>
+                      DEFENSIVE ({myPlayer?.categories?.defensive || 0}/3)
+                    </span>
+                    {(myPlayer?.categories?.defensive || 0) >= 3 && (
+                      <span style={{ color: '#3b82f6' }}>✓</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {[0, 1, 2].map(slot => {
+                      const defensivePicks = myPlayer?.picks?.filter((symbol, idx) =>
+                        myPlayer?.pickCategories?.[idx] === 'defensive'
+                      ) || [];
+                      const symbol = defensivePicks[slot];
+                      return (
+                        <div
+                          key={`defensive-${slot}`}
+                          style={{
+                            flex: 1,
+                            padding: '12px 8px',
+                            background: symbol ? 'rgba(59, 130, 246, 0.1)' : '#0d1117',
+                            border: symbol ? '2px solid #3b82f6' : '2px dashed #21262d',
+                            borderRadius: '8px',
+                            textAlign: 'center',
+                            minHeight: '50px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          {symbol ? (
+                            <span style={{ color: '#ffffff', fontWeight: '600', fontSize: '14px' }}>
+                              {symbol}
+                            </span>
+                          ) : (
+                            <span style={{ color: '#6e7681', fontSize: '20px' }}>—</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Tap to collapse hint */}
+                <div style={{
+                  textAlign: 'center',
+                  marginTop: '16px',
+                  color: '#6e7681',
+                  fontSize: '12px'
+                }}>
+                  Tap or swipe down to collapse
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
