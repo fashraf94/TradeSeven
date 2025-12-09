@@ -1157,6 +1157,9 @@ export default function PortfolioDuel() {
   const [selectedDraftCategory, setSelectedDraftCategory] = useState('steady');
   const [draftTimeRemaining, setDraftTimeRemaining] = useState(120);
 
+  // Draft Battle state - Phase 4
+  const [draftBattleOpponent, setDraftBattleOpponent] = useState(null);
+
   // Toggle asset expansion
   const toggleAssetExpansion = (symbol) => {
     setExpandedAssets(prev => {
@@ -1536,6 +1539,20 @@ export default function PortfolioDuel() {
       triggerCPU();
     }
   }, [screen, draftState?.currentPlayerId, draftState?.status, draftState?.isTraining]);
+
+  // Browser close warning for active draft - Phase 4
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if ((screen === 'draftRoom' || screen === 'draftLobby') && draftState?.status === 'active') {
+        e.preventDefault();
+        e.returnValue = 'You have an active draft in progress. Leaving may result in autopicks.';
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [screen, draftState?.status]);
 
   // ============================================
   // 3. HELPER FUNCTIONS
@@ -3133,6 +3150,36 @@ export default function PortfolioDuel() {
               </div>
               <ArrowRight style={{ height: '20px', width: '20px', color: colors.background }} />
             </motion.div>
+
+            {/* Draft History Link - Only show in Draft Mode */}
+            {gameMode === 'draft' && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.45 }}
+                onClick={() => setScreen('draftHistory')}
+                style={{
+                  background: '#161b22',
+                  border: '1px solid #8b5cf6',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '24px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '24px' }}>📜</span>
+                  <div>
+                    <div style={{ color: '#ffffff', fontWeight: '600' }}>Draft History</div>
+                    <div style={{ color: '#8b949e', fontSize: '12px' }}>View past drafts & stats</div>
+                  </div>
+                </div>
+                <span style={{ color: '#8b5cf6', fontSize: '20px' }}>→</span>
+              </motion.div>
+            )}
 
             {/* Completed Battles - Compact List */}
             {completedBattles.length > 0 && (
@@ -6853,6 +6900,41 @@ export default function PortfolioDuel() {
   // DRAFT ROOM SCREEN - Phase 3
   if (screen === 'draftRoom') {
     const roomDraft = draftState || currentDraft;
+
+    // Loading state - Phase 4
+    if (!roomDraft) {
+      return (
+        <div style={containerStyle}>
+          <div style={{
+            minHeight: '100vh',
+            background: '#0d1117',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                border: '4px solid #21262d',
+                borderTop: '4px solid #8b5cf6',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                margin: '0 auto 16px'
+              }} />
+              <div style={{ color: '#8b949e' }}>Loading draft...</div>
+            </div>
+            <style>{`
+              @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+              }
+            `}</style>
+          </div>
+        </div>
+      );
+    }
+
     const currentUserId = user.odUserId || user.username;
     const isMyTurn = roomDraft?.currentPlayerId === currentUserId;
     const myPlayer = roomDraft?.players?.find(p => p.odUserId === currentUserId);
@@ -6904,11 +6986,12 @@ export default function PortfolioDuel() {
     return (
       <div style={containerStyle}>
         <div style={{ minHeight: '100vh', background: '#0d1117', display: 'flex', flexDirection: 'column' }}>
-          {/* Header */}
+          {/* Header - Phase 4: Mobile Polish */}
           <div style={{
             background: '#161b22',
             borderBottom: '2px solid #21262d',
             padding: '12px 16px',
+            paddingTop: 'max(12px, env(safe-area-inset-top))',
             position: 'sticky',
             top: 0,
             zIndex: 100
@@ -7060,14 +7143,14 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* Asset Grid */}
+          {/* Asset Grid - Phase 4: Mobile Polish */}
           <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
             <div style={{
               maxWidth: '900px',
               margin: '0 auto',
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-              gap: '12px'
+              gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
+              gap: '8px'
             }}>
               {availableAssets.map(asset => (
                 <button
@@ -7078,11 +7161,13 @@ export default function PortfolioDuel() {
                     background: '#161b22',
                     border: '1px solid #21262d',
                     borderRadius: '12px',
-                    padding: '16px 12px',
+                    padding: '14px 10px',
+                    minHeight: '80px',
                     textAlign: 'center',
                     cursor: isMyTurn && canPickFromCategory(selectedDraftCategory) ? 'pointer' : 'not-allowed',
                     opacity: isMyTurn && canPickFromCategory(selectedDraftCategory) ? 1 : 0.5,
-                    transition: 'all 0.2s'
+                    transition: 'all 0.2s',
+                    WebkitTapHighlightColor: 'transparent'
                   }}
                 >
                   <div style={{
@@ -7174,6 +7259,291 @@ export default function PortfolioDuel() {
     );
   }
 
+  // DRAFT HISTORY SCREEN - Phase 4
+  if (screen === 'draftHistory') {
+    const [draftHistory, setDraftHistory] = useState([]);
+    const [draftStats, setDraftStats] = useState(null);
+    const [historyLoading, setHistoryLoading] = useState(true);
+    const [selectedHistoryDraft, setSelectedHistoryDraft] = useState(null);
+
+    useEffect(() => {
+      const loadHistory = async () => {
+        setHistoryLoading(true);
+        const draftService = await import('./services/draftService');
+        const userId = user.odUserId || user.username;
+
+        const [history, stats] = await Promise.all([
+          draftService.getUserDraftHistory(userId),
+          draftService.getUserDraftStats(userId)
+        ]);
+
+        setDraftHistory(history);
+        setDraftStats(stats);
+        setHistoryLoading(false);
+      };
+
+      loadHistory();
+    }, [user]);
+
+    const currentUserId = user.odUserId || user.username;
+
+    return (
+      <div style={containerStyle}>
+        <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+          {/* Header */}
+          <div style={{
+            background: '#161b22',
+            borderBottom: '2px solid #21262d',
+            padding: '16px'
+          }}>
+            <div style={{
+              maxWidth: '600px',
+              margin: '0 auto',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <button
+                onClick={() => setScreen('dashboard')}
+                style={{
+                  color: '#00d9ff',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600'
+                }}
+              >
+                Back
+              </button>
+              <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#ffffff' }}>
+                Draft History
+              </h1>
+              <div style={{ width: '60px' }}></div>
+            </div>
+          </div>
+
+          <div style={{ maxWidth: '600px', margin: '0 auto', padding: '24px 16px' }}>
+            {/* Stats Summary */}
+            {draftStats && (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '12px',
+                marginBottom: '24px'
+              }}>
+                <div style={{
+                  background: '#161b22',
+                  border: '1px solid #8b5cf6',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#8b5cf6' }}>
+                    {draftStats.totalDrafts}
+                  </div>
+                  <div style={{ color: '#8b949e', fontSize: '12px' }}>Total Drafts</div>
+                </div>
+                <div style={{
+                  background: '#161b22',
+                  border: '1px solid #10b981',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#10b981' }}>
+                    {draftStats.multiplayerDrafts}
+                  </div>
+                  <div style={{ color: '#8b949e', fontSize: '12px' }}>Multiplayer</div>
+                </div>
+                <div style={{
+                  background: '#161b22',
+                  border: '1px solid #f59e0b',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#f59e0b' }}>
+                    {draftStats.trainingDrafts}
+                  </div>
+                  <div style={{ color: '#8b949e', fontSize: '12px' }}>Training</div>
+                </div>
+              </div>
+            )}
+
+            {/* Loading State */}
+            {historyLoading && (
+              <div style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                Loading draft history...
+              </div>
+            )}
+
+            {/* Empty State */}
+            {!historyLoading && draftHistory.length === 0 && (
+              <div style={{
+                textAlign: 'center',
+                padding: '40px',
+                background: '#161b22',
+                borderRadius: '16px',
+                border: '1px solid #21262d'
+              }}>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
+                <h3 style={{ color: '#ffffff', marginBottom: '8px' }}>No Drafts Yet</h3>
+                <p style={{ color: '#8b949e', marginBottom: '20px' }}>
+                  Complete your first draft to see it here!
+                </p>
+                <button
+                  onClick={() => setScreen('dashboard')}
+                  style={{
+                    padding: '12px 24px',
+                    background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                    color: '#ffffff',
+                    fontWeight: '600',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Start a Draft
+                </button>
+              </div>
+            )}
+
+            {/* Draft List */}
+            {!historyLoading && draftHistory.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {draftHistory.map(draft => {
+                  const myPlayer = draft.players?.find(p => p.odUserId === currentUserId);
+                  const completedDate = draft.completedAt?.toDate?.()
+                    ? draft.completedAt.toDate().toLocaleDateString()
+                    : draft.completedAt
+                      ? new Date(draft.completedAt).toLocaleDateString()
+                      : 'Unknown date';
+
+                  return (
+                    <div
+                      key={draft.id}
+                      onClick={() => setSelectedHistoryDraft(selectedHistoryDraft?.id === draft.id ? null : draft)}
+                      style={{
+                        background: '#161b22',
+                        border: selectedHistoryDraft?.id === draft.id
+                          ? '2px solid #8b5cf6'
+                          : '1px solid #21262d',
+                        borderRadius: '12px',
+                        padding: '16px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: selectedHistoryDraft?.id === draft.id ? '16px' : '0'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={{ fontSize: '24px' }}>
+                            {draft.isTraining ? '🎯' : '👥'}
+                          </span>
+                          <div>
+                            <div style={{ color: '#ffffff', fontWeight: '600' }}>
+                              {draft.code}
+                            </div>
+                            <div style={{ color: '#8b949e', fontSize: '12px' }}>
+                              {draft.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'} • {completedDate}
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{
+                          padding: '4px 10px',
+                          background: draft.isTraining
+                            ? 'rgba(245, 158, 11, 0.2)'
+                            : 'rgba(16, 185, 129, 0.2)',
+                          border: `1px solid ${draft.isTraining ? '#f59e0b' : '#10b981'}`,
+                          borderRadius: '12px',
+                          color: draft.isTraining ? '#f59e0b' : '#10b981',
+                          fontSize: '11px',
+                          fontWeight: '600'
+                        }}>
+                          {draft.isTraining ? 'Training' : 'Multiplayer'}
+                        </div>
+                      </div>
+
+                      {/* Expanded Details */}
+                      {selectedHistoryDraft?.id === draft.id && (
+                        <div style={{
+                          borderTop: '1px solid #21262d',
+                          paddingTop: '16px'
+                        }}>
+                          <div style={{
+                            color: '#8b949e',
+                            fontSize: '13px',
+                            marginBottom: '12px'
+                          }}>
+                            Your Drafted Portfolio:
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {myPlayer?.picks?.map((symbol, i) => (
+                              <span
+                                key={i}
+                                style={{
+                                  padding: '4px 10px',
+                                  background: '#0d1117',
+                                  border: '1px solid #21262d',
+                                  borderRadius: '6px',
+                                  color: '#ffffff',
+                                  fontSize: '12px'
+                                }}
+                              >
+                                {symbol}
+                              </span>
+                            ))}
+                          </div>
+
+                          <div style={{
+                            color: '#8b949e',
+                            fontSize: '13px',
+                            marginTop: '16px',
+                            marginBottom: '8px'
+                          }}>
+                            Players: {draft.players?.length || 0}
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                            {draft.players?.map((player, i) => (
+                              <span
+                                key={i}
+                                style={{
+                                  padding: '4px 10px',
+                                  background: player.odUserId === currentUserId
+                                    ? 'rgba(0, 217, 255, 0.2)'
+                                    : '#0d1117',
+                                  border: player.odUserId === currentUserId
+                                    ? '1px solid #00d9ff'
+                                    : '1px solid #21262d',
+                                  borderRadius: '6px',
+                                  color: player.odUserId === currentUserId
+                                    ? '#00d9ff'
+                                    : '#8b949e',
+                                  fontSize: '12px'
+                                }}
+                              >
+                                {player.isCPU ? '🤖' : '👤'} {player.displayName}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // DRAFT RESULTS SCREEN - Phase 3
   if (screen === 'draftResults') {
     const draftData = currentDraft;
@@ -7181,8 +7551,103 @@ export default function PortfolioDuel() {
     const myPlayer = draftData?.players?.find(p => p.odUserId === currentUserId);
 
     const handleCreateBattle = async () => {
-      alert('Draft complete! Battle creation coming soon.');
+      if (!myPlayer || !myPlayer.picks || myPlayer.picks.length !== 9) {
+        alert('Invalid portfolio from draft');
+        return;
+      }
+
+      // Convert draft picks to battle portfolio format
+      // Each pick gets equal weight: ~11.1% (100% / 9 picks)
+      const equalWeight = 100 / 9; // 11.111...
+
+      const battlePortfolio = myPlayer.picks.map(symbol => {
+        // Find asset data from draft assets
+        const allAssets = [
+          ...draftData.availableAssets?.steady || [],
+          ...draftData.availableAssets?.risky || [],
+          ...draftData.availableAssets?.defensive || []
+        ];
+        const assetData = allAssets.find(a => a.symbol === symbol) || { symbol, name: symbol };
+
+        return {
+          symbol: assetData.symbol,
+          name: assetData.name || assetData.symbol,
+          percentage: equalWeight
+        };
+      });
+
+      // Store draft portfolio for battle creation
+      setPortfolio(battlePortfolio);
+      setPortfolioType(draftData.type); // 'stocks' or 'crypto'
+      setPortfolioName(`Draft Portfolio - ${new Date().toLocaleDateString()}`);
+
+      // Navigate to create battle screen with pre-filled portfolio
+      setScreen('createBattle');
+
+      // Show info message
+      setTimeout(() => {
+        alert('Your draft portfolio has been loaded! You can now create a battle or make adjustments.');
+      }, 100);
+    };
+
+    const handleChallengeDraftOpponent = (opponent) => {
+      if (opponent.isCPU) {
+        alert('Cannot challenge CPU opponents to multiplayer battles. Start a Training battle instead!');
+        return;
+      }
+
+      setDraftBattleOpponent(opponent);
+
+      // Create a special draft battle
+      const equalWeight = 100 / 9;
+
+      // My portfolio
+      const myPortfolio = myPlayer.picks.map(symbol => ({
+        symbol,
+        percentage: equalWeight,
+        amount: (equalWeight / 100) * 1000000
+      }));
+
+      // Opponent portfolio
+      const opponentPortfolio = opponent.picks.map(symbol => ({
+        symbol,
+        percentage: equalWeight,
+        amount: (equalWeight / 100) * 1000000
+      }));
+
+      // Create immediate battle (both portfolios already set)
+      const battleId = Date.now().toString();
+      const now = new Date();
+      const BATTLE_DURATION = battleTimer.TEST_MODE
+        ? 5 * 60 * 1000  // 5 minutes in test mode
+        : 24 * 60 * 60 * 1000; // 24 hours in production
+
+      const newBattle = {
+        id: battleId,
+        challengeCode: `DRAFT-${battleId.slice(-4)}`,
+        creator: currentUserId,
+        opponent: opponent.odUserId,
+        creatorPortfolio: myPortfolio,
+        opponentPortfolio: opponentPortfolio,
+        portfolioName: `Draft Battle - ${draftData.code}`,
+        portfolioType: draftData.type,
+        status: 'active', // Start immediately since both portfolios are set
+        startDate: now.toISOString(),
+        endDate: new Date(now.getTime() + BATTLE_DURATION).toISOString(),
+        isDraftBattle: true,
+        draftId: draftData.id,
+        draftCode: draftData.code,
+        createdAt: now.toISOString()
+      };
+
+      // Save battle
+      const currentBattles = loadBattlesSafe();
+      saveBattlesSafe([...currentBattles, newBattle]);
+      setBattles(prev => [...prev, newBattle]);
+
+      // Navigate to dashboard to see the new battle
       setScreen('dashboard');
+      setCurrentDraft(null);
     };
 
     return (
@@ -7232,6 +7697,74 @@ export default function PortfolioDuel() {
                 ))}
               </div>
             </div>
+
+            {/* Challenge an Opponent - Phase 4 */}
+            {!draftData?.isTraining && (
+              <div style={{
+                background: '#161b22',
+                border: '1px solid #21262d',
+                borderRadius: '16px',
+                padding: '20px',
+                marginBottom: '24px'
+              }}>
+                <h2 style={{ color: '#ffffff', fontSize: '18px', fontWeight: 'bold', marginBottom: '16px' }}>
+                  Challenge an Opponent
+                </h2>
+                <p style={{ color: '#8b949e', fontSize: '13px', marginBottom: '16px' }}>
+                  Start a head-to-head battle using your drafted portfolios
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {draftData?.players?.filter(p => p.odUserId !== currentUserId).map((player) => {
+                    return (
+                      <div
+                        key={player.odUserId}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '12px',
+                          background: '#0d1117',
+                          borderRadius: '8px',
+                          border: '1px solid #21262d'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '20px' }}>{player.isCPU ? '🤖' : '👤'}</span>
+                          <div>
+                            <div style={{ color: '#ffffff', fontWeight: '600' }}>
+                              {player.displayName}
+                            </div>
+                            <div style={{ color: '#8b949e', fontSize: '12px' }}>
+                              {player.picks?.length || 0} assets drafted
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => handleChallengeDraftOpponent(player)}
+                          disabled={player.isCPU}
+                          style={{
+                            padding: '8px 16px',
+                            background: player.isCPU
+                              ? '#21262d'
+                              : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                            color: player.isCPU ? '#6e7681' : '#ffffff',
+                            fontWeight: '600',
+                            fontSize: '13px',
+                            border: 'none',
+                            borderRadius: '8px',
+                            cursor: player.isCPU ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          {player.isCPU ? '🤖 CPU' : 'Challenge'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* All Players Summary */}
             <div style={{
@@ -7292,12 +7825,15 @@ export default function PortfolioDuel() {
                     cursor: 'pointer'
                   }}
                 >
-                  START BATTLE
+                  CREATE BATTLE WITH PORTFOLIO
                 </button>
               )}
 
               <button
-                onClick={() => setScreen('dashboard')}
+                onClick={() => {
+                  setCurrentDraft(null);
+                  setScreen('dashboard');
+                }}
                 style={{
                   width: '100%',
                   padding: '14px',
@@ -7308,7 +7844,7 @@ export default function PortfolioDuel() {
                   cursor: 'pointer'
                 }}
               >
-                ← Back to Dashboard
+                Back to Dashboard
               </button>
             </div>
           </div>

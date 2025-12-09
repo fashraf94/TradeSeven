@@ -437,6 +437,151 @@ export function subscribeToDraft(draftId, callback) {
   });
 }
 
+// ============================================
+// DRAFT HISTORY & ARCHIVE (Phase 4)
+// ============================================
+
+/**
+ * Archive a completed draft
+ */
+export async function archiveDraft(draftId) {
+  try {
+    const draftRef = doc(db, 'drafts', draftId);
+    await updateDoc(draftRef, {
+      archived: true,
+      archivedAt: serverTimestamp()
+    });
+    return { success: true };
+  } catch (error) {
+    console.error('Error archiving draft:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Get user's draft history
+ */
+export async function getUserDraftHistory(userId, limitCount = 20) {
+  try {
+    const draftsRef = collection(db, 'drafts');
+    const q = query(
+      draftsRef,
+      where('status', '==', 'completed')
+    );
+
+    const snapshot = await getDocs(q);
+    // Filter locally for playerIds since array-contains may have issues
+    const drafts = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(draft => draft.players?.some(p => p.odUserId === userId))
+      .slice(0, limitCount);
+
+    return drafts;
+  } catch (error) {
+    console.error('Error fetching draft history:', error);
+    return [];
+  }
+}
+
+/**
+ * Get draft statistics for a user
+ */
+export async function getUserDraftStats(userId) {
+  try {
+    const drafts = await getUserDraftHistory(userId, 100);
+
+    return {
+      totalDrafts: drafts.length,
+      trainingDrafts: drafts.filter(d => d.isTraining).length,
+      multiplayerDrafts: drafts.filter(d => !d.isTraining).length,
+      stockDrafts: drafts.filter(d => d.type === 'stocks').length,
+      cryptoDrafts: drafts.filter(d => d.type === 'crypto').length
+    };
+  } catch (error) {
+    console.error('Error fetching draft stats:', error);
+    return {
+      totalDrafts: 0,
+      trainingDrafts: 0,
+      multiplayerDrafts: 0,
+      stockDrafts: 0,
+      cryptoDrafts: 0
+    };
+  }
+}
+
+// ============================================
+// EDGE CASE HANDLING (Phase 4)
+// ============================================
+
+/**
+ * Handle player disconnect/timeout
+ */
+export async function handlePlayerDisconnect(draftId, playerId) {
+  try {
+    const draftRef = doc(db, 'drafts', draftId);
+    const draftSnap = await getDoc(draftRef);
+
+    if (!draftSnap.exists()) return { success: false, error: 'Draft not found' };
+
+    const draft = draftSnap.data();
+
+    // If it's the current player's turn, trigger autopick
+    if (draft.currentPlayerId === playerId && draft.status === 'active') {
+      await handleAutopick(draftId, playerId);
+    }
+
+    // Mark player as disconnected
+    const updatedPlayers = draft.players.map(p =>
+      p.odUserId === playerId
+        ? { ...p, disconnected: true, disconnectedAt: new Date().toISOString() }
+        : p
+    );
+
+    await updateDoc(draftRef, {
+      players: updatedPlayers,
+      updatedAt: serverTimestamp()
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error handling disconnect:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Check if draft should be cancelled due to disconnects
+ */
+export async function checkDraftHealth(draftId) {
+  try {
+    const draftRef = doc(db, 'drafts', draftId);
+    const draftSnap = await getDoc(draftRef);
+
+    if (!draftSnap.exists()) return { healthy: false };
+
+    const draft = draftSnap.data();
+
+    // Count disconnected players
+    const disconnectedCount = draft.players.filter(p => p.disconnected && !p.isCPU).length;
+    const humanCount = draft.players.filter(p => !p.isCPU).length;
+
+    // If more than half of humans disconnected, cancel draft
+    if (disconnectedCount > humanCount / 2) {
+      await updateDoc(draftRef, {
+        status: 'cancelled',
+        cancelReason: 'Too many players disconnected',
+        cancelledAt: serverTimestamp()
+      });
+      return { healthy: false, cancelled: true };
+    }
+
+    return { healthy: true };
+  } catch (error) {
+    console.error('Error checking draft health:', error);
+    return { healthy: false, error: error.message };
+  }
+}
+
 export default {
   createMultiplayerDraft,
   createTrainingDraft,
@@ -448,5 +593,10 @@ export default {
   makePick,
   handleAutopick,
   processCPUTurn,
-  subscribeToDraft
+  subscribeToDraft,
+  archiveDraft,
+  getUserDraftHistory,
+  getUserDraftStats,
+  handlePlayerDisconnect,
+  checkDraftHealth
 };
