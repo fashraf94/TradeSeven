@@ -1142,6 +1142,11 @@ export default function PortfolioDuel() {
   // Sidebar navigation state
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Game Mode state - Phase 1: Foundation
+  // 'classic' = Builder 1v1 (existing gameplay)
+  // 'draft' = Snake Draft 4P (new draft mode)
+  const [gameMode, setGameMode] = useState('classic');
+
   // Toggle asset expansion
   const toggleAssetExpansion = (symbol) => {
     setExpandedAssets(prev => {
@@ -2426,6 +2431,54 @@ export default function PortfolioDuel() {
             </div>
           </header>
 
+          {/* Game Mode Toggle - Phase 1: Draft Mode Foundation */}
+          <div style={{
+            background: '#161b22',
+            borderBottom: '1px solid #21262d',
+            padding: '12px 16px'
+          }}>
+            <div style={{
+              maxWidth: '900px',
+              margin: '0 auto',
+              display: 'flex',
+              justifyContent: 'center',
+              gap: '8px'
+            }}>
+              <button
+                onClick={() => setGameMode('classic')}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '10px',
+                  border: gameMode === 'classic' ? '2px solid #00d9ff' : '2px solid #21262d',
+                  background: gameMode === 'classic' ? 'rgba(0, 217, 255, 0.1)' : 'transparent',
+                  color: gameMode === 'classic' ? '#00d9ff' : '#8b949e',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                ⚔️ Builder 1v1
+              </button>
+              <button
+                onClick={() => setGameMode('draft')}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '10px',
+                  border: gameMode === 'draft' ? '2px solid #8b5cf6' : '2px solid #21262d',
+                  background: gameMode === 'draft' ? 'rgba(139, 92, 246, 0.1)' : 'transparent',
+                  color: gameMode === 'draft' ? '#8b5cf6' : '#8b949e',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                🐍 Snake Draft 4P
+              </button>
+            </div>
+          </div>
+
           {/* Main Content Area - Mobile-first with responsive padding */}
           <div
             className="pt-4 md:pt-0 pb-28 md:pb-20 px-4 md:px-6"
@@ -2710,7 +2763,12 @@ export default function PortfolioDuel() {
                   setPortfolioName('');
                   setAssetType('stocks');
                   setSearchTerm('');
-                  setScreen('builder');
+                  // Route based on game mode
+                  if (gameMode === 'draft') {
+                    setScreen('draftSetup');  // New screen for draft
+                  } else {
+                    setScreen('builder');     // Existing classic mode
+                  }
                 }}
                 style={{
                   position: 'relative',
@@ -2821,7 +2879,12 @@ export default function PortfolioDuel() {
                   setAssetType('stocks');
                   setSearchTerm('');
                   setJoinCode('');
-                  setScreen('join');
+                  // Route based on game mode
+                  if (gameMode === 'draft') {
+                    setScreen('draftJoin');   // New screen for draft join
+                  } else {
+                    setScreen('join');        // Existing classic mode
+                  }
                 }}
                 style={{
                   position: 'relative',
@@ -2938,7 +3001,12 @@ export default function PortfolioDuel() {
                 setPortfolioName('');
                 setAssetType('stocks');
                 setSearchTerm('');
-                setScreen('training');
+                // Route based on game mode
+                if (gameMode === 'draft') {
+                  setScreen('draftTraining');  // New screen for draft training
+                } else {
+                  setScreen('training');       // Existing classic mode
+                }
               }}
               style={{
                 background: `linear-gradient(135deg, #f59e0b 0%, #d97706 100%)`,
