@@ -2777,9 +2777,9 @@ export default function PortfolioDuel() {
                 style={{
                   padding: '10px 20px',
                   borderRadius: '10px',
-                  border: gameMode === 'draft' ? '2px solid #8b5cf6' : '2px solid #21262d',
-                  background: gameMode === 'draft' ? 'rgba(139, 92, 246, 0.1)' : 'transparent',
-                  color: gameMode === 'draft' ? '#8b5cf6' : '#8b949e',
+                  border: gameMode === 'draft' ? '2px solid #10b981' : '2px solid #21262d',
+                  background: gameMode === 'draft' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                  color: gameMode === 'draft' ? '#10b981' : '#8b949e',
                   fontSize: '14px',
                   fontWeight: '600',
                   cursor: 'pointer',
@@ -8158,22 +8158,135 @@ export default function PortfolioDuel() {
       setCurrentDraft(null);
     };
 
+    // Celebration animation state
+    const [showConfetti, setShowConfetti] = React.useState(false);
+    const [rockets] = React.useState([
+      { id: 1, left: '20%', delay: 0 },
+      { id: 2, left: '50%', delay: 0.2 },
+      { id: 3, left: '80%', delay: 0.4 },
+    ]);
+    const [confettiPieces] = React.useState(() => {
+      const confettiColors = ['#10b981', '#8b5cf6', '#00d9ff', '#f59e0b', '#ffffff', '#22c55e'];
+      const pieces = [];
+      for (let i = 0; i < 50; i++) {
+        pieces.push({
+          id: i,
+          left: `${Math.random() * 100}%`,
+          color: confettiColors[Math.floor(Math.random() * confettiColors.length)],
+          delay: Math.random() * 0.5,
+          duration: 2 + Math.random() * 2,
+          size: 6 + Math.random() * 8,
+          isCircle: Math.random() > 0.5
+        });
+      }
+      return pieces;
+    });
+
+    React.useEffect(() => {
+      const timer = setTimeout(() => setShowConfetti(true), 1000);
+      return () => clearTimeout(timer);
+    }, []);
+
     return (
       <div style={containerStyle}>
         <div style={{ minHeight: '100vh', background: '#0d1117' }}>
-          {/* Header */}
+          {/* Celebration Animation Header */}
+          <style>{`
+            @keyframes rocketFly {
+              0% { transform: translateY(100vh) translateX(-50%) rotate(0deg); opacity: 1; }
+              70% { transform: translateY(-20px) translateX(-50%) rotate(0deg); opacity: 1; }
+              100% { transform: translateY(-50px) translateX(-50%) rotate(0deg) scale(0); opacity: 0; }
+            }
+            @keyframes confettiPop {
+              0% { transform: scale(0) translateY(0); opacity: 0; }
+              20% { transform: scale(1.2) translateY(0); opacity: 1; }
+              100% { transform: scale(1) translateY(100vh) rotate(720deg); opacity: 0; }
+            }
+            @keyframes sparkle {
+              0%, 100% { opacity: 0; transform: scale(0); }
+              50% { opacity: 1; transform: scale(1); }
+            }
+            @keyframes titleReveal {
+              0% { opacity: 0; transform: translateY(20px) scale(0.9); }
+              100% { opacity: 1; transform: translateY(0) scale(1); }
+            }
+          `}</style>
           <div style={{
-            background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-            padding: '24px 16px',
-            textAlign: 'center'
+            position: 'relative',
+            width: '100%',
+            height: '200px',
+            overflow: 'hidden',
+            background: 'linear-gradient(180deg, #0d1117 0%, #161b22 100%)'
           }}>
-            <div style={{ fontSize: '48px', marginBottom: '12px' }}>🎉</div>
-            <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#ffffff', marginBottom: '8px' }}>
-              Draft Complete!
-            </h1>
-            <p style={{ color: 'rgba(255,255,255,0.8)' }}>
-              All players have made their picks
-            </p>
+            {/* Rockets */}
+            {rockets.map(rocket => (
+              <div
+                key={rocket.id}
+                style={{
+                  position: 'absolute',
+                  left: rocket.left,
+                  bottom: 0,
+                  fontSize: '32px',
+                  animation: `rocketFly 1.5s ease-out ${rocket.delay}s forwards`,
+                  zIndex: 10
+                }}
+              >
+                🚀
+              </div>
+            ))}
+
+            {/* Confetti */}
+            {showConfetti && confettiPieces.map(piece => (
+              <div
+                key={piece.id}
+                style={{
+                  position: 'absolute',
+                  left: piece.left,
+                  top: '20px',
+                  width: `${piece.size}px`,
+                  height: `${piece.size}px`,
+                  backgroundColor: piece.color,
+                  borderRadius: piece.isCircle ? '50%' : '2px',
+                  animation: `confettiPop ${piece.duration}s ease-out ${piece.delay}s forwards`,
+                  zIndex: 5
+                }}
+              />
+            ))}
+
+            {/* Sparkles */}
+            {showConfetti && (
+              <>
+                <span style={{ position: 'absolute', left: '15%', top: '30px', fontSize: '20px', animation: 'sparkle 1s ease-in-out infinite 0s' }}>✨</span>
+                <span style={{ position: 'absolute', left: '35%', top: '50px', fontSize: '20px', animation: 'sparkle 1s ease-in-out infinite 0.3s' }}>⭐</span>
+                <span style={{ position: 'absolute', left: '55%', top: '25px', fontSize: '20px', animation: 'sparkle 1s ease-in-out infinite 0.1s' }}>✨</span>
+                <span style={{ position: 'absolute', left: '75%', top: '45px', fontSize: '20px', animation: 'sparkle 1s ease-in-out infinite 0.4s' }}>⭐</span>
+                <span style={{ position: 'absolute', left: '90%', top: '35px', fontSize: '20px', animation: 'sparkle 1s ease-in-out infinite 0.2s' }}>✨</span>
+              </>
+            )}
+
+            {/* Title - appears after rockets */}
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              textAlign: 'center',
+              animation: 'titleReveal 0.6s ease-out 1s both',
+              zIndex: 20
+            }}>
+              <h1 style={{
+                fontSize: '28px',
+                fontWeight: 'bold',
+                color: '#ffffff',
+                marginBottom: '8px',
+                textShadow: '0 2px 10px rgba(0,0,0,0.5)'
+              }}>
+                Draft Complete!
+              </h1>
+              <p style={{ color: '#8b949e', fontSize: '14px' }}>
+                All players have made their picks
+              </p>
+            </div>
           </div>
 
           <div style={{ maxWidth: '600px', margin: '0 auto', padding: '24px 16px' }}>
@@ -8319,19 +8432,20 @@ export default function PortfolioDuel() {
             {/* Battle Status Banner - show when draft is in battle mode */}
             {draftData?.status === 'battle' && (
               <div style={{
-                background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                background: 'transparent',
+                border: '2px solid #8b5cf6',
                 borderRadius: '16px',
-                padding: '20px',
+                padding: '24px',
                 marginBottom: '24px',
                 textAlign: 'center'
               }}>
-                <div style={{ fontSize: '24px', marginBottom: '8px' }}>
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>
                   {draftData.type === 'stocks' ? '📈' : '🪙'}
                 </div>
-                <div style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '18px', marginBottom: '8px' }}>
+                <div style={{ color: '#8b5cf6', fontWeight: 'bold', fontSize: '20px', marginBottom: '8px' }}>
                   BATTLE IN PROGRESS
                 </div>
-                <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '13px', marginBottom: '12px' }}>
+                <div style={{ color: '#8b949e', fontSize: '14px', marginBottom: '12px' }}>
                   {draftData.type === 'stocks'
                     ? 'Battle ends Friday at 3 PM CT'
                     : `Battle ends ${new Date(draftData.battleEndTime).toLocaleDateString()} at ${new Date(draftData.battleEndTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
@@ -8341,8 +8455,8 @@ export default function PortfolioDuel() {
                   display: 'flex',
                   justifyContent: 'center',
                   gap: '16px',
-                  fontSize: '12px',
-                  color: 'rgba(255,255,255,0.7)'
+                  fontSize: '13px',
+                  color: '#8b949e'
                 }}>
                   <span>Free Agents: {Object.values(draftData.freeAgents || {}).flat().length}</span>
                   <span>|</span>
@@ -8359,18 +8473,25 @@ export default function PortfolioDuel() {
                   onClick={() => setScreen('freeAgency')}
                   style={{
                     width: '100%',
-                    padding: '18px',
-                    background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                    color: '#ffffff',
+                    padding: '16px',
+                    background: 'transparent',
+                    color: '#8b5cf6',
                     fontWeight: 'bold',
                     fontSize: '16px',
-                    border: 'none',
+                    border: '2px solid #8b5cf6',
                     borderRadius: '12px',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: '8px'
+                    gap: '8px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.background = 'rgba(139, 92, 246, 0.1)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.background = 'transparent';
                   }}
                 >
                   <span>🔄</span> Free Agency
