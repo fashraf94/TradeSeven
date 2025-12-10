@@ -871,6 +871,142 @@ export async function storeDraftLockedPrices(draftId) {
   }
 }
 
+/**
+ * Complete a draft battle and calculate final standings
+ * Called when battle time expires
+ */
+export async function completeDraftBattle(battleId, battleData) {
+  try {
+    // If already completed, skip
+    if (battleData.status === 'completed') {
+      console.log(`Battle ${battleId} already completed, skipping`);
+      return { success: true, alreadyCompleted: true };
+    }
+
+    console.log(`🏁 Completing draft battle ${battleId}...`);
+
+    // Calculate final standings for each player
+    const finalStandings = await Promise.all(
+      battleData.players.map(async (player) => {
+        let totalGain = 0;
+        const assetGains = [];
+
+        for (const symbol of player.picks || []) {
+          try {
+            let currentPrice;
+            if (battleData.type === 'crypto') {
+              const cryptoId = CRYPTO_ID_MAP[symbol];
+              if (cryptoId) {
+                const priceData = await getCryptoPrice(cryptoId);
+                currentPrice = priceData?.price || 0;
+              } else {
+                currentPrice = 100;
+              }
+            } else {
+              const priceData = await getStockPrice(symbol);
+              currentPrice = priceData?.price || 0;
+            }
+
+            const lockedPrice = battleData.lockedPrices?.[symbol] || currentPrice;
+
+            if (lockedPrice > 0) {
+              const gain = ((currentPrice - lockedPrice) / lockedPrice) * 100;
+              totalGain += gain / 9; // Equal weight (9 picks)
+              assetGains.push({
+                symbol,
+                lockedPrice,
+                finalPrice: currentPrice,
+                gain: parseFloat(gain.toFixed(2))
+              });
+            }
+          } catch (err) {
+            console.error(`Error fetching final price for ${symbol}:`, err);
+          }
+        }
+
+        return {
+          odUserId: player.odUserId,
+          displayName: player.displayName,
+          isCPU: player.isCPU || false,
+          finalGain: parseFloat(totalGain.toFixed(2)),
+          picks: player.picks,
+          assetGains
+        };
+      })
+    );
+
+    // Sort by gain to determine rankings
+    finalStandings.sort((a, b) => b.finalGain - a.finalGain);
+
+    // Assign final ranks
+    finalStandings.forEach((player, index) => {
+      player.finalRank = index + 1;
+    });
+
+    // Determine winner
+    const winner = finalStandings[0];
+
+    // Store final prices for history
+    const finalPrices = {};
+    for (const standing of finalStandings) {
+      for (const asset of standing.assetGains || []) {
+        finalPrices[asset.symbol] = asset.finalPrice;
+      }
+    }
+
+    // Update the battle document
+    const battleRef = doc(db, 'drafts', battleId);
+    await updateDoc(battleRef, removeUndefined({
+      status: 'completed',
+      completedAt: serverTimestamp(),
+      finalStandings: finalStandings,
+      finalPrices: finalPrices,
+      winner: {
+        odUserId: winner.odUserId,
+        displayName: winner.displayName,
+        finalGain: winner.finalGain,
+        isCPU: winner.isCPU || false
+      }
+    }));
+
+    console.log(`✅ Battle ${battleId} completed. Winner: ${winner.displayName} with ${winner.finalGain}%`);
+
+    return { success: true, winner, standings: finalStandings };
+  } catch (error) {
+    console.error('Error completing battle:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Get user's completed draft battles for history
+ */
+export async function getUserCompletedDraftBattles(userId, limitCount = 20) {
+  try {
+    const draftsRef = collection(db, 'drafts');
+    const q = query(
+      draftsRef,
+      where('status', '==', 'completed')
+    );
+
+    const snapshot = await getDocs(q);
+
+    // Filter locally for user's battles
+    const drafts = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(draft =>
+        draft.playerIds?.includes(userId) ||
+        draft.players?.some(p => p.odUserId === userId)
+      )
+      .slice(0, limitCount);
+
+    return drafts;
+  } catch (error) {
+    console.error('Error fetching completed draft battles:', error);
+    return [];
+  }
+}
+
 export default {
   createMultiplayerDraft,
   createTrainingDraft,
@@ -892,5 +1028,7 @@ export default {
   checkAbsentPlayers,
   getUserActiveDraft,
   shouldAutoPickForPlayer,
-  storeDraftLockedPrices
+  storeDraftLockedPrices,
+  completeDraftBattle,
+  getUserCompletedDraftBattles
 };

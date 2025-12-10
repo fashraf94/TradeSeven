@@ -1101,6 +1101,8 @@ export default function PortfolioDuel() {
   const [battles, setBattles] = useState([]);
   const [currentBattle, setCurrentBattle] = useState(null);
   const [activeBattleId, setActiveBattleId] = useState(null);
+  const [activeDraftBattles, setActiveDraftBattles] = useState([]);
+  const [completedDraftBattles, setCompletedDraftBattles] = useState([]);
 
   // Portfolio builder state
   const [assetType, setAssetType] = useState('stocks');
@@ -1289,6 +1291,120 @@ export default function PortfolioDuel() {
 
     return () => clearInterval(interval);
   }, [screen, battles]);
+
+  // Fetch active draft battles for dashboard
+  useEffect(() => {
+    if (screen !== 'dashboard') return;
+
+    const fetchActiveDraftBattles = async () => {
+      try {
+        const currentUserId = user?.odUserId || user?.username;
+        if (!currentUserId) return;
+
+        // Query Firebase for draft battles where user is a player
+        const { collection, query, where, getDocs } = await import('firebase/firestore');
+        const { db } = await import('./firebase/config');
+
+        const draftsRef = collection(db, 'drafts');
+
+        // Query for battles in progress
+        const q = query(
+          draftsRef,
+          where('status', '==', 'battle')
+        );
+
+        const snapshot = await getDocs(q);
+
+        const allBattles = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+
+        // Filter locally for user's battles (since array-contains with playerIds can be inconsistent)
+        const userBattles = allBattles.filter(b =>
+          b.playerIds?.includes(currentUserId) ||
+          b.players?.some(p => p.odUserId === currentUserId)
+        );
+
+        // Filter out expired battles (past battleEndTime)
+        const now = new Date();
+        const activeBattles = userBattles.filter(b => {
+          if (!b.battleEndTime) return true;
+          return new Date(b.battleEndTime) > now;
+        });
+
+        // Sort by end time (soonest first)
+        activeBattles.sort((a, b) => {
+          const aEnd = new Date(a.battleEndTime || 0);
+          const bEnd = new Date(b.battleEndTime || 0);
+          return aEnd - bEnd;
+        });
+
+        setActiveDraftBattles(activeBattles);
+
+        // Check for expired battles that need to be completed
+        const expiredBattles = userBattles.filter(b => {
+          if (!b.battleEndTime) return false;
+          return new Date(b.battleEndTime) <= now;
+        });
+
+        if (expiredBattles.length > 0) {
+          const draftService = await import('./services/draftService');
+          for (const battle of expiredBattles) {
+            if (draftService.completeDraftBattle) {
+              await draftService.completeDraftBattle(battle.id, battle);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching draft battles:', error);
+        setActiveDraftBattles([]);
+      }
+    };
+
+    fetchActiveDraftBattles();
+
+    // Refresh every 30 seconds
+    const refreshInterval = setInterval(fetchActiveDraftBattles, 30000);
+    return () => clearInterval(refreshInterval);
+  }, [screen, user]);
+
+  // Fetch completed draft battles for history
+  useEffect(() => {
+    if (screen !== 'battleHistory' || historyTab !== 'draft') return;
+
+    const fetchCompletedDraftBattles = async () => {
+      try {
+        const currentUserId = user?.odUserId || user?.username;
+        if (!currentUserId) return;
+
+        const draftService = await import('./services/draftService');
+        const battles = await draftService.getUserCompletedDraftBattles(currentUserId, 50);
+
+        // Transform to match expected format and sort by completion date
+        const formattedBattles = battles
+          .map(b => {
+            const myStanding = b.finalStandings?.find(s => s.odUserId === currentUserId);
+            return {
+              ...b,
+              isDraft: true,
+              won: myStanding?.finalRank === 1,
+              myRank: myStanding?.finalRank || 0,
+              myGain: myStanding?.finalGain || 0,
+              completedAt: b.completedAt?.toDate?.() || new Date(b.completedAt)
+            };
+          })
+          .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+
+        setCompletedDraftBattles(formattedBattles);
+      } catch (error) {
+        console.error('Error fetching completed draft battles:', error);
+        setCompletedDraftBattles([]);
+      }
+    };
+
+    fetchCompletedDraftBattles();
+  }, [screen, historyTab, user]);
 
   // Listen for localStorage changes from other tabs
   useEffect(() => {
@@ -2987,6 +3103,164 @@ export default function PortfolioDuel() {
                   </button>
                 </div>
               </motion.div>
+            )}
+
+            {/* Active Draft Battles Section */}
+            {activeDraftBattles.length > 0 && (
+              <div style={{ marginBottom: '24px' }}>
+                <h3 style={{
+                  color: '#10b981',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  marginBottom: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  🐍 Active Draft Battles
+                </h3>
+
+                {activeDraftBattles.map(battle => {
+                  // Calculate time remaining
+                  const endTime = battle.battleEndTime ? new Date(battle.battleEndTime) : null;
+                  const now = new Date();
+                  let timeRemaining = '';
+
+                  if (endTime) {
+                    const diff = endTime - now;
+                    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+                    if (days > 0) {
+                      timeRemaining = `${days}d ${hours}h left`;
+                    } else if (hours > 0) {
+                      timeRemaining = `${hours}h ${minutes}m left`;
+                    } else {
+                      timeRemaining = `${minutes}m left`;
+                    }
+                  }
+
+                  // Count players
+                  const playerCount = battle.players?.length || 4;
+                  const humanCount = battle.players?.filter(p => !p.isCPU).length || 1;
+                  const cpuCount = playerCount - humanCount;
+                  const currentUserId = user?.odUserId || user?.username;
+
+                  return (
+                    <div
+                      key={battle.id}
+                      onClick={() => {
+                        setCurrentDraft(battle);
+                        setScreen('draftBattle');
+                      }}
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%)',
+                        border: '2px solid #10b981',
+                        borderRadius: '16px',
+                        padding: '16px',
+                        marginBottom: '12px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      {/* Header Row */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '12px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '24px' }}>🐍</span>
+                          <div>
+                            <div style={{
+                              color: '#10b981',
+                              fontWeight: 'bold',
+                              fontSize: '16px'
+                            }}>
+                              {battle.code || 'Draft Battle'}
+                            </div>
+                            <div style={{
+                              color: '#8b949e',
+                              fontSize: '12px'
+                            }}>
+                              {battle.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'} • {playerCount} Players
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Time Remaining Badge */}
+                        <div style={{
+                          background: 'rgba(16, 185, 129, 0.2)',
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          color: '#10b981',
+                          fontSize: '12px',
+                          fontWeight: 'bold'
+                        }}>
+                          ⏱️ {timeRemaining}
+                        </div>
+                      </div>
+
+                      {/* Players Row */}
+                      <div style={{
+                        display: 'flex',
+                        gap: '8px',
+                        marginBottom: '12px',
+                        flexWrap: 'wrap'
+                      }}>
+                        {battle.players?.slice(0, 4).map((player, idx) => {
+                          const isMe = player.odUserId === currentUserId;
+                          return (
+                            <div
+                              key={idx}
+                              style={{
+                                background: isMe ? 'rgba(0, 217, 255, 0.2)' : '#21262d',
+                                border: isMe ? '1px solid #00d9ff' : '1px solid #30363d',
+                                borderRadius: '6px',
+                                padding: '4px 10px',
+                                fontSize: '12px',
+                                color: isMe ? '#00d9ff' : '#8b949e',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                            >
+                              {player.isCPU ? '🤖' : '👤'}
+                              {isMe ? 'You' : (player.displayName?.slice(0, 8) || 'Player')}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* View Battle Button */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}>
+                        <div style={{
+                          color: '#6e7681',
+                          fontSize: '11px'
+                        }}>
+                          {humanCount} human{humanCount !== 1 ? 's' : ''} • {cpuCount} CPU{cpuCount !== 1 ? 's' : ''}
+                        </div>
+                        <div style={{
+                          color: '#10b981',
+                          fontWeight: 'bold',
+                          fontSize: '14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}>
+                          View Battle →
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
 
             {/* Waiting Battles - Compact */}
@@ -11010,17 +11284,18 @@ export default function PortfolioDuel() {
 
   // BATTLE HISTORY SCREEN
   if (screen === 'battleHistory') {
-    // Get completed battles from user data or localStorage
-    const allCompletedBattles = user?.completedBattles || [];
+    // Get completed battles based on tab
+    const allCompletedClassicBattles = user?.completedBattles || [];
+    const classicBattles = allCompletedClassicBattles.filter(b => b.isDraft !== true);
 
-    // Filter battles by tab - Draft battles have isDraft: true
-    const completedBattles = allCompletedBattles.filter(b =>
-      historyTab === 'draft' ? b.isDraft === true : b.isDraft !== true
-    );
+    // Use completedDraftBattles state for draft tab (fetched from Firebase)
+    const completedBattles = historyTab === 'draft' ? completedDraftBattles : classicBattles;
 
     // Stats for the current tab
     const tabWins = completedBattles.filter(b => b.won === true).length;
     const tabLosses = completedBattles.filter(b => b.won === false).length;
+    // For draft battles, podium (top 3) count can be useful
+    const draftPodiums = historyTab === 'draft' ? completedBattles.filter(b => b.myRank && b.myRank <= 3).length : 0;
 
     return (
       <div style={containerStyle}>
@@ -11194,13 +11469,159 @@ export default function PortfolioDuel() {
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {completedBattles.map((battle, index) => (
-                  <BattleHistoryCard
-                    key={battle.battleId || index}
-                    battle={battle}
-                    userId={user?.odUserId}
-                  />
-                ))}
+                {completedBattles.map((battle, index) => {
+                  // Draft battle card (4 players)
+                  if (historyTab === 'draft' && battle.finalStandings) {
+                    const currentUserId = user?.odUserId || user?.username;
+                    const myResult = battle.finalStandings?.find(p =>
+                      p.odUserId === currentUserId
+                    );
+                    const won = myResult?.finalRank === 1;
+                    const podium = myResult?.finalRank <= 3;
+
+                    return (
+                      <div
+                        key={battle.id || index}
+                        style={{
+                          background: '#161b22',
+                          borderLeft: won ? '4px solid #10b981' :
+                                     podium ? '4px solid #f59e0b' :
+                                     '4px solid #ef4444',
+                          borderRadius: '12px',
+                          padding: '16px',
+                          marginBottom: '0'
+                        }}
+                      >
+                        {/* Header */}
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          marginBottom: '12px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              fontWeight: 'bold',
+                              background: won ? 'rgba(16, 185, 129, 0.2)' :
+                                         podium ? 'rgba(245, 158, 11, 0.2)' :
+                                         'rgba(239, 68, 68, 0.2)',
+                              color: won ? '#10b981' :
+                                    podium ? '#f59e0b' :
+                                    '#ef4444'
+                            }}>
+                              {won ? '🏆 1ST PLACE' :
+                               myResult?.finalRank === 2 ? '🥈 2ND PLACE' :
+                               myResult?.finalRank === 3 ? '🥉 3RD PLACE' :
+                               `${myResult?.finalRank || '?'}TH PLACE`}
+                            </span>
+                            <span style={{ fontSize: '16px' }}>🐍</span>
+                          </div>
+                          <span style={{ color: '#6e7681', fontSize: '12px' }}>
+                            {battle.completedAt ? new Date(battle.completedAt).toLocaleDateString() : ''}
+                          </span>
+                        </div>
+
+                        {/* Your Performance */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          marginBottom: '12px'
+                        }}>
+                          <div>
+                            <div style={{ color: '#8b949e', fontSize: '11px' }}>YOUR GAIN</div>
+                            <div style={{
+                              fontSize: '24px',
+                              fontWeight: 'bold',
+                              color: myResult?.finalGain >= 0 ? '#10b981' : '#ef4444'
+                            }}>
+                              {myResult?.finalGain >= 0 ? '+' : ''}{myResult?.finalGain?.toFixed(2)}%
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ color: '#8b949e', fontSize: '11px' }}>WINNER</div>
+                            <div style={{ color: '#ffffff', fontWeight: 'bold' }}>
+                              {battle.winner?.displayName || 'Unknown'}
+                            </div>
+                            <div style={{ color: '#10b981', fontSize: '12px' }}>
+                              +{battle.winner?.finalGain?.toFixed(2)}%
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* All Players Summary */}
+                        <div style={{
+                          display: 'flex',
+                          gap: '8px',
+                          flexWrap: 'wrap'
+                        }}>
+                          {battle.finalStandings?.map((player, idx) => (
+                            <div
+                              key={idx}
+                              style={{
+                                background: player.finalRank === 1 ? 'rgba(16, 185, 129, 0.1)' : '#0d1117',
+                                border: player.odUserId === currentUserId
+                                  ? '1px solid #00d9ff'
+                                  : '1px solid #21262d',
+                                borderRadius: '6px',
+                                padding: '6px 10px',
+                                fontSize: '11px',
+                                flex: '1',
+                                minWidth: '70px',
+                                textAlign: 'center'
+                              }}
+                            >
+                              <div style={{ color: '#8b949e' }}>
+                                {player.finalRank === 1 ? '🥇' :
+                                 player.finalRank === 2 ? '🥈' :
+                                 player.finalRank === 3 ? '🥉' : `#${player.finalRank}`}
+                              </div>
+                              <div style={{
+                                color: player.odUserId === currentUserId ? '#00d9ff' : '#ffffff',
+                                fontWeight: 'bold'
+                              }}>
+                                {player.odUserId === currentUserId ? 'You' : (player.displayName?.slice(0, 6) || 'Player')}
+                              </div>
+                              <div style={{
+                                color: player.finalGain >= 0 ? '#10b981' : '#ef4444',
+                                fontSize: '10px'
+                              }}>
+                                {player.finalGain >= 0 ? '+' : ''}{player.finalGain?.toFixed(1)}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Battle Info */}
+                        <div style={{
+                          marginTop: '12px',
+                          paddingTop: '12px',
+                          borderTop: '1px solid #21262d',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          color: '#6e7681',
+                          fontSize: '11px'
+                        }}>
+                          <span>{battle.code || 'Draft Battle'}</span>
+                          <span>{battle.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'}</span>
+                          <span>4-Player Draft</span>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Classic battle card (2 players)
+                  return (
+                    <BattleHistoryCard
+                      key={battle.battleId || index}
+                      battle={battle}
+                      userId={user?.odUserId}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
