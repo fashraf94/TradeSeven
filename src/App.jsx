@@ -7296,50 +7296,89 @@ export default function PortfolioDuel() {
             )}
           </div>
 
-          {/* Players Board */}
+          {/* Player Status Cards - 2x2 Grid for mobile */}
           <div style={{
             background: '#161b22',
             padding: '12px 16px',
             borderBottom: '1px solid #21262d'
           }}>
             <div style={{
-              maxWidth: '900px',
-              margin: '0 auto',
               display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              gap: '8px'
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: '8px',
+              marginBottom: '0',
+              maxWidth: '400px',
+              margin: '0 auto'
             }}>
-              {roomDraft?.players?.map((player) => {
+              {roomDraft?.players?.map((player, idx) => {
                 const isCurrentPicker = player.odUserId === roomDraft.currentPlayerId;
                 const isMe = player.odUserId === currentUserId;
 
                 return (
                   <div
-                    key={player.odUserId}
+                    key={player.odUserId || idx}
                     style={{
-                      background: isCurrentPicker ? 'rgba(0, 217, 255, 0.1)' : '#0d1117',
-                      border: isCurrentPicker ? '2px solid #00d9ff' : '1px solid #21262d',
-                      borderRadius: '8px',
-                      padding: '10px',
-                      textAlign: 'center'
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      background: isMe ? 'rgba(0, 217, 255, 0.1)' : '#0d1117',
+                      border: isCurrentPicker
+                        ? '2px solid #00d9ff'
+                        : isMe
+                          ? '1px solid rgba(0, 217, 255, 0.3)'
+                          : '1px solid #21262d',
+                      textAlign: 'center',
+                      position: 'relative',
+                      boxShadow: isCurrentPicker ? '0 0 12px rgba(0, 217, 255, 0.3)' : 'none'
                     }}
                   >
+                    {/* Current picker indicator */}
+                    {isCurrentPicker && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '-8px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        background: '#00d9ff',
+                        color: '#000',
+                        fontSize: '9px',
+                        fontWeight: 'bold',
+                        padding: '2px 6px',
+                        borderRadius: '4px'
+                      }}>
+                        PICKING
+                      </div>
+                    )}
+
+                    {/* Player name row */}
                     <div style={{
-                      fontSize: '11px',
-                      fontWeight: '600',
-                      color: isMe ? '#00d9ff' : '#ffffff',
-                      marginBottom: '6px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      marginBottom: '4px'
                     }}>
-                      {isMe ? 'YOU' : player.displayName}
-                      {player.isCPU && ' 🤖'}
-                      {isCurrentPicker && ' ★'}
+                      {player.isCPU && <span style={{ fontSize: '12px' }}>🤖</span>}
+                      <span style={{
+                        color: isMe ? '#00d9ff' : '#ffffff',
+                        fontWeight: isMe ? 'bold' : '600',
+                        fontSize: '13px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: '100px'
+                      }}>
+                        {isMe ? 'YOU' : player.displayName?.slice(0, 10) || `Player ${idx + 1}`}
+                      </span>
+                      {isCurrentPicker && <span style={{ fontSize: '10px' }}>⭐</span>}
                     </div>
 
-                    {/* Category Progress */}
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: '4px', fontSize: '10px' }}>
+                    {/* Category counts */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      fontSize: '11px'
+                    }}>
                       <span style={{ color: '#10b981' }}>S:{player.categories?.steady || 0}</span>
                       <span style={{ color: '#f59e0b' }}>R:{player.categories?.risky || 0}</span>
                       <span style={{ color: '#3b82f6' }}>D:{player.categories?.defensive || 0}</span>
