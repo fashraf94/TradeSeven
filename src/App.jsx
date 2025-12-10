@@ -1087,6 +1087,7 @@ export default function PortfolioDuel() {
   // 1. ALL STATE DECLARATIONS
   // ============================================
   const [screen, setScreen] = useState('home');
+  const [historyTab, setHistoryTab] = useState('classic'); // 'classic' or 'draft'
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
   const [portfolioName, setPortfolioName] = useState('');
@@ -1166,8 +1167,6 @@ export default function PortfolioDuel() {
   const [isRosterExpanded, setIsRosterExpanded] = useState(false);
   const [rosterTouchStart, setRosterTouchStart] = useState(null);
   const [rosterTouchEnd, setRosterTouchEnd] = useState(null);
-  const [lastDraftPick, setLastDraftPick] = useState(null);
-  const [previousPickCount, setPreviousPickCount] = useState(0);
 
   // Toggle asset expansion
   const toggleAssetExpansion = (symbol) => {
@@ -1480,36 +1479,13 @@ export default function PortfolioDuel() {
     if (screen !== 'draftLobby' && screen !== 'draftRoom') return;
 
     let unsubscribe = null;
-    let prevPickCount = 0;
 
     const loadDraftService = async () => {
       try {
         const draftService = await import('./services/draftService');
         unsubscribe = draftService.subscribeToDraft(currentDraft.id, (draft) => {
           if (draft) {
-            // Calculate total picks made
-            const totalPicks = draft.players?.reduce((sum, p) => sum + (p.picks?.length || 0), 0) || 0;
-
-            // If a new pick was made, find out what it was
-            if (totalPicks > prevPickCount && prevPickCount > 0) {
-              // Find the most recent pick from the picks array
-              const allPicks = draft.picks || [];
-              if (allPicks.length > 0) {
-                const lastPick = allPicks[allPicks.length - 1];
-                const pickerPlayer = draft.players?.find(p => p.odUserId === lastPick.playerId);
-
-                if (pickerPlayer && lastPick.asset) {
-                  setLastDraftPick({
-                    playerName: pickerPlayer.displayName,
-                    symbol: lastPick.asset.symbol,
-                    category: lastPick.asset.category,
-                    isCPU: pickerPlayer.isCPU
-                  });
-                }
-              }
-            }
-
-            prevPickCount = totalPicks;
+            // Just use draftState.lastPick directly from Firebase - no complex tracking needed
             setDraftState(draft);
 
             // Auto-navigate based on status changes
@@ -1535,7 +1511,6 @@ export default function PortfolioDuel() {
 
     return () => {
       if (unsubscribe) unsubscribe();
-      setLastDraftPick(null); // Clear last pick when leaving
     };
   }, [currentDraft?.id, screen]);
 
@@ -3386,36 +3361,6 @@ export default function PortfolioDuel() {
               <ArrowRight style={{ height: '20px', width: '20px', color: colors.background }} />
             </motion.div>
 
-            {/* Draft History Link - Only show in Draft Mode */}
-            {gameMode === 'draft' && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.45 }}
-                onClick={() => setScreen('draftHistory')}
-                style={{
-                  background: '#161b22',
-                  border: '1px solid #8b5cf6',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '24px'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ fontSize: '24px' }}>📜</span>
-                  <div>
-                    <div style={{ color: '#ffffff', fontWeight: '600' }}>Draft History</div>
-                    <div style={{ color: '#8b949e', fontSize: '12px' }}>View past drafts & stats</div>
-                  </div>
-                </div>
-                <span style={{ color: '#8b5cf6', fontSize: '20px' }}>→</span>
-              </motion.div>
-            )}
-
             {/* Completed Battles - Compact List */}
             {completedBattles.length > 0 && (
               <motion.div
@@ -3737,6 +3682,7 @@ export default function PortfolioDuel() {
                 <button
                   onClick={() => {
                     console.log('📜 Battle History clicked');
+                    setHistoryTab(gameMode === 'draft' ? 'draft' : 'classic');
                     setScreen('battleHistory');
                     setSidebarOpen(false);
                   }}
@@ -7302,20 +7248,20 @@ export default function PortfolioDuel() {
                 }}>
                   🎯 YOUR TURN - Pick an asset!
                 </span>
-              ) : lastDraftPick ? (
+              ) : draftState?.lastPick ? (
                 <div>
                   <span style={{ color: '#8b949e', fontSize: '13px' }}>
-                    {lastDraftPick.isCPU ? '🤖' : '👤'} {lastDraftPick.playerName} picked
+                    {draftState.lastPick.isCPU ? '🤖' : '👤'} {draftState.lastPick.displayName} picked
                   </span>
                   <span style={{
-                    color: lastDraftPick.category === 'steady' ? '#10b981'
-                         : lastDraftPick.category === 'risky' ? '#f59e0b'
+                    color: draftState.lastPick.category === 'steady' ? '#10b981'
+                         : draftState.lastPick.category === 'risky' ? '#f59e0b'
                          : '#3b82f6',
                     fontWeight: 'bold',
                     fontSize: '16px',
                     marginLeft: '8px'
                   }}>
-                    {lastDraftPick.symbol}
+                    {draftState.lastPick.symbol}
                   </span>
                   <span style={{
                     color: '#6e7681',
@@ -7323,7 +7269,7 @@ export default function PortfolioDuel() {
                     marginLeft: '8px',
                     textTransform: 'capitalize'
                   }}>
-                    ({lastDraftPick.category})
+                    ({draftState.lastPick.category})
                   </span>
                 </div>
               ) : (
@@ -10172,7 +10118,16 @@ export default function PortfolioDuel() {
   // BATTLE HISTORY SCREEN
   if (screen === 'battleHistory') {
     // Get completed battles from user data or localStorage
-    const completedBattles = user?.completedBattles || [];
+    const allCompletedBattles = user?.completedBattles || [];
+
+    // Filter battles by tab - Draft battles have isDraft: true
+    const completedBattles = allCompletedBattles.filter(b =>
+      historyTab === 'draft' ? b.isDraft === true : b.isDraft !== true
+    );
+
+    // Stats for the current tab
+    const tabWins = completedBattles.filter(b => b.won === true).length;
+    const tabLosses = completedBattles.filter(b => b.won === false).length;
 
     return (
       <div style={containerStyle}>
@@ -10211,21 +10166,67 @@ export default function PortfolioDuel() {
           </div>
 
           <div style={{ maxWidth: '896px', margin: '0 auto', padding: '16px' }}>
+            {/* Tab Buttons */}
+            <div style={{
+              display: 'flex',
+              gap: '8px',
+              marginBottom: '20px',
+              padding: '4px',
+              background: '#161b22',
+              borderRadius: '12px',
+              border: '1px solid #21262d'
+            }}>
+              <button
+                onClick={() => setHistoryTab('classic')}
+                style={{
+                  flex: 1,
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: historyTab === 'classic' ? '#00d9ff' : 'transparent',
+                  color: historyTab === 'classic' ? '#000000' : '#8b949e',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                Classic Mode
+              </button>
+              <button
+                onClick={() => setHistoryTab('draft')}
+                style={{
+                  flex: 1,
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: historyTab === 'draft' ? '#8b5cf6' : 'transparent',
+                  color: historyTab === 'draft' ? '#ffffff' : '#8b949e',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                Draft Mode
+              </button>
+            </div>
+
             {/* Stats Summary */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px' }}>
               {/* Total Battles */}
               <div style={{
                 backgroundColor: '#161b22',
-                border: '1px solid #21262d',
+                border: `1px solid ${historyTab === 'draft' ? '#8b5cf6' : '#21262d'}`,
                 borderRadius: '12px',
                 padding: '16px',
                 textAlign: 'center'
               }}>
-                <div style={{ fontSize: '28px', marginBottom: '8px' }}>⚔️</div>
+                <div style={{ fontSize: '28px', marginBottom: '8px' }}>{historyTab === 'draft' ? '🎯' : '⚔️'}</div>
                 <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ffffff' }}>
-                  {(user?.wins || 0) + (user?.losses || 0)}
+                  {tabWins + tabLosses}
                 </div>
-                <div style={{ fontSize: '13px', color: '#8b949e' }}>Total Battles</div>
+                <div style={{ fontSize: '13px', color: '#8b949e' }}>{historyTab === 'draft' ? 'Draft' : 'Classic'} Battles</div>
               </div>
 
               {/* Wins */}
@@ -10238,7 +10239,7 @@ export default function PortfolioDuel() {
               }}>
                 <div style={{ fontSize: '28px', marginBottom: '8px' }}>🏆</div>
                 <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#22c55e' }}>
-                  {user?.wins || 0}
+                  {tabWins}
                 </div>
                 <div style={{ fontSize: '13px', color: '#8b949e' }}>Wins</div>
               </div>
@@ -10253,14 +10254,16 @@ export default function PortfolioDuel() {
               }}>
                 <div style={{ fontSize: '28px', marginBottom: '8px' }}>💀</div>
                 <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
-                  {user?.losses || 0}
+                  {tabLosses}
                 </div>
                 <div style={{ fontSize: '13px', color: '#8b949e' }}>Losses</div>
               </div>
             </div>
 
             {/* Battle List */}
-            <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff', marginBottom: '16px' }}>Past Battles</h2>
+            <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff', marginBottom: '16px' }}>
+              {historyTab === 'draft' ? 'Past Draft Battles' : 'Past Classic Battles'}
+            </h2>
 
             {completedBattles.length === 0 ? (
               <div style={{
@@ -10270,16 +10273,21 @@ export default function PortfolioDuel() {
                 padding: '48px',
                 textAlign: 'center'
               }}>
-                <div style={{ fontSize: '64px', marginBottom: '16px' }}>🎮</div>
-                <p style={{ color: '#8b949e', fontSize: '18px', marginBottom: '8px' }}>No battles yet</p>
+                <div style={{ fontSize: '64px', marginBottom: '16px' }}>{historyTab === 'draft' ? '🎯' : '🎮'}</div>
+                <p style={{ color: '#8b949e', fontSize: '18px', marginBottom: '8px' }}>
+                  No {historyTab === 'draft' ? 'draft' : 'classic'} battles yet
+                </p>
                 <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '16px' }}>
-                  Create your first battle to start your history!
+                  {historyTab === 'draft'
+                    ? 'Start a draft battle to build your history!'
+                    : 'Create your first classic battle to start your history!'
+                  }
                 </p>
                 <button
                   onClick={() => setScreen('dashboard')}
                   style={{
-                    backgroundColor: '#00d9ff',
-                    color: '#000000',
+                    backgroundColor: historyTab === 'draft' ? '#8b5cf6' : '#00d9ff',
+                    color: historyTab === 'draft' ? '#ffffff' : '#000000',
                     fontWeight: 'bold',
                     padding: '12px 24px',
                     borderRadius: '8px',

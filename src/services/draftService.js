@@ -365,6 +365,17 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
   }
 
   // Build update object
+  // Create lastPick data for display in draft room
+  const lastPickData = {
+    odUserId: userId,
+    displayName: player.displayName,
+    symbol: asset.symbol,
+    category: asset.category,
+    timestamp: new Date().toISOString(),
+    isCPU: player.isCPU || false,
+    pickNumber: draft.currentPickIndex + 1
+  };
+
   const updateData = {
     players: updatedPlayers,
     picks: arrayUnion(pick),
@@ -372,6 +383,7 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
     currentPickIndex: nextPickIndex,
     currentPlayerId: nextPlayerId,
     pickDeadline: nextDeadline,
+    lastPick: lastPickData,
     currentRound: Math.floor(nextPickIndex / 4) + 1
   };
 
