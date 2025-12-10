@@ -2421,7 +2421,8 @@ export default function PortfolioDuel() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 zIndex: 1000,
-                backdropFilter: 'blur(4px)'
+                backdropFilter: 'blur(4px)',
+                WebkitBackdropFilter: 'blur(4px)'
               }}
             >
               <motion.div
@@ -3576,7 +3577,8 @@ export default function PortfolioDuel() {
                 bottom: 0,
                 backgroundColor: 'rgba(0, 0, 0, 0.7)',
                 zIndex: 100,
-                backdropFilter: 'blur(4px)'
+                backdropFilter: 'blur(4px)',
+                WebkitBackdropFilter: 'blur(4px)'
               }}
             />
 
@@ -8078,8 +8080,43 @@ export default function PortfolioDuel() {
 
   // DRAFT RESULTS SCREEN - Phase 3
   if (screen === 'draftResults') {
+    // Safety check - if no draft data, show fallback
+    if (!currentDraft) {
+      return (
+        <div style={containerStyle}>
+          <div style={{
+            minHeight: '100vh',
+            background: '#0d1117',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '40px',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>⏳</div>
+            <p style={{ color: '#ffffff', fontSize: '18px', marginBottom: '16px' }}>Loading draft results...</p>
+            <button
+              onClick={() => setScreen('dashboard')}
+              style={{
+                padding: '12px 24px',
+                background: '#00d9ff',
+                color: '#000',
+                border: 'none',
+                borderRadius: '8px',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     const draftData = currentDraft;
-    const currentUserId = user.odUserId || user.username;
+    const currentUserId = user?.odUserId || user?.username;
     const myPlayer = draftData?.players?.find(p => p.odUserId === currentUserId);
 
     const handleCreateBattle = async () => {
@@ -8182,135 +8219,103 @@ export default function PortfolioDuel() {
       setCurrentDraft(null);
     };
 
-    // Celebration animation state
-    const [showConfetti, setShowConfetti] = React.useState(false);
-    const [rockets] = React.useState([
-      { id: 1, left: '20%', delay: 0 },
-      { id: 2, left: '50%', delay: 0.2 },
-      { id: 3, left: '80%', delay: 0.4 },
-    ]);
-    const [confettiPieces] = React.useState(() => {
-      const confettiColors = ['#10b981', '#8b5cf6', '#00d9ff', '#f59e0b', '#ffffff', '#22c55e'];
-      const pieces = [];
-      for (let i = 0; i < 50; i++) {
-        pieces.push({
-          id: i,
-          left: `${Math.random() * 100}%`,
-          color: confettiColors[Math.floor(Math.random() * confettiColors.length)],
-          delay: Math.random() * 0.5,
-          duration: 2 + Math.random() * 2,
-          size: 6 + Math.random() * 8,
-          isCircle: Math.random() > 0.5
-        });
-      }
-      return pieces;
-    });
-
-    React.useEffect(() => {
-      const timer = setTimeout(() => setShowConfetti(true), 1000);
-      return () => clearTimeout(timer);
-    }, []);
+    // Static confetti data (no hooks needed)
+    const confettiColors = ['#10b981', '#8b5cf6', '#00d9ff', '#f59e0b', '#ffffff'];
+    const confettiPieces = Array.from({ length: 30 }, (_, i) => ({
+      id: i,
+      left: (i * 3.3) % 100,
+      color: confettiColors[i % confettiColors.length],
+      delay: (i * 0.1) % 2,
+      duration: 2.5 + (i % 3),
+      size: 8 + (i % 8)
+    }));
 
     return (
       <div style={containerStyle}>
         <div style={{ minHeight: '100vh', background: '#0d1117' }}>
-          {/* Celebration Animation Header */}
+          {/* Celebration Animation Header - CSS Only */}
           <style>{`
-            @keyframes rocketFly {
-              0% { transform: translateY(100vh) translateX(-50%) rotate(0deg); opacity: 1; }
-              70% { transform: translateY(-20px) translateX(-50%) rotate(0deg); opacity: 1; }
-              100% { transform: translateY(-50px) translateX(-50%) rotate(0deg) scale(0); opacity: 0; }
+            @keyframes confettiFall {
+              0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+              100% { transform: translateY(250px) rotate(360deg); opacity: 0; }
             }
-            @keyframes confettiPop {
-              0% { transform: scale(0) translateY(0); opacity: 0; }
-              20% { transform: scale(1.2) translateY(0); opacity: 1; }
-              100% { transform: scale(1) translateY(100vh) rotate(720deg); opacity: 0; }
+            @keyframes bounce {
+              0%, 100% { transform: translateY(0); }
+              50% { transform: translateY(-10px); }
+            }
+            @keyframes fadeIn {
+              0% { opacity: 0; transform: translateY(20px); }
+              100% { opacity: 1; transform: translateY(0); }
             }
             @keyframes sparkle {
-              0%, 100% { opacity: 0; transform: scale(0); }
-              50% { opacity: 1; transform: scale(1); }
-            }
-            @keyframes titleReveal {
-              0% { opacity: 0; transform: translateY(20px) scale(0.9); }
-              100% { opacity: 1; transform: translateY(0) scale(1); }
+              0%, 100% { opacity: 0.3; }
+              50% { opacity: 1; }
             }
           `}</style>
           <div style={{
             position: 'relative',
             width: '100%',
-            height: '200px',
+            padding: '40px 20px',
             overflow: 'hidden',
-            background: 'linear-gradient(180deg, #0d1117 0%, #161b22 100%)'
+            background: 'linear-gradient(180deg, #1a1a2e 0%, #0d1117 100%)',
+            textAlign: 'center'
           }}>
-            {/* Rockets */}
-            {rockets.map(rocket => (
-              <div
-                key={rocket.id}
-                style={{
-                  position: 'absolute',
-                  left: rocket.left,
-                  bottom: 0,
-                  fontSize: '32px',
-                  animation: `rocketFly 1.5s ease-out ${rocket.delay}s forwards`,
-                  zIndex: 10
-                }}
-              >
-                🚀
-              </div>
-            ))}
-
-            {/* Confetti */}
-            {showConfetti && confettiPieces.map(piece => (
+            {/* Confetti pieces - CSS animation only */}
+            {confettiPieces.map(piece => (
               <div
                 key={piece.id}
                 style={{
                   position: 'absolute',
-                  left: piece.left,
-                  top: '20px',
+                  left: `${piece.left}%`,
+                  top: '-20px',
                   width: `${piece.size}px`,
                   height: `${piece.size}px`,
                   backgroundColor: piece.color,
-                  borderRadius: piece.isCircle ? '50%' : '2px',
-                  animation: `confettiPop ${piece.duration}s ease-out ${piece.delay}s forwards`,
-                  zIndex: 5
+                  borderRadius: piece.id % 2 === 0 ? '50%' : '2px',
+                  pointerEvents: 'none',
+                  animation: `confettiFall ${piece.duration}s ease-out ${piece.delay}s infinite`
                 }}
               />
             ))}
 
             {/* Sparkles */}
-            {showConfetti && (
-              <>
-                <span style={{ position: 'absolute', left: '15%', top: '30px', fontSize: '20px', animation: 'sparkle 1s ease-in-out infinite 0s' }}>✨</span>
-                <span style={{ position: 'absolute', left: '35%', top: '50px', fontSize: '20px', animation: 'sparkle 1s ease-in-out infinite 0.3s' }}>⭐</span>
-                <span style={{ position: 'absolute', left: '55%', top: '25px', fontSize: '20px', animation: 'sparkle 1s ease-in-out infinite 0.1s' }}>✨</span>
-                <span style={{ position: 'absolute', left: '75%', top: '45px', fontSize: '20px', animation: 'sparkle 1s ease-in-out infinite 0.4s' }}>⭐</span>
-                <span style={{ position: 'absolute', left: '90%', top: '35px', fontSize: '20px', animation: 'sparkle 1s ease-in-out infinite 0.2s' }}>✨</span>
-              </>
-            )}
+            <span style={{ position: 'absolute', left: '10%', top: '20px', fontSize: '20px', animation: 'sparkle 1.5s ease-in-out infinite', pointerEvents: 'none' }}>✨</span>
+            <span style={{ position: 'absolute', left: '30%', top: '60px', fontSize: '16px', animation: 'sparkle 1.5s ease-in-out infinite 0.3s', pointerEvents: 'none' }}>⭐</span>
+            <span style={{ position: 'absolute', left: '70%', top: '30px', fontSize: '18px', animation: 'sparkle 1.5s ease-in-out infinite 0.6s', pointerEvents: 'none' }}>✨</span>
+            <span style={{ position: 'absolute', left: '90%', top: '50px', fontSize: '14px', animation: 'sparkle 1.5s ease-in-out infinite 0.9s', pointerEvents: 'none' }}>⭐</span>
 
-            {/* Title - appears after rockets */}
+            {/* Rocket emojis with bounce */}
             <div style={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              textAlign: 'center',
-              animation: 'titleReveal 0.6s ease-out 1s both',
-              zIndex: 20
+              fontSize: '40px',
+              marginBottom: '16px',
+              animation: 'bounce 1s ease-in-out infinite',
+              position: 'relative',
+              zIndex: 10
             }}>
-              <h1 style={{
-                fontSize: '28px',
-                fontWeight: 'bold',
-                color: '#ffffff',
-                marginBottom: '8px',
-                textShadow: '0 2px 10px rgba(0,0,0,0.5)'
-              }}>
-                Draft Complete!
-              </h1>
-              <p style={{ color: '#8b949e', fontSize: '14px' }}>
-                All players have made their picks
-              </p>
+              🚀 🎉 🚀
             </div>
+
+            {/* Title */}
+            <h1 style={{
+              fontSize: '28px',
+              fontWeight: 'bold',
+              color: '#ffffff',
+              marginBottom: '8px',
+              animation: 'fadeIn 0.6s ease-out',
+              position: 'relative',
+              zIndex: 10
+            }}>
+              Draft Complete!
+            </h1>
+            <p style={{
+              color: '#8b949e',
+              fontSize: '14px',
+              animation: 'fadeIn 0.6s ease-out 0.2s both',
+              position: 'relative',
+              zIndex: 10
+            }}>
+              All players have made their picks
+            </p>
           </div>
 
           <div style={{ maxWidth: '600px', margin: '0 auto', padding: '24px 16px' }}>
