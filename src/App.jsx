@@ -3066,240 +3066,251 @@ export default function PortfolioDuel() {
             {/* Create & Join Battle Cards - TRUE SIDE-BY-SIDE on all screens */}
             <div className="grid grid-cols-2 gap-3 mb-5">
               {/* CREATE BATTLE Card */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.2 }}
-                onClick={() => {
-                  setPortfolio([]); setPortfolioType(null);
-                  setPortfolioName('');
-                  setAssetType('stocks');
-                  setSearchTerm('');
-                  // Route based on game mode
-                  if (gameMode === 'draft') {
-                    setScreen('draftSetup');  // New screen for draft
-                  } else {
-                    setScreen('builder');     // Existing classic mode
-                  }
-                }}
-                style={{
-                  position: 'relative',
-                  background: colors.cardBg,
-                  borderRadius: '16px',
-                  padding: hasActiveBattle ? '28px 24px' : '40px 32px',
-                  border: `1px solid ${colors.border}`,
-                  cursor: 'pointer',
-                  overflow: 'hidden',
-                  transition: 'all 0.3s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = colors.cyan;
-                  e.currentTarget.style.boxShadow = `0 0 30px ${colors.cyan}30`;
-                  e.currentTarget.style.transform = 'translateY(-4px)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = colors.border;
-                  e.currentTarget.style.boxShadow = 'none';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                }}
-              >
-                {/* Background Pattern - Chart Lines */}
-                <div style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  opacity: 0.08,
-                  background: `
-                    linear-gradient(90deg, transparent 0%, ${colors.cyan}20 50%, transparent 100%),
-                    repeating-linear-gradient(
-                      0deg,
-                      transparent,
-                      transparent 20px,
-                      ${colors.cyan}10 20px,
-                      ${colors.cyan}10 21px
-                    )
-                  `,
-                  pointerEvents: 'none'
-                }} />
+              {(() => {
+                const createColor = gameMode === 'draft' ? '#10b981' : colors.cyan;
+                return (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: 0.2 }}
+                    onClick={() => {
+                      setPortfolio([]); setPortfolioType(null);
+                      setPortfolioName('');
+                      setAssetType('stocks');
+                      setSearchTerm('');
+                      // Route based on game mode
+                      if (gameMode === 'draft') {
+                        setScreen('draftSetup');  // New screen for draft
+                      } else {
+                        setScreen('builder');     // Existing classic mode
+                      }
+                    }}
+                    style={{
+                      position: 'relative',
+                      background: colors.cardBg,
+                      borderRadius: '16px',
+                      padding: hasActiveBattle ? '28px 24px' : '40px 32px',
+                      border: `1px solid ${colors.border}`,
+                      cursor: 'pointer',
+                      overflow: 'hidden',
+                      transition: 'all 0.3s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = createColor;
+                      e.currentTarget.style.boxShadow = `0 0 30px ${createColor}30`;
+                      e.currentTarget.style.transform = 'translateY(-4px)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = colors.border;
+                      e.currentTarget.style.boxShadow = 'none';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }}
+                  >
+                    {/* Background Pattern - Chart Lines */}
+                    <div style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      opacity: 0.08,
+                      background: `
+                        linear-gradient(90deg, transparent 0%, ${createColor}20 50%, transparent 100%),
+                        repeating-linear-gradient(
+                          0deg,
+                          transparent,
+                          transparent 20px,
+                          ${createColor}10 20px,
+                          ${createColor}10 21px
+                        )
+                      `,
+                      pointerEvents: 'none'
+                    }} />
 
-                {/* Gradient Overlay */}
-                <div style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '40%',
-                  height: '100%',
-                  background: `linear-gradient(90deg, ${colors.cyan}10 0%, transparent 100%)`,
-                  pointerEvents: 'none'
-                }} />
+                    {/* Gradient Overlay */}
+                    <div style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '40%',
+                      height: '100%',
+                      background: `linear-gradient(90deg, ${createColor}10 0%, transparent 100%)`,
+                      pointerEvents: 'none'
+                    }} />
 
-                {/* Content */}
-                <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
-                  <Trophy style={{
-                    height: hasActiveBattle ? '40px' : '56px',
-                    width: hasActiveBattle ? '40px' : '56px',
-                    color: colors.cyan,
-                    marginBottom: '16px'
-                  }} />
-                  <h3 style={{
-                    fontSize: hasActiveBattle ? '20px' : '24px',
-                    fontWeight: 'bold',
-                    color: colors.textPrimary,
-                    margin: '0 0 8px 0',
-                    textTransform: 'uppercase',
-                    letterSpacing: '2px'
-                  }}>
-                    Create Battle
-                  </h3>
-                  <p style={{
-                    fontSize: '14px',
-                    color: colors.textSecondary,
-                    margin: '0 0 20px 0'
-                  }}>
-                    Start a new battle & set the rules.
-                  </p>
-                  <div style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '10px 20px',
-                    background: 'transparent',
-                    border: `2px solid ${colors.cyan}`,
-                    borderRadius: '10px',
-                    color: colors.cyan,
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    textTransform: 'uppercase',
-                    letterSpacing: '1px'
-                  }}>
-                    CREATE BATTLE
-                    <Plus style={{ height: '16px', width: '16px' }} />
-                  </div>
-                </div>
-              </motion.div>
+                    {/* Content */}
+                    <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
+                      <Trophy style={{
+                        height: hasActiveBattle ? '40px' : '56px',
+                        width: hasActiveBattle ? '40px' : '56px',
+                        color: createColor,
+                        marginBottom: '16px'
+                      }} />
+                      <h3 style={{
+                        fontSize: hasActiveBattle ? '20px' : '24px',
+                        fontWeight: 'bold',
+                        color: colors.textPrimary,
+                        margin: '0 0 8px 0',
+                        textTransform: 'uppercase',
+                        letterSpacing: '2px'
+                      }}>
+                        {gameMode === 'draft' ? 'Create Draft' : 'Create Battle'}
+                      </h3>
+                      <p style={{
+                        fontSize: '14px',
+                        color: colors.textSecondary,
+                        margin: '0 0 20px 0'
+                      }}>
+                        {gameMode === 'draft' ? 'Start a 4-player snake draft.' : 'Start a new battle & set the rules.'}
+                      </p>
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '10px 20px',
+                        background: gameMode === 'draft' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'transparent',
+                        border: gameMode === 'draft' ? 'none' : `2px solid ${createColor}`,
+                        borderRadius: '10px',
+                        color: gameMode === 'draft' ? '#ffffff' : createColor,
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px',
+                        boxShadow: gameMode === 'draft' ? '0 4px 12px rgba(16, 185, 129, 0.3)' : 'none'
+                      }}>
+                        {gameMode === 'draft' ? '🐍 CREATE DRAFT' : 'CREATE BATTLE'}
+                        {gameMode !== 'draft' && <Plus style={{ height: '16px', width: '16px' }} />}
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })()}
 
               {/* JOIN BATTLE Card */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.3 }}
-                onClick={() => {
-                  setPortfolio([]); setPortfolioType(null);
-                  setPortfolioName('');
-                  setAssetType('stocks');
-                  setSearchTerm('');
-                  setJoinCode('');
-                  // Route based on game mode
-                  if (gameMode === 'draft') {
-                    setScreen('draftJoin');   // New screen for draft join
-                  } else {
-                    setScreen('join');        // Existing classic mode
-                  }
-                }}
-                style={{
-                  position: 'relative',
-                  background: colors.cardBg,
-                  borderRadius: '16px',
-                  padding: hasActiveBattle ? '28px 24px' : '40px 32px',
-                  border: `1px solid ${colors.border}`,
-                  cursor: 'pointer',
-                  overflow: 'hidden',
-                  transition: 'all 0.3s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = colors.purple;
-                  e.currentTarget.style.boxShadow = `0 0 30px ${colors.purple}30`;
-                  e.currentTarget.style.transform = 'translateY(-4px)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = colors.border;
-                  e.currentTarget.style.boxShadow = 'none';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                }}
-              >
-                {/* Background Pattern - Target/Crosshair */}
-                <div style={{
-                  position: 'absolute',
-                  top: '50%',
-                  right: '10%',
-                  transform: 'translateY(-50%)',
-                  width: '120px',
-                  height: '120px',
-                  opacity: 0.06,
-                  border: `3px solid ${colors.purple}`,
-                  borderRadius: '50%',
-                  pointerEvents: 'none'
-                }} />
-                <div style={{
-                  position: 'absolute',
-                  top: '50%',
-                  right: 'calc(10% + 30px)',
-                  transform: 'translateY(-50%)',
-                  width: '60px',
-                  height: '60px',
-                  opacity: 0.08,
-                  border: `2px solid ${colors.purple}`,
-                  borderRadius: '50%',
-                  pointerEvents: 'none'
-                }} />
+              {(() => {
+                const joinColor = gameMode === 'draft' ? '#10b981' : colors.purple;
+                return (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: 0.3 }}
+                    onClick={() => {
+                      setPortfolio([]); setPortfolioType(null);
+                      setPortfolioName('');
+                      setAssetType('stocks');
+                      setSearchTerm('');
+                      setJoinCode('');
+                      // Route based on game mode
+                      if (gameMode === 'draft') {
+                        setScreen('draftJoin');   // New screen for draft join
+                      } else {
+                        setScreen('join');        // Existing classic mode
+                      }
+                    }}
+                    style={{
+                      position: 'relative',
+                      background: colors.cardBg,
+                      borderRadius: '16px',
+                      padding: hasActiveBattle ? '28px 24px' : '40px 32px',
+                      border: `1px solid ${colors.border}`,
+                      cursor: 'pointer',
+                      overflow: 'hidden',
+                      transition: 'all 0.3s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = joinColor;
+                      e.currentTarget.style.boxShadow = `0 0 30px ${joinColor}30`;
+                      e.currentTarget.style.transform = 'translateY(-4px)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = colors.border;
+                      e.currentTarget.style.boxShadow = 'none';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }}
+                  >
+                    {/* Background Pattern - Target/Crosshair */}
+                    <div style={{
+                      position: 'absolute',
+                      top: '50%',
+                      right: '10%',
+                      transform: 'translateY(-50%)',
+                      width: '120px',
+                      height: '120px',
+                      opacity: 0.06,
+                      border: `3px solid ${joinColor}`,
+                      borderRadius: '50%',
+                      pointerEvents: 'none'
+                    }} />
+                    <div style={{
+                      position: 'absolute',
+                      top: '50%',
+                      right: 'calc(10% + 30px)',
+                      transform: 'translateY(-50%)',
+                      width: '60px',
+                      height: '60px',
+                      opacity: 0.08,
+                      border: `2px solid ${joinColor}`,
+                      borderRadius: '50%',
+                      pointerEvents: 'none'
+                    }} />
 
-                {/* Gradient Overlay */}
-                <div style={{
-                  position: 'absolute',
-                  top: 0,
-                  right: 0,
-                  width: '40%',
-                  height: '100%',
-                  background: `linear-gradient(270deg, ${colors.purple}10 0%, transparent 100%)`,
-                  pointerEvents: 'none'
-                }} />
+                    {/* Gradient Overlay */}
+                    <div style={{
+                      position: 'absolute',
+                      top: 0,
+                      right: 0,
+                      width: '40%',
+                      height: '100%',
+                      background: `linear-gradient(270deg, ${joinColor}10 0%, transparent 100%)`,
+                      pointerEvents: 'none'
+                    }} />
 
-                {/* Content */}
-                <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
-                  <Swords style={{
-                    height: hasActiveBattle ? '40px' : '56px',
-                    width: hasActiveBattle ? '40px' : '56px',
-                    color: colors.purple,
-                    marginBottom: '16px'
-                  }} />
-                  <h3 style={{
-                    fontSize: hasActiveBattle ? '20px' : '24px',
-                    fontWeight: 'bold',
-                    color: colors.textPrimary,
-                    margin: '0 0 8px 0',
-                    textTransform: 'uppercase',
-                    letterSpacing: '2px'
-                  }}>
-                    Join Battle
-                  </h3>
-                  <p style={{
-                    fontSize: '14px',
-                    color: colors.textSecondary,
-                    margin: '0 0 20px 0'
-                  }}>
-                    Find an open match & compete.
-                  </p>
-                  <div style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '10px 20px',
-                    background: 'transparent',
-                    border: `2px solid ${colors.purple}`,
-                    borderRadius: '10px',
-                    color: colors.purple,
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    textTransform: 'uppercase',
-                    letterSpacing: '1px'
-                  }}>
-                    JOIN BATTLE
-                    <ArrowRight style={{ height: '16px', width: '16px' }} />
-                  </div>
-                </div>
-              </motion.div>
+                    {/* Content */}
+                    <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
+                      <Swords style={{
+                        height: hasActiveBattle ? '40px' : '56px',
+                        width: hasActiveBattle ? '40px' : '56px',
+                        color: joinColor,
+                        marginBottom: '16px'
+                      }} />
+                      <h3 style={{
+                        fontSize: hasActiveBattle ? '20px' : '24px',
+                        fontWeight: 'bold',
+                        color: colors.textPrimary,
+                        margin: '0 0 8px 0',
+                        textTransform: 'uppercase',
+                        letterSpacing: '2px'
+                      }}>
+                        {gameMode === 'draft' ? 'Join Draft' : 'Join Battle'}
+                      </h3>
+                      <p style={{
+                        fontSize: '14px',
+                        color: colors.textSecondary,
+                        margin: '0 0 20px 0'
+                      }}>
+                        {gameMode === 'draft' ? 'Enter a draft code to join.' : 'Find an open match & compete.'}
+                      </p>
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '10px 20px',
+                        background: 'transparent',
+                        border: `2px solid ${joinColor}`,
+                        borderRadius: '10px',
+                        color: joinColor,
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px'
+                      }}>
+                        {gameMode === 'draft' ? '🎯 JOIN DRAFT' : 'JOIN BATTLE'}
+                        <ArrowRight style={{ height: '16px', width: '16px' }} />
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })()}
             </div>
 
             {/* Training Mode Banner - Visible on all screens */}
@@ -3321,7 +3332,10 @@ export default function PortfolioDuel() {
                 }
               }}
               style={{
-                background: `linear-gradient(135deg, #f59e0b 0%, #d97706 100%)`,
+                background: gameMode === 'draft'
+                  ? 'rgba(16, 185, 129, 0.1)'
+                  : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                border: gameMode === 'draft' ? '1px solid rgba(16, 185, 129, 0.3)' : 'none',
                 borderRadius: '14px',
                 padding: '16px 24px',
                 alignItems: 'center',
@@ -3332,33 +3346,43 @@ export default function PortfolioDuel() {
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 30px rgba(245, 158, 11, 0.4)';
+                e.currentTarget.style.boxShadow = gameMode === 'draft'
+                  ? '0 8px 30px rgba(16, 185, 129, 0.2)'
+                  : '0 8px 30px rgba(245, 158, 11, 0.4)';
+                if (gameMode === 'draft') {
+                  e.currentTarget.style.background = 'rgba(16, 185, 129, 0.2)';
+                  e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.5)';
+                }
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'translateY(0)';
                 e.currentTarget.style.boxShadow = 'none';
+                if (gameMode === 'draft') {
+                  e.currentTarget.style.background = 'rgba(16, 185, 129, 0.1)';
+                  e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+                }
               }}
             >
-              <Brain style={{ height: '28px', width: '28px', color: colors.background }} />
+              <Brain style={{ height: '28px', width: '28px', color: gameMode === 'draft' ? '#10b981' : colors.background }} />
               <div style={{ flex: 1 }}>
                 <span style={{
                   fontSize: '16px',
                   fontWeight: '700',
-                  color: colors.background,
+                  color: gameMode === 'draft' ? '#10b981' : colors.background,
                   textTransform: 'uppercase',
                   letterSpacing: '1px'
                 }}>
-                  Training Mode
+                  {gameMode === 'draft' ? '🤖 Training Mode' : 'Training Mode'}
                 </span>
                 <span style={{
                   fontSize: '14px',
-                  color: 'rgba(0, 0, 0, 0.7)',
+                  color: gameMode === 'draft' ? '#8b949e' : 'rgba(0, 0, 0, 0.7)',
                   marginLeft: '12px'
                 }}>
                   Practice your strategy
                 </span>
               </div>
-              <ArrowRight style={{ height: '20px', width: '20px', color: colors.background }} />
+              <ArrowRight style={{ height: '20px', width: '20px', color: gameMode === 'draft' ? '#10b981' : colors.background }} />
             </motion.div>
 
             {/* Completed Battles - Compact List */}
