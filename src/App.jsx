@@ -1496,6 +1496,15 @@ export default function PortfolioDuel() {
             if ((draft.status === 'completed' || draft.status === 'battle') && screen === 'draftRoom') {
               setCurrentDraft(draft);
               setScreen('draftResults');
+
+              // Store locked prices when draft transitions to battle (only if not already stored)
+              if (draft.status === 'battle' && !draft.lockedPrices) {
+                draftService.storeDraftLockedPrices(draft.id).then(result => {
+                  if (result.success) {
+                    console.log('✅ Locked prices stored for battle mode');
+                  }
+                }).catch(err => console.error('Failed to store locked prices:', err));
+              }
             }
             if (draft.status === 'cancelled') {
               setScreen('dashboard');
@@ -8496,35 +8505,61 @@ export default function PortfolioDuel() {
 
             {/* Action Buttons */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {/* Free Agency Button - show when in battle mode */}
+              {/* Battle Mode Buttons - show when in battle mode */}
               {draftData?.status === 'battle' && (
-                <button
-                  onClick={() => setScreen('freeAgency')}
-                  style={{
-                    width: '100%',
-                    padding: '16px',
-                    background: 'transparent',
-                    color: '#8b5cf6',
-                    fontWeight: 'bold',
-                    fontSize: '16px',
-                    border: '2px solid #8b5cf6',
-                    borderRadius: '12px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.background = 'rgba(139, 92, 246, 0.1)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.background = 'transparent';
-                  }}
-                >
-                  <span>🔄</span> Free Agency
-                </button>
+                <>
+                  {/* View Battle Standings - Primary CTA */}
+                  <button
+                    onClick={() => setScreen('draftBattle')}
+                    style={{
+                      width: '100%',
+                      padding: '18px',
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      color: '#ffffff',
+                      fontWeight: 'bold',
+                      fontSize: '16px',
+                      border: 'none',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)'
+                    }}
+                  >
+                    <span>📊</span> View Battle Standings
+                  </button>
+
+                  {/* Free Agency Button */}
+                  <button
+                    onClick={() => setScreen('freeAgency')}
+                    style={{
+                      width: '100%',
+                      padding: '16px',
+                      background: 'transparent',
+                      color: '#8b5cf6',
+                      fontWeight: 'bold',
+                      fontSize: '16px',
+                      border: '2px solid #8b5cf6',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.background = 'rgba(139, 92, 246, 0.1)';
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.background = 'transparent';
+                    }}
+                  >
+                    <span>🔄</span> Free Agency
+                  </button>
+                </>
               )}
 
               {!draftData?.isTraining && draftData?.status !== 'battle' && (
@@ -8568,6 +8603,675 @@ export default function PortfolioDuel() {
         </div>
       </div>
     );
+  }
+
+  // DRAFT BATTLE VIEW SCREEN - ESPN-style 4-player layout
+  if (screen === 'draftBattle') {
+    const DraftBattleScreen = () => {
+      const [standings, setStandings] = useState([]);
+      const [expandedCards, setExpandedCards] = useState({});
+      const [loading, setLoading] = useState(true);
+      const [timeRemaining, setTimeRemaining] = useState('');
+      const [assetComparison, setAssetComparison] = useState(null);
+
+      const currentUserId = user?.odUserId || user?.username;
+      const battleType = currentDraft?.type || 'stocks';
+
+      // Calculate standings from draft data
+      useEffect(() => {
+        const calculateStandings = async () => {
+          if (!currentDraft?.players) {
+            setLoading(false);
+            return;
+          }
+
+          setLoading(true);
+
+          try {
+            const stockAPI = await import('./services/stockAPI');
+
+            // Calculate each player's performance
+            const playerPerformances = await Promise.all(
+              currentDraft.players.map(async (player) => {
+                let totalGain = 0;
+                const portfolioWithGains = [];
+
+                for (const symbol of player.picks || []) {
+                  try {
+                    // Get current price
+                    const priceData = battleType === 'stocks'
+                      ? await stockAPI.getStockPrice(symbol)
+                      : await stockAPI.getCryptoPrice(symbol);
+
+                    const currentPrice = priceData?.price || 0;
+
+                    // Get locked price (from draft completion)
+                    const lockedPrice = currentDraft.lockedPrices?.[symbol] || currentPrice;
+
+                    const gain = lockedPrice > 0
+                      ? ((currentPrice - lockedPrice) / lockedPrice) * 100
+                      : 0;
+
+                    portfolioWithGains.push({
+                      symbol,
+                      gain: parseFloat(gain.toFixed(2)),
+                      lockedPrice,
+                      currentPrice
+                    });
+
+                    // Equal weight (11.1% each)
+                    totalGain += gain / 9;
+                  } catch (err) {
+                    console.error(`Error fetching ${symbol}:`, err);
+                    portfolioWithGains.push({ symbol, gain: 0, lockedPrice: 0, currentPrice: 0 });
+                  }
+                }
+
+                // Find best and worst assets
+                const sorted = [...portfolioWithGains].sort((a, b) => b.gain - a.gain);
+
+                return {
+                  odUserId: player.odUserId,
+                  displayName: player.displayName,
+                  isMe: player.odUserId === currentUserId,
+                  isCPU: player.isCPU || false,
+                  totalGain: parseFloat(totalGain.toFixed(2)),
+                  portfolio: portfolioWithGains,
+                  bestAsset: sorted[0] || { symbol: '-', gain: 0 },
+                  worstAsset: sorted[sorted.length - 1] || { symbol: '-', gain: 0 },
+                  previousRank: player.previousRank || 0
+                };
+              })
+            );
+
+            // Sort by total gain (descending)
+            const sorted = playerPerformances.sort((a, b) => b.totalGain - a.totalGain);
+
+            // Assign ranks
+            sorted.forEach((player, index) => {
+              player.currentRank = index + 1;
+            });
+
+            setStandings(sorted);
+
+            // Calculate asset comparison
+            const myPlayer = sorted.find(p => p.isMe);
+            if (myPlayer) {
+              const myBest = myPlayer.bestAsset;
+              const opponentBests = sorted
+                .filter(p => !p.isMe)
+                .map(p => p.bestAsset)
+                .sort((a, b) => b.gain - a.gain);
+
+              setAssetComparison({
+                myBest,
+                opponentBest: opponentBests[0],
+                iWin: myBest?.gain > (opponentBests[0]?.gain || 0)
+              });
+            }
+
+          } catch (error) {
+            console.error('Error calculating standings:', error);
+          }
+
+          setLoading(false);
+        };
+
+        calculateStandings();
+
+        // Refresh every 60 seconds
+        const refreshInterval = setInterval(calculateStandings, 60000);
+        return () => clearInterval(refreshInterval);
+      }, [currentDraft, currentUserId, battleType]);
+
+      // Calculate time remaining
+      useEffect(() => {
+        const updateTimer = () => {
+          if (!currentDraft?.battleEndTime) return;
+
+          const end = new Date(currentDraft.battleEndTime);
+          const now = new Date();
+          const diff = end - now;
+
+          if (diff <= 0) {
+            setTimeRemaining('Battle ended');
+            return;
+          }
+
+          const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+          const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+          if (days > 0) {
+            setTimeRemaining(`${days}d ${hours}h ${minutes}m`);
+          } else if (hours > 0) {
+            setTimeRemaining(`${hours}h ${minutes}m`);
+          } else {
+            setTimeRemaining(`${minutes}m`);
+          }
+        };
+
+        updateTimer();
+        const timerInterval = setInterval(updateTimer, 60000);
+        return () => clearInterval(timerInterval);
+      }, [currentDraft?.battleEndTime]);
+
+      // Toggle card expansion
+      const toggleExpand = (odUserId) => {
+        setExpandedCards(prev => ({
+          ...prev,
+          [odUserId]: !prev[odUserId]
+        }));
+      };
+
+      // Get movement indicator
+      const getMovementIndicator = (player) => {
+        if (!player.previousRank || player.previousRank === player.currentRank) {
+          return { icon: '─', color: '#8b949e' };
+        }
+        if (player.currentRank < player.previousRank) {
+          return { icon: '↑', color: '#10b981' };
+        }
+        return { icon: '↓', color: '#ef4444' };
+      };
+
+      // Get rank badge style
+      const getRankBadge = (rank) => {
+        switch (rank) {
+          case 1: return { bg: 'linear-gradient(135deg, #ffd700 0%, #ffb800 100%)', text: '🥇 1ST' };
+          case 2: return { bg: 'linear-gradient(135deg, #c0c0c0 0%, #a8a8a8 100%)', text: '🥈 2ND' };
+          case 3: return { bg: 'linear-gradient(135deg, #cd7f32 0%, #b87333 100%)', text: '🥉 3RD' };
+          default: return { bg: '#21262d', text: `${rank}TH` };
+        }
+      };
+
+      // Safety check
+      if (!currentDraft) {
+        return (
+          <div style={containerStyle}>
+            <div style={{
+              minHeight: '100vh',
+              background: '#0d1117',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '40px'
+            }}>
+              <p style={{ color: '#ffffff', marginBottom: '16px' }}>No active draft battle</p>
+              <button
+                onClick={() => setScreen('dashboard')}
+                style={{
+                  padding: '12px 24px',
+                  background: '#10b981',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                Back to Dashboard
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div style={containerStyle}>
+          <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+            {/* Header */}
+            <div style={{
+              background: '#161b22',
+              borderBottom: '2px solid #21262d',
+              padding: '12px 16px',
+              position: 'sticky',
+              top: 0,
+              zIndex: 100
+            }}>
+              <div style={{
+                maxWidth: '600px',
+                margin: '0 auto',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <button
+                  onClick={() => setScreen('dashboard')}
+                  style={{
+                    color: '#8b949e',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    padding: '8px'
+                  }}
+                >
+                  ← Back
+                </button>
+                <h1 style={{
+                  fontSize: '18px',
+                  fontWeight: 'bold',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  🐍 Draft Battle
+                </h1>
+                <div style={{ width: '50px' }}></div>
+              </div>
+            </div>
+
+            {/* Battle Info Bar */}
+            <div style={{
+              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              padding: '12px 16px',
+              textAlign: 'center'
+            }}>
+              <div style={{
+                color: '#ffffff',
+                fontWeight: 'bold',
+                fontSize: '14px',
+                marginBottom: '4px'
+              }}>
+                {currentDraft?.code || 'DRAFT'} • Ends in {timeRemaining || 'Calculating...'}
+              </div>
+              <div style={{
+                color: 'rgba(255,255,255,0.8)',
+                fontSize: '12px',
+                display: 'flex',
+                justifyContent: 'center',
+                gap: '16px'
+              }}>
+                <span>{battleType === 'stocks' ? '📈 Stocks' : '🪙 Crypto'}</span>
+                <span>•</span>
+                <span>Free Agents: {currentDraft?.freeAgents ?
+                  Object.values(currentDraft.freeAgents).flat().length : 0}</span>
+              </div>
+            </div>
+
+            {/* Main Content */}
+            <div style={{ maxWidth: '600px', margin: '0 auto', padding: '16px' }}>
+              {loading ? (
+                <div style={{ textAlign: 'center', padding: '60px 20px', color: '#8b949e' }}>
+                  <div style={{ fontSize: '32px', marginBottom: '16px' }}>📊</div>
+                  Calculating standings...
+                </div>
+              ) : (
+                <>
+                  {/* Standings Cards */}
+                  {standings.map((player) => {
+                    const isExpanded = player.isMe || expandedCards[player.odUserId];
+                    const movement = getMovementIndicator(player);
+                    const rankBadge = getRankBadge(player.currentRank);
+
+                    return (
+                      <div
+                        key={player.odUserId}
+                        onClick={() => !player.isMe && toggleExpand(player.odUserId)}
+                        style={{
+                          background: player.isMe
+                            ? 'linear-gradient(135deg, rgba(0, 217, 255, 0.1) 0%, rgba(16, 185, 129, 0.1) 100%)'
+                            : '#161b22',
+                          border: player.isMe
+                            ? '2px solid #00d9ff'
+                            : '1px solid #21262d',
+                          borderRadius: '16px',
+                          padding: '16px',
+                          marginBottom: '12px',
+                          cursor: player.isMe ? 'default' : 'pointer',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        {/* Card Header */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          marginBottom: isExpanded ? '16px' : '0'
+                        }}>
+                          {/* Left: Player Info */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            {/* Rank Badge */}
+                            <div style={{
+                              background: rankBadge.bg,
+                              padding: '4px 10px',
+                              borderRadius: '8px',
+                              fontSize: '11px',
+                              fontWeight: 'bold',
+                              color: player.currentRank <= 3 ? '#000' : '#fff'
+                            }}>
+                              {rankBadge.text}
+                            </div>
+
+                            {/* Player Name */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {player.isCPU && <span style={{ fontSize: '14px' }}>🤖</span>}
+                              {player.isMe && <span style={{ fontSize: '14px' }}>👤</span>}
+                              <span style={{
+                                color: player.isMe ? '#00d9ff' : '#ffffff',
+                                fontWeight: player.isMe ? 'bold' : '600',
+                                fontSize: '15px'
+                              }}>
+                                {player.isMe ? 'YOU' : player.displayName}
+                              </span>
+                            </div>
+
+                            {/* Movement Indicator */}
+                            <span style={{
+                              color: movement.color,
+                              fontWeight: 'bold',
+                              fontSize: '16px'
+                            }}>
+                              {movement.icon}
+                            </span>
+                          </div>
+
+                          {/* Right: Gain + Expand */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <span style={{
+                              color: player.totalGain >= 0 ? '#10b981' : '#ef4444',
+                              fontWeight: 'bold',
+                              fontSize: '18px'
+                            }}>
+                              {player.totalGain >= 0 ? '+' : ''}{player.totalGain}%
+                            </span>
+
+                            {!player.isMe && (
+                              <span style={{
+                                color: '#8b949e',
+                                fontSize: '18px',
+                                transition: 'transform 0.2s',
+                                transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)'
+                              }}>
+                                ▼
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Expanded Content */}
+                        {isExpanded && (
+                          <div>
+                            {/* Divider */}
+                            <div style={{
+                              height: '1px',
+                              background: player.isMe ? 'rgba(0, 217, 255, 0.2)' : '#21262d',
+                              marginBottom: '16px'
+                            }} />
+
+                            {/* Portfolio Grid */}
+                            <div style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(3, 1fr)',
+                              gap: '8px',
+                              marginBottom: '16px'
+                            }}>
+                              {player.portfolio.map((asset, assetIdx) => (
+                                <div
+                                  key={assetIdx}
+                                  style={{
+                                    background: '#0d1117',
+                                    border: '1px solid #21262d',
+                                    borderRadius: '8px',
+                                    padding: '10px 8px',
+                                    textAlign: 'center'
+                                  }}
+                                >
+                                  <div style={{
+                                    color: '#ffffff',
+                                    fontWeight: 'bold',
+                                    fontSize: '13px',
+                                    marginBottom: '4px'
+                                  }}>
+                                    {asset.symbol}
+                                  </div>
+                                  <div style={{
+                                    color: asset.gain >= 0 ? '#10b981' : '#ef4444',
+                                    fontSize: '12px',
+                                    fontWeight: '600'
+                                  }}>
+                                    {asset.gain >= 0 ? '+' : ''}{asset.gain}%
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Best/Worst Assets */}
+                            <div style={{
+                              display: 'flex',
+                              gap: '12px',
+                              marginBottom: player.isMe ? '16px' : '0'
+                            }}>
+                              <div style={{
+                                flex: 1,
+                                background: 'rgba(16, 185, 129, 0.1)',
+                                border: '1px solid rgba(16, 185, 129, 0.3)',
+                                borderRadius: '8px',
+                                padding: '10px',
+                                textAlign: 'center'
+                              }}>
+                                <div style={{ color: '#8b949e', fontSize: '10px', marginBottom: '4px' }}>
+                                  🔥 BEST
+                                </div>
+                                <div style={{ color: '#10b981', fontWeight: 'bold', fontSize: '14px' }}>
+                                  {player.bestAsset?.symbol} {player.bestAsset?.gain >= 0 ? '+' : ''}{player.bestAsset?.gain}%
+                                </div>
+                              </div>
+                              <div style={{
+                                flex: 1,
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                borderRadius: '8px',
+                                padding: '10px',
+                                textAlign: 'center'
+                              }}>
+                                <div style={{ color: '#8b949e', fontSize: '10px', marginBottom: '4px' }}>
+                                  ❄️ WORST
+                                </div>
+                                <div style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '14px' }}>
+                                  {player.worstAsset?.symbol} {player.worstAsset?.gain >= 0 ? '+' : ''}{player.worstAsset?.gain}%
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Action Buttons (only for your card) */}
+                            {player.isMe && (
+                              <div style={{ display: 'flex', gap: '12px' }}>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setScreen('freeAgency');
+                                  }}
+                                  style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    background: 'transparent',
+                                    border: '2px solid #8b5cf6',
+                                    borderRadius: '8px',
+                                    color: '#8b5cf6',
+                                    fontWeight: 'bold',
+                                    fontSize: '14px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '6px'
+                                  }}
+                                >
+                                  🔄 Free Agency
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setScreen('draftResults');
+                                  }}
+                                  style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    background: 'transparent',
+                                    border: '1px solid #21262d',
+                                    borderRadius: '8px',
+                                    color: '#8b949e',
+                                    fontWeight: '600',
+                                    fontSize: '14px',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  📋 All Picks
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Asset Comparison Section */}
+                  {assetComparison && (
+                    <div style={{
+                      background: '#161b22',
+                      border: '1px solid #21262d',
+                      borderRadius: '16px',
+                      padding: '16px',
+                      marginTop: '8px'
+                    }}>
+                      <h3 style={{
+                        color: '#ffffff',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        marginBottom: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}>
+                        ⚔️ ASSET SHOWDOWN
+                      </h3>
+
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '12px'
+                      }}>
+                        {/* Your Best */}
+                        <div style={{
+                          flex: 1,
+                          background: assetComparison.iWin
+                            ? 'rgba(16, 185, 129, 0.1)'
+                            : 'rgba(239, 68, 68, 0.1)',
+                          border: assetComparison.iWin
+                            ? '1px solid rgba(16, 185, 129, 0.3)'
+                            : '1px solid rgba(239, 68, 68, 0.3)',
+                          borderRadius: '10px',
+                          padding: '12px',
+                          textAlign: 'center'
+                        }}>
+                          <div style={{ color: '#8b949e', fontSize: '10px', marginBottom: '4px' }}>
+                            YOUR BEST
+                          </div>
+                          <div style={{
+                            color: '#ffffff',
+                            fontWeight: 'bold',
+                            fontSize: '16px',
+                            marginBottom: '2px'
+                          }}>
+                            {assetComparison.myBest?.symbol}
+                          </div>
+                          <div style={{
+                            color: '#10b981',
+                            fontWeight: 'bold',
+                            fontSize: '14px'
+                          }}>
+                            +{assetComparison.myBest?.gain}%
+                          </div>
+                          {assetComparison.iWin && (
+                            <div style={{
+                              color: '#10b981',
+                              fontSize: '11px',
+                              marginTop: '4px'
+                            }}>
+                              🏆 WINNING
+                            </div>
+                          )}
+                        </div>
+
+                        {/* VS */}
+                        <div style={{
+                          color: '#6e7681',
+                          fontWeight: 'bold',
+                          fontSize: '12px'
+                        }}>
+                          VS
+                        </div>
+
+                        {/* Opponent Best */}
+                        <div style={{
+                          flex: 1,
+                          background: !assetComparison.iWin
+                            ? 'rgba(16, 185, 129, 0.1)'
+                            : 'rgba(239, 68, 68, 0.1)',
+                          border: !assetComparison.iWin
+                            ? '1px solid rgba(16, 185, 129, 0.3)'
+                            : '1px solid rgba(239, 68, 68, 0.3)',
+                          borderRadius: '10px',
+                          padding: '12px',
+                          textAlign: 'center'
+                        }}>
+                          <div style={{ color: '#8b949e', fontSize: '10px', marginBottom: '4px' }}>
+                            THEIR BEST
+                          </div>
+                          <div style={{
+                            color: '#ffffff',
+                            fontWeight: 'bold',
+                            fontSize: '16px',
+                            marginBottom: '2px'
+                          }}>
+                            {assetComparison.opponentBest?.symbol || '-'}
+                          </div>
+                          <div style={{
+                            color: (assetComparison.opponentBest?.gain || 0) >= 0 ? '#10b981' : '#ef4444',
+                            fontWeight: 'bold',
+                            fontSize: '14px'
+                          }}>
+                            {(assetComparison.opponentBest?.gain || 0) >= 0 ? '+' : ''}
+                            {assetComparison.opponentBest?.gain || 0}%
+                          </div>
+                          {!assetComparison.iWin && (
+                            <div style={{
+                              color: '#f59e0b',
+                              fontSize: '11px',
+                              marginTop: '4px'
+                            }}>
+                              ⚠️ WATCH OUT
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Refresh Indicator */}
+                  <div style={{
+                    textAlign: 'center',
+                    color: '#6e7681',
+                    fontSize: '11px',
+                    marginTop: '16px',
+                    padding: '8px'
+                  }}>
+                    Prices update every minute
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    return <DraftBattleScreen />;
   }
 
   // FREE AGENCY SCREEN

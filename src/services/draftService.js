@@ -18,6 +18,29 @@ import {
 import { db } from '../firebase/config';
 import { getAssetPool, generateSnakeOrder, generateDraftCode, shuffleArray } from './draftAssets';
 import { initializeFreeAgents, calculateBattleEndTime } from './freeAgencyService';
+import { getStockPrice, getCryptoPrice } from './stockAPI';
+
+// Crypto ID mapping for price fetching
+const CRYPTO_ID_MAP = {
+  'BTC': 'bitcoin',
+  'ETH': 'ethereum',
+  'BNB': 'binancecoin',
+  'SOL': 'solana',
+  'XRP': 'ripple',
+  'ADA': 'cardano',
+  'DOGE': 'dogecoin',
+  'AVAX': 'avalanche-2',
+  'DOT': 'polkadot',
+  'MATIC': 'matic-network',
+  'LINK': 'chainlink',
+  'UNI': 'uniswap',
+  'LTC': 'litecoin',
+  'XLM': 'stellar',
+  'XMR': 'monero',
+  'ALGO': 'algorand',
+  'ATOM': 'cosmos',
+  'NEAR': 'near'
+};
 
 // ============================================
 // HELPER FUNCTIONS
@@ -774,6 +797,80 @@ export function shouldAutoPickForPlayer(draft, playerId) {
   return player.isCPU || player.disconnected || player.isAbsent;
 }
 
+// ============================================
+// LOCKED PRICES (Battle Mode)
+// ============================================
+
+/**
+ * Fetch and store locked prices when draft completes
+ * Called when draft transitions to 'battle' status
+ */
+export async function storeDraftLockedPrices(draftId) {
+  try {
+    const draft = await getDraft(draftId);
+    if (!draft) {
+      console.error('Draft not found for storing locked prices:', draftId);
+      return { success: false, error: 'Draft not found' };
+    }
+
+    // Collect all unique symbols from all players' picks
+    const allSymbols = new Set();
+    draft.players.forEach(player => {
+      if (player.picks) {
+        player.picks.forEach(symbol => allSymbols.add(symbol));
+      }
+    });
+
+    if (allSymbols.size === 0) {
+      console.warn('No picks found in draft:', draftId);
+      return { success: false, error: 'No picks found' };
+    }
+
+    const symbolsArray = Array.from(allSymbols);
+    console.log(`📊 Fetching locked prices for ${symbolsArray.length} assets:`, symbolsArray);
+
+    // Fetch current prices for all assets
+    const lockedPrices = {};
+    const pricePromises = symbolsArray.map(async (symbol) => {
+      try {
+        if (draft.type === 'crypto') {
+          // Get crypto ID from mapping
+          const cryptoId = CRYPTO_ID_MAP[symbol];
+          if (cryptoId) {
+            const priceData = await getCryptoPrice(cryptoId);
+            lockedPrices[symbol] = priceData.price;
+          } else {
+            console.warn(`No crypto ID mapping for ${symbol}`);
+            lockedPrices[symbol] = 100; // Fallback
+          }
+        } else {
+          // Stocks
+          const priceData = await getStockPrice(symbol);
+          lockedPrices[symbol] = priceData.price;
+        }
+      } catch (error) {
+        console.error(`Error fetching price for ${symbol}:`, error);
+        lockedPrices[symbol] = 100; // Fallback price
+      }
+    });
+
+    await Promise.all(pricePromises);
+
+    // Store locked prices in draft document
+    const draftRef = doc(db, 'drafts', draftId);
+    await updateDoc(draftRef, {
+      lockedPrices,
+      lockedPricesAt: serverTimestamp()
+    });
+
+    console.log('✅ Locked prices stored successfully:', lockedPrices);
+    return { success: true, lockedPrices };
+  } catch (error) {
+    console.error('Error storing locked prices:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 export default {
   createMultiplayerDraft,
   createTrainingDraft,
@@ -794,5 +891,6 @@ export default {
   updatePlayerPresence,
   checkAbsentPlayers,
   getUserActiveDraft,
-  shouldAutoPickForPlayer
+  shouldAutoPickForPlayer,
+  storeDraftLockedPrices
 };
