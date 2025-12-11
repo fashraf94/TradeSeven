@@ -522,6 +522,253 @@ function generateCPUPortfolio(portfolioType, stocksData, cryptoData) {
   return portfolio;
 }
 
+// =====================================================
+// RESEARCH MODE - Data Enrichment Functions
+// =====================================================
+
+/**
+ * Calculate momentum streak from historical prices
+ */
+function calculateMomentumStreak(historicalPrices) {
+  if (!historicalPrices || historicalPrices.length < 2) {
+    return { streak: 0, direction: 'mixed', description: 'No data available', upDays: 0, downDays: 0, totalDays: 0 };
+  }
+
+  const recentPrices = historicalPrices.slice(-7);
+  let upDays = 0;
+  let downDays = 0;
+  let currentStreak = 0;
+  let streakDirection = null;
+
+  for (let i = 1; i < recentPrices.length; i++) {
+    const change = recentPrices[i] - recentPrices[i - 1];
+    if (change > 0) {
+      upDays++;
+      if (streakDirection === 'up' || streakDirection === null) {
+        currentStreak++;
+        streakDirection = 'up';
+      } else {
+        currentStreak = 1;
+        streakDirection = 'up';
+      }
+    } else if (change < 0) {
+      downDays++;
+      if (streakDirection === 'down' || streakDirection === null) {
+        currentStreak++;
+        streakDirection = 'down';
+      } else {
+        currentStreak = 1;
+        streakDirection = 'down';
+      }
+    }
+  }
+
+  let description;
+  if (upDays >= 5) description = `Strong momentum - up ${upDays} of last 7 days`;
+  else if (downDays >= 5) description = `Weak momentum - down ${downDays} of last 7 days`;
+  else if (currentStreak >= 3 && streakDirection === 'up') description = `${currentStreak}-day winning streak`;
+  else if (currentStreak >= 3 && streakDirection === 'down') description = `${currentStreak}-day losing streak`;
+  else if (upDays > downDays) description = `Slight upward trend (${upDays}/${recentPrices.length - 1} days up)`;
+  else if (downDays > upDays) description = `Slight downward trend (${downDays}/${recentPrices.length - 1} days down)`;
+  else description = 'Trading sideways';
+
+  return { streak: currentStreak, direction: streakDirection || 'mixed', upDays, downDays, totalDays: recentPrices.length - 1, description };
+}
+
+/**
+ * Calculate where current price sits in its 30-day range
+ */
+function calculateRangePosition(currentPrice, historicalPrices, week52High, week52Low) {
+  if (!historicalPrices || historicalPrices.length < 2) {
+    return { position30d: 50, label: 'Unknown', nearHigh: false, nearLow: false };
+  }
+
+  const min30d = Math.min(...historicalPrices);
+  const max30d = Math.max(...historicalPrices);
+  const range30d = max30d - min30d;
+
+  let position30d = 50;
+  if (range30d > 0) position30d = ((currentPrice - min30d) / range30d) * 100;
+
+  let position52w = 50;
+  if (week52High && week52Low && week52High > week52Low) {
+    position52w = ((currentPrice - week52Low) / (week52High - week52Low)) * 100;
+  }
+
+  let label, nearHigh = false, nearLow = false;
+  if (position30d >= 90) { label = 'Near 30-day high'; nearHigh = true; }
+  else if (position30d >= 75) label = 'Upper range';
+  else if (position30d <= 10) { label = 'Near 30-day low'; nearLow = true; }
+  else if (position30d <= 25) label = 'Lower range';
+  else label = 'Mid-range';
+
+  return { position30d: Math.round(position30d), position52w: Math.round(position52w), min30d, max30d, label, nearHigh, nearLow };
+}
+
+/**
+ * Analyze volatility context
+ */
+function analyzeVolatilityContext(historicalPrices, currentVolatility) {
+  if (!historicalPrices || historicalPrices.length < 7) {
+    return { level: currentVolatility || 'unknown', vsHistorical: 'normal', avgDailySwing: 0, description: 'Insufficient data' };
+  }
+
+  const recentPrices = historicalPrices.slice(-7);
+  const recentSwings = [];
+  for (let i = 1; i < recentPrices.length; i++) {
+    recentSwings.push(Math.abs((recentPrices[i] - recentPrices[i-1]) / recentPrices[i-1]) * 100);
+  }
+  const recentAvgSwing = recentSwings.reduce((a, b) => a + b, 0) / recentSwings.length;
+
+  const allSwings = [];
+  for (let i = 1; i < historicalPrices.length; i++) {
+    allSwings.push(Math.abs((historicalPrices[i] - historicalPrices[i-1]) / historicalPrices[i-1]) * 100);
+  }
+  const historicalAvgSwing = allSwings.reduce((a, b) => a + b, 0) / allSwings.length;
+
+  const ratio = recentAvgSwing / historicalAvgSwing;
+  let vsHistorical, description;
+
+  if (ratio > 1.5) { vsHistorical = 'elevated'; description = 'More volatile than usual'; }
+  else if (ratio > 1.2) { vsHistorical = 'slightly-elevated'; description = 'Slightly more volatile than usual'; }
+  else if (ratio < 0.6) { vsHistorical = 'quiet'; description = 'Unusually quiet - could break out'; }
+  else if (ratio < 0.8) { vsHistorical = 'slightly-quiet'; description = 'Slightly quieter than usual'; }
+  else { vsHistorical = 'normal'; description = 'Normal volatility levels'; }
+
+  return { level: currentVolatility || 'medium', vsHistorical, avgDailySwing: Number(recentAvgSwing.toFixed(2)), historicalAvgSwing: Number(historicalAvgSwing.toFixed(2)), description };
+}
+
+/**
+ * Calculate relative performance vs category peers
+ */
+function calculateRelativePerformance(asset, allAssets) {
+  if (!allAssets || allAssets.length < 2) {
+    return { rank7d: 0, rank30d: 0, totalInCategory: 0, vs7dAvg: 0, vs30dAvg: 0, description: 'Insufficient data' };
+  }
+
+  const sorted7d = [...allAssets].sort((a, b) => (b.priceChange7d || 0) - (a.priceChange7d || 0));
+  const rank7d = sorted7d.findIndex(a => a.symbol === asset.symbol) + 1;
+
+  const sorted30d = [...allAssets].sort((a, b) => (b.priceChange30d || 0) - (a.priceChange30d || 0));
+  const rank30d = sorted30d.findIndex(a => a.symbol === asset.symbol) + 1;
+
+  const avg7d = allAssets.reduce((sum, a) => sum + (a.priceChange7d || 0), 0) / allAssets.length;
+  const avg30d = allAssets.reduce((sum, a) => sum + (a.priceChange30d || 0), 0) / allAssets.length;
+  const vs7dAvg = (asset.priceChange7d || 0) - avg7d;
+  const vs30dAvg = (asset.priceChange30d || 0) - avg30d;
+
+  const totalInCategory = allAssets.length;
+  let description;
+  if (rank7d <= 3) description = `Top performer - #${rank7d} in category this week`;
+  else if (rank7d <= Math.ceil(totalInCategory * 0.25)) description = `Strong performer - top 25% this week`;
+  else if (rank7d >= totalInCategory - 2) description = `Lagging - #${rank7d} of ${totalInCategory} this week`;
+  else if (vs7dAvg > 2) description = `Outperforming category by ${vs7dAvg.toFixed(1)}%`;
+  else if (vs7dAvg < -2) description = `Underperforming category by ${Math.abs(vs7dAvg).toFixed(1)}%`;
+  else description = `In line with category average`;
+
+  return { rank7d, rank30d, totalInCategory, vs7dAvg: Number(vs7dAvg.toFixed(2)), vs30dAvg: Number(vs30dAvg.toFixed(2)), avg7d: Number(avg7d.toFixed(2)), avg30d: Number(avg30d.toFixed(2)), description };
+}
+
+/**
+ * Generate research insights for an asset
+ */
+function generateResearchInsights(asset) {
+  const reasons = [];
+  const considerations = [];
+
+  // Momentum insights
+  if (asset.momentum?.upDays >= 5) {
+    reasons.push({ icon: '📈', text: `Strong momentum - up ${asset.momentum.upDays} of last 7 days` });
+  } else if (asset.momentum?.streak >= 3 && asset.momentum?.direction === 'up') {
+    reasons.push({ icon: '🔥', text: `${asset.momentum.streak}-day winning streak` });
+  }
+  if (asset.momentum?.downDays >= 5) {
+    considerations.push({ icon: '📉', text: `Weak momentum - down ${asset.momentum.downDays} of last 7 days` });
+  }
+
+  // Range insights
+  if (asset.rangePosition?.nearLow) {
+    reasons.push({ icon: '💰', text: 'Trading near 30-day low - potential value' });
+  }
+  if (asset.rangePosition?.nearHigh) {
+    considerations.push({ icon: '⚠️', text: 'Trading near 30-day high - limited upside?' });
+  }
+
+  // Relative performance
+  if (asset.relativePerformance?.rank7d <= 3) {
+    reasons.push({ icon: '🏆', text: `#${asset.relativePerformance.rank7d} performer in category this week` });
+  }
+  if (asset.relativePerformance?.vs7dAvg > 3) {
+    reasons.push({ icon: '💪', text: `Outperforming category by ${asset.relativePerformance.vs7dAvg.toFixed(1)}%` });
+  }
+  if (asset.relativePerformance?.vs7dAvg < -3) {
+    considerations.push({ icon: '📊', text: `Underperforming category by ${Math.abs(asset.relativePerformance.vs7dAvg).toFixed(1)}%` });
+  }
+
+  // Volatility
+  if (asset.volatilityContext?.vsHistorical === 'elevated') {
+    considerations.push({ icon: '⚡', text: 'More volatile than usual - higher risk/reward' });
+  }
+  if (asset.volatilityContext?.vsHistorical === 'quiet') {
+    considerations.push({ icon: '😴', text: 'Unusually quiet - could break out either direction' });
+  }
+
+  // MarketClash stats
+  if (asset.communityData?.winRate >= 60) {
+    reasons.push({ icon: '🎯', text: `High win rate in MarketClash (${asset.communityData.winRate}%)` });
+  }
+  if (asset.communityData?.championPick) {
+    reasons.push({ icon: '👑', text: `Champion's choice - ${asset.communityData.championPercentage}% of top players pick this` });
+  }
+  if (asset.communityData?.isHot) {
+    reasons.push({ icon: '🔥', text: `Hot pick - ${asset.communityData.picksThisWeek?.toLocaleString()} picks this week` });
+  }
+  if (asset.communityData?.winRate <= 45 && asset.communityData?.totalBattles > 100) {
+    considerations.push({ icon: '📉', text: `Lower win rate in battles (${asset.communityData.winRate}%)` });
+  }
+
+  // Performance
+  if (asset.priceChange30d > 10) {
+    reasons.push({ icon: '📈', text: `Strong 30-day performance (+${asset.priceChange30d.toFixed(1)}%)` });
+  } else if (asset.priceChange30d < -10) {
+    considerations.push({ icon: '📉', text: `Weak 30-day performance (${asset.priceChange30d.toFixed(1)}%)` });
+  }
+
+  return { reasons, considerations };
+}
+
+/**
+ * Enrich a single asset with research data
+ */
+function enrichAssetWithResearch(asset, categoryAssets) {
+  const momentum = calculateMomentumStreak(asset.historicalPrices);
+  const rangePosition = calculateRangePosition(asset.price, asset.historicalPrices, asset.week52High, asset.week52Low);
+  const volatilityContext = analyzeVolatilityContext(asset.historicalPrices, asset.volatility);
+  const relativePerformance = calculateRelativePerformance(asset, categoryAssets);
+
+  const enrichedAsset = { ...asset, momentum, rangePosition, volatilityContext, relativePerformance };
+  const insights = generateResearchInsights(enrichedAsset);
+
+  return { ...enrichedAsset, insights };
+}
+
+/**
+ * Enrich all assets with research data
+ */
+function enrichAllAssetsWithResearch(stocksArray, cryptoArray) {
+  const enrichedStocks = stocksArray.map(stock => enrichAssetWithResearch(stock, stocksArray));
+  const enrichedCrypto = cryptoArray.map(coin => enrichAssetWithResearch(coin, cryptoArray));
+
+  // Add category rankings
+  enrichedStocks.sort((a, b) => (b.priceChange7d || 0) - (a.priceChange7d || 0));
+  enrichedStocks.forEach((stock, index) => { stock.categoryRank7d = index + 1; });
+
+  enrichedCrypto.sort((a, b) => (b.priceChange7d || 0) - (a.priceChange7d || 0));
+  enrichedCrypto.forEach((coin, index) => { coin.categoryRank7d = index + 1; });
+
+  return { stocks: enrichedStocks, crypto: enrichedCrypto };
+}
+
 // Lucide icons
 import {
   TrendingUp,
@@ -1169,6 +1416,14 @@ export default function PortfolioDuel() {
   const [isRosterExpanded, setIsRosterExpanded] = useState(false);
   const [rosterTouchStart, setRosterTouchStart] = useState(null);
   const [rosterTouchEnd, setRosterTouchEnd] = useState(null);
+
+  // Research Mode state
+  const [showResearchMode, setShowResearchMode] = useState(false);
+  const [researchAssetType, setResearchAssetType] = useState('stocks');
+  const [researchSearchTerm, setResearchSearchTerm] = useState('');
+  const [researchSortBy, setResearchSortBy] = useState('rank');
+  const [researchExpandedAsset, setResearchExpandedAsset] = useState(null);
+  const [researchCompareAssets, setResearchCompareAssets] = useState([]);
 
   // Toggle asset expansion
   const toggleAssetExpansion = (symbol) => {
@@ -3667,6 +3922,67 @@ export default function PortfolioDuel() {
                 </span>
               </div>
               <ArrowRight style={{ height: '20px', width: '20px', color: gameMode === 'draft' ? '#10b981' : colors.background }} />
+            </motion.div>
+
+            {/* Research Mode Banner */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.45 }}
+              onClick={() => setShowResearchMode(true)}
+              style={{
+                background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)',
+                border: '1px solid rgba(0, 217, 255, 0.3)',
+                borderRadius: '14px',
+                padding: '16px 24px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '16px',
+                cursor: 'pointer',
+                transition: 'all 0.3s',
+                marginBottom: '24px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 8px 30px rgba(0, 217, 255, 0.2)';
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 217, 255, 0.15) 0%, rgba(59, 130, 246, 0.15) 100%)';
+                e.currentTarget.style.borderColor = 'rgba(0, 217, 255, 0.5)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 217, 255, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)';
+                e.currentTarget.style.borderColor = 'rgba(0, 217, 255, 0.3)';
+              }}
+            >
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '12px',
+                background: 'rgba(0, 217, 255, 0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <BarChart3 style={{ height: '24px', width: '24px', color: colors.cyan }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  color: colors.cyan,
+                  marginBottom: '2px'
+                }}>
+                  Research Assets
+                </div>
+                <div style={{
+                  fontSize: '13px',
+                  color: '#8b949e'
+                }}>
+                  Analyze stocks & crypto before building your portfolio
+                </div>
+              </div>
+              <ArrowRight style={{ height: '20px', width: '20px', color: colors.cyan }} />
             </motion.div>
 
             {/* Completed Battles - Compact List */}
@@ -12082,6 +12398,703 @@ export default function PortfolioDuel() {
             </div>
 
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // RESEARCH MODE SCREEN
+  if (showResearchMode) {
+    // Enrich assets with research data
+    const { stocks: enrichedStocks, crypto: enrichedCrypto } = enrichAllAssetsWithResearch(stocksData, cryptoData);
+    const currentAssets = researchAssetType === 'stocks' ? enrichedStocks : enrichedCrypto;
+
+    // Filter by search term
+    const filteredAssets = currentAssets.filter(asset =>
+      asset.symbol.toLowerCase().includes(researchSearchTerm.toLowerCase()) ||
+      asset.name.toLowerCase().includes(researchSearchTerm.toLowerCase())
+    );
+
+    // Sort assets
+    const sortedAssets = [...filteredAssets].sort((a, b) => {
+      switch (researchSortBy) {
+        case 'rank': return (a.categoryRank7d || 999) - (b.categoryRank7d || 999);
+        case '7d': return (b.priceChange7d || 0) - (a.priceChange7d || 0);
+        case '30d': return (b.priceChange30d || 0) - (a.priceChange30d || 0);
+        case 'winRate': return (b.communityData?.winRate || 0) - (a.communityData?.winRate || 0);
+        case 'volatility':
+          const volOrder = { high: 3, medium: 2, low: 1 };
+          return (volOrder[b.volatility] || 0) - (volOrder[a.volatility] || 0);
+        default: return 0;
+      }
+    });
+
+    // Sparkline component for research cards
+    const ResearchSparkline = ({ prices, width = 100, height = 40 }) => {
+      if (!prices || prices.length < 2) return null;
+
+      const min = Math.min(...prices);
+      const max = Math.max(...prices);
+      const range = max - min || 1;
+
+      const points = prices.map((price, i) => {
+        const x = (i / (prices.length - 1)) * width;
+        const y = height - ((price - min) / range) * (height - 4) - 2;
+        return `${x},${y}`;
+      }).join(' ');
+
+      const isPositive = prices[prices.length - 1] >= prices[0];
+      const color = isPositive ? '#10b981' : '#ef4444';
+
+      return (
+        <svg width={width} height={height} style={{ display: 'block' }}>
+          <defs>
+            <linearGradient id={`spark-grad-${isPositive}`} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+              <stop offset="100%" stopColor={color} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <polygon
+            points={`0,${height} ${points} ${width},${height}`}
+            fill={`url(#spark-grad-${isPositive})`}
+          />
+          <polyline
+            points={points}
+            fill="none"
+            stroke={color}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      );
+    };
+
+    // Handle adding to compare
+    const handleAddToCompare = (asset) => {
+      if (researchCompareAssets.length >= 3) {
+        return; // Max 3 assets
+      }
+      if (researchCompareAssets.find(a => a.symbol === asset.symbol)) {
+        return; // Already added
+      }
+      setResearchCompareAssets([...researchCompareAssets, asset]);
+    };
+
+    const handleRemoveFromCompare = (symbol) => {
+      setResearchCompareAssets(researchCompareAssets.filter(a => a.symbol !== symbol));
+    };
+
+    return (
+      <div style={containerStyle}>
+        <div style={{ minHeight: '100vh', background: colors.background }}>
+          {/* Header */}
+          <div style={{
+            background: '#161b22',
+            borderBottom: '1px solid #21262d',
+            padding: '16px',
+            position: 'sticky',
+            top: 0,
+            zIndex: 20
+          }}>
+            <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <button
+                  onClick={() => {
+                    setShowResearchMode(false);
+                    setResearchExpandedAsset(null);
+                    setResearchCompareAssets([]);
+                    setResearchSearchTerm('');
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: colors.cyan,
+                    fontWeight: '600',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '14px'
+                  }}
+                >
+                  <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                  Back
+                </button>
+                <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Brain style={{ width: '24px', height: '24px', color: colors.cyan }} />
+                  Research Mode
+                </h1>
+                <div style={{ width: '60px' }}></div>
+              </div>
+
+              {/* Asset Type Toggle */}
+              <div style={{
+                display: 'flex',
+                gap: '8px',
+                marginBottom: '12px',
+                padding: '4px',
+                background: '#0d1117',
+                borderRadius: '10px'
+              }}>
+                <button
+                  onClick={() => setResearchAssetType('stocks')}
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: researchAssetType === 'stocks' ? colors.cyan : 'transparent',
+                    color: researchAssetType === 'stocks' ? '#000' : '#8b949e',
+                    fontWeight: '600',
+                    fontSize: '14px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  📈 Stocks ({stocksData.length})
+                </button>
+                <button
+                  onClick={() => setResearchAssetType('crypto')}
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: researchAssetType === 'crypto' ? colors.cyan : 'transparent',
+                    color: researchAssetType === 'crypto' ? '#000' : '#8b949e',
+                    fontWeight: '600',
+                    fontSize: '14px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🪙 Crypto ({cryptoData.length})
+                </button>
+              </div>
+
+              {/* Search */}
+              <div style={{ position: 'relative', marginBottom: '12px' }}>
+                <input
+                  type="text"
+                  placeholder="Search by symbol or name..."
+                  value={researchSearchTerm}
+                  onChange={(e) => setResearchSearchTerm(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px 12px 44px',
+                    background: '#0d1117',
+                    border: '1px solid #21262d',
+                    borderRadius: '10px',
+                    color: '#ffffff',
+                    fontSize: '14px',
+                    outline: 'none'
+                  }}
+                />
+                <svg
+                  style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#6e7681' }}
+                  width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.35-4.35" />
+                </svg>
+              </div>
+
+              {/* Sort Options */}
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {[
+                  { key: 'rank', label: 'Top Ranked' },
+                  { key: '7d', label: '7D Perf' },
+                  { key: '30d', label: '30D Perf' },
+                  { key: 'winRate', label: 'Win Rate' },
+                  { key: 'volatility', label: 'Volatility' }
+                ].map(option => (
+                  <button
+                    key={option.key}
+                    onClick={() => setResearchSortBy(option.key)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      border: researchSortBy === option.key ? `1px solid ${colors.cyan}` : '1px solid #21262d',
+                      background: researchSortBy === option.key ? 'rgba(0, 217, 255, 0.1)' : 'transparent',
+                      color: researchSortBy === option.key ? colors.cyan : '#8b949e',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Asset List */}
+          <div style={{ maxWidth: '900px', margin: '0 auto', padding: '16px', paddingBottom: researchCompareAssets.length > 0 ? '200px' : '80px' }}>
+            {sortedAssets.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '60px 20px', color: '#8b949e' }}>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
+                <p>No assets found matching "{researchSearchTerm}"</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {sortedAssets.map((asset, index) => {
+                  const isExpanded = researchExpandedAsset === asset.symbol;
+                  const isInCompare = researchCompareAssets.find(a => a.symbol === asset.symbol);
+                  const isInPortfolio = portfolio.find(p => p.symbol === asset.symbol);
+
+                  return (
+                    <motion.div
+                      key={asset.symbol}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.02 }}
+                      style={{
+                        background: '#161b22',
+                        border: isExpanded ? `2px solid ${colors.cyan}` : '1px solid #21262d',
+                        borderRadius: '16px',
+                        overflow: 'hidden'
+                      }}
+                    >
+                      {/* Card Header - Always Visible */}
+                      <div
+                        onClick={() => setResearchExpandedAsset(isExpanded ? null : asset.symbol)}
+                        style={{
+                          padding: '16px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px'
+                        }}
+                      >
+                        {/* Rank Badge */}
+                        <div style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '8px',
+                          background: asset.categoryRank7d <= 3 ? 'rgba(16, 185, 129, 0.2)' : '#21262d',
+                          border: asset.categoryRank7d <= 3 ? '1px solid #10b981' : '1px solid #30363d',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: asset.categoryRank7d <= 3 ? '#10b981' : '#8b949e',
+                          fontSize: '12px',
+                          fontWeight: 'bold'
+                        }}>
+                          #{asset.categoryRank7d || '-'}
+                        </div>
+
+                        {/* Asset Info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                            <span style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '16px' }}>{asset.symbol}</span>
+                            {asset.communityData?.isHot && <span style={{ fontSize: '12px' }}>🔥</span>}
+                            {asset.communityData?.championPick && <span style={{ fontSize: '12px' }}>👑</span>}
+                          </div>
+                          <div style={{ color: '#8b949e', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {asset.name}
+                          </div>
+                        </div>
+
+                        {/* Sparkline */}
+                        <div style={{ width: '80px', height: '36px' }}>
+                          <ResearchSparkline prices={asset.historicalPrices} width={80} height={36} />
+                        </div>
+
+                        {/* Price & Change */}
+                        <div style={{ textAlign: 'right', minWidth: '90px' }}>
+                          <div style={{ color: '#ffffff', fontWeight: '600', fontSize: '14px' }}>
+                            ${asset.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div style={{
+                            color: (asset.percentChange || 0) >= 0 ? colors.green : colors.red,
+                            fontSize: '12px',
+                            fontWeight: '500'
+                          }}>
+                            {(asset.percentChange || 0) >= 0 ? '+' : ''}{(asset.percentChange || 0).toFixed(2)}%
+                          </div>
+                        </div>
+
+                        {/* Expand Icon */}
+                        <div style={{ color: '#6e7681' }}>
+                          {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                        </div>
+                      </div>
+
+                      {/* Quick Badges Row */}
+                      <div style={{
+                        padding: '0 16px 12px',
+                        display: 'flex',
+                        gap: '6px',
+                        flexWrap: 'wrap'
+                      }}>
+                        {/* 7D Performance */}
+                        <span style={{
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: '500',
+                          background: (asset.priceChange7d || 0) >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                          color: (asset.priceChange7d || 0) >= 0 ? '#10b981' : '#ef4444'
+                        }}>
+                          7D: {(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(1)}%
+                        </span>
+
+                        {/* 30D Performance */}
+                        <span style={{
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: '500',
+                          background: (asset.priceChange30d || 0) >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                          color: (asset.priceChange30d || 0) >= 0 ? '#10b981' : '#ef4444'
+                        }}>
+                          30D: {(asset.priceChange30d || 0) >= 0 ? '+' : ''}{(asset.priceChange30d || 0).toFixed(1)}%
+                        </span>
+
+                        {/* Win Rate */}
+                        {asset.communityData?.winRate && (
+                          <span style={{
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                            background: asset.communityData.winRate >= 55 ? 'rgba(0, 217, 255, 0.1)' : '#21262d',
+                            color: asset.communityData.winRate >= 55 ? colors.cyan : '#8b949e'
+                          }}>
+                            🎯 {asset.communityData.winRate}% WR
+                          </span>
+                        )}
+
+                        {/* Volatility */}
+                        <span style={{
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: '500',
+                          background: asset.volatility === 'high' ? 'rgba(239, 68, 68, 0.1)' : asset.volatility === 'low' ? 'rgba(16, 185, 129, 0.1)' : '#21262d',
+                          color: asset.volatility === 'high' ? '#ef4444' : asset.volatility === 'low' ? '#10b981' : '#8b949e'
+                        }}>
+                          ⚡ {asset.volatility || 'med'}
+                        </span>
+                      </div>
+
+                      {/* Expanded Content */}
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          style={{
+                            borderTop: '1px solid #21262d',
+                            padding: '16px'
+                          }}
+                        >
+                          {/* Why Pick This? */}
+                          {asset.insights?.reasons?.length > 0 && (
+                            <div style={{
+                              background: 'rgba(16, 185, 129, 0.1)',
+                              border: '1px solid rgba(16, 185, 129, 0.3)',
+                              borderRadius: '12px',
+                              padding: '14px',
+                              marginBottom: '12px'
+                            }}>
+                              <div style={{ color: '#10b981', fontWeight: 'bold', fontSize: '13px', marginBottom: '10px' }}>
+                                ✓ Why Pick This?
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {asset.insights.reasons.map((reason, i) => (
+                                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', color: '#e6edf3', fontSize: '13px' }}>
+                                    <span>{reason.icon}</span>
+                                    <span>{reason.text}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Things to Consider */}
+                          {asset.insights?.considerations?.length > 0 && (
+                            <div style={{
+                              background: 'rgba(251, 191, 36, 0.1)',
+                              border: '1px solid rgba(251, 191, 36, 0.3)',
+                              borderRadius: '12px',
+                              padding: '14px',
+                              marginBottom: '12px'
+                            }}>
+                              <div style={{ color: '#fbbf24', fontWeight: 'bold', fontSize: '13px', marginBottom: '10px' }}>
+                                ⚠ Things to Consider
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {asset.insights.considerations.map((item, i) => (
+                                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', color: '#e6edf3', fontSize: '13px' }}>
+                                    <span>{item.icon}</span>
+                                    <span>{item.text}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Detailed Metrics Grid */}
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(2, 1fr)',
+                            gap: '12px',
+                            marginBottom: '16px'
+                          }}>
+                            {/* Range Position */}
+                            <div style={{ background: '#0d1117', borderRadius: '10px', padding: '12px' }}>
+                              <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '6px' }}>30-DAY RANGE</div>
+                              <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600', marginBottom: '8px' }}>
+                                {asset.rangePosition?.label || 'Unknown'}
+                              </div>
+                              <div style={{
+                                height: '6px',
+                                background: '#21262d',
+                                borderRadius: '3px',
+                                position: 'relative',
+                                overflow: 'hidden'
+                              }}>
+                                <div style={{
+                                  position: 'absolute',
+                                  left: `${Math.min(100, Math.max(0, asset.rangePosition?.position30d || 50))}%`,
+                                  top: '50%',
+                                  transform: 'translate(-50%, -50%)',
+                                  width: '10px',
+                                  height: '10px',
+                                  borderRadius: '50%',
+                                  background: colors.cyan,
+                                  border: '2px solid #161b22'
+                                }} />
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '10px', color: '#6e7681' }}>
+                                <span>Low</span>
+                                <span>High</span>
+                              </div>
+                            </div>
+
+                            {/* Category Rank */}
+                            <div style={{ background: '#0d1117', borderRadius: '10px', padding: '12px' }}>
+                              <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '6px' }}>CATEGORY RANK</div>
+                              <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                                <span style={{
+                                  color: asset.relativePerformance?.rank7d <= 5 ? '#10b981' : '#ffffff',
+                                  fontSize: '24px',
+                                  fontWeight: 'bold'
+                                }}>
+                                  #{asset.relativePerformance?.rank7d || '-'}
+                                </span>
+                                <span style={{ color: '#6e7681', fontSize: '12px' }}>
+                                  of {asset.relativePerformance?.totalInCategory || '-'}
+                                </span>
+                              </div>
+                              <div style={{ color: '#8b949e', fontSize: '11px', marginTop: '4px' }}>
+                                {asset.relativePerformance?.description}
+                              </div>
+                            </div>
+
+                            {/* Volatility Context */}
+                            <div style={{ background: '#0d1117', borderRadius: '10px', padding: '12px' }}>
+                              <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '6px' }}>VOLATILITY</div>
+                              <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600', marginBottom: '4px', textTransform: 'capitalize' }}>
+                                {asset.volatilityContext?.level || 'Unknown'}
+                              </div>
+                              <div style={{ color: '#8b949e', fontSize: '11px' }}>
+                                {asset.volatilityContext?.description}
+                              </div>
+                              {asset.volatilityContext?.avgDailySwing > 0 && (
+                                <div style={{ color: '#6e7681', fontSize: '10px', marginTop: '4px' }}>
+                                  Avg daily: ±{asset.volatilityContext.avgDailySwing}%
+                                </div>
+                              )}
+                            </div>
+
+                            {/* MarketClash Stats */}
+                            <div style={{ background: '#0d1117', borderRadius: '10px', padding: '12px' }}>
+                              <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '6px' }}>MARKETCLASH STATS</div>
+                              {asset.communityData ? (
+                                <>
+                                  <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+                                    {asset.communityData.winRate}% Win Rate
+                                  </div>
+                                  <div style={{ color: '#8b949e', fontSize: '11px' }}>
+                                    {asset.communityData.totalBattles?.toLocaleString()} battles
+                                  </div>
+                                  <div style={{ color: '#6e7681', fontSize: '10px', marginTop: '4px' }}>
+                                    {asset.communityData.picksThisWeek?.toLocaleString()} picks this week
+                                  </div>
+                                </>
+                              ) : (
+                                <div style={{ color: '#6e7681', fontSize: '12px' }}>No data available</div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isInPortfolio) return;
+                                // Add to portfolio with default 10%
+                                const newAsset = {
+                                  symbol: asset.symbol,
+                                  name: asset.name,
+                                  price: asset.price,
+                                  allocation: 10
+                                };
+                                setPortfolio([...portfolio, newAsset]);
+                                setPortfolioType(researchAssetType);
+                              }}
+                              disabled={isInPortfolio}
+                              style={{
+                                flex: 1,
+                                padding: '12px',
+                                borderRadius: '10px',
+                                border: 'none',
+                                background: isInPortfolio ? '#21262d' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                color: isInPortfolio ? '#6e7681' : '#ffffff',
+                                fontWeight: '600',
+                                fontSize: '14px',
+                                cursor: isInPortfolio ? 'not-allowed' : 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px'
+                              }}
+                            >
+                              {isInPortfolio ? '✓ In Portfolio' : '+ Add to Portfolio'}
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isInCompare) {
+                                  handleRemoveFromCompare(asset.symbol);
+                                } else {
+                                  handleAddToCompare(asset);
+                                }
+                              }}
+                              disabled={!isInCompare && researchCompareAssets.length >= 3}
+                              style={{
+                                padding: '12px 16px',
+                                borderRadius: '10px',
+                                border: isInCompare ? `2px solid ${colors.cyan}` : '2px solid #21262d',
+                                background: isInCompare ? 'rgba(0, 217, 255, 0.1)' : 'transparent',
+                                color: isInCompare ? colors.cyan : (!isInCompare && researchCompareAssets.length >= 3) ? '#6e7681' : '#8b949e',
+                                fontWeight: '600',
+                                fontSize: '14px',
+                                cursor: (!isInCompare && researchCompareAssets.length >= 3) ? 'not-allowed' : 'pointer'
+                              }}
+                            >
+                              {isInCompare ? '✓ Comparing' : 'Compare'}
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Comparison Panel */}
+          {researchCompareAssets.length > 0 && (
+            <motion.div
+              initial={{ y: 200 }}
+              animate={{ y: 0 }}
+              style={{
+                position: 'fixed',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                background: '#161b22',
+                borderTop: '2px solid #00d9ff',
+                padding: '16px',
+                zIndex: 30
+              }}
+            >
+              <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '14px' }}>
+                    Comparing {researchCompareAssets.length}/3 Assets
+                  </span>
+                  <button
+                    onClick={() => setResearchCompareAssets([])}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid #ef4444',
+                      background: 'transparent',
+                      color: '#ef4444',
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Clear All
+                  </button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${researchCompareAssets.length}, 1fr)`, gap: '12px' }}>
+                  {researchCompareAssets.map(asset => (
+                    <div key={asset.symbol} style={{
+                      background: '#0d1117',
+                      borderRadius: '10px',
+                      padding: '12px',
+                      position: 'relative'
+                    }}>
+                      <button
+                        onClick={() => handleRemoveFromCompare(asset.symbol)}
+                        style={{
+                          position: 'absolute',
+                          top: '8px',
+                          right: '8px',
+                          width: '20px',
+                          height: '20px',
+                          borderRadius: '50%',
+                          border: 'none',
+                          background: '#21262d',
+                          color: '#8b949e',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '12px'
+                        }}
+                      >
+                        ×
+                      </button>
+                      <div style={{ fontWeight: 'bold', color: '#ffffff', marginBottom: '8px' }}>{asset.symbol}</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: '#8b949e' }}>7D</span>
+                          <span style={{ color: (asset.priceChange7d || 0) >= 0 ? '#10b981' : '#ef4444' }}>
+                            {(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(1)}%
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: '#8b949e' }}>30D</span>
+                          <span style={{ color: (asset.priceChange30d || 0) >= 0 ? '#10b981' : '#ef4444' }}>
+                            {(asset.priceChange30d || 0) >= 0 ? '+' : ''}{(asset.priceChange30d || 0).toFixed(1)}%
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: '#8b949e' }}>Win Rate</span>
+                          <span style={{ color: colors.cyan }}>{asset.communityData?.winRate || '-'}%</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: '#8b949e' }}>Rank</span>
+                          <span style={{ color: '#ffffff' }}>#{asset.categoryRank7d || '-'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
         </div>
       </div>
     );
