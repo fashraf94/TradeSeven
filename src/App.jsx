@@ -832,6 +832,172 @@ const colors = {
   borderFocus: '#00d9ff'
 };
 
+// ============================================
+// WEEKLY CHALLENGES - CHALLENGE POOL
+// ============================================
+
+const CHALLENGE_POOL = {
+  // CLASSIC MODE ONLY CHALLENGES
+  classic: [
+    // Easy (100 XP)
+    { id: 'classic_first_win', name: 'First Blood', description: 'Win a Classic battle', gameMode: 'classic', difficulty: 'easy', xp: 100, target: 1, type: 'wins', icon: '⚔️' },
+    { id: 'classic_complete_3', name: 'Battle Veteran', description: 'Complete 3 Classic battles', gameMode: 'classic', difficulty: 'easy', xp: 100, target: 3, type: 'completions', icon: '🎖️' },
+    { id: 'classic_positive_return', name: 'In The Green', description: 'Finish a Classic battle with a positive return', gameMode: 'classic', difficulty: 'easy', xp: 100, target: 1, type: 'positive_return', icon: '📈' },
+    // Medium (250 XP)
+    { id: 'classic_win_streak_2', name: 'Double Tap', description: 'Win 2 Classic battles in a row', gameMode: 'classic', difficulty: 'medium', xp: 250, target: 2, type: 'win_streak', icon: '🔥' },
+    { id: 'classic_5_green_assets', name: 'Green Portfolio', description: 'Win a Classic battle with 5+ assets in the green', gameMode: 'classic', difficulty: 'medium', xp: 250, target: 5, type: 'green_assets', icon: '💚' },
+    { id: 'classic_comeback', name: 'Comeback King', description: 'Win a Classic battle after trailing at halftime', gameMode: 'classic', difficulty: 'medium', xp: 250, target: 1, type: 'comeback_win', icon: '👑' },
+    { id: 'classic_defense_wins', name: 'Defense Wins', description: 'Win a Classic battle where your worst asset beats their worst asset', gameMode: 'classic', difficulty: 'medium', xp: 250, target: 1, type: 'defense_win', icon: '🛡️' },
+    // Hard (500 XP)
+    { id: 'classic_win_streak_3', name: 'Hat Trick', description: 'Win 3 Classic battles in a row', gameMode: 'classic', difficulty: 'hard', xp: 500, target: 3, type: 'win_streak', icon: '🎩' },
+    { id: 'classic_all_green', name: 'Perfect Portfolio', description: 'Win a Classic battle with ALL assets in the green', gameMode: 'classic', difficulty: 'hard', xp: 500, target: 1, type: 'all_green', icon: '✨' },
+    { id: 'classic_double_digit', name: 'Double Digits', description: 'Win a Classic battle with 10%+ portfolio return', gameMode: 'classic', difficulty: 'hard', xp: 500, target: 10, type: 'return_threshold', icon: '🚀' }
+  ],
+  // SNAKE DRAFT ONLY CHALLENGES
+  snake: [
+    // Easy (100 XP)
+    { id: 'snake_first_win', name: 'Snake Charmer', description: 'Win a Snake Draft battle', gameMode: 'snake', difficulty: 'easy', xp: 100, target: 1, type: 'wins', icon: '🐍' },
+    { id: 'snake_complete_2', name: 'Draft Day', description: 'Complete 2 Snake Draft battles', gameMode: 'snake', difficulty: 'easy', xp: 100, target: 2, type: 'completions', icon: '📋' },
+    { id: 'snake_top_half', name: 'Above Average', description: 'Finish in the top 2 of a Snake Draft', gameMode: 'snake', difficulty: 'easy', xp: 100, target: 1, type: 'top_half_finish', icon: '🏅' },
+    // Medium (250 XP)
+    { id: 'snake_first_pick_mvp', name: 'Worth The Pick', description: 'Win a Snake Draft where your 1st round pick is your top performer', gameMode: 'snake', difficulty: 'medium', xp: 250, target: 1, type: 'first_pick_mvp', icon: '🎯' },
+    { id: 'snake_last_pick_win', name: 'Against All Odds', description: 'Win a Snake Draft from the last pick position', gameMode: 'snake', difficulty: 'medium', xp: 250, target: 1, type: 'last_pick_win', icon: '🍀' },
+    { id: 'snake_sector_focus', name: 'Sector Specialist', description: 'Draft 3+ assets from the same sector in a Snake Draft', gameMode: 'snake', difficulty: 'medium', xp: 250, target: 3, type: 'same_sector_draft', icon: '🏭' },
+    // Hard (500 XP)
+    { id: 'snake_win_streak_2', name: 'Snake Eyes', description: 'Win 2 Snake Draft battles in a row', gameMode: 'snake', difficulty: 'hard', xp: 500, target: 2, type: 'win_streak', icon: '🎲' },
+    { id: 'snake_podium_streak', name: 'Consistent Drafter', description: 'Finish top 2 in 3 Snake Draft battles', gameMode: 'snake', difficulty: 'hard', xp: 500, target: 3, type: 'top_half_count', icon: '🏆' },
+    { id: 'snake_late_round_hero', name: 'Late Round Hero', description: 'Win a Snake Draft where a pick from round 5+ is your MVP', gameMode: 'snake', difficulty: 'hard', xp: 500, target: 1, type: 'late_pick_mvp', icon: '💎' }
+  ],
+  // UNIVERSAL CHALLENGES (Both Classic & Snake)
+  universal: [
+    // Easy (100 XP)
+    { id: 'uni_play_both', name: 'Versatile Trader', description: 'Complete 1 Classic and 1 Snake Draft battle', gameMode: 'universal', difficulty: 'easy', xp: 100, target: 1, type: 'play_both_modes', icon: '🔄' },
+    { id: 'uni_5_battles', name: 'Active Trader', description: 'Complete 5 battles (any mode)', gameMode: 'universal', difficulty: 'easy', xp: 100, target: 5, type: 'total_completions', icon: '📊' },
+    { id: 'uni_use_research', name: 'Research Rookie', description: 'Use Research Mode before building a portfolio', gameMode: 'universal', difficulty: 'easy', xp: 100, target: 1, type: 'use_research', icon: '🔬' },
+    // Medium (250 XP)
+    { id: 'uni_3_different_opponents', name: 'Social Trader', description: 'Battle 3 different opponents this week', gameMode: 'universal', difficulty: 'medium', xp: 250, target: 3, type: 'unique_opponents', icon: '🤝' },
+    { id: 'uni_win_both_modes', name: 'Master of Both', description: 'Win at least 1 Classic and 1 Snake Draft battle', gameMode: 'universal', difficulty: 'medium', xp: 250, target: 1, type: 'win_both_modes', icon: '⚡' },
+    { id: 'uni_diversified', name: 'Diversified Portfolio', description: 'Complete a battle with assets from 5+ different sectors', gameMode: 'universal', difficulty: 'medium', xp: 250, target: 5, type: 'sector_diversity', icon: '🌐' },
+    { id: 'uni_crypto_stock', name: 'Mixed Markets', description: 'Complete both a Stock and Crypto battle', gameMode: 'universal', difficulty: 'medium', xp: 250, target: 1, type: 'both_asset_types', icon: '💱' },
+    // Hard (500 XP)
+    { id: 'uni_5_wins', name: 'Weekly Champion', description: 'Win 5 battles this week (any mode)', gameMode: 'universal', difficulty: 'hard', xp: 500, target: 5, type: 'total_wins', icon: '🏆' },
+    { id: 'uni_no_losses', name: 'Undefeated', description: 'Win 3 battles without any losses', gameMode: 'universal', difficulty: 'hard', xp: 500, target: 3, type: 'win_without_loss', icon: '🛡️' },
+    { id: 'uni_daily_streak', name: 'Daily Grind', description: 'Complete at least 1 battle on 5 different days', gameMode: 'universal', difficulty: 'hard', xp: 500, target: 5, type: 'daily_activity', icon: '📅' }
+  ]
+};
+
+// XP Rewards
+const CHALLENGE_XP = {
+  easy: 100,
+  medium: 250,
+  hard: 500,
+  weeklyBonus: 250 // Complete all 4 challenges
+};
+
+// Challenge colors for UI
+const CHALLENGE_COLORS = {
+  weekly: '#A855F7',    // Purple for weekly challenges
+  inBattle: '#FB923C', // Orange for in-battle challenges
+  easy: '#22C55E',     // Green
+  medium: '#EAB308',   // Yellow/Gold
+  hard: '#EF4444',     // Red
+  completed: '#00d9ff' // Cyan (brand color)
+};
+
+// ============================================
+// WEEKLY CHALLENGES - HELPER FUNCTIONS
+// ============================================
+
+// Get the start of current week (Monday midnight)
+const getWeekStartDate = () => {
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+  const monday = new Date(now.setDate(diff));
+  monday.setHours(0, 0, 0, 0);
+  return monday.toISOString().split('T')[0]; // YYYY-MM-DD format
+};
+
+// Get today's date string for daily tracking
+const getTodayDateString = () => {
+  return new Date().toISOString().split('T')[0];
+};
+
+// Check if it's a new week (challenges should reset)
+const isNewWeek = (lastWeekStart) => {
+  return getWeekStartDate() !== lastWeekStart;
+};
+
+// Select 4 weekly challenges: 1 Classic, 1 Snake, 1 Universal, 1 Wild Card
+const selectWeeklyChallenges = () => {
+  const getRandomFromArray = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  const classicChallenge = getRandomFromArray(CHALLENGE_POOL.classic);
+  const snakeChallenge = getRandomFromArray(CHALLENGE_POOL.snake);
+  const universalChallenge = getRandomFromArray(CHALLENGE_POOL.universal);
+
+  // Wild card - pick from any pool
+  const allChallenges = [
+    ...CHALLENGE_POOL.classic,
+    ...CHALLENGE_POOL.snake,
+    ...CHALLENGE_POOL.universal
+  ].filter(c =>
+    c.id !== classicChallenge.id &&
+    c.id !== snakeChallenge.id &&
+    c.id !== universalChallenge.id
+  );
+  const wildCardChallenge = getRandomFromArray(allChallenges);
+
+  return [
+    { ...classicChallenge, slot: 'classic', slotLabel: 'Classic Mode' },
+    { ...snakeChallenge, slot: 'snake', slotLabel: 'Snake Draft' },
+    { ...universalChallenge, slot: 'universal', slotLabel: 'Any Mode' },
+    { ...wildCardChallenge, slot: 'wildcard', slotLabel: 'Wild Card' }
+  ];
+};
+
+// Check if user can accept a new challenge today
+const canAcceptChallengeToday = (activeDailyChallenge) => {
+  if (!activeDailyChallenge) return true;
+  return activeDailyChallenge.acceptedDate !== getTodayDateString();
+};
+
+// Check if challenge is already completed this week
+const isChallengeCompleted = (challengeId, completedChallenges) => {
+  return completedChallenges.some(c => c.id === challengeId);
+};
+
+// Calculate time until weekly reset (next Monday)
+const getTimeUntilReset = () => {
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+  const nextMonday = new Date(now);
+  nextMonday.setDate(now.getDate() + daysUntilMonday);
+  nextMonday.setHours(0, 0, 0, 0);
+
+  const diff = nextMonday - now;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+
+  return { days, hours, total: diff };
+};
+
+// Get difficulty color
+const getDifficultyColor = (difficulty) => {
+  return CHALLENGE_COLORS[difficulty] || '#ffffff';
+};
+
+// Get game mode badge color
+const getGameModeColor = (gameMode) => {
+  switch(gameMode) {
+    case 'classic': return '#00d9ff'; // Cyan
+    case 'snake': return '#A855F7';   // Purple
+    case 'universal': return '#22C55E'; // Green
+    default: return '#FB923C';         // Orange for wild card
+  }
+};
+
 // Style override to neutralize App.css
 const containerStyle = {
   maxWidth: 'none',
@@ -1425,6 +1591,19 @@ export default function PortfolioDuel() {
   const [researchExpandedAsset, setResearchExpandedAsset] = useState(null);
   const [researchCompareAssets, setResearchCompareAssets] = useState([]);
 
+  // Weekly Challenges State
+  const [showWeeklyChallenges, setShowWeeklyChallenges] = useState(false);
+  const [weeklyChallenges, setWeeklyChallenges] = useState([]);
+  const [activeDailyChallenge, setActiveDailyChallenge] = useState(null);
+  const [challengeProgress, setChallengeProgress] = useState({});
+  const [completedWeeklyChallenges, setCompletedWeeklyChallenges] = useState([]);
+  const [showSlotMachine, setShowSlotMachine] = useState(false);
+  const [slotMachineRevealed, setSlotMachineRevealed] = useState(false);
+  const [expandedChallengeId, setExpandedChallengeId] = useState(null);
+  const [showChallengeToast, setShowChallengeToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [challengeHistory, setChallengeHistory] = useState([]);
+
   // Toggle asset expansion
   const toggleAssetExpansion = (symbol) => {
     setExpandedAssets(prev => {
@@ -1436,6 +1615,222 @@ export default function PortfolioDuel() {
       }
       return newSet;
     });
+  };
+
+  // ============================================
+  // WEEKLY CHALLENGES - FIREBASE FUNCTIONS
+  // ============================================
+
+  // Show toast notification
+  const showChallengeToastMessage = (message) => {
+    setToastMessage(message);
+    setShowChallengeToast(true);
+    setTimeout(() => setShowChallengeToast(false), 3000);
+  };
+
+  // Load weekly challenges from localStorage (simplified for now)
+  const loadWeeklyChallenges = async () => {
+    try {
+      const storageKey = `weeklyChallenges_${user?.odM || user?.username}`;
+      const saved = localStorage.getItem(storageKey);
+      const currentWeekStart = getWeekStartDate();
+
+      if (saved) {
+        const data = JSON.parse(saved);
+
+        // Check if we need to reset for new week
+        if (data.weekStartDate !== currentWeekStart) {
+          // New week - generate new challenges
+          const newChallenges = selectWeeklyChallenges();
+          const newData = {
+            weekStartDate: currentWeekStart,
+            challenges: newChallenges,
+            activeDailyChallenge: null,
+            progress: {},
+            completedChallenges: [],
+            slotMachineShown: false
+          };
+          localStorage.setItem(storageKey, JSON.stringify(newData));
+
+          setWeeklyChallenges(newChallenges);
+          setActiveDailyChallenge(null);
+          setChallengeProgress({});
+          setCompletedWeeklyChallenges([]);
+          setShowSlotMachine(true);
+          return;
+        }
+
+        setWeeklyChallenges(data.challenges || []);
+        setActiveDailyChallenge(data.activeDailyChallenge);
+        setChallengeProgress(data.progress || {});
+        setCompletedWeeklyChallenges(data.completedChallenges || []);
+
+        // Show slot machine if new week and hasn't been shown
+        if (!data.slotMachineShown && data.weekStartDate === currentWeekStart) {
+          setShowSlotMachine(true);
+        }
+      } else {
+        // No data exists - create initial
+        const newChallenges = selectWeeklyChallenges();
+        const newData = {
+          weekStartDate: currentWeekStart,
+          challenges: newChallenges,
+          activeDailyChallenge: null,
+          progress: {},
+          completedChallenges: [],
+          slotMachineShown: false
+        };
+        localStorage.setItem(storageKey, JSON.stringify(newData));
+
+        setWeeklyChallenges(newChallenges);
+        setShowSlotMachine(true);
+      }
+    } catch (error) {
+      console.error('Error loading weekly challenges:', error);
+    }
+  };
+
+  // Save weekly challenges to localStorage
+  const saveWeeklyChallenges = (updates) => {
+    try {
+      const storageKey = `weeklyChallenges_${user?.odM || user?.username}`;
+      const saved = localStorage.getItem(storageKey);
+      const data = saved ? JSON.parse(saved) : {};
+      const newData = { ...data, ...updates };
+      localStorage.setItem(storageKey, JSON.stringify(newData));
+    } catch (error) {
+      console.error('Error saving weekly challenges:', error);
+    }
+  };
+
+  // Accept a challenge for today
+  const acceptChallenge = async (challenge) => {
+    const acceptedChallenge = {
+      ...challenge,
+      acceptedDate: getTodayDateString(),
+      acceptedAt: new Date().toISOString()
+    };
+
+    setActiveDailyChallenge(acceptedChallenge);
+    saveWeeklyChallenges({ activeDailyChallenge: acceptedChallenge });
+    showChallengeToastMessage(`Challenge Accepted: ${challenge.name}!`);
+  };
+
+  // Update challenge progress after battle
+  const updateWeeklyChallengeProgress = async (battleResult, battleGameMode) => {
+    if (!activeDailyChallenge) return;
+
+    // Check if challenge applies to this game mode
+    const challengeMode = activeDailyChallenge.gameMode;
+    if (challengeMode !== 'universal' && challengeMode !== battleGameMode) {
+      return;
+    }
+
+    let newProgress = { ...challengeProgress };
+    const challengeId = activeDailyChallenge.id;
+    const currentProgress = newProgress[challengeId] || 0;
+
+    // Calculate progress based on challenge type
+    switch (activeDailyChallenge.type) {
+      case 'wins':
+        if (battleResult.won) {
+          newProgress[challengeId] = currentProgress + 1;
+        }
+        break;
+      case 'completions':
+        newProgress[challengeId] = currentProgress + 1;
+        break;
+      case 'win_streak':
+        if (battleResult.won) {
+          newProgress[challengeId] = currentProgress + 1;
+        } else {
+          newProgress[challengeId] = 0;
+        }
+        break;
+      case 'green_assets':
+        if (battleResult.won && battleResult.greenAssetCount >= activeDailyChallenge.target) {
+          newProgress[challengeId] = activeDailyChallenge.target;
+        }
+        break;
+      case 'all_green':
+        if (battleResult.won && battleResult.allAssetsGreen) {
+          newProgress[challengeId] = 1;
+        }
+        break;
+      case 'positive_return':
+        if (battleResult.returnPercent > 0) {
+          newProgress[challengeId] = 1;
+        }
+        break;
+      case 'total_completions':
+        newProgress[challengeId] = currentProgress + 1;
+        break;
+      case 'total_wins':
+        if (battleResult.won) {
+          newProgress[challengeId] = currentProgress + 1;
+        }
+        break;
+      case 'top_half_finish':
+        if (battleResult.position <= 2) {
+          newProgress[challengeId] = 1;
+        }
+        break;
+      default:
+        break;
+    }
+
+    setChallengeProgress(newProgress);
+
+    // Check if challenge is completed
+    if (newProgress[challengeId] >= activeDailyChallenge.target) {
+      const xpReward = activeDailyChallenge.xp;
+
+      // Add to completed challenges
+      const completedChallenge = {
+        ...activeDailyChallenge,
+        completedAt: new Date().toISOString(),
+        completedDate: getTodayDateString()
+      };
+
+      const newCompleted = [...completedWeeklyChallenges, completedChallenge];
+      setCompletedWeeklyChallenges(newCompleted);
+
+      // Add to history
+      const newHistory = [...challengeHistory, { ...completedChallenge, type: 'weekly' }];
+      setChallengeHistory(newHistory);
+
+      // Update user XP
+      if (user) {
+        const newXP = (user.xp || 0) + xpReward;
+        setUser({ ...user, xp: newXP });
+      }
+
+      saveWeeklyChallenges({
+        completedChallenges: newCompleted,
+        progress: newProgress
+      });
+      localStorage.setItem(`challengeHistory_${user?.odM || user?.username}`, JSON.stringify(newHistory));
+
+      showChallengeToastMessage(`Challenge Complete: ${activeDailyChallenge.name}! +${xpReward} XP`);
+
+      // Check for weekly bonus (all 4 completed)
+      if (newCompleted.length === 4) {
+        setTimeout(() => {
+          const bonusXP = CHALLENGE_XP.weeklyBonus;
+          if (user) {
+            setUser({ ...user, xp: (user.xp || 0) + xpReward + bonusXP });
+          }
+          showChallengeToastMessage(`WEEKLY BONUS! All challenges complete! +${bonusXP} XP`);
+        }, 3500);
+      }
+    } else {
+      saveWeeklyChallenges({ progress: newProgress });
+    }
+  };
+
+  // Mark slot machine as shown
+  const markSlotMachineShown = () => {
+    saveWeeklyChallenges({ slotMachineShown: true });
   };
 
   // ============================================
@@ -1455,6 +1850,19 @@ export default function PortfolioDuel() {
   useEffect(() => {
     if (user) {
       saveUser(user);
+    }
+  }, [user]);
+
+  // Load weekly challenges when user logs in
+  useEffect(() => {
+    if (user) {
+      loadWeeklyChallenges();
+      // Also load challenge history
+      const historyKey = `challengeHistory_${user?.odM || user?.username}`;
+      const savedHistory = localStorage.getItem(historyKey);
+      if (savedHistory) {
+        setChallengeHistory(JSON.parse(savedHistory));
+      }
     }
   }, [user]);
 
@@ -2630,6 +3038,206 @@ export default function PortfolioDuel() {
   // 6. SCREEN RENDERS
   // ============================================
 
+  // ============================================
+  // GLOBAL OVERLAYS - Toast & Slot Machine
+  // ============================================
+
+  // Challenge Toast Notification (renders on all screens)
+  const ChallengeToast = () => (
+    showChallengeToast && (
+      <motion.div
+        initial={{ y: -100, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: -100, opacity: 0 }}
+        style={{
+          position: 'fixed',
+          top: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.95), rgba(139, 69, 219, 0.95))',
+          padding: '16px 24px',
+          borderRadius: '12px',
+          zIndex: 9999,
+          boxShadow: '0 8px 32px rgba(168, 85, 247, 0.4)',
+          border: '1px solid rgba(168, 85, 247, 0.5)',
+          maxWidth: '90%'
+        }}
+      >
+        <p style={{
+          color: '#fff',
+          fontWeight: '600',
+          fontSize: '14px',
+          margin: 0,
+          textAlign: 'center'
+        }}>
+          {toastMessage}
+        </p>
+      </motion.div>
+    )
+  );
+
+  // Slot Machine Reveal - New Week Animation
+  const SlotMachineOverlay = () => (
+    showSlotMachine && (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.95)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 2000,
+          padding: '20px'
+        }}
+      >
+        <motion.h2
+          initial={{ y: -50, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          style={{
+            color: '#fff',
+            fontSize: '24px',
+            fontWeight: '700',
+            marginBottom: '8px',
+            textAlign: 'center'
+          }}
+        >
+          NEW WEEKLY CHALLENGES
+        </motion.h2>
+
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.4 }}
+          style={{
+            color: 'rgba(255,255,255,0.6)',
+            fontSize: '14px',
+            marginBottom: '32px'
+          }}
+        >
+          Your challenges for this week are...
+        </motion.p>
+
+        {/* Slot Reels */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+          width: '100%',
+          maxWidth: '350px'
+        }}>
+          {weeklyChallenges.map((challenge, index) => (
+            <motion.div
+              key={challenge.id}
+              initial={{ x: -300, opacity: 0, rotateY: 90 }}
+              animate={{ x: 0, opacity: 1, rotateY: 0 }}
+              transition={{
+                delay: 0.8 + (index * 0.4),
+                type: 'spring',
+                stiffness: 100,
+                damping: 15
+              }}
+              style={{
+                background: `linear-gradient(135deg, ${getGameModeColor(challenge.gameMode)}22, ${colors.cardBg})`,
+                border: `2px solid ${getGameModeColor(challenge.gameMode)}`,
+                borderRadius: '16px',
+                padding: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px'
+              }}
+            >
+              <div style={{
+                width: '50px',
+                height: '50px',
+                borderRadius: '12px',
+                background: `${getGameModeColor(challenge.gameMode)}33`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '24px'
+              }}>
+                {challenge.icon}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginBottom: '4px'
+                }}>
+                  <span style={{
+                    color: '#fff',
+                    fontWeight: '700',
+                    fontSize: '14px'
+                  }}>
+                    {challenge.name}
+                  </span>
+                  <span style={{
+                    background: getDifficultyColor(challenge.difficulty),
+                    color: '#000',
+                    fontSize: '10px',
+                    fontWeight: '700',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    textTransform: 'uppercase'
+                  }}>
+                    {challenge.difficulty}
+                  </span>
+                </div>
+                <p style={{
+                  color: 'rgba(255,255,255,0.6)',
+                  fontSize: '12px',
+                  margin: 0
+                }}>
+                  {challenge.slotLabel}
+                </p>
+              </div>
+              <div style={{
+                color: getGameModeColor(challenge.gameMode),
+                fontWeight: '700',
+                fontSize: '14px'
+              }}>
+                +{challenge.xp} XP
+              </div>
+            </motion.div>
+          ))}
+        </div>
+
+        <motion.button
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 2.8 }}
+          onClick={() => {
+            setShowSlotMachine(false);
+            setSlotMachineRevealed(true);
+            markSlotMachineShown();
+          }}
+          style={{
+            marginTop: '32px',
+            background: 'linear-gradient(135deg, #A855F7, #7C3AED)',
+            color: '#fff',
+            border: 'none',
+            padding: '16px 48px',
+            borderRadius: '12px',
+            fontSize: '16px',
+            fontWeight: '700',
+            cursor: 'pointer'
+          }}
+        >
+          LET'S GO!
+        </motion.button>
+      </motion.div>
+    )
+  );
+
   // LOGIN SCREEN - Mobile-first responsive with Logo
   if (screen === 'home') {
     return (
@@ -3477,6 +4085,10 @@ export default function PortfolioDuel() {
 
     return (
       <div style={containerStyle}>
+        {/* Global Overlays */}
+        <ChallengeToast />
+        <SlotMachineOverlay />
+
         <div style={{
           minHeight: '100vh',
           display: 'flex',
@@ -4680,6 +5292,376 @@ export default function PortfolioDuel() {
                 </div>
               </div>
               <ArrowRight style={{ height: '20px', width: '20px', color: colors.cyan }} />
+            </motion.div>
+
+            {/* Weekly Challenges Section */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.45 }}
+              style={{
+                marginBottom: '24px',
+                background: colors.cardBg,
+                borderRadius: '16px',
+                border: `1px solid ${colors.border}`,
+                overflow: 'hidden'
+              }}
+            >
+              {/* Header */}
+              <div
+                onClick={() => setShowWeeklyChallenges(!showWeeklyChallenges)}
+                style={{
+                  padding: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1), transparent)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '24px' }}>🎯</span>
+                  <div>
+                    <h3 style={{
+                      color: '#fff',
+                      fontSize: '16px',
+                      fontWeight: '700',
+                      margin: 0
+                    }}>
+                      Weekly Challenges
+                    </h3>
+                    <p style={{
+                      color: 'rgba(255,255,255,0.5)',
+                      fontSize: '12px',
+                      margin: 0
+                    }}>
+                      {completedWeeklyChallenges.length}/4 completed • Resets in {getTimeUntilReset().days}d {getTimeUntilReset().hours}h
+                    </p>
+                  </div>
+                </div>
+                <motion.div
+                  animate={{ rotate: showWeeklyChallenges ? 180 : 0 }}
+                  style={{ color: '#A855F7' }}
+                >
+                  <ChevronDown size={20} />
+                </motion.div>
+              </div>
+
+              {/* Expandable Challenge Cards */}
+              {showWeeklyChallenges && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  style={{ overflow: 'hidden' }}
+                >
+                  <div style={{ padding: '0 16px 16px' }}>
+                    {/* Active Challenge Indicator */}
+                    {activeDailyChallenge && (
+                      <div style={{
+                        background: 'rgba(168, 85, 247, 0.2)',
+                        border: '1px solid #A855F7',
+                        borderRadius: '8px',
+                        padding: '12px',
+                        marginBottom: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}>
+                        <Zap size={16} style={{ color: '#A855F7' }} />
+                        <span style={{ color: '#fff', fontSize: '13px' }}>
+                          Active Today: <strong>{activeDailyChallenge.name}</strong>
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Challenge Cards */}
+                    {weeklyChallenges.map((challenge, index) => {
+                      const isCompleted = isChallengeCompleted(challenge.id, completedWeeklyChallenges);
+                      const isActive = activeDailyChallenge?.id === challenge.id;
+                      const isExpanded = expandedChallengeId === challenge.id;
+                      const progress = challengeProgress[challenge.id] || 0;
+                      const progressPercent = Math.min((progress / challenge.target) * 100, 100);
+                      const canAccept = canAcceptChallengeToday(activeDailyChallenge) && !isCompleted;
+
+                      return (
+                        <motion.div
+                          key={challenge.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.1 }}
+                          style={{
+                            background: isCompleted
+                              ? 'rgba(0, 217, 255, 0.1)'
+                              : isActive
+                                ? 'rgba(168, 85, 247, 0.15)'
+                                : 'rgba(255, 255, 255, 0.03)',
+                            border: `1px solid ${
+                              isCompleted
+                                ? '#00d9ff'
+                                : isActive
+                                  ? '#A855F7'
+                                  : colors.borderSubtle
+                            }`,
+                            borderRadius: '12px',
+                            marginBottom: '10px',
+                            overflow: 'hidden'
+                          }}
+                        >
+                          {/* Collapsed View */}
+                          <div
+                            onClick={() => setExpandedChallengeId(isExpanded ? null : challenge.id)}
+                            style={{
+                              padding: '14px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '12px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {/* Icon */}
+                            <div style={{
+                              width: '44px',
+                              height: '44px',
+                              borderRadius: '10px',
+                              background: `${getGameModeColor(challenge.gameMode)}22`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '20px',
+                              flexShrink: 0
+                            }}>
+                              {isCompleted ? '✅' : challenge.icon}
+                            </div>
+
+                            {/* Info */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                marginBottom: '4px',
+                                flexWrap: 'wrap'
+                              }}>
+                                <span style={{
+                                  color: isCompleted ? '#00d9ff' : '#fff',
+                                  fontWeight: '600',
+                                  fontSize: '14px'
+                                }}>
+                                  {challenge.name}
+                                </span>
+                                <span style={{
+                                  background: getGameModeColor(challenge.gameMode),
+                                  color: '#000',
+                                  fontSize: '9px',
+                                  fontWeight: '700',
+                                  padding: '2px 5px',
+                                  borderRadius: '4px'
+                                }}>
+                                  {challenge.slotLabel}
+                                </span>
+                              </div>
+
+                              {/* Mini Progress Bar */}
+                              {!isCompleted && (
+                                <div style={{
+                                  height: '4px',
+                                  background: 'rgba(255,255,255,0.1)',
+                                  borderRadius: '2px',
+                                  overflow: 'hidden'
+                                }}>
+                                  <motion.div
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${progressPercent}%` }}
+                                    style={{
+                                      height: '100%',
+                                      background: isActive ? '#A855F7' : getDifficultyColor(challenge.difficulty),
+                                      borderRadius: '2px'
+                                    }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+
+                            {/* XP / Status */}
+                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                              {isCompleted ? (
+                                <span style={{ color: '#00d9ff', fontSize: '12px', fontWeight: '600' }}>DONE</span>
+                              ) : (
+                                <span style={{
+                                  color: getDifficultyColor(challenge.difficulty),
+                                  fontSize: '13px',
+                                  fontWeight: '700'
+                                }}>
+                                  +{challenge.xp}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Expand Arrow */}
+                            <motion.div
+                              animate={{ rotate: isExpanded ? 180 : 0 }}
+                              style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}
+                            >
+                              <ChevronDown size={16} />
+                            </motion.div>
+                          </div>
+
+                          {/* Expanded Details */}
+                          {isExpanded && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              style={{ overflow: 'hidden' }}
+                            >
+                              <div style={{
+                                padding: '0 14px 14px',
+                                borderTop: `1px solid ${colors.borderSubtle}`
+                              }}>
+                                <p style={{
+                                  color: 'rgba(255,255,255,0.7)',
+                                  fontSize: '13px',
+                                  margin: '12px 0',
+                                  lineHeight: '1.5'
+                                }}>
+                                  {challenge.description}
+                                </p>
+
+                                {/* Progress Section */}
+                                {!isCompleted && (
+                                  <div style={{ marginBottom: '12px' }}>
+                                    <div style={{
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      marginBottom: '6px'
+                                    }}>
+                                      <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>Progress</span>
+                                      <span style={{ color: '#fff', fontSize: '12px', fontWeight: '600' }}>
+                                        {progress} / {challenge.target}
+                                      </span>
+                                    </div>
+                                    <div style={{
+                                      height: '8px',
+                                      background: 'rgba(255,255,255,0.1)',
+                                      borderRadius: '4px',
+                                      overflow: 'hidden'
+                                    }}>
+                                      <motion.div
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${progressPercent}%` }}
+                                        transition={{ duration: 0.5 }}
+                                        style={{
+                                          height: '100%',
+                                          background: `linear-gradient(90deg, ${getDifficultyColor(challenge.difficulty)}, ${getDifficultyColor(challenge.difficulty)}aa)`,
+                                          borderRadius: '4px'
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Difficulty Badge & Accept Button */}
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between'
+                                }}>
+                                  <span style={{
+                                    background: getDifficultyColor(challenge.difficulty),
+                                    color: '#000',
+                                    fontSize: '11px',
+                                    fontWeight: '700',
+                                    padding: '4px 10px',
+                                    borderRadius: '6px',
+                                    textTransform: 'uppercase'
+                                  }}>
+                                    {challenge.difficulty} • {challenge.xp} XP
+                                  </span>
+
+                                  {!isCompleted && canAccept && !isActive && (
+                                    <motion.button
+                                      whileHover={{ scale: 1.02 }}
+                                      whileTap={{ scale: 0.98 }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        acceptChallenge(challenge);
+                                      }}
+                                      style={{
+                                        background: 'linear-gradient(135deg, #A855F7, #7C3AED)',
+                                        color: '#fff',
+                                        border: 'none',
+                                        padding: '8px 16px',
+                                        borderRadius: '8px',
+                                        fontSize: '12px',
+                                        fontWeight: '700',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      ACCEPT
+                                    </motion.button>
+                                  )}
+
+                                  {isActive && !isCompleted && (
+                                    <span style={{ color: '#A855F7', fontSize: '12px', fontWeight: '600' }}>
+                                      <Zap size={14} style={{ marginRight: '4px' }} />ACTIVE
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </motion.div>
+                      );
+                    })}
+
+                    {/* Weekly Bonus Progress */}
+                    <div style={{
+                      marginTop: '16px',
+                      padding: '12px',
+                      background: 'rgba(168, 85, 247, 0.1)',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(168, 85, 247, 0.3)'
+                    }}>
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '8px'
+                      }}>
+                        <span style={{ color: '#fff', fontSize: '13px', fontWeight: '600' }}>
+                          <Trophy size={14} style={{ marginRight: '6px', color: '#A855F7' }} />
+                          Weekly Bonus
+                        </span>
+                        <span style={{ color: '#A855F7', fontSize: '13px', fontWeight: '700' }}>
+                          +{CHALLENGE_XP.weeklyBonus} XP
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        {[0, 1, 2, 3].map(i => (
+                          <div
+                            key={i}
+                            style={{
+                              flex: 1,
+                              height: '6px',
+                              borderRadius: '3px',
+                              background: completedWeeklyChallenges.length > i
+                                ? '#A855F7'
+                                : 'rgba(255,255,255,0.1)'
+                            }}
+                          />
+                        ))}
+                      </div>
+                      <p style={{
+                        color: 'rgba(255,255,255,0.5)',
+                        fontSize: '11px',
+                        margin: '8px 0 0',
+                        textAlign: 'center'
+                      }}>
+                        Complete all 4 challenges for bonus XP!
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
             </motion.div>
 
             {/* Completed Battles - Compact List */}
