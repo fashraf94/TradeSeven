@@ -10603,7 +10603,7 @@ export default function PortfolioDuel() {
       const currentUserId = user?.odUserId || user?.username;
       const battleType = currentDraft?.type || 'stocks';
 
-      // Calculate standings from draft data
+      // Calculate standings from draft data - BATCH FETCHING VERSION
       useEffect(() => {
         const calculateStandings = async () => {
           if (!currentDraft?.players) {
@@ -10614,61 +10614,84 @@ export default function PortfolioDuel() {
           setLoading(true);
 
           try {
-            const stockAPI = await import('./services/stockAPI');
+            const stockAPIModule = await import('./services/stockAPI');
 
-            // Calculate each player's performance
-            const playerPerformances = await Promise.all(
-              currentDraft.players.map(async (player) => {
-                let totalGain = 0;
-                const portfolioWithGains = [];
+            // STEP 1: Collect ALL unique symbols from ALL players (ONE batch call)
+            const allSymbols = new Set();
+            currentDraft.players.forEach(player => {
+              (player.picks || []).forEach(symbol => {
+                // For crypto, we need lowercase IDs
+                allSymbols.add(battleType === 'crypto' ? symbol.toLowerCase() : symbol.toUpperCase());
+              });
+            });
 
-                for (const symbol of player.picks || []) {
-                  try {
-                    // Get current price
-                    const priceData = battleType === 'stocks'
-                      ? await stockAPI.getStockPrice(symbol)
-                      : await stockAPI.getCryptoPrice(symbol);
+            const symbolList = Array.from(allSymbols);
+            console.log(`[DraftBattle] Fetching ${symbolList.length} unique assets in 1 batch call`);
 
-                    const currentPrice = priceData?.price || 0;
+            // STEP 2: Batch fetch ALL prices at once (1 API call instead of 36!)
+            let allPrices = {};
+            if (battleType === 'crypto') {
+              allPrices = await stockAPIModule.getAllCryptoPrices(symbolList);
+            } else {
+              allPrices = await stockAPIModule.getAllStockPrices(symbolList);
+            }
 
-                    // Get locked price (from draft completion)
-                    const lockedPrice = currentDraft.lockedPrices?.[symbol] || currentPrice;
+            // STEP 3: Calculate each player's performance using cached prices
+            const playerPerformances = currentDraft.players.map((player) => {
+              let totalGain = 0;
+              const portfolioWithGains = [];
 
-                    const gain = lockedPrice > 0
-                      ? ((currentPrice - lockedPrice) / lockedPrice) * 100
-                      : 0;
+              for (const symbol of player.picks || []) {
+                // Normalize symbol for lookup
+                const lookupKey = battleType === 'crypto' ? symbol.toLowerCase() : symbol.toUpperCase();
 
-                    portfolioWithGains.push({
-                      symbol,
-                      gain: parseFloat(gain.toFixed(2)),
-                      lockedPrice,
-                      currentPrice
-                    });
+                // Get current price from batch result
+                const priceData = allPrices[lookupKey];
+                const currentPrice = priceData?.price || 0;
 
-                    // Equal weight (11.1% each)
-                    totalGain += gain / 9;
-                  } catch (err) {
-                    console.error(`Error fetching ${symbol}:`, err);
-                    portfolioWithGains.push({ symbol, gain: 0, lockedPrice: 0, currentPrice: 0 });
+                // Get locked price (from draft completion)
+                const lockedPrice = currentDraft.lockedPrices?.[symbol] ||
+                                   currentDraft.lockedPrices?.[lookupKey] ||
+                                   currentPrice;
+
+                // Calculate gain with sanity checks
+                let gain = 0;
+                if (lockedPrice > 0 && currentPrice > 0) {
+                  gain = ((currentPrice - lockedPrice) / lockedPrice) * 100;
+
+                  // Sanity check - gains over 500% or under -90% are likely data errors
+                  if (gain > 500 || gain < -90) {
+                    console.warn(`[DraftBattle] Suspicious gain for ${symbol}: ${gain.toFixed(2)}% (locked: $${lockedPrice}, current: $${currentPrice})`);
+                    gain = 0; // Reset to 0 for display
                   }
                 }
 
-                // Find best and worst assets
-                const sorted = [...portfolioWithGains].sort((a, b) => b.gain - a.gain);
+                portfolioWithGains.push({
+                  symbol,
+                  gain: parseFloat(gain.toFixed(2)),
+                  lockedPrice,
+                  currentPrice
+                });
 
-                return {
-                  odUserId: player.odUserId,
-                  displayName: player.displayName,
-                  isMe: player.odUserId === currentUserId,
-                  isCPU: player.isCPU || false,
-                  totalGain: parseFloat(totalGain.toFixed(2)),
-                  portfolio: portfolioWithGains,
-                  bestAsset: sorted[0] || { symbol: '-', gain: 0 },
-                  worstAsset: sorted[sorted.length - 1] || { symbol: '-', gain: 0 },
-                  previousRank: player.previousRank || 0
-                };
-              })
-            );
+                // Equal weight (11.1% each for 9 assets)
+                totalGain += gain / 9;
+              }
+
+              // Find best and worst assets
+              const sorted = [...portfolioWithGains].sort((a, b) => b.gain - a.gain);
+
+              return {
+                odUserId: player.odUserId,
+                displayName: player.displayName,
+                isMe: player.odUserId === currentUserId,
+                isCPU: player.isCPU || false,
+                totalGain: parseFloat(totalGain.toFixed(2)),
+                portfolio: portfolioWithGains,
+                bestAsset: sorted[0] || { symbol: '-', gain: 0 },
+                worstAsset: sorted[sorted.length - 1] || { symbol: '-', gain: 0 },
+                previousRank: player.previousRank || 0
+              };
+            });
 
             // Sort by total gain (descending)
             const sorted = playerPerformances.sort((a, b) => b.totalGain - a.totalGain);
@@ -10697,7 +10720,7 @@ export default function PortfolioDuel() {
             }
 
           } catch (error) {
-            console.error('Error calculating standings:', error);
+            console.error('[DraftBattle] Error calculating standings:', error);
           }
 
           setLoading(false);
@@ -10705,8 +10728,8 @@ export default function PortfolioDuel() {
 
         calculateStandings();
 
-        // Refresh every 60 seconds
-        const refreshInterval = setInterval(calculateStandings, 60000);
+        // Refresh every 2 minutes (not 60 seconds - reduce API load)
+        const refreshInterval = setInterval(calculateStandings, 120000);
         return () => clearInterval(refreshInterval);
       }, [currentDraft, currentUserId, battleType]);
 

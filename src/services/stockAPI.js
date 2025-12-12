@@ -263,6 +263,18 @@ const FALLBACK_STOCK_PRICES = {
 
 const cache = new Map();
 
+// Dedicated batch price cache for draft battles
+const batchPriceCache = {
+  crypto: {},
+  stocks: {},
+  lastFetch: {
+    crypto: 0,
+    stocks: 0
+  }
+};
+
+const BATCH_CACHE_DURATION = 60000; // 60 seconds for batch prices
+
 /**
  * Get from cache if valid
  */
@@ -280,6 +292,170 @@ const getFromCache = (key) => {
 const setCache = (key, data) => {
   cache.set(key, { data, timestamp: Date.now() });
 };
+
+// ============================================
+// BATCH PRICE FETCHING (for Draft Battles)
+// ============================================
+
+/**
+ * Batch fetch ALL crypto prices in one API call
+ * Much more efficient than individual calls
+ */
+export async function getAllCryptoPrices(cryptoIds = []) {
+  const now = Date.now();
+
+  // Return cached data if fresh
+  if (now - batchPriceCache.lastFetch.crypto < BATCH_CACHE_DURATION) {
+    const cachedPrices = {};
+    let allCached = true;
+
+    for (const id of cryptoIds) {
+      const normalizedId = id.toLowerCase();
+      if (batchPriceCache.crypto[normalizedId]) {
+        cachedPrices[normalizedId] = batchPriceCache.crypto[normalizedId];
+      } else {
+        allCached = false;
+      }
+    }
+
+    if (allCached && Object.keys(cachedPrices).length > 0) {
+      logDebug(`Using cached crypto prices (${Object.keys(cachedPrices).length} assets)`);
+      return cachedPrices;
+    }
+  }
+
+  // Normalize IDs
+  const normalizedIds = cryptoIds.map(id => id.toLowerCase());
+  const idsString = normalizedIds.join(',');
+  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${idsString}&vs_currencies=usd&include_24hr_change=true`;
+
+  try {
+    // Try direct call first
+    let response;
+    let data;
+
+    try {
+      response = await fetchWithTimeout(url, {}, 8000);
+      if (response.ok) {
+        data = await response.json();
+      }
+    } catch (directError) {
+      logDebug('Direct API failed, trying CORS proxies...');
+    }
+
+    // If direct failed, try proxies
+    if (!data) {
+      for (const proxy of CORS_PROXIES) {
+        if (!proxy) continue; // Skip empty proxy (direct)
+        try {
+          const proxyUrl = proxy + encodeURIComponent(url);
+          response = await fetchWithTimeout(proxyUrl, {}, 8000);
+          if (response.ok) {
+            data = await response.json();
+            break;
+          }
+        } catch (proxyError) {
+          continue;
+        }
+      }
+    }
+
+    if (!data || Object.keys(data).length === 0) {
+      throw new Error('No data from any source');
+    }
+
+    // Update cache
+    batchPriceCache.lastFetch.crypto = now;
+    for (const [id, priceData] of Object.entries(data)) {
+      batchPriceCache.crypto[id] = {
+        price: priceData.usd || 0,
+        change24h: priceData.usd_24h_change || 0
+      };
+    }
+
+    logDebug(`Fetched ${Object.keys(data).length} crypto prices in 1 batch call`);
+    return batchPriceCache.crypto;
+
+  } catch (error) {
+    logWarn('Crypto batch fetch failed, using fallbacks', error);
+
+    // Return fallback prices
+    const fallbacks = {};
+    for (const id of normalizedIds) {
+      fallbacks[id] = {
+        price: FALLBACK_CRYPTO_PRICES[id] || 100,
+        change24h: 0
+      };
+    }
+    return fallbacks;
+  }
+}
+
+/**
+ * Batch fetch stock prices (Finnhub doesn't have batch, so we sequence with caching)
+ */
+export async function getAllStockPrices(symbols = []) {
+  const now = Date.now();
+
+  // Return cached if fresh
+  if (now - batchPriceCache.lastFetch.stocks < BATCH_CACHE_DURATION) {
+    const cachedPrices = {};
+    let allCached = true;
+
+    for (const symbol of symbols) {
+      const upperSymbol = symbol.toUpperCase();
+      if (batchPriceCache.stocks[upperSymbol]) {
+        cachedPrices[upperSymbol] = batchPriceCache.stocks[upperSymbol];
+      } else {
+        allCached = false;
+      }
+    }
+
+    if (allCached && Object.keys(cachedPrices).length > 0) {
+      logDebug(`Using cached stock prices (${Object.keys(cachedPrices).length} assets)`);
+      return cachedPrices;
+    }
+  }
+
+  // Fetch stocks sequentially with small delays
+  const prices = {};
+
+  for (const symbol of symbols) {
+    const upperSymbol = symbol.toUpperCase();
+    try {
+      const data = await getStockPrice(upperSymbol);
+      prices[upperSymbol] = {
+        price: data.price,
+        change: data.percentChange || 0
+      };
+      batchPriceCache.stocks[upperSymbol] = prices[upperSymbol];
+
+      // Small delay between calls (150ms)
+      if (symbols.indexOf(symbol) < symbols.length - 1) {
+        await new Promise(r => setTimeout(r, 150));
+      }
+    } catch (error) {
+      prices[upperSymbol] = {
+        price: FALLBACK_STOCK_PRICES[upperSymbol] || 100,
+        change: 0
+      };
+    }
+  }
+
+  batchPriceCache.lastFetch.stocks = now;
+  logDebug(`Fetched ${Object.keys(prices).length} stock prices`);
+  return prices;
+}
+
+/**
+ * Clear batch price cache (useful for forcing refresh)
+ */
+export function clearBatchPriceCache() {
+  batchPriceCache.crypto = {};
+  batchPriceCache.stocks = {};
+  batchPriceCache.lastFetch = { crypto: 0, stocks: 0 };
+  logDebug('Batch price cache cleared');
+}
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -819,7 +995,7 @@ function createFallbackCryptoListData() {
 // ============================================
 
 // Named exports for direct imports
-export { POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES };
+export { POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, FALLBACK_STOCK_PRICES };
 
 export const stockAPI = {
   getStockPrice,
@@ -829,9 +1005,15 @@ export const stockAPI = {
   getCryptoExtendedData,
   getStockHistoricalPrices,
   getCryptoHistoricalPrices,
+  // Batch price functions for draft battles
+  getAllCryptoPrices,
+  getAllStockPrices,
+  clearBatchPriceCache,
+  // Constants
   POPULAR_STOCKS,
   POPULAR_CRYPTO,
-  FALLBACK_CRYPTO_PRICES
+  FALLBACK_CRYPTO_PRICES,
+  FALLBACK_STOCK_PRICES
 };
 
 export default stockAPI;
