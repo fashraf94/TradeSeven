@@ -17,12 +17,126 @@ const CONFIG = {
   CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
 };
 
-// Multiple CORS proxies for fallback
-const CORS_PROXIES = [
-  '', // Try direct first (may work in some environments)
-  'https://api.allorigins.win/raw?url=',
-  'https://corsproxy.io/?',
+// Multiple CORS proxy strategies for robust fallback
+// Each strategy is a function that transforms the target URL
+const CORS_STRATEGIES = [
+  // Strategy 1: Direct call (works in Node.js, Electron, or permissive CORS)
+  (url) => ({ url, needsJsonParse: false }),
+  // Strategy 2: corsproxy.io - reliable, fast
+  (url) => ({ url: `https://corsproxy.io/?${encodeURIComponent(url)}`, needsJsonParse: false }),
+  // Strategy 3: allorigins raw endpoint - returns raw response
+  (url) => ({ url: `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, needsJsonParse: false }),
+  // Strategy 4: allorigins get endpoint - wraps in JSON with "contents" field
+  (url) => ({ url: `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, needsJsonParse: true }),
+  // Strategy 5: thingproxy - another fallback option
+  (url) => ({ url: `https://thingproxy.freeboard.io/fetch/${url}`, needsJsonParse: false }),
 ];
+
+// ============================================
+// SYMBOL TO COINGECKO ID MAPPING
+// ============================================
+
+// Maps common ticker symbols (BTC, ETH) to CoinGecko IDs (bitcoin, ethereum)
+const SYMBOL_TO_COINGECKO_ID = {
+  // Major coins
+  'BTC': 'bitcoin',
+  'ETH': 'ethereum',
+  'BNB': 'binancecoin',
+  'SOL': 'solana',
+  'XRP': 'ripple',
+  'ADA': 'cardano',
+  'DOGE': 'dogecoin',
+  'AVAX': 'avalanche-2',
+  'DOT': 'polkadot',
+  'MATIC': 'matic-network',
+  'LINK': 'chainlink',
+  'UNI': 'uniswap',
+  'LTC': 'litecoin',
+  'XLM': 'stellar',
+  'XMR': 'monero',
+  'ALGO': 'algorand',
+  'ATOM': 'cosmos',
+  'NEAR': 'near',
+  // Additional popular coins
+  'SHIB': 'shiba-inu',
+  'TRX': 'tron',
+  'ETC': 'ethereum-classic',
+  'BCH': 'bitcoin-cash',
+  'APT': 'aptos',
+  'ARB': 'arbitrum',
+  'OP': 'optimism',
+  'FIL': 'filecoin',
+  'HBAR': 'hedera-hashgraph',
+  'VET': 'vechain',
+  'ICP': 'internet-computer',
+  'SAND': 'the-sandbox',
+  'MANA': 'decentraland',
+  'AXS': 'axie-infinity',
+  'AAVE': 'aave',
+  'MKR': 'maker',
+  'CRV': 'curve-dao-token',
+  'SNX': 'synthetix-network-token',
+  'COMP': 'compound-governance-token',
+  'THETA': 'theta-token',
+  'FTM': 'fantom',
+  'EGLD': 'elrond-erd-2',
+  'KCS': 'kucoin-shares',
+  'HNT': 'helium',
+  'FLOW': 'flow',
+  'CHZ': 'chiliz',
+  'ENJ': 'enjincoin',
+  'BAT': 'basic-attention-token',
+  'ZEC': 'zcash',
+  'DASH': 'dash',
+  'NEO': 'neo',
+  'WAVES': 'waves',
+  'KAVA': 'kava',
+  'ONE': 'harmony',
+  'ZIL': 'zilliqa',
+  'CELO': 'celo',
+  'QTUM': 'qtum',
+  'BTT': 'bittorrent',
+  'HOT': 'holotoken',
+  'SC': 'siacoin',
+  'IOST': 'iostoken',
+  'OMG': 'omisego',
+  'ZRX': '0x',
+  'ICX': 'icon',
+  'ONT': 'ontology',
+  'DGB': 'digibyte',
+  'RVN': 'ravencoin',
+};
+
+// Reverse mapping: CoinGecko ID → Symbol (for display purposes)
+const COINGECKO_ID_TO_SYMBOL = Object.fromEntries(
+  Object.entries(SYMBOL_TO_COINGECKO_ID).map(([symbol, id]) => [id, symbol])
+);
+
+/**
+ * Convert symbol to CoinGecko ID
+ * @param {string} symbolOrId - Either a ticker symbol (BTC) or CoinGecko ID (bitcoin)
+ * @returns {string} CoinGecko ID
+ */
+const symbolToCoinGeckoId = (symbolOrId) => {
+  if (!symbolOrId) return '';
+  const upper = symbolOrId.toUpperCase();
+  // If it's a known symbol, return the ID
+  if (SYMBOL_TO_COINGECKO_ID[upper]) {
+    return SYMBOL_TO_COINGECKO_ID[upper];
+  }
+  // Otherwise assume it's already an ID (lowercase)
+  return symbolOrId.toLowerCase();
+};
+
+/**
+ * Convert CoinGecko ID to symbol (for display)
+ * @param {string} coinGeckoId - CoinGecko ID (bitcoin, ethereum)
+ * @returns {string} Ticker symbol (BTC, ETH)
+ */
+const coinGeckoIdToSymbol = (coinGeckoId) => {
+  if (!coinGeckoId) return '';
+  return COINGECKO_ID_TO_SYMBOL[coinGeckoId.toLowerCase()] || coinGeckoId.toUpperCase();
+};
 
 // ============================================
 // LOGGING UTILITIES
@@ -150,25 +264,49 @@ const fetchWithRetry = async (url, options = {}, maxRetries = CONFIG.MAX_RETRIES
 
 /**
  * Fetch with CORS proxy fallback for CoinGecko
+ * Tries multiple strategies until one succeeds
+ * Returns parsed JSON data directly (not Response object)
  */
 const fetchWithCorsProxy = async (url) => {
   let lastError;
+  let strategyIndex = 0;
 
-  for (const proxy of CORS_PROXIES) {
+  for (const strategy of CORS_STRATEGIES) {
+    strategyIndex++;
     try {
-      const proxyUrl = proxy ? proxy + encodeURIComponent(url) : url;
+      const { url: proxyUrl, needsJsonParse } = strategy(url);
+      logDebug(`Trying CORS strategy ${strategyIndex}: ${proxyUrl.substring(0, 60)}...`);
+
       const response = await fetchWithTimeout(proxyUrl, {}, CONFIG.FETCH_TIMEOUT);
 
       if (response.ok) {
+        // Handle allorigins /get endpoint which wraps response in JSON
+        if (needsJsonParse) {
+          const wrapper = await response.json();
+          // allorigins wraps the actual response in a "contents" field
+          if (wrapper.contents) {
+            logDebug(`CORS strategy ${strategyIndex} succeeded (with JSON unwrap)`);
+            // Return a mock Response-like object with json() method
+            return {
+              ok: true,
+              json: async () => JSON.parse(wrapper.contents)
+            };
+          }
+        }
+        logDebug(`CORS strategy ${strategyIndex} succeeded`);
         return response;
       }
+
+      // Response not OK, log and try next
+      logDebug(`CORS strategy ${strategyIndex} returned status ${response.status}`);
     } catch (error) {
       lastError = error;
-      // Continue to next proxy
+      logDebug(`CORS strategy ${strategyIndex} failed: ${error.message}`);
+      // Continue to next strategy
     }
   }
 
-  throw lastError || new Error('All CORS proxies failed');
+  throw lastError || new Error('All CORS strategies failed');
 };
 
 // ============================================
@@ -300,19 +438,33 @@ const setCache = (key, data) => {
 /**
  * Batch fetch ALL crypto prices in one API call
  * Much more efficient than individual calls
+ * Accepts either symbols (BTC, ETH) or CoinGecko IDs (bitcoin, ethereum)
  */
-export async function getAllCryptoPrices(cryptoIds = []) {
+export async function getAllCryptoPrices(symbolsOrIds = []) {
   const now = Date.now();
+
+  // Build mapping: original input -> CoinGecko ID
+  const inputToId = {};
+  const coinGeckoIds = [];
+
+  for (const input of symbolsOrIds) {
+    const coinGeckoId = symbolToCoinGeckoId(input);
+    inputToId[input] = coinGeckoId;
+    if (!coinGeckoIds.includes(coinGeckoId)) {
+      coinGeckoIds.push(coinGeckoId);
+    }
+  }
+
+  logDebug(`Converting ${symbolsOrIds.length} inputs to ${coinGeckoIds.length} unique CoinGecko IDs`);
 
   // Return cached data if fresh
   if (now - batchPriceCache.lastFetch.crypto < BATCH_CACHE_DURATION) {
     const cachedPrices = {};
     let allCached = true;
 
-    for (const id of cryptoIds) {
-      const normalizedId = id.toLowerCase();
-      if (batchPriceCache.crypto[normalizedId]) {
-        cachedPrices[normalizedId] = batchPriceCache.crypto[normalizedId];
+    for (const id of coinGeckoIds) {
+      if (batchPriceCache.crypto[id]) {
+        cachedPrices[id] = batchPriceCache.crypto[id];
       } else {
         allCached = false;
       }
@@ -320,51 +472,23 @@ export async function getAllCryptoPrices(cryptoIds = []) {
 
     if (allCached && Object.keys(cachedPrices).length > 0) {
       logDebug(`Using cached crypto prices (${Object.keys(cachedPrices).length} assets)`);
-      return cachedPrices;
+      return batchPriceCache.crypto;
     }
   }
 
-  // Normalize IDs
-  const normalizedIds = cryptoIds.map(id => id.toLowerCase());
-  const idsString = normalizedIds.join(',');
+  const idsString = coinGeckoIds.join(',');
   const url = `https://api.coingecko.com/api/v3/simple/price?ids=${idsString}&vs_currencies=usd&include_24hr_change=true`;
 
   try {
-    // Try direct call first
-    let response;
-    let data;
-
-    try {
-      response = await fetchWithTimeout(url, {}, 8000);
-      if (response.ok) {
-        data = await response.json();
-      }
-    } catch (directError) {
-      logDebug('Direct API failed, trying CORS proxies...');
-    }
-
-    // If direct failed, try proxies
-    if (!data) {
-      for (const proxy of CORS_PROXIES) {
-        if (!proxy) continue; // Skip empty proxy (direct)
-        try {
-          const proxyUrl = proxy + encodeURIComponent(url);
-          response = await fetchWithTimeout(proxyUrl, {}, 8000);
-          if (response.ok) {
-            data = await response.json();
-            break;
-          }
-        } catch (proxyError) {
-          continue;
-        }
-      }
-    }
+    // Use the robust CORS proxy fallback system
+    const response = await fetchWithCorsProxy(url);
+    const data = await response.json();
 
     if (!data || Object.keys(data).length === 0) {
       throw new Error('No data from any source');
     }
 
-    // Update cache
+    // Update cache with CoinGecko IDs
     batchPriceCache.lastFetch.crypto = now;
     for (const [id, priceData] of Object.entries(data)) {
       batchPriceCache.crypto[id] = {
@@ -379,9 +503,9 @@ export async function getAllCryptoPrices(cryptoIds = []) {
   } catch (error) {
     logWarn('Crypto batch fetch failed, using fallbacks', error);
 
-    // Return fallback prices
+    // Return fallback prices keyed by CoinGecko ID
     const fallbacks = {};
-    for (const id of normalizedIds) {
+    for (const id of coinGeckoIds) {
       fallbacks[id] = {
         price: FALLBACK_CRYPTO_PRICES[id] || 100,
         change24h: 0
@@ -995,7 +1119,17 @@ function createFallbackCryptoListData() {
 // ============================================
 
 // Named exports for direct imports
-export { POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, FALLBACK_STOCK_PRICES };
+export {
+  POPULAR_STOCKS,
+  POPULAR_CRYPTO,
+  FALLBACK_CRYPTO_PRICES,
+  FALLBACK_STOCK_PRICES,
+  SYMBOL_TO_COINGECKO_ID,
+  COINGECKO_ID_TO_SYMBOL
+};
+
+// Export symbol mapping functions
+export { symbolToCoinGeckoId, coinGeckoIdToSymbol };
 
 export const stockAPI = {
   getStockPrice,
@@ -1009,11 +1143,16 @@ export const stockAPI = {
   getAllCryptoPrices,
   getAllStockPrices,
   clearBatchPriceCache,
+  // Symbol mapping utilities
+  symbolToCoinGeckoId,
+  coinGeckoIdToSymbol,
   // Constants
   POPULAR_STOCKS,
   POPULAR_CRYPTO,
   FALLBACK_CRYPTO_PRICES,
-  FALLBACK_STOCK_PRICES
+  FALLBACK_STOCK_PRICES,
+  SYMBOL_TO_COINGECKO_ID,
+  COINGECKO_ID_TO_SYMBOL
 };
 
 export default stockAPI;

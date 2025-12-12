@@ -10620,7 +10620,7 @@ export default function PortfolioDuel() {
             const allSymbols = new Set();
             currentDraft.players.forEach(player => {
               (player.picks || []).forEach(symbol => {
-                // For crypto, we need lowercase IDs
+                // For crypto, we need lowercase IDs (or symbols that will be converted)
                 allSymbols.add(battleType === 'crypto' ? symbol.toLowerCase() : symbol.toUpperCase());
               });
             });
@@ -10629,6 +10629,7 @@ export default function PortfolioDuel() {
             console.log(`[DraftBattle] Fetching ${symbolList.length} unique assets in 1 batch call`);
 
             // STEP 2: Batch fetch ALL prices at once (1 API call instead of 36!)
+            // getAllCryptoPrices now handles symbol→CoinGecko ID conversion automatically
             let allPrices = {};
             if (battleType === 'crypto') {
               allPrices = await stockAPIModule.getAllCryptoPrices(symbolList);
@@ -10643,7 +10644,15 @@ export default function PortfolioDuel() {
 
               for (const symbol of player.picks || []) {
                 // Normalize symbol for lookup
-                const lookupKey = battleType === 'crypto' ? symbol.toLowerCase() : symbol.toUpperCase();
+                // For crypto, convert symbol to CoinGecko ID (BTC → bitcoin)
+                let lookupKey;
+                if (battleType === 'crypto') {
+                  lookupKey = stockAPIModule.symbolToCoinGeckoId
+                    ? stockAPIModule.symbolToCoinGeckoId(symbol)
+                    : symbol.toLowerCase();
+                } else {
+                  lookupKey = symbol.toUpperCase();
+                }
 
                 // Get current price from batch result
                 const priceData = allPrices[lookupKey];
