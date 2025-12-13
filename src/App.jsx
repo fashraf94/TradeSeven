@@ -10911,8 +10911,8 @@ export default function PortfolioDuel() {
 
         calculateStandings();
 
-        // Refresh every 2 minutes (not 60 seconds - reduce API load)
-        const refreshInterval = setInterval(calculateStandings, 120000);
+        // Refresh every 30 seconds (EODHD has 100k calls/day limit - plenty of headroom)
+        const refreshInterval = setInterval(calculateStandings, 30000);
         return () => clearInterval(refreshInterval);
       }, [currentDraft, currentUserId, battleType]);
 

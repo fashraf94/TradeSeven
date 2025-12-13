@@ -281,6 +281,9 @@ export async function getMultipleCryptoPrices(symbols) {
   const now = Date.now();
   const upperSymbols = symbols.map(s => s.toUpperCase());
 
+  // Enhanced debug logging
+  console.log(`[EODHD] Requesting crypto prices for:`, upperSymbols);
+
   // Check cache
   const allCached = upperSymbols.every(s =>
     priceCache.crypto[s] &&
@@ -291,6 +294,7 @@ export async function getMultipleCryptoPrices(symbols) {
     logDebug('Using cached crypto prices');
     const result = {};
     upperSymbols.forEach(s => result[s] = priceCache.crypto[s]);
+    console.log(`[EODHD] Returning ${Object.keys(result).length} cached crypto prices`);
     return result;
   }
 
@@ -309,51 +313,134 @@ export async function getMultipleCryptoPrices(symbols) {
     }
 
     const data = await response.json();
+    console.log(`[EODHD] Raw API response:`, data);
 
     // Handle both single and multiple responses
     const dataArray = Array.isArray(data) ? data : [data];
 
     const result = {};
+    const successfulSymbols = [];
+    const zeroOrMissingSymbols = [];
+
     dataArray.forEach(item => {
       // Extract symbol from code (e.g., "BTC-USD.CC" -> "BTC")
       const symbol = (item.code?.split('-')[0] || item.symbol || '').toUpperCase();
       if (symbol) {
+        const price = item.close || item.previousClose || 0;
         result[symbol] = {
-          price: item.close || item.previousClose || 0,
+          price: price,
           change24h: item.change_p || 0
         };
         priceCache.crypto[symbol] = result[symbol];
+
+        if (price > 0) {
+          successfulSymbols.push(symbol);
+        } else {
+          zeroOrMissingSymbols.push(symbol);
+        }
       }
     });
 
-    // Fill in any missing symbols with fallbacks
+    // Find which symbols we didn't get or got zero price for
+    const missingSymbols = upperSymbols.filter(s => !result[s] || result[s].price === 0);
+
+    if (missingSymbols.length > 0) {
+      console.warn(`[EODHD] Missing/zero prices for:`, missingSymbols);
+
+      // Try fetching missing symbols individually with alternate formats
+      for (const symbol of missingSymbols) {
+        const altPrice = await tryAlternateFormats(symbol);
+        if (altPrice && altPrice.price > 0) {
+          result[symbol] = altPrice;
+          priceCache.crypto[symbol] = altPrice;
+          console.log(`[EODHD] Got ${symbol} via alternate format: $${altPrice.price}`);
+        } else {
+          // Use fallback price
+          const fallbackPrice = FALLBACK_CRYPTO_PRICES[symbol] || 1;
+          result[symbol] = {
+            price: fallbackPrice,
+            change24h: 0,
+            isFallback: true
+          };
+          console.warn(`[EODHD] Using fallback for ${symbol}: $${fallbackPrice}`);
+        }
+      }
+    }
+
+    // Fill in any remaining missing symbols with fallbacks
     upperSymbols.forEach(s => {
       if (!result[s]) {
         result[s] = {
           price: FALLBACK_CRYPTO_PRICES[s] || 1,
-          change24h: 0
+          change24h: 0,
+          isFallback: true
         };
       }
     });
 
     priceCache.lastFetch.crypto = now;
-    logDebug(`Got ${Object.keys(result).length} crypto prices`);
+
+    const received = Object.keys(result).filter(s => result[s].price > 0 && !result[s].isFallback);
+    console.log(`[EODHD] Got prices for ${received.length}/${upperSymbols.length} cryptos (live), rest using fallbacks`);
 
     return result;
 
   } catch (error) {
     logWarn('Batch crypto fetch error:', error.message);
+    console.error(`[EODHD] Batch fetch failed:`, error);
 
     // Return fallback prices
     const result = {};
     upperSymbols.forEach(s => {
       result[s] = {
         price: FALLBACK_CRYPTO_PRICES[s] || 1,
-        change24h: 0
+        change24h: 0,
+        isFallback: true
       };
     });
+    console.warn(`[EODHD] All ${upperSymbols.length} prices using fallbacks due to error`);
     return result;
   }
+}
+
+/**
+ * Try alternate EODHD symbol formats for crypto
+ * Some cryptos may use different ticker formats
+ */
+async function tryAlternateFormats(symbol) {
+  const upperSymbol = symbol.toUpperCase();
+
+  // EODHD alternate formats to try
+  const formats = [
+    `${upperSymbol}-USD.CC`,      // Standard: BTC-USD.CC
+    `${upperSymbol}USD.CC`,       // No dash: BTCUSD.CC
+    `${upperSymbol}-USDT.CC`,     // USDT pair: BTC-USDT.CC
+    `${upperSymbol}.CC`,          // Just symbol: BTC.CC
+  ];
+
+  for (const format of formats) {
+    try {
+      const url = `${EODHD_BASE}/real-time/${format}?api_token=${EODHD_API_KEY}&fmt=json`;
+      const response = await fetchWithTimeout(url, 5000);
+
+      if (response.ok) {
+        const data = await response.json();
+        const price = data.close || data.previousClose || 0;
+
+        if (price > 0) {
+          console.log(`[EODHD] Found ${symbol} using format: ${format} = $${price}`);
+          return {
+            price: price,
+            change24h: data.change_p || 0
+          };
+        }
+      }
+    } catch (e) {
+      // Continue to next format
+    }
+  }
+
+  return null;
 }
 
 // Alias for backward compatibility - returns data keyed by symbol
