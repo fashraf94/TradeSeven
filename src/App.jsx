@@ -10599,9 +10599,106 @@ export default function PortfolioDuel() {
       const [loading, setLoading] = useState(true);
       const [timeRemaining, setTimeRemaining] = useState('');
       const [assetComparison, setAssetComparison] = useState(null);
+      const [repairStatus, setRepairStatus] = useState(null); // 'repairing', 'success', 'error'
 
       const currentUserId = user?.odUserId || user?.username;
       const battleType = currentDraft?.type || 'stocks';
+
+      // Check if prices need repair (all $100)
+      const needsPriceRepair = currentDraft?.lockedPrices &&
+        Object.values(currentDraft.lockedPrices).length > 0 &&
+        Object.values(currentDraft.lockedPrices).every(p => p === 100);
+
+      // FORCE REPAIR: Manual button to fix locked prices
+      const forceRepairPrices = async () => {
+        if (!currentDraft) {
+          console.log('[ForceRepair] No current draft to repair');
+          return;
+        }
+
+        setRepairStatus('repairing');
+        console.log('[ForceRepair] Starting forced price repair for:', currentDraft.code || currentDraft.id);
+        console.log('[ForceRepair] Current locked prices:', currentDraft.lockedPrices);
+
+        try {
+          const stockAPIModule = await import('./services/stockAPI');
+          const { doc, updateDoc, serverTimestamp } = await import('firebase/firestore');
+          const { db } = await import('./firebase/config');
+
+          // Collect all symbols from all players
+          const allSymbols = new Set();
+          currentDraft.players?.forEach(player => {
+            player.picks?.forEach(symbol => allSymbols.add(symbol));
+          });
+          const symbolList = Array.from(allSymbols);
+          console.log('[ForceRepair] Assets to fix:', symbolList);
+
+          // Fetch real prices using batch API
+          let newLockedPrices = {};
+
+          if (battleType === 'crypto') {
+            console.log('[ForceRepair] Fetching crypto prices...');
+            const priceData = await stockAPIModule.getAllCryptoPrices(symbolList);
+            console.log('[ForceRepair] Price data received:', priceData);
+
+            for (const symbol of symbolList) {
+              const coinGeckoId = stockAPIModule.symbolToCoinGeckoId(symbol);
+              const data = priceData[coinGeckoId];
+
+              if (data?.price && data.price > 0) {
+                newLockedPrices[symbol] = data.price;
+                console.log(`[ForceRepair] ${symbol} (${coinGeckoId}): $${data.price}`);
+              } else {
+                // Use fallback
+                const fallback = stockAPIModule.FALLBACK_CRYPTO_PRICES[coinGeckoId] || 1;
+                newLockedPrices[symbol] = fallback;
+                console.log(`[ForceRepair] ${symbol} (${coinGeckoId}): $${fallback} (fallback)`);
+              }
+            }
+          } else {
+            console.log('[ForceRepair] Fetching stock prices...');
+            const priceData = await stockAPIModule.getAllStockPrices(symbolList);
+
+            for (const symbol of symbolList) {
+              const data = priceData[symbol.toUpperCase()];
+              newLockedPrices[symbol] = data?.price || stockAPIModule.FALLBACK_STOCK_PRICES[symbol] || 100;
+            }
+          }
+
+          console.log('[ForceRepair] New locked prices:', newLockedPrices);
+
+          // Direct Firebase update
+          if (currentDraft.id) {
+            console.log('[ForceRepair] Updating Firebase document:', currentDraft.id);
+            const draftRef = doc(db, 'drafts', currentDraft.id);
+            await updateDoc(draftRef, {
+              lockedPrices: newLockedPrices,
+              lockedPricesRepairedAt: serverTimestamp(),
+              pricesRepaired: true
+            });
+            console.log('[ForceRepair] ✅ Firebase updated successfully!');
+          }
+
+          // Update local state
+          const repairedDraft = {
+            ...currentDraft,
+            lockedPrices: newLockedPrices,
+            pricesRepaired: true
+          };
+          setCurrentDraft(repairedDraft);
+
+          setRepairStatus('success');
+          console.log('[ForceRepair] ✅ Repair complete! Prices are now correct.');
+
+          // Auto-dismiss success message after 3 seconds
+          setTimeout(() => setRepairStatus(null), 3000);
+
+        } catch (error) {
+          console.error('[ForceRepair] Failed:', error);
+          setRepairStatus('error');
+          setTimeout(() => setRepairStatus(null), 5000);
+        }
+      };
 
       // REPAIR: Fix battles with bad locked prices ($100 for everything)
       useEffect(() => {
@@ -10984,6 +11081,59 @@ export default function PortfolioDuel() {
                   Object.values(currentDraft.freeAgents).flat().length : 0}</span>
               </div>
             </div>
+
+            {/* Price Repair Warning Banner - Shows when all prices are $100 */}
+            {needsPriceRepair && (
+              <div style={{
+                background: '#7f1d1d',
+                borderBottom: '2px solid #ef4444',
+                padding: '12px 16px',
+                textAlign: 'center'
+              }}>
+                <div style={{
+                  color: '#fca5a5',
+                  fontSize: '13px',
+                  marginBottom: '8px'
+                }}>
+                  ⚠️ Locked prices are incorrect (all $100). Click below to repair.
+                </div>
+                <button
+                  onClick={forceRepairPrices}
+                  disabled={repairStatus === 'repairing'}
+                  style={{
+                    padding: '8px 20px',
+                    background: repairStatus === 'repairing' ? '#6b7280' :
+                               repairStatus === 'success' ? '#10b981' :
+                               repairStatus === 'error' ? '#ef4444' : '#dc2626',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontWeight: 'bold',
+                    fontSize: '13px',
+                    cursor: repairStatus === 'repairing' ? 'wait' : 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {repairStatus === 'repairing' ? '⏳ Repairing...' :
+                   repairStatus === 'success' ? '✅ Prices Fixed!' :
+                   repairStatus === 'error' ? '❌ Failed - Try Again' :
+                   '🔧 Repair Prices Now'}
+                </button>
+              </div>
+            )}
+
+            {/* Success message when repair is done but prices still show repair button */}
+            {repairStatus === 'success' && !needsPriceRepair && (
+              <div style={{
+                background: '#064e3b',
+                padding: '12px 16px',
+                textAlign: 'center',
+                color: '#6ee7b7',
+                fontSize: '14px'
+              }}>
+                ✅ Prices repaired successfully! Gains should now be accurate.
+              </div>
+            )}
 
             {/* Main Content */}
             <div style={{ maxWidth: '600px', margin: '0 auto', padding: '16px' }}>
