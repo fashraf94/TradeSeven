@@ -10802,7 +10802,13 @@ export default function PortfolioDuel() {
             const symbolList = Array.from(allSymbols);
             console.log(`[DraftBattle] Fetching ${symbolList.length} unique assets in 1 batch call`);
 
-            // STEP 2: Batch fetch ALL prices at once (1 API call instead of 36!)
+            // STEP 2: Clear cache to ensure we get FRESH prices (not cached from when battle started)
+            if (stockAPIModule.clearCache) {
+              stockAPIModule.clearCache();
+              console.log('[DraftBattle] Cache cleared to fetch fresh prices');
+            }
+
+            // Batch fetch ALL prices at once (1 API call instead of 36!)
             // getAllCryptoPrices now handles symbol→CoinGecko ID conversion automatically
             let allPrices = {};
             if (battleType === 'crypto') {
@@ -10837,12 +10843,12 @@ export default function PortfolioDuel() {
                 const currentPrice = priceData?.price || 0;
 
                 // Get locked price (from draft completion)
-                const lockedPrice = currentDraft.lockedPrices?.[symbol] ||
+                const lockedPrice = Number(currentDraft.lockedPrices?.[symbol] ||
                                    currentDraft.lockedPrices?.[lookupKey] ||
-                                   currentPrice;
+                                   currentPrice) || 0;
 
                 // DEBUG: Log price comparison for each asset
-                console.log(`[DraftBattle] ${symbol}: locked=$${lockedPrice?.toFixed(4)}, current=$${currentPrice?.toFixed(4)}, isFallback=${priceData?.isFallback || false}`);
+                console.log(`[DraftBattle] ${symbol}: locked=$${(Number(lockedPrice) || 0).toFixed(4)}, current=$${(Number(currentPrice) || 0).toFixed(4)}, isFallback=${priceData?.isFallback || false}`);
 
                 // Calculate gain with sanity checks
                 let gain = 0;
@@ -10851,7 +10857,7 @@ export default function PortfolioDuel() {
 
                   // Sanity check - gains over 500% or under -90% are likely data errors
                   if (gain > 500 || gain < -90) {
-                    console.warn(`[DraftBattle] Suspicious gain for ${symbol}: ${gain.toFixed(2)}% (locked: $${lockedPrice}, current: $${currentPrice})`);
+                    console.warn(`[DraftBattle] Suspicious gain for ${symbol}: ${(Number(gain) || 0).toFixed(2)}% (locked: $${lockedPrice}, current: $${currentPrice})`);
                     gain = 0; // Reset to 0 for display
                   }
                 }
@@ -11223,11 +11229,11 @@ export default function PortfolioDuel() {
                           {/* Right: Gain + Expand */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <span style={{
-                              color: player.totalGain >= 0 ? '#10b981' : '#ef4444',
+                              color: (Number(player.totalGain) || 0) >= 0 ? '#10b981' : '#ef4444',
                               fontWeight: 'bold',
                               fontSize: '18px'
                             }}>
-                              {player.totalGain >= 0 ? '+' : ''}{player.totalGain}%
+                              {(Number(player.totalGain) || 0) >= 0 ? '+' : ''}{(Number(player.totalGain) || 0).toFixed(2)}%
                             </span>
 
                             {!player.isMe && (
@@ -11280,11 +11286,11 @@ export default function PortfolioDuel() {
                                     {asset.symbol}
                                   </div>
                                   <div style={{
-                                    color: asset.gain >= 0 ? '#10b981' : '#ef4444',
+                                    color: (Number(asset.gain) || 0) >= 0 ? '#10b981' : '#ef4444',
                                     fontSize: '12px',
                                     fontWeight: '600'
                                   }}>
-                                    {asset.gain >= 0 ? '+' : ''}{asset.gain}%
+                                    {(Number(asset.gain) || 0) >= 0 ? '+' : ''}{(Number(asset.gain) || 0).toFixed(2)}%
                                   </div>
                                 </div>
                               ))}
@@ -11308,7 +11314,7 @@ export default function PortfolioDuel() {
                                   🔥 BEST
                                 </div>
                                 <div style={{ color: '#10b981', fontWeight: 'bold', fontSize: '14px' }}>
-                                  {player.bestAsset?.symbol} {player.bestAsset?.gain >= 0 ? '+' : ''}{player.bestAsset?.gain}%
+                                  {player.bestAsset?.symbol} {(Number(player.bestAsset?.gain) || 0) >= 0 ? '+' : ''}{(Number(player.bestAsset?.gain) || 0).toFixed(2)}%
                                 </div>
                               </div>
                               <div style={{
@@ -11323,7 +11329,7 @@ export default function PortfolioDuel() {
                                   ❄️ WORST
                                 </div>
                                 <div style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '14px' }}>
-                                  {player.worstAsset?.symbol} {player.worstAsset?.gain >= 0 ? '+' : ''}{player.worstAsset?.gain}%
+                                  {player.worstAsset?.symbol} {(Number(player.worstAsset?.gain) || 0) >= 0 ? '+' : ''}{(Number(player.worstAsset?.gain) || 0).toFixed(2)}%
                                 </div>
                               </div>
                             </div>
@@ -11437,7 +11443,7 @@ export default function PortfolioDuel() {
                             fontWeight: 'bold',
                             fontSize: '14px'
                           }}>
-                            +{assetComparison.myBest?.gain}%
+                            +{(Number(assetComparison.myBest?.gain) || 0).toFixed(2)}%
                           </div>
                           {assetComparison.iWin && (
                             <div style={{
@@ -11484,12 +11490,12 @@ export default function PortfolioDuel() {
                             {assetComparison.opponentBest?.symbol || '-'}
                           </div>
                           <div style={{
-                            color: (assetComparison.opponentBest?.gain || 0) >= 0 ? '#10b981' : '#ef4444',
+                            color: (Number(assetComparison.opponentBest?.gain) || 0) >= 0 ? '#10b981' : '#ef4444',
                             fontWeight: 'bold',
                             fontSize: '14px'
                           }}>
-                            {(assetComparison.opponentBest?.gain || 0) >= 0 ? '+' : ''}
-                            {assetComparison.opponentBest?.gain || 0}%
+                            {(Number(assetComparison.opponentBest?.gain) || 0) >= 0 ? '+' : ''}
+                            {(Number(assetComparison.opponentBest?.gain) || 0).toFixed(2)}%
                           </div>
                           {!assetComparison.iWin && (
                             <div style={{
