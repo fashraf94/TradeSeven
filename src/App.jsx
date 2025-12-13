@@ -10603,6 +10603,82 @@ export default function PortfolioDuel() {
       const currentUserId = user?.odUserId || user?.username;
       const battleType = currentDraft?.type || 'stocks';
 
+      // REPAIR: Fix battles with bad locked prices ($100 for everything)
+      useEffect(() => {
+        const repairLockedPrices = async () => {
+          if (!currentDraft?.lockedPrices || !currentDraft?.players) return;
+
+          // Check if locked prices look wrong (all exactly $100)
+          const prices = Object.values(currentDraft.lockedPrices);
+          const allSamePrice = prices.length > 0 && prices.every(p => p === 100);
+
+          if (!allSamePrice) {
+            console.log('[DraftBattle] Locked prices look valid, skipping repair');
+            return;
+          }
+
+          console.log('[DraftBattle] ⚠️ Detected bad locked prices (all $100), attempting repair...');
+
+          try {
+            const stockAPIModule = await import('./services/stockAPI');
+            const draftServiceModule = await import('./services/draftService');
+
+            // Collect all symbols
+            const allSymbols = new Set();
+            currentDraft.players.forEach(player => {
+              (player.picks || []).forEach(symbol => allSymbols.add(symbol));
+            });
+            const symbolList = Array.from(allSymbols);
+
+            // Fetch real prices
+            let newLockedPrices = {};
+
+            if (battleType === 'crypto') {
+              const priceData = await stockAPIModule.getAllCryptoPrices(symbolList);
+
+              for (const symbol of symbolList) {
+                const coinGeckoId = stockAPIModule.symbolToCoinGeckoId(symbol);
+                const data = priceData[coinGeckoId];
+                newLockedPrices[symbol] = data?.price ||
+                  stockAPIModule.FALLBACK_CRYPTO_PRICES[coinGeckoId] || 1;
+              }
+            } else {
+              const priceData = await stockAPIModule.getAllStockPrices(symbolList);
+
+              for (const symbol of symbolList) {
+                const data = priceData[symbol.toUpperCase()];
+                newLockedPrices[symbol] = data?.price ||
+                  stockAPIModule.FALLBACK_STOCK_PRICES[symbol] || 100;
+              }
+            }
+
+            console.log('[DraftBattle] Repaired locked prices:', newLockedPrices);
+
+            // Update the local draft state
+            const repairedDraft = {
+              ...currentDraft,
+              lockedPrices: newLockedPrices,
+              lockedPricesRepaired: true
+            };
+            setCurrentDraft(repairedDraft);
+
+            // Try to persist the fix to Firebase (best effort)
+            try {
+              if (draftServiceModule.storeDraftLockedPrices && currentDraft.id) {
+                await draftServiceModule.storeDraftLockedPrices(currentDraft.id);
+                console.log('[DraftBattle] ✅ Repaired prices saved to Firebase');
+              }
+            } catch (saveError) {
+              console.warn('[DraftBattle] Could not save repaired prices to Firebase:', saveError);
+            }
+          } catch (error) {
+            console.error('[DraftBattle] Failed to repair locked prices:', error);
+          }
+        };
+
+        repairLockedPrices();
+      }, [currentDraft?.id]); // Only run when draft changes
+
       // Calculate standings from draft data - BATCH FETCHING VERSION
       useEffect(() => {
         const calculateStandings = async () => {

@@ -18,29 +18,15 @@ import {
 import { db } from '../firebase/config';
 import { getAssetPool, generateSnakeOrder, generateDraftCode, shuffleArray } from './draftAssets';
 import { initializeFreeAgents, calculateBattleEndTime } from './freeAgencyService';
-import { getStockPrice, getCryptoPrice } from './stockAPI';
-
-// Crypto ID mapping for price fetching
-const CRYPTO_ID_MAP = {
-  'BTC': 'bitcoin',
-  'ETH': 'ethereum',
-  'BNB': 'binancecoin',
-  'SOL': 'solana',
-  'XRP': 'ripple',
-  'ADA': 'cardano',
-  'DOGE': 'dogecoin',
-  'AVAX': 'avalanche-2',
-  'DOT': 'polkadot',
-  'MATIC': 'matic-network',
-  'LINK': 'chainlink',
-  'UNI': 'uniswap',
-  'LTC': 'litecoin',
-  'XLM': 'stellar',
-  'XMR': 'monero',
-  'ALGO': 'algorand',
-  'ATOM': 'cosmos',
-  'NEAR': 'near'
-};
+import {
+  getStockPrice,
+  getCryptoPrice,
+  getAllCryptoPrices,
+  getAllStockPrices,
+  symbolToCoinGeckoId,
+  FALLBACK_CRYPTO_PRICES,
+  FALLBACK_STOCK_PRICES
+} from './stockAPI';
 
 // ============================================
 // HELPER FUNCTIONS
@@ -804,6 +790,7 @@ export function shouldAutoPickForPlayer(draft, playerId) {
 /**
  * Fetch and store locked prices when draft completes
  * Called when draft transitions to 'battle' status
+ * Uses batch fetching with proper symbol-to-CoinGecko ID conversion
  */
 export async function storeDraftLockedPrices(draftId) {
   try {
@@ -829,32 +816,71 @@ export async function storeDraftLockedPrices(draftId) {
     const symbolsArray = Array.from(allSymbols);
     console.log(`📊 Fetching locked prices for ${symbolsArray.length} assets:`, symbolsArray);
 
-    // Fetch current prices for all assets
+    // Fetch current prices using batch API (1 call instead of N calls)
     const lockedPrices = {};
-    const pricePromises = symbolsArray.map(async (symbol) => {
-      try {
-        if (draft.type === 'crypto') {
-          // Get crypto ID from mapping
-          const cryptoId = CRYPTO_ID_MAP[symbol];
-          if (cryptoId) {
-            const priceData = await getCryptoPrice(cryptoId);
-            lockedPrices[symbol] = priceData.price;
-          } else {
-            console.warn(`No crypto ID mapping for ${symbol}`);
-            lockedPrices[symbol] = 100; // Fallback
-          }
-        } else {
-          // Stocks
-          const priceData = await getStockPrice(symbol);
-          lockedPrices[symbol] = priceData.price;
-        }
-      } catch (error) {
-        console.error(`Error fetching price for ${symbol}:`, error);
-        lockedPrices[symbol] = 100; // Fallback price
-      }
-    });
 
-    await Promise.all(pricePromises);
+    try {
+      if (draft.type === 'crypto') {
+        // Use batch crypto price fetching with automatic symbol→ID conversion
+        const priceData = await getAllCryptoPrices(symbolsArray);
+
+        // Map prices back to original symbols
+        for (const symbol of symbolsArray) {
+          const coinGeckoId = symbolToCoinGeckoId(symbol);
+          const data = priceData[coinGeckoId];
+
+          if (data && data.price > 0) {
+            lockedPrices[symbol] = data.price;
+            console.log(`  ${symbol} (${coinGeckoId}): $${data.price}`);
+          } else {
+            // Use fallback price from stockAPI (real historical prices, not $100)
+            const fallbackPrice = FALLBACK_CRYPTO_PRICES[coinGeckoId] || 1;
+            lockedPrices[symbol] = fallbackPrice;
+            console.warn(`  ${symbol}: Using fallback price $${fallbackPrice}`);
+          }
+        }
+      } else {
+        // Use batch stock price fetching
+        const priceData = await getAllStockPrices(symbolsArray);
+
+        for (const symbol of symbolsArray) {
+          const upperSymbol = symbol.toUpperCase();
+          const data = priceData[upperSymbol];
+
+          if (data && data.price > 0) {
+            lockedPrices[symbol] = data.price;
+            console.log(`  ${symbol}: $${data.price}`);
+          } else {
+            // Use fallback price
+            const fallbackPrice = FALLBACK_STOCK_PRICES[upperSymbol] || 100;
+            lockedPrices[symbol] = fallbackPrice;
+            console.warn(`  ${symbol}: Using fallback price $${fallbackPrice}`);
+          }
+        }
+      }
+    } catch (batchError) {
+      console.error('Batch price fetch failed:', batchError);
+
+      // Fallback: use individual fetches with proper fallback prices
+      for (const symbol of symbolsArray) {
+        try {
+          if (draft.type === 'crypto') {
+            const coinGeckoId = symbolToCoinGeckoId(symbol);
+            const priceData = await getCryptoPrice(coinGeckoId);
+            lockedPrices[symbol] = priceData.price || FALLBACK_CRYPTO_PRICES[coinGeckoId] || 1;
+          } else {
+            const priceData = await getStockPrice(symbol);
+            lockedPrices[symbol] = priceData.price || FALLBACK_STOCK_PRICES[symbol] || 100;
+          }
+        } catch (err) {
+          const coinGeckoId = symbolToCoinGeckoId(symbol);
+          lockedPrices[symbol] = draft.type === 'crypto'
+            ? (FALLBACK_CRYPTO_PRICES[coinGeckoId] || 1)
+            : (FALLBACK_STOCK_PRICES[symbol] || 100);
+          console.warn(`Using fallback for ${symbol}: $${lockedPrices[symbol]}`);
+        }
+      }
+    }
 
     // Store locked prices in draft document
     const draftRef = doc(db, 'drafts', draftId);
@@ -874,6 +900,7 @@ export async function storeDraftLockedPrices(draftId) {
 /**
  * Complete a draft battle and calculate final standings
  * Called when battle time expires
+ * Uses batch fetching with proper symbol-to-CoinGecko ID conversion
  */
 export async function completeDraftBattle(battleId, battleData) {
   try {
@@ -885,55 +912,67 @@ export async function completeDraftBattle(battleId, battleData) {
 
     console.log(`🏁 Completing draft battle ${battleId}...`);
 
-    // Calculate final standings for each player
-    const finalStandings = await Promise.all(
-      battleData.players.map(async (player) => {
-        let totalGain = 0;
-        const assetGains = [];
+    // Collect all unique symbols from all players
+    const allSymbols = new Set();
+    battleData.players.forEach(player => {
+      (player.picks || []).forEach(symbol => allSymbols.add(symbol));
+    });
+    const symbolsArray = Array.from(allSymbols);
 
-        for (const symbol of player.picks || []) {
-          try {
-            let currentPrice;
-            if (battleData.type === 'crypto') {
-              const cryptoId = CRYPTO_ID_MAP[symbol];
-              if (cryptoId) {
-                const priceData = await getCryptoPrice(cryptoId);
-                currentPrice = priceData?.price || 0;
-              } else {
-                currentPrice = 100;
-              }
-            } else {
-              const priceData = await getStockPrice(symbol);
-              currentPrice = priceData?.price || 0;
-            }
-
-            const lockedPrice = battleData.lockedPrices?.[symbol] || currentPrice;
-
-            if (lockedPrice > 0) {
-              const gain = ((currentPrice - lockedPrice) / lockedPrice) * 100;
-              totalGain += gain / 9; // Equal weight (9 picks)
-              assetGains.push({
-                symbol,
-                lockedPrice,
-                finalPrice: currentPrice,
-                gain: parseFloat(gain.toFixed(2))
-              });
-            }
-          } catch (err) {
-            console.error(`Error fetching final price for ${symbol}:`, err);
-          }
+    // Batch fetch all current prices at once
+    let currentPrices = {};
+    try {
+      if (battleData.type === 'crypto') {
+        const priceData = await getAllCryptoPrices(symbolsArray);
+        for (const symbol of symbolsArray) {
+          const coinGeckoId = symbolToCoinGeckoId(symbol);
+          currentPrices[symbol] = priceData[coinGeckoId]?.price || FALLBACK_CRYPTO_PRICES[coinGeckoId] || 1;
         }
+      } else {
+        const priceData = await getAllStockPrices(symbolsArray);
+        for (const symbol of symbolsArray) {
+          currentPrices[symbol] = priceData[symbol.toUpperCase()]?.price || FALLBACK_STOCK_PRICES[symbol] || 100;
+        }
+      }
+    } catch (batchError) {
+      console.error('Batch fetch failed in completeDraftBattle:', batchError);
+      // Prices will use fallbacks in the calculation below
+    }
 
-        return {
-          odUserId: player.odUserId,
-          displayName: player.displayName,
-          isCPU: player.isCPU || false,
-          finalGain: parseFloat(totalGain.toFixed(2)),
-          picks: player.picks,
-          assetGains
-        };
-      })
-    );
+    // Calculate final standings for each player
+    const finalStandings = battleData.players.map((player) => {
+      let totalGain = 0;
+      const assetGains = [];
+
+      for (const symbol of player.picks || []) {
+        const currentPrice = currentPrices[symbol] ||
+          (battleData.type === 'crypto'
+            ? FALLBACK_CRYPTO_PRICES[symbolToCoinGeckoId(symbol)] || 1
+            : FALLBACK_STOCK_PRICES[symbol] || 100);
+
+        const lockedPrice = battleData.lockedPrices?.[symbol] || currentPrice;
+
+        if (lockedPrice > 0 && currentPrice > 0) {
+          const gain = ((currentPrice - lockedPrice) / lockedPrice) * 100;
+          totalGain += gain / 9; // Equal weight (9 picks)
+          assetGains.push({
+            symbol,
+            lockedPrice,
+            finalPrice: currentPrice,
+            gain: parseFloat(gain.toFixed(2))
+          });
+        }
+      }
+
+      return {
+        odUserId: player.odUserId,
+        displayName: player.displayName,
+        isCPU: player.isCPU || false,
+        finalGain: parseFloat(totalGain.toFixed(2)),
+        picks: player.picks,
+        assetGains
+      };
+    });
 
     // Sort by gain to determine rankings
     finalStandings.sort((a, b) => b.finalGain - a.finalGain);
