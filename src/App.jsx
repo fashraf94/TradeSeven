@@ -551,6 +551,362 @@ const colors = {
 };
 
 // ============================================
+// SECTOR COLORS FOR STOCK RESEARCH
+// ============================================
+
+const sectorColors = {
+  Technology: {
+    primary: '#4a9ead',
+    background: 'rgba(74, 158, 173, 0.12)',
+    border: 'rgba(74, 158, 173, 0.25)',
+  },
+  Healthcare: {
+    primary: '#5a8a7a',
+    background: 'rgba(90, 138, 122, 0.12)',
+    border: 'rgba(90, 138, 122, 0.25)',
+  },
+  Financials: {
+    primary: '#a89a6a',
+    background: 'rgba(168, 154, 106, 0.12)',
+    border: 'rgba(168, 154, 106, 0.25)',
+  },
+  Energy: {
+    primary: '#b08a5a',
+    background: 'rgba(176, 138, 90, 0.12)',
+    border: 'rgba(176, 138, 90, 0.25)',
+  },
+  'Consumer Discretionary': {
+    primary: '#a07a8a',
+    background: 'rgba(160, 122, 138, 0.12)',
+    border: 'rgba(160, 122, 138, 0.25)',
+  },
+  'Consumer Staples': {
+    primary: '#8a7a9a',
+    background: 'rgba(138, 122, 154, 0.12)',
+    border: 'rgba(138, 122, 154, 0.25)',
+  },
+  Retail: {
+    primary: '#8a7a9a',
+    background: 'rgba(138, 122, 154, 0.12)',
+    border: 'rgba(138, 122, 154, 0.25)',
+  },
+  Industrials: {
+    primary: '#7a8a8a',
+    background: 'rgba(122, 138, 138, 0.12)',
+    border: 'rgba(122, 138, 138, 0.25)',
+  },
+  Communication: {
+    primary: '#6a7a9a',
+    background: 'rgba(106, 122, 154, 0.12)',
+    border: 'rgba(106, 122, 154, 0.25)',
+  },
+  Entertainment: {
+    primary: '#6a7a9a',
+    background: 'rgba(106, 122, 154, 0.12)',
+    border: 'rgba(106, 122, 154, 0.25)',
+  },
+  Utilities: {
+    primary: '#6a7a7a',
+    background: 'rgba(106, 122, 122, 0.12)',
+    border: 'rgba(106, 122, 122, 0.25)',
+  },
+  'Real Estate': {
+    primary: '#8a7a6a',
+    background: 'rgba(138, 122, 106, 0.12)',
+    border: 'rgba(138, 122, 106, 0.25)',
+  },
+  REIT: {
+    primary: '#8a7a6a',
+    background: 'rgba(138, 122, 106, 0.12)',
+    border: 'rgba(138, 122, 106, 0.25)',
+  },
+  Materials: {
+    primary: '#9a7a6a',
+    background: 'rgba(154, 122, 106, 0.12)',
+    border: 'rgba(154, 122, 106, 0.25)',
+  },
+  Biotech: {
+    primary: '#5a8a7a',
+    background: 'rgba(90, 138, 122, 0.12)',
+    border: 'rgba(90, 138, 122, 0.25)',
+  },
+  Automotive: {
+    primary: '#7a8a8a',
+    background: 'rgba(122, 138, 138, 0.12)',
+    border: 'rgba(122, 138, 138, 0.25)',
+  },
+  Fintech: {
+    primary: '#a89a6a',
+    background: 'rgba(168, 154, 106, 0.12)',
+    border: 'rgba(168, 154, 106, 0.25)',
+  },
+  Conglomerate: {
+    primary: '#7a8a8a',
+    background: 'rgba(122, 138, 138, 0.12)',
+    border: 'rgba(122, 138, 138, 0.25)',
+  },
+  Defense: {
+    primary: '#7a8a8a',
+    background: 'rgba(122, 138, 138, 0.12)',
+    border: 'rgba(122, 138, 138, 0.25)',
+  },
+  Unknown: {
+    primary: '#8b949e',
+    background: 'rgba(139, 148, 158, 0.12)',
+    border: 'rgba(139, 148, 158, 0.25)',
+  }
+};
+
+// Crypto uses a single color since there are no "sectors"
+const cryptoColor = {
+  primary: '#8a6aaa',
+  background: 'rgba(138, 106, 170, 0.12)',
+  border: 'rgba(138, 106, 170, 0.25)',
+};
+
+// ============================================
+// STOCK METRIC EXPLANATIONS
+// ============================================
+
+const stockMetricExplanations = {
+  beta: {
+    intermediate: (value) => `When the market moves 1%, this stock typically moves ${value?.toFixed(2) || '?'}%. ${value > 1.2 ? 'Higher beta means amplified swings - great for comeback potential, risky if the market dips.' : value < 0.8 ? 'Lower beta means steadier performance with smaller swings.' : 'Moderate volatility, moves roughly with the market.'}`,
+    moreDepth: `Beta measures how much a stock moves compared to the overall market. Think of it like sensitivity:
+
+• Beta = 1.0: Moves exactly with the market
+• Beta > 1.0: More volatile (amplifies gains AND losses)
+• Beta < 1.0: Less volatile (steadier, smaller swings)
+
+For a 24-hour battle, high beta stocks can make or break your portfolio. If you're confident the market will go up, high beta gives you an edge. If uncertain, lower beta is safer.`
+  },
+  momentum7d: {
+    intermediate: (value, upDays) => `${value >= 0 ? 'Up' : 'Down'} ${Math.abs(value || 0).toFixed(1)}% over the past week. ${upDays || 0}/7 trading days were positive. ${Math.abs(value || 0) > 3 ? 'Strong' : Math.abs(value || 0) > 1 ? 'Moderate' : 'Weak'} short-term momentum.`,
+    moreDepth: `Momentum shows which direction a stock has been trending recently. Stocks in motion tend to stay in motion (at least in the short term).
+
+For MarketClash battles:
+• Strong upward momentum: Stock has tailwind, may continue
+• Downward momentum: Could be a dip-buy opportunity OR a falling knife
+• Flat momentum: Stable but may not give you the edge you need`
+  },
+  analystConsensus: {
+    intermediate: (rating, totalAnalysts, buyPercent) => `${totalAnalysts || 0} analysts covering this stock. ${(buyPercent || 0).toFixed(0)}% recommend buying. Average rating: ${(rating || 3).toFixed(1)}/5.`,
+    moreDepth: `Wall Street analysts study companies professionally and issue ratings:
+
+• Strong Buy: Very bullish, expect significant gains
+• Buy: Positive outlook
+• Hold: Neutral, wait and see
+• Sell / Strong Sell: Negative outlook
+
+A high consensus (4.0+) means most experts are optimistic. But remember: analysts aren't always right, and their targets are often 6-12 month outlooks, not 24-hour predictions.`
+  },
+  priceTarget: {
+    intermediate: (target, current) => {
+      if (!target || !current) return 'No price target data available.';
+      const upside = ((target - current) / current * 100).toFixed(0);
+      const progress = (current / target * 100).toFixed(0);
+      return `Analysts' average target: $${target.toFixed(2)} (${upside > 0 ? '+' : ''}${upside}% from current). Price is at ${progress}% of target.`;
+    },
+    moreDepth: `Analysts set price targets - where they think the stock will be in 6-12 months.
+
+For MarketClash:
+• Stock well below target: Room to run, analysts see upside
+• Stock at or above target: May be "priced in," limited near-term catalyst
+
+This doesn't predict tomorrow's price, but shows overall sentiment.`
+  },
+  pegRatio: {
+    intermediate: (value) => {
+      if (!value) return 'PEG ratio data not available.';
+      return `PEG of ${value.toFixed(2)}. ${value < 1 ? 'Potentially undervalued relative to growth.' : value > 2 ? 'Premium valuation - growth expectations priced in.' : 'Fairly valued relative to growth expectations.'}`;
+    },
+    moreDepth: `PEG = P/E ratio divided by earnings growth rate. It tells you if a stock's price makes sense given how fast the company is growing.
+
+• PEG < 1.0: Potentially undervalued - growth isn't fully priced in
+• PEG 1.0 - 2.0: Fairly valued
+• PEG > 2.0: Expensive - you're paying a premium for growth
+
+Lower PEG can mean more upside potential if the company delivers on growth.`
+  },
+  range52w: {
+    intermediate: (position, low, high) => {
+      if (!position && position !== 0) return '52-week range data not available.';
+      return `Trading at ${position.toFixed(0)}% of its yearly range ($${low?.toFixed(2) || '?'} - $${high?.toFixed(2) || '?'}). ${position > 75 ? 'Near 52-week highs - strong momentum but limited upside.' : position < 25 ? 'Near 52-week lows - potential value or falling knife.' : 'Mid-range territory.'}`;
+    },
+    moreDepth: `This shows where the current price sits between its lowest and highest points of the past year.
+
+• Near 52-week high (80%+): Stock has been on a run. Could keep going, or may be due for pullback.
+• Near 52-week low (20%-): Stock has been beaten down. Could be a bargain, or there's a reason it's low.
+• Mid-range (40-60%): Neutral territory.`
+  },
+  ma50: {
+    intermediate: (price, ma, isAbove) => {
+      if (!ma) return '50-day moving average data not available.';
+      const pctDiff = ((price - ma) / ma * 100).toFixed(1);
+      return `Price is ${isAbove ? 'ABOVE' : 'BELOW'} the 50-day MA ($${ma.toFixed(2)}) by ${Math.abs(pctDiff)}%. ${isAbove ? 'Short-term bullish signal.' : 'Short-term bearish signal.'}`;
+    },
+    moreDepth: `The 50-day moving average is the average closing price over the last 50 trading days. It's a key technical indicator:
+
+• Price ABOVE 50 MA: Stock is in a short-term uptrend. Buyers are in control.
+• Price BELOW 50 MA: Stock is in a short-term downtrend. Sellers are in control.
+• Price crossing above 50 MA: Potential bullish signal (trend reversal)
+• Price crossing below 50 MA: Potential bearish signal
+
+For 24-hour battles, stocks above their 50 MA tend to have momentum on their side.`
+  },
+  ma200: {
+    intermediate: (price, ma, isAbove) => {
+      if (!ma) return '200-day moving average data not available.';
+      const pctDiff = ((price - ma) / ma * 100).toFixed(1);
+      return `Price is ${isAbove ? 'ABOVE' : 'BELOW'} the 200-day MA ($${ma.toFixed(2)}) by ${Math.abs(pctDiff)}%. ${isAbove ? 'Long-term uptrend intact.' : 'Long-term downtrend - caution advised.'}`;
+    },
+    moreDepth: `The 200-day moving average represents the long-term trend. It's one of the most watched indicators:
+
+• Price ABOVE 200 MA: Stock is in a long-term bull market. Major institutions often buy above this level.
+• Price BELOW 200 MA: Stock is in a long-term bear market. Often signals fundamental problems.
+
+Key signals:
+• "Golden Cross": 50 MA crosses ABOVE 200 MA - very bullish
+• "Death Cross": 50 MA crosses BELOW 200 MA - very bearish
+
+Stocks above both their 50 and 200 MA have the strongest technical setup.`
+  }
+};
+
+// ============================================
+// CRYPTO METRIC EXPLANATIONS
+// ============================================
+
+const cryptoMetricExplanations = {
+  volatility7d: {
+    intermediate: (value) => `Average daily swing of ${(value || 0).toFixed(1)}% over the past week. ${value > 5 ? 'Very high volatility - big swings both ways.' : value > 3 ? 'Moderate volatility - expect meaningful daily moves.' : 'Relatively stable for crypto.'}`,
+    moreDepth: `Volatility measures how much the price swings up and down. In crypto, this is measured as the average daily percentage change:
+
+• Low volatility (<3%): Relatively stable, smaller daily moves
+• Medium volatility (3-5%): Typical for major altcoins
+• High volatility (>5%): Expect big swings, both gains and losses
+
+For 24-hour battles:
+• High volatility = high risk/reward. You could win big or lose big.
+• Low volatility = steadier but may not give you the edge you need.`
+  },
+  volatility30d: {
+    intermediate: (value, vol7d) => {
+      const trend = vol7d > value ? 'Volatility is increasing' : vol7d < value ? 'Volatility is decreasing' : 'Volatility is stable';
+      return `30-day average volatility: ${(value || 0).toFixed(1)}%. ${trend} compared to recent week.`;
+    },
+    moreDepth: `Comparing 30-day to 7-day volatility shows if the asset is becoming more or less volatile:
+
+• 7-day > 30-day: Volatility is INCREASING. Market is getting more uncertain. Bigger swings likely.
+• 7-day < 30-day: Volatility is DECREASING. Market is calming down. Potentially safer entry.
+• 7-day ≈ 30-day: Stable volatility. Expect similar patterns to continue.`
+  },
+  volatilityVsBtc: {
+    intermediate: (ratio) => `This asset is ${(ratio || 1).toFixed(1)}x ${ratio > 1 ? 'more' : 'less'} volatile than Bitcoin. ${ratio > 2 ? 'Significantly amplified risk/reward.' : ratio > 1.2 ? 'Moderately more volatile than BTC.' : ratio < 0.8 ? 'Surprisingly stable for an altcoin.' : 'Similar volatility to BTC.'}`,
+    moreDepth: `Bitcoin is the benchmark for crypto volatility. Comparing other coins to BTC helps you understand relative risk:
+
+• 2x+ BTC volatility: Very aggressive. Big potential gains but also big potential losses.
+• 1-2x BTC volatility: Typical for major altcoins. Moderately more volatile.
+• <1x BTC volatility: Rare for altcoins. Often stablecoins or very established tokens.
+
+For MarketClash: If you want to play it "safe" in crypto battles, lower volatility vs BTC is better. If you need a comeback, higher volatility gives more upside (and downside).`
+  },
+  volume24h: {
+    intermediate: (value) => {
+      const formatted = value >= 1e9 ? `$${(value/1e9).toFixed(1)}B` : `$${(value/1e6).toFixed(0)}M`;
+      return `${formatted} traded in the last 24 hours. ${value > 1e9 ? 'Very liquid - easy to trade.' : value > 100e6 ? 'Good liquidity.' : 'Lower liquidity - price can move on smaller trades.'}`;
+    },
+    moreDepth: `24-hour volume shows how much money is flowing through this asset:
+
+• High volume (>$1B): Very liquid. Large trades don't move the price much.
+• Medium volume ($100M-$1B): Good liquidity for most purposes.
+• Low volume (<$100M): Be careful. Price can spike or crash on relatively small trades.
+
+Volume also indicates interest. Rising volume often precedes big price moves.`
+  },
+  volumeVsAvg: {
+    intermediate: (pctDiff) => {
+      const direction = pctDiff > 0 ? 'higher' : 'lower';
+      const magnitude = Math.abs(pctDiff || 0);
+      return `Today's volume is ${magnitude.toFixed(0)}% ${direction} than the 7-day average. ${magnitude > 50 ? 'Unusual activity - something may be happening.' : magnitude > 20 ? 'Elevated interest today.' : 'Normal trading activity.'}`;
+    },
+    moreDepth: `Comparing today's volume to the recent average reveals unusual activity:
+
+• Volume 50%+ above average: Something is happening. News, rumors, or whale activity. Expect bigger moves.
+• Volume 20-50% above average: Elevated interest. Worth paying attention.
+• Volume near average: Normal day. No unusual catalysts.
+• Volume below average: Quiet day. Less likely to see big moves.
+
+Unusual volume often comes BEFORE big price moves, making it a leading indicator.`
+  },
+  momentum7d: {
+    intermediate: (value) => `${value >= 0 ? 'Up' : 'Down'} ${Math.abs(value || 0).toFixed(1)}% over the past 7 days. ${Math.abs(value || 0) > 15 ? 'Very strong move.' : Math.abs(value || 0) > 5 ? 'Solid momentum.' : 'Relatively flat.'}`,
+    moreDepth: `7-day momentum shows the short-term trend direction and strength:
+
+• Strong positive (>15%): Asset is hot. Could continue or be due for pullback.
+• Moderate positive (5-15%): Healthy uptrend.
+• Flat (-5% to +5%): Consolidating. Waiting for direction.
+• Moderate negative (-5% to -15%): Downtrend. Could be buying opportunity or falling knife.
+• Strong negative (<-15%): Significant selling pressure.
+
+In 24-hour battles, momentum often continues in the short term. But extreme momentum (>20%) often reverts.`
+  },
+  momentum30d: {
+    intermediate: (value, mom7d) => {
+      const trend = mom7d > value ? 'accelerating' : mom7d < value ? 'decelerating' : 'steady';
+      return `${value >= 0 ? 'Up' : 'Down'} ${Math.abs(value || 0).toFixed(1)}% over 30 days. Short-term momentum is ${trend}.`;
+    },
+    moreDepth: `Comparing 30-day to 7-day momentum reveals trend strength:
+
+• 7-day > 30-day (both positive): Momentum is ACCELERATING. Trend is strengthening.
+• 7-day < 30-day (both positive): Momentum is SLOWING. Trend may be weakening.
+• 7-day positive, 30-day negative: Potential REVERSAL. Recent bounce off lows.
+• 7-day negative, 30-day positive: Potential BREAKDOWN. Recent weakness in uptrend.
+
+Accelerating momentum has the best chance of continuing into your battle window.`
+  },
+  distanceFromATH: {
+    intermediate: (pctFromATH, athPrice, athDate) => {
+      if (!athPrice) return 'All-time high data not available.';
+      return `Currently ${Math.abs(pctFromATH || 0).toFixed(0)}% below all-time high of $${athPrice.toFixed(2)} (${athDate || 'Unknown'}). ${Math.abs(pctFromATH || 0) < 20 ? 'Near ATH - strong momentum.' : Math.abs(pctFromATH || 0) > 70 ? 'Far from ATH - high risk or value opportunity.' : 'Significant room to recover.'}`;
+    },
+    moreDepth: `Distance from All-Time High shows where the current price sits vs the asset's peak:
+
+• Within 20% of ATH: Asset is strong. Hitting new highs is realistic.
+• 20-50% below ATH: Meaningful correction. Could recover or drop further.
+• 50-80% below ATH: Major drawdown. Either a value opportunity or fundamental problems.
+• 80%+ below ATH: Extreme drawdown. Very high risk. Many never recover.
+
+Note: In crypto, ATHs are often from bull market peaks. Don't assume every coin will return to ATH.`
+  }
+};
+
+// Research requirements and rewards
+const RESEARCH_REQUIREMENTS = {
+  minimumNotes: 20,
+  minimumAssets: 4,
+  mustFinalize: true
+};
+
+const calculateResearchXP = (streak) => {
+  const baseXP = 100;
+  const streakBonuses = {
+    1: 0, 2: 25, 3: 50, 4: 75, 5: 100,
+    6: 100, 7: 100, 8: 100, 9: 100, 10: 200
+  };
+  const bonus = streak >= 10 ? 200 : (streakBonuses[streak] || 100);
+  return { base: baseXP, streakBonus: bonus, total: baseXP + bonus };
+};
+
+// Get current week's Monday in ISO format
+const getCurrentWeekMonday = () => {
+  const now = new Date();
+  const day = now.getUTCDay();
+  const diff = now.getUTCDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(now.setUTCDate(diff));
+  return monday.toISOString().split('T')[0];
+};
+
+// ============================================
 // WEEKLY CHALLENGES - CHALLENGE POOL
 // ============================================
 
@@ -1308,6 +1664,27 @@ export default function PortfolioDuel() {
   const [researchSortBy, setResearchSortBy] = useState('rank');
   const [researchExpandedAsset, setResearchExpandedAsset] = useState(null);
   const [researchCompareAssets, setResearchCompareAssets] = useState([]);
+
+  // Enhanced Research Mode state
+  const [researchActiveTab, setResearchActiveTab] = useState('stocks'); // 'stocks' | 'crypto' | 'notes'
+  const [selectedAssetDetail, setSelectedAssetDetail] = useState(null);
+  const [selectedAssetType, setSelectedAssetType] = useState(null); // 'stock' | 'crypto'
+  const [stockFundamentals, setStockFundamentals] = useState({}); // { AAPL: {...}, MSFT: {...} }
+  const [cryptoMetrics, setCryptoMetrics] = useState({}); // { BTC: {...}, ETH: {...} }
+  const [showMoreDepth, setShowMoreDepth] = useState({}); // { metricName: boolean }
+  const [fundamentalsLoading, setFundamentalsLoading] = useState({});
+  const [cryptoMetricsLoading, setCryptoMetricsLoading] = useState({});
+
+  // Notes system state
+  const [userNotes, setUserNotes] = useState([]);
+  const [weeklyProgress, setWeeklyProgress] = useState(null);
+  const [notesExpanded, setNotesExpanded] = useState({});
+  const [draftNotesExpanded, setDraftNotesExpanded] = useState(false);
+  const [customNoteText, setCustomNoteText] = useState('');
+
+  // Research rewards state
+  const [researchStreak, setResearchStreak] = useState(0);
+  const [showResearchComplete, setShowResearchComplete] = useState(false);
 
   // Weekly Challenges State
   const [showWeeklyChallenges, setShowWeeklyChallenges] = useState(false);
@@ -3054,11 +3431,14 @@ export default function PortfolioDuel() {
     );
   }
 
-  // RESEARCH MODE SCREEN
+  // RESEARCH MODE SCREEN - ENHANCED VERSION
   if (showResearchMode) {
     // Enrich assets with research data
     const { stocks: enrichedStocks, crypto: enrichedCrypto } = enrichAllAssetsWithResearch(stocksData, cryptoData);
-    const currentAssets = researchAssetType === 'stocks' ? enrichedStocks : enrichedCrypto;
+
+    // Get assets based on current tab
+    const currentAssets = researchActiveTab === 'stocks' ? enrichedStocks :
+                          researchActiveTab === 'crypto' ? enrichedCrypto : [];
 
     // Filter by search term
     const filteredAssets = currentAssets.filter(asset =>
@@ -3066,18 +3446,13 @@ export default function PortfolioDuel() {
       asset.name.toLowerCase().includes(researchSearchTerm.toLowerCase())
     );
 
-    // Sort assets
+    // Sort assets by 30-day momentum + market cap (hidden from user)
     const sortedAssets = [...filteredAssets].sort((a, b) => {
-      switch (researchSortBy) {
-        case 'rank': return (a.categoryRank7d || 999) - (b.categoryRank7d || 999);
-        case '7d': return (b.priceChange7d || 0) - (a.priceChange7d || 0);
-        case '30d': return (b.priceChange30d || 0) - (a.priceChange30d || 0);
-        case 'winRate': return (b.communityData?.winRate || 0) - (a.communityData?.winRate || 0);
-        case 'volatility':
-          const volOrder = { high: 3, medium: 2, low: 1 };
-          return (volOrder[b.volatility] || 0) - (volOrder[a.volatility] || 0);
-        default: return 0;
-      }
+      // Primary: 30-day momentum
+      const momentumDiff = (b.priceChange30d || 0) - (a.priceChange30d || 0);
+      if (Math.abs(momentumDiff) > 5) return momentumDiff;
+      // Secondary: category rank (proxy for market cap importance)
+      return (a.categoryRank7d || 999) - (b.categoryRank7d || 999);
     });
 
     // Sparkline component for research cards
@@ -3100,14 +3475,14 @@ export default function PortfolioDuel() {
       return (
         <svg width={width} height={height} style={{ display: 'block' }}>
           <defs>
-            <linearGradient id={`spark-grad-${isPositive}`} x1="0%" y1="0%" x2="0%" y2="100%">
+            <linearGradient id={`spark-grad-${isPositive}-${width}`} x1="0%" y1="0%" x2="0%" y2="100%">
               <stop offset="0%" stopColor={color} stopOpacity="0.3" />
               <stop offset="100%" stopColor={color} stopOpacity="0" />
             </linearGradient>
           </defs>
           <polygon
             points={`0,${height} ${points} ${width},${height}`}
-            fill={`url(#spark-grad-${isPositive})`}
+            fill={`url(#spark-grad-${isPositive}-${width})`}
           />
           <polyline
             points={points}
@@ -3121,21 +3496,631 @@ export default function PortfolioDuel() {
       );
     };
 
-    // Handle adding to compare
-    const handleAddToCompare = (asset) => {
-      if (researchCompareAssets.length >= 3) {
-        return; // Max 3 assets
+    // Fetch stock fundamentals
+    const fetchStockFundamentals = async (symbol) => {
+      if (stockFundamentals[symbol] || fundamentalsLoading[symbol]) return;
+
+      setFundamentalsLoading(prev => ({ ...prev, [symbol]: true }));
+      try {
+        const response = await fetch(`/api/stocks/fundamentals?symbol=${symbol}`);
+        const data = await response.json();
+        if (data.success) {
+          setStockFundamentals(prev => ({ ...prev, [symbol]: data.data }));
+        }
+      } catch (error) {
+        console.error('Failed to fetch fundamentals:', error);
       }
-      if (researchCompareAssets.find(a => a.symbol === asset.symbol)) {
-        return; // Already added
-      }
-      setResearchCompareAssets([...researchCompareAssets, asset]);
+      setFundamentalsLoading(prev => ({ ...prev, [symbol]: false }));
     };
 
-    const handleRemoveFromCompare = (symbol) => {
-      setResearchCompareAssets(researchCompareAssets.filter(a => a.symbol !== symbol));
+    // Fetch crypto metrics
+    const fetchCryptoMetrics = async (symbol) => {
+      if (cryptoMetrics[symbol] || cryptoMetricsLoading[symbol]) return;
+
+      setCryptoMetricsLoading(prev => ({ ...prev, [symbol]: true }));
+      try {
+        const response = await fetch(`/api/crypto/metrics?symbol=${symbol}`);
+        const data = await response.json();
+        if (data.success) {
+          setCryptoMetrics(prev => ({ ...prev, [symbol]: data.data }));
+        }
+      } catch (error) {
+        console.error('Failed to fetch crypto metrics:', error);
+      }
+      setCryptoMetricsLoading(prev => ({ ...prev, [symbol]: false }));
     };
 
+    // Handle opening asset detail
+    const handleOpenDetail = (asset, type) => {
+      setSelectedAssetDetail(asset);
+      setSelectedAssetType(type);
+      setShowMoreDepth({});
+
+      // Fetch data based on type
+      if (type === 'stock') {
+        fetchStockFundamentals(asset.symbol);
+      } else {
+        fetchCryptoMetrics(asset.symbol);
+      }
+    };
+
+    // Handle clipping a note
+    const handleClipNote = (metricName, metricValue, explanation, symbol, assetType) => {
+      const newNote = {
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        symbol,
+        assetType,
+        type: 'clipped',
+        metricName,
+        metricValue: String(metricValue),
+        explanation,
+        userAnnotation: '',
+        createdAt: new Date().toISOString(),
+        weekOf: getCurrentWeekMonday(),
+        isFinalized: false
+      };
+      setUserNotes(prev => [...prev, newNote]);
+    };
+
+    // Handle adding custom note
+    const handleAddCustomNote = (symbol, assetType) => {
+      if (!customNoteText.trim()) return;
+
+      const newNote = {
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        symbol,
+        assetType,
+        type: 'custom',
+        customText: customNoteText.trim(),
+        userAnnotation: '',
+        createdAt: new Date().toISOString(),
+        weekOf: getCurrentWeekMonday(),
+        isFinalized: false
+      };
+      setUserNotes(prev => [...prev, newNote]);
+      setCustomNoteText('');
+    };
+
+    // Handle deleting a note
+    const handleDeleteNote = (noteId) => {
+      setUserNotes(prev => prev.filter(n => n.id !== noteId));
+    };
+
+    // Get sector color for stock
+    const getSectorColor = (sector) => {
+      return sectorColors[sector] || sectorColors['Unknown'];
+    };
+
+    // Toggle more depth for a metric
+    const toggleMoreDepth = (metricKey) => {
+      setShowMoreDepth(prev => ({ ...prev, [metricKey]: !prev[metricKey] }));
+    };
+
+    // Calculate weekly progress
+    const currentWeekNotes = userNotes.filter(n => n.weekOf === getCurrentWeekMonday());
+    const assetsWithNotes = [...new Set(currentWeekNotes.map(n => n.symbol))];
+    const progressPercent = Math.min(100, (currentWeekNotes.length / RESEARCH_REQUIREMENTS.minimumNotes) * 100);
+    const canFinalize = currentWeekNotes.length >= RESEARCH_REQUIREMENTS.minimumNotes &&
+                        assetsWithNotes.length >= RESEARCH_REQUIREMENTS.minimumAssets;
+
+    // ASSET DETAIL PAGE
+    if (selectedAssetDetail) {
+      const isStock = selectedAssetType === 'stock';
+      const fundamentals = isStock ? stockFundamentals[selectedAssetDetail.symbol] : null;
+      const metrics = !isStock ? cryptoMetrics[selectedAssetDetail.symbol] : null;
+      const isLoading = isStock ? fundamentalsLoading[selectedAssetDetail.symbol] : cryptoMetricsLoading[selectedAssetDetail.symbol];
+      const color = isStock ? getSectorColor(selectedAssetDetail.sector || 'Unknown') : cryptoColor;
+
+      // Metric card component
+      const MetricCard = ({ title, value, subValue, metricKey, explanationFn, moreDepth, valueColor }) => (
+        <div style={{
+          background: '#0d1117',
+          borderRadius: '12px',
+          border: '1px solid #21262d',
+          padding: '16px',
+          marginBottom: '12px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+            <span style={{ color: '#8b949e', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' }}>{title}</span>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => handleClipNote(title, value, explanationFn, selectedAssetDetail.symbol, selectedAssetType)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#6e7681',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  fontSize: '14px'
+                }}
+                title="Save to notes"
+              >
+                📌
+              </button>
+              <button
+                onClick={() => toggleMoreDepth(metricKey)}
+                style={{
+                  background: showMoreDepth[metricKey] ? 'rgba(0, 217, 255, 0.2)' : 'transparent',
+                  border: 'none',
+                  color: showMoreDepth[metricKey] ? colors.cyan : '#6e7681',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  fontSize: '14px',
+                  borderRadius: '4px'
+                }}
+                title="More info"
+              >
+                ℹ️
+              </button>
+            </div>
+          </div>
+          <div style={{ color: valueColor || '#ffffff', fontSize: '24px', fontWeight: 'bold', marginBottom: subValue ? '4px' : '8px' }}>
+            {value}
+          </div>
+          {subValue && (
+            <div style={{ color: '#8b949e', fontSize: '13px', marginBottom: '8px' }}>{subValue}</div>
+          )}
+          <div style={{ color: '#e6edf3', fontSize: '13px', lineHeight: '1.5' }}>
+            {explanationFn}
+          </div>
+          {showMoreDepth[metricKey] && moreDepth && (
+            <div style={{
+              marginTop: '12px',
+              padding: '12px',
+              background: 'rgba(0, 217, 255, 0.05)',
+              borderRadius: '8px',
+              border: '1px solid rgba(0, 217, 255, 0.2)',
+              color: '#e6edf3',
+              fontSize: '12px',
+              lineHeight: '1.6',
+              whiteSpace: 'pre-line'
+            }}>
+              {moreDepth}
+            </div>
+          )}
+        </div>
+      );
+
+      return (
+        <div style={containerStyle}>
+          <div style={{ minHeight: '100vh', background: colors.background }}>
+            {/* Header */}
+            <div style={{
+              background: '#161b22',
+              borderBottom: '1px solid #21262d',
+              padding: '16px',
+              position: 'sticky',
+              top: 0,
+              zIndex: 20
+            }}>
+              <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <button
+                    onClick={() => setSelectedAssetDetail(null)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      color: colors.cyan,
+                      fontWeight: '600',
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: '14px'
+                    }}
+                  >
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back
+                  </button>
+                  <button
+                    onClick={() => handleClipNote('Asset Overview', selectedAssetDetail.symbol, `${selectedAssetDetail.name} - Price: $${selectedAssetDetail.price?.toFixed(2)}`, selectedAssetDetail.symbol, selectedAssetType)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 12px',
+                      background: 'rgba(0, 217, 255, 0.1)',
+                      border: '1px solid rgba(0, 217, 255, 0.3)',
+                      borderRadius: '8px',
+                      color: colors.cyan,
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    📌 Add to Notes
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Asset Header */}
+            <div style={{
+              background: color.background,
+              borderBottom: `3px solid ${color.primary}`,
+              padding: '20px 16px'
+            }}>
+              <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <span style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '24px' }}>{selectedAssetDetail.symbol}</span>
+                  <span style={{ color: '#8b949e', fontSize: '14px' }}>·</span>
+                  <span style={{ color: '#8b949e', fontSize: '14px' }}>{selectedAssetDetail.name}</span>
+                  {isStock && selectedAssetDetail.sector && (
+                    <>
+                      <span style={{ color: '#8b949e', fontSize: '14px' }}>·</span>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        color: color.primary,
+                        fontSize: '12px'
+                      }}>
+                        <span style={{
+                          width: '6px',
+                          height: '6px',
+                          borderRadius: '50%',
+                          background: color.primary
+                        }} />
+                        {selectedAssetDetail.sector}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                  <span style={{ color: '#ffffff', fontSize: '32px', fontWeight: 'bold' }}>
+                    ${selectedAssetDetail.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span style={{
+                    color: (selectedAssetDetail.percentChange || 0) >= 0 ? colors.green : colors.red,
+                    fontSize: '16px',
+                    fontWeight: '600'
+                  }}>
+                    {(selectedAssetDetail.percentChange || 0) >= 0 ? '▲' : '▼'} {(selectedAssetDetail.percentChange || 0) >= 0 ? '+' : ''}{(selectedAssetDetail.percentChange || 0).toFixed(2)}% today
+                  </span>
+                </div>
+                {!isStock && metrics?.marketCapRank && (
+                  <span style={{ color: '#8b949e', fontSize: '13px' }}>Rank #{metrics.marketCapRank} by Market Cap</span>
+                )}
+              </div>
+            </div>
+
+            {/* Content */}
+            <div style={{ maxWidth: '900px', margin: '0 auto', padding: '20px 16px' }}>
+              {isLoading ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                  <Loader2 className="animate-spin" style={{ width: '32px', height: '32px', margin: '0 auto 12px' }} />
+                  <p>Loading {isStock ? 'fundamentals' : 'metrics'}...</p>
+                </div>
+              ) : isStock ? (
+                // STOCK METRICS
+                <>
+                  <h3 style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Fundamentals
+                  </h3>
+
+                  <MetricCard
+                    title="Beta"
+                    value={fundamentals?.beta?.toFixed(2) || 'N/A'}
+                    metricKey="beta"
+                    explanationFn={stockMetricExplanations.beta.intermediate(fundamentals?.beta)}
+                    moreDepth={stockMetricExplanations.beta.moreDepth}
+                    valueColor={fundamentals?.beta > 1.2 ? colors.red : fundamentals?.beta < 0.8 ? colors.green : '#ffffff'}
+                  />
+
+                  <MetricCard
+                    title="Analyst Consensus"
+                    value={fundamentals?.analystConsensus ? `${fundamentals.analystConsensus.rating?.toFixed(1)} / 5.0` : 'N/A'}
+                    subValue={fundamentals?.analystConsensus ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span>{'●'.repeat(Math.round(fundamentals.analystConsensus.rating || 0))}{'○'.repeat(5 - Math.round(fundamentals.analystConsensus.rating || 0))}</span>
+                        <span style={{ fontSize: '11px' }}>
+                          {fundamentals.analystConsensus.strongBuy} Strong Buy | {fundamentals.analystConsensus.buy} Buy | {fundamentals.analystConsensus.hold} Hold | {fundamentals.analystConsensus.sell + (fundamentals.analystConsensus.strongSell || 0)} Sell
+                        </span>
+                      </div>
+                    ) : null}
+                    metricKey="analystConsensus"
+                    explanationFn={stockMetricExplanations.analystConsensus.intermediate(
+                      fundamentals?.analystConsensus?.rating,
+                      fundamentals?.analystConsensus?.totalAnalysts,
+                      fundamentals?.analystConsensus?.buyPercent
+                    )}
+                    moreDepth={stockMetricExplanations.analystConsensus.moreDepth}
+                    valueColor={fundamentals?.analystConsensus?.rating >= 4 ? colors.green : fundamentals?.analystConsensus?.rating <= 2 ? colors.red : '#ffffff'}
+                  />
+
+                  <MetricCard
+                    title="Avg. Price Target"
+                    value={fundamentals?.targetPrice ? `$${fundamentals.targetPrice.toFixed(2)}` : 'N/A'}
+                    subValue={fundamentals?.targetPrice && fundamentals?.currentPrice ? (
+                      <div>
+                        <div style={{
+                          height: '6px',
+                          background: '#21262d',
+                          borderRadius: '3px',
+                          overflow: 'hidden',
+                          marginBottom: '4px'
+                        }}>
+                          <div style={{
+                            width: `${Math.min(100, (fundamentals.currentPrice / fundamentals.targetPrice) * 100)}%`,
+                            height: '100%',
+                            background: fundamentals.currentPrice < fundamentals.targetPrice ? colors.green : colors.red,
+                            borderRadius: '3px'
+                          }} />
+                        </div>
+                        <span style={{ fontSize: '11px' }}>
+                          {((fundamentals.currentPrice / fundamentals.targetPrice) * 100).toFixed(0)}% of target ({((fundamentals.targetPrice - fundamentals.currentPrice) / fundamentals.currentPrice * 100).toFixed(0)}% {fundamentals.targetPrice > fundamentals.currentPrice ? 'upside' : 'downside'})
+                        </span>
+                      </div>
+                    ) : null}
+                    metricKey="priceTarget"
+                    explanationFn={stockMetricExplanations.priceTarget.intermediate(fundamentals?.targetPrice, fundamentals?.currentPrice)}
+                    moreDepth={stockMetricExplanations.priceTarget.moreDepth}
+                  />
+
+                  <MetricCard
+                    title="PEG Ratio"
+                    value={fundamentals?.pegRatio?.toFixed(2) || 'N/A'}
+                    metricKey="pegRatio"
+                    explanationFn={stockMetricExplanations.pegRatio.intermediate(fundamentals?.pegRatio)}
+                    moreDepth={stockMetricExplanations.pegRatio.moreDepth}
+                    valueColor={fundamentals?.pegRatio < 1 ? colors.green : fundamentals?.pegRatio > 2 ? colors.red : '#ffffff'}
+                  />
+
+                  <h3 style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '16px', marginTop: '24px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Technicals
+                  </h3>
+
+                  <MetricCard
+                    title="7-Day Momentum"
+                    value={`${fundamentals?.momentum7d >= 0 ? '+' : ''}${fundamentals?.momentum7d?.toFixed(1) || 0}%`}
+                    subValue={`Up ${fundamentals?.upDays7d || 0} of last 7 days`}
+                    metricKey="momentum7d"
+                    explanationFn={stockMetricExplanations.momentum7d.intermediate(fundamentals?.momentum7d, fundamentals?.upDays7d)}
+                    moreDepth={stockMetricExplanations.momentum7d.moreDepth}
+                    valueColor={fundamentals?.momentum7d >= 0 ? colors.green : colors.red}
+                  />
+
+                  <MetricCard
+                    title="50-Day Moving Average"
+                    value={fundamentals?.ma50 ? `$${fundamentals.ma50.toFixed(2)}` : 'N/A'}
+                    subValue={fundamentals?.aboveMA50 !== undefined ? (
+                      <span style={{ color: fundamentals.aboveMA50 ? colors.green : colors.red }}>
+                        {fundamentals.aboveMA50 ? '✓' : '✗'} Price {fundamentals.aboveMA50 ? 'ABOVE' : 'BELOW'} 50 MA ({fundamentals.ma50Diff >= 0 ? '+' : ''}{fundamentals.ma50Diff?.toFixed(1)}%)
+                      </span>
+                    ) : null}
+                    metricKey="ma50"
+                    explanationFn={stockMetricExplanations.ma50.intermediate(fundamentals?.currentPrice, fundamentals?.ma50, fundamentals?.aboveMA50)}
+                    moreDepth={stockMetricExplanations.ma50.moreDepth}
+                  />
+
+                  <MetricCard
+                    title="200-Day Moving Average"
+                    value={fundamentals?.ma200 ? `$${fundamentals.ma200.toFixed(2)}` : 'N/A'}
+                    subValue={fundamentals?.aboveMA200 !== undefined ? (
+                      <span style={{ color: fundamentals.aboveMA200 ? colors.green : colors.red }}>
+                        {fundamentals.aboveMA200 ? '✓' : '✗'} Price {fundamentals.aboveMA200 ? 'ABOVE' : 'BELOW'} 200 MA ({fundamentals.ma200Diff >= 0 ? '+' : ''}{fundamentals.ma200Diff?.toFixed(1)}%)
+                      </span>
+                    ) : null}
+                    metricKey="ma200"
+                    explanationFn={stockMetricExplanations.ma200.intermediate(fundamentals?.currentPrice, fundamentals?.ma200, fundamentals?.aboveMA200)}
+                    moreDepth={stockMetricExplanations.ma200.moreDepth}
+                  />
+
+                  <MetricCard
+                    title="52-Week Range"
+                    value={fundamentals?.range52wPosition !== undefined ? `${fundamentals.range52wPosition.toFixed(0)}% of range` : 'N/A'}
+                    subValue={fundamentals?.week52Low && fundamentals?.week52High ? (
+                      <div>
+                        <div style={{
+                          height: '8px',
+                          background: '#21262d',
+                          borderRadius: '4px',
+                          position: 'relative',
+                          marginBottom: '4px'
+                        }}>
+                          <div style={{
+                            position: 'absolute',
+                            left: `${fundamentals.range52wPosition}%`,
+                            top: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            width: '12px',
+                            height: '12px',
+                            borderRadius: '50%',
+                            background: colors.cyan,
+                            border: '2px solid #161b22'
+                          }} />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                          <span>${fundamentals.week52Low?.toFixed(2)}</span>
+                          <span>${fundamentals.week52High?.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    ) : null}
+                    metricKey="range52w"
+                    explanationFn={stockMetricExplanations.range52w.intermediate(fundamentals?.range52wPosition, fundamentals?.week52Low, fundamentals?.week52High)}
+                    moreDepth={stockMetricExplanations.range52w.moreDepth}
+                  />
+
+                  {fundamentals?.nextEarningsDate && (
+                    <div style={{
+                      background: 'rgba(251, 191, 36, 0.1)',
+                      border: '1px solid rgba(251, 191, 36, 0.3)',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      marginTop: '16px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fbbf24', fontWeight: '600', marginBottom: '4px' }}>
+                        ⚠️ UPCOMING EVENT
+                      </div>
+                      <div style={{ color: '#e6edf3', fontSize: '14px' }}>
+                        Earnings Report: {fundamentals.nextEarningsDate} ({fundamentals.nextEarningsTime || 'Time TBD'})
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                // CRYPTO METRICS
+                <>
+                  <h3 style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Volatility
+                  </h3>
+
+                  <MetricCard
+                    title="7-Day Volatility"
+                    value={`${metrics?.volatility7d?.toFixed(1) || 0}%`}
+                    subValue="Average daily price swing over the past week"
+                    metricKey="volatility7d"
+                    explanationFn={cryptoMetricExplanations.volatility7d.intermediate(metrics?.volatility7d)}
+                    moreDepth={cryptoMetricExplanations.volatility7d.moreDepth}
+                    valueColor={metrics?.volatility7d > 5 ? colors.red : metrics?.volatility7d < 3 ? colors.green : '#ffffff'}
+                  />
+
+                  <MetricCard
+                    title="30-Day Volatility"
+                    value={`${metrics?.volatility30d?.toFixed(1) || 0}%`}
+                    metricKey="volatility30d"
+                    explanationFn={cryptoMetricExplanations.volatility30d.intermediate(metrics?.volatility30d, metrics?.volatility7d)}
+                    moreDepth={cryptoMetricExplanations.volatility30d.moreDepth}
+                  />
+
+                  <MetricCard
+                    title="Volatility vs Bitcoin"
+                    value={`${metrics?.volatilityVsBtc?.toFixed(1) || 1}x`}
+                    subValue={
+                      <div style={{ marginTop: '4px' }}>
+                        <div style={{
+                          height: '6px',
+                          background: '#21262d',
+                          borderRadius: '3px',
+                          overflow: 'hidden'
+                        }}>
+                          <div style={{
+                            width: `${Math.min(100, (metrics?.volatilityVsBtc || 1) * 33)}%`,
+                            height: '100%',
+                            background: metrics?.volatilityVsBtc > 2 ? colors.red : metrics?.volatilityVsBtc > 1.2 ? '#fbbf24' : colors.green,
+                            borderRadius: '3px'
+                          }} />
+                        </div>
+                        <span style={{ fontSize: '11px', color: '#8b949e' }}>
+                          {selectedAssetDetail.symbol} is {metrics?.volatilityVsBtc?.toFixed(1) || 1}x {metrics?.volatilityVsBtc > 1 ? 'more' : 'less'} volatile than BTC
+                        </span>
+                      </div>
+                    }
+                    metricKey="volatilityVsBtc"
+                    explanationFn={cryptoMetricExplanations.volatilityVsBtc.intermediate(metrics?.volatilityVsBtc)}
+                    moreDepth={cryptoMetricExplanations.volatilityVsBtc.moreDepth}
+                  />
+
+                  <h3 style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '16px', marginTop: '24px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Volume
+                  </h3>
+
+                  <MetricCard
+                    title="24-Hour Volume"
+                    value={metrics?.volume24h >= 1e9 ? `$${(metrics.volume24h / 1e9).toFixed(1)}B` : `$${((metrics?.volume24h || 0) / 1e6).toFixed(0)}M`}
+                    metricKey="volume24h"
+                    explanationFn={cryptoMetricExplanations.volume24h.intermediate(metrics?.volume24h)}
+                    moreDepth={cryptoMetricExplanations.volume24h.moreDepth}
+                  />
+
+                  <MetricCard
+                    title="Volume vs 7-Day Avg"
+                    value={`${metrics?.volumeVsAvg >= 0 ? '+' : ''}${metrics?.volumeVsAvg?.toFixed(0) || 0}%`}
+                    subValue={Math.abs(metrics?.volumeVsAvg || 0) > 50 ? '⚡ Unusually high volume today' : null}
+                    metricKey="volumeVsAvg"
+                    explanationFn={cryptoMetricExplanations.volumeVsAvg.intermediate(metrics?.volumeVsAvg)}
+                    moreDepth={cryptoMetricExplanations.volumeVsAvg.moreDepth}
+                    valueColor={metrics?.volumeVsAvg > 50 ? '#fbbf24' : '#ffffff'}
+                  />
+
+                  <h3 style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '16px', marginTop: '24px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Momentum
+                  </h3>
+
+                  <MetricCard
+                    title="7-Day Momentum"
+                    value={`${metrics?.momentum7d >= 0 ? '+' : ''}${metrics?.momentum7d?.toFixed(1) || 0}%`}
+                    metricKey="cryptoMomentum7d"
+                    explanationFn={cryptoMetricExplanations.momentum7d.intermediate(metrics?.momentum7d)}
+                    moreDepth={cryptoMetricExplanations.momentum7d.moreDepth}
+                    valueColor={metrics?.momentum7d >= 0 ? colors.green : colors.red}
+                  />
+
+                  <MetricCard
+                    title="30-Day Momentum"
+                    value={`${metrics?.momentum30d >= 0 ? '+' : ''}${metrics?.momentum30d?.toFixed(1) || 0}%`}
+                    metricKey="cryptoMomentum30d"
+                    explanationFn={cryptoMetricExplanations.momentum30d.intermediate(metrics?.momentum30d, metrics?.momentum7d)}
+                    moreDepth={cryptoMetricExplanations.momentum30d.moreDepth}
+                    valueColor={metrics?.momentum30d >= 0 ? colors.green : colors.red}
+                  />
+
+                  <MetricCard
+                    title="Distance from ATH"
+                    value={`${metrics?.distanceFromATH?.toFixed(0) || 0}%`}
+                    subValue={metrics?.athPrice ? `All-Time High: $${metrics.athPrice.toFixed(2)} (${metrics.athDate || 'Unknown'})` : null}
+                    metricKey="distanceFromATH"
+                    explanationFn={cryptoMetricExplanations.distanceFromATH.intermediate(metrics?.distanceFromATH, metrics?.athPrice, metrics?.athDate)}
+                    moreDepth={cryptoMetricExplanations.distanceFromATH.moreDepth}
+                    valueColor={Math.abs(metrics?.distanceFromATH || 0) < 20 ? colors.green : Math.abs(metrics?.distanceFromATH || 0) > 70 ? colors.red : '#ffffff'}
+                  />
+                </>
+              )}
+
+              {/* Custom Note Input */}
+              <div style={{
+                background: '#161b22',
+                borderRadius: '12px',
+                border: '1px solid #21262d',
+                padding: '16px',
+                marginTop: '24px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: '#8b949e', fontSize: '13px' }}>
+                  ✏️ ADD CUSTOM NOTE
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    value={customNoteText}
+                    onChange={(e) => setCustomNoteText(e.target.value)}
+                    placeholder="Add your insight about this asset..."
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      background: '#0d1117',
+                      border: '1px solid #21262d',
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      fontSize: '14px',
+                      outline: 'none'
+                    }}
+                  />
+                  <button
+                    onClick={() => handleAddCustomNote(selectedAssetDetail.symbol, selectedAssetType)}
+                    disabled={!customNoteText.trim()}
+                    style={{
+                      padding: '12px 20px',
+                      background: customNoteText.trim() ? colors.cyan : '#21262d',
+                      color: customNoteText.trim() ? '#000' : '#6e7681',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontWeight: '600',
+                      cursor: customNoteText.trim() ? 'pointer' : 'not-allowed'
+                    }}
+                  >
+                    Save Note
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // MAIN RESEARCH MODE VIEW
     return (
       <div style={containerStyle}>
         <div style={{ minHeight: '100vh', background: colors.background }}>
@@ -3153,8 +4138,7 @@ export default function PortfolioDuel() {
                 <button
                   onClick={() => {
                     setShowResearchMode(false);
-                    setResearchExpandedAsset(null);
-                    setResearchCompareAssets([]);
+                    setSelectedAssetDetail(null);
                     setResearchSearchTerm('');
                   }}
                   style={{
@@ -3181,571 +4165,468 @@ export default function PortfolioDuel() {
                 <div style={{ width: '60px' }}></div>
               </div>
 
-              {/* Asset Type Toggle */}
+              {/* Three-Tab Toggle: Stocks | Crypto | Notes */}
               <div style={{
                 display: 'flex',
-                gap: '8px',
+                gap: '4px',
                 marginBottom: '12px',
                 padding: '4px',
                 background: '#0d1117',
                 borderRadius: '10px'
               }}>
                 <button
-                  onClick={() => setResearchAssetType('stocks')}
+                  onClick={() => setResearchActiveTab('stocks')}
                   style={{
                     flex: 1,
-                    padding: '10px 16px',
+                    padding: '10px 12px',
                     borderRadius: '8px',
                     border: 'none',
-                    background: researchAssetType === 'stocks' ? colors.cyan : 'transparent',
-                    color: researchAssetType === 'stocks' ? '#000' : '#8b949e',
+                    background: researchActiveTab === 'stocks' ? colors.cyan : 'transparent',
+                    color: researchActiveTab === 'stocks' ? '#000' : '#8b949e',
                     fontWeight: '600',
-                    fontSize: '14px',
+                    fontSize: '13px',
                     cursor: 'pointer'
                   }}
                 >
                   Stocks ({stocksData.length})
                 </button>
                 <button
-                  onClick={() => setResearchAssetType('crypto')}
+                  onClick={() => setResearchActiveTab('crypto')}
                   style={{
                     flex: 1,
-                    padding: '10px 16px',
+                    padding: '10px 12px',
                     borderRadius: '8px',
                     border: 'none',
-                    background: researchAssetType === 'crypto' ? colors.cyan : 'transparent',
-                    color: researchAssetType === 'crypto' ? '#000' : '#8b949e',
+                    background: researchActiveTab === 'crypto' ? colors.cyan : 'transparent',
+                    color: researchActiveTab === 'crypto' ? '#000' : '#8b949e',
                     fontWeight: '600',
-                    fontSize: '14px',
+                    fontSize: '13px',
                     cursor: 'pointer'
                   }}
                 >
                   Crypto ({cryptoData.length})
                 </button>
-              </div>
-
-              {/* Search */}
-              <div style={{ position: 'relative', marginBottom: '12px' }}>
-                <input
-                  type="text"
-                  placeholder="Search by symbol or name..."
-                  value={researchSearchTerm}
-                  onChange={(e) => setResearchSearchTerm(e.target.value)}
+                <button
+                  onClick={() => setResearchActiveTab('notes')}
                   style={{
-                    width: '100%',
-                    padding: '12px 16px 12px 44px',
-                    background: '#0d1117',
-                    border: '1px solid #21262d',
-                    borderRadius: '10px',
-                    color: '#ffffff',
-                    fontSize: '14px',
-                    outline: 'none'
+                    flex: 1,
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: researchActiveTab === 'notes' ? colors.cyan : 'transparent',
+                    color: researchActiveTab === 'notes' ? '#000' : '#8b949e',
+                    fontWeight: '600',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px'
                   }}
-                />
-                <svg
-                  style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#6e7681' }}
-                  width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"
                 >
-                  <circle cx="11" cy="11" r="8" />
-                  <path d="m21 21-4.35-4.35" />
-                </svg>
+                  My Notes {currentWeekNotes.length > 0 && <span style={{
+                    background: researchActiveTab === 'notes' ? '#000' : colors.cyan,
+                    color: researchActiveTab === 'notes' ? colors.cyan : '#000',
+                    fontSize: '10px',
+                    padding: '2px 6px',
+                    borderRadius: '10px',
+                    fontWeight: '700'
+                  }}>{currentWeekNotes.length}</span>}
+                </button>
               </div>
 
-              {/* Sort Options */}
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                {[
-                  { key: 'rank', label: 'Top Ranked' },
-                  { key: '7d', label: '7D Perf' },
-                  { key: '30d', label: '30D Perf' },
-                  { key: 'winRate', label: 'Win Rate' },
-                  { key: 'volatility', label: 'Volatility' }
-                ].map(option => (
-                  <button
-                    key={option.key}
-                    onClick={() => setResearchSortBy(option.key)}
+              {/* Search (only for stocks/crypto tabs) */}
+              {researchActiveTab !== 'notes' && (
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    placeholder="Search by symbol or name..."
+                    value={researchSearchTerm}
+                    onChange={(e) => setResearchSearchTerm(e.target.value)}
                     style={{
-                      padding: '6px 12px',
-                      borderRadius: '6px',
-                      border: researchSortBy === option.key ? `1px solid ${colors.cyan}` : '1px solid #21262d',
-                      background: researchSortBy === option.key ? 'rgba(0, 217, 255, 0.1)' : 'transparent',
-                      color: researchSortBy === option.key ? colors.cyan : '#8b949e',
-                      fontSize: '12px',
-                      fontWeight: '500',
-                      cursor: 'pointer'
+                      width: '100%',
+                      padding: '12px 16px 12px 44px',
+                      background: '#0d1117',
+                      border: '1px solid #21262d',
+                      borderRadius: '10px',
+                      color: '#ffffff',
+                      fontSize: '14px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
                     }}
+                  />
+                  <svg
+                    style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#6e7681' }}
+                    width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"
                   >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.35-4.35" />
+                  </svg>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Asset List */}
-          <div style={{ maxWidth: '900px', margin: '0 auto', padding: '16px', paddingBottom: researchCompareAssets.length > 0 ? '200px' : '80px' }}>
-            {sortedAssets.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '60px 20px', color: '#8b949e' }}>
-                <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
-                <p>No assets found matching "{researchSearchTerm}"</p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {sortedAssets.map((asset, index) => {
-                  const isExpanded = researchExpandedAsset === asset.symbol;
-                  const isInCompare = researchCompareAssets.find(a => a.symbol === asset.symbol);
-                  const isInPortfolio = portfolio.find(p => p.symbol === asset.symbol);
+          {/* Content */}
+          <div style={{ maxWidth: '900px', margin: '0 auto', padding: '16px', paddingBottom: '100px' }}>
 
-                  return (
-                    <motion.div
-                      key={asset.symbol}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.02 }}
-                      style={{
-                        background: '#161b22',
-                        border: isExpanded ? `2px solid ${colors.cyan}` : '1px solid #21262d',
-                        borderRadius: '16px',
-                        overflow: 'hidden'
-                      }}
-                    >
-                      {/* Card Header - Always Visible */}
-                      <div
-                        onClick={() => setResearchExpandedAsset(isExpanded ? null : asset.symbol)}
-                        style={{
-                          padding: '16px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px'
-                        }}
-                      >
-                        {/* Rank Badge */}
-                        <div style={{
-                          width: '32px',
-                          height: '32px',
-                          borderRadius: '8px',
-                          background: asset.categoryRank7d <= 3 ? 'rgba(16, 185, 129, 0.2)' : '#21262d',
-                          border: asset.categoryRank7d <= 3 ? '1px solid #10b981' : '1px solid #30363d',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: asset.categoryRank7d <= 3 ? '#10b981' : '#8b949e',
-                          fontSize: '12px',
-                          fontWeight: 'bold'
-                        }}>
-                          #{asset.categoryRank7d || '-'}
-                        </div>
-
-                        {/* Asset Info */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                            <span style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '16px' }}>{asset.symbol}</span>
-                            {asset.communityData?.isHot && <span style={{ fontSize: '12px' }}>🔥</span>}
-                            {asset.communityData?.championPick && <span style={{ fontSize: '12px' }}>👑</span>}
-                          </div>
-                          <div style={{ color: '#8b949e', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {asset.name}
-                          </div>
-                        </div>
-
-                        {/* Sparkline */}
-                        <div style={{ width: '80px', height: '36px' }}>
-                          <ResearchSparkline prices={asset.historicalPrices} width={80} height={36} />
-                        </div>
-
-                        {/* Price & Change */}
-                        <div style={{ textAlign: 'right', minWidth: '90px' }}>
-                          <div style={{ color: '#ffffff', fontWeight: '600', fontSize: '14px' }}>
-                            ${asset.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </div>
-                          <div style={{
-                            color: (asset.percentChange || 0) >= 0 ? colors.green : colors.red,
-                            fontSize: '12px',
-                            fontWeight: '500'
-                          }}>
-                            {(asset.percentChange || 0) >= 0 ? '+' : ''}{(asset.percentChange || 0).toFixed(2)}%
-                          </div>
-                        </div>
-
-                        {/* Expand Icon */}
-                        <div style={{ color: '#6e7681' }}>
-                          {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                        </div>
-                      </div>
-
-                      {/* Quick Badges Row */}
-                      <div style={{
-                        padding: '0 16px 12px',
-                        display: 'flex',
-                        gap: '6px',
-                        flexWrap: 'wrap'
-                      }}>
-                        {/* 7D Performance */}
-                        <span style={{
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          fontWeight: '500',
-                          background: (asset.priceChange7d || 0) >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                          color: (asset.priceChange7d || 0) >= 0 ? '#10b981' : '#ef4444'
-                        }}>
-                          7D: {(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(1)}%
+            {/* NOTES TAB */}
+            {researchActiveTab === 'notes' && (
+              <div>
+                {/* Weekly Progress */}
+                <div style={{
+                  background: '#161b22',
+                  borderRadius: '16px',
+                  border: '1px solid #21262d',
+                  padding: '20px',
+                  marginBottom: '20px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <span style={{ color: '#ffffff', fontWeight: '700', fontSize: '14px' }}>WEEKLY RESEARCH PROGRESS</span>
+                    <span style={{ color: '#8b949e', fontSize: '12px' }}>Week of {getCurrentWeekMonday()}</span>
+                  </div>
+                  <div style={{
+                    height: '10px',
+                    background: '#21262d',
+                    borderRadius: '5px',
+                    overflow: 'hidden',
+                    marginBottom: '8px'
+                  }}>
+                    <div style={{
+                      width: `${progressPercent}%`,
+                      height: '100%',
+                      background: `linear-gradient(90deg, ${colors.green} 0%, ${colors.cyan} 100%)`,
+                      borderRadius: '5px',
+                      transition: 'width 0.3s ease'
+                    }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <span style={{ color: '#8b949e', fontSize: '13px' }}>{currentWeekNotes.length}/{RESEARCH_REQUIREMENTS.minimumNotes} notes</span>
+                    <span style={{ color: '#8b949e', fontSize: '13px' }}>{assetsWithNotes.length}/{RESEARCH_REQUIREMENTS.minimumAssets} assets covered</span>
+                  </div>
+                  <div style={{
+                    background: 'rgba(0, 217, 255, 0.1)',
+                    borderRadius: '8px',
+                    padding: '12px',
+                    color: '#e6edf3',
+                    fontSize: '13px'
+                  }}>
+                    <span style={{ color: colors.cyan }}>Complete {RESEARCH_REQUIREMENTS.minimumNotes} notes on {RESEARCH_REQUIREMENTS.minimumAssets}+ assets to earn:</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                      <span style={{ fontSize: '16px' }}>🔥</span>
+                      <span style={{ fontWeight: '700' }}>{calculateResearchXP(researchStreak + 1).total} XP</span>
+                      {researchStreak > 0 && (
+                        <span style={{ color: '#8b949e', fontSize: '12px' }}>
+                          ({researchStreak}-week streak bonus: +{calculateResearchXP(researchStreak + 1).streakBonus} XP)
                         </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
-                        {/* 30D Performance */}
-                        <span style={{
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          fontWeight: '500',
-                          background: (asset.priceChange30d || 0) >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                          color: (asset.priceChange30d || 0) >= 0 ? '#10b981' : '#ef4444'
-                        }}>
-                          30D: {(asset.priceChange30d || 0) >= 0 ? '+' : ''}{(asset.priceChange30d || 0).toFixed(1)}%
-                        </span>
-
-                        {/* Win Rate */}
-                        {asset.communityData?.winRate && (
-                          <span style={{
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            fontSize: '11px',
-                            fontWeight: '500',
-                            background: asset.communityData.winRate >= 55 ? 'rgba(0, 217, 255, 0.1)' : '#21262d',
-                            color: asset.communityData.winRate >= 55 ? colors.cyan : '#8b949e'
-                          }}>
-                            🎯 {asset.communityData.winRate}% WR
-                          </span>
-                        )}
-
-                        {/* Volatility */}
-                        <span style={{
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          fontWeight: '500',
-                          background: asset.volatility === 'high' ? 'rgba(239, 68, 68, 0.1)' : asset.volatility === 'low' ? 'rgba(16, 185, 129, 0.1)' : '#21262d',
-                          color: asset.volatility === 'high' ? '#ef4444' : asset.volatility === 'low' ? '#10b981' : '#8b949e'
-                        }}>
-                          {asset.volatility || 'med'}
-                        </span>
-                      </div>
-
-                      {/* Expanded Content */}
-                      {isExpanded && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          style={{
-                            borderTop: '1px solid #21262d',
-                            padding: '16px'
-                          }}
-                        >
-                          {/* Why Pick This? */}
-                          {asset.insights?.reasons?.length > 0 && (
-                            <div style={{
-                              background: 'rgba(16, 185, 129, 0.1)',
-                              border: '1px solid rgba(16, 185, 129, 0.3)',
+                {/* Notes by Asset */}
+                {currentWeekNotes.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '60px 20px', color: '#8b949e' }}>
+                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>📝</div>
+                    <p style={{ marginBottom: '8px' }}>No notes yet this week</p>
+                    <p style={{ fontSize: '13px' }}>Tap on any stock or crypto to view metrics and clip notes</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Stock Notes */}
+                    {currentWeekNotes.filter(n => n.assetType === 'stock').length > 0 && (
+                      <div style={{ marginBottom: '20px' }}>
+                        <h3 style={{ color: '#8b949e', fontSize: '12px', fontWeight: '600', marginBottom: '12px', textTransform: 'uppercase' }}>
+                          STOCKS
+                        </h3>
+                        {[...new Set(currentWeekNotes.filter(n => n.assetType === 'stock').map(n => n.symbol))].map(symbol => {
+                          const notes = currentWeekNotes.filter(n => n.symbol === symbol && n.assetType === 'stock');
+                          const isExpanded = notesExpanded[`stock-${symbol}`];
+                          return (
+                            <div key={symbol} style={{
+                              background: '#161b22',
                               borderRadius: '12px',
-                              padding: '14px',
-                              marginBottom: '12px'
+                              border: '1px solid #21262d',
+                              marginBottom: '8px',
+                              overflow: 'hidden'
                             }}>
-                              <div style={{ color: '#10b981', fontWeight: 'bold', fontSize: '13px', marginBottom: '10px' }}>
-                                Why Pick This?
-                              </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {asset.insights.reasons.map((reason, i) => (
-                                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', color: '#e6edf3', fontSize: '13px' }}>
-                                    <span>{reason.icon}</span>
-                                    <span>{reason.text}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Things to Consider */}
-                          {asset.insights?.considerations?.length > 0 && (
-                            <div style={{
-                              background: 'rgba(251, 191, 36, 0.1)',
-                              border: '1px solid rgba(251, 191, 36, 0.3)',
-                              borderRadius: '12px',
-                              padding: '14px',
-                              marginBottom: '12px'
-                            }}>
-                              <div style={{ color: '#fbbf24', fontWeight: 'bold', fontSize: '13px', marginBottom: '10px' }}>
-                                Things to Consider
-                              </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {asset.insights.considerations.map((item, i) => (
-                                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', color: '#e6edf3', fontSize: '13px' }}>
-                                    <span>{item.icon}</span>
-                                    <span>{item.text}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Detailed Metrics Grid */}
-                          <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(2, 1fr)',
-                            gap: '12px',
-                            marginBottom: '16px'
-                          }}>
-                            {/* Range Position */}
-                            <div style={{ background: '#0d1117', borderRadius: '10px', padding: '12px' }}>
-                              <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '6px' }}>30-DAY RANGE</div>
-                              <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600', marginBottom: '8px' }}>
-                                {asset.rangePosition?.label || 'Unknown'}
-                              </div>
-                              <div style={{
-                                height: '6px',
-                                background: '#21262d',
-                                borderRadius: '3px',
-                                position: 'relative',
-                                overflow: 'hidden'
-                              }}>
-                                <div style={{
-                                  position: 'absolute',
-                                  left: `${Math.min(100, Math.max(0, asset.rangePosition?.position30d || 50))}%`,
-                                  top: '50%',
-                                  transform: 'translate(-50%, -50%)',
-                                  width: '10px',
-                                  height: '10px',
-                                  borderRadius: '50%',
-                                  background: colors.cyan,
-                                  border: '2px solid #161b22'
-                                }} />
-                              </div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '10px', color: '#6e7681' }}>
-                                <span>Low</span>
-                                <span>High</span>
-                              </div>
-                            </div>
-
-                            {/* Category Rank */}
-                            <div style={{ background: '#0d1117', borderRadius: '10px', padding: '12px' }}>
-                              <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '6px' }}>CATEGORY RANK</div>
-                              <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                                <span style={{
-                                  color: asset.relativePerformance?.rank7d <= 5 ? '#10b981' : '#ffffff',
-                                  fontSize: '24px',
-                                  fontWeight: 'bold'
-                                }}>
-                                  #{asset.relativePerformance?.rank7d || '-'}
+                              <button
+                                onClick={() => setNotesExpanded(prev => ({ ...prev, [`stock-${symbol}`]: !prev[`stock-${symbol}`] }))}
+                                style={{
+                                  width: '100%',
+                                  padding: '14px 16px',
+                                  background: 'transparent',
+                                  border: 'none',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  cursor: 'pointer',
+                                  color: '#ffffff'
+                                }}
+                              >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  📁 {symbol} <span style={{ color: '#8b949e', fontSize: '13px' }}>({notes.length} note{notes.length !== 1 ? 's' : ''})</span>
                                 </span>
-                                <span style={{ color: '#6e7681', fontSize: '12px' }}>
-                                  of {asset.relativePerformance?.totalInCategory || '-'}
-                                </span>
-                              </div>
-                              <div style={{ color: '#8b949e', fontSize: '11px', marginTop: '4px' }}>
-                                {asset.relativePerformance?.description}
-                              </div>
-                            </div>
-
-                            {/* Volatility Context */}
-                            <div style={{ background: '#0d1117', borderRadius: '10px', padding: '12px' }}>
-                              <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '6px' }}>VOLATILITY</div>
-                              <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600', marginBottom: '4px', textTransform: 'capitalize' }}>
-                                {asset.volatilityContext?.level || 'Unknown'}
-                              </div>
-                              <div style={{ color: '#8b949e', fontSize: '11px' }}>
-                                {asset.volatilityContext?.description}
-                              </div>
-                              {asset.volatilityContext?.avgDailySwing > 0 && (
-                                <div style={{ color: '#6e7681', fontSize: '10px', marginTop: '4px' }}>
-                                  Avg daily: +/-{asset.volatilityContext.avgDailySwing}%
+                                <span style={{ color: '#6e7681' }}>{isExpanded ? '▼' : '▶'}</span>
+                              </button>
+                              {isExpanded && (
+                                <div style={{ padding: '0 16px 16px' }}>
+                                  {notes.map(note => (
+                                    <div key={note.id} style={{
+                                      background: '#0d1117',
+                                      borderRadius: '8px',
+                                      padding: '12px',
+                                      marginBottom: '8px',
+                                      position: 'relative'
+                                    }}>
+                                      <button
+                                        onClick={() => handleDeleteNote(note.id)}
+                                        style={{
+                                          position: 'absolute',
+                                          top: '8px',
+                                          right: '8px',
+                                          background: 'transparent',
+                                          border: 'none',
+                                          color: '#6e7681',
+                                          cursor: 'pointer',
+                                          fontSize: '12px'
+                                        }}
+                                      >✕</button>
+                                      {note.type === 'clipped' ? (
+                                        <>
+                                          <div style={{ color: colors.cyan, fontSize: '12px', fontWeight: '600', marginBottom: '4px' }}>{note.metricName}</div>
+                                          <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>{note.metricValue}</div>
+                                          <div style={{ color: '#8b949e', fontSize: '12px' }}>{note.explanation}</div>
+                                        </>
+                                      ) : (
+                                        <div style={{ color: '#e6edf3', fontSize: '13px' }}>{note.customText}</div>
+                                      )}
+                                    </div>
+                                  ))}
                                 </div>
                               )}
                             </div>
+                          );
+                        })}
+                      </div>
+                    )}
 
-                            {/* MarketClash Stats */}
-                            <div style={{ background: '#0d1117', borderRadius: '10px', padding: '12px' }}>
-                              <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '6px' }}>MARKETCLASH STATS</div>
-                              {asset.communityData ? (
-                                <>
-                                  <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
-                                    {asset.communityData.winRate}% Win Rate
-                                  </div>
-                                  <div style={{ color: '#8b949e', fontSize: '11px' }}>
-                                    {asset.communityData.totalBattles?.toLocaleString()} battles
-                                  </div>
-                                  <div style={{ color: '#6e7681', fontSize: '10px', marginTop: '4px' }}>
-                                    {asset.communityData.picksThisWeek?.toLocaleString()} picks this week
-                                  </div>
-                                </>
-                              ) : (
-                                <div style={{ color: '#6e7681', fontSize: '12px' }}>No data available</div>
+                    {/* Crypto Notes */}
+                    {currentWeekNotes.filter(n => n.assetType === 'crypto').length > 0 && (
+                      <div>
+                        <h3 style={{ color: '#8b949e', fontSize: '12px', fontWeight: '600', marginBottom: '12px', textTransform: 'uppercase' }}>
+                          CRYPTO
+                        </h3>
+                        {[...new Set(currentWeekNotes.filter(n => n.assetType === 'crypto').map(n => n.symbol))].map(symbol => {
+                          const notes = currentWeekNotes.filter(n => n.symbol === symbol && n.assetType === 'crypto');
+                          const isExpanded = notesExpanded[`crypto-${symbol}`];
+                          return (
+                            <div key={symbol} style={{
+                              background: '#161b22',
+                              borderRadius: '12px',
+                              border: '1px solid #21262d',
+                              marginBottom: '8px',
+                              overflow: 'hidden'
+                            }}>
+                              <button
+                                onClick={() => setNotesExpanded(prev => ({ ...prev, [`crypto-${symbol}`]: !prev[`crypto-${symbol}`] }))}
+                                style={{
+                                  width: '100%',
+                                  padding: '14px 16px',
+                                  background: 'transparent',
+                                  border: 'none',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  cursor: 'pointer',
+                                  color: '#ffffff'
+                                }}
+                              >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  📁 {symbol} <span style={{ color: '#8b949e', fontSize: '13px' }}>({notes.length} note{notes.length !== 1 ? 's' : ''})</span>
+                                </span>
+                                <span style={{ color: '#6e7681' }}>{isExpanded ? '▼' : '▶'}</span>
+                              </button>
+                              {isExpanded && (
+                                <div style={{ padding: '0 16px 16px' }}>
+                                  {notes.map(note => (
+                                    <div key={note.id} style={{
+                                      background: '#0d1117',
+                                      borderRadius: '8px',
+                                      padding: '12px',
+                                      marginBottom: '8px',
+                                      position: 'relative'
+                                    }}>
+                                      <button
+                                        onClick={() => handleDeleteNote(note.id)}
+                                        style={{
+                                          position: 'absolute',
+                                          top: '8px',
+                                          right: '8px',
+                                          background: 'transparent',
+                                          border: 'none',
+                                          color: '#6e7681',
+                                          cursor: 'pointer',
+                                          fontSize: '12px'
+                                        }}
+                                      >✕</button>
+                                      {note.type === 'clipped' ? (
+                                        <>
+                                          <div style={{ color: cryptoColor.primary, fontSize: '12px', fontWeight: '600', marginBottom: '4px' }}>{note.metricName}</div>
+                                          <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>{note.metricValue}</div>
+                                          <div style={{ color: '#8b949e', fontSize: '12px' }}>{note.explanation}</div>
+                                        </>
+                                      ) : (
+                                        <div style={{ color: '#e6edf3', fontSize: '13px' }}>{note.customText}</div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
                               )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Finalize Button */}
+                {canFinalize && (
+                  <button
+                    onClick={() => {
+                      setShowResearchComplete(true);
+                      setResearchStreak(prev => prev + 1);
+                      // Award XP here
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '16px',
+                      marginTop: '20px',
+                      background: 'linear-gradient(90deg, #10b981 0%, #00d9ff 100%)',
+                      border: 'none',
+                      borderRadius: '12px',
+                      color: '#000',
+                      fontSize: '16px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    ✓ Finalize & Complete Weekly Research
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* STOCKS/CRYPTO TAB - Asset List */}
+            {researchActiveTab !== 'notes' && (
+              <>
+                {sortedAssets.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '60px 20px', color: '#8b949e' }}>
+                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
+                    <p>No assets found matching "{researchSearchTerm}"</p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {sortedAssets.map((asset, index) => {
+                      const isStock = researchActiveTab === 'stocks';
+                      const color = isStock ? getSectorColor(asset.sector || 'Unknown') : cryptoColor;
+
+                      return (
+                        <motion.div
+                          key={asset.symbol}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.02 }}
+                          onClick={() => handleOpenDetail(asset, isStock ? 'stock' : 'crypto')}
+                          style={{
+                            background: '#161b22',
+                            border: '1px solid #21262d',
+                            borderLeft: `3px solid ${color.primary}`,
+                            borderRadius: '12px',
+                            padding: '16px',
+                            cursor: 'pointer',
+                            transition: 'background 0.2s, border-color 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = color.background;
+                            e.currentTarget.style.borderColor = color.border;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = '#161b22';
+                            e.currentTarget.style.borderColor = '#21262d';
+                          }}
+                        >
+                          {/* Card Header */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                            <div>
+                              <div style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '16px', marginBottom: '2px' }}>
+                                {asset.symbol}
+                              </div>
+                              <div style={{ color: '#8b949e', fontSize: '13px' }}>
+                                {asset.name}
+                              </div>
+                              {isStock && asset.sector && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                                  <span style={{
+                                    width: '6px',
+                                    height: '6px',
+                                    borderRadius: '50%',
+                                    background: color.primary
+                                  }} />
+                                  <span style={{ color: color.primary, fontSize: '11px' }}>{asset.sector}</span>
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ color: '#ffffff', fontWeight: '600', fontSize: '16px' }}>
+                                ${asset.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                              <div style={{
+                                color: (asset.percentChange || 0) >= 0 ? colors.green : colors.red,
+                                fontSize: '13px',
+                                fontWeight: '500'
+                              }}>
+                                {(asset.percentChange || 0) >= 0 ? '▲' : '▼'} {(asset.percentChange || 0) >= 0 ? '+' : ''}{(asset.percentChange || 0).toFixed(2)}%
+                              </div>
                             </div>
                           </div>
 
-                          {/* Action Buttons */}
-                          <div style={{ display: 'flex', gap: '10px' }}>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (isInPortfolio) return;
-                                // Add to portfolio with default 10%
-                                const newAsset = {
-                                  symbol: asset.symbol,
-                                  name: asset.name,
-                                  price: asset.price,
-                                  allocation: 10
-                                };
-                                setPortfolio([...portfolio, newAsset]);
-                                setPortfolioType(researchAssetType);
-                              }}
-                              disabled={isInPortfolio}
-                              style={{
-                                flex: 1,
-                                padding: '12px',
-                                borderRadius: '10px',
-                                border: 'none',
-                                background: isInPortfolio ? '#21262d' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                                color: isInPortfolio ? '#6e7681' : '#ffffff',
-                                fontWeight: '600',
-                                fontSize: '14px',
-                                cursor: isInPortfolio ? 'not-allowed' : 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '6px'
-                              }}
-                            >
-                              {isInPortfolio ? 'In Portfolio' : '+ Add to Portfolio'}
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (isInCompare) {
-                                  handleRemoveFromCompare(asset.symbol);
-                                } else {
-                                  handleAddToCompare(asset);
-                                }
-                              }}
-                              disabled={!isInCompare && researchCompareAssets.length >= 3}
-                              style={{
-                                padding: '12px 16px',
-                                borderRadius: '10px',
-                                border: isInCompare ? `2px solid ${colors.cyan}` : '2px solid #21262d',
-                                background: isInCompare ? 'rgba(0, 217, 255, 0.1)' : 'transparent',
-                                color: isInCompare ? colors.cyan : (!isInCompare && researchCompareAssets.length >= 3) ? '#6e7681' : '#8b949e',
-                                fontWeight: '600',
-                                fontSize: '14px',
-                                cursor: (!isInCompare && researchCompareAssets.length >= 3) ? 'not-allowed' : 'pointer'
-                              }}
-                            >
-                              {isInCompare ? 'Comparing' : 'Compare'}
-                            </button>
+                          {/* Quick Stats */}
+                          <div style={{
+                            display: 'flex',
+                            gap: '12px',
+                            paddingTop: '8px',
+                            borderTop: '1px solid #21262d',
+                            fontSize: '12px',
+                            color: '#8b949e'
+                          }}>
+                            {isStock ? (
+                              <>
+                                <span>Beta: <span style={{ color: '#ffffff' }}>{stockFundamentals[asset.symbol]?.beta?.toFixed(2) || '-'}</span></span>
+                                <span>7D: <span style={{ color: (asset.priceChange7d || 0) >= 0 ? colors.green : colors.red }}>{(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(1)}%</span></span>
+                                <span>Analysts: <span style={{ color: '#ffffff' }}>{stockFundamentals[asset.symbol]?.analystConsensus?.rating?.toFixed(1) || '-'}★</span></span>
+                              </>
+                            ) : (
+                              <>
+                                <span>Vol: <span style={{ color: '#ffffff' }}>{cryptoMetrics[asset.symbol]?.volatility7d?.toFixed(1) || '-'}%</span></span>
+                                <span>7D: <span style={{ color: (asset.priceChange7d || 0) >= 0 ? colors.green : colors.red }}>{(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(1)}%</span></span>
+                                <span>vs BTC: <span style={{ color: '#ffffff' }}>{cryptoMetrics[asset.symbol]?.volatilityVsBtc?.toFixed(1) || '-'}x</span></span>
+                              </>
+                            )}
                           </div>
                         </motion.div>
-                      )}
-                    </motion.div>
-                  );
-                })}
-              </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
-
-          {/* Comparison Panel */}
-          {researchCompareAssets.length > 0 && (
-            <motion.div
-              initial={{ y: 200 }}
-              animate={{ y: 0 }}
-              style={{
-                position: 'fixed',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                background: '#161b22',
-                borderTop: '2px solid #00d9ff',
-                padding: '16px',
-                zIndex: 30
-              }}
-            >
-              <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <span style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '14px' }}>
-                    Comparing {researchCompareAssets.length}/3 Assets
-                  </span>
-                  <button
-                    onClick={() => setResearchCompareAssets([])}
-                    style={{
-                      padding: '6px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid #ef4444',
-                      background: 'transparent',
-                      color: '#ef4444',
-                      fontSize: '12px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Clear All
-                  </button>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${researchCompareAssets.length}, 1fr)`, gap: '12px' }}>
-                  {researchCompareAssets.map(asset => (
-                    <div key={asset.symbol} style={{
-                      background: '#0d1117',
-                      borderRadius: '10px',
-                      padding: '12px',
-                      position: 'relative'
-                    }}>
-                      <button
-                        onClick={() => handleRemoveFromCompare(asset.symbol)}
-                        style={{
-                          position: 'absolute',
-                          top: '8px',
-                          right: '8px',
-                          width: '20px',
-                          height: '20px',
-                          borderRadius: '50%',
-                          border: 'none',
-                          background: '#21262d',
-                          color: '#8b949e',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '12px'
-                        }}
-                      >
-                        x
-                      </button>
-                      <div style={{ fontWeight: 'bold', color: '#ffffff', marginBottom: '8px' }}>{asset.symbol}</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: '#8b949e' }}>7D</span>
-                          <span style={{ color: (asset.priceChange7d || 0) >= 0 ? '#10b981' : '#ef4444' }}>
-                            {(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(1)}%
-                          </span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: '#8b949e' }}>30D</span>
-                          <span style={{ color: (asset.priceChange30d || 0) >= 0 ? '#10b981' : '#ef4444' }}>
-                            {(asset.priceChange30d || 0) >= 0 ? '+' : ''}{(asset.priceChange30d || 0).toFixed(1)}%
-                          </span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: '#8b949e' }}>Win Rate</span>
-                          <span style={{ color: colors.cyan }}>{asset.communityData?.winRate || '-'}%</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: '#8b949e' }}>Rank</span>
-                          <span style={{ color: '#ffffff' }}>#{asset.categoryRank7d || '-'}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
         </div>
       </div>
     );
