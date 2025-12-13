@@ -1,7 +1,369 @@
-// TradeSeven Stock & Crypto API Service
-// Handles real-time market data from Finnhub (stocks) and CoinGecko (crypto)
+// TradeSeven Stock & Crypto API Service - ROBUST ERROR HANDLING VERSION
+// Handles real-time market data with timeout, retry, and graceful fallbacks
 
 const FINNHUB_API_KEY = import.meta.env.VITE_FINNHUB_API_KEY;
+const IS_DEV = import.meta.env.DEV;
+
+// ============================================
+// CONFIGURATION
+// ============================================
+
+const CONFIG = {
+  FETCH_TIMEOUT: 10000,        // 10 second timeout
+  MAX_RETRIES: 2,              // Retry twice on failure
+  RETRY_DELAY_BASE: 1000,      // Base delay for exponential backoff
+  RATE_LIMIT_WINDOW: 60000,    // 1 minute window for rate limiting
+  MAX_REQUESTS_PER_WINDOW: 30, // Max requests per minute
+  CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
+};
+
+// Multiple CORS proxy strategies for robust fallback
+// Each strategy is a function that transforms the target URL
+const CORS_STRATEGIES = [
+  // Strategy 1: Direct call (works in Node.js, Electron, or permissive CORS)
+  (url) => ({ url, needsJsonParse: false }),
+  // Strategy 2: corsproxy.io - reliable, fast
+  (url) => ({ url: `https://corsproxy.io/?${encodeURIComponent(url)}`, needsJsonParse: false }),
+  // Strategy 3: allorigins raw endpoint - returns raw response
+  (url) => ({ url: `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, needsJsonParse: false }),
+  // Strategy 4: allorigins get endpoint - wraps in JSON with "contents" field
+  (url) => ({ url: `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, needsJsonParse: true }),
+  // Strategy 5: thingproxy - another fallback option
+  (url) => ({ url: `https://thingproxy.freeboard.io/fetch/${url}`, needsJsonParse: false }),
+];
+
+// ============================================
+// SYMBOL TO COINGECKO ID MAPPING
+// ============================================
+
+// Maps common ticker symbols (BTC, ETH) to CoinGecko IDs (bitcoin, ethereum)
+// Comprehensive mapping for 100+ cryptocurrencies
+const SYMBOL_TO_COINGECKO_ID = {
+  // Major coins
+  'BTC': 'bitcoin',
+  'ETH': 'ethereum',
+  'BNB': 'binancecoin',
+  'SOL': 'solana',
+  'XRP': 'ripple',
+  'ADA': 'cardano',
+  'DOGE': 'dogecoin',
+  'AVAX': 'avalanche-2',
+  'DOT': 'polkadot',
+  'MATIC': 'matic-network',
+  'LINK': 'chainlink',
+  'UNI': 'uniswap',
+  'LTC': 'litecoin',
+  'XLM': 'stellar',
+  'XMR': 'monero',
+  'ALGO': 'algorand',
+  'ATOM': 'cosmos',
+  'NEAR': 'near',
+
+  // Stablecoins
+  'USDT': 'tether',
+  'USDC': 'usd-coin',
+  'DAI': 'dai',
+  'BUSD': 'binance-usd',
+
+  // Meme coins
+  'SHIB': 'shiba-inu',
+  'PEPE': 'pepe',
+  'BONK': 'bonk',
+  'FLOKI': 'floki',
+  'WIF': 'dogwifcoin',
+  'NOT': 'notcoin',
+
+  // Layer 2 / New chains
+  'ARB': 'arbitrum',
+  'OP': 'optimism',
+  'APT': 'aptos',
+  'SUI': 'sui',
+  'SEI': 'sei-network',
+  'INJ': 'injective-protocol',
+  'TIA': 'celestia',
+  'TON': 'the-open-network',
+  'KAS': 'kaspa',
+  'STX': 'stacks',
+
+  // DeFi
+  'AAVE': 'aave',
+  'MKR': 'maker',
+  'LDO': 'lido-dao',
+  'GRT': 'the-graph',
+  'CRV': 'curve-dao-token',
+  'RUNE': 'thorchain',
+  'SNX': 'havven',
+  'COMP': 'compound-governance-token',
+  'JUP': 'jupiter-exchange-solana',
+
+  // Gaming / Metaverse
+  'SAND': 'the-sandbox',
+  'MANA': 'decentraland',
+  'AXS': 'axie-infinity',
+  'IMX': 'immutable-x',
+  'GALA': 'gala',
+  'ENJ': 'enjincoin',
+
+  // Infrastructure / AI
+  'FIL': 'filecoin',
+  'HNT': 'helium',
+  'RNDR': 'render-token',
+  'RENDER': 'render-token',
+  'AR': 'arweave',
+  'THETA': 'theta-token',
+  'QNT': 'quant-network',
+  'VET': 'vechain',
+  'FET': 'fetch-ai',
+  'TAO': 'bittensor',
+  'OCEAN': 'ocean-protocol',
+
+  // Exchange tokens
+  'CRO': 'crypto-com-chain',
+  'OKB': 'okb',
+  'LEO': 'leo-token',
+  'KCS': 'kucoin-shares',
+
+  // Other popular coins
+  'TRX': 'tron',
+  'ETC': 'ethereum-classic',
+  'BCH': 'bitcoin-cash',
+  'FTM': 'fantom',
+  'HBAR': 'hedera-hashgraph',
+  'ICP': 'internet-computer',
+  'EOS': 'eos',
+  'FLOW': 'flow',
+  'EGLD': 'elrond-erd-2',
+  'XTZ': 'tezos',
+  'ONDO': 'ondo-finance',
+  'PYTH': 'pyth-network',
+  'CHZ': 'chiliz',
+  'BAT': 'basic-attention-token',
+  'ZEC': 'zcash',
+  'DASH': 'dash',
+  'NEO': 'neo',
+  'WAVES': 'waves',
+  'KAVA': 'kava',
+  'ONE': 'harmony',
+  'ZIL': 'zilliqa',
+  'CELO': 'celo',
+  'QTUM': 'qtum',
+  'BTT': 'bittorrent',
+  'HOT': 'holotoken',
+  'SC': 'siacoin',
+  'IOST': 'iostoken',
+  'OMG': 'omisego',
+  'ZRX': '0x',
+  'ICX': 'icon',
+  'ONT': 'ontology',
+  'DGB': 'digibyte',
+  'RVN': 'ravencoin',
+};
+
+// Reverse mapping: CoinGecko ID → Symbol (for display purposes)
+const COINGECKO_ID_TO_SYMBOL = Object.fromEntries(
+  Object.entries(SYMBOL_TO_COINGECKO_ID).map(([symbol, id]) => [id, symbol])
+);
+
+/**
+ * Convert symbol to CoinGecko ID
+ * @param {string} symbolOrId - Either a ticker symbol (BTC) or CoinGecko ID (bitcoin)
+ * @returns {string} CoinGecko ID
+ */
+const symbolToCoinGeckoId = (symbolOrId) => {
+  if (!symbolOrId) return '';
+  const upper = symbolOrId.toUpperCase();
+  // If it's a known symbol, return the ID
+  if (SYMBOL_TO_COINGECKO_ID[upper]) {
+    return SYMBOL_TO_COINGECKO_ID[upper];
+  }
+  // Otherwise assume it's already an ID (lowercase)
+  return symbolOrId.toLowerCase();
+};
+
+/**
+ * Convert CoinGecko ID to symbol (for display)
+ * @param {string} coinGeckoId - CoinGecko ID (bitcoin, ethereum)
+ * @returns {string} Ticker symbol (BTC, ETH)
+ */
+const coinGeckoIdToSymbol = (coinGeckoId) => {
+  if (!coinGeckoId) return '';
+  return COINGECKO_ID_TO_SYMBOL[coinGeckoId.toLowerCase()] || coinGeckoId.toUpperCase();
+};
+
+// ============================================
+// LOGGING UTILITIES
+// ============================================
+
+/**
+ * Log only in development mode
+ */
+const logDebug = (message, ...args) => {
+  if (IS_DEV) {
+    console.log(`[StockAPI] ${message}`, ...args);
+  }
+};
+
+/**
+ * Log warnings (expected failures like network issues)
+ */
+const logWarn = (message, error) => {
+  if (IS_DEV) {
+    console.warn(`[StockAPI] ${message}:`, error?.message || error);
+  }
+};
+
+/**
+ * Log errors (unexpected failures)
+ */
+const logError = (message, error) => {
+  // Always log actual errors, but keep it clean
+  console.error(`[StockAPI] ${message}:`, error?.message || 'Unknown error');
+};
+
+// ============================================
+// RATE LIMITING
+// ============================================
+
+const rateLimitState = {
+  requests: [],
+  isLimited: false,
+};
+
+/**
+ * Check if we're rate limited
+ */
+const checkRateLimit = () => {
+  const now = Date.now();
+  // Clean old requests
+  rateLimitState.requests = rateLimitState.requests.filter(
+    (time) => now - time < CONFIG.RATE_LIMIT_WINDOW
+  );
+
+  if (rateLimitState.requests.length >= CONFIG.MAX_REQUESTS_PER_WINDOW) {
+    if (!rateLimitState.isLimited) {
+      logWarn('Rate limit reached, using cached/fallback data');
+      rateLimitState.isLimited = true;
+    }
+    return true;
+  }
+
+  rateLimitState.isLimited = false;
+  rateLimitState.requests.push(now);
+  return false;
+};
+
+// ============================================
+// FETCH UTILITIES
+// ============================================
+
+/**
+ * Fetch with timeout
+ */
+const fetchWithTimeout = async (url, options = {}, timeout = CONFIG.FETCH_TIMEOUT) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeout}ms`);
+    }
+    throw error;
+  }
+};
+
+/**
+ * Fetch with retry and exponential backoff
+ */
+const fetchWithRetry = async (url, options = {}, maxRetries = CONFIG.MAX_RETRIES) => {
+  let lastError;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetchWithTimeout(url, options);
+
+      if (response.ok) {
+        return response;
+      }
+
+      // Don't retry on client errors (4xx) except 429 (rate limit)
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        throw new Error(`Client error: ${response.status}`);
+      }
+
+      lastError = new Error(`HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error;
+
+      if (attempt < maxRetries) {
+        // Exponential backoff: 1s, 2s, 4s...
+        const delay = CONFIG.RETRY_DELAY_BASE * Math.pow(2, attempt);
+        logDebug(`Retry ${attempt + 1}/${maxRetries} after ${delay}ms`);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+  }
+
+  throw lastError;
+};
+
+/**
+ * Fetch with CORS proxy fallback for CoinGecko
+ * Tries multiple strategies until one succeeds
+ * Returns parsed JSON data directly (not Response object)
+ */
+const fetchWithCorsProxy = async (url) => {
+  let lastError;
+  let strategyIndex = 0;
+
+  for (const strategy of CORS_STRATEGIES) {
+    strategyIndex++;
+    try {
+      const { url: proxyUrl, needsJsonParse } = strategy(url);
+      logDebug(`Trying CORS strategy ${strategyIndex}: ${proxyUrl.substring(0, 60)}...`);
+
+      const response = await fetchWithTimeout(proxyUrl, {}, CONFIG.FETCH_TIMEOUT);
+
+      if (response.ok) {
+        // Handle allorigins /get endpoint which wraps response in JSON
+        if (needsJsonParse) {
+          const wrapper = await response.json();
+          // allorigins wraps the actual response in a "contents" field
+          if (wrapper.contents) {
+            logDebug(`CORS strategy ${strategyIndex} succeeded (with JSON unwrap)`);
+            // Return a mock Response-like object with json() method
+            return {
+              ok: true,
+              json: async () => JSON.parse(wrapper.contents)
+            };
+          }
+        }
+        logDebug(`CORS strategy ${strategyIndex} succeeded`);
+        return response;
+      }
+
+      // Response not OK, log and try next
+      logDebug(`CORS strategy ${strategyIndex} returned status ${response.status}`);
+    } catch (error) {
+      lastError = error;
+      logDebug(`CORS strategy ${strategyIndex} failed: ${error.message}`);
+      // Continue to next strategy
+    }
+  }
+
+  throw lastError || new Error('All CORS strategies failed');
+};
+
+// ============================================
+// DATA CONSTANTS
+// ============================================
 
 // Popular stocks (15 major companies)
 const POPULAR_STOCKS = [
@@ -22,7 +384,7 @@ const POPULAR_STOCKS = [
   { symbol: 'HD', name: 'Home Depot' }
 ];
 
-// Popular cryptocurrencies (18 major coins, all >$1B market cap)
+// Popular cryptocurrencies (18 major coins)
 const POPULAR_CRYPTO = [
   { id: 'bitcoin', symbol: 'BTC', name: 'Bitcoin' },
   { id: 'ethereum', symbol: 'ETH', name: 'Ethereum' },
@@ -44,180 +406,905 @@ const POPULAR_CRYPTO = [
   { id: 'near', symbol: 'NEAR', name: 'NEAR Protocol' }
 ];
 
-// Fallback crypto prices (in case API fails)
+// Fallback crypto prices (updated Dec 2024)
+// Approximate prices for when API fails
 const FALLBACK_CRYPTO_PRICES = {
-  'bitcoin': 45000,
-  'ethereum': 2500,
-  'binancecoin': 320,
-  'solana': 110,
-  'ripple': 0.52,
-  'cardano': 0.48,
-  'dogecoin': 0.085,
-  'avalanche-2': 38,
-  'polkadot': 7.2,
-  'matic-network': 0.85,
-  'chainlink': 15.5,
-  'uniswap': 6.8,
-  'litecoin': 72,
-  'stellar': 0.12,
-  'monero': 165,
-  'algorand': 0.22,
-  'cosmos': 9.5,
-  'near': 4.2
+  // Major coins
+  'bitcoin': 97000,
+  'ethereum': 3400,
+  'solana': 190,
+  'binancecoin': 650,
+  'ripple': 2.20,
+  'cardano': 1.05,
+  'dogecoin': 0.38,
+  'polkadot': 7.50,
+  'avalanche-2': 42,
+  'chainlink': 24,
+  'matic-network': 0.55,
+  'uniswap': 14,
+  'litecoin': 115,
+  'cosmos': 10,
+  'stellar': 0.45,
+  'near': 5.5,
+  'algorand': 0.40,
+  'monero': 190,
+
+  // Stablecoins
+  'tether': 1.00,
+  'usd-coin': 1.00,
+  'dai': 1.00,
+  'binance-usd': 1.00,
+
+  // Meme coins
+  'shiba-inu': 0.000024,
+  'pepe': 0.000021,
+  'bonk': 0.000033,
+  'floki': 0.00018,
+  'dogwifcoin': 2.50,
+  'notcoin': 0.008,
+
+  // Layer 2 / New chains
+  'arbitrum': 0.95,
+  'optimism': 2.20,
+  'aptos': 12,
+  'sui': 4.20,
+  'sei-network': 0.55,
+  'injective-protocol': 25,
+  'celestia': 8,
+  'the-open-network': 5.80,
+  'kaspa': 0.15,
+  'stacks': 1.80,
+
+  // DeFi
+  'aave': 180,
+  'maker': 1800,
+  'lido-dao': 2.20,
+  'the-graph': 0.25,
+  'curve-dao-token': 0.90,
+  'thorchain': 5.50,
+  'havven': 3.20,
+  'compound-governance-token': 85,
+  'jupiter-exchange-solana': 1.10,
+
+  // Gaming / Metaverse
+  'the-sandbox': 0.58,
+  'decentraland': 0.55,
+  'axie-infinity': 7.50,
+  'immutable-x': 1.80,
+  'gala': 0.045,
+  'enjincoin': 0.28,
+
+  // Infrastructure / AI
+  'filecoin': 5.20,
+  'helium': 6.00,
+  'render-token': 9.50,
+  'arweave': 18,
+  'theta-token': 2.20,
+  'quant-network': 120,
+  'vechain': 0.052,
+  'fetch-ai': 1.60,
+  'bittensor': 480,
+  'ocean-protocol': 0.85,
+
+  // Exchange tokens
+  'crypto-com-chain': 0.14,
+  'okb': 48,
+  'leo-token': 9.20,
+  'kucoin-shares': 12,
+
+  // Other popular
+  'tron': 0.27,
+  'ethereum-classic': 28,
+  'bitcoin-cash': 480,
+  'fantom': 0.85,
+  'hedera-hashgraph': 0.28,
+  'internet-computer': 11,
+  'eos': 0.85,
+  'flow': 0.95,
+  'elrond-erd-2': 45,
+  'tezos': 1.10,
+  'ondo-finance': 1.35,
+  'pyth-network': 0.42,
+  'chiliz': 0.12,
+  'basic-attention-token': 0.28,
+  'zcash': 55,
+  'dash': 32,
+  'neo': 15,
+  'waves': 2.20,
+  'kava': 0.65,
+  'harmony': 0.025,
+  'zilliqa': 0.025,
+  'celo': 0.80,
+  'qtum': 3.50,
+  'bittorrent': 0.0000012,
+  'holotoken': 0.002,
+  'siacoin': 0.006,
+  'iostoken': 0.008,
+  'omisego': 0.55,
+  '0x': 0.45,
+  'icon': 0.22,
+  'ontology': 0.28,
+  'digibyte': 0.012,
+  'ravencoin': 0.028
 };
 
-// CORS Proxy for CoinGecko (to bypass browser CORS restrictions)
-const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+// Fallback stock prices
+const FALLBACK_STOCK_PRICES = {
+  'AAPL': 185,
+  'MSFT': 378,
+  'GOOGL': 175,
+  'AMZN': 185,
+  'NVDA': 135,
+  'TSLA': 250,
+  'META': 560,
+  'BRK.B': 410,
+  'V': 280,
+  'JPM': 200,
+  'WMT': 165,
+  'MA': 470,
+  'PG': 165,
+  'UNH': 550,
+  'HD': 385
+};
 
-// Fetch stock price from Finnhub
-export async function getStockPrice(symbol) {
+// ============================================
+// CACHING
+// ============================================
+
+const cache = new Map();
+
+// Dedicated batch price cache for draft battles
+const batchPriceCache = {
+  crypto: {},
+  stocks: {},
+  lastFetch: {
+    crypto: 0,
+    stocks: 0
+  }
+};
+
+const BATCH_CACHE_DURATION = 60000; // 60 seconds for batch prices
+
+/**
+ * Get from cache if valid
+ */
+const getFromCache = (key) => {
+  const cached = cache.get(key);
+  if (cached && Date.now() - cached.timestamp < CONFIG.CACHE_DURATION) {
+    return cached.data;
+  }
+  return null;
+};
+
+/**
+ * Set cache
+ */
+const setCache = (key, data) => {
+  cache.set(key, { data, timestamp: Date.now() });
+};
+
+// ============================================
+// BATCH PRICE FETCHING (for Draft Battles)
+// ============================================
+
+/**
+ * Batch fetch ALL crypto prices in one API call
+ * Much more efficient than individual calls
+ * Accepts either symbols (BTC, ETH) or CoinGecko IDs (bitcoin, ethereum)
+ */
+export async function getAllCryptoPrices(symbolsOrIds = []) {
+  const now = Date.now();
+
+  // Build mapping: original input -> CoinGecko ID
+  const inputToId = {};
+  const coinGeckoIds = [];
+
+  for (const input of symbolsOrIds) {
+    const coinGeckoId = symbolToCoinGeckoId(input);
+    inputToId[input] = coinGeckoId;
+    if (!coinGeckoIds.includes(coinGeckoId)) {
+      coinGeckoIds.push(coinGeckoId);
+    }
+  }
+
+  logDebug(`Converting ${symbolsOrIds.length} inputs to ${coinGeckoIds.length} unique CoinGecko IDs`);
+
+  // Return cached data if fresh
+  if (now - batchPriceCache.lastFetch.crypto < BATCH_CACHE_DURATION) {
+    const cachedPrices = {};
+    let allCached = true;
+
+    for (const id of coinGeckoIds) {
+      if (batchPriceCache.crypto[id]) {
+        cachedPrices[id] = batchPriceCache.crypto[id];
+      } else {
+        allCached = false;
+      }
+    }
+
+    if (allCached && Object.keys(cachedPrices).length > 0) {
+      logDebug(`Using cached crypto prices (${Object.keys(cachedPrices).length} assets)`);
+      return batchPriceCache.crypto;
+    }
+  }
+
+  const idsString = coinGeckoIds.join(',');
+  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${idsString}&vs_currencies=usd&include_24hr_change=true`;
+
   try {
-    const response = await fetch(
+    // Use the robust CORS proxy fallback system
+    const response = await fetchWithCorsProxy(url);
+    const data = await response.json();
+
+    if (!data || Object.keys(data).length === 0) {
+      throw new Error('No data from any source');
+    }
+
+    // Update cache with CoinGecko IDs
+    batchPriceCache.lastFetch.crypto = now;
+    for (const [id, priceData] of Object.entries(data)) {
+      batchPriceCache.crypto[id] = {
+        price: priceData.usd || 0,
+        change24h: priceData.usd_24h_change || 0
+      };
+    }
+
+    logDebug(`Fetched ${Object.keys(data).length} crypto prices in 1 batch call`);
+    return batchPriceCache.crypto;
+
+  } catch (error) {
+    logWarn('Crypto batch fetch failed, using fallbacks', error);
+
+    // Return fallback prices keyed by CoinGecko ID
+    const fallbacks = {};
+    for (const id of coinGeckoIds) {
+      fallbacks[id] = {
+        price: FALLBACK_CRYPTO_PRICES[id] || 100,
+        change24h: 0
+      };
+    }
+    return fallbacks;
+  }
+}
+
+/**
+ * Batch fetch stock prices (Finnhub doesn't have batch, so we sequence with caching)
+ */
+export async function getAllStockPrices(symbols = []) {
+  const now = Date.now();
+
+  // Return cached if fresh
+  if (now - batchPriceCache.lastFetch.stocks < BATCH_CACHE_DURATION) {
+    const cachedPrices = {};
+    let allCached = true;
+
+    for (const symbol of symbols) {
+      const upperSymbol = symbol.toUpperCase();
+      if (batchPriceCache.stocks[upperSymbol]) {
+        cachedPrices[upperSymbol] = batchPriceCache.stocks[upperSymbol];
+      } else {
+        allCached = false;
+      }
+    }
+
+    if (allCached && Object.keys(cachedPrices).length > 0) {
+      logDebug(`Using cached stock prices (${Object.keys(cachedPrices).length} assets)`);
+      return cachedPrices;
+    }
+  }
+
+  // Fetch stocks sequentially with small delays
+  const prices = {};
+
+  for (const symbol of symbols) {
+    const upperSymbol = symbol.toUpperCase();
+    try {
+      const data = await getStockPrice(upperSymbol);
+      prices[upperSymbol] = {
+        price: data.price,
+        change: data.percentChange || 0
+      };
+      batchPriceCache.stocks[upperSymbol] = prices[upperSymbol];
+
+      // Small delay between calls (150ms)
+      if (symbols.indexOf(symbol) < symbols.length - 1) {
+        await new Promise(r => setTimeout(r, 150));
+      }
+    } catch (error) {
+      prices[upperSymbol] = {
+        price: FALLBACK_STOCK_PRICES[upperSymbol] || 100,
+        change: 0
+      };
+    }
+  }
+
+  batchPriceCache.lastFetch.stocks = now;
+  logDebug(`Fetched ${Object.keys(prices).length} stock prices`);
+  return prices;
+}
+
+/**
+ * Clear batch price cache (useful for forcing refresh)
+ */
+export function clearBatchPriceCache() {
+  batchPriceCache.crypto = {};
+  batchPriceCache.stocks = {};
+  batchPriceCache.lastFetch = { crypto: 0, stocks: 0 };
+  logDebug('Batch price cache cleared');
+}
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
+/**
+ * Calculate volatility from price array
+ */
+function calculateVolatility(prices) {
+  if (!prices || prices.length < 2) return 'low';
+
+  const returns = [];
+  for (let i = 1; i < prices.length; i++) {
+    const returnVal = (prices[i] - prices[i-1]) / prices[i-1];
+    returns.push(returnVal);
+  }
+
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const variance = returns.reduce((sum, ret) => sum + Math.pow(ret - mean, 2), 0) / returns.length;
+  const stdDev = Math.sqrt(variance) * 100;
+
+  if (stdDev < 2) return 'low';
+  if (stdDev < 5) return 'medium';
+  return 'high';
+}
+
+/**
+ * Generate mock community data for social proof
+ */
+function generateCommunityData(symbol, price, percentChange, volatility) {
+  const volatilityMultiplier = volatility === 'high' ? 1.3 : volatility === 'medium' ? 1.1 : 0.9;
+  const priceMultiplier = price > 1000 ? 0.7 : price > 100 ? 1.0 : 1.2;
+  const momentumMultiplier = Math.abs(percentChange) > 3 ? 1.5 : 1.0;
+
+  const basePicks = Math.floor(500 + Math.random() * 3500);
+  const adjustedPicks = Math.floor(basePicks * volatilityMultiplier * priceMultiplier * momentumMultiplier);
+
+  const isHot = adjustedPicks > 2500;
+  const trendPercentage = Math.floor(-50 + Math.random() * 250);
+  const championPercentage = Math.floor(40 + Math.random() * 45);
+  const isChampionPick = championPercentage > 60;
+
+  const masterPicks = Math.floor(adjustedPicks * 0.15);
+  const expertPicks = Math.floor(adjustedPicks * 0.25);
+  const veteranPicks = Math.floor(adjustedPicks * 0.35);
+  const beginnerPicks = adjustedPicks - masterPicks - expertPicks - veteranPicks;
+
+  const winRate = Math.floor(50 + Math.random() * 20);
+  const totalBattles = Math.floor(adjustedPicks * 0.6);
+  const wins = Math.floor(totalBattles * (winRate / 100));
+  const losses = totalBattles - wins;
+  const avgReturnWhenWinning = +(3 + Math.random() * 12).toFixed(1);
+
+  return {
+    picksThisWeek: adjustedPicks,
+    trendPercentage,
+    isHot,
+    isTrending: trendPercentage > 50,
+    championPick: isChampionPick,
+    championPercentage,
+    rankDistribution: {
+      beginner: beginnerPicks,
+      veteran: veteranPicks,
+      expert: expertPicks,
+      master: masterPicks
+    },
+    winRate,
+    totalBattles,
+    wins,
+    losses,
+    avgReturnWhenWinning,
+    popularityRank: 0,
+    recentActivity: trendPercentage > 100 ? `+${trendPercentage}% today` : null
+  };
+}
+
+/**
+ * Generate historical prices that match returns direction
+ */
+function getStockHistoricalPrices(symbol, currentPrice, priceChange7d, priceChange30d) {
+  const cacheKey = `stock_hist_30d_${symbol}_${priceChange30d.toFixed(2)}`;
+  const cached = getFromCache(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const price30dAgo = currentPrice / (1 + priceChange30d / 100);
+    const price7dAgo = currentPrice / (1 + priceChange7d / 100);
+
+    const prices = [];
+    const totalDays = 30;
+
+    for (let day = 0; day < totalDays; day++) {
+      let basePrice;
+
+      if (day <= 23) {
+        const progress = day / 23;
+        basePrice = price30dAgo + (price7dAgo - price30dAgo) * progress;
+      } else {
+        const progress = (day - 23) / 6;
+        basePrice = price7dAgo + (currentPrice - price7dAgo) * progress;
+      }
+
+      const variation = (Math.random() - 0.5) * 0.01;
+      prices.push(basePrice * (1 + variation));
+    }
+
+    prices[0] = price30dAgo;
+    prices[prices.length - 1] = currentPrice;
+
+    setCache(cacheKey, prices);
+    return prices;
+
+  } catch (error) {
+    logWarn(`Error generating historical prices for ${symbol}`, error);
+    return Array(30).fill(currentPrice || 100);
+  }
+}
+
+// ============================================
+// STOCK API FUNCTIONS
+// ============================================
+
+/**
+ * Fetch stock price with robust error handling
+ */
+export async function getStockPrice(symbol) {
+  // Check cache first
+  const cacheKey = `stock_price_${symbol}`;
+  const cached = getFromCache(cacheKey);
+  if (cached) return cached;
+
+  // Check rate limit
+  if (checkRateLimit()) {
+    return createFallbackStockData(symbol);
+  }
+
+  try {
+    const response = await fetchWithRetry(
       `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_API_KEY}`
     );
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
+
     const data = await response.json();
-    
-    return {
+
+    // Validate response
+    if (!data || data.c === undefined || data.c === 0) {
+      logWarn(`Invalid response for ${symbol}`, 'No price data');
+      return createFallbackStockData(symbol);
+    }
+
+    const price = data.c;
+    const week52High = price * (1 + (Math.random() * 0.25 + 0.05));
+    const week52Low = price * (1 - (Math.random() * 0.20 + 0.10));
+
+    const result = {
       symbol,
-      price: data.c || 0, // Current price
-      change: data.d || 0, // Change
-      percentChange: data.dp || 0 // Percent change
+      price,
+      change: data.d || 0,
+      percentChange: data.dp || 0,
+      high: data.h || price,
+      low: data.l || price,
+      open: data.o || price,
+      previousClose: data.pc || price,
+      week52High,
+      week52Low
     };
+
+    setCache(cacheKey, result);
+    return result;
+
   } catch (error) {
-    console.error(`Error fetching stock price for ${symbol}:`, error);
-    return {
-      symbol,
-      price: 100, // Fallback price
-      change: 0,
-      percentChange: 0
-    };
+    logWarn(`Failed to fetch ${symbol}`, error);
+    return createFallbackStockData(symbol);
   }
 }
 
-// Fetch crypto price from CoinGecko (with CORS proxy)
+/**
+ * Create fallback stock data
+ */
+function createFallbackStockData(symbol) {
+  const price = FALLBACK_STOCK_PRICES[symbol] || 100;
+  return {
+    symbol,
+    price,
+    change: 0,
+    percentChange: 0,
+    high: price,
+    low: price,
+    open: price,
+    previousClose: price,
+    week52High: price * 1.25,
+    week52Low: price * 0.80
+  };
+}
+
+// ============================================
+// CRYPTO API FUNCTIONS
+// ============================================
+
+/**
+ * Fetch crypto price with CORS proxy fallback
+ */
 export async function getCryptoPrice(cryptoId) {
+  // Check cache first
+  const cacheKey = `crypto_price_${cryptoId}`;
+  const cached = getFromCache(cacheKey);
+  if (cached) return cached;
+
+  // Check rate limit
+  if (checkRateLimit()) {
+    return createFallbackCryptoData(cryptoId);
+  }
+
   try {
-    // Use CORS proxy to avoid browser restrictions
-    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${cryptoId}&vs_currencies=usd&include_24hr_change=true`;
-    const proxiedUrl = CORS_PROXY + encodeURIComponent(url);
-    
-    const response = await fetch(proxiedUrl);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
+    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${cryptoId}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true&include_24hr_vol=true`;
+
+    const response = await fetchWithCorsProxy(url);
     const data = await response.json();
-    
+
     if (!data[cryptoId]) {
-      throw new Error('Crypto data not found');
+      logWarn(`No data returned for ${cryptoId}`, 'Empty response');
+      return createFallbackCryptoData(cryptoId);
     }
-    
-    return {
+
+    const result = {
       id: cryptoId,
       price: data[cryptoId].usd || 0,
-      change24h: data[cryptoId].usd_24h_change || 0
+      change24h: data[cryptoId].usd_24h_change || 0,
+      marketCap: data[cryptoId].usd_market_cap || 0,
+      volume24h: data[cryptoId].usd_24h_vol || 0
     };
+
+    setCache(cacheKey, result);
+    return result;
+
   } catch (error) {
-    console.warn(`Error fetching crypto price for ${cryptoId}, using fallback:`, error);
-    
-    // Use fallback price
-    return {
-      id: cryptoId,
-      price: FALLBACK_CRYPTO_PRICES[cryptoId] || 100,
-      change24h: 0
-    };
+    logWarn(`Failed to fetch ${cryptoId}`, error);
+    return createFallbackCryptoData(cryptoId);
   }
 }
 
-// Get list of popular stocks with current prices
+/**
+ * Create fallback crypto data
+ */
+function createFallbackCryptoData(cryptoId) {
+  const price = FALLBACK_CRYPTO_PRICES[cryptoId] || 100;
+  return {
+    id: cryptoId,
+    price,
+    change24h: 0,
+    marketCap: 0,
+    volume24h: 0
+  };
+}
+
+/**
+ * Fetch extended crypto data with 7d/30d performance
+ */
+export async function getCryptoExtendedData(cryptoId) {
+  const cacheKey = `crypto_extended_${cryptoId}`;
+  const cached = getFromCache(cacheKey);
+  if (cached) return cached;
+
+  if (checkRateLimit()) {
+    return { priceChange7d: 0, priceChange30d: 0, week52High: 0, week52Low: 0 };
+  }
+
+  try {
+    const url = `https://api.coingecko.com/api/v3/coins/${cryptoId}?localization=false&tickers=false&community_data=false&developer_data=false`;
+
+    const response = await fetchWithCorsProxy(url);
+    const data = await response.json();
+
+    const result = {
+      priceChange7d: data.market_data?.price_change_percentage_7d || 0,
+      priceChange30d: data.market_data?.price_change_percentage_30d || 0,
+      week52High: data.market_data?.high_24h?.usd * 1.3 || 0,
+      week52Low: data.market_data?.low_24h?.usd * 0.7 || 0
+    };
+
+    setCache(cacheKey, result);
+    return result;
+
+  } catch (error) {
+    logWarn(`Failed to fetch extended data for ${cryptoId}`, error);
+    return { priceChange7d: 0, priceChange30d: 0, week52High: 0, week52Low: 0 };
+  }
+}
+
+/**
+ * Fetch 30-day historical prices for crypto
+ */
+async function getCryptoHistoricalPrices(cryptoId) {
+  const cacheKey = `crypto_hist_30d_${cryptoId}`;
+  const cached = getFromCache(cacheKey);
+  if (cached) return cached;
+
+  if (checkRateLimit()) {
+    return Array(30).fill(FALLBACK_CRYPTO_PRICES[cryptoId] || 100);
+  }
+
+  try {
+    const url = `https://api.coingecko.com/api/v3/coins/${cryptoId}/market_chart?vs_currency=usd&days=30`;
+
+    const response = await fetchWithCorsProxy(url);
+    const data = await response.json();
+
+    const prices = data.prices.map(p => p[1]);
+
+    // Sample to 30 data points
+    const sampledPrices = [];
+    const interval = Math.floor(prices.length / 30);
+    for (let i = 0; i < 30; i++) {
+      sampledPrices.push(prices[i * interval] || prices[prices.length - 1]);
+    }
+
+    setCache(cacheKey, sampledPrices);
+    return sampledPrices;
+
+  } catch (error) {
+    logWarn(`Failed to fetch historical prices for ${cryptoId}`, error);
+    return Array(30).fill(FALLBACK_CRYPTO_PRICES[cryptoId] || 100);
+  }
+}
+
+// ============================================
+// BULK FETCH FUNCTIONS
+// ============================================
+
+/**
+ * Get popular stocks with community data
+ */
 export async function getPopularStocks() {
+  const cacheKey = 'popular_stocks';
+  const cached = getFromCache(cacheKey);
+  if (cached) {
+    logDebug('Using cached stocks data');
+    return cached;
+  }
+
   try {
     const stocksWithPrices = await Promise.all(
       POPULAR_STOCKS.map(async (stock) => {
         const priceData = await getStockPrice(stock.symbol);
+
+        const priceChange7d = (Math.random() - 0.5) * 10;
+        const priceChange30d = (Math.random() - 0.5) * 30;
+        const volatility = Math.abs(priceChange30d) > 10 ? 'high' : Math.abs(priceChange30d) > 5 ? 'medium' : 'low';
+
         return {
           symbol: stock.symbol,
           name: stock.name,
           price: priceData.price,
           change: priceData.change,
-          percentChange: priceData.percentChange
+          percentChange: priceData.percentChange,
+          priceChange7d,
+          priceChange30d,
+          volatility,
+          week52High: priceData.week52High,
+          week52Low: priceData.week52Low,
+          marketCap: 0,
+          volume24h: 0,
+          communityData: generateCommunityData(stock.symbol, priceData.price, priceData.percentChange, volatility)
         };
       })
     );
-    
+
+    // Set popularity rankings
+    stocksWithPrices.sort((a, b) => b.communityData.picksThisWeek - a.communityData.picksThisWeek);
+    stocksWithPrices.forEach((stock, index) => {
+      stock.communityData.popularityRank = index + 1;
+    });
+
+    setCache(cacheKey, stocksWithPrices);
+    logDebug(`Fetched ${stocksWithPrices.length} stocks`);
     return stocksWithPrices;
+
   } catch (error) {
-    console.error('Error fetching popular stocks:', error);
-    // Return stocks with fallback prices
-    return POPULAR_STOCKS.map(stock => ({
-      symbol: stock.symbol,
-      name: stock.name,
-      price: 100,
-      change: 0,
-      percentChange: 0
-    }));
+    logError('Failed to fetch popular stocks', error);
+    return createFallbackStocksData();
   }
 }
 
-// Get list of popular crypto with current prices
+/**
+ * Create fallback stocks data
+ */
+function createFallbackStocksData() {
+  return POPULAR_STOCKS.map((stock, index) => {
+    const price = FALLBACK_STOCK_PRICES[stock.symbol] || 100;
+    return {
+      symbol: stock.symbol,
+      name: stock.name,
+      price,
+      change: 0,
+      percentChange: 0,
+      priceChange7d: 0,
+      priceChange30d: 0,
+      volatility: 'low',
+      week52High: price * 1.25,
+      week52Low: price * 0.80,
+      marketCap: 0,
+      volume24h: 0,
+      communityData: {
+        picksThisWeek: 500,
+        trendPercentage: 0,
+        isHot: false,
+        isTrending: false,
+        championPick: false,
+        championPercentage: 50,
+        rankDistribution: { beginner: 125, veteran: 175, expert: 125, master: 75 },
+        winRate: 50,
+        totalBattles: 300,
+        wins: 150,
+        losses: 150,
+        avgReturnWhenWinning: 5.0,
+        popularityRank: index + 1,
+        recentActivity: null
+      }
+    };
+  });
+}
+
+/**
+ * Get popular crypto with community data
+ */
 export async function getPopularCrypto() {
+  const cacheKey = 'popular_crypto';
+  const cached = getFromCache(cacheKey);
+  if (cached) {
+    logDebug('Using cached crypto data');
+    return cached;
+  }
+
   try {
-    // Fetch prices in batches to avoid rate limiting
-    const batchSize = 6;
+    // Process in smaller batches to avoid rate limits
+    const batchSize = 4;
     const batches = [];
-    
+
     for (let i = 0; i < POPULAR_CRYPTO.length; i += batchSize) {
-      const batch = POPULAR_CRYPTO.slice(i, i + batchSize);
-      batches.push(batch);
+      batches.push(POPULAR_CRYPTO.slice(i, i + batchSize));
     }
-    
+
     const allCryptoWithPrices = [];
-    
+
     for (const batch of batches) {
       const batchPromises = batch.map(async (crypto) => {
         const priceData = await getCryptoPrice(crypto.id);
+        const extendedData = await getCryptoExtendedData(crypto.id);
+
+        const currentPrice = priceData.price;
+        const priceChange7d = extendedData.priceChange7d || (Math.random() - 0.5) * 10;
+        const priceChange30d = extendedData.priceChange30d || (Math.random() - 0.5) * 30;
+        const volatility = Math.abs(priceChange30d) > 10 ? 'high' : Math.abs(priceChange30d) > 5 ? 'medium' : 'low';
+
         return {
           symbol: crypto.symbol,
           name: crypto.name,
           price: priceData.price,
-          change24h: priceData.change24h
+          change24h: priceData.change24h,
+          percentChange: priceData.change24h,
+          priceChange7d,
+          priceChange30d,
+          marketCap: priceData.marketCap,
+          volume24h: priceData.volume24h,
+          volatility,
+          week52High: extendedData.week52High || currentPrice * 1.5,
+          week52Low: extendedData.week52Low || currentPrice * 0.5,
+          communityData: generateCommunityData(crypto.symbol, priceData.price, priceData.change24h, volatility)
         };
       });
-      
+
       const batchResults = await Promise.all(batchPromises);
       allCryptoWithPrices.push(...batchResults);
-      
-      // Small delay between batches to avoid rate limiting
+
+      // Delay between batches to avoid rate limiting
       if (batches.indexOf(batch) < batches.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
     }
-    
+
+    // Set popularity rankings
+    allCryptoWithPrices.sort((a, b) => b.communityData.picksThisWeek - a.communityData.picksThisWeek);
+    allCryptoWithPrices.forEach((crypto, index) => {
+      crypto.communityData.popularityRank = index + 1;
+    });
+
+    setCache(cacheKey, allCryptoWithPrices);
+    logDebug(`Fetched ${allCryptoWithPrices.length} cryptocurrencies`);
     return allCryptoWithPrices;
+
   } catch (error) {
-    console.error('Error fetching popular crypto:', error);
-    // Return crypto with fallback prices
-    return POPULAR_CRYPTO.map(crypto => ({
-      symbol: crypto.symbol,
-      name: crypto.name,
-      price: FALLBACK_CRYPTO_PRICES[crypto.id] || 100,
-      change24h: 0
-    }));
+    logError('Failed to fetch popular crypto', error);
+    return createFallbackCryptoListData();
   }
 }
 
-// Export API object for backward compatibility
+/**
+ * Create fallback crypto list data
+ */
+function createFallbackCryptoListData() {
+  return POPULAR_CRYPTO.map((crypto, index) => {
+    const price = FALLBACK_CRYPTO_PRICES[crypto.id] || 100;
+    return {
+      symbol: crypto.symbol,
+      name: crypto.name,
+      price,
+      change24h: 0,
+      percentChange: 0,
+      priceChange7d: 0,
+      priceChange30d: 0,
+      marketCap: 0,
+      volume24h: 0,
+      volatility: 'low',
+      week52High: price * 1.25,
+      week52Low: price * 0.75,
+      communityData: {
+        picksThisWeek: 500,
+        trendPercentage: 0,
+        isHot: false,
+        isTrending: false,
+        championPick: false,
+        championPercentage: 50,
+        rankDistribution: { beginner: 125, veteran: 175, expert: 125, master: 75 },
+        winRate: 50,
+        totalBattles: 300,
+        wins: 150,
+        losses: 150,
+        avgReturnWhenWinning: 5.0,
+        popularityRank: index + 1,
+        recentActivity: null
+      }
+    };
+  });
+}
+
+// ============================================
+// EXPORTS
+// ============================================
+
+// Named exports for direct imports
+export {
+  POPULAR_STOCKS,
+  POPULAR_CRYPTO,
+  FALLBACK_CRYPTO_PRICES,
+  FALLBACK_STOCK_PRICES,
+  SYMBOL_TO_COINGECKO_ID,
+  COINGECKO_ID_TO_SYMBOL
+};
+
+// Export symbol mapping functions
+export { symbolToCoinGeckoId, coinGeckoIdToSymbol };
+
 export const stockAPI = {
   getStockPrice,
   getCryptoPrice,
   getPopularStocks,
-  getPopularCrypto
+  getPopularCrypto,
+  getCryptoExtendedData,
+  getStockHistoricalPrices,
+  getCryptoHistoricalPrices,
+  // Batch price functions for draft battles
+  getAllCryptoPrices,
+  getAllStockPrices,
+  clearBatchPriceCache,
+  // Symbol mapping utilities
+  symbolToCoinGeckoId,
+  coinGeckoIdToSymbol,
+  // Constants
+  POPULAR_STOCKS,
+  POPULAR_CRYPTO,
+  FALLBACK_CRYPTO_PRICES,
+  FALLBACK_STOCK_PRICES,
+  SYMBOL_TO_COINGECKO_ID,
+  COINGECKO_ID_TO_SYMBOL
 };
 
 export default stockAPI;

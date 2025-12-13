@@ -2,85 +2,227 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Prevent iOS auto-zoom on input focus */
+input,
+select,
+textarea,
+button {
+  font-size: 16px !important;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="number"] {
+  font-size: 16px !important;
+}
+
+/* Dark Gaming Theme for MarketClash */
 @layer base {
   :root {
-    /* Cyan blue theme (#52d8ea) */
-    --background: 220 25% 97%;
-    --foreground: 220 15% 20%;
-    
-    --card: 0 0% 100%;
-    --card-foreground: 220 15% 20%;
-    
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 15% 20%;
-    
-    /* Primary cyan blue (#52d8ea) */
-    --primary: 187 76% 62%;
-    --primary-foreground: 0 0% 100%;
-    
-    /* Secondary lighter cyan */
-    --secondary: 187 100% 92%;
-    --secondary-foreground: 187 76% 62%;
-    
-    --muted: 220 25% 95%;
-    --muted-foreground: 220 10% 50%;
-    
-    --accent: 187 76% 62%;
-    --accent-foreground: 0 0% 100%;
-    
-    /* Success green */
-    --success: 142 71% 45%;
-    --success-foreground: 0 0% 100%;
-    
-    /* Destructive red */
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-    
-    --border: 220 20% 88%;
-    --input: 220 20% 88%;
-    --ring: 187 76% 62%;
-    --radius: 1rem;
+    /* Dark Gaming Theme Colors */
+    --background: #0d1117;
+    --card: #161b22;
+    --card-hover: #1c2128;
+    --card-elevated: #21262d;
+
+    /* Text Colors */
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #6e7681;
+
+    /* Accent Colors */
+    --cyan: #00d9ff;
+    --cyan-dim: #0099cc;
+    --green: #10b981;
+    --green-bright: #00ff88;
+    --red: #ef4444;
+    --red-bright: #ff4466;
+    --blue: #3b82f6;
+    --purple: #9333ea;
+    --gold: #ffc107;
+
+    /* Border & Effects */
+    --border: rgba(0, 217, 255, 0.2);
+    --border-subtle: rgba(255, 255, 255, 0.1);
+    --glow-cyan: 0 0 20px rgba(0, 217, 255, 0.3);
+    --glow-green: 0 0 20px rgba(16, 185, 129, 0.3);
+    --glow-red: 0 0 20px rgba(239, 68, 68, 0.3);
+
+    --radius: 12px;
   }
 }
 
 @layer base {
   * {
-    border-color: hsl(var(--border));
+    border-color: var(--border-subtle);
   }
+
   body {
-    background: linear-gradient(to bottom, #E0F7FA 0%, #B2EBF2 100%);
-    color: hsl(var(--foreground));
+    background: var(--background);
+    color: var(--text-primary);
     margin: 0;
     min-height: 100vh;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  }
+
+  #root {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    text-align: left;
   }
 }
 
-/* Custom gradient utilities */
+/* Keyframe Animations */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(0, 217, 255, 0.3); }
+  50% { box-shadow: 0 0 30px rgba(0, 217, 255, 0.5); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Sidebar slide-in animation */
+@keyframes slide-in {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 217, 255, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 217, 255, 0.5);
+}
+
+/* Custom Gaming Utilities */
 @layer utilities {
-  .gradient-cyan {
-    background: linear-gradient(135deg, #52d8ea 0%, #4fc3dd 100%);
-  }
-  
-  .gradient-green {
-    background: linear-gradient(90deg, #4ADE80 0%, #10B981 100%);
+  .bg-gaming {
+    background: #0d1117;
   }
 
-  .avatar-circle {
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 32px;
+  .bg-card-gaming {
+    background: #161b22;
   }
 
-  .avatar-cyan {
-    background: linear-gradient(135deg, #B2EBF2 0%, #80DEEA 100%);
+  .text-cyber {
+    color: #00d9ff;
   }
 
-  .avatar-pink {
-    background: linear-gradient(135deg, #FCE7F3 0%, #FBCFE8 100%);
+  .text-gain {
+    color: #10b981;
   }
+
+  .text-loss {
+    color: #ef4444;
+  }
+
+  .border-cyber {
+    border-color: rgba(0, 217, 255, 0.3);
+  }
+
+  .glow-cyan {
+    box-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+  }
+
+  .glow-green {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+  }
+
+  .glow-red {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+  }
+}
+
+/* Custom slider styling for portfolio weights */
+.custom-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: #21262d;
+  outline: none;
+  cursor: pointer;
+}
+
+.custom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #8b5cf6;
+  cursor: pointer;
+  border: 3px solid #0d1117;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
+  transition: all 0.2s ease;
+}
+
+.custom-slider::-webkit-slider-thumb:hover {
+  background: #a78bfa;
+  box-shadow: 0 3px 12px rgba(139, 92, 246, 0.6);
+  transform: scale(1.1);
+}
+
+.custom-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #8b5cf6;
+  cursor: pointer;
+  border: 3px solid #0d1117;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
+  transition: all 0.2s ease;
+}
+
+.custom-slider::-moz-range-thumb:hover {
+  background: #a78bfa;
+  box-shadow: 0 3px 12px rgba(139, 92, 246, 0.6);
+}
+
+/* Slider track styling */
+.custom-slider::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, #8b5cf6 0%, #8b5cf6 50%, #21262d 50%, #21262d 100%);
+}
+
+.custom-slider::-moz-range-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: #21262d;
 }
