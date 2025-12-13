@@ -1,5 +1,3 @@
 node_modules
-*.php
 .git
-.env
-.env.local
+*.log
