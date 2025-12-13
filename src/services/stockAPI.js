@@ -37,6 +37,7 @@ const CORS_STRATEGIES = [
 // ============================================
 
 // Maps common ticker symbols (BTC, ETH) to CoinGecko IDs (bitcoin, ethereum)
+// Comprehensive mapping for 100+ cryptocurrencies
 const SYMBOL_TO_COINGECKO_ID = {
   // Major coins
   'BTC': 'bitcoin',
@@ -57,34 +58,85 @@ const SYMBOL_TO_COINGECKO_ID = {
   'ALGO': 'algorand',
   'ATOM': 'cosmos',
   'NEAR': 'near',
-  // Additional popular coins
+
+  // Stablecoins
+  'USDT': 'tether',
+  'USDC': 'usd-coin',
+  'DAI': 'dai',
+  'BUSD': 'binance-usd',
+
+  // Meme coins
   'SHIB': 'shiba-inu',
-  'TRX': 'tron',
-  'ETC': 'ethereum-classic',
-  'BCH': 'bitcoin-cash',
-  'APT': 'aptos',
+  'PEPE': 'pepe',
+  'BONK': 'bonk',
+  'FLOKI': 'floki',
+  'WIF': 'dogwifcoin',
+  'NOT': 'notcoin',
+
+  // Layer 2 / New chains
   'ARB': 'arbitrum',
   'OP': 'optimism',
-  'FIL': 'filecoin',
-  'HBAR': 'hedera-hashgraph',
-  'VET': 'vechain',
-  'ICP': 'internet-computer',
+  'APT': 'aptos',
+  'SUI': 'sui',
+  'SEI': 'sei-network',
+  'INJ': 'injective-protocol',
+  'TIA': 'celestia',
+  'TON': 'the-open-network',
+  'KAS': 'kaspa',
+  'STX': 'stacks',
+
+  // DeFi
+  'AAVE': 'aave',
+  'MKR': 'maker',
+  'LDO': 'lido-dao',
+  'GRT': 'the-graph',
+  'CRV': 'curve-dao-token',
+  'RUNE': 'thorchain',
+  'SNX': 'havven',
+  'COMP': 'compound-governance-token',
+  'JUP': 'jupiter-exchange-solana',
+
+  // Gaming / Metaverse
   'SAND': 'the-sandbox',
   'MANA': 'decentraland',
   'AXS': 'axie-infinity',
-  'AAVE': 'aave',
-  'MKR': 'maker',
-  'CRV': 'curve-dao-token',
-  'SNX': 'synthetix-network-token',
-  'COMP': 'compound-governance-token',
-  'THETA': 'theta-token',
-  'FTM': 'fantom',
-  'EGLD': 'elrond-erd-2',
-  'KCS': 'kucoin-shares',
-  'HNT': 'helium',
-  'FLOW': 'flow',
-  'CHZ': 'chiliz',
+  'IMX': 'immutable-x',
+  'GALA': 'gala',
   'ENJ': 'enjincoin',
+
+  // Infrastructure / AI
+  'FIL': 'filecoin',
+  'HNT': 'helium',
+  'RNDR': 'render-token',
+  'RENDER': 'render-token',
+  'AR': 'arweave',
+  'THETA': 'theta-token',
+  'QNT': 'quant-network',
+  'VET': 'vechain',
+  'FET': 'fetch-ai',
+  'TAO': 'bittensor',
+  'OCEAN': 'ocean-protocol',
+
+  // Exchange tokens
+  'CRO': 'crypto-com-chain',
+  'OKB': 'okb',
+  'LEO': 'leo-token',
+  'KCS': 'kucoin-shares',
+
+  // Other popular coins
+  'TRX': 'tron',
+  'ETC': 'ethereum-classic',
+  'BCH': 'bitcoin-cash',
+  'FTM': 'fantom',
+  'HBAR': 'hedera-hashgraph',
+  'ICP': 'internet-computer',
+  'EOS': 'eos',
+  'FLOW': 'flow',
+  'EGLD': 'elrond-erd-2',
+  'XTZ': 'tezos',
+  'ONDO': 'ondo-finance',
+  'PYTH': 'pyth-network',
+  'CHZ': 'chiliz',
   'BAT': 'basic-attention-token',
   'ZEC': 'zcash',
   'DASH': 'dash',
@@ -355,25 +407,125 @@ const POPULAR_CRYPTO = [
 ];
 
 // Fallback crypto prices (updated Dec 2024)
+// Approximate prices for when API fails
 const FALLBACK_CRYPTO_PRICES = {
-  'bitcoin': 95000,
-  'ethereum': 3600,
-  'binancecoin': 620,
-  'solana': 235,
-  'ripple': 2.15,
+  // Major coins
+  'bitcoin': 97000,
+  'ethereum': 3400,
+  'solana': 190,
+  'binancecoin': 650,
+  'ripple': 2.20,
   'cardano': 1.05,
-  'dogecoin': 0.40,
+  'dogecoin': 0.38,
+  'polkadot': 7.50,
   'avalanche-2': 42,
-  'polkadot': 8.5,
-  'matic-network': 1.10,
-  'chainlink': 19.5,
-  'uniswap': 12.5,
-  'litecoin': 95,
-  'stellar': 0.38,
+  'chainlink': 24,
+  'matic-network': 0.55,
+  'uniswap': 14,
+  'litecoin': 115,
+  'cosmos': 10,
+  'stellar': 0.45,
+  'near': 5.5,
+  'algorand': 0.40,
   'monero': 190,
-  'algorand': 0.42,
-  'cosmos': 11.5,
-  'near': 7.8
+
+  // Stablecoins
+  'tether': 1.00,
+  'usd-coin': 1.00,
+  'dai': 1.00,
+  'binance-usd': 1.00,
+
+  // Meme coins
+  'shiba-inu': 0.000024,
+  'pepe': 0.000021,
+  'bonk': 0.000033,
+  'floki': 0.00018,
+  'dogwifcoin': 2.50,
+  'notcoin': 0.008,
+
+  // Layer 2 / New chains
+  'arbitrum': 0.95,
+  'optimism': 2.20,
+  'aptos': 12,
+  'sui': 4.20,
+  'sei-network': 0.55,
+  'injective-protocol': 25,
+  'celestia': 8,
+  'the-open-network': 5.80,
+  'kaspa': 0.15,
+  'stacks': 1.80,
+
+  // DeFi
+  'aave': 180,
+  'maker': 1800,
+  'lido-dao': 2.20,
+  'the-graph': 0.25,
+  'curve-dao-token': 0.90,
+  'thorchain': 5.50,
+  'havven': 3.20,
+  'compound-governance-token': 85,
+  'jupiter-exchange-solana': 1.10,
+
+  // Gaming / Metaverse
+  'the-sandbox': 0.58,
+  'decentraland': 0.55,
+  'axie-infinity': 7.50,
+  'immutable-x': 1.80,
+  'gala': 0.045,
+  'enjincoin': 0.28,
+
+  // Infrastructure / AI
+  'filecoin': 5.20,
+  'helium': 6.00,
+  'render-token': 9.50,
+  'arweave': 18,
+  'theta-token': 2.20,
+  'quant-network': 120,
+  'vechain': 0.052,
+  'fetch-ai': 1.60,
+  'bittensor': 480,
+  'ocean-protocol': 0.85,
+
+  // Exchange tokens
+  'crypto-com-chain': 0.14,
+  'okb': 48,
+  'leo-token': 9.20,
+  'kucoin-shares': 12,
+
+  // Other popular
+  'tron': 0.27,
+  'ethereum-classic': 28,
+  'bitcoin-cash': 480,
+  'fantom': 0.85,
+  'hedera-hashgraph': 0.28,
+  'internet-computer': 11,
+  'eos': 0.85,
+  'flow': 0.95,
+  'elrond-erd-2': 45,
+  'tezos': 1.10,
+  'ondo-finance': 1.35,
+  'pyth-network': 0.42,
+  'chiliz': 0.12,
+  'basic-attention-token': 0.28,
+  'zcash': 55,
+  'dash': 32,
+  'neo': 15,
+  'waves': 2.20,
+  'kava': 0.65,
+  'harmony': 0.025,
+  'zilliqa': 0.025,
+  'celo': 0.80,
+  'qtum': 3.50,
+  'bittorrent': 0.0000012,
+  'holotoken': 0.002,
+  'siacoin': 0.006,
+  'iostoken': 0.008,
+  'omisego': 0.55,
+  '0x': 0.45,
+  'icon': 0.22,
+  'ontology': 0.28,
+  'digibyte': 0.012,
+  'ravencoin': 0.028
 };
 
 // Fallback stock prices
