@@ -1,11 +1,11 @@
 // EODHD API Service for MarketClash
-// All-In-One provider for stocks and crypto
-// Replaces Finnhub (stocks) and CoinGecko (crypto)
-// Benefits: 100k calls/day, 1k/min, no CORS issues, 1-min delay crypto
+// Uses Vercel serverless proxy to avoid CORS issues
+// Endpoints: /api/crypto/prices, /api/stocks/prices
 
-const EODHD_API_KEY = import.meta.env.VITE_EODHD_API_KEY;
-const EODHD_BASE = 'https://eodhd.com/api';
 const IS_DEV = import.meta.env.DEV;
+
+// Use relative URLs - works in both dev and production on Vercel
+const API_BASE = '/api';
 
 // ============================================
 // LOGGING UTILITIES
@@ -39,7 +39,7 @@ const priceCache = {
 // FETCH WITH TIMEOUT
 // ============================================
 
-const fetchWithTimeout = async (url, timeout = 10000) => {
+const fetchWithTimeout = async (url, timeout = 15000) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -57,131 +57,80 @@ const fetchWithTimeout = async (url, timeout = 10000) => {
 };
 
 // ============================================
-// STOCK FUNCTIONS
+// STOCK FUNCTIONS (via Vercel Proxy)
 // ============================================
 
 /**
- * Get real-time stock price
- * @param {string} symbol - Stock symbol (e.g., 'AAPL')
- * @returns {Promise<{symbol, price, change, percentChange}>}
- */
-export async function getStockPrice(symbol) {
-  try {
-    const url = `${EODHD_BASE}/real-time/${symbol}.US?api_token=${EODHD_API_KEY}&fmt=json`;
-
-    const response = await fetchWithTimeout(url);
-
-    if (!response.ok) {
-      throw new Error(`EODHD error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    return {
-      symbol: symbol,
-      price: data.close || data.previousClose || 0,
-      change: data.change || 0,
-      percentChange: data.change_p || 0,
-      high: data.high || data.close,
-      low: data.low || data.close,
-      open: data.open || data.close,
-      previousClose: data.previousClose || data.close,
-      volume: data.volume,
-      timestamp: data.timestamp,
-      week52High: (data.close || 100) * 1.25,
-      week52Low: (data.close || 100) * 0.75
-    };
-
-  } catch (error) {
-    logWarn(`Stock price error for ${symbol}:`, error.message);
-    const fallback = FALLBACK_STOCK_PRICES[symbol] || 100;
-    return {
-      symbol: symbol,
-      price: fallback,
-      change: 0,
-      percentChange: 0,
-      high: fallback,
-      low: fallback,
-      open: fallback,
-      previousClose: fallback,
-      week52High: fallback * 1.25,
-      week52Low: fallback * 0.75
-    };
-  }
-}
-
-/**
- * Get multiple stock prices in batch
+ * Get multiple stock prices via proxy
  * @param {string[]} symbols - Array of stock symbols
  * @returns {Promise<Object>} - { AAPL: {price, change}, MSFT: {price, change}, ... }
  */
 export async function getMultipleStockPrices(symbols) {
   const now = Date.now();
+  const upperSymbols = symbols.map(s => s.toUpperCase());
 
   // Check cache
-  const allCached = symbols.every(s =>
-    priceCache.stocks[s.toUpperCase()] &&
-    (now - priceCache.lastFetch.stocks < priceCache.CACHE_DURATION)
-  );
-
-  if (allCached) {
-    logDebug('Using cached stock prices');
-    const result = {};
-    symbols.forEach(s => result[s.toUpperCase()] = priceCache.stocks[s.toUpperCase()]);
-    return result;
+  if (now - priceCache.lastFetch.stocks < priceCache.CACHE_DURATION) {
+    const allCached = upperSymbols.every(s => priceCache.stocks[s]);
+    if (allCached) {
+      console.log('[EODHD] Using cached stock prices');
+      const result = {};
+      upperSymbols.forEach(s => result[s] = priceCache.stocks[s]);
+      return result;
+    }
   }
 
-  logDebug(`Fetching ${symbols.length} stock prices...`);
-
-  // EODHD supports batch requests with comma-separated symbols
-  const upperSymbols = symbols.map(s => s.toUpperCase());
-  const symbolList = upperSymbols.map(s => `${s}.US`).join(',');
+  console.log(`[EODHD] Fetching ${symbols.length} stock prices via proxy...`);
 
   try {
-    const url = `${EODHD_BASE}/real-time/${symbolList}?api_token=${EODHD_API_KEY}&fmt=json`;
-
-    const response = await fetchWithTimeout(url);
+    const response = await fetchWithTimeout(
+      `${API_BASE}/stocks/prices?symbols=${upperSymbols.join(',')}`
+    );
 
     if (!response.ok) {
-      throw new Error(`EODHD error: ${response.status}`);
+      throw new Error(`Proxy error: ${response.status}`);
     }
 
     const data = await response.json();
 
-    // Handle both single and multiple responses
-    const dataArray = Array.isArray(data) ? data : [data];
-
-    const result = {};
-    dataArray.forEach(item => {
-      const symbol = (item.code?.replace('.US', '') || item.symbol || '').toUpperCase();
-      if (symbol) {
-        result[symbol] = {
-          price: item.close || item.previousClose || 0,
-          change: item.change || 0,
-          percentChange: item.change_p || 0
+    if (data.success && data.prices) {
+      // Update cache
+      Object.entries(data.prices).forEach(([symbol, priceData]) => {
+        priceCache.stocks[symbol] = {
+          price: priceData.price,
+          change: priceData.change,
+          percentChange: priceData.changePercent
         };
-        priceCache.stocks[symbol] = result[symbol];
-      }
-    });
+      });
+      priceCache.lastFetch.stocks = now;
 
-    // Fill in any missing symbols with fallbacks
-    upperSymbols.forEach(s => {
-      if (!result[s]) {
-        result[s] = {
-          price: FALLBACK_STOCK_PRICES[s] || 100,
-          change: 0,
-          percentChange: 0
-        };
-      }
-    });
+      console.log(`[EODHD] Got ${data.count} stock prices via proxy`);
 
-    priceCache.lastFetch.stocks = now;
-    logDebug(`Got ${Object.keys(result).length} stock prices`);
+      // Return in expected format, with fallbacks for missing
+      const result = {};
+      upperSymbols.forEach(s => {
+        if (data.prices[s]) {
+          result[s] = {
+            price: data.prices[s].price,
+            change: data.prices[s].change,
+            percentChange: data.prices[s].changePercent
+          };
+        } else {
+          result[s] = {
+            price: FALLBACK_STOCK_PRICES[s] || 100,
+            change: 0,
+            percentChange: 0
+          };
+        }
+      });
 
-    return result;
+      return result;
+    }
+
+    throw new Error(data.error || 'Unknown proxy error');
 
   } catch (error) {
-    logWarn('Batch stock fetch error:', error.message);
+    console.warn('[EODHD] Stock proxy fetch failed:', error.message);
 
     // Return fallback prices
     const result = {};
@@ -196,8 +145,28 @@ export async function getMultipleStockPrices(symbols) {
   }
 }
 
-// Alias for backward compatibility with stockAPI
+// Alias for backward compatibility
 export const getAllStockPrices = getMultipleStockPrices;
+
+/**
+ * Get single stock price via proxy
+ */
+export async function getStockPrice(symbol) {
+  const prices = await getMultipleStockPrices([symbol]);
+  const upper = symbol.toUpperCase();
+  return {
+    symbol: upper,
+    price: prices[upper]?.price || FALLBACK_STOCK_PRICES[upper] || 100,
+    change: prices[upper]?.change || 0,
+    percentChange: prices[upper]?.percentChange || 0,
+    high: prices[upper]?.price || 100,
+    low: prices[upper]?.price || 100,
+    open: prices[upper]?.price || 100,
+    previousClose: prices[upper]?.price || 100,
+    week52High: (prices[upper]?.price || 100) * 1.25,
+    week52Low: (prices[upper]?.price || 100) * 0.75
+  };
+}
 
 /**
  * Get list of popular stocks with prices
@@ -223,57 +192,11 @@ export async function getPopularStocks() {
 }
 
 // ============================================
-// CRYPTO FUNCTIONS
+// CRYPTO FUNCTIONS (via Vercel Proxy)
 // ============================================
 
 /**
- * Get crypto price
- * @param {string} symbol - Crypto symbol (e.g., 'BTC')
- * @returns {Promise<{symbol, price, change24h}>}
- */
-export async function getCryptoPrice(symbol) {
-  const upperSymbol = symbol.toUpperCase();
-
-  try {
-    // EODHD uses format: BTC-USD.CC
-    const url = `${EODHD_BASE}/real-time/${upperSymbol}-USD.CC?api_token=${EODHD_API_KEY}&fmt=json`;
-
-    const response = await fetchWithTimeout(url);
-
-    if (!response.ok) {
-      throw new Error(`EODHD error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    return {
-      id: upperSymbol.toLowerCase(),
-      symbol: upperSymbol,
-      price: data.close || data.previousClose || 0,
-      change24h: data.change_p || 0,
-      high: data.high,
-      low: data.low,
-      volume: data.volume,
-      marketCap: 0,
-      volume24h: data.volume || 0
-    };
-
-  } catch (error) {
-    logWarn(`Crypto price error for ${symbol}:`, error.message);
-    const fallback = FALLBACK_CRYPTO_PRICES[upperSymbol] || 1;
-    return {
-      id: upperSymbol.toLowerCase(),
-      symbol: upperSymbol,
-      price: fallback,
-      change24h: 0,
-      marketCap: 0,
-      volume24h: 0
-    };
-  }
-}
-
-/**
- * Get multiple crypto prices
+ * Get multiple crypto prices via proxy
  * @param {string[]} symbols - Array of crypto symbols (e.g., ['BTC', 'ETH'])
  * @returns {Promise<Object>} - Keyed by symbol: { BTC: {price, change24h}, ETH: {...} }
  */
@@ -281,113 +204,76 @@ export async function getMultipleCryptoPrices(symbols) {
   const now = Date.now();
   const upperSymbols = symbols.map(s => s.toUpperCase());
 
-  // Enhanced debug logging
   console.log(`[EODHD] Requesting crypto prices for:`, upperSymbols);
 
   // Check cache
-  const allCached = upperSymbols.every(s =>
-    priceCache.crypto[s] &&
-    (now - priceCache.lastFetch.crypto < priceCache.CACHE_DURATION)
-  );
-
-  if (allCached) {
-    logDebug('Using cached crypto prices');
-    const result = {};
-    upperSymbols.forEach(s => result[s] = priceCache.crypto[s]);
-    console.log(`[EODHD] Returning ${Object.keys(result).length} cached crypto prices`);
-    return result;
+  if (now - priceCache.lastFetch.crypto < priceCache.CACHE_DURATION) {
+    const allCached = upperSymbols.every(s => priceCache.crypto[s]);
+    if (allCached) {
+      console.log('[EODHD] Using cached crypto prices');
+      const result = {};
+      upperSymbols.forEach(s => result[s] = priceCache.crypto[s]);
+      return result;
+    }
   }
 
-  logDebug(`Fetching ${symbols.length} crypto prices...`);
-
-  // EODHD batch format for crypto
-  const symbolList = upperSymbols.map(s => `${s}-USD.CC`).join(',');
+  console.log(`[EODHD] Fetching ${symbols.length} crypto prices via proxy...`);
 
   try {
-    const url = `${EODHD_BASE}/real-time/${symbolList}?api_token=${EODHD_API_KEY}&fmt=json`;
-
-    const response = await fetchWithTimeout(url);
+    const response = await fetchWithTimeout(
+      `${API_BASE}/crypto/prices?symbols=${upperSymbols.join(',')}`
+    );
 
     if (!response.ok) {
-      throw new Error(`EODHD error: ${response.status}`);
+      throw new Error(`Proxy error: ${response.status}`);
     }
 
     const data = await response.json();
-    console.log(`[EODHD] Raw API response:`, data);
+    console.log(`[EODHD] Proxy response:`, data);
 
-    // Handle both single and multiple responses
-    const dataArray = Array.isArray(data) ? data : [data];
-
-    const result = {};
-    const successfulSymbols = [];
-    const zeroOrMissingSymbols = [];
-
-    dataArray.forEach(item => {
-      // Extract symbol from code (e.g., "BTC-USD.CC" -> "BTC")
-      const symbol = (item.code?.split('-')[0] || item.symbol || '').toUpperCase();
-      if (symbol) {
-        const price = item.close || item.previousClose || 0;
-        result[symbol] = {
-          price: price,
-          change24h: item.change_p || 0
+    if (data.success && data.prices) {
+      // Update cache
+      Object.entries(data.prices).forEach(([symbol, priceData]) => {
+        priceCache.crypto[symbol] = {
+          price: priceData.price,
+          change24h: priceData.changePercent
         };
-        priceCache.crypto[symbol] = result[symbol];
+      });
+      priceCache.lastFetch.crypto = now;
 
-        if (price > 0) {
-          successfulSymbols.push(symbol);
+      console.log(`[EODHD] Got ${data.count} crypto prices via proxy`);
+
+      // Return in expected format, with fallbacks for missing
+      const result = {};
+      const missing = [];
+
+      upperSymbols.forEach(s => {
+        if (data.prices[s] && data.prices[s].price > 0) {
+          result[s] = {
+            price: data.prices[s].price,
+            change24h: data.prices[s].changePercent || 0
+          };
         } else {
-          zeroOrMissingSymbols.push(symbol);
-        }
-      }
-    });
-
-    // Find which symbols we didn't get or got zero price for
-    const missingSymbols = upperSymbols.filter(s => !result[s] || result[s].price === 0);
-
-    if (missingSymbols.length > 0) {
-      console.warn(`[EODHD] Missing/zero prices for:`, missingSymbols);
-
-      // Try fetching missing symbols individually with alternate formats
-      for (const symbol of missingSymbols) {
-        const altPrice = await tryAlternateFormats(symbol);
-        if (altPrice && altPrice.price > 0) {
-          result[symbol] = altPrice;
-          priceCache.crypto[symbol] = altPrice;
-          console.log(`[EODHD] Got ${symbol} via alternate format: $${altPrice.price}`);
-        } else {
-          // Use fallback price
-          const fallbackPrice = FALLBACK_CRYPTO_PRICES[symbol] || 1;
-          result[symbol] = {
-            price: fallbackPrice,
+          missing.push(s);
+          result[s] = {
+            price: FALLBACK_CRYPTO_PRICES[s] || 1,
             change24h: 0,
             isFallback: true
           };
-          console.warn(`[EODHD] Using fallback for ${symbol}: $${fallbackPrice}`);
         }
+      });
+
+      if (missing.length > 0) {
+        console.warn(`[EODHD] Using fallbacks for:`, missing);
       }
+
+      return result;
     }
 
-    // Fill in any remaining missing symbols with fallbacks
-    upperSymbols.forEach(s => {
-      if (!result[s]) {
-        result[s] = {
-          price: FALLBACK_CRYPTO_PRICES[s] || 1,
-          change24h: 0,
-          isFallback: true
-        };
-      }
-    });
-
-    priceCache.lastFetch.crypto = now;
-
-    const received = Object.keys(result).filter(s => result[s].price > 0 && !result[s].isFallback);
-    console.log(`[EODHD] Got prices for ${received.length}/${upperSymbols.length} cryptos (live), rest using fallbacks`);
-
-    return result;
+    throw new Error(data.error || 'Unknown proxy error');
 
   } catch (error) {
-    logWarn('Batch crypto fetch error:', error.message);
-    console.error(`[EODHD] Batch fetch failed:`, error);
+    console.warn('[EODHD] Crypto proxy fetch failed:', error.message);
 
     // Return fallback prices
     const result = {};
@@ -403,48 +289,24 @@ export async function getMultipleCryptoPrices(symbols) {
   }
 }
 
-/**
- * Try alternate EODHD symbol formats for crypto
- * Some cryptos may use different ticker formats
- */
-async function tryAlternateFormats(symbol) {
-  const upperSymbol = symbol.toUpperCase();
-
-  // EODHD alternate formats to try
-  const formats = [
-    `${upperSymbol}-USD.CC`,      // Standard: BTC-USD.CC
-    `${upperSymbol}USD.CC`,       // No dash: BTCUSD.CC
-    `${upperSymbol}-USDT.CC`,     // USDT pair: BTC-USDT.CC
-    `${upperSymbol}.CC`,          // Just symbol: BTC.CC
-  ];
-
-  for (const format of formats) {
-    try {
-      const url = `${EODHD_BASE}/real-time/${format}?api_token=${EODHD_API_KEY}&fmt=json`;
-      const response = await fetchWithTimeout(url, 5000);
-
-      if (response.ok) {
-        const data = await response.json();
-        const price = data.close || data.previousClose || 0;
-
-        if (price > 0) {
-          console.log(`[EODHD] Found ${symbol} using format: ${format} = $${price}`);
-          return {
-            price: price,
-            change24h: data.change_p || 0
-          };
-        }
-      }
-    } catch (e) {
-      // Continue to next format
-    }
-  }
-
-  return null;
-}
-
-// Alias for backward compatibility - returns data keyed by symbol
+// Alias for backward compatibility
 export const getAllCryptoPrices = getMultipleCryptoPrices;
+
+/**
+ * Get single crypto price via proxy
+ */
+export async function getCryptoPrice(symbol) {
+  const prices = await getMultipleCryptoPrices([symbol]);
+  const upper = symbol.toUpperCase();
+  return {
+    id: upper.toLowerCase(),
+    symbol: upper,
+    price: prices[upper]?.price || FALLBACK_CRYPTO_PRICES[upper] || 1,
+    change24h: prices[upper]?.change24h || 0,
+    marketCap: 0,
+    volume24h: 0
+  };
+}
 
 /**
  * Get list of popular crypto with prices
@@ -519,10 +381,8 @@ function generateCommunityData(symbol, price, percentChange) {
 
 /**
  * Symbol conversion helper (for backward compatibility)
- * With EODHD we use symbols directly, no need for CoinGecko ID conversion
  */
 export function symbolToCoinGeckoId(symbol) {
-  // EODHD uses symbols directly, but we keep this for compatibility
   return symbol.toUpperCase();
 }
 
@@ -544,26 +404,21 @@ export function clearCache() {
 export const clearBatchPriceCache = clearCache;
 
 /**
- * Test API connection
+ * Test API connection via proxy
  */
 export async function testConnection() {
   try {
-    const response = await fetchWithTimeout(
-      `${EODHD_BASE}/real-time/AAPL.US?api_token=${EODHD_API_KEY}&fmt=json`
-    );
+    const response = await fetchWithTimeout(`${API_BASE}/stocks/prices?symbols=AAPL`);
 
     if (response.ok) {
       const data = await response.json();
-      console.log('[EODHD] Connection test successful:', {
-        symbol: 'AAPL',
-        price: data.close
-      });
+      console.log('[EODHD] Proxy connection test successful:', data);
       return true;
     }
 
     return false;
   } catch (error) {
-    console.error('[EODHD] Connection test failed:', error);
+    console.error('[EODHD] Proxy connection test failed:', error);
     return false;
   }
 }
