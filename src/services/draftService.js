@@ -18,6 +18,7 @@ import {
 import { db } from '../firebase/config';
 import { getAssetPool, generateSnakeOrder, generateDraftCode, shuffleArray } from './draftAssets';
 import { initializeFreeAgents, calculateBattleEndTime } from './freeAgencyService';
+// EODHD API - All-in-one provider (replaces Finnhub + CoinGecko)
 import {
   getStockPrice,
   getCryptoPrice,
@@ -26,7 +27,7 @@ import {
   symbolToCoinGeckoId,
   FALLBACK_CRYPTO_PRICES,
   FALLBACK_STOCK_PRICES
-} from './stockAPI';
+} from './eodhdAPI';
 
 // ============================================
 // HELPER FUNCTIONS

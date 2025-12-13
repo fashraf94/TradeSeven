@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } from './services/LocalStorage';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
-import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES } from './services/stockAPI';
+// EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
+import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES } from './services/eodhdAPI';
 import './firebase/config';
 import { motion } from 'framer-motion';
 
@@ -10621,7 +10622,7 @@ export default function PortfolioDuel() {
         console.log('[ForceRepair] Current locked prices:', currentDraft.lockedPrices);
 
         try {
-          const stockAPIModule = await import('./services/stockAPI');
+          const stockAPIModule = await import('./services/eodhdAPI');
           const { doc, updateDoc, serverTimestamp } = await import('firebase/firestore');
           const { db } = await import('./firebase/config');
 
@@ -10717,7 +10718,7 @@ export default function PortfolioDuel() {
           console.log('[DraftBattle] ⚠️ Detected bad locked prices (all $100), attempting repair...');
 
           try {
-            const stockAPIModule = await import('./services/stockAPI');
+            const stockAPIModule = await import('./services/eodhdAPI');
             const draftServiceModule = await import('./services/draftService');
 
             // Collect all symbols
@@ -10787,7 +10788,7 @@ export default function PortfolioDuel() {
           setLoading(true);
 
           try {
-            const stockAPIModule = await import('./services/stockAPI');
+            const stockAPIModule = await import('./services/eodhdAPI');
 
             // STEP 1: Collect ALL unique symbols from ALL players (ONE batch call)
             const allSymbols = new Set();

@@ -3,7 +3,8 @@
 
 import { db } from '../firebase/config';
 import { doc, getDoc, updateDoc, serverTimestamp, runTransaction } from 'firebase/firestore';
-import * as stockAPI from './stockAPI';
+// EODHD API - All-in-one provider (replaces Finnhub + CoinGecko)
+import * as stockAPI from './eodhdAPI';
 import { getAssetPool } from './draftAssets';
 
 // ============================================
