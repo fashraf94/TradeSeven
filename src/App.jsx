@@ -10811,6 +10811,10 @@ export default function PortfolioDuel() {
               allPrices = await stockAPIModule.getAllStockPrices(symbolList);
             }
 
+            // DEBUG: Log what we received from API and what's in lockedPrices
+            console.log('[DraftBattle] Current prices received:', allPrices);
+            console.log('[DraftBattle] Locked prices from draft:', currentDraft.lockedPrices);
+
             // STEP 3: Calculate each player's performance using cached prices
             const playerPerformances = currentDraft.players.map((player) => {
               let totalGain = 0;
@@ -10836,6 +10840,9 @@ export default function PortfolioDuel() {
                 const lockedPrice = currentDraft.lockedPrices?.[symbol] ||
                                    currentDraft.lockedPrices?.[lookupKey] ||
                                    currentPrice;
+
+                // DEBUG: Log price comparison for each asset
+                console.log(`[DraftBattle] ${symbol}: locked=$${lockedPrice?.toFixed(4)}, current=$${currentPrice?.toFixed(4)}, isFallback=${priceData?.isFallback || false}`);
 
                 // Calculate gain with sanity checks
                 let gain = 0;
