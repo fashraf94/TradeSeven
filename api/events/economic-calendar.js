@@ -20,33 +20,45 @@ export default async function handler(req, res) {
   }
 
   // Default date range: current month
-  const fromDate = from || new Date().toISOString().split('T')[0];
-  const toDate = to || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const today = new Date();
+  const fromDate = from || new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+  const toDate = to || new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
 
   try {
     console.log(`[API] Fetching economic events from ${fromDate} to ${toDate}`);
 
-    const response = await fetch(
-      `https://eodhd.com/api/economic-events?api_token=${API_KEY}&fmt=json&from=${fromDate}&to=${toDate}&country=US`
-    );
+    // EODHD Economic Events API
+    const url = `https://eodhd.com/api/economic-events?api_token=${API_KEY}&fmt=json&from=${fromDate}&to=${toDate}&country=US`;
+    console.log(`[API] Request URL: ${url.replace(API_KEY, 'HIDDEN')}`);
+
+    const response = await fetch(url);
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[API] EODHD API error: ${response.status} - ${errorText}`);
       throw new Error(`EODHD API responded with ${response.status}`);
     }
 
     const rawEvents = await response.json();
+    console.log(`[API] Raw events received: ${rawEvents.length}`);
 
-    // Filter and transform to relevant events
+    // Log first few events for debugging
+    if (rawEvents.length > 0) {
+      console.log('[API] Sample event structure:', JSON.stringify(rawEvents[0], null, 2));
+    }
+
+    // Filter and transform to relevant events - now more permissive
     const transformedEvents = rawEvents
-      .filter(isRelevantEvent)
-      .map(transformEvent)
-      .sort((a, b) => new Date(a.date + 'T' + a.time) - new Date(b.date + 'T' + b.time));
+      .filter(event => isRelevantEvent(event))
+      .map(event => transformEvent(event))
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    console.log(`[API] Found ${transformedEvents.length} relevant economic events`);
+    console.log(`[API] Found ${transformedEvents.length} relevant economic events after filtering`);
 
     return res.status(200).json({
       success: true,
-      events: transformedEvents
+      events: transformedEvents,
+      totalRaw: rawEvents.length
     });
 
   } catch (error) {
@@ -58,9 +70,14 @@ export default async function handler(req, res) {
   }
 }
 
-// Check if event is relevant to MarketClash users
+// Check if event is relevant to MarketClash users - MORE PERMISSIVE
 function isRelevantEvent(event) {
-  const relevantKeywords = [
+  // Get the event name/title from the API response
+  const eventName = event.event || event.title || event.name || '';
+  const eventLower = eventName.toLowerCase();
+
+  // High-priority keywords - always include these
+  const highPriorityKeywords = [
     'interest rate',
     'federal funds',
     'fomc',
@@ -68,9 +85,11 @@ function isRelevantEvent(event) {
     'consumer price',
     'inflation',
     'non-farm payroll',
+    'nonfarm payroll',
     'nfp',
     'employment',
     'unemployment',
+    'jobless claims',
     'gdp',
     'gross domestic',
     'pce',
@@ -80,29 +99,48 @@ function isRelevantEvent(event) {
     'federal reserve',
     'powell',
     'manufacturing pmi',
-    'services pmi'
+    'services pmi',
+    'ism pmi',
+    'ism manufacturing',
+    'ism services',
+    'housing starts',
+    'building permits',
+    'consumer confidence',
+    'michigan consumer',
+    'industrial production',
+    'durable goods',
+    'trade balance',
+    'treasury',
+    'beige book'
   ];
 
-  const eventLower = (event.event || '').toLowerCase();
-  return relevantKeywords.some(keyword => eventLower.includes(keyword));
+  // Check for any matching keyword
+  const isRelevant = highPriorityKeywords.some(keyword => eventLower.includes(keyword));
+
+  // Also include events with "high" importance if provided
+  const importance = (event.importance || event.impact || '').toLowerCase();
+  const isHighImportance = importance === 'high' || importance === '3';
+
+  return isRelevant || isHighImportance;
 }
 
 // Transform EODHD event to our format
 function transformEvent(event) {
-  const eventType = categorizeEvent(event.event);
+  const eventName = event.event || event.title || event.name || 'Economic Event';
+  const eventType = categorizeEvent(eventName);
 
   return {
-    id: `eco_${event.date}_${hashCode(event.event)}`,
-    name: event.event,
+    id: `eco_${event.date}_${hashCode(eventName)}`,
+    name: eventName,
     type: eventType.type,
     impact: eventType.impact,
     date: event.date,
     time: event.time || '09:00',
     timezone: 'America/New_York',
 
-    // Expectations
-    expected: event.estimate || event.forecast || null,
-    previous: event.previous || event.actual || null,
+    // Expectations - check multiple field names
+    expected: event.estimate || event.forecast || event.consensus || null,
+    previous: event.previous || event.prior || null,
     actual: event.actual || null,
 
     // Historical volatility (static estimates based on event type)

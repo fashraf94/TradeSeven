@@ -2008,13 +2008,28 @@ export default function PortfolioDuel() {
   const fetchEconomicEvents = async (from, to) => {
     try {
       setEventsLoading(true);
+      console.log(`[Calendar] Fetching events from ${from} to ${to}`);
+
       const response = await fetch(`/api/events/economic-calendar?from=${from}&to=${to}`);
-      if (!response.ok) throw new Error('Failed to fetch events');
+      console.log(`[Calendar] Response status: ${response.status}`);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[Calendar] API error: ${errorText}`);
+        throw new Error('Failed to fetch events');
+      }
+
       const data = await response.json();
+      console.log(`[Calendar] Received ${data.events?.length || 0} events (${data.totalRaw || 0} total from API)`);
+
+      if (data.error) {
+        console.error(`[Calendar] API returned error: ${data.error}`);
+      }
+
       setEconomicEvents(data.events || []);
       return data.events || [];
     } catch (error) {
-      console.error('Error fetching economic events:', error);
+      console.error('[Calendar] Error fetching economic events:', error);
       setEconomicEvents([]);
       return [];
     } finally {
