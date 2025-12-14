@@ -6,6 +6,8 @@ import * as challengeService from './services/challengeService';
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES } from './services/eodhdAPI';
 import './firebase/config';
 import { motion } from 'framer-motion';
+// Static economic events data
+import { getEventsForDateRange, getCurrentWeekRange, shouldShowNextWeek, EVENT_TYPE_CONFIG } from './data/economicEvents';
 
 // MarketClash Bull & Bear Logo Component
 const MarketClashLogo = ({ size = 'large' }) => {
@@ -1750,13 +1752,14 @@ export default function PortfolioDuel() {
   const [templateName, setTemplateName] = useState('');
 
   // ============================================
-  // EVENT CALENDAR STATE
+  // WEEK AHEAD CALENDAR STATE
   // ============================================
-  const [showEventCalendar, setShowEventCalendar] = useState(false);
-  const [economicEvents, setEconomicEvents] = useState([]);
-  const [eventsLoading, setEventsLoading] = useState(false);
-  const [selectedEvent, setSelectedEvent] = useState(null);
-  const [eventCalendarMonth, setEventCalendarMonth] = useState(new Date());
+  const [showWeekAhead, setShowWeekAhead] = useState(false);
+  const [weekAheadEvents, setWeekAheadEvents] = useState([]);
+  const [weekAheadEarnings, setWeekAheadEarnings] = useState([]);
+  const [weekAheadLoading, setWeekAheadLoading] = useState(false);
+  const [weekAheadRange, setWeekAheadRange] = useState({ start: null, end: null, isNextWeek: false });
+  const [expandedEventId, setExpandedEventId] = useState(null);
 
   // ============================================
   // REMATCH STATE
@@ -2001,61 +2004,76 @@ export default function PortfolioDuel() {
   };
 
   // ============================================
-  // EVENT CALENDAR HELPER FUNCTIONS
+  // WEEK AHEAD HELPER FUNCTIONS
   // ============================================
 
-  // Fetch economic events from API
-  const fetchEconomicEvents = async (from, to) => {
+  // Load Week Ahead data (static events + earnings from API)
+  const loadWeekAheadData = async () => {
+    setWeekAheadLoading(true);
+    setExpandedEventId(null);
+
     try {
-      setEventsLoading(true);
-      console.log(`[Calendar] Fetching events from ${from} to ${to}`);
+      // Determine which week to show
+      const showNextWeek = shouldShowNextWeek();
+      let { monday, sunday } = getCurrentWeekRange();
 
-      const response = await fetch(`/api/events/economic-calendar?from=${from}&to=${to}`);
-      console.log(`[Calendar] Response status: ${response.status}`);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[Calendar] API error: ${errorText}`);
-        throw new Error('Failed to fetch events');
+      if (showNextWeek) {
+        // Shift to next week
+        monday = new Date(monday);
+        monday.setDate(monday.getDate() + 7);
+        sunday = new Date(sunday);
+        sunday.setDate(sunday.getDate() + 7);
       }
 
-      const data = await response.json();
-      console.log(`[Calendar] Received ${data.events?.length || 0} events (${data.totalRaw || 0} total from API)`);
+      setWeekAheadRange({
+        start: monday,
+        end: sunday,
+        isNextWeek: showNextWeek
+      });
 
-      if (data.error) {
-        console.error(`[Calendar] API returned error: ${data.error}`);
+      const fromStr = monday.toISOString().split('T')[0];
+      const toStr = sunday.toISOString().split('T')[0];
+
+      console.log(`[WeekAhead] Loading data from ${fromStr} to ${toStr}`);
+
+      // Get static events from imported data
+      const staticEvents = getEventsForDateRange(fromStr, toStr);
+      console.log(`[WeekAhead] Found ${staticEvents.length} static events`);
+      setWeekAheadEvents(staticEvents);
+
+      // Get earnings from API
+      try {
+        const earningsRes = await fetch(`/api/earnings-week?from=${fromStr}&to=${toStr}`);
+        if (earningsRes.ok) {
+          const earningsData = await earningsRes.json();
+          console.log(`[WeekAhead] Found ${earningsData.length} earnings`);
+          setWeekAheadEarnings(earningsData);
+        } else {
+          console.log('[WeekAhead] No earnings data available');
+          setWeekAheadEarnings([]);
+        }
+      } catch (err) {
+        console.error('[WeekAhead] Failed to load earnings:', err);
+        setWeekAheadEarnings([]);
       }
-
-      setEconomicEvents(data.events || []);
-      return data.events || [];
     } catch (error) {
-      console.error('[Calendar] Error fetching economic events:', error);
-      setEconomicEvents([]);
-      return [];
+      console.error('[WeekAhead] Error loading data:', error);
     } finally {
-      setEventsLoading(false);
+      setWeekAheadLoading(false);
     }
   };
 
-  // Check for upcoming high-impact events (next 3 days)
-  const checkUpcomingHighImpactEvents = async () => {
-    try {
-      const today = new Date();
-      const threeDaysLater = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
-      const from = today.toISOString().split('T')[0];
-      const to = threeDaysLater.toISOString().split('T')[0];
+  // Check for upcoming high-impact events (next 3 days) - uses static data
+  const checkUpcomingHighImpactEvents = () => {
+    const today = new Date();
+    const threeDaysLater = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
+    const fromStr = today.toISOString().split('T')[0];
+    const toStr = threeDaysLater.toISOString().split('T')[0];
 
-      const response = await fetch(`/api/events/economic-calendar?from=${from}&to=${to}`);
-      if (!response.ok) return [];
-
-      const data = await response.json();
-      const highImpact = (data.events || []).filter(e => e.impact === 'high');
-      setUpcomingHighImpactEvents(highImpact);
-      return highImpact;
-    } catch (error) {
-      console.error('Error checking high-impact events:', error);
-      return [];
-    }
+    const events = getEventsForDateRange(fromStr, toStr);
+    const highImpact = events.filter(e => e.impact === 'high');
+    setUpcomingHighImpactEvents(highImpact);
+    return highImpact;
   };
 
   // Get event impact color
@@ -2064,8 +2082,26 @@ export default function PortfolioDuel() {
       case 'high': return '#ef4444';
       case 'medium': return '#f59e0b';
       case 'low': return '#22c55e';
-      default: return '#8b949e';
+      default: return '#6b7280';
     }
+  };
+
+  // Get event icon by type
+  const getEventIcon = (type) => {
+    const config = EVENT_TYPE_CONFIG[type];
+    return config ? config.icon : '📅';
+  };
+
+  // Format date for display
+  const formatWeekDate = (dateStr) => {
+    const date = new Date(dateStr);
+    const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+    const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    return {
+      dayName: days[date.getDay()],
+      dayNum: date.getDate(),
+      month: months[date.getMonth()]
+    };
   };
 
   // ============================================
@@ -7167,17 +7203,13 @@ export default function PortfolioDuel() {
                   )}
                 </button>
 
-                {/* EVENT CALENDAR */}
+                {/* WEEK AHEAD CALENDAR */}
                 <button
                   onClick={() => {
-                    console.log('📅 Event Calendar clicked');
-                    setShowEventCalendar(true);
+                    console.log('📅 Week Ahead clicked');
+                    setShowWeekAhead(true);
                     setSidebarOpen(false);
-                    // Fetch events for current month
-                    const now = new Date();
-                    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-                    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-                    fetchEconomicEvents(firstDay, lastDay);
+                    loadWeekAheadData();
                   }}
                   style={{
                     width: '100%',
@@ -7198,7 +7230,7 @@ export default function PortfolioDuel() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                   <div style={{ flex: 1, textAlign: 'left' }}>
-                    <div style={{ fontWeight: '600', fontSize: '14px' }}>Event Calendar</div>
+                    <div style={{ fontWeight: '600', fontSize: '14px' }}>Week Ahead</div>
                     {upcomingHighImpactEvents.length > 0 && (
                       <div style={{ fontSize: '11px', color: '#ef4444' }}>
                         {upcomingHighImpactEvents.length} high-impact event{upcomingHighImpactEvents.length > 1 ? 's' : ''} soon
@@ -7433,13 +7465,13 @@ export default function PortfolioDuel() {
         )}
 
         {/* ============================================ */}
-        {/* EVENT CALENDAR MODAL */}
+        {/* WEEK AHEAD CALENDAR MODAL */}
         {/* ============================================ */}
-        {showEventCalendar && (
+        {showWeekAhead && (
           <>
             {/* Backdrop */}
             <div
-              onClick={() => setShowEventCalendar(false)}
+              onClick={() => setShowWeekAhead(false)}
               style={{
                 position: 'fixed',
                 top: 0,
@@ -7477,10 +7509,13 @@ export default function PortfolioDuel() {
                 justifyContent: 'space-between'
               }}>
                 <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>📅</span> Economic Calendar
+                  <span>📅</span> Week Ahead
+                  {weekAheadRange.isNextWeek && (
+                    <span style={{ fontSize: '12px', color: '#8b949e', fontWeight: 'normal' }}>(Next Week)</span>
+                  )}
                 </h2>
                 <button
-                  onClick={() => setShowEventCalendar(false)}
+                  onClick={() => setShowWeekAhead(false)}
                   style={{
                     padding: '6px',
                     backgroundColor: 'transparent',
@@ -7495,57 +7530,17 @@ export default function PortfolioDuel() {
                 </button>
               </div>
 
-              {/* Month Navigation */}
+              {/* Week Range Header */}
               <div style={{
                 padding: '12px 20px',
                 borderBottom: '1px solid #21262d',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
+                textAlign: 'center'
               }}>
-                <button
-                  onClick={() => {
-                    const newDate = new Date(eventCalendarMonth);
-                    newDate.setMonth(newDate.getMonth() - 1);
-                    setEventCalendarMonth(newDate);
-                    const firstDay = new Date(newDate.getFullYear(), newDate.getMonth(), 1).toISOString().split('T')[0];
-                    const lastDay = new Date(newDate.getFullYear(), newDate.getMonth() + 1, 0).toISOString().split('T')[0];
-                    fetchEconomicEvents(firstDay, lastDay);
-                  }}
-                  style={{
-                    padding: '8px 12px',
-                    backgroundColor: '#21262d',
-                    color: '#d1d5db',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  ← Prev
-                </button>
-                <span style={{ fontSize: '16px', fontWeight: '600', color: '#ffffff' }}>
-                  {eventCalendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                <span style={{ fontSize: '14px', color: '#d1d5db' }}>
+                  {weekAheadRange.start && weekAheadRange.end && (
+                    `${formatWeekDate(weekAheadRange.start)} - ${formatWeekDate(weekAheadRange.end)}`
+                  )}
                 </span>
-                <button
-                  onClick={() => {
-                    const newDate = new Date(eventCalendarMonth);
-                    newDate.setMonth(newDate.getMonth() + 1);
-                    setEventCalendarMonth(newDate);
-                    const firstDay = new Date(newDate.getFullYear(), newDate.getMonth(), 1).toISOString().split('T')[0];
-                    const lastDay = new Date(newDate.getFullYear(), newDate.getMonth() + 1, 0).toISOString().split('T')[0];
-                    fetchEconomicEvents(firstDay, lastDay);
-                  }}
-                  style={{
-                    padding: '8px 12px',
-                    backgroundColor: '#21262d',
-                    color: '#d1d5db',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Next →
-                </button>
               </div>
 
               {/* Impact Legend */}
@@ -7574,148 +7569,167 @@ export default function PortfolioDuel() {
 
               {/* Events List */}
               <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
-                {eventsLoading ? (
+                {weekAheadLoading ? (
                   <div style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
                     <div style={{ fontSize: '24px', marginBottom: '8px' }}>⏳</div>
-                    Loading economic events...
+                    Loading week ahead...
                   </div>
-                ) : economicEvents.length === 0 ? (
+                ) : (weekAheadEvents.length === 0 && weekAheadEarnings.length === 0) ? (
                   <div style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
                     <div style={{ fontSize: '32px', marginBottom: '8px' }}>📭</div>
-                    <p>No major economic events this month</p>
+                    <p>No major events this week</p>
+                    <p style={{ fontSize: '12px', marginTop: '8px' }}>Check back on the weekend for next week's events</p>
                   </div>
                 ) : (
-                  economicEvents.map(event => (
-                    <div
-                      key={event.id}
-                      onClick={() => setSelectedEvent(selectedEvent?.id === event.id ? null : event)}
-                      style={{
-                        padding: '12px 16px',
-                        marginBottom: '8px',
-                        borderRadius: '10px',
-                        backgroundColor: selectedEvent?.id === event.id ? '#21262d' : '#0d1117',
-                        border: `1px solid ${selectedEvent?.id === event.id ? getEventImpactColor(event.impact) : '#21262d'}`,
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                        {/* Date badge */}
-                        <div style={{
-                          minWidth: '50px',
-                          textAlign: 'center',
-                          padding: '8px',
-                          backgroundColor: '#21262d',
-                          borderRadius: '8px'
-                        }}>
-                          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff' }}>
-                            {new Date(event.date).getDate()}
-                          </div>
-                          <div style={{ fontSize: '10px', color: '#8b949e', textTransform: 'uppercase' }}>
-                            {new Date(event.date).toLocaleDateString('en-US', { weekday: 'short' })}
-                          </div>
-                        </div>
+                  <>
+                    {/* Combine and sort all events */}
+                    {[...weekAheadEvents, ...weekAheadEarnings]
+                      .sort((a, b) => new Date(a.date) - new Date(b.date))
+                      .map(event => (
+                        <div
+                          key={event.id}
+                          onClick={() => setExpandedEventId(expandedEventId === event.id ? null : event.id)}
+                          style={{
+                            padding: '12px 16px',
+                            marginBottom: '8px',
+                            borderRadius: '10px',
+                            backgroundColor: expandedEventId === event.id ? '#21262d' : '#0d1117',
+                            border: `1px solid ${expandedEventId === event.id ? getEventImpactColor(event.impact) : '#21262d'}`,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                            {/* Date badge */}
+                            <div style={{
+                              minWidth: '50px',
+                              textAlign: 'center',
+                              padding: '8px',
+                              backgroundColor: '#21262d',
+                              borderRadius: '8px'
+                            }}>
+                              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff' }}>
+                                {new Date(event.date + 'T12:00:00').getDate()}
+                              </div>
+                              <div style={{ fontSize: '10px', color: '#8b949e', textTransform: 'uppercase' }}>
+                                {new Date(event.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' })}
+                              </div>
+                            </div>
 
-                        {/* Event details */}
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                            <span style={{
-                              width: '8px',
-                              height: '8px',
-                              borderRadius: '50%',
-                              backgroundColor: getEventImpactColor(event.impact)
-                            }}></span>
-                            <span style={{ fontSize: '14px', fontWeight: '600', color: '#ffffff' }}>
-                              {event.name}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#8b949e' }}>
-                            {event.time} ET
-                          </div>
-
-                          {/* Expanded details */}
-                          {selectedEvent?.id === event.id && (
-                            <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #21262d' }}>
-                              {/* Expected vs Previous */}
-                              <div style={{ display: 'flex', gap: '16px', marginBottom: '12px' }}>
-                                {event.expected && (
-                                  <div>
-                                    <div style={{ fontSize: '10px', color: '#8b949e', marginBottom: '2px' }}>Expected</div>
-                                    <div style={{ fontSize: '14px', color: '#3b82f6', fontWeight: '600' }}>{event.expected}</div>
-                                  </div>
-                                )}
-                                {event.previous && (
-                                  <div>
-                                    <div style={{ fontSize: '10px', color: '#8b949e', marginBottom: '2px' }}>Previous</div>
-                                    <div style={{ fontSize: '14px', color: '#8b949e', fontWeight: '600' }}>{event.previous}</div>
-                                  </div>
+                            {/* Event details */}
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                <span style={{ fontSize: '16px' }}>{getEventIcon(event.type)}</span>
+                                <span style={{
+                                  width: '8px',
+                                  height: '8px',
+                                  borderRadius: '50%',
+                                  backgroundColor: getEventImpactColor(event.impact)
+                                }}></span>
+                                <span style={{ fontSize: '14px', fontWeight: '600', color: '#ffffff' }}>
+                                  {event.name}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#8b949e' }}>
+                                {event.time} ET
+                                {event.beforeAfterMarket && (
+                                  <span style={{ marginLeft: '8px', color: '#8b949e' }}>
+                                    ({event.beforeAfterMarket === 'BeforeMarket' ? 'Pre-market' : 'After-hours'})
+                                  </span>
                                 )}
                               </div>
 
-                              {/* Historical Volatility */}
-                              {event.historicalData && (
-                                <div style={{
-                                  padding: '10px',
-                                  backgroundColor: '#0d1117',
-                                  borderRadius: '8px',
-                                  marginBottom: '12px'
-                                }}>
-                                  <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '8px' }}>Historical Avg Moves</div>
-                                  <div style={{ display: 'flex', gap: '12px', fontSize: '12px' }}>
-                                    <div>
-                                      <span style={{ color: '#8b949e' }}>Market: </span>
-                                      <span style={{ color: '#22c55e', fontWeight: '600' }}>±{event.historicalData.avgMarketMove}%</span>
+                              {/* Expanded details */}
+                              {expandedEventId === event.id && (
+                                <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #21262d' }}>
+                                  {/* Expected value for economic events */}
+                                  {event.expected && (
+                                    <div style={{ marginBottom: '12px' }}>
+                                      <div style={{ fontSize: '10px', color: '#8b949e', marginBottom: '2px' }}>Expected</div>
+                                      <div style={{ fontSize: '14px', color: '#3b82f6', fontWeight: '600' }}>{event.expected}</div>
                                     </div>
-                                    <div>
-                                      <span style={{ color: '#8b949e' }}>High-Beta: </span>
-                                      <span style={{ color: '#f59e0b', fontWeight: '600' }}>±{event.historicalData.avgHighBetaMove}%</span>
-                                    </div>
-                                    <div>
-                                      <span style={{ color: '#8b949e' }}>Crypto: </span>
-                                      <span style={{ color: '#ef4444', fontWeight: '600' }}>±{event.historicalData.avgCryptoMove}%</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
+                                  )}
 
-                              {/* Strategy Tip */}
-                              {event.strategyTip && (
-                                <div style={{
-                                  padding: '10px',
-                                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                  borderRadius: '8px',
-                                  border: '1px solid rgba(59, 130, 246, 0.2)'
-                                }}>
-                                  <div style={{ fontSize: '11px', color: '#3b82f6', marginBottom: '4px', fontWeight: '600' }}>💡 Strategy Tip</div>
-                                  <div style={{ fontSize: '12px', color: '#d1d5db', lineHeight: '1.4' }}>{event.strategyTip}</div>
-                                </div>
-                              )}
+                                  {/* Historical Volatility */}
+                                  {event.historicalMove && (
+                                    <div style={{
+                                      padding: '10px',
+                                      backgroundColor: '#0d1117',
+                                      borderRadius: '8px',
+                                      marginBottom: '12px'
+                                    }}>
+                                      <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '8px' }}>Historical Avg Moves</div>
+                                      <div style={{ display: 'flex', gap: '12px', fontSize: '12px' }}>
+                                        {event.type === 'earnings' ? (
+                                          <>
+                                            <div>
+                                              <span style={{ color: '#8b949e' }}>Stock: </span>
+                                              <span style={{ color: '#22c55e', fontWeight: '600' }}>±{event.historicalMove.stock}%</span>
+                                            </div>
+                                            <div>
+                                              <span style={{ color: '#8b949e' }}>Sector: </span>
+                                              <span style={{ color: '#f59e0b', fontWeight: '600' }}>±{event.historicalMove.sector}%</span>
+                                            </div>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <div>
+                                              <span style={{ color: '#8b949e' }}>Market: </span>
+                                              <span style={{ color: '#22c55e', fontWeight: '600' }}>±{event.historicalMove.market}%</span>
+                                            </div>
+                                            <div>
+                                              <span style={{ color: '#8b949e' }}>High-Beta: </span>
+                                              <span style={{ color: '#f59e0b', fontWeight: '600' }}>±{event.historicalMove.highBeta}%</span>
+                                            </div>
+                                            <div>
+                                              <span style={{ color: '#8b949e' }}>Crypto: </span>
+                                              <span style={{ color: '#ef4444', fontWeight: '600' }}>±{event.historicalMove.crypto}%</span>
+                                            </div>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
 
-                              {/* Related Assets */}
-                              {event.relatedAssets && event.relatedAssets.length > 0 && (
-                                <div style={{ marginTop: '12px' }}>
-                                  <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px' }}>Related Assets</div>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                    {event.relatedAssets.map(asset => (
-                                      <span key={asset} style={{
-                                        padding: '4px 8px',
-                                        backgroundColor: '#21262d',
-                                        borderRadius: '4px',
-                                        fontSize: '11px',
-                                        color: '#00d9ff'
-                                      }}>
-                                        {asset}
-                                      </span>
-                                    ))}
-                                  </div>
+                                  {/* Strategy Tip */}
+                                  {event.strategyTip && (
+                                    <div style={{
+                                      padding: '10px',
+                                      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                      borderRadius: '8px',
+                                      border: '1px solid rgba(59, 130, 246, 0.2)'
+                                    }}>
+                                      <div style={{ fontSize: '11px', color: '#3b82f6', marginBottom: '4px', fontWeight: '600' }}>💡 Strategy Tip</div>
+                                      <div style={{ fontSize: '12px', color: '#d1d5db', lineHeight: '1.4' }}>{event.strategyTip}</div>
+                                    </div>
+                                  )}
+
+                                  {/* Affected Sectors for economic events */}
+                                  {event.affectedSectors && event.affectedSectors.length > 0 && (
+                                    <div style={{ marginTop: '12px' }}>
+                                      <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px' }}>Affected Sectors</div>
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                        {event.affectedSectors.map(sector => (
+                                          <span key={sector} style={{
+                                            padding: '4px 8px',
+                                            backgroundColor: '#21262d',
+                                            borderRadius: '4px',
+                                            fontSize: '11px',
+                                            color: '#00d9ff'
+                                          }}>
+                                            {sector}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
-                          )}
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  ))
+                      ))}
+                  </>
                 )}
               </div>
             </div>
