@@ -6,8 +6,8 @@ import * as challengeService from './services/challengeService';
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES } from './services/eodhdAPI';
 import './firebase/config';
 import { motion } from 'framer-motion';
-// Static economic events data
-import { getEventsForDateRange, getCurrentWeekRange, shouldShowNextWeek, EVENT_TYPE_CONFIG } from './data/economicEvents';
+// Event watchlist configuration for Week Ahead calendar
+import { EVENT_TYPE_CONFIG, getHolidaysInRange } from './data/eventWatchlist';
 
 // MarketClash Bull & Bear Logo Component
 const MarketClashLogo = ({ size = 'large' }) => {
@@ -1757,6 +1757,7 @@ export default function PortfolioDuel() {
   const [showWeekAhead, setShowWeekAhead] = useState(false);
   const [weekAheadEvents, setWeekAheadEvents] = useState([]);
   const [weekAheadEarnings, setWeekAheadEarnings] = useState([]);
+  const [weekAheadHolidays, setWeekAheadHolidays] = useState([]);
   const [weekAheadLoading, setWeekAheadLoading] = useState(false);
   const [weekAheadRange, setWeekAheadRange] = useState({ start: null, end: null, isNextWeek: false });
   const [expandedEventId, setExpandedEventId] = useState(null);
@@ -2007,43 +2008,66 @@ export default function PortfolioDuel() {
   // WEEK AHEAD HELPER FUNCTIONS
   // ============================================
 
-  // Load Week Ahead data (static events + earnings from API)
+  // Get week range (Monday to Sunday)
+  const getWeekRange = (showNextWeek = false) => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+
+    // Get Monday of current week
+    let monday = new Date(now);
+    monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+    monday.setHours(0, 0, 0, 0);
+
+    // If weekend (Sat=6, Sun=0), show next week
+    if (dayOfWeek === 0 || dayOfWeek === 6 || showNextWeek) {
+      monday.setDate(monday.getDate() + 7);
+    }
+
+    // Get Sunday
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+
+    return {
+      start: monday,
+      end: sunday,
+      isNextWeek: dayOfWeek === 0 || dayOfWeek === 6 || showNextWeek
+    };
+  };
+
+  // Load Week Ahead data (dynamic events from EODHD API + earnings)
   const loadWeekAheadData = async () => {
     setWeekAheadLoading(true);
     setExpandedEventId(null);
 
     try {
-      // Determine which week to show
-      const showNextWeek = shouldShowNextWeek();
-      let { monday, sunday } = getCurrentWeekRange();
+      const range = getWeekRange();
+      setWeekAheadRange(range);
 
-      if (showNextWeek) {
-        // Shift to next week
-        monday = new Date(monday);
-        monday.setDate(monday.getDate() + 7);
-        sunday = new Date(sunday);
-        sunday.setDate(sunday.getDate() + 7);
-      }
-
-      setWeekAheadRange({
-        start: monday,
-        end: sunday,
-        isNextWeek: showNextWeek
-      });
-
-      const fromStr = monday.toISOString().split('T')[0];
-      const toStr = sunday.toISOString().split('T')[0];
+      const fromStr = range.start.toISOString().split('T')[0];
+      const toStr = range.end.toISOString().split('T')[0];
 
       console.log(`[WeekAhead] Loading data from ${fromStr} to ${toStr}`);
 
-      // Get static events from imported data
-      const staticEvents = getEventsForDateRange(fromStr, toStr);
-      console.log(`[WeekAhead] Found ${staticEvents.length} static events`);
-      setWeekAheadEvents(staticEvents);
+      // Fetch economic events from API
+      try {
+        const eventsRes = await fetch(`/api/week-ahead-events?from=${fromStr}&to=${toStr}`);
+        if (eventsRes.ok) {
+          const eventsData = await eventsRes.json();
+          console.log(`[WeekAhead] Found ${eventsData.events?.length || 0} economic events (from ${eventsData.meta?.totalRaw || 0} raw)`);
+          setWeekAheadEvents(eventsData.events || []);
+        } else {
+          console.log('[WeekAhead] No economic events data available');
+          setWeekAheadEvents([]);
+        }
+      } catch (err) {
+        console.error('[WeekAhead] Failed to load events:', err);
+        setWeekAheadEvents([]);
+      }
 
       // Get earnings from API
       try {
-        const earningsRes = await fetch(`/api/earnings-week?from=${fromStr}&to=${toStr}`);
+        const earningsRes = await fetch(`/api/week-ahead-earnings?from=${fromStr}&to=${toStr}`);
         if (earningsRes.ok) {
           const earningsData = await earningsRes.json();
           console.log(`[WeekAhead] Found ${earningsData.length} earnings`);
@@ -2056,6 +2080,12 @@ export default function PortfolioDuel() {
         console.error('[WeekAhead] Failed to load earnings:', err);
         setWeekAheadEarnings([]);
       }
+
+      // Get holidays from static data
+      const holidays = getHolidaysInRange(fromStr, toStr);
+      console.log(`[WeekAhead] Found ${holidays.length} holidays/closures`);
+      setWeekAheadHolidays(holidays);
+
     } catch (error) {
       console.error('[WeekAhead] Error loading data:', error);
     } finally {
@@ -2063,17 +2093,26 @@ export default function PortfolioDuel() {
     }
   };
 
-  // Check for upcoming high-impact events (next 3 days) - uses static data
-  const checkUpcomingHighImpactEvents = () => {
-    const today = new Date();
-    const threeDaysLater = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
-    const fromStr = today.toISOString().split('T')[0];
-    const toStr = threeDaysLater.toISOString().split('T')[0];
+  // Check for upcoming high-impact events (next 3 days) - fetches from API
+  const checkUpcomingHighImpactEvents = async () => {
+    try {
+      const today = new Date();
+      const threeDaysLater = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
+      const fromStr = today.toISOString().split('T')[0];
+      const toStr = threeDaysLater.toISOString().split('T')[0];
 
-    const events = getEventsForDateRange(fromStr, toStr);
-    const highImpact = events.filter(e => e.impact === 'high');
-    setUpcomingHighImpactEvents(highImpact);
-    return highImpact;
+      const eventsRes = await fetch(`/api/week-ahead-events?from=${fromStr}&to=${toStr}`);
+      if (eventsRes.ok) {
+        const data = await eventsRes.json();
+        const highImpact = (data.events || []).filter(e => e.impact === 'high');
+        setUpcomingHighImpactEvents(highImpact);
+        return highImpact;
+      }
+    } catch (err) {
+      console.error('[WeekAhead] Failed to check upcoming events:', err);
+    }
+    setUpcomingHighImpactEvents([]);
+    return [];
   };
 
   // Get event impact color
@@ -2092,15 +2131,26 @@ export default function PortfolioDuel() {
     return config ? config.icon : '📅';
   };
 
-  // Format date for display
-  const formatWeekDate = (dateStr) => {
-    const date = new Date(dateStr);
+  // Format date for display (handles both Date objects and ISO strings)
+  const formatWeekDate = (dateInput) => {
+    const date = dateInput instanceof Date ? dateInput : new Date(dateInput + 'T12:00:00');
     const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-    const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[date.getMonth()]} ${date.getDate()}`;
+  };
+
+  // Format date for API (ISO format)
+  const formatDateForAPI = (date) => {
+    return date instanceof Date ? date.toISOString().split('T')[0] : date;
+  };
+
+  // Get display info for a date
+  const getDateDisplay = (dateStr) => {
+    const date = new Date(dateStr + 'T12:00:00');
+    const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
     return {
       dayName: days[date.getDay()],
-      dayNum: date.getDate(),
-      month: months[date.getMonth()]
+      dayNum: date.getDate()
     };
   };
 
@@ -7567,6 +7617,39 @@ export default function PortfolioDuel() {
                 </span>
               </div>
 
+              {/* Summary Bar */}
+              <div style={{
+                padding: '12px 20px',
+                background: '#0d1117',
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '16px',
+                fontSize: '13px',
+                borderBottom: '1px solid #21262d'
+              }}>
+                {weekAheadEvents.filter(e => e.impact === 'high').length > 0 && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#ef4444', fontSize: '10px' }}>●</span>
+                    <span style={{ color: '#8b949e' }}>High Impact: {weekAheadEvents.filter(e => e.impact === 'high').length}</span>
+                  </span>
+                )}
+                {weekAheadEarnings.length > 0 && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#a855f7', fontSize: '10px' }}>●</span>
+                    <span style={{ color: '#8b949e' }}>Earnings: {weekAheadEarnings.length}</span>
+                  </span>
+                )}
+                {weekAheadHolidays.length > 0 && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#6b7280', fontSize: '10px' }}>●</span>
+                    <span style={{ color: '#8b949e' }}>Market Closures</span>
+                  </span>
+                )}
+                {weekAheadEvents.length === 0 && weekAheadEarnings.length === 0 && weekAheadHolidays.length === 0 && !weekAheadLoading && (
+                  <span style={{ color: '#22c55e' }}>✓ Quiet week ahead</span>
+                )}
+              </div>
+
               {/* Events List */}
               <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
                 {weekAheadLoading ? (
@@ -7574,7 +7657,7 @@ export default function PortfolioDuel() {
                     <div style={{ fontSize: '24px', marginBottom: '8px' }}>⏳</div>
                     Loading week ahead...
                   </div>
-                ) : (weekAheadEvents.length === 0 && weekAheadEarnings.length === 0) ? (
+                ) : (weekAheadEvents.length === 0 && weekAheadEarnings.length === 0 && weekAheadHolidays.length === 0) ? (
                   <div style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
                     <div style={{ fontSize: '32px', marginBottom: '8px' }}>📭</div>
                     <p>No major events this week</p>
@@ -7582,9 +7665,30 @@ export default function PortfolioDuel() {
                   </div>
                 ) : (
                   <>
-                    {/* Combine and sort all events */}
-                    {[...weekAheadEvents, ...weekAheadEarnings]
-                      .sort((a, b) => new Date(a.date) - new Date(b.date))
+                    {/* Combine and sort all events including holidays */}
+                    {[
+                      ...weekAheadEvents,
+                      ...weekAheadEarnings,
+                      ...weekAheadHolidays.map(h => ({
+                        id: `${h.date}-${h.type}`,
+                        name: h.name,
+                        type: h.type,
+                        date: h.date,
+                        time: h.closeTime || null,
+                        impact: 'info',
+                        note: h.note,
+                        strategyTip: h.type === 'early_close'
+                          ? 'Low volume trading - prices can be erratic. Consider avoiding battles.'
+                          : 'Markets closed. Crypto still trades 24/7.'
+                      }))
+                    ]
+                      .sort((a, b) => {
+                        const dateCompare = a.date.localeCompare(b.date);
+                        if (dateCompare !== 0) return dateCompare;
+                        // Sort by impact within same day
+                        const impactOrder = { high: 0, medium: 1, low: 2, info: 3 };
+                        return (impactOrder[a.impact] || 3) - (impactOrder[b.impact] || 3);
+                      })
                       .map(event => (
                         <div
                           key={event.id}
@@ -7654,40 +7758,51 @@ export default function PortfolioDuel() {
                                   {event.historicalMove && (
                                     <div style={{
                                       padding: '10px',
-                                      backgroundColor: '#0d1117',
+                                      backgroundColor: '#161b22',
                                       borderRadius: '8px',
                                       marginBottom: '12px'
                                     }}>
-                                      <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '8px' }}>Historical Avg Moves</div>
-                                      <div style={{ display: 'flex', gap: '12px', fontSize: '12px' }}>
+                                      <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '8px', fontWeight: '600', letterSpacing: '0.5px' }}>AVG HISTORICAL MOVES</div>
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', fontSize: '13px' }}>
                                         {event.type === 'earnings' ? (
                                           <>
-                                            <div>
+                                            <span>
                                               <span style={{ color: '#8b949e' }}>Stock: </span>
-                                              <span style={{ color: '#22c55e', fontWeight: '600' }}>±{event.historicalMove.stock}%</span>
-                                            </div>
-                                            <div>
-                                              <span style={{ color: '#8b949e' }}>Sector: </span>
-                                              <span style={{ color: '#f59e0b', fontWeight: '600' }}>±{event.historicalMove.sector}%</span>
-                                            </div>
+                                              <span style={{ color: '#00d9ff', fontWeight: '600' }}>±{event.historicalMove.stock}%</span>
+                                            </span>
                                           </>
                                         ) : (
                                           <>
-                                            <div>
-                                              <span style={{ color: '#8b949e' }}>Market: </span>
-                                              <span style={{ color: '#22c55e', fontWeight: '600' }}>±{event.historicalMove.market}%</span>
-                                            </div>
-                                            <div>
-                                              <span style={{ color: '#8b949e' }}>High-Beta: </span>
-                                              <span style={{ color: '#f59e0b', fontWeight: '600' }}>±{event.historicalMove.highBeta}%</span>
-                                            </div>
-                                            <div>
-                                              <span style={{ color: '#8b949e' }}>Crypto: </span>
-                                              <span style={{ color: '#ef4444', fontWeight: '600' }}>±{event.historicalMove.crypto}%</span>
-                                            </div>
+                                            {event.historicalMove.market && (
+                                              <span>
+                                                <span style={{ color: '#8b949e' }}>Market: </span>
+                                                <span style={{ color: '#00d9ff', fontWeight: '600' }}>±{event.historicalMove.market}%</span>
+                                              </span>
+                                            )}
+                                            {event.historicalMove.highBeta && (
+                                              <span>
+                                                <span style={{ color: '#8b949e' }}>High-Beta: </span>
+                                                <span style={{ color: '#f59e0b', fontWeight: '600' }}>±{event.historicalMove.highBeta}%</span>
+                                              </span>
+                                            )}
+                                            {event.historicalMove.crypto && (
+                                              <span>
+                                                <span style={{ color: '#8b949e' }}>Crypto: </span>
+                                                <span style={{ color: '#a855f7', fontWeight: '600' }}>±{event.historicalMove.crypto}%</span>
+                                              </span>
+                                            )}
                                           </>
                                         )}
                                       </div>
+                                      {/* Earnings-specific: last moves */}
+                                      {event.historicalMove.lastMoves && event.historicalMove.lastMoves.length > 0 && (
+                                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#8b949e' }}>
+                                          Last 4: {event.historicalMove.lastMoves.join(' · ')}
+                                          {event.historicalMove.beatRate && (
+                                            <span style={{ marginLeft: '12px' }}>Beat rate: {event.historicalMove.beatRate}</span>
+                                          )}
+                                        </div>
+                                      )}
                                     </div>
                                   )}
 
