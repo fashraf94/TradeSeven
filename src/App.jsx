@@ -2135,6 +2135,18 @@ export default function PortfolioDuel() {
     return config ? config.icon : '📅';
   };
 
+  // Helper to extract just the date part from various formats
+  // EODHD returns '2025-12-18 16:00:00' (space separator)
+  // ISO format is '2025-12-18T16:00:00' (T separator)
+  const extractDatePart = (dateInput) => {
+    if (!dateInput) return null;
+    const str = String(dateInput);
+    // Check for space separator first (EODHD format), then T separator (ISO format)
+    if (str.includes(' ')) return str.split(' ')[0];
+    if (str.includes('T')) return str.split('T')[0];
+    return str; // Already just a date
+  };
+
   // Format date for display (handles both Date objects and ISO strings)
   const formatWeekDate = (dateInput) => {
     if (!dateInput) return 'N/A';
@@ -2143,8 +2155,9 @@ export default function PortfolioDuel() {
     if (dateInput instanceof Date) {
       date = dateInput;
     } else {
-      // Handle string dates - strip any time component and add noon to avoid timezone issues
-      const dateStr = String(dateInput).split('T')[0];
+      // Handle string dates - extract date part and add noon to avoid timezone issues
+      const dateStr = extractDatePart(dateInput);
+      if (!dateStr) return 'N/A';
       date = new Date(dateStr + 'T12:00:00');
     }
 
@@ -2170,13 +2183,18 @@ export default function PortfolioDuel() {
       return { dayName: '???', dayNum: '?' };
     }
 
-    // Handle different date formats - strip time component if present
-    const cleanDateStr = String(dateStr).split('T')[0];
+    // Handle different date formats - EODHD uses space, ISO uses T
+    const cleanDateStr = extractDatePart(dateStr);
+    if (!cleanDateStr) {
+      console.error('[WeekAhead] Could not extract date from:', dateStr);
+      return { dayName: '???', dayNum: '?' };
+    }
+
     const date = new Date(cleanDateStr + 'T12:00:00');
 
     // Check if date is valid
     if (isNaN(date.getTime())) {
-      console.error('[WeekAhead] Invalid date in getDateDisplay:', dateStr);
+      console.error('[WeekAhead] Invalid date in getDateDisplay:', dateStr, '→', cleanDateStr);
       return { dayName: '???', dayNum: '?' };
     }
 
