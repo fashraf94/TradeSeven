@@ -36,6 +36,22 @@ export default async function handler(req, res) {
       console.log('[Week Ahead] Sample event types:', rawEvents.slice(0, 10).map(e => e.type));
     }
 
+    // Log potential Fed events we might be missing
+    console.log('[Week Ahead] --- Scanning for Fed-related events ---');
+    for (const raw of rawEvents) {
+      const eventType = (raw.type || '').toLowerCase();
+      if (eventType.includes('fed') || eventType.includes('fomc') ||
+          eventType.includes('interest') || eventType.includes('rate') ||
+          eventType.includes('monetary') || eventType.includes('central bank')) {
+        console.log('[Week Ahead] Potential Fed event:', {
+          type: raw.type,
+          date: raw.date,
+          country: raw.country
+        });
+      }
+    }
+    console.log('[Week Ahead] --- End Fed scan ---');
+
     // Curated watchlist for filtering
     const EVENT_WATCHLIST = [
       { keywords: ['fomc', 'federal funds rate', 'interest rate decision', 'fed rate'], type: 'fed_decision', displayName: 'Fed Rate Decision', impact: 'high' },
