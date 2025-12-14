@@ -51,11 +51,14 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+  // Use CLAUDE_API_KEY (the env var name used in Vercel)
+  const API_KEY = process.env.CLAUDE_API_KEY;
 
-  if (!ANTHROPIC_API_KEY) {
-    console.error('[AI Advisor] ERROR: ANTHROPIC_API_KEY not set');
-    return res.status(500).json({ error: 'AI service not configured' });
+  console.log('[AI Advisor] API Key exists:', !!API_KEY);
+
+  if (!API_KEY) {
+    console.error('[AI Advisor] ERROR: CLAUDE_API_KEY not set');
+    return res.status(500).json({ error: 'AI service not configured - missing API key' });
   }
 
   try {
@@ -102,7 +105,7 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
+        'x-api-key': API_KEY,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
@@ -115,13 +118,25 @@ export default async function handler(req, res) {
       }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[AI Advisor] Claude API error:', response.status, errorText);
-      throw new Error(`Claude API error: ${response.status}`);
+    const data = await response.json();
+
+    // Log any error from Anthropic
+    if (data.error) {
+      console.error('[AI Advisor] Anthropic error:', data.error);
+      return res.status(500).json({
+        error: 'AI service error',
+        details: data.error.message || data.error
+      });
     }
 
-    const data = await response.json();
+    if (!response.ok) {
+      console.error('[AI Advisor] Claude API error:', response.status, JSON.stringify(data));
+      return res.status(500).json({
+        error: 'AI service error',
+        details: `Status ${response.status}`
+      });
+    }
+
     const assistantMessage = data.content?.[0]?.text || 'No response generated';
 
     console.log('[AI Advisor] Response length:', assistantMessage.length);
@@ -134,6 +149,7 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('[AI Advisor] Error:', error.message);
+    console.error('[AI Advisor] Stack:', error.stack);
     res.status(500).json({
       error: 'Failed to get AI response',
       details: error.message
