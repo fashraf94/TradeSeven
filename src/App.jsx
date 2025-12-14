@@ -10,6 +10,9 @@ import { motion } from 'framer-motion';
 import { EVENT_TYPE_CONFIG } from './data/eventWatchlist';
 // Static week ahead events (manual data)
 import { getWeekAheadEvents } from './data/weekAheadEvents';
+// AI Advisors
+import ResearchAdvisor from './components/ResearchAdvisor';
+import DraftAdvisor from './components/DraftAdvisor';
 
 // MarketClash Bull & Bear Logo Component
 const MarketClashLogo = ({ size = 'large' }) => {
@@ -1705,7 +1708,7 @@ export default function PortfolioDuel() {
   const [researchCompareAssets, setResearchCompareAssets] = useState([]);
 
   // Enhanced Research Mode state
-  const [researchActiveTab, setResearchActiveTab] = useState('stocks'); // 'stocks' | 'crypto' | 'notes'
+  const [researchActiveTab, setResearchActiveTab] = useState('stocks'); // 'stocks' | 'crypto' | 'notes' | 'advisor'
   const [selectedAssetDetail, setSelectedAssetDetail] = useState(null);
   const [selectedAssetType, setSelectedAssetType] = useState(null); // 'stock' | 'crypto'
   const [stockFundamentals, setStockFundamentals] = useState({}); // { AAPL: {...}, MSFT: {...} }
@@ -4825,10 +4828,30 @@ export default function PortfolioDuel() {
                     fontWeight: '700'
                   }}>{currentWeekNotes.length}</span>}
                 </button>
+                <button
+                  onClick={() => setResearchActiveTab('advisor')}
+                  style={{
+                    flex: 1,
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: researchActiveTab === 'advisor' ? colors.cyan : 'transparent',
+                    color: researchActiveTab === 'advisor' ? '#000' : '#8b949e',
+                    fontWeight: '600',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  AI
+                </button>
               </div>
 
               {/* Search (only for stocks/crypto tabs) */}
-              {researchActiveTab !== 'notes' && (
+              {researchActiveTab !== 'notes' && researchActiveTab !== 'advisor' && (
                 <div style={{ position: 'relative' }}>
                   <input
                     type="text"
@@ -5114,8 +5137,17 @@ export default function PortfolioDuel() {
               </div>
             )}
 
+            {/* AI ADVISOR TAB */}
+            {researchActiveTab === 'advisor' && (
+              <ResearchAdvisor
+                portfolio={[]}
+                weekAheadEvents={weekAheadEvents}
+                colors={colors}
+              />
+            )}
+
             {/* STOCKS/CRYPTO TAB - Asset List */}
-            {researchActiveTab !== 'notes' && (
+            {researchActiveTab !== 'notes' && researchActiveTab !== 'advisor' && (
               <>
                 {sortedAssets.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '60px 20px', color: '#8b949e' }}>
@@ -12351,6 +12383,18 @@ export default function PortfolioDuel() {
                   )}
                 </button>
               ))}
+            </div>
+
+            {/* Draft Advisor Panel */}
+            <div style={{ marginTop: '16px', maxWidth: '400px' }}>
+              <DraftAdvisor
+                myPicks={myPlayer?.picks || []}
+                availableStocks={availableAssets}
+                draftPosition={roomDraft?.players?.findIndex(p => p.odUserId === currentUserId) + 1}
+                round={currentRound}
+                compareStocks={[]}
+                colors={colors}
+              />
             </div>
           </div>
 
