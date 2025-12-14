@@ -2055,6 +2055,10 @@ export default function PortfolioDuel() {
         if (eventsRes.ok) {
           const eventsData = await eventsRes.json();
           console.log(`[WeekAhead] Found ${eventsData.events?.length || 0} economic events (from ${eventsData.meta?.totalRaw || 0} raw)`);
+          // Log sample event dates to debug date formatting
+          if (eventsData.events?.length > 0) {
+            console.log('[WeekAhead] Sample event dates:', eventsData.events.slice(0, 3).map(e => ({ name: e.name, date: e.date })));
+          }
           setWeekAheadEvents(eventsData.events || []);
         } else {
           console.log('[WeekAhead] No economic events data available');
@@ -2133,8 +2137,23 @@ export default function PortfolioDuel() {
 
   // Format date for display (handles both Date objects and ISO strings)
   const formatWeekDate = (dateInput) => {
-    const date = dateInput instanceof Date ? dateInput : new Date(dateInput + 'T12:00:00');
-    const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+    if (!dateInput) return 'N/A';
+
+    let date;
+    if (dateInput instanceof Date) {
+      date = dateInput;
+    } else {
+      // Handle string dates - strip any time component and add noon to avoid timezone issues
+      const dateStr = String(dateInput).split('T')[0];
+      date = new Date(dateStr + 'T12:00:00');
+    }
+
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      console.error('[WeekAhead] Invalid date in formatWeekDate:', dateInput);
+      return 'Invalid';
+    }
+
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${months[date.getMonth()]} ${date.getDate()}`;
   };
@@ -2146,7 +2165,21 @@ export default function PortfolioDuel() {
 
   // Get display info for a date
   const getDateDisplay = (dateStr) => {
-    const date = new Date(dateStr + 'T12:00:00');
+    if (!dateStr) {
+      console.error('[WeekAhead] getDateDisplay called with empty date');
+      return { dayName: '???', dayNum: '?' };
+    }
+
+    // Handle different date formats - strip time component if present
+    const cleanDateStr = String(dateStr).split('T')[0];
+    const date = new Date(cleanDateStr + 'T12:00:00');
+
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      console.error('[WeekAhead] Invalid date in getDateDisplay:', dateStr);
+      return { dayName: '???', dayNum: '?' };
+    }
+
     const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
     return {
       dayName: days[date.getDay()],
@@ -7713,10 +7746,10 @@ export default function PortfolioDuel() {
                               borderRadius: '8px'
                             }}>
                               <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff' }}>
-                                {new Date(event.date + 'T12:00:00').getDate()}
+                                {getDateDisplay(event.date).dayNum}
                               </div>
                               <div style={{ fontSize: '10px', color: '#8b949e', textTransform: 'uppercase' }}>
-                                {new Date(event.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' })}
+                                {getDateDisplay(event.date).dayName}
                               </div>
                             </div>
 
