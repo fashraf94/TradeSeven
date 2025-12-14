@@ -16,7 +16,7 @@ export default async function handler(req, res) {
 
   try {
     // Fetch economic events from EODHD
-    const url = `https://eodhd.com/api/economic-events?api_token=${API_KEY}&from=${from}&to=${to}&country=US&fmt=json`;
+    const url = `https://eodhd.com/api/economic-events?api_token=${API_KEY}&from=${from}&to=${to}&country=US&limit=100&fmt=json`;
 
     console.log('[Week Ahead] Fetching events:', url.replace(API_KEY, 'HIDDEN'));
 
@@ -32,6 +32,8 @@ export default async function handler(req, res) {
     // Log first 5 raw events to see exact field names and values
     if (rawEvents.length > 0) {
       console.log('[Week Ahead] First 5 raw events:', JSON.stringify(rawEvents.slice(0, 5), null, 2));
+      // Log sample event types to see what EODHD returns
+      console.log('[Week Ahead] Sample event types:', rawEvents.slice(0, 10).map(e => e.type));
     }
 
     // Curated watchlist for filtering
@@ -104,9 +106,9 @@ export default async function handler(req, res) {
     console.log('[Week Ahead] --- Starting event matching ---');
 
     for (const raw of rawEvents) {
-      // Try different field names EODHD might use
-      const eventName = raw.event || raw.title || raw.name || '';
-      const eventDate = raw.date || raw.event_date || '';
+      // EODHD uses 'type' field for event name (not 'event' or 'title')
+      const eventName = raw.type || '';
+      const eventDate = raw.date || '';
       const eventTime = raw.time || '';
 
       // Log each event being checked
