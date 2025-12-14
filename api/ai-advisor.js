@@ -25,8 +25,82 @@ Consider: sector balance, volatility mix, upcoming catalysts.`;
 // Quick action prompts for Research Advisor
 const QUICK_ACTIONS = {
   'whats-hot': "What's moving in the market today? Highlight the top 3 themes or stocks getting attention and why they matter for a stock picking game.",
-  'sectors': "Give me a quick sector breakdown - which sectors look strong, which look weak, and what's driving the rotation?",
+  'sectors': `Analyze current sector performance for MarketClash battle strategy.
+
+Use these SPDR Sector ETFs as reference:
+- XLK: Technology
+- XLF: Financials
+- XLE: Energy
+- XLV: Healthcare
+- XLY: Consumer Discretionary
+- XLP: Consumer Staples
+- XLI: Industrials
+- XLB: Materials
+- XLU: Utilities
+- XLRE: Real Estate
+- XLC: Communication Services
+- SPY: S&P 500 (benchmark)
+
+Provide a MOMENTUM-FOCUSED sector breakdown:
+
+1. **Leading Sectors** (strongest momentum)
+   - Which sectors are outperforming SPY?
+   - Recent trend direction
+
+2. **Lagging Sectors** (weakest momentum)
+   - Which sectors are underperforming?
+   - Sectors to avoid for battles
+
+3. **Sector Momentum Ranking**
+   - Quick ranking from strongest to weakest momentum
+
+4. **Battle Recommendation**
+   - Which sectors to favor for 24-hour battles
+   - Any sector rotation happening?
+
+Keep it data-driven and focused on short-term momentum, not long-term fundamentals.
+Be concise - bullet points preferred.`,
   'risk-check': "What are the top 3 risk factors I should be watching this week? Consider economic events, earnings, and market conditions.",
+};
+
+// Game Plan prompt builder - takes user notes and creates personalized strategy
+const buildGamePlanPrompt = (userNotes) => {
+  if (!userNotes || userNotes.length === 0) {
+    return null; // Will be handled by frontend
+  }
+
+  const notesText = userNotes.map((note, i) =>
+    `${i + 1}. [${note.asset || note.symbol || 'General'}] ${note.content || note.text} (saved: ${note.timestamp || 'recently'})`
+  ).join('\n');
+
+  return `You are helping a MarketClash player build their battle strategy.
+
+They have saved these research notes:
+
+${notesText}
+
+Based on their notes, provide a personalized GAME PLAN:
+
+1. **Notes Summary**
+   - What assets/themes are they interested in?
+   - What patterns do you see in their research?
+
+2. **Strengths**
+   - What good instincts do their notes show?
+   - Which noted assets look promising?
+
+3. **Gaps to Consider**
+   - What might they be missing?
+   - Any over-concentration in one sector/type?
+
+4. **Recommended Portfolio**
+   - Based on their notes, suggest 5-8 assets for a battle
+   - Mix of their noted assets + suggestions to balance
+
+5. **Quick Tips**
+   - 2-3 actionable tips based on their specific notes
+
+Make it personal - reference their specific notes. This should feel like a custom strategy session, not generic advice.`;
 };
 
 // Draft action prompts
@@ -77,6 +151,22 @@ export default async function handler(req, res) {
     // Handle quick actions for Research Advisor
     if (advisorType === 'research' && action && QUICK_ACTIONS[action]) {
       userMessage = QUICK_ACTIONS[action];
+    }
+
+    // Handle game-plan action (requires user notes in context)
+    if (advisorType === 'research' && action === 'game-plan') {
+      const gamePlanPrompt = buildGamePlanPrompt(context?.userNotes);
+      if (!gamePlanPrompt) {
+        // No notes - return empty state message
+        return res.status(200).json({
+          message: null,
+          advisorType,
+          action,
+          emptyState: true,
+          emptyStateMessage: "You haven't saved any research notes yet.\n\nHere's how to get started:\n1. Go to the Stocks or Crypto tabs\n2. Research assets you're interested in\n3. Pin insights to your notes\n4. Come back here and I'll help you build a game plan!\n\nYour notes become your personal scouting report for battles."
+        });
+      }
+      userMessage = gamePlanPrompt;
     }
 
     // Handle draft actions

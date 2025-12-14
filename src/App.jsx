@@ -4181,6 +4181,23 @@ export default function PortfolioDuel() {
       setUserNotes(prev => prev.filter(n => n.id !== noteId));
     };
 
+    // Handle pinning AI insight from Research Advisor
+    const handlePinAINote = (noteData) => {
+      const newNote = {
+        id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        symbol: null,
+        assetType: 'ai_insight',
+        type: 'ai_insight',
+        customText: noteData.content,
+        source: noteData.source || 'Research Advisor',
+        userAnnotation: '',
+        createdAt: noteData.timestamp || new Date().toISOString(),
+        weekOf: getCurrentWeekMonday(),
+        isFinalized: false
+      };
+      setUserNotes(prev => [...prev, newNote]);
+    };
+
     // Get sector color for stock
     const getSectorColor = (sector) => {
       return sectorColors[sector] || sectorColors['Unknown'];
@@ -5103,6 +5120,57 @@ export default function PortfolioDuel() {
                         })}
                       </div>
                     )}
+
+                    {/* AI Insights */}
+                    {currentWeekNotes.filter(n => n.assetType === 'ai_insight').length > 0 && (
+                      <div style={{ marginTop: '20px' }}>
+                        <h3 style={{ color: '#8b949e', fontSize: '12px', fontWeight: '600', marginBottom: '12px', textTransform: 'uppercase' }}>
+                          AI INSIGHTS
+                        </h3>
+                        {currentWeekNotes.filter(n => n.assetType === 'ai_insight').map(note => (
+                          <div key={note.id} style={{
+                            background: '#161b22',
+                            borderRadius: '12px',
+                            border: '1px solid #21262d',
+                            marginBottom: '8px',
+                            padding: '14px 16px',
+                            position: 'relative'
+                          }}>
+                            <button
+                              onClick={() => handleDeleteNote(note.id)}
+                              style={{
+                                position: 'absolute',
+                                top: '12px',
+                                right: '12px',
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#6e7681',
+                                cursor: 'pointer',
+                                fontSize: '12px'
+                              }}
+                            >✕</button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                              <span style={{
+                                background: 'rgba(139, 92, 246, 0.2)',
+                                color: '#a78bfa',
+                                fontSize: '11px',
+                                padding: '2px 8px',
+                                borderRadius: '10px',
+                                fontWeight: '600'
+                              }}>
+                                🤖 AI Insight
+                              </span>
+                              <span style={{ color: '#6e7681', fontSize: '11px' }}>
+                                from {note.source || 'Research Advisor'}
+                              </span>
+                            </div>
+                            <div style={{ color: '#e6edf3', fontSize: '13px', lineHeight: '1.5', whiteSpace: 'pre-wrap', paddingRight: '20px' }}>
+                              {note.customText}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </>
                 )}
 
@@ -5142,6 +5210,8 @@ export default function PortfolioDuel() {
               <ResearchAdvisor
                 portfolio={[]}
                 weekAheadEvents={weekAheadEvents}
+                userNotes={currentWeekNotes}
+                onPinNote={handlePinAINote}
                 colors={colors}
               />
             )}
