@@ -1127,7 +1127,7 @@ const MiniSparkline = ({ isPositive, width = 70, height = 24 }) => {
 };
 
 // Battle History Card Component
-const BattleHistoryCard = ({ battle, userId }) => {
+const BattleHistoryCard = ({ battle, userId, onRematch }) => {
   const [expanded, setExpanded] = useState(false);
 
   // Determine if user won
@@ -1374,6 +1374,41 @@ const BattleHistoryCard = ({ battle, userId }) => {
               </div>
             </div>
           </div>
+
+          {/* Rematch Button */}
+          {onRematch && opponentPlayer && (
+            <div style={{
+              marginTop: '16px',
+              paddingTop: '16px',
+              borderTop: '1px solid #21262d'
+            }}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRematch(battle.id, opponentPlayer.odUserId || opponentPlayer.odM, opponentPlayer.username || 'Opponent');
+                }}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  backgroundColor: '#f59e0b',
+                  color: '#000000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <span>⚔️</span>
+                Quick Rematch
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1699,6 +1734,414 @@ export default function PortfolioDuel() {
   const [toastMessage, setToastMessage] = useState('');
   const [challengeHistory, setChallengeHistory] = useState([]);
 
+  // ============================================
+  // NOTIFICATIONS STATE
+  // ============================================
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // ============================================
+  // PORTFOLIO TEMPLATES STATE
+  // ============================================
+  const [portfolioTemplates, setPortfolioTemplates] = useState([]);
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
+  const [saveTemplateModal, setSaveTemplateModal] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+
+  // ============================================
+  // EVENT CALENDAR STATE
+  // ============================================
+  const [showEventCalendar, setShowEventCalendar] = useState(false);
+  const [economicEvents, setEconomicEvents] = useState([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [eventCalendarMonth, setEventCalendarMonth] = useState(new Date());
+
+  // ============================================
+  // REMATCH STATE
+  // ============================================
+  const [pendingRematch, setPendingRematch] = useState(null);
+  const [showRematchModal, setShowRematchModal] = useState(false);
+  const [rematchRequest, setRematchRequest] = useState(null);
+
+  // ============================================
+  // HIGH VOLATILITY ALERT STATE
+  // ============================================
+  const [upcomingHighImpactEvents, setUpcomingHighImpactEvents] = useState([]);
+  const [showVolatilityAlert, setShowVolatilityAlert] = useState(false);
+
+  // ============================================
+  // NOTIFICATION HELPER FUNCTIONS
+  // ============================================
+
+  // System templates for portfolios
+  const SYSTEM_PORTFOLIO_TEMPLATES = [
+    {
+      id: 'sys_tech_giants',
+      name: 'Tech Giants',
+      description: 'Top technology companies',
+      type: 'stocks',
+      assets: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META'],
+      icon: '💻',
+      isSystem: true
+    },
+    {
+      id: 'sys_blue_chip',
+      name: 'Blue Chip Mix',
+      description: 'Stable, established companies',
+      type: 'stocks',
+      assets: ['JNJ', 'JPM', 'PG', 'KO', 'V'],
+      icon: '🏛️',
+      isSystem: true
+    },
+    {
+      id: 'sys_growth',
+      name: 'High Growth',
+      description: 'High-growth momentum stocks',
+      type: 'stocks',
+      assets: ['NVDA', 'TSLA', 'AMD', 'CRM', 'SHOP'],
+      icon: '🚀',
+      isSystem: true
+    },
+    {
+      id: 'sys_crypto_majors',
+      name: 'Crypto Majors',
+      description: 'Top cryptocurrency by market cap',
+      type: 'crypto',
+      assets: ['BTC', 'ETH', 'BNB', 'SOL', 'XRP'],
+      icon: '🪙',
+      isSystem: true
+    },
+    {
+      id: 'sys_defi',
+      name: 'DeFi Leaders',
+      description: 'Decentralized finance tokens',
+      type: 'crypto',
+      assets: ['UNI', 'AAVE', 'LINK', 'MKR', 'SNX'],
+      icon: '🔗',
+      isSystem: true
+    },
+    {
+      id: 'sys_meme',
+      name: 'Meme Coins',
+      description: 'High-risk community tokens',
+      type: 'crypto',
+      assets: ['DOGE', 'SHIB', 'PEPE', 'BONK', 'FLOKI'],
+      icon: '🐕',
+      isSystem: true
+    }
+  ];
+
+  // Notification type config
+  const NOTIFICATION_TYPES = {
+    rematch_request: { icon: '⚔️', color: '#f59e0b', title: 'Rematch Request' },
+    rematch_accepted: { icon: '✅', color: '#22c55e', title: 'Rematch Accepted' },
+    rematch_declined: { icon: '❌', color: '#ef4444', title: 'Rematch Declined' },
+    battle_result: { icon: '🏆', color: '#8b5cf6', title: 'Battle Complete' },
+    flash_challenge: { icon: '⚡', color: '#f59e0b', title: 'Flash Challenge' },
+    price_alert: { icon: '📈', color: '#22c55e', title: 'Price Alert' },
+    event_reminder: { icon: '📅', color: '#3b82f6', title: 'Event Reminder' },
+    challenge_unlocked: { icon: '🎯', color: '#ec4899', title: 'Challenge Unlocked' },
+    streak_milestone: { icon: '🔥', color: '#f97316', title: 'Streak Milestone' },
+    xp_earned: { icon: '⭐', color: '#eab308', title: 'XP Earned' },
+    rank_up: { icon: '🎖️', color: '#6366f1', title: 'Rank Up' },
+    friend_battle: { icon: '👋', color: '#06b6d4', title: 'Friend Battle' },
+    system: { icon: '📢', color: '#8b949e', title: 'System' }
+  };
+
+  // Load notifications from localStorage
+  const loadNotifications = () => {
+    try {
+      const storageKey = `notifications_${user?.uid || user?.username}`;
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const data = JSON.parse(saved);
+        setNotifications(data.notifications || []);
+        setUnreadCount(data.notifications?.filter(n => !n.read).length || 0);
+      }
+    } catch (error) {
+      console.error('Error loading notifications:', error);
+    }
+  };
+
+  // Save notifications to localStorage
+  const saveNotifications = (newNotifications) => {
+    try {
+      const storageKey = `notifications_${user?.uid || user?.username}`;
+      localStorage.setItem(storageKey, JSON.stringify({ notifications: newNotifications }));
+    } catch (error) {
+      console.error('Error saving notifications:', error);
+    }
+  };
+
+  // Add a new notification
+  const addNotification = (type, title, body, data = {}) => {
+    const newNotification = {
+      id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      type,
+      title,
+      body,
+      data,
+      read: false,
+      createdAt: new Date().toISOString()
+    };
+
+    setNotifications(prev => {
+      const updated = [newNotification, ...prev].slice(0, 50); // Keep last 50
+      saveNotifications(updated);
+      return updated;
+    });
+    setUnreadCount(prev => prev + 1);
+  };
+
+  // Mark notification as read
+  const markNotificationRead = (notificationId) => {
+    setNotifications(prev => {
+      const updated = prev.map(n =>
+        n.id === notificationId ? { ...n, read: true } : n
+      );
+      saveNotifications(updated);
+      return updated;
+    });
+    setUnreadCount(prev => Math.max(0, prev - 1));
+  };
+
+  // Mark all notifications as read
+  const markAllNotificationsRead = () => {
+    setNotifications(prev => {
+      const updated = prev.map(n => ({ ...n, read: true }));
+      saveNotifications(updated);
+      return updated;
+    });
+    setUnreadCount(0);
+  };
+
+  // Delete notification
+  const deleteNotification = (notificationId) => {
+    setNotifications(prev => {
+      const notif = prev.find(n => n.id === notificationId);
+      const updated = prev.filter(n => n.id !== notificationId);
+      saveNotifications(updated);
+      if (notif && !notif.read) {
+        setUnreadCount(p => Math.max(0, p - 1));
+      }
+      return updated;
+    });
+  };
+
+  // ============================================
+  // PORTFOLIO TEMPLATES HELPER FUNCTIONS
+  // ============================================
+
+  // Load user's saved templates from localStorage
+  const loadPortfolioTemplates = () => {
+    try {
+      const storageKey = `portfolioTemplates_${user?.uid || user?.username}`;
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        setPortfolioTemplates(JSON.parse(saved));
+      }
+    } catch (error) {
+      console.error('Error loading portfolio templates:', error);
+    }
+  };
+
+  // Save a new portfolio template
+  const savePortfolioTemplate = (name, assets, type) => {
+    try {
+      const newTemplate = {
+        id: `tpl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name,
+        assets,
+        type,
+        createdAt: new Date().toISOString(),
+        isSystem: false
+      };
+
+      setPortfolioTemplates(prev => {
+        const updated = [...prev, newTemplate];
+        const storageKey = `portfolioTemplates_${user?.uid || user?.username}`;
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+        return updated;
+      });
+
+      return newTemplate;
+    } catch (error) {
+      console.error('Error saving portfolio template:', error);
+      return null;
+    }
+  };
+
+  // Delete a user template
+  const deletePortfolioTemplate = (templateId) => {
+    setPortfolioTemplates(prev => {
+      const updated = prev.filter(t => t.id !== templateId);
+      const storageKey = `portfolioTemplates_${user?.uid || user?.username}`;
+      localStorage.setItem(storageKey, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // Load template into portfolio builder
+  const loadTemplateToPortfolio = (template) => {
+    // Get full asset data from stocksData or cryptoData
+    const assetSource = template.type === 'stocks' ? stocksData : cryptoData;
+    const portfolioAssets = template.assets
+      .map(symbol => assetSource.find(a => a.symbol === symbol))
+      .filter(Boolean)
+      .slice(0, 5);
+
+    if (portfolioAssets.length > 0) {
+      setPortfolio(portfolioAssets);
+      setPortfolioType(template.type);
+      setAssetType(template.type);
+      setShowTemplatesModal(false);
+    }
+  };
+
+  // ============================================
+  // EVENT CALENDAR HELPER FUNCTIONS
+  // ============================================
+
+  // Fetch economic events from API
+  const fetchEconomicEvents = async (from, to) => {
+    try {
+      setEventsLoading(true);
+      const response = await fetch(`/api/events/economic-calendar?from=${from}&to=${to}`);
+      if (!response.ok) throw new Error('Failed to fetch events');
+      const data = await response.json();
+      setEconomicEvents(data.events || []);
+      return data.events || [];
+    } catch (error) {
+      console.error('Error fetching economic events:', error);
+      setEconomicEvents([]);
+      return [];
+    } finally {
+      setEventsLoading(false);
+    }
+  };
+
+  // Check for upcoming high-impact events (next 3 days)
+  const checkUpcomingHighImpactEvents = async () => {
+    try {
+      const today = new Date();
+      const threeDaysLater = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
+      const from = today.toISOString().split('T')[0];
+      const to = threeDaysLater.toISOString().split('T')[0];
+
+      const response = await fetch(`/api/events/economic-calendar?from=${from}&to=${to}`);
+      if (!response.ok) return [];
+
+      const data = await response.json();
+      const highImpact = (data.events || []).filter(e => e.impact === 'high');
+      setUpcomingHighImpactEvents(highImpact);
+      return highImpact;
+    } catch (error) {
+      console.error('Error checking high-impact events:', error);
+      return [];
+    }
+  };
+
+  // Get event impact color
+  const getEventImpactColor = (impact) => {
+    switch (impact) {
+      case 'high': return '#ef4444';
+      case 'medium': return '#f59e0b';
+      case 'low': return '#22c55e';
+      default: return '#8b949e';
+    }
+  };
+
+  // ============================================
+  // REMATCH HELPER FUNCTIONS
+  // ============================================
+
+  // Send rematch request (stored in localStorage for demo)
+  const sendRematchRequest = (battleId, opponentId, opponentUsername) => {
+    try {
+      const rematch = {
+        id: `rematch_${Date.now()}`,
+        battleId,
+        fromUserId: user?.uid || user?.username,
+        fromUsername: user?.username,
+        toUserId: opponentId,
+        toUsername: opponentUsername,
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+
+      // Save to localStorage (in real app, this would go to Firebase)
+      const storageKey = `rematchRequests_${opponentId}`;
+      const existing = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      localStorage.setItem(storageKey, JSON.stringify([...existing, rematch]));
+
+      // Add notification for self
+      addNotification('rematch_request', 'Rematch Sent!', `You challenged ${opponentUsername} to a rematch`, { battleId, opponentId });
+
+      setPendingRematch(rematch);
+      return rematch;
+    } catch (error) {
+      console.error('Error sending rematch request:', error);
+      return null;
+    }
+  };
+
+  // Check for incoming rematch requests
+  const checkRematchRequests = () => {
+    try {
+      const storageKey = `rematchRequests_${user?.uid || user?.username}`;
+      const requests = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      const pending = requests.filter(r => r.status === 'pending');
+      if (pending.length > 0) {
+        setRematchRequest(pending[0]);
+        setShowRematchModal(true);
+      }
+    } catch (error) {
+      console.error('Error checking rematch requests:', error);
+    }
+  };
+
+  // Accept rematch request
+  const acceptRematch = (rematchId) => {
+    try {
+      const storageKey = `rematchRequests_${user?.uid || user?.username}`;
+      const requests = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      const updated = requests.map(r =>
+        r.id === rematchId ? { ...r, status: 'accepted' } : r
+      );
+      localStorage.setItem(storageKey, JSON.stringify(updated));
+
+      // Add notification
+      if (rematchRequest) {
+        addNotification('rematch_accepted', 'Rematch Accepted!', `Starting rematch with ${rematchRequest.fromUsername}`, { rematchId });
+      }
+
+      setShowRematchModal(false);
+      setRematchRequest(null);
+
+      // Navigate to builder for rematch
+      setScreen('builder');
+    } catch (error) {
+      console.error('Error accepting rematch:', error);
+    }
+  };
+
+  // Decline rematch request
+  const declineRematch = (rematchId) => {
+    try {
+      const storageKey = `rematchRequests_${user?.uid || user?.username}`;
+      const requests = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      const updated = requests.filter(r => r.id !== rematchId);
+      localStorage.setItem(storageKey, JSON.stringify(updated));
+
+      setShowRematchModal(false);
+      setRematchRequest(null);
+    } catch (error) {
+      console.error('Error declining rematch:', error);
+    }
+  };
+
   // Toggle asset expansion
   const toggleAssetExpansion = (symbol) => {
     setExpandedAssets(prev => {
@@ -1958,6 +2401,16 @@ export default function PortfolioDuel() {
       if (savedHistory) {
         setChallengeHistory(JSON.parse(savedHistory));
       }
+    }
+  }, [user]);
+
+  // Load notifications and portfolio templates when user logs in
+  useEffect(() => {
+    if (user) {
+      loadNotifications();
+      loadPortfolioTemplates();
+      // Check for rematch requests
+      checkRematchRequests();
     }
   }, [user]);
 
@@ -5520,11 +5973,18 @@ export default function PortfolioDuel() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.2 }}
-                    onClick={() => {
+                    onClick={async () => {
                       setPortfolio([]); setPortfolioType(null);
                       setPortfolioName('');
                       setAssetType('stocks');
                       setSearchTerm('');
+
+                      // Check for upcoming high-impact events and show alert
+                      const highImpact = await checkUpcomingHighImpactEvents();
+                      if (highImpact && highImpact.length > 0) {
+                        setShowVolatilityAlert(true);
+                      }
+
                       // Route based on game mode
                       if (gameMode === 'draft') {
                         setScreen('draftSetup');  // New screen for draft
@@ -6646,6 +7106,92 @@ export default function PortfolioDuel() {
                   <span style={{ fontWeight: '600', fontSize: '14px' }}>Profile</span>
                 </button>
 
+                {/* NOTIFICATIONS */}
+                <button
+                  onClick={() => {
+                    console.log('🔔 Notifications clicked');
+                    setShowNotifications(true);
+                    setSidebarOpen(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    backgroundColor: 'transparent',
+                    color: '#d1d5db',
+                    border: 'none',
+                    marginBottom: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    position: 'relative'
+                  }}
+                >
+                  <svg style={{ width: '20px', height: '20px', flexShrink: 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
+                  <span style={{ fontWeight: '600', fontSize: '14px' }}>Notifications</span>
+                  {/* Unread badge */}
+                  {unreadCount > 0 && (
+                    <span style={{
+                      position: 'absolute',
+                      right: '16px',
+                      backgroundColor: '#ef4444',
+                      color: 'white',
+                      fontSize: '11px',
+                      fontWeight: 'bold',
+                      padding: '2px 6px',
+                      borderRadius: '10px',
+                      minWidth: '18px',
+                      textAlign: 'center'
+                    }}>
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* EVENT CALENDAR */}
+                <button
+                  onClick={() => {
+                    console.log('📅 Event Calendar clicked');
+                    setShowEventCalendar(true);
+                    setSidebarOpen(false);
+                    // Fetch events for current month
+                    const now = new Date();
+                    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+                    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+                    fetchEconomicEvents(firstDay, lastDay);
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    backgroundColor: 'transparent',
+                    color: '#d1d5db',
+                    border: 'none',
+                    marginBottom: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <svg style={{ width: '20px', height: '20px', flexShrink: 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <div style={{ flex: 1, textAlign: 'left' }}>
+                    <div style={{ fontWeight: '600', fontSize: '14px' }}>Event Calendar</div>
+                    {upcomingHighImpactEvents.length > 0 && (
+                      <div style={{ fontSize: '11px', color: '#ef4444' }}>
+                        {upcomingHighImpactEvents.length} high-impact event{upcomingHighImpactEvents.length > 1 ? 's' : ''} soon
+                      </div>
+                    )}
+                  </div>
+                </button>
+
                 {/* DIVIDER */}
                 <div style={{ borderTop: '1px solid #374151', margin: '16px 0' }}></div>
 
@@ -6679,6 +7225,881 @@ export default function PortfolioDuel() {
                 </button>
 
               </div>
+            </div>
+          </>
+        )}
+
+        {/* ============================================ */}
+        {/* NOTIFICATIONS MODAL */}
+        {/* ============================================ */}
+        {showNotifications && (
+          <>
+            {/* Backdrop */}
+            <div
+              onClick={() => setShowNotifications(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 200,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+            {/* Modal Panel */}
+            <div style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '90%',
+              maxWidth: '500px',
+              maxHeight: '80vh',
+              backgroundColor: '#161b22',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              zIndex: 210,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              {/* Header */}
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #21262d',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff' }}>
+                  Notifications
+                  {unreadCount > 0 && (
+                    <span style={{
+                      marginLeft: '8px',
+                      backgroundColor: '#ef4444',
+                      color: 'white',
+                      fontSize: '12px',
+                      padding: '2px 8px',
+                      borderRadius: '10px'
+                    }}>
+                      {unreadCount}
+                    </span>
+                  )}
+                </h2>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={markAllNotificationsRead}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        backgroundColor: '#21262d',
+                        color: '#8b949e',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowNotifications(false)}
+                    style={{
+                      padding: '6px',
+                      backgroundColor: 'transparent',
+                      color: '#8b949e',
+                      border: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Notifications List */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
+                {notifications.length === 0 ? (
+                  <div style={{
+                    textAlign: 'center',
+                    padding: '40px 20px',
+                    color: '#8b949e'
+                  }}>
+                    <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ margin: '0 auto 16px', opacity: 0.5 }}>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg>
+                    <p style={{ fontSize: '14px' }}>No notifications yet</p>
+                    <p style={{ fontSize: '12px', marginTop: '4px' }}>Battle results, challenges, and alerts will appear here</p>
+                  </div>
+                ) : (
+                  notifications.map(notif => {
+                    const typeConfig = NOTIFICATION_TYPES[notif.type] || NOTIFICATION_TYPES.system;
+                    return (
+                      <div
+                        key={notif.id}
+                        onClick={() => markNotificationRead(notif.id)}
+                        style={{
+                          padding: '12px 16px',
+                          marginBottom: '4px',
+                          borderRadius: '8px',
+                          backgroundColor: notif.read ? 'transparent' : 'rgba(59, 130, 246, 0.1)',
+                          border: notif.read ? '1px solid #21262d' : '1px solid rgba(59, 130, 246, 0.3)',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                          <span style={{
+                            fontSize: '24px',
+                            width: '36px',
+                            height: '36px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: `${typeConfig.color}20`,
+                            borderRadius: '8px'
+                          }}>
+                            {typeConfig.icon}
+                          </span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{
+                              fontSize: '14px',
+                              fontWeight: notif.read ? '500' : '600',
+                              color: '#ffffff',
+                              marginBottom: '2px'
+                            }}>
+                              {notif.title}
+                            </div>
+                            <div style={{
+                              fontSize: '13px',
+                              color: '#8b949e'
+                            }}>
+                              {notif.body}
+                            </div>
+                            <div style={{
+                              fontSize: '11px',
+                              color: '#6e7681',
+                              marginTop: '4px'
+                            }}>
+                              {new Date(notif.createdAt).toLocaleDateString()} at {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteNotification(notif.id);
+                            }}
+                            style={{
+                              padding: '4px',
+                              backgroundColor: 'transparent',
+                              color: '#6e7681',
+                              border: 'none',
+                              cursor: 'pointer',
+                              opacity: 0.6
+                            }}
+                          >
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ============================================ */}
+        {/* EVENT CALENDAR MODAL */}
+        {/* ============================================ */}
+        {showEventCalendar && (
+          <>
+            {/* Backdrop */}
+            <div
+              onClick={() => setShowEventCalendar(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 200,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+            {/* Modal Panel */}
+            <div style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '95%',
+              maxWidth: '600px',
+              maxHeight: '85vh',
+              backgroundColor: '#161b22',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              zIndex: 210,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              {/* Header */}
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #21262d',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>📅</span> Economic Calendar
+                </h2>
+                <button
+                  onClick={() => setShowEventCalendar(false)}
+                  style={{
+                    padding: '6px',
+                    backgroundColor: 'transparent',
+                    color: '#8b949e',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Month Navigation */}
+              <div style={{
+                padding: '12px 20px',
+                borderBottom: '1px solid #21262d',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <button
+                  onClick={() => {
+                    const newDate = new Date(eventCalendarMonth);
+                    newDate.setMonth(newDate.getMonth() - 1);
+                    setEventCalendarMonth(newDate);
+                    const firstDay = new Date(newDate.getFullYear(), newDate.getMonth(), 1).toISOString().split('T')[0];
+                    const lastDay = new Date(newDate.getFullYear(), newDate.getMonth() + 1, 0).toISOString().split('T')[0];
+                    fetchEconomicEvents(firstDay, lastDay);
+                  }}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: '#21262d',
+                    color: '#d1d5db',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ← Prev
+                </button>
+                <span style={{ fontSize: '16px', fontWeight: '600', color: '#ffffff' }}>
+                  {eventCalendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                </span>
+                <button
+                  onClick={() => {
+                    const newDate = new Date(eventCalendarMonth);
+                    newDate.setMonth(newDate.getMonth() + 1);
+                    setEventCalendarMonth(newDate);
+                    const firstDay = new Date(newDate.getFullYear(), newDate.getMonth(), 1).toISOString().split('T')[0];
+                    const lastDay = new Date(newDate.getFullYear(), newDate.getMonth() + 1, 0).toISOString().split('T')[0];
+                    fetchEconomicEvents(firstDay, lastDay);
+                  }}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: '#21262d',
+                    color: '#d1d5db',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Next →
+                </button>
+              </div>
+
+              {/* Impact Legend */}
+              <div style={{
+                padding: '8px 20px',
+                borderBottom: '1px solid #21262d',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '16px',
+                fontSize: '12px'
+              }}>
+                <span style={{ color: '#8b949e' }}>Impact:</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ef4444' }}></span>
+                  <span style={{ color: '#ef4444' }}>High</span>
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b' }}></span>
+                  <span style={{ color: '#f59e0b' }}>Medium</span>
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#22c55e' }}></span>
+                  <span style={{ color: '#22c55e' }}>Low</span>
+                </span>
+              </div>
+
+              {/* Events List */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                {eventsLoading ? (
+                  <div style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <div style={{ fontSize: '24px', marginBottom: '8px' }}>⏳</div>
+                    Loading economic events...
+                  </div>
+                ) : economicEvents.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <div style={{ fontSize: '32px', marginBottom: '8px' }}>📭</div>
+                    <p>No major economic events this month</p>
+                  </div>
+                ) : (
+                  economicEvents.map(event => (
+                    <div
+                      key={event.id}
+                      onClick={() => setSelectedEvent(selectedEvent?.id === event.id ? null : event)}
+                      style={{
+                        padding: '12px 16px',
+                        marginBottom: '8px',
+                        borderRadius: '10px',
+                        backgroundColor: selectedEvent?.id === event.id ? '#21262d' : '#0d1117',
+                        border: `1px solid ${selectedEvent?.id === event.id ? getEventImpactColor(event.impact) : '#21262d'}`,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                        {/* Date badge */}
+                        <div style={{
+                          minWidth: '50px',
+                          textAlign: 'center',
+                          padding: '8px',
+                          backgroundColor: '#21262d',
+                          borderRadius: '8px'
+                        }}>
+                          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff' }}>
+                            {new Date(event.date).getDate()}
+                          </div>
+                          <div style={{ fontSize: '10px', color: '#8b949e', textTransform: 'uppercase' }}>
+                            {new Date(event.date).toLocaleDateString('en-US', { weekday: 'short' })}
+                          </div>
+                        </div>
+
+                        {/* Event details */}
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                            <span style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              backgroundColor: getEventImpactColor(event.impact)
+                            }}></span>
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: '#ffffff' }}>
+                              {event.name}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#8b949e' }}>
+                            {event.time} ET
+                          </div>
+
+                          {/* Expanded details */}
+                          {selectedEvent?.id === event.id && (
+                            <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #21262d' }}>
+                              {/* Expected vs Previous */}
+                              <div style={{ display: 'flex', gap: '16px', marginBottom: '12px' }}>
+                                {event.expected && (
+                                  <div>
+                                    <div style={{ fontSize: '10px', color: '#8b949e', marginBottom: '2px' }}>Expected</div>
+                                    <div style={{ fontSize: '14px', color: '#3b82f6', fontWeight: '600' }}>{event.expected}</div>
+                                  </div>
+                                )}
+                                {event.previous && (
+                                  <div>
+                                    <div style={{ fontSize: '10px', color: '#8b949e', marginBottom: '2px' }}>Previous</div>
+                                    <div style={{ fontSize: '14px', color: '#8b949e', fontWeight: '600' }}>{event.previous}</div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Historical Volatility */}
+                              {event.historicalData && (
+                                <div style={{
+                                  padding: '10px',
+                                  backgroundColor: '#0d1117',
+                                  borderRadius: '8px',
+                                  marginBottom: '12px'
+                                }}>
+                                  <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '8px' }}>Historical Avg Moves</div>
+                                  <div style={{ display: 'flex', gap: '12px', fontSize: '12px' }}>
+                                    <div>
+                                      <span style={{ color: '#8b949e' }}>Market: </span>
+                                      <span style={{ color: '#22c55e', fontWeight: '600' }}>±{event.historicalData.avgMarketMove}%</span>
+                                    </div>
+                                    <div>
+                                      <span style={{ color: '#8b949e' }}>High-Beta: </span>
+                                      <span style={{ color: '#f59e0b', fontWeight: '600' }}>±{event.historicalData.avgHighBetaMove}%</span>
+                                    </div>
+                                    <div>
+                                      <span style={{ color: '#8b949e' }}>Crypto: </span>
+                                      <span style={{ color: '#ef4444', fontWeight: '600' }}>±{event.historicalData.avgCryptoMove}%</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Strategy Tip */}
+                              {event.strategyTip && (
+                                <div style={{
+                                  padding: '10px',
+                                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                  borderRadius: '8px',
+                                  border: '1px solid rgba(59, 130, 246, 0.2)'
+                                }}>
+                                  <div style={{ fontSize: '11px', color: '#3b82f6', marginBottom: '4px', fontWeight: '600' }}>💡 Strategy Tip</div>
+                                  <div style={{ fontSize: '12px', color: '#d1d5db', lineHeight: '1.4' }}>{event.strategyTip}</div>
+                                </div>
+                              )}
+
+                              {/* Related Assets */}
+                              {event.relatedAssets && event.relatedAssets.length > 0 && (
+                                <div style={{ marginTop: '12px' }}>
+                                  <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px' }}>Related Assets</div>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    {event.relatedAssets.map(asset => (
+                                      <span key={asset} style={{
+                                        padding: '4px 8px',
+                                        backgroundColor: '#21262d',
+                                        borderRadius: '4px',
+                                        fontSize: '11px',
+                                        color: '#00d9ff'
+                                      }}>
+                                        {asset}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ============================================ */}
+        {/* REMATCH REQUEST MODAL */}
+        {/* ============================================ */}
+        {showRematchModal && rematchRequest && (
+          <>
+            {/* Backdrop */}
+            <div
+              onClick={() => setShowRematchModal(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 200,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+            {/* Modal */}
+            <div style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '90%',
+              maxWidth: '400px',
+              backgroundColor: '#161b22',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              zIndex: 210,
+              padding: '24px',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚔️</div>
+              <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#ffffff', marginBottom: '8px' }}>
+                Rematch Request!
+              </h2>
+              <p style={{ fontSize: '14px', color: '#8b949e', marginBottom: '24px' }}>
+                <span style={{ color: '#00d9ff', fontWeight: '600' }}>{rematchRequest.fromUsername}</span> wants a rematch!
+              </p>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  onClick={() => declineRematch(rematchRequest.id)}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: '#21262d',
+                    color: '#8b949e',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Decline
+                </button>
+                <button
+                  onClick={() => acceptRematch(rematchRequest.id)}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: '#22c55e',
+                    color: '#000000',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Accept Rematch
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ============================================ */}
+        {/* PORTFOLIO TEMPLATES MODAL */}
+        {/* ============================================ */}
+        {showTemplatesModal && (
+          <>
+            {/* Backdrop */}
+            <div
+              onClick={() => setShowTemplatesModal(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 200,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+            {/* Modal Panel */}
+            <div style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '90%',
+              maxWidth: '500px',
+              maxHeight: '80vh',
+              backgroundColor: '#161b22',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              zIndex: 210,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              {/* Header */}
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #21262d',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff' }}>
+                  Portfolio Templates
+                </h2>
+                <button
+                  onClick={() => setShowTemplatesModal(false)}
+                  style={{
+                    padding: '6px',
+                    backgroundColor: 'transparent',
+                    color: '#8b949e',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Template Type Tabs */}
+              <div style={{
+                padding: '12px 20px',
+                borderBottom: '1px solid #21262d',
+                display: 'flex',
+                gap: '8px'
+              }}>
+                <button
+                  onClick={() => setAssetType('stocks')}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: assetType === 'stocks' ? '#22c55e' : '#21262d',
+                    color: assetType === 'stocks' ? '#000' : '#8b949e',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Stocks
+                </button>
+                <button
+                  onClick={() => setAssetType('crypto')}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: assetType === 'crypto' ? '#f59e0b' : '#21262d',
+                    color: assetType === 'crypto' ? '#000' : '#8b949e',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Crypto
+                </button>
+              </div>
+
+              {/* Templates List */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                {/* System Templates Section */}
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '8px', paddingLeft: '4px' }}>
+                    SYSTEM TEMPLATES
+                  </div>
+                  {SYSTEM_PORTFOLIO_TEMPLATES
+                    .filter(t => t.type === assetType)
+                    .map(template => (
+                      <div
+                        key={template.id}
+                        onClick={() => loadTemplateToPortfolio(template)}
+                        style={{
+                          padding: '12px 16px',
+                          marginBottom: '8px',
+                          borderRadius: '10px',
+                          backgroundColor: '#0d1117',
+                          border: '1px solid #21262d',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={{ fontSize: '24px' }}>{template.icon}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#ffffff' }}>
+                              {template.name}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#8b949e' }}>
+                              {template.description}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#6e7681', marginTop: '4px' }}>
+                              {template.assets.join(', ')}
+                            </div>
+                          </div>
+                          <svg width="20" height="20" fill="none" stroke="#8b949e" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </div>
+                      </div>
+                    ))
+                  }
+                </div>
+
+                {/* User Templates Section */}
+                <div>
+                  <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '8px', paddingLeft: '4px' }}>
+                    YOUR TEMPLATES
+                  </div>
+                  {portfolioTemplates.filter(t => t.type === assetType).length === 0 ? (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: '24px',
+                      color: '#6e7681',
+                      backgroundColor: '#0d1117',
+                      borderRadius: '10px',
+                      border: '1px dashed #21262d'
+                    }}>
+                      <div style={{ fontSize: '24px', marginBottom: '8px' }}>📁</div>
+                      <p style={{ fontSize: '13px' }}>No saved templates yet</p>
+                      <p style={{ fontSize: '11px', marginTop: '4px' }}>Save your portfolio during battle creation</p>
+                    </div>
+                  ) : (
+                    portfolioTemplates
+                      .filter(t => t.type === assetType)
+                      .map(template => (
+                        <div
+                          key={template.id}
+                          style={{
+                            padding: '12px 16px',
+                            marginBottom: '8px',
+                            borderRadius: '10px',
+                            backgroundColor: '#0d1117',
+                            border: '1px solid #21262d',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px'
+                          }}
+                        >
+                          <div
+                            style={{ flex: 1, cursor: 'pointer' }}
+                            onClick={() => loadTemplateToPortfolio(template)}
+                          >
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#ffffff' }}>
+                              {template.name}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#6e7681', marginTop: '2px' }}>
+                              {template.assets.join(', ')}
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deletePortfolioTemplate(template.id);
+                            }}
+                            style={{
+                              padding: '6px',
+                              backgroundColor: 'transparent',
+                              color: '#ef4444',
+                              border: 'none',
+                              cursor: 'pointer',
+                              opacity: 0.7
+                            }}
+                          >
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ============================================ */}
+        {/* HIGH VOLATILITY ALERT MODAL */}
+        {/* ============================================ */}
+        {showVolatilityAlert && upcomingHighImpactEvents.length > 0 && (
+          <>
+            {/* Backdrop */}
+            <div
+              onClick={() => setShowVolatilityAlert(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 200,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+            {/* Modal */}
+            <div style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '90%',
+              maxWidth: '450px',
+              backgroundColor: '#161b22',
+              borderRadius: '16px',
+              border: '2px solid #ef4444',
+              zIndex: 210,
+              padding: '24px',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '48px', marginBottom: '12px' }}>⚠️</div>
+              <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#ef4444', marginBottom: '8px' }}>
+                High Volatility Alert!
+              </h2>
+              <p style={{ fontSize: '14px', color: '#8b949e', marginBottom: '20px' }}>
+                Major economic events are scheduled in the next 3 days. Expect increased market volatility!
+              </p>
+
+              {/* Events list */}
+              <div style={{
+                backgroundColor: '#0d1117',
+                borderRadius: '10px',
+                padding: '12px',
+                marginBottom: '20px',
+                textAlign: 'left',
+                maxHeight: '150px',
+                overflowY: 'auto'
+              }}>
+                {upcomingHighImpactEvents.slice(0, 3).map(event => (
+                  <div key={event.id} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px',
+                    borderBottom: '1px solid #21262d'
+                  }}>
+                    <span style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: '#ef4444'
+                    }}></span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '13px', color: '#ffffff', fontWeight: '500' }}>{event.name}</div>
+                      <div style={{ fontSize: '11px', color: '#8b949e' }}>
+                        {new Date(event.date).toLocaleDateString()} at {event.time}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <p style={{ fontSize: '12px', color: '#6e7681', marginBottom: '16px' }}>
+                Consider this when building your portfolio strategy!
+              </p>
+
+              <button
+                onClick={() => setShowVolatilityAlert(false)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                Got it, continue
+              </button>
             </div>
           </>
         )}
@@ -6871,6 +8292,58 @@ export default function PortfolioDuel() {
                         >
                           ₿ Crypto
                         </button>
+                      </div>
+
+                      {/* Quick Actions: Templates & Save */}
+                      <div style={{
+                        display: 'flex',
+                        gap: '8px',
+                        marginBottom: '16px'
+                      }}>
+                        <button
+                          onClick={() => setShowTemplatesModal(true)}
+                          style={{
+                            flex: 1,
+                            padding: '10px 16px',
+                            backgroundColor: '#21262d',
+                            color: '#d1d5db',
+                            border: '1px solid #30363d',
+                            borderRadius: '8px',
+                            fontSize: '13px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          <span>📂</span> Load Template
+                        </button>
+                        {portfolio.length >= 5 && (
+                          <button
+                            onClick={() => setSaveTemplateModal(true)}
+                            style={{
+                              flex: 1,
+                              padding: '10px 16px',
+                              backgroundColor: '#22c55e20',
+                              color: '#22c55e',
+                              border: '1px solid #22c55e40',
+                              borderRadius: '8px',
+                              fontSize: '13px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            <span>💾</span> Save as Template
+                          </button>
+                        )}
                       </div>
 
                       {/* Portfolio Type Indicator */}
@@ -7534,6 +9007,302 @@ export default function PortfolioDuel() {
               </button>
             </div>
           </div>
+        )}
+
+        {/* SAVE TEMPLATE MODAL */}
+        {saveTemplateModal && (
+          <>
+            <div
+              onClick={() => setSaveTemplateModal(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 200,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+            <div style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '90%',
+              maxWidth: '400px',
+              backgroundColor: '#161b22',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              zIndex: 210,
+              padding: '24px'
+            }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff', marginBottom: '16px' }}>
+                Save Portfolio Template
+              </h2>
+              <input
+                type="text"
+                placeholder="Template name..."
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  backgroundColor: '#0d1117',
+                  border: '1px solid #21262d',
+                  borderRadius: '8px',
+                  color: '#ffffff',
+                  fontSize: '14px',
+                  marginBottom: '16px'
+                }}
+              />
+              <div style={{
+                backgroundColor: '#0d1117',
+                borderRadius: '8px',
+                padding: '12px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '8px' }}>Assets to save:</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {portfolio.map(asset => (
+                    <span key={asset.symbol} style={{
+                      padding: '4px 8px',
+                      backgroundColor: '#21262d',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      color: '#00d9ff'
+                    }}>
+                      {asset.symbol}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => {
+                    setSaveTemplateModal(false);
+                    setTemplateName('');
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    backgroundColor: '#21262d',
+                    color: '#8b949e',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (templateName.trim() && portfolio.length > 0) {
+                      const symbols = portfolio.map(a => a.symbol);
+                      savePortfolioTemplate(templateName.trim(), symbols, portfolioType || assetType);
+                      setSaveTemplateModal(false);
+                      setTemplateName('');
+                      // Show toast or notification
+                      addNotification('system', 'Template Saved!', `Your "${templateName.trim()}" template has been saved.`);
+                    }
+                  }}
+                  disabled={!templateName.trim()}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    backgroundColor: templateName.trim() ? '#22c55e' : '#21262d',
+                    color: templateName.trim() ? '#000000' : '#6e7681',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: templateName.trim() ? 'pointer' : 'not-allowed'
+                  }}
+                >
+                  Save Template
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* PORTFOLIO TEMPLATES MODAL (shared from dashboard) */}
+        {showTemplatesModal && (
+          <>
+            <div
+              onClick={() => setShowTemplatesModal(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 200,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+            <div style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '90%',
+              maxWidth: '500px',
+              maxHeight: '80vh',
+              backgroundColor: '#161b22',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              zIndex: 210,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #21262d',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff' }}>
+                  Portfolio Templates
+                </h2>
+                <button
+                  onClick={() => setShowTemplatesModal(false)}
+                  style={{
+                    padding: '6px',
+                    backgroundColor: 'transparent',
+                    color: '#8b949e',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div style={{
+                padding: '12px 20px',
+                borderBottom: '1px solid #21262d',
+                display: 'flex',
+                gap: '8px'
+              }}>
+                <button
+                  onClick={() => setAssetType('stocks')}
+                  disabled={portfolioType === 'crypto'}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: assetType === 'stocks' ? '#22c55e' : '#21262d',
+                    color: assetType === 'stocks' ? '#000' : '#8b949e',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: portfolioType === 'crypto' ? 'not-allowed' : 'pointer',
+                    opacity: portfolioType === 'crypto' ? 0.5 : 1
+                  }}
+                >
+                  Stocks
+                </button>
+                <button
+                  onClick={() => setAssetType('crypto')}
+                  disabled={portfolioType === 'stocks'}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: assetType === 'crypto' ? '#f59e0b' : '#21262d',
+                    color: assetType === 'crypto' ? '#000' : '#8b949e',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: portfolioType === 'stocks' ? 'not-allowed' : 'pointer',
+                    opacity: portfolioType === 'stocks' ? 0.5 : 1
+                  }}
+                >
+                  Crypto
+                </button>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '8px', paddingLeft: '4px' }}>
+                    SYSTEM TEMPLATES
+                  </div>
+                  {SYSTEM_PORTFOLIO_TEMPLATES
+                    .filter(t => t.type === assetType)
+                    .map(template => (
+                      <div
+                        key={template.id}
+                        onClick={() => loadTemplateToPortfolio(template)}
+                        style={{
+                          padding: '12px 16px',
+                          marginBottom: '8px',
+                          borderRadius: '10px',
+                          backgroundColor: '#0d1117',
+                          border: '1px solid #21262d',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={{ fontSize: '24px' }}>{template.icon}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#ffffff' }}>{template.name}</div>
+                            <div style={{ fontSize: '12px', color: '#8b949e' }}>{template.description}</div>
+                            <div style={{ fontSize: '11px', color: '#6e7681', marginTop: '4px' }}>{template.assets.join(', ')}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  }
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '8px', paddingLeft: '4px' }}>
+                    YOUR TEMPLATES
+                  </div>
+                  {portfolioTemplates.filter(t => t.type === assetType).length === 0 ? (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: '24px',
+                      color: '#6e7681',
+                      backgroundColor: '#0d1117',
+                      borderRadius: '10px',
+                      border: '1px dashed #21262d'
+                    }}>
+                      <div style={{ fontSize: '24px', marginBottom: '8px' }}>📁</div>
+                      <p style={{ fontSize: '13px' }}>No saved templates yet</p>
+                    </div>
+                  ) : (
+                    portfolioTemplates
+                      .filter(t => t.type === assetType)
+                      .map(template => (
+                        <div
+                          key={template.id}
+                          onClick={() => loadTemplateToPortfolio(template)}
+                          style={{
+                            padding: '12px 16px',
+                            marginBottom: '8px',
+                            borderRadius: '10px',
+                            backgroundColor: '#0d1117',
+                            border: '1px solid #21262d',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <div style={{ fontSize: '14px', fontWeight: '600', color: '#ffffff' }}>{template.name}</div>
+                          <div style={{ fontSize: '11px', color: '#6e7681', marginTop: '2px' }}>{template.assets.join(', ')}</div>
+                        </div>
+                      ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
         )}
       </div>
     );
@@ -14484,6 +16253,7 @@ export default function PortfolioDuel() {
                       key={battle.battleId || index}
                       battle={battle}
                       userId={user?.odUserId}
+                      onRematch={sendRematchRequest}
                     />
                   );
                 })}
