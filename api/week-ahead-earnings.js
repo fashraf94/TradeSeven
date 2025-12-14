@@ -52,6 +52,12 @@ export default async function handler(req, res) {
   const API_KEY = process.env.EODHD_API_KEY;
   const { from, to } = req.query;
 
+  // Check if API key exists
+  if (!API_KEY) {
+    console.error('[Earnings] ERROR: EODHD_API_KEY environment variable not set');
+    return res.status(500).json({ error: 'API key not configured' });
+  }
+
   if (!from || !to) {
     return res.status(400).json({ error: 'Missing from/to date parameters' });
   }
@@ -60,15 +66,48 @@ export default async function handler(req, res) {
     const url = `https://eodhd.com/api/earnings?api_token=${API_KEY}&from=${from}&to=${to}&fmt=json`;
 
     console.log('[Earnings] Fetching:', from, 'to', to);
+    console.log('[Earnings] URL:', url.replace(API_KEY, 'HIDDEN'));
 
     const response = await fetch(url);
 
+    console.log('[Earnings] Response status:', response.status);
+
     if (!response.ok) {
-      throw new Error(`EODHD responded with ${response.status}`);
+      const errorText = await response.text();
+      console.error('[Earnings] EODHD error response:', errorText);
+      throw new Error(`EODHD responded with ${response.status}: ${errorText}`);
     }
 
-    const allEarnings = await response.json();
+    const responseText = await response.text();
+    console.log('[Earnings] Response length:', responseText.length, 'chars');
+
+    // Try to parse JSON
+    let allEarnings;
+    try {
+      allEarnings = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('[Earnings] JSON parse error:', parseError.message);
+      console.error('[Earnings] Response text (first 500 chars):', responseText.substring(0, 500));
+      throw new Error(`Failed to parse EODHD response: ${parseError.message}`);
+    }
+
+    // Handle case where response is not an array
+    if (!Array.isArray(allEarnings)) {
+      console.log('[Earnings] Response is not an array:', typeof allEarnings, allEarnings);
+      // If it's an object with an error, handle it
+      if (allEarnings.error) {
+        throw new Error(`EODHD API error: ${allEarnings.error}`);
+      }
+      // Otherwise return empty array
+      return res.status(200).json([]);
+    }
+
     console.log(`[Earnings] Received ${allEarnings.length} total earnings`);
+
+    // Log first earnings entry to see field names
+    if (allEarnings.length > 0) {
+      console.log('[Earnings] Sample entry:', JSON.stringify(allEarnings[0], null, 2));
+    }
 
     // Filter to only our tracked stocks
     const relevantEarnings = allEarnings.filter(e =>
@@ -104,10 +143,15 @@ export default async function handler(req, res) {
     // Sort by date
     earnings.sort((a, b) => a.date.localeCompare(b.date));
 
+    console.log(`[Earnings] Returning ${earnings.length} earnings`);
     res.status(200).json(earnings);
 
   } catch (error) {
-    console.error('[Earnings] Error:', error);
-    res.status(500).json({ error: error.message });
+    console.error('[Earnings] Full error:', error);
+    console.error('[Earnings] Stack:', error.stack);
+    res.status(500).json({
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 }
