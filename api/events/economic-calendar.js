@@ -42,18 +42,27 @@ export default async function handler(req, res) {
     const rawEvents = await response.json();
     console.log(`[API] Raw events received: ${rawEvents.length}`);
 
-    // Log first few events for debugging
+    // Log first 3 events for debugging - see actual field names
     if (rawEvents.length > 0) {
-      console.log('[API] Sample event structure:', JSON.stringify(rawEvents[0], null, 2));
+      console.log('[API] === RAW EVENT SAMPLES ===');
+      rawEvents.slice(0, 3).forEach((evt, i) => {
+        console.log(`[API] Event ${i + 1}:`, JSON.stringify(evt, null, 2));
+      });
+      console.log('[API] === END RAW SAMPLES ===');
     }
 
-    // Filter and transform to relevant events - now more permissive
+    // TEMPORARILY DISABLED FILTER - show ALL events to debug
+    // const transformedEvents = rawEvents
+    //   .filter(event => isRelevantEvent(event))
+    //   .map(event => transformEvent(event))
+    //   .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Transform ALL events without filtering (temporary for debugging)
     const transformedEvents = rawEvents
-      .filter(event => isRelevantEvent(event))
       .map(event => transformEvent(event))
       .sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    console.log(`[API] Found ${transformedEvents.length} relevant economic events after filtering`);
+    console.log(`[API] Returning ${transformedEvents.length} events (filter disabled for debugging)`);
 
     return res.status(200).json({
       success: true,
