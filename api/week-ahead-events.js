@@ -108,7 +108,9 @@ export default async function handler(req, res) {
     for (const raw of rawEvents) {
       // EODHD uses 'type' field for event name (not 'event' or 'title')
       const eventName = raw.type || '';
-      const eventDate = raw.date || '';
+      // Clean date: EODHD returns '2025-12-18 16:00:00', extract just 'YYYY-MM-DD'
+      const rawDate = raw.date || '';
+      const eventDate = rawDate.includes(' ') ? rawDate.split(' ')[0] : rawDate.split('T')[0];
       const eventTime = raw.time || '';
 
       // Log each event being checked
@@ -117,23 +119,24 @@ export default async function handler(req, res) {
       const match = matchEvent(eventName);
 
       if (match) {
-        console.log(`[Week Ahead] ✓ MATCHED: "${eventName}" → ${match.displayName} (${match.type})`);
-
-        const dayTypeKey = `${eventDate}-${match.type}`;
+        // Create unique key with cleaned date
+        const dayTypeKey = `${match.type}-${eventDate}`;
 
         // Skip if we already have this event type on this day
         if (seenTypes.has(dayTypeKey)) {
-          console.log(`[Week Ahead] Skipping duplicate: ${dayTypeKey}`);
+          console.log(`[Week Ahead] Skipping duplicate: ${eventName} → ${dayTypeKey}`);
           continue;
         }
         seenTypes.add(dayTypeKey);
 
+        console.log(`[Week Ahead] ✓ MATCHED: "${eventName}" → ${match.displayName} (${match.type})`);
+
         matchedEvents.push({
-          id: `${match.type}-${eventDate}`,
+          id: dayTypeKey,
           name: match.displayName,
           originalName: eventName,
           type: match.type,
-          date: eventDate,
+          date: eventDate, // Use cleaned date
           time: eventTime || '08:30', // Default to common release time
           impact: match.impact,
           expected: raw.estimate || raw.forecast || raw.consensus || null,

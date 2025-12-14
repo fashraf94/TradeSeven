@@ -120,13 +120,16 @@ export default async function handler(req, res) {
     const earnings = relevantEarnings.map(e => {
       const symbol = e.code || e.symbol;
       const history = EARNINGS_HISTORY[symbol] || { avgMove: 3.0, lastMoves: [], beatRate: 'N/A' };
+      // Clean date: handle '2025-12-18 16:00:00' format
+      const rawDate = e.report_date || '';
+      const cleanDate = rawDate.includes(' ') ? rawDate.split(' ')[0] : rawDate.split('T')[0];
 
       return {
-        id: `earnings-${symbol}-${e.report_date}`,
+        id: `earnings-${symbol}-${cleanDate}`,
         name: `${symbol} Earnings`,
         symbol: symbol,
         type: 'earnings',
-        date: e.report_date,
+        date: cleanDate, // Use cleaned date
         time: e.before_after_market === 'BeforeMarket' ? 'Before Open' : 'After Close',
         beforeAfterMarket: e.before_after_market,
         impact: ['NVDA', 'TSLA', 'META', 'AAPL', 'AMZN', 'GOOGL', 'MSFT'].includes(symbol) ? 'high' : 'medium',
@@ -141,17 +144,16 @@ export default async function handler(req, res) {
     });
 
     // Sort by date
-    earnings.sort((a, b) => a.date.localeCompare(b.date));
+    earnings.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
     console.log(`[Earnings] Returning ${earnings.length} earnings`);
     res.status(200).json(earnings);
 
   } catch (error) {
-    console.error('[Earnings] Full error:', error);
+    console.error('[Earnings] Full error:', error.message);
     console.error('[Earnings] Stack:', error.stack);
-    res.status(500).json({
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
+    // Return empty array instead of crashing - don't break the UI
+    console.log('[Earnings] Returning empty array due to error');
+    res.status(200).json([]);
   }
 }
