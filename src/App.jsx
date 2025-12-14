@@ -8,6 +8,8 @@ import './firebase/config';
 import { motion } from 'framer-motion';
 // Event watchlist configuration for Week Ahead calendar
 import { EVENT_TYPE_CONFIG } from './data/eventWatchlist';
+// Static week ahead events (manual data)
+import { getWeekAheadEvents } from './data/weekAheadEvents';
 
 // MarketClash Bull & Bear Logo Component
 const MarketClashLogo = ({ size = 'large' }) => {
@@ -2049,21 +2051,11 @@ export default function PortfolioDuel() {
 
       console.log(`[WeekAhead] Loading data from ${fromStr} to ${toStr}`);
 
-      // Fetch economic events from API
+      // Get economic events from static data (manual file)
       try {
-        const eventsRes = await fetch(`/api/week-ahead-events?from=${fromStr}&to=${toStr}`);
-        if (eventsRes.ok) {
-          const eventsData = await eventsRes.json();
-          console.log(`[WeekAhead] Found ${eventsData.events?.length || 0} economic events (from ${eventsData.meta?.totalRaw || 0} raw)`);
-          // Log sample event dates to debug date formatting
-          if (eventsData.events?.length > 0) {
-            console.log('[WeekAhead] Sample event dates:', eventsData.events.slice(0, 3).map(e => ({ name: e.name, date: e.date })));
-          }
-          setWeekAheadEvents(eventsData.events || []);
-        } else {
-          console.log('[WeekAhead] No economic events data available');
-          setWeekAheadEvents([]);
-        }
+        const events = getWeekAheadEvents(fromStr, toStr);
+        console.log(`[WeekAhead] Found ${events.length} economic events from static data`);
+        setWeekAheadEvents(events);
       } catch (err) {
         console.error('[WeekAhead] Failed to load events:', err);
         setWeekAheadEvents([]);
@@ -2095,21 +2087,18 @@ export default function PortfolioDuel() {
     }
   };
 
-  // Check for upcoming high-impact events (next 3 days) - fetches from API
-  const checkUpcomingHighImpactEvents = async () => {
+  // Check for upcoming high-impact events (next 3 days) - uses static data
+  const checkUpcomingHighImpactEvents = () => {
     try {
       const today = new Date();
       const threeDaysLater = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
       const fromStr = today.toISOString().split('T')[0];
       const toStr = threeDaysLater.toISOString().split('T')[0];
 
-      const eventsRes = await fetch(`/api/week-ahead-events?from=${fromStr}&to=${toStr}`);
-      if (eventsRes.ok) {
-        const data = await eventsRes.json();
-        const highImpact = (data.events || []).filter(e => e.impact === 'high');
-        setUpcomingHighImpactEvents(highImpact);
-        return highImpact;
-      }
+      const events = getWeekAheadEvents(fromStr, toStr);
+      const highImpact = events.filter(e => e.impact === 'high');
+      setUpcomingHighImpactEvents(highImpact);
+      return highImpact;
     } catch (err) {
       console.error('[WeekAhead] Failed to check upcoming events:', err);
     }
