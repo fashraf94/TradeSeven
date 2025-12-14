@@ -29,9 +29,9 @@ export default async function handler(req, res) {
     const rawEvents = await response.json();
     console.log(`[Week Ahead] Received ${rawEvents.length} raw events from EODHD`);
 
-    // Log sample event for debugging
+    // Log first 5 raw events to see exact field names and values
     if (rawEvents.length > 0) {
-      console.log('[Week Ahead] Sample raw event:', JSON.stringify(rawEvents[0], null, 2));
+      console.log('[Week Ahead] First 5 raw events:', JSON.stringify(rawEvents.slice(0, 5), null, 2));
     }
 
     // Curated watchlist for filtering
@@ -101,19 +101,29 @@ export default async function handler(req, res) {
     const matchedEvents = [];
     const seenTypes = new Set(); // Avoid duplicates of same event type on same day
 
+    console.log('[Week Ahead] --- Starting event matching ---');
+
     for (const raw of rawEvents) {
       // Try different field names EODHD might use
       const eventName = raw.event || raw.title || raw.name || '';
       const eventDate = raw.date || raw.event_date || '';
       const eventTime = raw.time || '';
 
+      // Log each event being checked
+      console.log(`[Week Ahead] Checking: "${eventName}" (date: ${eventDate})`);
+
       const match = matchEvent(eventName);
 
       if (match) {
+        console.log(`[Week Ahead] ✓ MATCHED: "${eventName}" → ${match.displayName} (${match.type})`);
+
         const dayTypeKey = `${eventDate}-${match.type}`;
 
         // Skip if we already have this event type on this day
-        if (seenTypes.has(dayTypeKey)) continue;
+        if (seenTypes.has(dayTypeKey)) {
+          console.log(`[Week Ahead] Skipping duplicate: ${dayTypeKey}`);
+          continue;
+        }
         seenTypes.add(dayTypeKey);
 
         matchedEvents.push({
@@ -131,6 +141,8 @@ export default async function handler(req, res) {
         });
       }
     }
+
+    console.log('[Week Ahead] --- Matching complete ---');
 
     // Sort by date, then by impact (high first)
     const impactOrder = { high: 0, medium: 1, low: 2 };
