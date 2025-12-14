@@ -122,6 +122,17 @@ export default async function handler(req, res) {
         // Create unique key with cleaned date
         const dayTypeKey = `${match.type}-${eventDate}`;
 
+        // Log GDP matches specifically for debugging
+        if (match.type === 'gdp') {
+          console.log('[Week Ahead] GDP match details:', {
+            originalType: eventName,
+            date: eventDate,
+            rawDate: rawDate,
+            dayTypeKey: dayTypeKey,
+            alreadySeen: seenTypes.has(dayTypeKey)
+          });
+        }
+
         // Skip if we already have this event type on this day
         if (seenTypes.has(dayTypeKey)) {
           console.log(`[Week Ahead] Skipping duplicate: ${eventName} → ${dayTypeKey}`);
@@ -148,6 +159,14 @@ export default async function handler(req, res) {
     }
 
     console.log('[Week Ahead] --- Matching complete ---');
+
+    // Log all matched events with their original names for debugging
+    console.log('[Week Ahead] All matched events:', matchedEvents.map(e => ({
+      name: e.name,
+      originalName: e.originalName,
+      date: e.date,
+      type: e.type
+    })));
 
     // Sort by date, then by impact (high first)
     const impactOrder = { high: 0, medium: 1, low: 2 };
