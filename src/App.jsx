@@ -7,7 +7,7 @@ import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES } from
 import './firebase/config';
 import { motion } from 'framer-motion';
 // Event watchlist configuration for Week Ahead calendar
-import { EVENT_TYPE_CONFIG, getHolidaysInRange } from './data/eventWatchlist';
+import { EVENT_TYPE_CONFIG } from './data/eventWatchlist';
 
 // MarketClash Bull & Bear Logo Component
 const MarketClashLogo = ({ size = 'large' }) => {
@@ -2085,10 +2085,8 @@ export default function PortfolioDuel() {
         setWeekAheadEarnings([]);
       }
 
-      // Get holidays from static data
-      const holidays = getHolidaysInRange(fromStr, toStr);
-      console.log(`[WeekAhead] Found ${holidays.length} holidays/closures`);
-      setWeekAheadHolidays(holidays);
+      // Holidays are now included in the API response (no separate fetch needed)
+      setWeekAheadHolidays([]);
 
     } catch (error) {
       console.error('[WeekAhead] Error loading data:', error);
