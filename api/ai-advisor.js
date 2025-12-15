@@ -444,14 +444,6 @@ const getAssetTypePrefix = (assetType) => {
   }
 };
 
-// Draft action prompts
-const DRAFT_ACTIONS = {
-  'analyze': (context) => `Analyze the current draft state. My picks so far: ${context.myPicks?.join(', ') || 'None yet'}. Available high-impact stocks: ${context.availableStocks?.slice(0, 10).join(', ') || 'Unknown'}. What should I be thinking about for my next pick?`,
-  'compare': (context) => `I'm deciding between these stocks: ${context.compareStocks?.join(' vs ') || 'Unknown'}. Quick comparison for a draft pick - which would you lean toward and why?`,
-  'gaps': (context) => `My current picks: ${context.myPicks?.join(', ') || 'None'}. What sectors or themes am I missing? What type of stock should I target next?`,
-  'suggest': (context) => `Draft position: ${context.draftPosition || 'Unknown'}. My picks: ${context.myPicks?.join(', ') || 'None'}. Round: ${context.round || 'Unknown'}. Available: ${context.availableStocks?.slice(0, 15).join(', ') || 'Unknown'}. Suggest my next pick with brief reasoning.`,
-};
-
 export default async function handler(req, res) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
