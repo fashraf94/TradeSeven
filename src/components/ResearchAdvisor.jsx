@@ -401,21 +401,38 @@ export default function ResearchAdvisor({
 
     try {
       // Build market data for context
+      console.log('[ResearchAdvisor] Building market data context...');
+      console.log('[ResearchAdvisor] stocksData received:', stocksData?.length || 0, 'items');
+      console.log('[ResearchAdvisor] cryptoData received:', cryptoData?.length || 0, 'items');
+
+      // Debug: log first stock and crypto to see structure
+      if (stocksData?.length > 0) {
+        console.log('[ResearchAdvisor] Sample stock:', stocksData[0]);
+      }
+      if (cryptoData?.length > 0) {
+        console.log('[ResearchAdvisor] Sample crypto:', cryptoData[0]);
+      }
+
       const marketData = {
-        stocks: stocksData.map(s => ({
+        stocks: (stocksData || []).map(s => ({
           symbol: s.symbol,
           name: s.name,
           sector: s.sector,
           price: s.price,
-          change24h: s.change24h || s.changePercent || s.dailyChange,
+          change24h: s.change24h || s.percentChange || s.changePercent || s.dailyChange || 0,
         })),
-        crypto: cryptoData.map(c => ({
+        crypto: (cryptoData || []).map(c => ({
           symbol: c.symbol,
           name: c.name,
           price: c.price,
-          change24h: c.change24h || c.changePercent || c.dailyChange,
+          change24h: c.change24h || c.percentChange || c.changePercent || c.dailyChange || 0,
         })),
       };
+
+      console.log('[ResearchAdvisor] Market data built:', {
+        stocksCount: marketData.stocks.length,
+        cryptoCount: marketData.crypto.length
+      });
 
       const response = await fetch('/api/ai-advisor', {
         method: 'POST',

@@ -139,7 +139,23 @@ Keep it data-driven and actionable for battle strategy.`,
 
 // Build market data context from EODHD data - clearly separated by asset type
 const buildMarketDataContext = (marketData) => {
-  if (!marketData) return '';
+  console.log('[AI Advisor] Building market data context...');
+  console.log('[AI Advisor] Received marketData:', {
+    hasStocks: !!marketData?.stocks,
+    stocksCount: marketData?.stocks?.length || 0,
+    hasCrypto: !!marketData?.crypto,
+    cryptoCount: marketData?.crypto?.length || 0
+  });
+
+  if (!marketData) {
+    console.log('[AI Advisor] No market data provided');
+    return '';
+  }
+
+  // Debug first stock if available
+  if (marketData.stocks?.length > 0) {
+    console.log('[AI Advisor] Sample stock:', marketData.stocks[0]);
+  }
 
   const parts = [];
 
