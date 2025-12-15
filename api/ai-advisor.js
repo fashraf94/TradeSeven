@@ -45,17 +45,166 @@ RULES:
 - Keep responses concise with bullet points`;
 };
 
-const DRAFT_SYSTEM_PROMPT = `You are a tactical draft advisor for MarketClash snake drafts. Help users make smart picks by:
-- Analyzing available stocks vs what's been drafted
-- Identifying sector gaps in their portfolio
-- Suggesting picks based on their draft position and strategy
-- Comparing similar stocks when they're deciding between options
+const DRAFT_SYSTEM_PROMPT = `You are a tactical draft advisor for MarketClash snake drafts.
 
-Keep responses SHORT and tactical - users are on a timer during drafts.
-Use bullet points. Be decisive but explain your reasoning briefly.
-Consider: sector balance, volatility mix, upcoming catalysts.`;
+CRITICAL RULES FOR MARKETCLASH DRAFTS:
+1. Users have 60 seconds per pick - be EXTREMELY concise (under 100 words)
+2. MarketClash uses THREE GAME CATEGORIES: Steady, Risky, Defensive
+3. ONLY suggest assets from the AVAILABLE lists provided - never suggest already-drafted assets
+4. Pay attention to CATEGORY requirements - if user needs a Defensive pick, ONLY suggest from Defensive
+5. The categories are GAME CATEGORIES assigned by MarketClash, NOT real-world financial classifications
+6. An asset's game category may differ from its real-world classification (e.g., TSLA might be "Risky" in-game)
 
-// Quick action prompts for Research Advisor - explicit about asset type
+RESPONSE FORMAT:
+- Bullet points only, no paragraphs
+- Always specify which CATEGORY your suggestion is from
+- Be decisive - don't hedge
+
+When giving a Quick Pick:
+🎯 PICK: [SYMBOL] (from [CATEGORY] category)
+📝 WHY: [One sentence, max 15 words]`;
+
+// Build complete draft context for AI
+const buildDraftContext = (context) => {
+  if (!context) return '';
+
+  const parts = [];
+
+  // Header
+  parts.push(`
+MARKETCLASH SNAKE DRAFT - CURRENT STATE
+════════════════════════════════════════`);
+
+  // Draft status
+  parts.push(`
+YOUR DRAFT STATUS:
+- Picks made: ${context.myPicks?.length || 0}
+- Current round: ${context.round || 'Unknown'}
+- Draft position: ${context.draftPosition || 'Unknown'}`);
+
+  // Category requirements (if provided)
+  if (context.categoryRequirements) {
+    const req = context.categoryRequirements;
+    parts.push(`
+CATEGORY REQUIREMENTS:
+- Steady: ${req.steadyPicked || 0}/${req.steadyRequired || 0} picked (need ${Math.max(0, (req.steadyRequired || 0) - (req.steadyPicked || 0))} more)
+- Risky: ${req.riskyPicked || 0}/${req.riskyRequired || 0} picked (need ${Math.max(0, (req.riskyRequired || 0) - (req.riskyPicked || 0))} more)
+- Defensive: ${req.defensivePicked || 0}/${req.defensiveRequired || 0} picked (need ${Math.max(0, (req.defensiveRequired || 0) - (req.defensivePicked || 0))} more)`);
+  }
+
+  // Current picks with categories
+  if (context.myPicksDetailed?.length > 0) {
+    parts.push(`
+YOUR CURRENT PICKS:
+${context.myPicksDetailed.map(p => `- ${p.symbol} (${p.name || 'Unknown'}) - Category: ${p.category || 'Unknown'}`).join('\n')}`);
+  } else if (context.myPicks?.length > 0) {
+    parts.push(`
+YOUR CURRENT PICKS: ${context.myPicks.join(', ')}`);
+  }
+
+  // Available assets by category
+  parts.push(`
+════════════════════════════════════════
+AVAILABLE ASSETS BY CATEGORY:
+════════════════════════════════════════`);
+
+  if (context.availableSteady?.length > 0) {
+    parts.push(`
+📊 STEADY CATEGORY (${context.availableSteady.length} available):
+${context.availableSteady.slice(0, 15).map(a => `- ${a.symbol}: ${a.name || ''} | ${(a.change24h || 0) >= 0 ? '+' : ''}${(a.change24h || 0).toFixed(1)}%`).join('\n')}`);
+  }
+
+  if (context.availableRisky?.length > 0) {
+    parts.push(`
+🔥 RISKY CATEGORY (${context.availableRisky.length} available):
+${context.availableRisky.slice(0, 15).map(a => `- ${a.symbol}: ${a.name || ''} | ${(a.change24h || 0) >= 0 ? '+' : ''}${(a.change24h || 0).toFixed(1)}%`).join('\n')}`);
+  }
+
+  if (context.availableDefensive?.length > 0) {
+    parts.push(`
+🛡️ DEFENSIVE CATEGORY (${context.availableDefensive.length} available):
+${context.availableDefensive.slice(0, 15).map(a => `- ${a.symbol}: ${a.name || ''} | ${(a.change24h || 0) >= 0 ? '+' : ''}${(a.change24h || 0).toFixed(1)}%`).join('\n')}`);
+  }
+
+  // Fallback if no categorized assets but has availableStocks
+  if (!context.availableSteady && !context.availableRisky && !context.availableDefensive && context.availableStocks?.length > 0) {
+    parts.push(`
+AVAILABLE ASSETS (uncategorized):
+${context.availableStocks.slice(0, 20).map(s => typeof s === 'string' ? `- ${s}` : `- ${s.symbol}`).join('\n')}`);
+  }
+
+  parts.push(`
+════════════════════════════════════════
+IMPORTANT: ONLY suggest assets from the AVAILABLE lists above.
+Never suggest assets that have already been drafted.
+════════════════════════════════════════`);
+
+  return parts.join('\n');
+};
+
+// Determine which category the user needs to pick from
+const getNeededCategory = (context) => {
+  if (!context?.categoryRequirements) return null;
+
+  const req = context.categoryRequirements;
+  const steadyNeeded = Math.max(0, (req.steadyRequired || 0) - (req.steadyPicked || 0));
+  const riskyNeeded = Math.max(0, (req.riskyRequired || 0) - (req.riskyPicked || 0));
+  const defensiveNeeded = Math.max(0, (req.defensiveRequired || 0) - (req.defensivePicked || 0));
+
+  // If only one category has remaining picks, that's what they need
+  if (steadyNeeded > 0 && riskyNeeded === 0 && defensiveNeeded === 0) return 'Steady';
+  if (riskyNeeded > 0 && steadyNeeded === 0 && defensiveNeeded === 0) return 'Risky';
+  if (defensiveNeeded > 0 && steadyNeeded === 0 && riskyNeeded === 0) return 'Defensive';
+
+  return null; // Multiple categories still available
+};
+
+// Draft action prompts - now category-aware
+const DRAFT_ACTIONS = {
+  'analyze': (context) => {
+    const draftContext = buildDraftContext(context);
+    return `${draftContext}
+
+Analyze my current draft state. What categories do I still need to fill? Which available assets look strongest in the categories I need?`;
+  },
+
+  'compare': (context) => {
+    const draftContext = buildDraftContext(context);
+    const stocks = context.compareStocks?.join(' vs ') || 'Unknown';
+    return `${draftContext}
+
+Compare these assets: ${stocks}
+- Which category is each one in?
+- Which fits my draft needs better?
+- Quick recommendation on which to pick`;
+  },
+
+  'gaps': (context) => {
+    const draftContext = buildDraftContext(context);
+    return `${draftContext}
+
+What am I missing in my draft? Look at:
+1. Which categories still need picks?
+2. Am I over-concentrated in any sector?
+3. What type of asset should I prioritize next?`;
+  },
+
+  'suggest': (context) => {
+    const draftContext = buildDraftContext(context);
+    const neededCategory = getNeededCategory(context);
+
+    let categoryInstruction = '';
+    if (neededCategory) {
+      categoryInstruction = `\n\nIMPORTANT: I specifically need a ${neededCategory.toUpperCase()} category pick. ONLY suggest from the ${neededCategory} available assets.`;
+    }
+
+    return `${draftContext}${categoryInstruction}
+
+Give me a Quick Pick recommendation. Format:
+🎯 PICK: [SYMBOL] (from [CATEGORY] category)
+📝 WHY: [One sentence reason]`;
+  },
+};
 const QUICK_ACTIONS = {
   'whats-hot': `What's moving in the market today? Show me BOTH top STOCKS AND top CRYPTO - but keep them in SEPARATE sections.
 

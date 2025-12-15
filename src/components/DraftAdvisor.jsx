@@ -13,6 +13,10 @@ const DRAFT_ACTIONS = [
 export default function DraftAdvisor({
   myPicks = [],
   availableStocks = [],
+  availableSteady = [],
+  availableRisky = [],
+  availableDefensive = [],
+  categoryRequirements = null,
   draftPosition = null,
   round = null,
   compareStocks = [],
@@ -40,6 +44,13 @@ export default function DraftAdvisor({
     setShowCompareInput(false);
 
     try {
+      // Build detailed picks with category info
+      const myPicksDetailed = myPicks.map(p => ({
+        symbol: p.symbol || p.name || p,
+        name: p.name || p.symbol || p,
+        category: p.category || 'Unknown'
+      }));
+
       const response = await fetch('/api/ai-advisor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -48,7 +59,24 @@ export default function DraftAdvisor({
           action: actionId,
           context: {
             myPicks: myPicks.map(p => p.symbol || p.name || p),
+            myPicksDetailed,
             availableStocks: availableStocks.map(s => s.symbol || s.name || s),
+            availableSteady: availableSteady.map(s => ({
+              symbol: s.symbol,
+              name: s.name,
+              change24h: s.percentChange || s.change24h || 0
+            })),
+            availableRisky: availableRisky.map(s => ({
+              symbol: s.symbol,
+              name: s.name,
+              change24h: s.percentChange || s.change24h || 0
+            })),
+            availableDefensive: availableDefensive.map(s => ({
+              symbol: s.symbol,
+              name: s.name,
+              change24h: s.percentChange || s.change24h || 0
+            })),
+            categoryRequirements,
             draftPosition,
             round,
             compareStocks: actionId === 'compare' ? compareStocks : undefined,
@@ -81,6 +109,13 @@ export default function DraftAdvisor({
       setError(null);
       setShowCompareInput(false);
 
+      // Build detailed picks with category info
+      const myPicksDetailed = myPicks.map(p => ({
+        symbol: p.symbol || p.name || p,
+        name: p.name || p.symbol || p,
+        category: p.category || 'Unknown'
+      }));
+
       fetch('/api/ai-advisor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -89,7 +124,24 @@ export default function DraftAdvisor({
           action: 'compare',
           context: {
             myPicks: myPicks.map(p => p.symbol || p.name || p),
+            myPicksDetailed,
             availableStocks: availableStocks.map(s => s.symbol || s.name || s),
+            availableSteady: availableSteady.map(s => ({
+              symbol: s.symbol,
+              name: s.name,
+              change24h: s.percentChange || s.change24h || 0
+            })),
+            availableRisky: availableRisky.map(s => ({
+              symbol: s.symbol,
+              name: s.name,
+              change24h: s.percentChange || s.change24h || 0
+            })),
+            availableDefensive: availableDefensive.map(s => ({
+              symbol: s.symbol,
+              name: s.name,
+              change24h: s.percentChange || s.change24h || 0
+            })),
+            categoryRequirements,
             draftPosition,
             round,
             compareStocks: stocks,
@@ -273,14 +325,21 @@ export default function DraftAdvisor({
       <div style={{
         padding: '8px 16px',
         borderTop: '1px solid #21262d',
-        display: 'flex',
-        justifyContent: 'space-between',
         fontSize: '11px',
         color: '#6e7681'
       }}>
-        <span>Picks: {myPicks.length}</span>
-        <span>Available: {availableStocks.length}</span>
-        {round && <span>Round {round}</span>}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+          <span>Picks: {myPicks.length}</span>
+          <span>Available: {availableSteady.length + availableRisky.length + availableDefensive.length || availableStocks.length}</span>
+          {round && <span>Round {round}</span>}
+        </div>
+        {categoryRequirements && (
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '4px' }}>
+            <span>📊 {categoryRequirements.steadyPicked || 0}/{categoryRequirements.steadyRequired || 0}</span>
+            <span>🔥 {categoryRequirements.riskyPicked || 0}/{categoryRequirements.riskyRequired || 0}</span>
+            <span>🛡️ {categoryRequirements.defensivePicked || 0}/{categoryRequirements.defensiveRequired || 0}</span>
+          </div>
+        )}
       </div>
     </div>
   );
