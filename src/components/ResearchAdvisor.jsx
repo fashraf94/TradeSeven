@@ -10,48 +10,106 @@ const QUICK_ACTIONS = [
   { id: 'game-plan', label: 'Game Plan', icon: '🎯' },
 ];
 
-// Follow-up buttons based on the last topic
-const FOLLOW_UP_OPTIONS = {
-  'whats-hot': [
-    { label: '🔥 Top 5 Stock Movers', prompt: 'Show me the top 5 stocks by momentum with analysis' },
-    { label: '₿ Top 5 Crypto Movers', prompt: 'Show me the top 5 crypto by momentum with analysis' },
-    { label: '⚔️ Battle-Ready Picks', prompt: 'Which assets are best for a 24-hour battle right now?' },
-    { label: '📉 Avoid These', prompt: 'Which assets should I avoid for battles today and why?' },
-  ],
-  'sectors': [
-    { label: '📈 Best in Top Sector', prompt: 'What are the best individual stocks in the leading sector?' },
-    { label: '🔄 Sector Rotation Play', prompt: 'Is there a sector rotation happening? How can I profit?' },
-    { label: '₿ Crypto Categories', prompt: 'Break down crypto by category: DeFi, L1s, Memecoins - which is hottest?' },
-    { label: '⚡ Momentum Leaders', prompt: 'Which 3 stocks have the strongest momentum right now?' },
-  ],
-  'risk-check': [
-    { label: '⚖️ Balance Portfolio', prompt: 'How should I balance risk while keeping upside potential?' },
-    { label: '🛡️ Safer Alternatives', prompt: 'Suggest lower-volatility alternatives that still have momentum' },
-    { label: '🎲 High Risk/Reward', prompt: 'I want to be aggressive - what are the highest upside plays?' },
-    { label: '📊 Correlation Check', prompt: 'Which assets are least correlated for better diversification?' },
-  ],
-  'game-plan': [
-    { label: '🏆 Final Portfolio', prompt: 'Based on my notes, give me a final 7-asset battle portfolio' },
-    { label: '➕ What Am I Missing?', prompt: 'What sectors or assets are missing from my research?' },
-    { label: '⚡ Quick Picks to Add', prompt: 'Suggest 3 assets I should research next' },
-    { label: '🆚 Compare Top 2', prompt: 'Compare my top 2 most-researched assets head-to-head' },
-  ],
-  'general': [
-    { label: '🔥 What\'s Hot Now', prompt: 'What are the top momentum plays right now in stocks and crypto?' },
-    { label: '📊 Sector Analysis', prompt: 'Give me a momentum breakdown of stock sectors' },
-    { label: '₿ Crypto Breakdown', prompt: 'Break down crypto momentum by category' },
-    { label: '🎯 Build Portfolio', prompt: 'Help me build a balanced 8-asset battle portfolio' },
-  ],
+// Generate follow-up buttons dynamically from the AI response
+const generateFollowUpsFromResponse = (responseText) => {
+  if (!responseText) return [];
+
+  const followUps = [];
+  const foundHeaders = [];
+
+  // Extract section headers from the response
+  // Pattern 1: "1. Leading Sectors:" or "2. **Lagging Sectors:**"
+  const numberedPattern = /^\d+\.\s*\*?\*?([^:*\n]+)\*?\*?:/gm;
+  // Pattern 2: "**Leading Sectors:**" or "**Leading Sectors**"
+  const boldPattern = /^\*\*([^*\n]+)\*\*:?/gm;
+  // Pattern 3: Headers with emoji like "🚀 Top Performers:"
+  const emojiPattern = /^[\u{1F300}-\u{1F9FF}]\s*([^:\n]+):/gmu;
+
+  let match;
+
+  // Try numbered pattern first
+  while ((match = numberedPattern.exec(responseText)) !== null) {
+    const header = match[1].trim().replace(/\*\*/g, '');
+    if (header.length > 3 && header.length < 50 && !header.match(/^(Note|Warning|Tip|Example)$/i)) {
+      foundHeaders.push({ header, position: match.index });
+    }
+  }
+
+  // Try bold pattern
+  while ((match = boldPattern.exec(responseText)) !== null) {
+    const header = match[1].trim();
+    if (header.length > 3 && header.length < 50 && !header.match(/^(Note|Warning|Tip|Example)$/i)) {
+      // Check if we already have this header
+      if (!foundHeaders.some(h => h.header.toLowerCase() === header.toLowerCase())) {
+        foundHeaders.push({ header, position: match.index });
+      }
+    }
+  }
+
+  // Try emoji pattern
+  while ((match = emojiPattern.exec(responseText)) !== null) {
+    const header = match[1].trim();
+    if (header.length > 3 && header.length < 50) {
+      if (!foundHeaders.some(h => h.header.toLowerCase() === header.toLowerCase())) {
+        foundHeaders.push({ header, position: match.index });
+      }
+    }
+  }
+
+  // Sort by position in text
+  foundHeaders.sort((a, b) => a.position - b.position);
+
+  // Convert headers to follow-up buttons
+  foundHeaders.forEach(({ header, position }) => {
+    // Find the section content to extract tickers
+    const sectionEnd = responseText.indexOf('\n\n', position + header.length);
+    const endPos = sectionEnd > 0 ? sectionEnd : Math.min(position + 500, responseText.length);
+    const sectionContent = responseText.substring(position, endPos);
+
+    // Find stock/crypto tickers (2-5 uppercase letters)
+    const tickerMatches = sectionContent.match(/\b[A-Z]{2,5}\b/g) || [];
+    // Filter out common words that aren't tickers
+    const commonWords = ['THE', 'AND', 'FOR', 'ARE', 'BUT', 'NOT', 'YOU', 'ALL', 'CAN', 'HAD', 'HER', 'WAS', 'ONE', 'OUR', 'OUT', 'TOP', 'ETF', 'SPY', 'NOW', 'HOW', 'WHY'];
+    const tickers = tickerMatches.filter(t => !commonWords.includes(t));
+    const uniqueTickers = [...new Set(tickers)].slice(0, 3);
+
+    const tickerSuffix = uniqueTickers.length > 0 ? ` (${uniqueTickers.join(', ')})` : '';
+
+    // Clean header for display (remove numbers and extra formatting)
+    const cleanHeader = header.replace(/^\d+\.\s*/, '').replace(/\(.*\)/, '').trim();
+
+    followUps.push({
+      label: `📊 ${cleanHeader}${tickerSuffix}`,
+      prompt: `Give me more detailed analysis on "${cleanHeader}". Include specific assets, entry considerations, and battle strategy for this category.`,
+      header: cleanHeader,
+    });
+  });
+
+  // Limit to 4 follow-ups max
+  return followUps.slice(0, 4);
 };
 
-// Get follow-up buttons based on topic
-const getFollowUpButtons = (topic) => {
-  return FOLLOW_UP_OPTIONS[topic] || FOLLOW_UP_OPTIONS['general'];
-};
+// Fallback follow-ups when no headers are found
+const FALLBACK_FOLLOWUPS = [
+  { label: '🔥 Top Movers', prompt: 'Show me the top 5 movers right now with analysis' },
+  { label: '📊 Sector View', prompt: 'Give me a sector momentum breakdown' },
+  { label: '⚔️ Battle Picks', prompt: 'Which assets are best for a 24-hour battle?' },
+  { label: '📉 Avoid List', prompt: 'Which assets should I avoid today and why?' },
+];
 
-// Follow-up buttons component
-const FollowUpButtons = ({ topic, onSelectPrompt, isLoading }) => {
-  const buttons = getFollowUpButtons(topic);
+// Follow-up buttons component - now uses response text
+const FollowUpButtons = ({ responseText, onSelectPrompt, isLoading }) => {
+  const [followUps, setFollowUps] = useState([]);
+
+  useEffect(() => {
+    if (responseText) {
+      const generated = generateFollowUpsFromResponse(responseText);
+      // Use generated follow-ups or fallback if none found
+      setFollowUps(generated.length > 0 ? generated : FALLBACK_FOLLOWUPS);
+    }
+  }, [responseText]);
+
+  if (followUps.length === 0) return null;
 
   return (
     <div style={{
@@ -72,7 +130,7 @@ const FollowUpButtons = ({ topic, onSelectPrompt, isLoading }) => {
         flexWrap: 'wrap',
         gap: '6px',
       }}>
-        {buttons.map((btn, index) => (
+        {followUps.map((btn, index) => (
           <button
             key={index}
             onClick={() => onSelectPrompt(btn.prompt)}
@@ -318,7 +376,6 @@ export default function ResearchAdvisor({
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [lastTopic, setLastTopic] = useState('general');
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -334,11 +391,6 @@ export default function ResearchAdvisor({
 
     const actionLabel = QUICK_ACTIONS.find(a => a.id === action)?.label;
     const userMessage = messageText || `[${actionLabel}]`;
-
-    // Track topic for follow-up buttons
-    if (action) {
-      setLastTopic(action);
-    }
 
     // Add user message to chat
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
@@ -417,8 +469,9 @@ export default function ResearchAdvisor({
   };
 
   const handleFollowUp = (prompt) => {
-    // Send follow-up prompt (keeps same topic context)
-    sendMessage(prompt);
+    // Add context that we're continuing the previous analysis
+    const contextualPrompt = `Continuing our analysis from before: ${prompt}`;
+    sendMessage(contextualPrompt);
   };
 
   const handlePinSection = (noteData) => {
@@ -578,7 +631,7 @@ export default function ResearchAdvisor({
         {/* Follow-up buttons after last AI response */}
         {showFollowUps && (
           <FollowUpButtons
-            topic={lastTopic}
+            responseText={lastMessage?.content}
             onSelectPrompt={handleFollowUp}
             isLoading={isLoading}
           />
