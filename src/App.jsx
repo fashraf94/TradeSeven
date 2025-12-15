@@ -12635,6 +12635,17 @@ export default function PortfolioDuel() {
               <DraftAdvisor
                 myPicks={myPlayer?.picks || []}
                 availableStocks={availableAssets}
+                availableSteady={roomDraft?.availableAssets?.steady || []}
+                availableRisky={roomDraft?.availableAssets?.risky || []}
+                availableDefensive={roomDraft?.availableAssets?.defensive || []}
+                categoryRequirements={{
+                  steadyPicked: myPlayer?.categories?.steady || 0,
+                  steadyRequired: 3,
+                  riskyPicked: myPlayer?.categories?.risky || 0,
+                  riskyRequired: 3,
+                  defensivePicked: myPlayer?.categories?.defensive || 0,
+                  defensiveRequired: 3
+                }}
                 draftPosition={roomDraft?.players?.findIndex(p => p.odUserId === currentUserId) + 1}
                 round={currentRound}
                 compareStocks={[]}
