@@ -12650,6 +12650,7 @@ export default function PortfolioDuel() {
                 round={currentRound}
                 compareStocks={[]}
                 colors={colors}
+                notes={userNotes.map(n => ({ header: n.header || n.symbol, content: n.content || n.note }))}
               />
             </div>
           </div>
