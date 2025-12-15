@@ -1728,6 +1728,10 @@ export default function PortfolioDuel() {
   const [researchStreak, setResearchStreak] = useState(0);
   const [showResearchComplete, setShowResearchComplete] = useState(false);
 
+  // Game Plan state (AI-powered strategy from notes)
+  const [gamePlanResponse, setGamePlanResponse] = useState(null);
+  const [gamePlanLoading, setGamePlanLoading] = useState(false);
+
   // Weekly Challenges State
   const [showWeeklyChallenges, setShowWeeklyChallenges] = useState(false);
   const [weeklyChallenges, setWeeklyChallenges] = useState([]);
@@ -4198,6 +4202,58 @@ export default function PortfolioDuel() {
       setUserNotes(prev => [...prev, newNote]);
     };
 
+    // Generate Game Plan from notes using AI
+    const handleGenerateGamePlan = async () => {
+      const currentWeekNotes = userNotes.filter(n => n.weekOf === getCurrentWeekMonday());
+
+      if (currentWeekNotes.length === 0) {
+        return;
+      }
+
+      setGamePlanLoading(true);
+      setGamePlanResponse(null);
+
+      try {
+        // Format notes for the AI
+        const formattedNotes = currentWeekNotes.map(note => ({
+          asset: note.symbol || 'General',
+          content: note.type === 'clipped'
+            ? `${note.metricName}: ${note.metricValue} - ${note.explanation}`
+            : note.customText,
+          timestamp: note.createdAt
+        }));
+
+        const response = await fetch('/api/ai-advisor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            advisorType: 'research',
+            action: 'game-plan',
+            context: {
+              userNotes: formattedNotes
+            }
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to generate game plan');
+        }
+
+        const data = await response.json();
+
+        if (data.emptyState) {
+          setGamePlanResponse({ isEmpty: true, message: data.emptyStateMessage });
+        } else {
+          setGamePlanResponse({ message: data.message });
+        }
+      } catch (error) {
+        console.error('[GamePlan] Error:', error);
+        setGamePlanResponse({ error: 'Failed to generate game plan. Please try again.' });
+      } finally {
+        setGamePlanLoading(false);
+      }
+    };
+
     // Get sector color for stock
     const getSectorColor = (sector) => {
       return sectorColors[sector] || sectorColors['Unknown'];
@@ -4954,6 +5010,123 @@ export default function PortfolioDuel() {
                       )}
                     </div>
                   </div>
+                </div>
+
+                {/* Game Plan Section */}
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%)',
+                  border: '1px solid rgba(0, 217, 255, 0.3)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  marginBottom: '20px'
+                }}>
+                  <button
+                    onClick={handleGenerateGamePlan}
+                    disabled={gamePlanLoading || currentWeekNotes.length === 0}
+                    style={{
+                      width: '100%',
+                      background: currentWeekNotes.length === 0
+                        ? '#21262d'
+                        : 'linear-gradient(135deg, #00d9ff 0%, #a855f7 100%)',
+                      border: 'none',
+                      color: currentWeekNotes.length === 0 ? '#8b949e' : '#000',
+                      fontWeight: '600',
+                      fontSize: '15px',
+                      padding: '14px 20px',
+                      borderRadius: '8px',
+                      cursor: gamePlanLoading || currentWeekNotes.length === 0 ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s',
+                      opacity: gamePlanLoading ? 0.7 : 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    {gamePlanLoading ? (
+                      <>
+                        <span style={{ animation: 'pulse 1.5s infinite' }}>⏳</span>
+                        Analyzing your research...
+                      </>
+                    ) : (
+                      <>🎯 Generate Game Plan</>
+                    )}
+                  </button>
+
+                  {currentWeekNotes.length === 0 && (
+                    <p style={{
+                      color: '#8b949e',
+                      fontSize: '13px',
+                      textAlign: 'center',
+                      marginTop: '10px',
+                      marginBottom: '0'
+                    }}>
+                      Save some research notes first, then I'll help you build a strategy!
+                    </p>
+                  )}
+
+                  {/* Game Plan Response */}
+                  {gamePlanResponse && (
+                    <div style={{
+                      marginTop: '16px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+                    }}>
+                      {gamePlanResponse.error ? (
+                        <div style={{
+                          background: 'rgba(248, 81, 73, 0.1)',
+                          border: '1px solid rgba(248, 81, 73, 0.3)',
+                          borderRadius: '8px',
+                          padding: '12px',
+                          color: '#f85149',
+                          fontSize: '13px'
+                        }}>
+                          {gamePlanResponse.error}
+                        </div>
+                      ) : (
+                        <div style={{
+                          background: '#0d1117',
+                          borderRadius: '8px',
+                          padding: '16px',
+                          color: '#e6edf3',
+                          fontSize: '13px',
+                          lineHeight: '1.6',
+                          whiteSpace: 'pre-wrap'
+                        }}>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            marginBottom: '12px',
+                            paddingBottom: '12px',
+                            borderBottom: '1px solid #21262d'
+                          }}>
+                            <span style={{ fontSize: '18px' }}>🎯</span>
+                            <span style={{ fontWeight: '700', color: colors.cyan }}>Your Game Plan</span>
+                          </div>
+                          {gamePlanResponse.message}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Notes Divider */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  margin: '20px 0 16px 0',
+                  color: '#8b949e',
+                  fontSize: '13px',
+                  fontWeight: '600'
+                }}>
+                  <span>📝 Your Saved Notes ({currentWeekNotes.length})</span>
+                  <div style={{
+                    flex: 1,
+                    height: '1px',
+                    background: '#21262d',
+                    marginLeft: '12px'
+                  }} />
                 </div>
 
                 {/* Notes by Asset */}

@@ -8,7 +8,6 @@ const QUICK_ACTIONS = [
   { id: 'sectors', label: 'Stock Sectors', icon: '📊' },
   { id: 'crypto-analysis', label: 'Crypto', icon: '₿' },
   { id: 'risk-check', label: 'Risk Check', icon: '⚠️' },
-  { id: 'game-plan', label: 'Game Plan', icon: '🎯' },
 ];
 
 // Generate follow-up buttons dynamically from the AI response
