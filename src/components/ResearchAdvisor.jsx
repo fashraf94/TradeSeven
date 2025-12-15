@@ -5,7 +5,8 @@ import React, { useState, useRef, useEffect } from 'react';
 
 const QUICK_ACTIONS = [
   { id: 'whats-hot', label: "What's Hot", icon: '🔥' },
-  { id: 'sectors', label: 'Sectors', icon: '📊' },
+  { id: 'sectors', label: 'Stock Sectors', icon: '📊' },
+  { id: 'crypto-analysis', label: 'Crypto', icon: '₿' },
   { id: 'risk-check', label: 'Risk Check', icon: '⚠️' },
   { id: 'game-plan', label: 'Game Plan', icon: '🎯' },
 ];

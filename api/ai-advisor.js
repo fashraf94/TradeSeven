@@ -14,6 +14,20 @@ const getResearchSystemPrompt = () => {
 
 Today's date: ${today}
 
+═══════════════════════════════════════════════════════════════════
+CRITICAL RULE - ASSET TYPE SEPARATION:
+═══════════════════════════════════════════════════════════════════
+When the user asks about 'stocks', 'sectors', 'equities', or ETFs → respond ONLY about STOCKS - NOT crypto.
+When the user asks about 'crypto', 'coins', 'tokens', or 'bitcoin' → respond ONLY about CRYPTO - NOT stocks.
+When the user says 'assets', 'market', or 'both' → cover BOTH but keep them in SEPARATE sections.
+If unclear what the user wants, ASK: "Would you like analysis on stocks, crypto, or both?"
+
+STOCK TICKERS in our system: AAPL, MSFT, GOOGL, AMZN, NVDA, TSLA, META, JPM, V, JNJ, WMT, PG, UNH, HD, DIS
+CRYPTO TICKERS in our system: BTC, ETH, BNB, SOL, XRP, ADA, DOGE, AVAX, DOT, MATIC, LINK, UNI, ATOM, LTC
+
+For STOCK SECTOR analysis, use SPDR ETFs: XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLB, XLU, XLRE, XLC
+═══════════════════════════════════════════════════════════════════
+
 HOW TO RESPOND:
 1. Use the EODHD market data provided for all specific prices and percentages
 2. Use your knowledge to explain WHY things are moving and provide strategic context
@@ -41,12 +55,27 @@ Keep responses SHORT and tactical - users are on a timer during drafts.
 Use bullet points. Be decisive but explain your reasoning briefly.
 Consider: sector balance, volatility mix, upcoming catalysts.`;
 
-// Quick action prompts for Research Advisor
+// Quick action prompts for Research Advisor - explicit about asset type
 const QUICK_ACTIONS = {
-  'whats-hot': "What's moving in the market today? Highlight the top 3 themes or stocks getting attention and why they matter for a stock picking game.",
-  'sectors': `Analyze current sector performance for MarketClash battle strategy.
+  'whats-hot': `What's moving in the market today? Show me BOTH top STOCKS AND top CRYPTO - but keep them in SEPARATE sections.
 
-Use these SPDR Sector ETFs as reference:
+Format your response as:
+**📈 TOP STOCK MOVERS:**
+[List top stocks with analysis]
+
+**₿ TOP CRYPTO MOVERS:**
+[List top crypto with analysis]
+
+**⚔️ BATTLE PICKS:**
+[Best options from each category for 24-hour battles]
+
+Use the EODHD data provided. Keep it actionable for battle strategy.`,
+
+  'sectors': `Give me a STOCK SECTOR momentum analysis using SPDR ETFs.
+
+IMPORTANT: This is a STOCKS-ONLY analysis. Do NOT include any crypto.
+
+Use these SPDR Sector ETFs:
 - XLK: Technology
 - XLF: Financials
 - XLE: Energy
@@ -75,20 +104,46 @@ Provide a MOMENTUM-FOCUSED sector breakdown:
 
 4. **Battle Recommendation**
    - Which sectors to favor for 24-hour battles
-   - Any sector rotation happening?
+   - Top stock picks from leading sectors
 
 Keep it data-driven and focused on short-term momentum, not long-term fundamentals.
 Be concise - bullet points preferred.`,
-  'risk-check': "What are the top 3 risk factors I should be watching this week? Consider economic events, earnings, and market conditions.",
+
+  'crypto-analysis': `Give me a CRYPTO momentum analysis.
+
+IMPORTANT: This is a CRYPTO-ONLY analysis. Do NOT include any stocks or ETFs.
+
+Analyze the provided crypto data and give me:
+
+1. **Top Crypto Movers**
+   - Which coins are showing strongest momentum?
+   - Why are they moving?
+
+2. **Category Breakdown**
+   - Layer 1s (BTC, ETH, SOL, etc.)
+   - DeFi tokens
+   - Meme coins / Altcoins
+
+3. **Risk Assessment**
+   - Which crypto are overextended?
+   - Which have more room to run?
+
+4. **Battle Picks**
+   - Best crypto for 24-hour battles
+   - High-risk/high-reward options
+
+Keep it data-driven and actionable for battle strategy.`,
+
+  'risk-check': "What are the top 3 risk factors I should be watching this week for BOTH stocks AND crypto? Cover economic events, earnings, Fed decisions, and crypto-specific risks. Keep them in separate sections.",
 };
 
-// Build market data context from EODHD data
+// Build market data context from EODHD data - clearly separated by asset type
 const buildMarketDataContext = (marketData) => {
   if (!marketData) return '';
 
   const parts = [];
 
-  // Top stock movers
+  // Top stock movers - clearly labeled for stock questions
   if (marketData.stocks?.length > 0) {
     const topStocks = [...marketData.stocks]
       .filter(s => s.change24h !== undefined && s.change24h !== null)
@@ -96,7 +151,9 @@ const buildMarketDataContext = (marketData) => {
       .slice(0, 10);
 
     if (topStocks.length > 0) {
-      parts.push(`TOP STOCK MOVERS:
+      parts.push(`═══════════════════════════════════════
+STOCK DATA (Use for stock/sector questions):
+═══════════════════════════════════════
 ${topStocks.map(s => {
   const change = s.change24h || 0;
   const changeStr = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
@@ -105,7 +162,7 @@ ${topStocks.map(s => {
     }
   }
 
-  // Top crypto movers
+  // Top crypto movers - clearly labeled for crypto questions
   if (marketData.crypto?.length > 0) {
     const topCrypto = [...marketData.crypto]
       .filter(c => c.change24h !== undefined && c.change24h !== null)
@@ -113,7 +170,9 @@ ${topStocks.map(s => {
       .slice(0, 10);
 
     if (topCrypto.length > 0) {
-      parts.push(`TOP CRYPTO MOVERS:
+      parts.push(`═══════════════════════════════════════
+CRYPTO DATA (Use for crypto questions):
+═══════════════════════════════════════
 ${topCrypto.map(c => {
   const change = c.change24h || 0;
   const changeStr = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
@@ -128,7 +187,10 @@ ${topCrypto.map(c => {
 
 ${parts.join('\n\n')}
 
-Use this data for facts. Add your analysis for context and strategy.
+IMPORTANT: Only use the relevant section based on what the user is asking about.
+If user asks about STOCKS/SECTORS → use STOCK DATA only.
+If user asks about CRYPTO → use CRYPTO DATA only.
+If user asks about BOTH or general "market" → use both sections.
 
 `;
 };
@@ -171,6 +233,50 @@ Based on their notes, provide a personalized GAME PLAN:
    - 2-3 actionable tips based on their specific notes
 
 Make it personal - reference their specific notes. This should feel like a custom strategy session, not generic advice.`;
+};
+
+// Detect asset type from user message
+const detectAssetType = (userMessage) => {
+  if (!userMessage) return 'unclear';
+  const msg = userMessage.toLowerCase();
+
+  const stockKeywords = [
+    'stock', 'stocks', 'sector', 'sectors', 'equity', 'equities',
+    'xlk', 'xlf', 'xle', 'xlv', 'xly', 'xlp', 'xli', 'xlb', 'xlu', 'xlre', 'xlc', 'spy',
+    'aapl', 'nvda', 'msft', 'googl', 'amzn', 'tsla', 'meta', 'jpm',
+    'apple', 'nvidia', 'microsoft', 'google', 'amazon', 'tesla',
+    'spdr', 'etf', 's&p', 'dow', 'nasdaq'
+  ];
+
+  const cryptoKeywords = [
+    'crypto', 'cryptocurrency', 'coin', 'coins', 'token', 'tokens',
+    'btc', 'eth', 'bitcoin', 'ethereum', 'sol', 'solana',
+    'bnb', 'xrp', 'ripple', 'ada', 'cardano', 'doge', 'dogecoin',
+    'defi', 'altcoin', 'altcoins', 'blockchain', 'web3'
+  ];
+
+  const hasStock = stockKeywords.some(kw => msg.includes(kw));
+  const hasCrypto = cryptoKeywords.some(kw => msg.includes(kw));
+
+  if (hasStock && !hasCrypto) return 'stocks';
+  if (hasCrypto && !hasStock) return 'crypto';
+  if (hasStock && hasCrypto) return 'both';
+  return 'unclear';
+};
+
+// Get context prefix based on detected asset type
+const getAssetTypePrefix = (assetType) => {
+  switch (assetType) {
+    case 'stocks':
+      return '[USER WANTS STOCK ANALYSIS ONLY - Do not mention crypto. Focus on stocks and SPDR sector ETFs.]\n\n';
+    case 'crypto':
+      return '[USER WANTS CRYPTO ANALYSIS ONLY - Do not mention stocks. Focus on cryptocurrencies.]\n\n';
+    case 'both':
+      return '[USER WANTS BOTH - Cover stocks AND crypto but keep them in SEPARATE sections.]\n\n';
+    case 'unclear':
+    default:
+      return '';
+  }
 };
 
 // Draft action prompts
@@ -274,6 +380,16 @@ export default async function handler(req, res) {
       finalMessage += userMessage;
 
       userMessage = finalMessage;
+    }
+
+    // Detect asset type and add context prefix for research advisor
+    if (advisorType === 'research') {
+      const assetType = detectAssetType(userMessage);
+      const assetTypePrefix = getAssetTypePrefix(assetType);
+      if (assetTypePrefix) {
+        userMessage = assetTypePrefix + userMessage;
+      }
+      console.log('[AI Advisor] Detected asset type:', assetType);
     }
 
     console.log('[AI Advisor] Request:', { advisorType, action, messagePreview: userMessage?.substring(0, 100) });
