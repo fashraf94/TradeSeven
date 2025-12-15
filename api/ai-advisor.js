@@ -1,16 +1,35 @@
 // api/ai-advisor.js
 // AI Advisor endpoint using Claude API for Research and Draft advisors
 
-const RESEARCH_SYSTEM_PROMPT = `You are a market research assistant for MarketClash, a stock picking game. You help users understand:
-- Market trends and what's moving
-- Sector performance and rotation
-- Economic events and their likely impact
-- Risk factors to watch
+// Dynamic system prompt with current date
+const getResearchSystemPrompt = () => {
+  const today = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
 
-Keep responses concise (2-3 paragraphs max). Use bullet points for lists.
-Focus on actionable insights for stock picking decisions.
-Don't give specific buy/sell recommendations - help users think through their decisions.
-Current game context will be provided with each message.`;
+  return `You are a research advisor for MarketClash, a competitive portfolio battle game.
+
+Today's date: ${today}
+
+HOW TO RESPOND:
+1. Use the EODHD market data provided for all specific prices and percentages
+2. Use your knowledge to explain WHY things are moving and provide strategic context
+3. Combine both into actionable insights for 24-hour battles
+
+EXAMPLE FORMAT:
+"NVDA is currently up 3.2% [from EODHD data], likely driven by continued momentum in AI infrastructure spending [your analysis]. For battles, this momentum could continue short-term [strategy]."
+
+RULES:
+- Always use provided data for numbers (prices, % changes)
+- Add your analysis for context (why it's moving, what it means)
+- Never make up prices or percentages - only use what's provided
+- If data isn't provided for something, say so or skip it
+- Focus on what matters for 24-hour battle performance
+- Keep responses concise with bullet points`;
+};
 
 const DRAFT_SYSTEM_PROMPT = `You are a tactical draft advisor for MarketClash snake drafts. Help users make smart picks by:
 - Analyzing available stocks vs what's been drafted
@@ -61,6 +80,57 @@ Provide a MOMENTUM-FOCUSED sector breakdown:
 Keep it data-driven and focused on short-term momentum, not long-term fundamentals.
 Be concise - bullet points preferred.`,
   'risk-check': "What are the top 3 risk factors I should be watching this week? Consider economic events, earnings, and market conditions.",
+};
+
+// Build market data context from EODHD data
+const buildMarketDataContext = (marketData) => {
+  if (!marketData) return '';
+
+  const parts = [];
+
+  // Top stock movers
+  if (marketData.stocks?.length > 0) {
+    const topStocks = [...marketData.stocks]
+      .filter(s => s.change24h !== undefined && s.change24h !== null)
+      .sort((a, b) => Math.abs(b.change24h || 0) - Math.abs(a.change24h || 0))
+      .slice(0, 10);
+
+    if (topStocks.length > 0) {
+      parts.push(`TOP STOCK MOVERS:
+${topStocks.map(s => {
+  const change = s.change24h || 0;
+  const changeStr = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
+  return `• ${s.symbol} (${s.name || s.sector || 'Stock'}): $${(s.price || 0).toFixed(2)}, ${changeStr}`;
+}).join('\n')}`);
+    }
+  }
+
+  // Top crypto movers
+  if (marketData.crypto?.length > 0) {
+    const topCrypto = [...marketData.crypto]
+      .filter(c => c.change24h !== undefined && c.change24h !== null)
+      .sort((a, b) => Math.abs(b.change24h || 0) - Math.abs(a.change24h || 0))
+      .slice(0, 10);
+
+    if (topCrypto.length > 0) {
+      parts.push(`TOP CRYPTO MOVERS:
+${topCrypto.map(c => {
+  const change = c.change24h || 0;
+  const changeStr = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
+  return `• ${c.symbol}: $${(c.price || 0).toLocaleString()}, ${changeStr}`;
+}).join('\n')}`);
+    }
+  }
+
+  if (parts.length === 0) return '';
+
+  return `REAL-TIME MARKET DATA FROM EODHD:
+
+${parts.join('\n\n')}
+
+Use this data for facts. Add your analysis for context and strategy.
+
+`;
 };
 
 // Game Plan prompt builder - takes user notes and creates personalized strategy
@@ -143,7 +213,10 @@ export default async function handler(req, res) {
     }
 
     // Determine system prompt based on advisor type
-    const systemPrompt = advisorType === 'draft' ? DRAFT_SYSTEM_PROMPT : RESEARCH_SYSTEM_PROMPT;
+    const systemPrompt = advisorType === 'draft' ? DRAFT_SYSTEM_PROMPT : getResearchSystemPrompt();
+
+    // Build market data context if provided
+    const marketDataContext = advisorType === 'research' ? buildMarketDataContext(context?.marketData) : '';
 
     // Build the user message
     let userMessage = message;
@@ -174,7 +247,7 @@ export default async function handler(req, res) {
       userMessage = DRAFT_ACTIONS[action](context || {});
     }
 
-    // Add game context if provided
+    // Add game context if provided (for research advisor)
     if (context && advisorType === 'research') {
       const contextParts = [];
       if (context.portfolio?.length) {
@@ -183,9 +256,24 @@ export default async function handler(req, res) {
       if (context.weekAheadEvents?.length) {
         contextParts.push(`Upcoming events: ${context.weekAheadEvents.map(e => e.name).join(', ')}`);
       }
-      if (contextParts.length) {
-        userMessage = `[Context: ${contextParts.join('. ')}]\n\n${userMessage}`;
+
+      // Build final message with market data + context + question
+      let finalMessage = '';
+
+      // Add real-time market data first
+      if (marketDataContext) {
+        finalMessage += marketDataContext;
       }
+
+      // Add user context
+      if (contextParts.length) {
+        finalMessage += `[User Context: ${contextParts.join('. ')}]\n\n`;
+      }
+
+      // Add the actual question/action
+      finalMessage += userMessage;
+
+      userMessage = finalMessage;
     }
 
     console.log('[AI Advisor] Request:', { advisorType, action, messagePreview: userMessage?.substring(0, 100) });

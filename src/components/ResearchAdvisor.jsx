@@ -209,6 +209,8 @@ export default function ResearchAdvisor({
   portfolio = [],
   weekAheadEvents = [],
   userNotes = [],
+  stocksData = [],
+  cryptoData = [],
   onPinNote,
   colors
 }) {
@@ -239,6 +241,23 @@ export default function ResearchAdvisor({
     setError(null);
 
     try {
+      // Build market data for context
+      const marketData = {
+        stocks: stocksData.map(s => ({
+          symbol: s.symbol,
+          name: s.name,
+          sector: s.sector,
+          price: s.price,
+          change24h: s.change24h || s.changePercent || s.dailyChange,
+        })),
+        crypto: cryptoData.map(c => ({
+          symbol: c.symbol,
+          name: c.name,
+          price: c.price,
+          change24h: c.change24h || c.changePercent || c.dailyChange,
+        })),
+      };
+
       const response = await fetch('/api/ai-advisor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -250,6 +269,7 @@ export default function ResearchAdvisor({
             portfolio: portfolio.map(p => p.symbol || p.name),
             weekAheadEvents: weekAheadEvents.slice(0, 5),
             userNotes: action === 'game-plan' ? userNotes : undefined,
+            marketData: marketData,
           },
         }),
       });

@@ -5211,6 +5211,8 @@ export default function PortfolioDuel() {
                 portfolio={[]}
                 weekAheadEvents={weekAheadEvents}
                 userNotes={currentWeekNotes}
+                stocksData={stocksData}
+                cryptoData={cryptoData}
                 onPinNote={handlePinAINote}
                 colors={colors}
               />
