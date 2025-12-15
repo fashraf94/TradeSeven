@@ -10,6 +10,106 @@ const QUICK_ACTIONS = [
   { id: 'game-plan', label: 'Game Plan', icon: '🎯' },
 ];
 
+// Follow-up buttons based on the last topic
+const FOLLOW_UP_OPTIONS = {
+  'whats-hot': [
+    { label: '🔥 Top 5 Stock Movers', prompt: 'Show me the top 5 stocks by momentum with analysis' },
+    { label: '₿ Top 5 Crypto Movers', prompt: 'Show me the top 5 crypto by momentum with analysis' },
+    { label: '⚔️ Battle-Ready Picks', prompt: 'Which assets are best for a 24-hour battle right now?' },
+    { label: '📉 Avoid These', prompt: 'Which assets should I avoid for battles today and why?' },
+  ],
+  'sectors': [
+    { label: '📈 Best in Top Sector', prompt: 'What are the best individual stocks in the leading sector?' },
+    { label: '🔄 Sector Rotation Play', prompt: 'Is there a sector rotation happening? How can I profit?' },
+    { label: '₿ Crypto Categories', prompt: 'Break down crypto by category: DeFi, L1s, Memecoins - which is hottest?' },
+    { label: '⚡ Momentum Leaders', prompt: 'Which 3 stocks have the strongest momentum right now?' },
+  ],
+  'risk-check': [
+    { label: '⚖️ Balance Portfolio', prompt: 'How should I balance risk while keeping upside potential?' },
+    { label: '🛡️ Safer Alternatives', prompt: 'Suggest lower-volatility alternatives that still have momentum' },
+    { label: '🎲 High Risk/Reward', prompt: 'I want to be aggressive - what are the highest upside plays?' },
+    { label: '📊 Correlation Check', prompt: 'Which assets are least correlated for better diversification?' },
+  ],
+  'game-plan': [
+    { label: '🏆 Final Portfolio', prompt: 'Based on my notes, give me a final 7-asset battle portfolio' },
+    { label: '➕ What Am I Missing?', prompt: 'What sectors or assets are missing from my research?' },
+    { label: '⚡ Quick Picks to Add', prompt: 'Suggest 3 assets I should research next' },
+    { label: '🆚 Compare Top 2', prompt: 'Compare my top 2 most-researched assets head-to-head' },
+  ],
+  'general': [
+    { label: '🔥 What\'s Hot Now', prompt: 'What are the top momentum plays right now in stocks and crypto?' },
+    { label: '📊 Sector Analysis', prompt: 'Give me a momentum breakdown of stock sectors' },
+    { label: '₿ Crypto Breakdown', prompt: 'Break down crypto momentum by category' },
+    { label: '🎯 Build Portfolio', prompt: 'Help me build a balanced 8-asset battle portfolio' },
+  ],
+};
+
+// Get follow-up buttons based on topic
+const getFollowUpButtons = (topic) => {
+  return FOLLOW_UP_OPTIONS[topic] || FOLLOW_UP_OPTIONS['general'];
+};
+
+// Follow-up buttons component
+const FollowUpButtons = ({ topic, onSelectPrompt, isLoading }) => {
+  const buttons = getFollowUpButtons(topic);
+
+  return (
+    <div style={{
+      marginTop: '12px',
+      paddingTop: '12px',
+      borderTop: '1px solid #21262d',
+    }}>
+      <div style={{
+        fontSize: '11px',
+        color: '#8b949e',
+        marginBottom: '8px',
+        fontWeight: '600',
+      }}>
+        💬 Dig Deeper:
+      </div>
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '6px',
+      }}>
+        {buttons.map((btn, index) => (
+          <button
+            key={index}
+            onClick={() => onSelectPrompt(btn.prompt)}
+            disabled={isLoading}
+            style={{
+              background: '#21262d',
+              border: '1px solid #30363d',
+              color: '#e6edf3',
+              padding: '6px 10px',
+              borderRadius: '16px',
+              fontSize: '11px',
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s',
+              opacity: isLoading ? 0.5 : 1,
+              whiteSpace: 'nowrap',
+            }}
+            onMouseEnter={(e) => {
+              if (!isLoading) {
+                e.target.style.background = '#30363d';
+                e.target.style.borderColor = '#00d9ff';
+                e.target.style.color = '#00d9ff';
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = '#21262d';
+              e.target.style.borderColor = '#30363d';
+              e.target.style.color = '#e6edf3';
+            }}
+          >
+            {btn.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 // Parse AI response into sections for pinning
 const parseResponseIntoSections = (responseText) => {
   if (!responseText) return [];
@@ -218,6 +318,7 @@ export default function ResearchAdvisor({
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [lastTopic, setLastTopic] = useState('general');
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -233,6 +334,11 @@ export default function ResearchAdvisor({
 
     const actionLabel = QUICK_ACTIONS.find(a => a.id === action)?.label;
     const userMessage = messageText || `[${actionLabel}]`;
+
+    // Track topic for follow-up buttons
+    if (action) {
+      setLastTopic(action);
+    }
 
     // Add user message to chat
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
@@ -310,11 +416,20 @@ export default function ResearchAdvisor({
     }
   };
 
+  const handleFollowUp = (prompt) => {
+    // Send follow-up prompt (keeps same topic context)
+    sendMessage(prompt);
+  };
+
   const handlePinSection = (noteData) => {
     if (onPinNote) {
       onPinNote(noteData);
     }
   };
+
+  // Check if should show follow-up buttons (after last assistant message, not loading)
+  const lastMessage = messages[messages.length - 1];
+  const showFollowUps = !isLoading && lastMessage?.role === 'assistant' && !lastMessage?.isEmptyState;
 
   return (
     <div style={{
@@ -458,6 +573,15 @@ export default function ResearchAdvisor({
           }}>
             <span style={{ animation: 'pulse 1.5s infinite' }}>Thinking...</span>
           </div>
+        )}
+
+        {/* Follow-up buttons after last AI response */}
+        {showFollowUps && (
+          <FollowUpButtons
+            topic={lastTopic}
+            onSelectPrompt={handleFollowUp}
+            isLoading={isLoading}
+          />
         )}
 
         <div ref={messagesEndRef} />
