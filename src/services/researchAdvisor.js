@@ -228,7 +228,201 @@ function parseDeepDiveResponse(response) {
   }
 }
 
+/**
+ * Generate the final Game Plan using Claude
+ */
+export async function generateGamePlan(thesis, convictionData, pinnedInsights, recommendations) {
+  try {
+    const response = await fetch('/api/ai-advisor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        advisorType: 'research',
+        action: 'generate_game_plan',
+        params: {
+          thesis,
+          convictionData,
+          pinnedInsights,
+          recommendations: recommendations.slice(0, 10).map(r => ({
+            symbol: r.symbol,
+            name: r.name,
+            sector: r.sector || r.category,
+            price: r.price,
+            percentChange: r.percentChange || r.change24h,
+            priceChange7d: r.priceChange7d,
+            thesisScore: r.thesisScore?.score,
+            beta: r.beta,
+          })),
+        },
+        messages: [{
+          role: 'user',
+          content: buildGamePlanPrompt(thesis, convictionData, pinnedInsights, recommendations)
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return parseGamePlanResponse(data.response);
+
+  } catch (error) {
+    console.error('[ResearchAdvisor] Game plan generation failed:', error);
+    // Return fallback game plan based on scoring algorithm
+    return generateFallbackGamePlan(thesis, convictionData, recommendations);
+  }
+}
+
+function buildGamePlanPrompt(thesis, convictionData, pinnedInsights, recommendations) {
+  const mustHaveList = convictionData.mustHave?.length > 0
+    ? convictionData.mustHave.join(', ')
+    : 'None specified';
+
+  const mustAvoidList = convictionData.mustAvoid?.length > 0
+    ? convictionData.mustAvoid.join(', ')
+    : 'None specified';
+
+  const pinnedList = pinnedInsights?.length > 0
+    ? pinnedInsights.map(p => `- ${p.symbol}: ${p.metricName} = ${p.metricValue}`).join('\n')
+    : 'None';
+
+  const assetList = recommendations.slice(0, 10).map(r =>
+    `- ${r.symbol} (${r.name}): Score ${r.thesisScore?.score || 'N/A'}, ` +
+    `${(r.percentChange || 0) > 0 ? '+' : ''}${safeToFixed(r.percentChange || 0, 1)}% today, ` +
+    `${(r.priceChange7d || 0) > 0 ? '+' : ''}${safeToFixed(r.priceChange7d || 0, 1)}% 7d`
+  ).join('\n');
+
+  return `
+You are a MarketClash strategy advisor. Generate a personalized Game Plan.
+
+USER'S THESIS:
+- Battle Type: ${thesis.battleType} (${thesis.battleType === 'head-to-head' ? '24-hour' : 'week-long'})
+- Market Stance: ${thesis.stance}
+- Sector Focus: ${thesis.sectors?.join(', ') || 'No preference'}
+- Risk Tolerance: ${thesis.risk}
+
+USER'S CONVICTION:
+- Confidence Level: ${convictionData.confidence}
+- Must-Have Assets: ${mustHaveList}
+- Must-Avoid Assets: ${mustAvoidList}
+
+USER'S PINNED INSIGHTS:
+${pinnedList}
+
+TOP SCORING ASSETS (from thesis alignment algorithm):
+${assetList}
+
+PORTFOLIO RULES:
+- Must have 7-13 assets total
+- Each position: 7.5% minimum, 20% maximum
+- Total must equal 100%
+- Must-have assets MUST be included
+- Must-avoid assets MUST be excluded
+- Higher confidence = more concentrated positions allowed
+- Lower confidence = more diversified positions recommended
+
+Generate a portfolio with this JSON structure:
+{
+  "strategySummary": "2-3 sentence overview of the strategy approach",
+  "portfolio": [
+    {
+      "symbol": "NVDA",
+      "allocation": 20,
+      "rationale": "One sentence why this allocation"
+    }
+  ],
+  "risks": [
+    "Risk statement 1",
+    "Risk statement 2",
+    "Risk statement 3"
+  ],
+  "insightConnections": "2-3 sentences connecting portfolio to user's pinned insights"
+}
+
+Use probability language ("should", "may", "tends to"). Never guarantee returns.
+`.trim();
+}
+
+function parseGamePlanResponse(response) {
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn('[ResearchAdvisor] Could not find JSON in game plan response');
+      return null;
+    }
+    return JSON.parse(jsonMatch[0]);
+  } catch (error) {
+    console.warn('[ResearchAdvisor] Failed to parse game plan:', error);
+    return null;
+  }
+}
+
+/**
+ * Fallback game plan if Claude API fails
+ */
+function generateFallbackGamePlan(thesis, convictionData, recommendations) {
+  // Filter out must-avoid assets
+  let availableAssets = recommendations.filter(
+    r => !convictionData.mustAvoid?.includes(r.symbol)
+  );
+
+  // Start with must-have assets
+  const portfolio = (convictionData.mustHave || []).map(symbol => {
+    const asset = recommendations.find(r => r.symbol === symbol);
+    return {
+      symbol,
+      allocation: 15, // Default allocation for must-haves
+      rationale: 'Included per your preference',
+    };
+  });
+
+  // Fill remaining slots with top-scoring assets
+  const remainingSlots = 7 - portfolio.length;
+  const usedSymbols = new Set(portfolio.map(p => p.symbol));
+
+  const topAssets = availableAssets
+    .filter(a => !usedSymbols.has(a.symbol))
+    .slice(0, Math.max(remainingSlots, 0));
+
+  topAssets.forEach(asset => {
+    portfolio.push({
+      symbol: asset.symbol,
+      allocation: 12.5,
+      rationale: `High thesis alignment (${asset.thesisScore?.alignment || 'moderate'})`,
+    });
+  });
+
+  // Normalize allocations to 100%
+  const totalAllocation = portfolio.reduce((sum, p) => sum + p.allocation, 0);
+  if (totalAllocation > 0) {
+    portfolio.forEach(p => {
+      p.allocation = Math.round((p.allocation / totalAllocation) * 100 * 10) / 10;
+    });
+  }
+
+  // Adjust to exactly 100%
+  const finalTotal = portfolio.reduce((sum, p) => sum + p.allocation, 0);
+  if (finalTotal !== 100 && portfolio.length > 0) {
+    portfolio[0].allocation += (100 - finalTotal);
+    portfolio[0].allocation = Math.round(portfolio[0].allocation * 10) / 10;
+  }
+
+  return {
+    strategySummary: `A ${thesis.risk} ${thesis.stance} portfolio focused on ${thesis.sectors?.join(' and ') || 'diversified sectors'}. Built for a ${thesis.battleType === 'head-to-head' ? '24-hour' : 'week-long'} battle.`,
+    portfolio,
+    risks: [
+      `${thesis.stance === 'bullish' ? 'Market downturn' : 'Market rally'} would work against this thesis`,
+      `${thesis.risk === 'aggressive' ? 'High volatility may cause significant swings' : 'Conservative positioning may limit upside'}`,
+      'Correlated positions may move together, reducing diversification benefit',
+    ],
+    insightConnections: 'Portfolio constructed based on your thesis alignment scoring and stated preferences.',
+  };
+}
+
 export default {
   enhanceRecommendations,
   getAssetDeepDive,
+  generateGamePlan,
 };

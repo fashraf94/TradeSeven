@@ -13,6 +13,8 @@ import { getWeekAheadEvents } from './data/weekAheadEvents';
 // AI Advisors
 import ResearchAdvisor from './components/ResearchAdvisor';
 import DraftAdvisor from './components/DraftAdvisor';
+// Research Mode services
+import { generateGamePlan } from './services/researchAdvisor';
 
 // MarketClash Bull & Bear Logo Component
 const MarketClashLogo = ({ size = 'large' }) => {
@@ -816,6 +818,815 @@ const CryptoMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors
           isPinned={isPinned('Category Dynamics')}
           colors={c}
         />
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// CONVICTION CHECK COMPONENT (Research Phase 4)
+// ============================================
+
+/**
+ * ConvictionCheck - Collect user preferences before generating game plan
+ * Must-have assets, must-avoid assets, and confidence level
+ */
+const ConvictionCheck = ({
+  thesis,
+  recommendations,
+  onComplete,
+  onBack,
+  onOpenAssetPicker,
+  convictionData,
+  setConvictionData,
+  colors,
+}) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  const confidenceLevels = [
+    { value: 'high', label: 'High', description: 'Concentrated positions OK', icon: '🎯' },
+    { value: 'medium', label: 'Medium', description: 'Balanced approach', icon: '⚖️' },
+    { value: 'low', label: 'Low', description: 'More diversification', icon: '🛡️' },
+  ];
+
+  const handleRemoveMustHave = (symbol) => {
+    setConvictionData(prev => ({
+      ...prev,
+      mustHave: prev.mustHave.filter(s => s !== symbol),
+    }));
+  };
+
+  const handleRemoveMustAvoid = (symbol) => {
+    setConvictionData(prev => ({
+      ...prev,
+      mustAvoid: prev.mustAvoid.filter(s => s !== symbol),
+    }));
+  };
+
+  const canProceed = convictionData.confidence !== null;
+
+  return (
+    <div style={{
+      background: '#161b22',
+      borderRadius: '16px',
+      padding: '24px',
+      border: '1px solid #2d3548',
+    }}>
+      {/* Header */}
+      <div style={{ marginBottom: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #9333ea, #6366f1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '16px',
+          }}>
+            4
+          </div>
+          <h3 style={{ color: '#e6edf3', margin: 0, fontSize: '18px' }}>
+            Conviction Check
+          </h3>
+        </div>
+        <p style={{ color: '#8b949e', fontSize: '14px', margin: 0 }}>
+          Fine-tune your preferences before we generate your personalized game plan
+        </p>
+      </div>
+
+      {/* Must-Have Assets */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '12px',
+        }}>
+          <label style={{ color: '#e6edf3', fontSize: '14px', fontWeight: '500' }}>
+            Must-Have Assets
+          </label>
+          <button
+            onClick={() => onOpenAssetPicker('mustHave')}
+            style={{
+              background: 'rgba(0, 217, 255, 0.1)',
+              border: '1px solid rgba(0, 217, 255, 0.3)',
+              borderRadius: '8px',
+              padding: '6px 12px',
+              color: c.cyan,
+              fontSize: '12px',
+              cursor: 'pointer',
+            }}
+          >
+            + Add Asset
+          </button>
+        </div>
+        <div style={{
+          background: '#1a1f2e',
+          borderRadius: '8px',
+          padding: '12px',
+          minHeight: '48px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px',
+          alignItems: 'center',
+        }}>
+          {convictionData.mustHave.length === 0 ? (
+            <span style={{ color: '#6e7681', fontSize: '13px' }}>
+              No must-have assets selected
+            </span>
+          ) : (
+            convictionData.mustHave.map(symbol => (
+              <div
+                key={symbol}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  borderRadius: '6px',
+                  padding: '4px 8px',
+                }}
+              >
+                <span style={{ color: c.green, fontSize: '13px', fontWeight: '500' }}>
+                  {symbol}
+                </span>
+                <button
+                  onClick={() => handleRemoveMustHave(symbol)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#8b949e',
+                    cursor: 'pointer',
+                    padding: '0',
+                    fontSize: '14px',
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Must-Avoid Assets */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '12px',
+        }}>
+          <label style={{ color: '#e6edf3', fontSize: '14px', fontWeight: '500' }}>
+            Must-Avoid Assets
+          </label>
+          <button
+            onClick={() => onOpenAssetPicker('mustAvoid')}
+            style={{
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: '8px',
+              padding: '6px 12px',
+              color: '#ef4444',
+              fontSize: '12px',
+              cursor: 'pointer',
+            }}
+          >
+            + Add Asset
+          </button>
+        </div>
+        <div style={{
+          background: '#1a1f2e',
+          borderRadius: '8px',
+          padding: '12px',
+          minHeight: '48px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px',
+          alignItems: 'center',
+        }}>
+          {convictionData.mustAvoid.length === 0 ? (
+            <span style={{ color: '#6e7681', fontSize: '13px' }}>
+              No must-avoid assets selected
+            </span>
+          ) : (
+            convictionData.mustAvoid.map(symbol => (
+              <div
+                key={symbol}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: '6px',
+                  padding: '4px 8px',
+                }}
+              >
+                <span style={{ color: '#ef4444', fontSize: '13px', fontWeight: '500' }}>
+                  {symbol}
+                </span>
+                <button
+                  onClick={() => handleRemoveMustAvoid(symbol)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#8b949e',
+                    cursor: 'pointer',
+                    padding: '0',
+                    fontSize: '14px',
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Confidence Level */}
+      <div style={{ marginBottom: '24px' }}>
+        <label style={{
+          color: '#e6edf3',
+          fontSize: '14px',
+          fontWeight: '500',
+          marginBottom: '12px',
+          display: 'block',
+        }}>
+          Confidence in Your Thesis
+        </label>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          {confidenceLevels.map(level => (
+            <button
+              key={level.value}
+              onClick={() => setConvictionData(prev => ({ ...prev, confidence: level.value }))}
+              style={{
+                flex: 1,
+                background: convictionData.confidence === level.value
+                  ? 'rgba(0, 217, 255, 0.15)'
+                  : '#1a1f2e',
+                border: convictionData.confidence === level.value
+                  ? '2px solid #00d9ff'
+                  : '1px solid #2d3548',
+                borderRadius: '12px',
+                padding: '16px 12px',
+                cursor: 'pointer',
+                textAlign: 'center',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <div style={{ fontSize: '24px', marginBottom: '8px' }}>{level.icon}</div>
+              <div style={{
+                color: convictionData.confidence === level.value ? c.cyan : '#e6edf3',
+                fontSize: '14px',
+                fontWeight: '600',
+                marginBottom: '4px',
+              }}>
+                {level.label}
+              </div>
+              <div style={{ color: '#8b949e', fontSize: '11px' }}>
+                {level.description}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div style={{ display: 'flex', gap: '12px' }}>
+        <button
+          onClick={onBack}
+          style={{
+            flex: 1,
+            background: 'transparent',
+            border: '1px solid #2d3548',
+            borderRadius: '12px',
+            padding: '14px',
+            color: '#8b949e',
+            fontSize: '14px',
+            fontWeight: '500',
+            cursor: 'pointer',
+          }}
+        >
+          ← Back
+        </button>
+        <button
+          onClick={() => onComplete(convictionData)}
+          disabled={!canProceed}
+          style={{
+            flex: 2,
+            background: canProceed
+              ? 'linear-gradient(135deg, #9333ea, #6366f1)'
+              : '#2d3548',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '14px',
+            color: canProceed ? '#ffffff' : '#6e7681',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: canProceed ? 'pointer' : 'not-allowed',
+          }}
+        >
+          Generate Game Plan →
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// ASSET PICKER MODAL (for Conviction Check)
+// ============================================
+
+/**
+ * AssetPickerModal - Search and select assets for must-have/must-avoid
+ */
+const AssetPickerModal = ({
+  isOpen,
+  onClose,
+  onSelect,
+  type, // 'mustHave' or 'mustAvoid'
+  stocksData,
+  cryptoData,
+  excludeSymbols = [],
+  colors,
+}) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [assetType, setAssetType] = useState('all');
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  if (!isOpen) return null;
+
+  // Combine and filter assets
+  const allAssets = [
+    ...stocksData.map(s => ({ ...s, assetType: 'stock' })),
+    ...cryptoData.map(c => ({ ...c, assetType: 'crypto' })),
+  ].filter(asset => !excludeSymbols.includes(asset.symbol));
+
+  const filteredAssets = allAssets.filter(asset => {
+    const matchesSearch = searchTerm === '' ||
+      asset.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      asset.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesType = assetType === 'all' ||
+      (assetType === 'stocks' && asset.assetType === 'stock') ||
+      (assetType === 'crypto' && asset.assetType === 'crypto');
+    return matchesSearch && matchesType;
+  }).slice(0, 20);
+
+  const titleColor = type === 'mustHave' ? c.green : '#ef4444';
+  const titleText = type === 'mustHave' ? 'Add Must-Have Asset' : 'Add Must-Avoid Asset';
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0, 0, 0, 0.8)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      padding: '20px',
+    }}>
+      <div style={{
+        background: '#161b22',
+        borderRadius: '16px',
+        padding: '24px',
+        width: '100%',
+        maxWidth: '480px',
+        maxHeight: '80vh',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '16px',
+        }}>
+          <h3 style={{ color: titleColor, margin: 0, fontSize: '18px' }}>
+            {titleText}
+          </h3>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#8b949e',
+              fontSize: '24px',
+              cursor: 'pointer',
+              padding: '0',
+              lineHeight: 1,
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Search & Filter */}
+        <div style={{ marginBottom: '16px' }}>
+          <input
+            type="text"
+            placeholder="Search assets..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{
+              width: '100%',
+              background: '#1a1f2e',
+              border: '1px solid #2d3548',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#e6edf3',
+              fontSize: '14px',
+              marginBottom: '12px',
+              boxSizing: 'border-box',
+            }}
+          />
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {['all', 'stocks', 'crypto'].map(t => (
+              <button
+                key={t}
+                onClick={() => setAssetType(t)}
+                style={{
+                  flex: 1,
+                  background: assetType === t ? 'rgba(0, 217, 255, 0.15)' : 'transparent',
+                  border: assetType === t ? '1px solid #00d9ff' : '1px solid #2d3548',
+                  borderRadius: '6px',
+                  padding: '8px',
+                  color: assetType === t ? c.cyan : '#8b949e',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  textTransform: 'capitalize',
+                }}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Asset List */}
+        <div style={{
+          flex: 1,
+          overflowY: 'auto',
+          marginRight: '-8px',
+          paddingRight: '8px',
+        }}>
+          {filteredAssets.length === 0 ? (
+            <div style={{
+              textAlign: 'center',
+              padding: '32px',
+              color: '#6e7681',
+            }}>
+              No assets found
+            </div>
+          ) : (
+            filteredAssets.map(asset => (
+              <button
+                key={asset.symbol}
+                onClick={() => {
+                  onSelect(asset.symbol);
+                  onClose();
+                }}
+                style={{
+                  width: '100%',
+                  background: '#1a1f2e',
+                  border: '1px solid #2d3548',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  marginBottom: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  textAlign: 'left',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#21262d';
+                  e.currentTarget.style.borderColor = type === 'mustHave' ? c.green : '#ef4444';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#1a1f2e';
+                  e.currentTarget.style.borderColor = '#2d3548';
+                }}
+              >
+                <div>
+                  <div style={{ color: '#e6edf3', fontWeight: '600', fontSize: '14px' }}>
+                    {asset.symbol}
+                  </div>
+                  <div style={{ color: '#8b949e', fontSize: '12px' }}>
+                    {asset.name}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ color: '#e6edf3', fontSize: '14px' }}>
+                    ${safeToFixed(asset.price, 2)}
+                  </div>
+                  <div style={{
+                    color: safeNumber(asset.percentChange || asset.change24h) >= 0 ? c.green : '#ef4444',
+                    fontSize: '12px',
+                  }}>
+                    {safeNumber(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}
+                    {safeToFixed(asset.percentChange || asset.change24h, 2)}%
+                  </div>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// GAME PLAN COMPONENT (Research Phase 5)
+// ============================================
+
+/**
+ * GamePlan - Display the AI-generated portfolio strategy
+ */
+const GamePlan = ({
+  gamePlan,
+  thesis,
+  convictionData,
+  onUsePortfolio,
+  onSaveToNotes,
+  onBack,
+  isLoading,
+  colors,
+}) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  if (isLoading) {
+    return (
+      <div style={{
+        background: '#161b22',
+        borderRadius: '16px',
+        padding: '48px 24px',
+        border: '1px solid #2d3548',
+        textAlign: 'center',
+      }}>
+        <div style={{
+          width: '48px',
+          height: '48px',
+          border: '3px solid #2d3548',
+          borderTopColor: c.cyan,
+          borderRadius: '50%',
+          margin: '0 auto 16px',
+          animation: 'spin 1s linear infinite',
+        }} />
+        <style>
+          {`@keyframes spin { to { transform: rotate(360deg); } }`}
+        </style>
+        <p style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '8px' }}>
+          Analyzing your thesis...
+        </p>
+        <p style={{ color: '#8b949e', fontSize: '14px', margin: 0 }}>
+          Building your personalized game plan
+        </p>
+      </div>
+    );
+  }
+
+  if (!gamePlan) {
+    return (
+      <div style={{
+        background: '#161b22',
+        borderRadius: '16px',
+        padding: '32px 24px',
+        border: '1px solid #2d3548',
+        textAlign: 'center',
+      }}>
+        <p style={{ color: '#ef4444', fontSize: '16px', marginBottom: '16px' }}>
+          Failed to generate game plan
+        </p>
+        <button
+          onClick={onBack}
+          style={{
+            background: 'rgba(0, 217, 255, 0.1)',
+            border: '1px solid rgba(0, 217, 255, 0.3)',
+            borderRadius: '8px',
+            padding: '10px 20px',
+            color: c.cyan,
+            fontSize: '14px',
+            cursor: 'pointer',
+          }}
+        >
+          ← Back to Conviction Check
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      background: '#161b22',
+      borderRadius: '16px',
+      padding: '24px',
+      border: '1px solid #2d3548',
+    }}>
+      {/* Header */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #f59e0b, #eab308)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '16px',
+          }}>
+            5
+          </div>
+          <h3 style={{ color: '#e6edf3', margin: 0, fontSize: '18px' }}>
+            Your Game Plan
+          </h3>
+        </div>
+      </div>
+
+      {/* Strategy Summary */}
+      <div style={{
+        background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.1), rgba(99, 102, 241, 0.1))',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '20px',
+        border: '1px solid rgba(0, 217, 255, 0.2)',
+      }}>
+        <div style={{ color: c.cyan, fontSize: '12px', marginBottom: '8px', fontWeight: '600' }}>
+          STRATEGY
+        </div>
+        <p style={{ color: '#e6edf3', fontSize: '14px', lineHeight: '1.6', margin: 0 }}>
+          {gamePlan.strategySummary}
+        </p>
+      </div>
+
+      {/* Portfolio Allocations */}
+      <div style={{ marginBottom: '20px' }}>
+        <h4 style={{ color: '#e6edf3', fontSize: '14px', marginBottom: '12px' }}>
+          Recommended Portfolio
+        </h4>
+        <div style={{
+          background: '#1a1f2e',
+          borderRadius: '12px',
+          overflow: 'hidden',
+        }}>
+          {gamePlan.portfolio?.map((position, index) => (
+            <div
+              key={position.symbol}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '12px 16px',
+                borderBottom: index < gamePlan.portfolio.length - 1 ? '1px solid #2d3548' : 'none',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '40px',
+                  height: '24px',
+                  background: `linear-gradient(90deg, ${c.cyan} ${position.allocation}%, #2d3548 ${position.allocation}%)`,
+                  borderRadius: '4px',
+                }} />
+                <div>
+                  <div style={{ color: '#e6edf3', fontWeight: '600', fontSize: '14px' }}>
+                    {position.symbol}
+                  </div>
+                  {position.rationale && (
+                    <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '200px' }}>
+                      {position.rationale}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div style={{
+                color: c.cyan,
+                fontWeight: '600',
+                fontSize: '16px',
+              }}>
+                {safeToFixed(position.allocation, 1)}%
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Insight Connections */}
+      {gamePlan.insightConnections && (
+        <div style={{
+          background: '#1a1f2e',
+          borderRadius: '12px',
+          padding: '16px',
+          marginBottom: '20px',
+          borderLeft: '3px solid #9333ea',
+        }}>
+          <div style={{ color: '#9333ea', fontSize: '12px', marginBottom: '8px', fontWeight: '600' }}>
+            HOW THIS CONNECTS TO YOUR RESEARCH
+          </div>
+          <p style={{ color: '#c9d1d9', fontSize: '13px', lineHeight: '1.5', margin: 0 }}>
+            {gamePlan.insightConnections}
+          </p>
+        </div>
+      )}
+
+      {/* Risks */}
+      {gamePlan.risks && gamePlan.risks.length > 0 && (
+        <div style={{ marginBottom: '24px' }}>
+          <h4 style={{ color: '#ef4444', fontSize: '14px', marginBottom: '12px' }}>
+            ⚠️ Key Risks
+          </h4>
+          <div style={{
+            background: 'rgba(239, 68, 68, 0.1)',
+            borderRadius: '12px',
+            padding: '16px',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+          }}>
+            {gamePlan.risks.map((risk, i) => (
+              <div
+                key={i}
+                style={{
+                  display: 'flex',
+                  gap: '8px',
+                  marginBottom: i < gamePlan.risks.length - 1 ? '8px' : 0,
+                }}
+              >
+                <span style={{ color: '#ef4444' }}>•</span>
+                <span style={{ color: '#c9d1d9', fontSize: '13px' }}>{risk}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <button
+          onClick={() => onUsePortfolio(gamePlan.portfolio)}
+          style={{
+            width: '100%',
+            background: 'linear-gradient(135deg, #10b981, #059669)',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '16px',
+            color: '#ffffff',
+            fontSize: '16px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+          }}
+        >
+          Use This Portfolio →
+        </button>
+
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button
+            onClick={() => onSaveToNotes(gamePlan)}
+            style={{
+              flex: 1,
+              background: 'rgba(147, 51, 234, 0.15)',
+              border: '1px solid rgba(147, 51, 234, 0.3)',
+              borderRadius: '12px',
+              padding: '12px',
+              color: '#9333ea',
+              fontSize: '14px',
+              cursor: 'pointer',
+            }}
+          >
+            Save to Notes
+          </button>
+          <button
+            onClick={onBack}
+            style={{
+              flex: 1,
+              background: 'transparent',
+              border: '1px solid #2d3548',
+              borderRadius: '12px',
+              padding: '12px',
+              color: '#8b949e',
+              fontSize: '14px',
+              cursor: 'pointer',
+            }}
+          >
+            ← Adjust Preferences
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -2347,6 +3158,19 @@ export default function PortfolioDuel() {
   // Game Plan state (AI-powered strategy from notes)
   const [gamePlanResponse, setGamePlanResponse] = useState(null);
   const [gamePlanLoading, setGamePlanLoading] = useState(false);
+
+  // Research Flow Phase 4 & 5 state (Conviction Check + Game Plan)
+  const [researchPhase, setResearchPhase] = useState('explore'); // 'explore' | 'conviction' | 'gameplan'
+  const [convictionData, setConvictionData] = useState({
+    mustHave: [],
+    mustAvoid: [],
+    confidence: null,
+  });
+  const [researchGamePlan, setResearchGamePlan] = useState(null);
+  const [researchGamePlanLoading, setResearchGamePlanLoading] = useState(false);
+  const [showAssetPicker, setShowAssetPicker] = useState(false);
+  const [assetPickerType, setAssetPickerType] = useState(null); // 'mustHave' | 'mustAvoid'
+  const [researchThesis, setResearchThesis] = useState(null); // Store thesis from advisor
 
   // Weekly Challenges State
   const [showWeeklyChallenges, setShowWeeklyChallenges] = useState(false);
@@ -4870,6 +5694,124 @@ export default function PortfolioDuel() {
       }
     };
 
+    // ============================================
+    // RESEARCH FLOW PHASE 4 & 5 HANDLERS
+    // ============================================
+
+    // Handler to open the asset picker modal
+    const handleOpenAssetPicker = (pickerType) => {
+      setAssetPickerType(pickerType);
+      setShowAssetPicker(true);
+    };
+
+    // Handler for selecting an asset in the picker
+    const handleAssetPickerSelect = (symbol) => {
+      if (assetPickerType === 'mustHave') {
+        setConvictionData(prev => ({
+          ...prev,
+          mustHave: prev.mustHave.includes(symbol) ? prev.mustHave : [...prev.mustHave, symbol],
+        }));
+      } else if (assetPickerType === 'mustAvoid') {
+        setConvictionData(prev => ({
+          ...prev,
+          mustAvoid: prev.mustAvoid.includes(symbol) ? prev.mustAvoid : [...prev.mustAvoid, symbol],
+        }));
+      }
+    };
+
+    // Handler to transition to conviction check phase
+    const handleStartConvictionCheck = (thesis, recommendations) => {
+      setResearchThesis(thesis);
+      // Pre-populate with top recommendations as suggested must-haves
+      setConvictionData({
+        mustHave: [],
+        mustAvoid: [],
+        confidence: null,
+      });
+      setResearchPhase('conviction');
+    };
+
+    // Handler when conviction check is complete - generate game plan
+    const handleConvictionComplete = async (convictionData) => {
+      setResearchPhase('gameplan');
+      setResearchGamePlanLoading(true);
+      setResearchGamePlan(null);
+
+      try {
+        // Get current notes for context
+        const currentWeekNotes = userNotes.filter(n => n.weekOf === getCurrentWeekMonday());
+
+        // Get recommendations based on thesis
+        const allAssets = [...stocksData, ...cryptoData];
+
+        // Generate the game plan using the imported function
+        const gamePlanResult = await generateGamePlan(
+          researchThesis,
+          convictionData,
+          currentWeekNotes,
+          allAssets
+        );
+
+        setResearchGamePlan(gamePlanResult);
+      } catch (error) {
+        console.error('[ResearchFlow] Game plan generation failed:', error);
+        setResearchGamePlan(null);
+      } finally {
+        setResearchGamePlanLoading(false);
+      }
+    };
+
+    // Handler to use the generated portfolio
+    const handleUseResearchPortfolio = (portfolioAllocations) => {
+      // Convert allocations to portfolio format
+      const allAssets = [...stocksData, ...cryptoData];
+      const newPortfolio = portfolioAllocations.map(allocation => {
+        const asset = allAssets.find(a => a.symbol === allocation.symbol);
+        if (!asset) return null;
+        return {
+          symbol: allocation.symbol,
+          name: asset.name,
+          price: asset.price,
+          amount: (allocation.allocation / 100) * 1000000, // Convert % to amount based on $1M portfolio
+        };
+      }).filter(Boolean);
+
+      // Set the portfolio and navigate to portfolio builder
+      setPortfolio(newPortfolio);
+      setPortfolioType(newPortfolio.some(p => cryptoData.find(c => c.symbol === p.symbol)) ? 'crypto' : 'stocks');
+      setShowResearchMode(false);
+      setResearchPhase('explore');
+      setScreen('portfolio');
+    };
+
+    // Handler to save game plan to notes
+    const handleSaveGamePlanToNotes = (gamePlan) => {
+      const newNote = {
+        id: `gameplan-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        symbol: null,
+        assetType: 'ai_insight',
+        type: 'game_plan',
+        customText: `**Game Plan Strategy:** ${gamePlan.strategySummary}\n\n**Portfolio:** ${gamePlan.portfolio?.map(p => `${p.symbol}: ${p.allocation}%`).join(', ')}\n\n**Key Risks:** ${gamePlan.risks?.join('; ')}`,
+        source: 'Research Flow Game Plan',
+        userAnnotation: '',
+        createdAt: new Date().toISOString(),
+        weekOf: getCurrentWeekMonday(),
+        isFinalized: false,
+      };
+      setUserNotes(prev => [...prev, newNote]);
+      // Show a toast or feedback (using existing system if available)
+    };
+
+    // Handler to go back from game plan to conviction check
+    const handleBackFromGamePlan = () => {
+      setResearchPhase('conviction');
+    };
+
+    // Handler to go back from conviction check to explore
+    const handleBackFromConviction = () => {
+      setResearchPhase('explore');
+    };
+
     // Get sector color for stock
     const getSectorColor = (sector) => {
       return sectorColors[sector] || sectorColors['Unknown'];
@@ -5996,15 +6938,61 @@ export default function PortfolioDuel() {
 
             {/* AI ADVISOR TAB */}
             {researchActiveTab === 'advisor' && (
-              <ResearchAdvisor
-                portfolio={[]}
-                weekAheadEvents={weekAheadEvents}
-                userNotes={currentWeekNotes}
-                stocksData={stocksData}
-                cryptoData={cryptoData}
-                onPinNote={handlePinAINote}
-                colors={colors}
-              />
+              <>
+                {/* Phase 1-3: Research Advisor (Explore Phase) */}
+                {researchPhase === 'explore' && (
+                  <ResearchAdvisor
+                    portfolio={[]}
+                    weekAheadEvents={weekAheadEvents}
+                    userNotes={currentWeekNotes}
+                    stocksData={stocksData}
+                    cryptoData={cryptoData}
+                    onPinNote={handlePinAINote}
+                    onStartConvictionCheck={handleStartConvictionCheck}
+                    colors={colors}
+                  />
+                )}
+
+                {/* Phase 4: Conviction Check */}
+                {researchPhase === 'conviction' && (
+                  <ConvictionCheck
+                    thesis={researchThesis}
+                    recommendations={[...stocksData, ...cryptoData].slice(0, 20)}
+                    convictionData={convictionData}
+                    setConvictionData={setConvictionData}
+                    onComplete={handleConvictionComplete}
+                    onBack={handleBackFromConviction}
+                    onOpenAssetPicker={handleOpenAssetPicker}
+                    colors={colors}
+                  />
+                )}
+
+                {/* Phase 5: Game Plan */}
+                {researchPhase === 'gameplan' && (
+                  <GamePlan
+                    gamePlan={researchGamePlan}
+                    thesis={researchThesis}
+                    convictionData={convictionData}
+                    isLoading={researchGamePlanLoading}
+                    onUsePortfolio={handleUseResearchPortfolio}
+                    onSaveToNotes={handleSaveGamePlanToNotes}
+                    onBack={handleBackFromGamePlan}
+                    colors={colors}
+                  />
+                )}
+
+                {/* Asset Picker Modal */}
+                <AssetPickerModal
+                  isOpen={showAssetPicker}
+                  onClose={() => setShowAssetPicker(false)}
+                  onSelect={handleAssetPickerSelect}
+                  type={assetPickerType}
+                  stocksData={stocksData}
+                  cryptoData={cryptoData}
+                  excludeSymbols={[...convictionData.mustHave, ...convictionData.mustAvoid]}
+                  colors={colors}
+                />
+              </>
             )}
 
             {/* STOCKS/CRYPTO TAB - Asset List */}
