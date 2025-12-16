@@ -105,26 +105,26 @@ export async function getMultipleStockPrices(symbols) {
     const data = await response.json();
 
     if (data.success && data.prices) {
-      // Update cache
+      // Update cache (ensure all values are numbers)
       Object.entries(data.prices).forEach(([symbol, priceData]) => {
         priceCache.stocks[symbol] = {
-          price: priceData.price,
-          change: priceData.change,
-          percentChange: priceData.changePercent
+          price: parseFloat(priceData.price) || 0,
+          change: parseFloat(priceData.change) || 0,
+          percentChange: parseFloat(priceData.changePercent) || 0
         };
       });
       priceCache.lastFetch.stocks = now;
 
       console.log(`[EODHD] Got ${data.count} stock prices via proxy`);
 
-      // Return in expected format, with fallbacks for missing
+      // Return in expected format, with fallbacks for missing (ensure all values are numbers)
       const result = {};
       upperSymbols.forEach(s => {
         if (data.prices[s]) {
           result[s] = {
-            price: data.prices[s].price,
-            change: data.prices[s].change,
-            percentChange: data.prices[s].changePercent
+            price: parseFloat(data.prices[s].price) || FALLBACK_STOCK_PRICES[s] || 100,
+            change: parseFloat(data.prices[s].change) || 0,
+            percentChange: parseFloat(data.prices[s].changePercent) || 0
           };
         } else {
           result[s] = {
@@ -180,26 +180,30 @@ export async function getStockPrice(symbol) {
 }
 
 /**
- * Get list of popular stocks with prices
+ * Get list of popular stocks with prices (ensures all numeric fields are numbers)
  */
 export async function getPopularStocks() {
   const prices = await getMultipleStockPrices(POPULAR_STOCK_SYMBOLS);
 
-  return POPULAR_STOCK_SYMBOLS.map(symbol => ({
-    symbol,
-    name: STOCK_NAMES[symbol] || symbol,
-    price: prices[symbol]?.price || FALLBACK_STOCK_PRICES[symbol] || 100,
-    change: prices[symbol]?.change || 0,
-    percentChange: prices[symbol]?.percentChange || 0,
-    priceChange7d: (Math.random() - 0.5) * 10,
-    priceChange30d: (Math.random() - 0.5) * 30,
-    volatility: 'medium',
-    week52High: (prices[symbol]?.price || 100) * 1.25,
-    week52Low: (prices[symbol]?.price || 100) * 0.75,
-    marketCap: 0,
-    volume24h: 0,
-    communityData: generateCommunityData(symbol, prices[symbol]?.price || 100, prices[symbol]?.percentChange || 0)
-  }));
+  return POPULAR_STOCK_SYMBOLS.map(symbol => {
+    const price = parseFloat(prices[symbol]?.price) || FALLBACK_STOCK_PRICES[symbol] || 100;
+    const percentChange = parseFloat(prices[symbol]?.percentChange) || 0;
+    return {
+      symbol,
+      name: STOCK_NAMES[symbol] || symbol,
+      price: price,
+      change: parseFloat(prices[symbol]?.change) || 0,
+      percentChange: percentChange,
+      priceChange7d: (Math.random() - 0.5) * 10,
+      priceChange30d: (Math.random() - 0.5) * 30,
+      volatility: 'medium',
+      week52High: price * 1.25,
+      week52Low: price * 0.75,
+      marketCap: 0,
+      volume24h: 0,
+      communityData: generateCommunityData(symbol, price, percentChange)
+    };
+  });
 }
 
 // ============================================
@@ -243,26 +247,27 @@ export async function getMultipleCryptoPrices(symbols) {
     console.log(`[EODHD] Proxy response:`, data);
 
     if (data.success && data.prices) {
-      // Update cache
+      // Update cache (ensure all values are numbers)
       Object.entries(data.prices).forEach(([symbol, priceData]) => {
         priceCache.crypto[symbol] = {
-          price: priceData.price,
-          change24h: priceData.changePercent
+          price: parseFloat(priceData.price) || 0,
+          change24h: parseFloat(priceData.changePercent) || 0
         };
       });
       priceCache.lastFetch.crypto = now;
 
       console.log(`[EODHD] Got ${data.count} crypto prices via proxy`);
 
-      // Return in expected format, with fallbacks for missing
+      // Return in expected format, with fallbacks for missing (ensure all values are numbers)
       const result = {};
       const missing = [];
 
       upperSymbols.forEach(s => {
-        if (data.prices[s] && data.prices[s].price > 0) {
+        const price = parseFloat(data.prices[s]?.price);
+        if (data.prices[s] && price > 0) {
           result[s] = {
-            price: data.prices[s].price,
-            change24h: data.prices[s].changePercent || 0
+            price: price,
+            change24h: parseFloat(data.prices[s].changePercent) || 0
           };
         } else {
           missing.push(s);
@@ -320,26 +325,30 @@ export async function getCryptoPrice(symbol) {
 }
 
 /**
- * Get list of popular crypto with prices
+ * Get list of popular crypto with prices (ensures all numeric fields are numbers)
  */
 export async function getPopularCrypto() {
   const prices = await getMultipleCryptoPrices(POPULAR_CRYPTO_SYMBOLS);
 
-  return POPULAR_CRYPTO_SYMBOLS.map(symbol => ({
-    symbol,
-    name: CRYPTO_NAMES[symbol] || symbol,
-    price: prices[symbol]?.price || FALLBACK_CRYPTO_PRICES[symbol] || 1,
-    change24h: prices[symbol]?.change24h || 0,
-    percentChange: prices[symbol]?.change24h || 0,
-    priceChange7d: (Math.random() - 0.5) * 15,
-    priceChange30d: (Math.random() - 0.5) * 40,
-    volatility: 'high',
-    week52High: (prices[symbol]?.price || 100) * 1.5,
-    week52Low: (prices[symbol]?.price || 100) * 0.5,
-    marketCap: 0,
-    volume24h: 0,
-    communityData: generateCommunityData(symbol, prices[symbol]?.price || 100, prices[symbol]?.change24h || 0)
-  }));
+  return POPULAR_CRYPTO_SYMBOLS.map(symbol => {
+    const price = parseFloat(prices[symbol]?.price) || FALLBACK_CRYPTO_PRICES[symbol] || 1;
+    const change24h = parseFloat(prices[symbol]?.change24h) || 0;
+    return {
+      symbol,
+      name: CRYPTO_NAMES[symbol] || symbol,
+      price: price,
+      change24h: change24h,
+      percentChange: change24h,
+      priceChange7d: (Math.random() - 0.5) * 15,
+      priceChange30d: (Math.random() - 0.5) * 40,
+      volatility: 'high',
+      week52High: price * 1.5,
+      week52Low: price * 0.5,
+      marketCap: 0,
+      volume24h: 0,
+      communityData: generateCommunityData(symbol, price, change24h)
+    };
+  });
 }
 
 /**

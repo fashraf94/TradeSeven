@@ -206,6 +206,22 @@ const MarketClashLogo = ({ size = 'large' }) => {
 };
 
 // ============================================
+// SAFE NUMBER UTILITIES (prevent toFixed errors)
+// ============================================
+
+// Safe number conversion for price/percent values
+const safeNumber = (val, fallback = 0) => {
+  if (val === null || val === undefined) return fallback;
+  const num = typeof val === 'number' ? val : parseFloat(val);
+  return isNaN(num) ? fallback : num;
+};
+
+// Safe toFixed that always works
+const safeToFixed = (val, decimals = 2, fallback = 0) => {
+  return safeNumber(val, fallback).toFixed(decimals);
+};
+
+// ============================================
 // UTILITY FUNCTION: GENERATE RANDOM CPU PORTFOLIO
 // ============================================
 function generateCPUPortfolio(portfolioType, stocksData, cryptoData) {
@@ -4441,11 +4457,11 @@ export default function PortfolioDuel() {
                     ${selectedAssetDetail.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                   <span style={{
-                    color: (selectedAssetDetail.percentChange || 0) >= 0 ? colors.green : colors.red,
+                    color: safeNumber(selectedAssetDetail.percentChange) >= 0 ? colors.green : colors.red,
                     fontSize: '16px',
                     fontWeight: '600'
                   }}>
-                    {(selectedAssetDetail.percentChange || 0) >= 0 ? '▲' : '▼'} {(selectedAssetDetail.percentChange || 0) >= 0 ? '+' : ''}{(selectedAssetDetail.percentChange || 0).toFixed(2)}% today
+                    {safeNumber(selectedAssetDetail.percentChange) >= 0 ? '▲' : '▼'} {safeNumber(selectedAssetDetail.percentChange) >= 0 ? '+' : ''}{safeToFixed(selectedAssetDetail.percentChange, 2)}% today
                   </span>
                 </div>
                 {!isStock && metrics?.marketCapRank && (
@@ -5456,11 +5472,11 @@ export default function PortfolioDuel() {
                                 ${asset.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </div>
                               <div style={{
-                                color: (asset.percentChange || 0) >= 0 ? colors.green : colors.red,
+                                color: safeNumber(asset.percentChange) >= 0 ? colors.green : colors.red,
                                 fontSize: '13px',
                                 fontWeight: '500'
                               }}>
-                                {(asset.percentChange || 0) >= 0 ? '▲' : '▼'} {(asset.percentChange || 0) >= 0 ? '+' : ''}{(asset.percentChange || 0).toFixed(2)}%
+                                {safeNumber(asset.percentChange) >= 0 ? '▲' : '▼'} {safeNumber(asset.percentChange) >= 0 ? '+' : ''}{safeToFixed(asset.percentChange, 2)}%
                               </div>
                             </div>
                           </div>
@@ -8903,14 +8919,14 @@ export default function PortfolioDuel() {
                                 {/* Price & 24h Change */}
                                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
                                   <span style={{ fontSize: '16px', fontWeight: '600', color: colors.cyan }}>
-                                    ${asset.price.toFixed(2)}
+                                    ${safeToFixed(asset.price, 2)}
                                   </span>
                                   {(asset.percentChange !== undefined || asset.change24h !== undefined) && (
                                     <span style={{
                                       fontSize: '11px',
-                                      color: (asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
+                                      color: safeNumber(asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
                                     }}>
-                                      {(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{(asset.percentChange || asset.change24h || 0).toFixed(2)}%
+                                      {safeNumber(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{safeToFixed(asset.percentChange || asset.change24h, 2)}%
                                     </span>
                                   )}
                                 </div>
@@ -10107,14 +10123,14 @@ export default function PortfolioDuel() {
                                 {/* Price & 24h Change */}
                                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
                                   <span style={{ fontSize: '16px', fontWeight: '600', color: colors.cyan }}>
-                                    ${asset.price.toFixed(2)}
+                                    ${safeToFixed(asset.price, 2)}
                                   </span>
                                   {(asset.percentChange !== undefined || asset.change24h !== undefined) && (
                                     <span style={{
                                       fontSize: '11px',
-                                      color: (asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
+                                      color: safeNumber(asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
                                     }}>
-                                      {(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{(asset.percentChange || asset.change24h || 0).toFixed(2)}%
+                                      {safeNumber(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{safeToFixed(asset.percentChange || asset.change24h, 2)}%
                                     </span>
                                   )}
                                 </div>
@@ -11019,9 +11035,9 @@ export default function PortfolioDuel() {
                                   {(asset.percentChange !== undefined || asset.change24h !== undefined) && (
                                     <span style={{
                                       fontSize: '11px',
-                                      color: (asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
+                                      color: safeNumber(asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
                                     }}>
-                                      {(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{(asset.percentChange || asset.change24h || 0).toFixed(2)}%
+                                      {safeNumber(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{safeToFixed(asset.percentChange || asset.change24h, 2)}%
                                     </span>
                                   )}
                                 </div>
