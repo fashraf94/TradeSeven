@@ -222,6 +222,606 @@ const safeToFixed = (val, decimals = 2, fallback = 0) => {
 };
 
 // ============================================
+// PINNABLE INSIGHT COMPONENT
+// ============================================
+
+/**
+ * PinnableInsight - A metric with explanation that can be saved to notes
+ */
+const PinnableInsight = ({ title, value, explanation, symbol, onPin, isPinned, colors }) => {
+  const defaultColors = {
+    green: '#00ff88',
+    red: '#ff4757',
+    cyan: '#00d9ff',
+  };
+  const c = colors || defaultColors;
+
+  const handlePin = () => {
+    if (onPin && !isPinned) {
+      onPin({
+        symbol,
+        metricName: title,
+        metricValue: value,
+        explanation,
+        source: 'research_flow',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  return (
+    <div style={{
+      background: '#1a1f2e',
+      borderRadius: '12px',
+      padding: '16px',
+      marginBottom: '12px',
+      border: '1px solid #2d3548',
+    }}>
+      {/* Metric Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '8px',
+      }}>
+        <span style={{ color: '#8b949e', fontSize: '14px' }}>{title}</span>
+        <span style={{
+          color: value?.toString().startsWith('+') ? c.green : value?.toString().startsWith('-') ? c.red : '#e6edf3',
+          fontSize: '18px',
+          fontWeight: '600',
+        }}>
+          {value}
+        </span>
+      </div>
+
+      {/* Explanation */}
+      <div style={{
+        background: '#161b22',
+        borderRadius: '8px',
+        padding: '12px',
+        marginTop: '8px',
+        borderLeft: '3px solid #00d9ff',
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '8px',
+          marginBottom: '8px',
+        }}>
+          <span style={{ color: '#00d9ff' }}>*</span>
+          <span style={{ color: '#c9d1d9', fontSize: '14px', lineHeight: '1.5' }}>
+            {explanation}
+          </span>
+        </div>
+
+        {/* Pin Button */}
+        <button
+          onClick={handlePin}
+          disabled={isPinned}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            marginLeft: 'auto',
+            padding: '6px 12px',
+            background: isPinned ? '#238636' : 'transparent',
+            border: `1px solid ${isPinned ? '#238636' : '#3d4450'}`,
+            borderRadius: '6px',
+            color: isPinned ? '#ffffff' : '#8b949e',
+            fontSize: '12px',
+            cursor: isPinned ? 'default' : 'pointer',
+            transition: 'all 0.2s',
+          }}
+        >
+          {isPinned ? 'Saved' : 'Save Insight'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// STOCK METRICS COMPONENT (for Asset Detail)
+// ============================================
+
+const StockMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  const isPinned = (metricName) => {
+    return pinnedNotes?.some(n =>
+      n.symbol === asset.symbol && n.metricName === metricName
+    );
+  };
+
+  // Calculate 52-week position percentage
+  const week52Position = asset.week52High && asset.week52Low
+    ? ((safeNumber(asset.price) - safeNumber(asset.week52Low)) / (safeNumber(asset.week52High) - safeNumber(asset.week52Low)) * 100).toFixed(0)
+    : null;
+
+  // Determine momentum strength
+  const getMomentumStrength = (change) => {
+    if (change > 10) return { label: 'Very Strong', color: c.green };
+    if (change > 5) return { label: 'Strong', color: c.green };
+    if (change > 0) return { label: 'Positive', color: c.cyan };
+    if (change > -5) return { label: 'Weak', color: '#f59e0b' };
+    return { label: 'Negative', color: c.red };
+  };
+
+  const change7d = safeNumber(asset.priceChange7d);
+  const change30d = safeNumber(asset.priceChange30d);
+  const percentChange = safeNumber(asset.percentChange);
+  const momentum = getMomentumStrength(change7d);
+
+  return (
+    <div>
+      {/* MOMENTUM SECTION */}
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+          PRICE MOMENTUM
+        </h3>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          <div style={{ textAlign: 'center', padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>Today</div>
+            <div style={{ color: percentChange >= 0 ? c.green : c.red, fontSize: '18px', fontWeight: '600' }}>
+              {percentChange >= 0 ? '+' : ''}{safeToFixed(percentChange, 2)}%
+            </div>
+          </div>
+          <div style={{ textAlign: 'center', padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>7 Days</div>
+            <div style={{ color: change7d >= 0 ? c.green : c.red, fontSize: '18px', fontWeight: '600' }}>
+              {change7d >= 0 ? '+' : ''}{safeToFixed(change7d, 2)}%
+            </div>
+          </div>
+          <div style={{ textAlign: 'center', padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>30 Days</div>
+            <div style={{ color: change30d >= 0 ? c.green : c.red, fontSize: '18px', fontWeight: '600' }}>
+              {change30d >= 0 ? '+' : ''}{safeToFixed(change30d, 2)}%
+            </div>
+          </div>
+        </div>
+
+        <PinnableInsight
+          title="Momentum Read"
+          value={momentum.label}
+          explanation={`${asset.symbol} ${change7d >= 0 ? 'has gained' : 'has lost'} ${Math.abs(change7d).toFixed(1)}% over the past week. ${
+            change7d > 5
+              ? 'Strong momentum often continues short-term, but extended rallies can reverse quickly.'
+              : change7d < -5
+              ? 'Negative momentum may continue, but oversold conditions can lead to bounces.'
+              : 'Moderate movement suggests the stock is in a consolidation phase.'
+          }`}
+          symbol={asset.symbol}
+          onPin={onPinInsight}
+          isPinned={isPinned('Momentum Read')}
+          colors={c}
+        />
+      </div>
+
+      {/* VOLATILITY SECTION */}
+      {asset.beta && (
+        <div style={{ marginBottom: '24px' }}>
+          <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+            VOLATILITY & RISK
+          </h3>
+
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ color: '#8b949e' }}>Beta</span>
+              <span style={{ color: '#e6edf3', fontWeight: '600' }}>{safeToFixed(asset.beta, 2)}</span>
+            </div>
+            {/* Beta scale visualization */}
+            <div style={{ position: 'relative', height: '8px', background: '#161b22', borderRadius: '4px' }}>
+              <div style={{
+                position: 'absolute',
+                left: `${Math.min(Math.max((safeNumber(asset.beta) / 2) * 100, 0), 100)}%`,
+                top: '-4px',
+                width: '16px',
+                height: '16px',
+                background: c.cyan,
+                borderRadius: '50%',
+                transform: 'translateX(-50%)',
+              }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '10px', color: '#6e7681' }}>
+              <span>Defensive</span>
+              <span>Market</span>
+              <span>Aggressive</span>
+            </div>
+          </div>
+
+          <PinnableInsight
+            title="Beta Analysis"
+            value={safeNumber(asset.beta) > 1.3 ? 'High Volatility' : safeNumber(asset.beta) < 0.8 ? 'Low Volatility' : 'Market Average'}
+            explanation={`With a beta of ${safeToFixed(asset.beta, 2)}, ${asset.symbol} typically moves ${(safeNumber(asset.beta) * 100).toFixed(0)}% as much as the market. ${
+              safeNumber(asset.beta) > 1.3
+                ? 'This amplifies both gains and losses - good for aggressive plays if your direction is right.'
+                : safeNumber(asset.beta) < 0.8
+                ? 'Lower volatility means more stability but potentially smaller gains in a 24-hour window.'
+                : 'Average volatility provides a balance of movement potential and stability.'
+            }`}
+            symbol={asset.symbol}
+            onPin={onPinInsight}
+            isPinned={isPinned('Beta Analysis')}
+            colors={c}
+          />
+        </div>
+      )}
+
+      {/* 52-WEEK POSITION */}
+      {week52Position && (
+        <div style={{ marginBottom: '24px' }}>
+          <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+            52-WEEK POSITION
+          </h3>
+
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ position: 'relative', height: '8px', background: '#161b22', borderRadius: '4px', marginBottom: '8px' }}>
+              <div style={{
+                position: 'absolute',
+                left: `${week52Position}%`,
+                top: '-4px',
+                width: '16px',
+                height: '16px',
+                background: c.cyan,
+                borderRadius: '50%',
+                transform: 'translateX(-50%)',
+              }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+              <span style={{ color: '#8b949e' }}>${safeToFixed(asset.week52Low, 2)}</span>
+              <span style={{ color: c.cyan }}>${safeToFixed(asset.price, 2)} ({week52Position}%)</span>
+              <span style={{ color: '#8b949e' }}>${safeToFixed(asset.week52High, 2)}</span>
+            </div>
+          </div>
+
+          <PinnableInsight
+            title="Range Context"
+            value={`${week52Position}% of 52-week range`}
+            explanation={`${asset.symbol} is trading at ${week52Position}% of its yearly range. ${
+              parseInt(week52Position) > 80
+                ? 'Near yearly highs - momentum is strong but upside may be limited.'
+                : parseInt(week52Position) < 20
+                ? 'Near yearly lows - could be a value opportunity or a falling knife.'
+                : 'Mid-range positioning suggests room to move in either direction.'
+            }`}
+            symbol={asset.symbol}
+            onPin={onPinInsight}
+            isPinned={isPinned('Range Context')}
+            colors={c}
+          />
+        </div>
+      )}
+
+      {/* ANALYST SENTIMENT (if available) */}
+      {asset.analystRating && (
+        <div style={{ marginBottom: '24px' }}>
+          <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+            ANALYST SENTIMENT
+          </h3>
+
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+              <div style={{ flex: asset.analystRating.buy || 1, height: '24px', background: '#238636', borderRadius: '4px 0 0 4px' }} />
+              <div style={{ flex: asset.analystRating.hold || 1, height: '24px', background: '#f59e0b' }} />
+              <div style={{ flex: asset.analystRating.sell || 1, height: '24px', background: c.red, borderRadius: '0 4px 4px 0' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#8b949e' }}>
+              <span>Buy: {asset.analystRating.buy || 0}</span>
+              <span>Hold: {asset.analystRating.hold || 0}</span>
+              <span>Sell: {asset.analystRating.sell || 0}</span>
+            </div>
+          </div>
+
+          <PinnableInsight
+            title="Analyst Consensus"
+            value={`${((safeNumber(asset.analystRating.buy) / (safeNumber(asset.analystRating.buy) + safeNumber(asset.analystRating.hold) + safeNumber(asset.analystRating.sell))) * 100).toFixed(0)}% Bullish`}
+            explanation={`${asset.analystRating.buy} analysts rate ${asset.symbol} as a buy. Analyst consensus can indicate institutional sentiment, though analysts often lag behind price movements.`}
+            symbol={asset.symbol}
+            onPin={onPinInsight}
+            isPinned={isPinned('Analyst Consensus')}
+            colors={c}
+          />
+        </div>
+      )}
+
+      {/* EARNINGS WARNING (if upcoming) */}
+      {asset.earningsDate && (
+        <div style={{
+          marginBottom: '24px',
+          background: 'rgba(245, 158, 11, 0.1)',
+          border: '1px solid #f59e0b',
+          borderRadius: '12px',
+          padding: '16px',
+        }}>
+          <h3 style={{ color: '#f59e0b', fontSize: '16px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            UPCOMING EARNINGS
+          </h3>
+
+          <div style={{ color: '#e6edf3', marginBottom: '12px' }}>
+            {new Date(asset.earningsDate).toLocaleDateString('en-US', {
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric',
+              year: 'numeric'
+            })}
+          </div>
+
+          <PinnableInsight
+            title="Earnings Warning"
+            value="Event Risk"
+            explanation={`${asset.symbol} reports earnings soon. If your battle overlaps this date, expect significant price movement - stocks often swing 5-15% on earnings regardless of direction. This adds uncertainty to any thesis.`}
+            symbol={asset.symbol}
+            onPin={onPinInsight}
+            isPinned={isPinned('Earnings Warning')}
+            colors={c}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// CRYPTO METRICS COMPONENT (for Asset Detail)
+// ============================================
+
+const CryptoMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  const isPinned = (metricName) => {
+    return pinnedNotes?.some(n =>
+      n.symbol === asset.symbol && n.metricName === metricName
+    );
+  };
+
+  const change7d = safeNumber(asset.priceChange7d);
+  const change30d = safeNumber(asset.priceChange30d);
+  const change24h = safeNumber(asset.percentChange || asset.change24h);
+
+  // Mock correlation data (in production, calculate from price history)
+  const btcCorrelation = asset.symbol === 'BTC' ? 1.0
+    : ['ETH', 'SOL', 'ADA', 'DOT', 'AVAX'].includes(asset.symbol) ? 0.7 + Math.random() * 0.2
+    : ['USDT', 'USDC'].includes(asset.symbol) ? 0.1
+    : 0.4 + Math.random() * 0.3;
+
+  // Determine momentum label
+  const getMomentumLabel = () => {
+    if (change7d > 15) return { label: 'Surging', color: c.green };
+    if (change7d > 8) return { label: 'Hot', color: c.green };
+    if (change7d > 3) return { label: 'Climbing', color: c.cyan };
+    if (change7d > -3) return { label: 'Stable', color: '#8b949e' };
+    if (change7d > -8) return { label: 'Cooling', color: '#f59e0b' };
+    return { label: 'Cold', color: c.red };
+  };
+
+  const momentum = getMomentumLabel();
+
+  return (
+    <div>
+      {/* MOMENTUM & HYPE */}
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+          MOMENTUM & HYPE
+        </h3>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          <div style={{ textAlign: 'center', padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>24h</div>
+            <div style={{ color: change24h >= 0 ? c.green : c.red, fontSize: '18px', fontWeight: '600' }}>
+              {change24h >= 0 ? '+' : ''}{safeToFixed(change24h, 2)}%
+            </div>
+          </div>
+          <div style={{ textAlign: 'center', padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>7d</div>
+            <div style={{ color: change7d >= 0 ? c.green : c.red, fontSize: '18px', fontWeight: '600' }}>
+              {change7d >= 0 ? '+' : ''}{safeToFixed(change7d, 2)}%
+            </div>
+          </div>
+          <div style={{ textAlign: 'center', padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>30d</div>
+            <div style={{ color: change30d >= 0 ? c.green : c.red, fontSize: '18px', fontWeight: '600' }}>
+              {change30d >= 0 ? '+' : ''}{safeToFixed(change30d, 2)}%
+            </div>
+          </div>
+        </div>
+
+        <PinnableInsight
+          title="Momentum Read"
+          value={momentum.label}
+          explanation={`${asset.symbol} is ${change7d >= 0 ? 'up' : 'down'} ${Math.abs(change7d).toFixed(1)}% over 7 days. ${
+            change7d > 10
+              ? 'Strong crypto momentum often continues but corrections can be sharp and sudden.'
+              : change7d < -10
+              ? 'Significant pullback - could be oversold or beginning of larger downtrend.'
+              : 'Moderate activity suggests consolidation phase.'
+          }`}
+          symbol={asset.symbol}
+          onPin={onPinInsight}
+          isPinned={isPinned('Momentum Read')}
+          colors={c}
+        />
+      </div>
+
+      {/* MARKET POSITION */}
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+          MARKET POSITION
+        </h3>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          <div style={{ padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>Market Cap</div>
+            <div style={{ color: '#e6edf3', fontSize: '16px', fontWeight: '600' }}>
+              ${asset.marketCap ? (asset.marketCap / 1e9).toFixed(1) + 'B' : 'N/A'}
+            </div>
+          </div>
+          <div style={{ padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>Category</div>
+            <div style={{ color: c.cyan, fontSize: '16px', fontWeight: '600' }}>
+              {asset.category || 'N/A'}
+            </div>
+          </div>
+        </div>
+
+        <PinnableInsight
+          title="Size Context"
+          value={safeNumber(asset.marketCap) > 50e9 ? 'Large Cap' : safeNumber(asset.marketCap) > 10e9 ? 'Mid Cap' : 'Small Cap'}
+          explanation={`${asset.symbol} is a ${safeNumber(asset.marketCap) > 50e9 ? 'large' : safeNumber(asset.marketCap) > 10e9 ? 'mid' : 'small'}-cap crypto. ${
+            safeNumber(asset.marketCap) > 50e9
+              ? 'Larger coins tend to be less volatile but still swing more than stocks.'
+              : safeNumber(asset.marketCap) > 10e9
+              ? 'Mid-size coins balance liquidity with growth potential.'
+              : 'Smaller caps can see explosive moves but carry higher risk.'
+          }`}
+          symbol={asset.symbol}
+          onPin={onPinInsight}
+          isPinned={isPinned('Size Context')}
+          colors={c}
+        />
+      </div>
+
+      {/* BTC CORRELATION */}
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+          BTC CORRELATION
+        </h3>
+
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ color: '#8b949e' }}>Correlation Score</span>
+            <span style={{ color: '#e6edf3', fontWeight: '600' }}>{btcCorrelation.toFixed(2)}</span>
+          </div>
+          <div style={{ position: 'relative', height: '8px', background: '#161b22', borderRadius: '4px' }}>
+            <div style={{
+              width: `${btcCorrelation * 100}%`,
+              height: '100%',
+              background: 'linear-gradient(90deg, #00d9ff, #f7931a)',
+              borderRadius: '4px',
+            }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '10px', color: '#6e7681' }}>
+            <span>Independent</span>
+            <span>Correlated</span>
+          </div>
+        </div>
+
+        <PinnableInsight
+          title="BTC Relationship"
+          value={btcCorrelation > 0.7 ? 'High Correlation' : btcCorrelation > 0.4 ? 'Moderate' : 'Low Correlation'}
+          explanation={`${asset.symbol} has a ${btcCorrelation.toFixed(2)} correlation with Bitcoin. ${
+            btcCorrelation > 0.7
+              ? 'Tends to follow BTC direction - if BTC dumps, expect this to dump too, often harder.'
+              : btcCorrelation > 0.4
+              ? 'Some relationship with BTC but can move independently on its own catalysts.'
+              : 'Moves relatively independently from Bitcoin - useful for diversification.'
+          }`}
+          symbol={asset.symbol}
+          onPin={onPinInsight}
+          isPinned={isPinned('BTC Relationship')}
+          colors={c}
+        />
+      </div>
+
+      {/* TRADING ACTIVITY */}
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+          TRADING ACTIVITY
+        </h3>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          <div style={{ padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>24h Volume</div>
+            <div style={{ color: '#e6edf3', fontSize: '16px', fontWeight: '600' }}>
+              ${safeNumber(asset.volume24h) >= 1e9 ? (safeNumber(asset.volume24h) / 1e9).toFixed(2) + 'B' : (safeNumber(asset.volume24h) / 1e6).toFixed(0) + 'M'}
+            </div>
+          </div>
+          <div style={{ padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>Vol/MCap Ratio</div>
+            <div style={{ color: '#e6edf3', fontSize: '16px', fontWeight: '600' }}>
+              {safeNumber(asset.volume24h) && safeNumber(asset.marketCap)
+                ? ((safeNumber(asset.volume24h) / safeNumber(asset.marketCap)) * 100).toFixed(1) + '%'
+                : 'N/A'}
+            </div>
+          </div>
+        </div>
+
+        <PinnableInsight
+          title="Liquidity Check"
+          value={safeNumber(asset.volume24h) > 1e9 ? 'High Activity' : safeNumber(asset.volume24h) > 100e6 ? 'Normal' : 'Low Volume'}
+          explanation={`${asset.symbol} has ${safeNumber(asset.volume24h) > 1e9 ? 'high' : safeNumber(asset.volume24h) > 100e6 ? 'moderate' : 'low'} trading volume. ${
+            safeNumber(asset.volume24h) > 1e9
+              ? 'Active trading means the price is being actively discovered - more movement potential.'
+              : 'Lower volume can mean less price discovery but also potential for sudden moves on news.'
+          }`}
+          symbol={asset.symbol}
+          onPin={onPinInsight}
+          isPinned={isPinned('Liquidity Check')}
+          colors={c}
+        />
+      </div>
+
+      {/* CATEGORY CONTEXT */}
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+          CATEGORY CONTEXT
+        </h3>
+
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '12px',
+          background: '#161b22',
+          borderRadius: '8px',
+          marginBottom: '12px',
+        }}>
+          <span style={{ fontSize: '24px' }}>
+            {asset.category === 'Layer 1' ? '[]' :
+             asset.category === 'Layer 2' ? '>' :
+             asset.category === 'DeFi' ? '#' :
+             asset.category === 'Meme' ? '@' :
+             asset.category === 'Stablecoin' ? '$' :
+             asset.category === 'Payment' ? '*' : '~'}
+          </span>
+          <div>
+            <div style={{ color: '#e6edf3', fontWeight: '600' }}>{asset.category || 'Unknown'}</div>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>
+              {asset.category === 'Layer 1' ? 'Base blockchain protocol' :
+               asset.category === 'Layer 2' ? 'Scaling solution' :
+               asset.category === 'DeFi' ? 'Decentralized finance' :
+               asset.category === 'Meme' ? 'Community-driven token' :
+               asset.category === 'Stablecoin' ? 'Dollar-pegged token' :
+               asset.category === 'Payment' ? 'Payment & utility' : 'Alternative chain'}
+            </div>
+          </div>
+        </div>
+
+        <PinnableInsight
+          title="Category Dynamics"
+          value={asset.category || 'Unknown'}
+          explanation={`${asset.symbol} is a ${asset.category || 'crypto'} token. ${
+            asset.category === 'Meme'
+              ? 'Meme coins are highly volatile and sentiment-driven - can see 20%+ swings on social media hype.'
+              : asset.category === 'Stablecoin'
+              ? 'Stablecoins maintain ~$1 value - useful for defensive positioning but won\'t generate battle returns.'
+              : asset.category === 'Layer 1'
+              ? 'Layer 1 chains often move together. When one pumps, peers may follow.'
+              : asset.category === 'DeFi'
+              ? 'DeFi tokens correlate with overall crypto sentiment and TVL flows.'
+              : 'Category performance can influence individual token movements.'
+          }`}
+          symbol={asset.symbol}
+          onPin={onPinInsight}
+          isPinned={isPinned('Category Dynamics')}
+          colors={c}
+        />
+      </div>
+    </div>
+  );
+};
+
+// ============================================
 // UTILITY FUNCTION: GENERATE RANDOM CPU PORTFOLIO
 // ============================================
 function generateCPUPortfolio(portfolioType, stocksData, cryptoData) {
