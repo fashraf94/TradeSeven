@@ -14,7 +14,14 @@ import { getWeekAheadEvents } from './data/weekAheadEvents';
 import ResearchAdvisor from './components/ResearchAdvisor';
 import DraftAdvisor from './components/DraftAdvisor';
 // Research Mode services
-import { generateGamePlan } from './services/researchAdvisor';
+import { generateGamePlan, enhanceRecommendations, getAssetDeepDive } from './services/researchAdvisor';
+// Recommendation Engine
+import {
+  getRecommendations,
+  generateGenericExplanation,
+  filterBySector,
+  getAvailableSectors,
+} from './services/recommendationEngine';
 
 // MarketClash Bull & Bear Logo Component
 const MarketClashLogo = ({ size = 'large' }) => {
@@ -1633,6 +1640,1089 @@ const GamePlan = ({
 };
 
 // ============================================
+// PHASE 1: MARKET BRIEFING
+// ============================================
+
+const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  // Calculate market data from props
+  const marketData = React.useMemo(() => {
+    if (!stocksData?.length && !cryptoData?.length) return null;
+
+    // Calculate sector performance
+    const sectorPerformance = {};
+    stocksData.forEach(stock => {
+      const sector = stock.sector || 'Other';
+      if (!sectorPerformance[sector]) {
+        sectorPerformance[sector] = { total: 0, count: 0 };
+      }
+      sectorPerformance[sector].total += safeNumber(stock.percentChange, 0);
+      sectorPerformance[sector].count += 1;
+    });
+
+    const sectors = Object.entries(sectorPerformance)
+      .map(([name, data]) => ({
+        name,
+        avgChange: data.count > 0 ? data.total / data.count : 0,
+      }))
+      .sort((a, b) => b.avgChange - a.avgChange);
+
+    // Top movers
+    const allAssets = [...stocksData, ...cryptoData];
+    const topGainers = [...allAssets]
+      .sort((a, b) => safeNumber(b.percentChange || b.change24h, 0) - safeNumber(a.percentChange || a.change24h, 0))
+      .slice(0, 3);
+    const topLosers = [...allAssets]
+      .sort((a, b) => safeNumber(a.percentChange || a.change24h, 0) - safeNumber(b.percentChange || b.change24h, 0))
+      .slice(0, 3);
+
+    return {
+      sectors,
+      topGainers,
+      topLosers,
+      stocksUp: stocksData.filter(s => safeNumber(s.percentChange, 0) > 0).length,
+      stocksDown: stocksData.filter(s => safeNumber(s.percentChange, 0) < 0).length,
+      cryptoUp: cryptoData.filter(c => safeNumber(c.change24h, 0) > 0).length,
+      cryptoDown: cryptoData.filter(c => safeNumber(c.change24h, 0) < 0).length,
+    };
+  }, [stocksData, cryptoData]);
+
+  if (!marketData) {
+    return (
+      <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+        <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
+        <h2 style={{ color: '#e6edf3' }}>Loading Market Data...</h2>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+        <h1 style={{ color: '#e6edf3', fontSize: '24px', marginBottom: '8px' }}>
+          📊 Market Briefing
+        </h1>
+        <p style={{ color: '#8b949e', fontSize: '14px' }}>
+          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+        </p>
+      </div>
+
+      {/* Market Pulse */}
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '16px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px' }}>
+          Market Pulse
+        </h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+          <div>
+            <div style={{ color: '#e6edf3', fontSize: '14px', marginBottom: '4px' }}>Stocks</div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <span style={{ color: c.green }}>↑ {marketData.stocksUp}</span>
+              <span style={{ color: c.red }}>↓ {marketData.stocksDown}</span>
+            </div>
+          </div>
+          <div>
+            <div style={{ color: '#e6edf3', fontSize: '14px', marginBottom: '4px' }}>Crypto</div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <span style={{ color: c.green }}>↑ {marketData.cryptoUp}</span>
+              <span style={{ color: c.red }}>↓ {marketData.cryptoDown}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sector Snapshot */}
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '16px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px' }}>
+          Sector Snapshot
+        </h3>
+        {marketData.sectors.slice(0, 5).map((sector, idx) => (
+          <div
+            key={sector.name}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '8px 0',
+              borderBottom: idx < 4 ? '1px solid #2d3548' : 'none',
+            }}
+          >
+            <span style={{ color: '#e6edf3', fontSize: '14px' }}>{sector.name}</span>
+            <span style={{
+              color: sector.avgChange >= 0 ? c.green : c.red,
+              fontSize: '14px',
+              fontWeight: '600',
+            }}>
+              {sector.avgChange >= 0 ? '+' : ''}{sector.avgChange.toFixed(2)}%
+            </span>
+          </div>
+        ))}
+
+        <div style={{
+          marginTop: '12px',
+          padding: '12px',
+          background: '#161b22',
+          borderRadius: '8px',
+          borderLeft: `3px solid ${c.cyan}`,
+        }}>
+          <span style={{ color: c.cyan }}>💡</span>
+          <span style={{ color: '#c9d1d9', fontSize: '13px', marginLeft: '8px' }}>
+            {marketData.sectors[0]?.avgChange > 0
+              ? `${marketData.sectors[0].name} is leading today. Consider sector momentum in your thesis.`
+              : 'Markets are mixed. A balanced approach may be wise.'}
+          </span>
+        </div>
+      </div>
+
+      {/* Top Movers */}
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '24px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px' }}>
+          Top Movers Today
+        </h3>
+
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ color: c.green, fontSize: '12px', marginBottom: '8px' }}>🚀 GAINERS</div>
+          {marketData.topGainers.map(asset => (
+            <div
+              key={asset.symbol}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: '6px 0',
+              }}
+            >
+              <span style={{ color: '#e6edf3', fontSize: '14px' }}>{asset.symbol}</span>
+              <span style={{ color: c.green, fontSize: '14px' }}>
+                +{safeToFixed(asset.percentChange || asset.change24h, 2)}%
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div>
+          <div style={{ color: c.red, fontSize: '12px', marginBottom: '8px' }}>📉 LAGGARDS</div>
+          {marketData.topLosers.map(asset => (
+            <div
+              key={asset.symbol}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: '6px 0',
+              }}
+            >
+              <span style={{ color: '#e6edf3', fontSize: '14px' }}>{asset.symbol}</span>
+              <span style={{ color: c.red, fontSize: '14px' }}>
+                {safeToFixed(asset.percentChange || asset.change24h, 2)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Continue Button */}
+      <button
+        onClick={onContinue}
+        style={{
+          width: '100%',
+          padding: '16px',
+          background: `linear-gradient(135deg, ${c.cyan}, ${c.green})`,
+          border: 'none',
+          borderRadius: '12px',
+          color: '#000',
+          fontSize: '16px',
+          fontWeight: '700',
+          cursor: 'pointer',
+        }}
+      >
+        BUILD MY THESIS →
+      </button>
+    </div>
+  );
+};
+
+// ============================================
+// PHASE 2: THESIS BUILDER
+// ============================================
+
+const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
+  const [currentQuestion, setCurrentQuestion] = useState(1);
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  const questions = [
+    {
+      id: 1,
+      title: "What type of battle?",
+      subtitle: "This affects which strategies work best",
+      options: [
+        { id: 'head-to-head', label: '⚔️ Head-to-Head', description: '24-hour battle', color: c.cyan },
+        { id: 'snake-draft', label: '🐍 Snake Draft', description: 'Week-long competition', color: c.green },
+        { id: 'training', label: '🎯 Training', description: 'Practice mode', color: '#f59e0b' },
+      ],
+      field: 'battleType',
+    },
+    {
+      id: 2,
+      title: "What's your market stance?",
+      subtitle: "How do you feel about the market direction?",
+      options: [
+        { id: 'bullish', label: '📈 Bullish', description: 'Expecting markets to rise', color: c.green },
+        { id: 'bearish', label: '📉 Bearish', description: 'Expecting markets to fall', color: c.red },
+        { id: 'neutral', label: '➡️ Neutral', description: 'No strong direction', color: '#f59e0b' },
+      ],
+      field: 'stance',
+    },
+    {
+      id: 3,
+      title: "Any sector focus?",
+      subtitle: "Select up to 2 sectors, or skip for all",
+      multiSelect: true,
+      maxSelections: 2,
+      options: [
+        { id: 'Technology', label: '💻 Tech', color: c.cyan },
+        { id: 'Financials', label: '🏦 Finance', color: '#10b981' },
+        { id: 'Healthcare', label: '🏥 Healthcare', color: '#f43f5e' },
+        { id: 'Energy', label: '⚡ Energy', color: '#ef4444' },
+        { id: 'Consumer Discretionary', label: '🛍️ Consumer', color: '#f59e0b' },
+        { id: 'Industrials', label: '🏭 Industrial', color: '#6366f1' },
+        { id: 'Layer 1', label: '🔷 L1 Crypto', color: '#8b5cf6' },
+        { id: 'DeFi', label: '🏛️ DeFi', color: '#14b8a6' },
+        { id: 'Meme', label: '🐕 Meme Coins', color: '#ec4899' },
+      ],
+      field: 'sectors',
+      skippable: true,
+    },
+    {
+      id: 4,
+      title: "Risk tolerance?",
+      subtitle: "How much volatility can you handle?",
+      options: [
+        { id: 'aggressive', label: '🔥 Aggressive', description: 'High risk, high reward', color: c.red },
+        { id: 'balanced', label: '⚖️ Balanced', description: 'Mix of growth and stability', color: '#f59e0b' },
+        { id: 'conservative', label: '🛡️ Conservative', description: 'Protect downside first', color: c.green },
+      ],
+      field: 'risk',
+    },
+  ];
+
+  const currentQ = questions[currentQuestion - 1];
+  const isLastQuestion = currentQuestion === questions.length;
+
+  const handleSelect = (optionId) => {
+    if (currentQ.multiSelect) {
+      const current = thesis[currentQ.field] || [];
+      if (current.includes(optionId)) {
+        onUpdate({ ...thesis, [currentQ.field]: current.filter(id => id !== optionId) });
+      } else if (current.length < currentQ.maxSelections) {
+        onUpdate({ ...thesis, [currentQ.field]: [...current, optionId] });
+      }
+    } else {
+      onUpdate({ ...thesis, [currentQ.field]: optionId });
+      // Auto-advance for single select
+      setTimeout(() => {
+        if (isLastQuestion) {
+          onComplete({ ...thesis, [currentQ.field]: optionId });
+        } else {
+          setCurrentQuestion(prev => prev + 1);
+        }
+      }, 300);
+    }
+  };
+
+  const handleContinue = () => {
+    if (isLastQuestion) {
+      onComplete(thesis);
+    } else {
+      setCurrentQuestion(prev => prev + 1);
+    }
+  };
+
+  const handleBack = () => {
+    if (currentQuestion > 1) {
+      setCurrentQuestion(prev => prev - 1);
+    } else {
+      onBack();
+    }
+  };
+
+  const isSelected = (optionId) => {
+    if (currentQ.multiSelect) {
+      return (thesis[currentQ.field] || []).includes(optionId);
+    }
+    return thesis[currentQ.field] === optionId;
+  };
+
+  return (
+    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '24px',
+      }}>
+        <button
+          onClick={handleBack}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: c.cyan,
+            fontSize: '16px',
+            cursor: 'pointer',
+          }}
+        >
+          ← Back
+        </button>
+        <span style={{ color: '#8b949e', fontSize: '14px' }}>
+          Question {currentQuestion} of {questions.length}
+        </span>
+      </div>
+
+      {/* Question */}
+      <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+        <h2 style={{ color: '#e6edf3', fontSize: '24px', marginBottom: '8px' }}>
+          {currentQ.title}
+        </h2>
+        <p style={{ color: '#8b949e', fontSize: '14px' }}>
+          {currentQ.subtitle}
+        </p>
+      </div>
+
+      {/* Options */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        marginBottom: '24px',
+      }}>
+        {currentQ.options.map(option => (
+          <button
+            key={option.id}
+            onClick={() => handleSelect(option.id)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '16px 20px',
+              background: isSelected(option.id) ? `${option.color}15` : '#1a1f2e',
+              border: `2px solid ${isSelected(option.id) ? option.color : '#2d3548'}`,
+              borderRadius: '12px',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            <div style={{ textAlign: 'left' }}>
+              <div style={{
+                color: isSelected(option.id) ? option.color : '#e6edf3',
+                fontSize: '18px',
+                fontWeight: '600',
+                marginBottom: option.description ? '4px' : '0',
+              }}>
+                {option.label}
+              </div>
+              {option.description && (
+                <div style={{ color: '#8b949e', fontSize: '13px' }}>
+                  {option.description}
+                </div>
+              )}
+            </div>
+            {isSelected(option.id) && (
+              <div style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '50%',
+                background: option.color,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#000',
+                fontSize: '14px',
+                fontWeight: '700',
+              }}>
+                ✓
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Multi-select continue button */}
+      {currentQ.multiSelect && (
+        <button
+          onClick={handleContinue}
+          style={{
+            width: '100%',
+            padding: '16px',
+            background: `linear-gradient(135deg, ${c.cyan}, ${c.green})`,
+            border: 'none',
+            borderRadius: '12px',
+            color: '#000',
+            fontSize: '16px',
+            fontWeight: '700',
+            cursor: 'pointer',
+          }}
+        >
+          {(thesis[currentQ.field] || []).length === 0
+            ? 'SKIP (ALL SECTORS)'
+            : `CONTINUE WITH ${(thesis[currentQ.field] || []).length} SELECTED`}
+        </button>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// PHASE 3: ASSET EXPLORER
+// ============================================
+
+const AssetExplorer = ({
+  thesis,
+  recommendations,
+  isEnhancing,
+  pinnedInsights,
+  stocksData,
+  cryptoData,
+  onSelectAsset,
+  onContinue,
+  onBack,
+  colors,
+}) => {
+  const [viewMode, setViewMode] = useState('recommended'); // 'recommended' | 'all'
+  const [searchQuery, setSearchQuery] = useState('');
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  const allAssets = [...(stocksData || []), ...(cryptoData || [])];
+
+  const filteredAssets = viewMode === 'recommended'
+    ? recommendations
+    : allAssets.filter(a =>
+        a.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.name.toLowerCase().includes(searchQuery.toLowerCase())
+      ).slice(0, 30);
+
+  const thesisSummary = [
+    thesis.battleType === 'head-to-head' ? '24hr' : thesis.battleType === 'snake-draft' ? 'Week' : 'Training',
+    thesis.stance,
+    ...(thesis.sectors || []),
+    thesis.risk,
+  ].filter(Boolean).join(' • ');
+
+  return (
+    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '16px',
+      }}>
+        <button
+          onClick={onBack}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: c.cyan,
+            fontSize: '16px',
+            cursor: 'pointer',
+          }}
+        >
+          ← Back
+        </button>
+        <span style={{ color: '#8b949e', fontSize: '14px' }}>Step 3 of 5</span>
+      </div>
+
+      <h2 style={{ color: '#e6edf3', fontSize: '20px', marginBottom: '4px' }}>
+        🔍 Explore Assets
+      </h2>
+      <p style={{ color: c.cyan, fontSize: '13px', marginBottom: '20px' }}>
+        {thesisSummary}
+      </p>
+
+      {/* View Toggle */}
+      <div style={{
+        display: 'flex',
+        gap: '8px',
+        marginBottom: '16px',
+      }}>
+        <button
+          onClick={() => setViewMode('recommended')}
+          style={{
+            flex: 1,
+            padding: '10px',
+            background: viewMode === 'recommended' ? c.cyan : '#1a1f2e',
+            border: 'none',
+            borderRadius: '8px',
+            color: viewMode === 'recommended' ? '#000' : '#8b949e',
+            fontSize: '13px',
+            fontWeight: '600',
+            cursor: 'pointer',
+          }}
+        >
+          🎯 Recommended ({recommendations.length})
+        </button>
+        <button
+          onClick={() => setViewMode('all')}
+          style={{
+            flex: 1,
+            padding: '10px',
+            background: viewMode === 'all' ? c.cyan : '#1a1f2e',
+            border: 'none',
+            borderRadius: '8px',
+            color: viewMode === 'all' ? '#000' : '#8b949e',
+            fontSize: '13px',
+            fontWeight: '600',
+            cursor: 'pointer',
+          }}
+        >
+          📊 All Assets ({allAssets.length})
+        </button>
+      </div>
+
+      {/* Search (only for all view) */}
+      {viewMode === 'all' && (
+        <input
+          type="text"
+          placeholder="Search by symbol or name..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            background: '#1a1f2e',
+            border: '1px solid #2d3548',
+            borderRadius: '8px',
+            color: '#e6edf3',
+            fontSize: '14px',
+            marginBottom: '16px',
+            boxSizing: 'border-box',
+          }}
+        />
+      )}
+
+      {/* Enhancing indicator */}
+      {isEnhancing && viewMode === 'recommended' && (
+        <div style={{
+          padding: '8px 12px',
+          background: `rgba(0, 217, 255, 0.1)`,
+          borderRadius: '8px',
+          marginBottom: '16px',
+          fontSize: '13px',
+          color: c.cyan,
+        }}>
+          ✨ AI is enhancing recommendations...
+        </div>
+      )}
+
+      {/* Asset List */}
+      <div style={{ marginBottom: '100px' }}>
+        {filteredAssets.map((asset) => (
+          <div
+            key={asset.symbol}
+            onClick={() => onSelectAsset(asset)}
+            style={{
+              background: '#1a1f2e',
+              borderRadius: '12px',
+              padding: '16px',
+              marginBottom: '12px',
+              border: '1px solid #2d3548',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <div>
+                <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '18px' }}>
+                  {asset.symbol}
+                </div>
+                <div style={{ color: '#8b949e', fontSize: '13px' }}>
+                  {asset.name}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ color: '#e6edf3', fontWeight: '600' }}>
+                  ${safeToFixed(asset.price, 2)}
+                </div>
+                <div style={{
+                  color: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red,
+                  fontSize: '14px',
+                }}>
+                  {safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? '▲' : '▼'} {Math.abs(safeNumber(asset.percentChange || asset.change24h, 0)).toFixed(2)}%
+                </div>
+              </div>
+            </div>
+
+            {/* Recommendation explanation */}
+            {viewMode === 'recommended' && (
+              <div style={{
+                padding: '10px',
+                background: '#161b22',
+                borderRadius: '8px',
+                marginTop: '8px',
+              }}>
+                <p style={{
+                  color: '#c9d1d9',
+                  fontSize: '13px',
+                  margin: 0,
+                  lineHeight: '1.5',
+                }}>
+                  {asset.enhancedExplanation || asset.genericExplanation || 'Matches your thesis criteria.'}
+                </p>
+                {asset.thesisScore && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginTop: '8px',
+                  }}>
+                    <span style={{
+                      color: asset.thesisScore.alignment === 'strong' ? c.green
+                           : asset.thesisScore.alignment === 'moderate' ? '#f59e0b'
+                           : '#8b949e',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                    }}>
+                      {asset.thesisScore.alignment?.toUpperCase()} MATCH
+                    </span>
+                    <span style={{ color: '#6e7681', fontSize: '12px' }}>
+                      Score: {asset.thesisScore.score}/100
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              marginTop: '8px',
+            }}>
+              <span style={{ color: c.cyan, fontSize: '13px' }}>
+                Tap to explore →
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Continue Button - Fixed at bottom */}
+      <div style={{
+        position: 'fixed',
+        bottom: '0',
+        left: '0',
+        right: '0',
+        padding: '16px 20px',
+        background: 'linear-gradient(transparent, #0d1117 30%)',
+      }}>
+        <button
+          onClick={onContinue}
+          style={{
+            width: '100%',
+            maxWidth: '560px',
+            margin: '0 auto',
+            display: 'block',
+            padding: '16px',
+            background: `linear-gradient(135deg, ${c.cyan}, ${c.green})`,
+            border: 'none',
+            borderRadius: '12px',
+            color: '#000',
+            fontSize: '16px',
+            fontWeight: '700',
+            cursor: 'pointer',
+          }}
+        >
+          CONTINUE TO CONVICTION CHECK →
+        </button>
+        {pinnedInsights.length > 0 && (
+          <p style={{
+            textAlign: 'center',
+            color: '#8b949e',
+            fontSize: '12px',
+            marginTop: '8px',
+          }}>
+            📌 {pinnedInsights.length} insight{pinnedInsights.length !== 1 ? 's' : ''} saved
+          </p>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// ASSET DETAIL VIEW (from Phase 3)
+// ============================================
+
+const AssetDetailView = ({ asset, thesis, pinnedInsights, onPin, onBack, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+  const isCrypto = asset.category !== undefined;
+
+  const isPinned = (metricName) => {
+    return pinnedInsights?.some(n =>
+      n.symbol === asset.symbol && n.metricName === metricName
+    );
+  };
+
+  return (
+    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '24px',
+      }}>
+        <button
+          onClick={onBack}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: c.cyan,
+            fontSize: '16px',
+            cursor: 'pointer',
+          }}
+        >
+          ← Back to List
+        </button>
+      </div>
+
+      {/* Asset Header */}
+      <div style={{
+        textAlign: 'center',
+        marginBottom: '24px',
+        padding: '20px',
+        background: '#1a1f2e',
+        borderRadius: '16px',
+        border: '1px solid #2d3548',
+      }}>
+        <h1 style={{ color: '#e6edf3', fontSize: '32px', marginBottom: '4px' }}>
+          {asset.symbol}
+        </h1>
+        <p style={{ color: '#8b949e', fontSize: '14px', marginBottom: '12px' }}>
+          {asset.name}
+        </p>
+        <div style={{
+          display: 'inline-block',
+          padding: '4px 12px',
+          background: '#161b22',
+          borderRadius: '16px',
+          color: c.cyan,
+          fontSize: '12px',
+        }}>
+          {isCrypto ? `🔷 ${asset.category}` : `💼 ${asset.sector}`}
+        </div>
+
+        <div style={{ marginTop: '16px' }}>
+          <div style={{ color: '#e6edf3', fontSize: '28px', fontWeight: '700' }}>
+            ${safeToFixed(asset.price, 2)}
+          </div>
+          <div style={{
+            color: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red,
+            fontSize: '18px',
+            marginTop: '4px',
+          }}>
+            {safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? '▲' : '▼'} {Math.abs(safeNumber(asset.percentChange || asset.change24h, 0)).toFixed(2)}% today
+          </div>
+        </div>
+      </div>
+
+      {/* Metrics Display */}
+      {isCrypto ? (
+        <CryptoMetricsDisplay
+          asset={asset}
+          thesis={thesis}
+          pinnedNotes={pinnedInsights}
+          onPinInsight={onPin}
+          colors={c}
+        />
+      ) : (
+        <StockMetricsDisplay
+          asset={asset}
+          thesis={thesis}
+          pinnedNotes={pinnedInsights}
+          onPinInsight={onPin}
+          colors={c}
+        />
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// RESEARCH FLOW - MAIN CONTAINER
+// ============================================
+
+const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  // Flow state
+  const [flowPhase, setFlowPhase] = useState(1);
+  const [thesis, setThesis] = useState({
+    battleType: null,
+    stance: null,
+    sectors: [],
+    risk: null,
+  });
+  const [recommendations, setRecommendations] = useState([]);
+  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState(null);
+  const [pinnedInsights, setPinnedInsights] = useState([]);
+  const [convictionData, setConvictionData] = useState({
+    mustHave: [],
+    mustAvoid: [],
+    confidence: null,
+  });
+  const [gamePlan, setGamePlan] = useState(null);
+  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
+  const [showAssetPicker, setShowAssetPicker] = useState(false);
+  const [assetPickerType, setAssetPickerType] = useState(null);
+
+  // Reset flow
+  const resetFlow = () => {
+    setFlowPhase(1);
+    setThesis({ battleType: null, stance: null, sectors: [], risk: null });
+    setRecommendations([]);
+    setPinnedInsights([]);
+    setConvictionData({ mustHave: [], mustAvoid: [], confidence: null });
+    setGamePlan(null);
+    setSelectedAsset(null);
+  };
+
+  // Handle thesis completion (Phase 2 → 3)
+  const handleThesisComplete = async (completedThesis) => {
+    setThesis(completedThesis);
+    setFlowPhase(3);
+
+    // Get all assets
+    const allAssets = [...(stocksData || []), ...(cryptoData || [])];
+
+    // Get instant recommendations using recommendation engine
+    const recs = getRecommendations(allAssets, completedThesis, 8);
+    const withGenericExplanations = recs.map(rec => ({
+      ...rec,
+      genericExplanation: generateGenericExplanation(rec, completedThesis),
+    }));
+
+    setRecommendations(withGenericExplanations);
+    setIsEnhancing(true);
+
+    // Enhance with Claude in background
+    try {
+      const enhanced = await enhanceRecommendations(withGenericExplanations, completedThesis, {});
+      setRecommendations(enhanced);
+    } catch (err) {
+      console.warn('Enhancement failed, using generic explanations:', err);
+    } finally {
+      setIsEnhancing(false);
+    }
+  };
+
+  // Handle pin insight
+  const handlePinInsight = (insight) => {
+    setPinnedInsights(prev => [...prev, { ...insight, id: Date.now().toString() }]);
+  };
+
+  // Handle unpin insight
+  const handleUnpinInsight = (insightId) => {
+    setPinnedInsights(prev => prev.filter(p => p.id !== insightId));
+  };
+
+  // Handle open asset picker
+  const handleOpenAssetPicker = (type) => {
+    setAssetPickerType(type);
+    setShowAssetPicker(true);
+  };
+
+  // Handle asset picker select
+  const handleAssetPickerSelect = (symbol) => {
+    if (assetPickerType === 'mustHave') {
+      setConvictionData(prev => ({
+        ...prev,
+        mustHave: prev.mustHave.includes(symbol) ? prev.mustHave : [...prev.mustHave, symbol],
+      }));
+    } else if (assetPickerType === 'mustAvoid') {
+      setConvictionData(prev => ({
+        ...prev,
+        mustAvoid: prev.mustAvoid.includes(symbol) ? prev.mustAvoid : [...prev.mustAvoid, symbol],
+      }));
+    }
+  };
+
+  // Handle generate game plan (Phase 4 → 5)
+  const handleGeneratePlan = async () => {
+    setFlowPhase(5);
+    setIsGeneratingPlan(true);
+
+    try {
+      const plan = await generateGamePlan(thesis, convictionData, pinnedInsights, recommendations);
+      setGamePlan(plan);
+    } catch (err) {
+      console.error('Game plan generation failed:', err);
+    } finally {
+      setIsGeneratingPlan(false);
+    }
+  };
+
+  // Handle use portfolio
+  const handleUsePortfolio = (portfolio) => {
+    if (portfolio && onUsePortfolio) {
+      onUsePortfolio(portfolio);
+    }
+    resetFlow();
+  };
+
+  // Handle save to notes
+  const handleSaveToNotes = (plan) => {
+    // Could integrate with existing notes system
+    console.log('Saving game plan to notes:', plan);
+  };
+
+  // Render current phase
+  const renderPhase = () => {
+    // If viewing asset detail, show that instead
+    if (selectedAsset) {
+      return (
+        <AssetDetailView
+          asset={selectedAsset}
+          thesis={thesis}
+          pinnedInsights={pinnedInsights}
+          onPin={handlePinInsight}
+          onBack={() => setSelectedAsset(null)}
+          colors={c}
+        />
+      );
+    }
+
+    switch (flowPhase) {
+      case 1:
+        return (
+          <MarketBriefing
+            stocksData={stocksData}
+            cryptoData={cryptoData}
+            onContinue={() => setFlowPhase(2)}
+            colors={c}
+          />
+        );
+
+      case 2:
+        return (
+          <ThesisBuilder
+            thesis={thesis}
+            onUpdate={setThesis}
+            onComplete={handleThesisComplete}
+            onBack={() => setFlowPhase(1)}
+            colors={c}
+          />
+        );
+
+      case 3:
+        return (
+          <AssetExplorer
+            thesis={thesis}
+            recommendations={recommendations}
+            isEnhancing={isEnhancing}
+            pinnedInsights={pinnedInsights}
+            stocksData={stocksData}
+            cryptoData={cryptoData}
+            onSelectAsset={setSelectedAsset}
+            onContinue={() => setFlowPhase(4)}
+            onBack={() => setFlowPhase(2)}
+            colors={c}
+          />
+        );
+
+      case 4:
+        return (
+          <>
+            <ConvictionCheck
+              thesis={thesis}
+              recommendations={recommendations}
+              convictionData={convictionData}
+              setConvictionData={setConvictionData}
+              onComplete={handleGeneratePlan}
+              onBack={() => setFlowPhase(3)}
+              onOpenAssetPicker={handleOpenAssetPicker}
+              colors={c}
+            />
+            <AssetPickerModal
+              isOpen={showAssetPicker}
+              onClose={() => setShowAssetPicker(false)}
+              onSelect={handleAssetPickerSelect}
+              type={assetPickerType}
+              stocksData={stocksData}
+              cryptoData={cryptoData}
+              excludeSymbols={[...convictionData.mustHave, ...convictionData.mustAvoid]}
+              colors={c}
+            />
+          </>
+        );
+
+      case 5:
+        return (
+          <GamePlan
+            gamePlan={gamePlan}
+            thesis={thesis}
+            convictionData={convictionData}
+            isLoading={isGeneratingPlan}
+            onUsePortfolio={handleUsePortfolio}
+            onSaveToNotes={handleSaveToNotes}
+            onBack={() => setFlowPhase(4)}
+            colors={c}
+          />
+        );
+
+      default:
+        return <MarketBriefing stocksData={stocksData} cryptoData={cryptoData} onContinue={() => setFlowPhase(2)} colors={c} />;
+    }
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+      {/* Progress indicator */}
+      {!selectedAsset && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          padding: '16px',
+          gap: '8px',
+        }}>
+          {[1, 2, 3, 4, 5].map(phase => (
+            <div
+              key={phase}
+              style={{
+                width: phase === flowPhase ? '24px' : '8px',
+                height: '8px',
+                borderRadius: '4px',
+                background: phase <= flowPhase ? c.cyan : '#2d3548',
+                transition: 'all 0.3s',
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {renderPhase()}
+    </div>
+  );
+};
+
+// ============================================
 // UTILITY FUNCTION: GENERATE RANDOM CPU PORTFOLIO
 // ============================================
 function generateCPUPortfolio(portfolioType, stocksData, cryptoData) {
@@ -3171,6 +4261,7 @@ export default function PortfolioDuel() {
   const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [assetPickerType, setAssetPickerType] = useState(null); // 'mustHave' | 'mustAvoid'
   const [researchThesis, setResearchThesis] = useState(null); // Store thesis from advisor
+  const [researchViewMode, setResearchViewMode] = useState('guided'); // 'guided' | 'classic'
 
   // Weekly Challenges State
   const [showWeeklyChallenges, setShowWeeklyChallenges] = useState(false);
@@ -5472,6 +6563,91 @@ export default function PortfolioDuel() {
 
   // RESEARCH MODE SCREEN - ENHANCED VERSION
   if (showResearchMode) {
+    // Handler to use portfolio from ResearchFlow
+    const handleUseResearchFlowPortfolio = (portfolioAllocations) => {
+      // Convert allocations to portfolio format
+      const allAssets = [...stocksData, ...cryptoData];
+      const newPortfolio = portfolioAllocations.map(allocation => {
+        const asset = allAssets.find(a => a.symbol === allocation.symbol);
+        if (!asset) return null;
+        return {
+          symbol: allocation.symbol,
+          name: asset.name,
+          price: asset.price,
+          amount: (allocation.allocation / 100) * 1000000,
+        };
+      }).filter(Boolean);
+
+      setPortfolio(newPortfolio);
+      setPortfolioType(newPortfolio.some(p => cryptoData.find(c => c.symbol === p.symbol)) ? 'crypto' : 'stocks');
+      setShowResearchMode(false);
+      setScreen('portfolio');
+    };
+
+    // GUIDED RESEARCH FLOW MODE
+    if (researchViewMode === 'guided') {
+      return (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: '#0d1117',
+          zIndex: 1000,
+          overflow: 'auto',
+        }}>
+          {/* Header with back and mode toggle */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '16px 20px',
+            borderBottom: '1px solid #2d3548',
+          }}>
+            <button
+              onClick={() => setShowResearchMode(false)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: colors.cyan,
+                fontSize: '16px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              ← Exit Research
+            </button>
+            <button
+              onClick={() => setResearchViewMode('classic')}
+              style={{
+                background: 'rgba(139, 148, 158, 0.1)',
+                border: '1px solid #2d3548',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                color: '#8b949e',
+                fontSize: '12px',
+                cursor: 'pointer',
+              }}
+            >
+              Classic View
+            </button>
+          </div>
+
+          {/* ResearchFlow Component */}
+          <ResearchFlow
+            stocksData={stocksData}
+            cryptoData={cryptoData}
+            onUsePortfolio={handleUseResearchFlowPortfolio}
+            colors={colors}
+          />
+        </div>
+      );
+    }
+
+    // CLASSIC RESEARCH MODE (existing implementation)
     // Enrich assets with research data
     const { stocks: enrichedStocks, crypto: enrichedCrypto } = enrichAllAssetsWithResearch(stocksData, cryptoData);
 
@@ -6388,7 +7564,24 @@ export default function PortfolioDuel() {
                   <Brain style={{ width: '24px', height: '24px', color: colors.cyan }} />
                   Research Mode
                 </h1>
-                <div style={{ width: '60px' }}></div>
+                <button
+                  onClick={() => setResearchViewMode('guided')}
+                  style={{
+                    background: 'linear-gradient(135deg, #9333ea, #6366f1)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '8px 12px',
+                    color: '#ffffff',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  ✨ Guided Flow
+                </button>
               </div>
 
               {/* Three-Tab Toggle: Stocks | Crypto | Notes */}
