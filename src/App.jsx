@@ -2849,7 +2849,7 @@ export default function PortfolioDuel() {
     // ⭐ Only refresh for active battles, not completed ones
     const battleStatus = battleTimer.getBattleStatus(currentBattle);
     if (battleStatus === 'active') {
-      const interval = setInterval(fetchBattlePrices, 30000);
+      const interval = setInterval(fetchBattlePrices, 60000); // 60s refresh (was 30s)
       return () => clearInterval(interval);
     }
   }, [screen, currentBattle]);
@@ -14057,8 +14057,8 @@ export default function PortfolioDuel() {
 
         calculateStandings();
 
-        // Refresh every 30 seconds (EODHD has 100k calls/day limit - plenty of headroom)
-        const refreshInterval = setInterval(calculateStandings, 30000);
+        // Refresh every 60 seconds (was 30s - EODHD has 100k calls/day limit)
+        const refreshInterval = setInterval(calculateStandings, 60000);
         return () => clearInterval(refreshInterval);
       }, [currentDraft, currentUserId, battleType]);
 
