@@ -8684,7 +8684,8 @@ export default function PortfolioDuel() {
           <div style={{
             background: '#161b22',
             borderBottom: '1px solid #21262d',
-            padding: '12px 16px'
+            padding: '12px 16px',
+            marginBottom: '16px'
           }}>
             <div style={{
               maxWidth: '900px',
@@ -9159,7 +9160,7 @@ export default function PortfolioDuel() {
             )}
 
             {/* Create & Join Battle Cards - TRUE SIDE-BY-SIDE on all screens */}
-            <div className="grid grid-cols-2 gap-3 mb-5">
+            <div className="grid grid-cols-2 gap-4 mb-4">
               {/* CREATE BATTLE Card */}
               {(() => {
                 const createColor = gameMode === 'draft' ? '#10b981' : colors.cyan;
@@ -9444,6 +9445,7 @@ export default function PortfolioDuel() {
                 gap: '16px',
                 cursor: 'pointer',
                 transition: 'all 0.3s',
+                marginTop: '12px',
                 marginBottom: '24px'
               }}
               onMouseEnter={(e) => {
