@@ -2,6 +2,17 @@
 // Uses Vercel serverless proxy to avoid CORS issues
 // Endpoints: /api/crypto/prices, /api/stocks/prices
 
+import {
+  STOCKS,
+  CRYPTO,
+  FALLBACK_STOCK_PRICES as CENTRALIZED_FALLBACK_STOCK_PRICES,
+  FALLBACK_CRYPTO_PRICES as CENTRALIZED_FALLBACK_CRYPTO_PRICES,
+  getStockSymbols,
+  getCryptoSymbols,
+  getStockNameMap,
+  getCryptoNameMap,
+} from '../data/assets';
+
 const IS_DEV = import.meta.env.DEV;
 
 // Use relative URLs - works in both dev and production on Vercel
@@ -94,26 +105,26 @@ export async function getMultipleStockPrices(symbols) {
     const data = await response.json();
 
     if (data.success && data.prices) {
-      // Update cache
+      // Update cache (ensure all values are numbers)
       Object.entries(data.prices).forEach(([symbol, priceData]) => {
         priceCache.stocks[symbol] = {
-          price: priceData.price,
-          change: priceData.change,
-          percentChange: priceData.changePercent
+          price: parseFloat(priceData.price) || 0,
+          change: parseFloat(priceData.change) || 0,
+          percentChange: parseFloat(priceData.changePercent) || 0
         };
       });
       priceCache.lastFetch.stocks = now;
 
       console.log(`[EODHD] Got ${data.count} stock prices via proxy`);
 
-      // Return in expected format, with fallbacks for missing
+      // Return in expected format, with fallbacks for missing (ensure all values are numbers)
       const result = {};
       upperSymbols.forEach(s => {
         if (data.prices[s]) {
           result[s] = {
-            price: data.prices[s].price,
-            change: data.prices[s].change,
-            percentChange: data.prices[s].changePercent
+            price: parseFloat(data.prices[s].price) || FALLBACK_STOCK_PRICES[s] || 100,
+            change: parseFloat(data.prices[s].change) || 0,
+            percentChange: parseFloat(data.prices[s].changePercent) || 0
           };
         } else {
           result[s] = {
@@ -169,26 +180,30 @@ export async function getStockPrice(symbol) {
 }
 
 /**
- * Get list of popular stocks with prices
+ * Get list of popular stocks with prices (ensures all numeric fields are numbers)
  */
 export async function getPopularStocks() {
   const prices = await getMultipleStockPrices(POPULAR_STOCK_SYMBOLS);
 
-  return POPULAR_STOCK_SYMBOLS.map(symbol => ({
-    symbol,
-    name: STOCK_NAMES[symbol] || symbol,
-    price: prices[symbol]?.price || FALLBACK_STOCK_PRICES[symbol] || 100,
-    change: prices[symbol]?.change || 0,
-    percentChange: prices[symbol]?.percentChange || 0,
-    priceChange7d: (Math.random() - 0.5) * 10,
-    priceChange30d: (Math.random() - 0.5) * 30,
-    volatility: 'medium',
-    week52High: (prices[symbol]?.price || 100) * 1.25,
-    week52Low: (prices[symbol]?.price || 100) * 0.75,
-    marketCap: 0,
-    volume24h: 0,
-    communityData: generateCommunityData(symbol, prices[symbol]?.price || 100, prices[symbol]?.percentChange || 0)
-  }));
+  return POPULAR_STOCK_SYMBOLS.map(symbol => {
+    const price = parseFloat(prices[symbol]?.price) || FALLBACK_STOCK_PRICES[symbol] || 100;
+    const percentChange = parseFloat(prices[symbol]?.percentChange) || 0;
+    return {
+      symbol,
+      name: STOCK_NAMES[symbol] || symbol,
+      price: price,
+      change: parseFloat(prices[symbol]?.change) || 0,
+      percentChange: percentChange,
+      priceChange7d: (Math.random() - 0.5) * 10,
+      priceChange30d: (Math.random() - 0.5) * 30,
+      volatility: 'medium',
+      week52High: price * 1.25,
+      week52Low: price * 0.75,
+      marketCap: 0,
+      volume24h: 0,
+      communityData: generateCommunityData(symbol, price, percentChange)
+    };
+  });
 }
 
 // ============================================
@@ -232,26 +247,27 @@ export async function getMultipleCryptoPrices(symbols) {
     console.log(`[EODHD] Proxy response:`, data);
 
     if (data.success && data.prices) {
-      // Update cache
+      // Update cache (ensure all values are numbers)
       Object.entries(data.prices).forEach(([symbol, priceData]) => {
         priceCache.crypto[symbol] = {
-          price: priceData.price,
-          change24h: priceData.changePercent
+          price: parseFloat(priceData.price) || 0,
+          change24h: parseFloat(priceData.changePercent) || 0
         };
       });
       priceCache.lastFetch.crypto = now;
 
       console.log(`[EODHD] Got ${data.count} crypto prices via proxy`);
 
-      // Return in expected format, with fallbacks for missing
+      // Return in expected format, with fallbacks for missing (ensure all values are numbers)
       const result = {};
       const missing = [];
 
       upperSymbols.forEach(s => {
-        if (data.prices[s] && data.prices[s].price > 0) {
+        const price = parseFloat(data.prices[s]?.price);
+        if (data.prices[s] && price > 0) {
           result[s] = {
-            price: data.prices[s].price,
-            change24h: data.prices[s].changePercent || 0
+            price: price,
+            change24h: parseFloat(data.prices[s].changePercent) || 0
           };
         } else {
           missing.push(s);
@@ -309,26 +325,30 @@ export async function getCryptoPrice(symbol) {
 }
 
 /**
- * Get list of popular crypto with prices
+ * Get list of popular crypto with prices (ensures all numeric fields are numbers)
  */
 export async function getPopularCrypto() {
   const prices = await getMultipleCryptoPrices(POPULAR_CRYPTO_SYMBOLS);
 
-  return POPULAR_CRYPTO_SYMBOLS.map(symbol => ({
-    symbol,
-    name: CRYPTO_NAMES[symbol] || symbol,
-    price: prices[symbol]?.price || FALLBACK_CRYPTO_PRICES[symbol] || 1,
-    change24h: prices[symbol]?.change24h || 0,
-    percentChange: prices[symbol]?.change24h || 0,
-    priceChange7d: (Math.random() - 0.5) * 15,
-    priceChange30d: (Math.random() - 0.5) * 40,
-    volatility: 'high',
-    week52High: (prices[symbol]?.price || 100) * 1.5,
-    week52Low: (prices[symbol]?.price || 100) * 0.5,
-    marketCap: 0,
-    volume24h: 0,
-    communityData: generateCommunityData(symbol, prices[symbol]?.price || 100, prices[symbol]?.change24h || 0)
-  }));
+  return POPULAR_CRYPTO_SYMBOLS.map(symbol => {
+    const price = parseFloat(prices[symbol]?.price) || FALLBACK_CRYPTO_PRICES[symbol] || 1;
+    const change24h = parseFloat(prices[symbol]?.change24h) || 0;
+    return {
+      symbol,
+      name: CRYPTO_NAMES[symbol] || symbol,
+      price: price,
+      change24h: change24h,
+      percentChange: change24h,
+      priceChange7d: (Math.random() - 0.5) * 15,
+      priceChange30d: (Math.random() - 0.5) * 40,
+      volatility: 'high',
+      week52High: price * 1.5,
+      week52Low: price * 0.5,
+      marketCap: 0,
+      volume24h: 0,
+      communityData: generateCommunityData(symbol, price, change24h)
+    };
+  });
 }
 
 /**
@@ -424,225 +444,33 @@ export async function testConnection() {
 }
 
 // ============================================
-// DATA CONSTANTS
+// DATA CONSTANTS (derived from centralized assets)
 // ============================================
 
-const POPULAR_STOCK_SYMBOLS = [
-  'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META',
-  'BRK-B', 'V', 'JPM', 'WMT', 'MA', 'PG', 'UNH', 'HD'
-];
+// Use centralized asset definitions
+const POPULAR_STOCK_SYMBOLS = getStockSymbols();
+const POPULAR_CRYPTO_SYMBOLS = getCryptoSymbols();
 
-const POPULAR_CRYPTO_SYMBOLS = [
-  'BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX',
-  'DOT', 'MATIC', 'LINK', 'UNI', 'LTC', 'XLM', 'ATOM', 'NEAR', 'ALGO', 'XMR'
-];
+// Build name mappings from centralized data
+const STOCK_NAMES = getStockNameMap();
+const CRYPTO_NAMES = getCryptoNameMap();
 
-// Stock name mapping
-const STOCK_NAMES = {
-  'AAPL': 'Apple',
-  'MSFT': 'Microsoft',
-  'GOOGL': 'Google',
-  'AMZN': 'Amazon',
-  'NVDA': 'NVIDIA',
-  'TSLA': 'Tesla',
-  'META': 'Meta',
-  'BRK-B': 'Berkshire Hathaway',
-  'V': 'Visa',
-  'JPM': 'JPMorgan Chase',
-  'WMT': 'Walmart',
-  'MA': 'Mastercard',
-  'PG': 'Procter & Gamble',
-  'UNH': 'UnitedHealth',
-  'HD': 'Home Depot',
-  'DIS': 'Disney',
-  'PYPL': 'PayPal',
-  'NFLX': 'Netflix',
-  'ADBE': 'Adobe',
-  'CRM': 'Salesforce',
-  'INTC': 'Intel',
-  'AMD': 'AMD',
-  'COST': 'Costco',
-  'PEP': 'PepsiCo',
-  'KO': 'Coca-Cola',
-  'MRK': 'Merck',
-  'PFE': 'Pfizer',
-  'ABBV': 'AbbVie',
-  'TMO': 'Thermo Fisher',
-  'NKE': 'Nike'
-};
+// Use centralized fallback prices
+const FALLBACK_STOCK_PRICES = CENTRALIZED_FALLBACK_STOCK_PRICES;
+const FALLBACK_CRYPTO_PRICES = CENTRALIZED_FALLBACK_CRYPTO_PRICES;
 
-// Crypto name mapping
-const CRYPTO_NAMES = {
-  'BTC': 'Bitcoin',
-  'ETH': 'Ethereum',
-  'BNB': 'BNB',
-  'SOL': 'Solana',
-  'XRP': 'XRP',
-  'ADA': 'Cardano',
-  'DOGE': 'Dogecoin',
-  'AVAX': 'Avalanche',
-  'DOT': 'Polkadot',
-  'MATIC': 'Polygon',
-  'LINK': 'Chainlink',
-  'UNI': 'Uniswap',
-  'LTC': 'Litecoin',
-  'XLM': 'Stellar',
-  'ATOM': 'Cosmos',
-  'NEAR': 'NEAR Protocol',
-  'ALGO': 'Algorand',
-  'XMR': 'Monero',
-  'SHIB': 'Shiba Inu',
-  'TRX': 'Tron',
-  'ETC': 'Ethereum Classic',
-  'FIL': 'Filecoin',
-  'VET': 'VeChain',
-  'HBAR': 'Hedera',
-  'SAND': 'The Sandbox',
-  'MANA': 'Decentraland',
-  'AAVE': 'Aave',
-  'MKR': 'Maker',
-  'GRT': 'The Graph',
-  'FTM': 'Fantom',
-  'THETA': 'Theta',
-  'HNT': 'Helium',
-  'RNDR': 'Render',
-  'CRO': 'Cronos',
-  'PEPE': 'Pepe',
-  'BONK': 'Bonk',
-  'ARB': 'Arbitrum',
-  'OP': 'Optimism',
-  'SUI': 'Sui',
-  'APT': 'Aptos',
-  'INJ': 'Injective',
-  'SEI': 'Sei',
-  'TON': 'Toncoin',
-  'USDT': 'Tether',
-  'USDC': 'USD Coin',
-  'DAI': 'Dai'
-};
-
-// Fallback stock prices (Dec 2024)
-const FALLBACK_STOCK_PRICES = {
-  'AAPL': 185,
-  'MSFT': 378,
-  'GOOGL': 175,
-  'AMZN': 185,
-  'NVDA': 135,
-  'TSLA': 250,
-  'META': 560,
-  'BRK-B': 410,
-  'V': 280,
-  'JPM': 200,
-  'WMT': 165,
-  'MA': 470,
-  'PG': 165,
-  'UNH': 550,
-  'HD': 385,
-  'DIS': 115,
-  'PYPL': 85,
-  'NFLX': 700,
-  'ADBE': 520,
-  'CRM': 320,
-  'INTC': 22,
-  'AMD': 145,
-  'COST': 920,
-  'PEP': 170,
-  'KO': 62,
-  'MRK': 105,
-  'PFE': 28,
-  'ABBV': 175,
-  'TMO': 540,
-  'NKE': 78
-};
-
-// Fallback crypto prices (Dec 2024)
-const FALLBACK_CRYPTO_PRICES = {
-  'BTC': 97000,
-  'ETH': 3400,
-  'BNB': 650,
-  'SOL': 190,
-  'XRP': 2.20,
-  'ADA': 1.05,
-  'DOGE': 0.38,
-  'AVAX': 42,
-  'DOT': 7.50,
-  'MATIC': 0.55,
-  'LINK': 24,
-  'UNI': 14,
-  'LTC': 115,
-  'XLM': 0.45,
-  'ATOM': 10,
-  'NEAR': 5.50,
-  'ALGO': 0.40,
-  'XMR': 190,
-  'SHIB': 0.000024,
-  'TRX': 0.27,
-  'ETC': 28,
-  'FIL': 5.20,
-  'VET': 0.052,
-  'HBAR': 0.28,
-  'SAND': 0.58,
-  'MANA': 0.55,
-  'AAVE': 180,
-  'MKR': 1800,
-  'GRT': 0.25,
-  'FTM': 0.85,
-  'THETA': 2.20,
-  'HNT': 6.00,
-  'RNDR': 9.50,
-  'CRO': 0.14,
-  'PEPE': 0.000021,
-  'BONK': 0.000033,
-  'ARB': 0.95,
-  'OP': 2.20,
-  'SUI': 4.20,
-  'APT': 12,
-  'INJ': 25,
-  'SEI': 0.55,
-  'TON': 5.80,
-  'USDT': 1.00,
-  'USDC': 1.00,
-  'DAI': 1.00,
-  'WIF': 2.50,
-  'FLOKI': 0.00018,
-  'NOT': 0.008,
-  'TIA': 8,
-  'KAS': 0.15,
-  'STX': 1.80,
-  'LDO': 2.20,
-  'RUNE': 5.50,
-  'JUP': 1.10,
-  'IMX': 1.80,
-  'GALA': 0.045,
-  'ENJ': 0.28,
-  'AR': 18,
-  'QNT': 120,
-  'FET': 1.60,
-  'TAO': 480,
-  'OCEAN': 0.85,
-  'OKB': 48,
-  'LEO': 9.20,
-  'KCS': 12,
-  'BCH': 480,
-  'ICP': 11,
-  'EOS': 0.85,
-  'FLOW': 0.95,
-  'EGLD': 45,
-  'XTZ': 1.10,
-  'ONDO': 1.35,
-  'PYTH': 0.42
-};
-
-// Export constants for backward compatibility
-export const POPULAR_STOCKS = POPULAR_STOCK_SYMBOLS.map(symbol => ({
-  symbol,
-  name: STOCK_NAMES[symbol] || symbol
+// Export constants for backward compatibility (now includes sector/category metadata)
+export const POPULAR_STOCKS = STOCKS.map(stock => ({
+  symbol: stock.symbol,
+  name: stock.name,
+  sector: stock.sector
 }));
 
-export const POPULAR_CRYPTO = POPULAR_CRYPTO_SYMBOLS.map(symbol => ({
-  id: symbol.toLowerCase(),
-  symbol,
-  name: CRYPTO_NAMES[symbol] || symbol
+export const POPULAR_CRYPTO = CRYPTO.map(crypto => ({
+  id: crypto.id,
+  symbol: crypto.symbol,
+  name: crypto.name,
+  category: crypto.category
 }));
 
 export { FALLBACK_CRYPTO_PRICES, FALLBACK_STOCK_PRICES };

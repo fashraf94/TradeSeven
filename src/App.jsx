@@ -6,6 +6,22 @@ import * as challengeService from './services/challengeService';
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES } from './services/eodhdAPI';
 import './firebase/config';
 import { motion } from 'framer-motion';
+// Event watchlist configuration for Week Ahead calendar
+import { EVENT_TYPE_CONFIG } from './data/eventWatchlist';
+// Static week ahead events (manual data)
+import { getWeekAheadEvents } from './data/weekAheadEvents';
+// AI Advisors
+import ResearchAdvisor from './components/ResearchAdvisor';
+import DraftAdvisor from './components/DraftAdvisor';
+// Research Mode services
+import { generateGamePlan, enhanceRecommendations, getAssetDeepDive } from './services/researchAdvisor';
+// Recommendation Engine
+import {
+  getRecommendations,
+  generateGenericExplanation,
+  filterBySector,
+  getAvailableSectors,
+} from './services/recommendationEngine';
 
 // MarketClash Bull & Bear Logo Component
 const MarketClashLogo = ({ size = 'large' }) => {
@@ -96,8 +112,7 @@ const MarketClashLogo = ({ size = 'large' }) => {
                 fill="url(#potGrad)" stroke="#78350f" strokeWidth="2"/>
           <ellipse cx="0" cy="0" rx="45" ry="12" fill="#92400e" stroke="#78350f" strokeWidth="2"/>
           <ellipse cx="0" cy="2" rx="38" ry="8" fill="url(#honeyGrad)"/>
-          <path d="M30 5 Q35 15 32 30 Q30 40 35 45"
-                stroke="#fbbf24" strokeWidth="6" fill="none" strokeLinecap="round"/>
+          {/* HONEY DRIP REMOVED */}
           <rect x="-32" y="18" width="64" height="28" rx="3" fill="#fef3c7" stroke="#d97706" strokeWidth="1"/>
           <text x="0" y="28" textAnchor="middle" fontFamily="'Segoe UI', system-ui, sans-serif"
                 fontSize="7" fontWeight="600" fill="#78350f">FROM</text>
@@ -195,6 +210,2724 @@ const MarketClashLogo = ({ size = 'large' }) => {
         PORTFOLIO BATTLES
       </text>
     </svg>
+  );
+};
+
+// ============================================
+// SAFE NUMBER UTILITIES (prevent toFixed errors)
+// ============================================
+
+// Safe number conversion for price/percent values
+const safeNumber = (val, fallback = 0) => {
+  if (val === null || val === undefined) return fallback;
+  const num = typeof val === 'number' ? val : parseFloat(val);
+  return isNaN(num) ? fallback : num;
+};
+
+// Safe toFixed that always works
+const safeToFixed = (val, decimals = 2, fallback = 0) => {
+  return safeNumber(val, fallback).toFixed(decimals);
+};
+
+// ============================================
+// DESKTOP BACKGROUND COMPONENT
+// ============================================
+
+const DesktopBackground = ({ isDesktop }) => {
+  if (!isDesktop) return null;
+
+  // Generate stable particle positions
+  const particles = React.useMemo(() => {
+    return [...Array(15)].map((_, i) => ({
+      id: i,
+      left: `${(i * 7 + 5) % 100}%`,
+      top: `${(i * 11 + 10) % 100}%`,
+      color: i % 3 === 0 ? '#00d9ff' : i % 3 === 1 ? '#00ff88' : '#8b5cf6',
+      duration: 12 + (i % 5) * 2,
+      delay: (i % 4) * 1.5,
+    }));
+  }, []);
+
+  return (
+    <>
+      {/* CSS Animations */}
+      <style>{`
+        @keyframes gradientPulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.6; }
+        }
+        @keyframes bullGlow {
+          0%, 100% { opacity: 0.05; filter: drop-shadow(0 0 20px rgba(0, 255, 136, 0.2)); }
+          50% { opacity: 0.08; filter: drop-shadow(0 0 40px rgba(0, 255, 136, 0.4)); }
+        }
+        @keyframes bearGlow {
+          0%, 100% { opacity: 0.05; filter: drop-shadow(0 0 20px rgba(255, 71, 87, 0.2)); }
+          50% { opacity: 0.08; filter: drop-shadow(0 0 40px rgba(255, 71, 87, 0.4)); }
+        }
+        @keyframes floatParticle {
+          0%, 100% { transform: translateY(0) translateX(0); }
+          25% { transform: translateY(-15px) translateX(8px); }
+          50% { transform: translateY(-8px) translateX(-8px); }
+          75% { transform: translateY(-20px) translateX(4px); }
+        }
+        @keyframes priceDraw {
+          0% { stroke-dashoffset: 1000; }
+          100% { stroke-dashoffset: 0; }
+        }
+      `}</style>
+
+      {/* Background Container */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 0,
+          pointerEvents: 'none',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Gradient Mesh Base */}
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: `
+            radial-gradient(ellipse at 15% 20%, rgba(0, 217, 255, 0.07) 0%, transparent 45%),
+            radial-gradient(ellipse at 85% 80%, rgba(139, 92, 246, 0.07) 0%, transparent 45%),
+            radial-gradient(ellipse at 15% 80%, rgba(0, 255, 136, 0.04) 0%, transparent 40%),
+            radial-gradient(ellipse at 85% 20%, rgba(255, 71, 87, 0.04) 0%, transparent 40%)
+          `,
+          animation: 'gradientPulse 10s ease-in-out infinite',
+        }} />
+
+        {/* Animated Price Lines - Left Side */}
+        <svg
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: '15%',
+            width: '25%',
+            height: '50%',
+            opacity: 0.08,
+          }}
+          viewBox="0 0 400 300"
+          preserveAspectRatio="none"
+        >
+          <path
+            d="M0 150 Q50 120 100 140 T200 100 T300 130 T400 80"
+            stroke="#00d9ff"
+            strokeWidth="2"
+            fill="none"
+            strokeDasharray="1000"
+            style={{ animation: 'priceDraw 20s ease-in-out infinite' }}
+          />
+          <path
+            d="M0 180 Q50 200 100 170 T200 190 T300 150 T400 170"
+            stroke="#00ff88"
+            strokeWidth="2"
+            fill="none"
+            strokeDasharray="1000"
+            style={{ animation: 'priceDraw 25s ease-in-out infinite', animationDelay: '2s' }}
+          />
+          <path
+            d="M0 220 Q50 180 100 210 T200 180 T300 220 T400 190"
+            stroke="#ff4757"
+            strokeWidth="1.5"
+            fill="none"
+            strokeDasharray="1000"
+            style={{ animation: 'priceDraw 18s ease-in-out infinite', animationDelay: '4s' }}
+          />
+        </svg>
+
+        {/* Animated Price Lines - Right Side */}
+        <svg
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: '25%',
+            width: '25%',
+            height: '45%',
+            opacity: 0.08,
+            transform: 'scaleX(-1)',
+          }}
+          viewBox="0 0 400 300"
+          preserveAspectRatio="none"
+        >
+          <path
+            d="M0 150 Q50 100 100 130 T200 90 T300 120 T400 70"
+            stroke="#00d9ff"
+            strokeWidth="2"
+            fill="none"
+            strokeDasharray="1000"
+            style={{ animation: 'priceDraw 22s ease-in-out infinite', animationDelay: '1s' }}
+          />
+          <path
+            d="M0 180 Q50 160 100 190 T200 150 T300 180 T400 140"
+            stroke="#8b5cf6"
+            strokeWidth="2"
+            fill="none"
+            strokeDasharray="1000"
+            style={{ animation: 'priceDraw 28s ease-in-out infinite', animationDelay: '3s' }}
+          />
+        </svg>
+
+        {/* Bull Silhouette - Left Side */}
+        <div style={{
+          position: 'absolute',
+          left: '-3%',
+          bottom: '8%',
+          width: '250px',
+          height: '250px',
+          animation: 'bullGlow 5s ease-in-out infinite',
+        }}>
+          <svg viewBox="0 0 100 100" fill="#00ff88">
+            <path d="M20 80 L20 50 Q20 30 35 25 L35 15 L40 25 Q50 20 60 25 L60 15 L65 25 Q80 30 80 50 L80 80 Q70 85 50 85 Q30 85 20 80 Z" />
+            <ellipse cx="35" cy="45" rx="5" ry="8" fill="#059669" />
+            <ellipse cx="65" cy="45" rx="5" ry="8" fill="#059669" />
+            <path d="M30 15 Q25 5 15 10" stroke="#00ff88" strokeWidth="4" fill="none" strokeLinecap="round" />
+            <path d="M70 15 Q75 5 85 10" stroke="#00ff88" strokeWidth="4" fill="none" strokeLinecap="round" />
+          </svg>
+        </div>
+
+        {/* Bear Silhouette - Right Side */}
+        <div style={{
+          position: 'absolute',
+          right: '-3%',
+          bottom: '8%',
+          width: '230px',
+          height: '230px',
+          animation: 'bearGlow 5s ease-in-out infinite',
+          animationDelay: '2.5s',
+        }}>
+          <svg viewBox="0 0 100 100" fill="#ff4757">
+            <ellipse cx="50" cy="55" rx="28" ry="32" />
+            <circle cx="30" cy="28" r="11" />
+            <circle cx="70" cy="28" r="11" />
+            <circle cx="30" cy="28" r="5" fill="#dc2626" />
+            <circle cx="70" cy="28" r="5" fill="#dc2626" />
+            <ellipse cx="50" cy="52" rx="16" ry="18" fill="#f87171" />
+            <ellipse cx="50" cy="47" rx="7" ry="5" fill="#1a1a2e" />
+          </svg>
+        </div>
+
+        {/* Floating Particles */}
+        {particles.map((p) => (
+          <div
+            key={p.id}
+            style={{
+              position: 'absolute',
+              width: '3px',
+              height: '3px',
+              borderRadius: '50%',
+              background: p.color,
+              opacity: 0.15,
+              left: p.left,
+              top: p.top,
+              animation: `floatParticle ${p.duration}s ease-in-out infinite`,
+              animationDelay: `${p.delay}s`,
+            }}
+          />
+        ))}
+      </div>
+    </>
+  );
+};
+
+// ============================================
+// PINNABLE INSIGHT COMPONENT
+// ============================================
+
+/**
+ * PinnableInsight - A metric with explanation that can be saved to notes
+ */
+const PinnableInsight = ({ title, value, explanation, symbol, onPin, isPinned, colors }) => {
+  const defaultColors = {
+    green: '#00ff88',
+    red: '#ff4757',
+    cyan: '#00d9ff',
+  };
+  const c = colors || defaultColors;
+
+  const handlePin = () => {
+    if (onPin && !isPinned) {
+      onPin({
+        symbol,
+        metricName: title,
+        metricValue: value,
+        explanation,
+        source: 'research_flow',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  return (
+    <div style={{
+      background: '#1a1f2e',
+      borderRadius: '12px',
+      padding: '16px',
+      marginBottom: '12px',
+      border: '1px solid #2d3548',
+    }}>
+      {/* Metric Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '8px',
+      }}>
+        <span style={{ color: '#8b949e', fontSize: '14px' }}>{title}</span>
+        <span style={{
+          color: value?.toString().startsWith('+') ? c.green : value?.toString().startsWith('-') ? c.red : '#e6edf3',
+          fontSize: '18px',
+          fontWeight: '600',
+        }}>
+          {value}
+        </span>
+      </div>
+
+      {/* Explanation */}
+      <div style={{
+        background: '#161b22',
+        borderRadius: '8px',
+        padding: '12px',
+        marginTop: '8px',
+        borderLeft: '3px solid #00d9ff',
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '8px',
+          marginBottom: '8px',
+        }}>
+          <span style={{ color: '#00d9ff' }}>*</span>
+          <span style={{ color: '#c9d1d9', fontSize: '14px', lineHeight: '1.5' }}>
+            {explanation}
+          </span>
+        </div>
+
+        {/* Pin Button */}
+        <button
+          onClick={handlePin}
+          disabled={isPinned}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            marginLeft: 'auto',
+            padding: '6px 12px',
+            background: isPinned ? '#238636' : 'transparent',
+            border: `1px solid ${isPinned ? '#238636' : '#3d4450'}`,
+            borderRadius: '6px',
+            color: isPinned ? '#ffffff' : '#8b949e',
+            fontSize: '12px',
+            cursor: isPinned ? 'default' : 'pointer',
+            transition: 'all 0.2s',
+          }}
+        >
+          {isPinned ? 'Saved' : 'Save Insight'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// STOCK METRICS COMPONENT (for Asset Detail)
+// ============================================
+
+const StockMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  const isPinned = (metricName) => {
+    return pinnedNotes?.some(n =>
+      n.symbol === asset.symbol && n.metricName === metricName
+    );
+  };
+
+  // Calculate 52-week position percentage
+  const week52Position = asset.week52High && asset.week52Low
+    ? ((safeNumber(asset.price) - safeNumber(asset.week52Low)) / (safeNumber(asset.week52High) - safeNumber(asset.week52Low)) * 100).toFixed(0)
+    : null;
+
+  // Determine momentum strength
+  const getMomentumStrength = (change) => {
+    if (change > 10) return { label: 'Very Strong', color: c.green };
+    if (change > 5) return { label: 'Strong', color: c.green };
+    if (change > 0) return { label: 'Positive', color: c.cyan };
+    if (change > -5) return { label: 'Weak', color: '#f59e0b' };
+    return { label: 'Negative', color: c.red };
+  };
+
+  const change7d = safeNumber(asset.priceChange7d);
+  const change30d = safeNumber(asset.priceChange30d);
+  const percentChange = safeNumber(asset.percentChange);
+  const momentum = getMomentumStrength(change7d);
+
+  return (
+    <div>
+      {/* MOMENTUM SECTION */}
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+          PRICE MOMENTUM
+        </h3>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          <div style={{ textAlign: 'center', padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>Today</div>
+            <div style={{ color: percentChange >= 0 ? c.green : c.red, fontSize: '18px', fontWeight: '600' }}>
+              {percentChange >= 0 ? '+' : ''}{safeToFixed(percentChange, 2)}%
+            </div>
+          </div>
+          <div style={{ textAlign: 'center', padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>7 Days</div>
+            <div style={{ color: change7d >= 0 ? c.green : c.red, fontSize: '18px', fontWeight: '600' }}>
+              {change7d >= 0 ? '+' : ''}{safeToFixed(change7d, 2)}%
+            </div>
+          </div>
+          <div style={{ textAlign: 'center', padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>30 Days</div>
+            <div style={{ color: change30d >= 0 ? c.green : c.red, fontSize: '18px', fontWeight: '600' }}>
+              {change30d >= 0 ? '+' : ''}{safeToFixed(change30d, 2)}%
+            </div>
+          </div>
+        </div>
+
+        <PinnableInsight
+          title="Momentum Read"
+          value={momentum.label}
+          explanation={`${asset.symbol} ${change7d >= 0 ? 'has gained' : 'has lost'} ${Math.abs(change7d).toFixed(1)}% over the past week. ${
+            change7d > 5
+              ? 'Strong momentum often continues short-term, but extended rallies can reverse quickly.'
+              : change7d < -5
+              ? 'Negative momentum may continue, but oversold conditions can lead to bounces.'
+              : 'Moderate movement suggests the stock is in a consolidation phase.'
+          }`}
+          symbol={asset.symbol}
+          onPin={onPinInsight}
+          isPinned={isPinned('Momentum Read')}
+          colors={c}
+        />
+      </div>
+
+      {/* VOLATILITY SECTION */}
+      {asset.beta && (
+        <div style={{ marginBottom: '24px' }}>
+          <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+            VOLATILITY & RISK
+          </h3>
+
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ color: '#8b949e' }}>Beta</span>
+              <span style={{ color: '#e6edf3', fontWeight: '600' }}>{safeToFixed(asset.beta, 2)}</span>
+            </div>
+            {/* Beta scale visualization */}
+            <div style={{ position: 'relative', height: '8px', background: '#161b22', borderRadius: '4px' }}>
+              <div style={{
+                position: 'absolute',
+                left: `${Math.min(Math.max((safeNumber(asset.beta) / 2) * 100, 0), 100)}%`,
+                top: '-4px',
+                width: '16px',
+                height: '16px',
+                background: c.cyan,
+                borderRadius: '50%',
+                transform: 'translateX(-50%)',
+              }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '10px', color: '#6e7681' }}>
+              <span>Defensive</span>
+              <span>Market</span>
+              <span>Aggressive</span>
+            </div>
+          </div>
+
+          <PinnableInsight
+            title="Beta Analysis"
+            value={safeNumber(asset.beta) > 1.3 ? 'High Volatility' : safeNumber(asset.beta) < 0.8 ? 'Low Volatility' : 'Market Average'}
+            explanation={`With a beta of ${safeToFixed(asset.beta, 2)}, ${asset.symbol} typically moves ${(safeNumber(asset.beta) * 100).toFixed(0)}% as much as the market. ${
+              safeNumber(asset.beta) > 1.3
+                ? 'This amplifies both gains and losses - good for aggressive plays if your direction is right.'
+                : safeNumber(asset.beta) < 0.8
+                ? 'Lower volatility means more stability but potentially smaller gains in a 24-hour window.'
+                : 'Average volatility provides a balance of movement potential and stability.'
+            }`}
+            symbol={asset.symbol}
+            onPin={onPinInsight}
+            isPinned={isPinned('Beta Analysis')}
+            colors={c}
+          />
+        </div>
+      )}
+
+      {/* 52-WEEK POSITION */}
+      {week52Position && (
+        <div style={{ marginBottom: '24px' }}>
+          <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+            52-WEEK POSITION
+          </h3>
+
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ position: 'relative', height: '8px', background: '#161b22', borderRadius: '4px', marginBottom: '8px' }}>
+              <div style={{
+                position: 'absolute',
+                left: `${week52Position}%`,
+                top: '-4px',
+                width: '16px',
+                height: '16px',
+                background: c.cyan,
+                borderRadius: '50%',
+                transform: 'translateX(-50%)',
+              }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+              <span style={{ color: '#8b949e' }}>${safeToFixed(asset.week52Low, 2)}</span>
+              <span style={{ color: c.cyan }}>${safeToFixed(asset.price, 2)} ({week52Position}%)</span>
+              <span style={{ color: '#8b949e' }}>${safeToFixed(asset.week52High, 2)}</span>
+            </div>
+          </div>
+
+          <PinnableInsight
+            title="Range Context"
+            value={`${week52Position}% of 52-week range`}
+            explanation={`${asset.symbol} is trading at ${week52Position}% of its yearly range. ${
+              parseInt(week52Position) > 80
+                ? 'Near yearly highs - momentum is strong but upside may be limited.'
+                : parseInt(week52Position) < 20
+                ? 'Near yearly lows - could be a value opportunity or a falling knife.'
+                : 'Mid-range positioning suggests room to move in either direction.'
+            }`}
+            symbol={asset.symbol}
+            onPin={onPinInsight}
+            isPinned={isPinned('Range Context')}
+            colors={c}
+          />
+        </div>
+      )}
+
+      {/* ANALYST SENTIMENT (if available) */}
+      {asset.analystRating && (
+        <div style={{ marginBottom: '24px' }}>
+          <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+            ANALYST SENTIMENT
+          </h3>
+
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+              <div style={{ flex: asset.analystRating.buy || 1, height: '24px', background: '#238636', borderRadius: '4px 0 0 4px' }} />
+              <div style={{ flex: asset.analystRating.hold || 1, height: '24px', background: '#f59e0b' }} />
+              <div style={{ flex: asset.analystRating.sell || 1, height: '24px', background: c.red, borderRadius: '0 4px 4px 0' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#8b949e' }}>
+              <span>Buy: {asset.analystRating.buy || 0}</span>
+              <span>Hold: {asset.analystRating.hold || 0}</span>
+              <span>Sell: {asset.analystRating.sell || 0}</span>
+            </div>
+          </div>
+
+          <PinnableInsight
+            title="Analyst Consensus"
+            value={`${((safeNumber(asset.analystRating.buy) / (safeNumber(asset.analystRating.buy) + safeNumber(asset.analystRating.hold) + safeNumber(asset.analystRating.sell))) * 100).toFixed(0)}% Bullish`}
+            explanation={`${asset.analystRating.buy} analysts rate ${asset.symbol} as a buy. Analyst consensus can indicate institutional sentiment, though analysts often lag behind price movements.`}
+            symbol={asset.symbol}
+            onPin={onPinInsight}
+            isPinned={isPinned('Analyst Consensus')}
+            colors={c}
+          />
+        </div>
+      )}
+
+      {/* EARNINGS WARNING (if upcoming) */}
+      {asset.earningsDate && (
+        <div style={{
+          marginBottom: '24px',
+          background: 'rgba(245, 158, 11, 0.1)',
+          border: '1px solid #f59e0b',
+          borderRadius: '12px',
+          padding: '16px',
+        }}>
+          <h3 style={{ color: '#f59e0b', fontSize: '16px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            UPCOMING EARNINGS
+          </h3>
+
+          <div style={{ color: '#e6edf3', marginBottom: '12px' }}>
+            {new Date(asset.earningsDate).toLocaleDateString('en-US', {
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric',
+              year: 'numeric'
+            })}
+          </div>
+
+          <PinnableInsight
+            title="Earnings Warning"
+            value="Event Risk"
+            explanation={`${asset.symbol} reports earnings soon. If your battle overlaps this date, expect significant price movement - stocks often swing 5-15% on earnings regardless of direction. This adds uncertainty to any thesis.`}
+            symbol={asset.symbol}
+            onPin={onPinInsight}
+            isPinned={isPinned('Earnings Warning')}
+            colors={c}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// CRYPTO METRICS COMPONENT (for Asset Detail)
+// ============================================
+
+const CryptoMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  const isPinned = (metricName) => {
+    return pinnedNotes?.some(n =>
+      n.symbol === asset.symbol && n.metricName === metricName
+    );
+  };
+
+  const change7d = safeNumber(asset.priceChange7d);
+  const change30d = safeNumber(asset.priceChange30d);
+  const change24h = safeNumber(asset.percentChange || asset.change24h);
+
+  // Mock correlation data (in production, calculate from price history)
+  const btcCorrelation = asset.symbol === 'BTC' ? 1.0
+    : ['ETH', 'SOL', 'ADA', 'DOT', 'AVAX'].includes(asset.symbol) ? 0.7 + Math.random() * 0.2
+    : ['USDT', 'USDC'].includes(asset.symbol) ? 0.1
+    : 0.4 + Math.random() * 0.3;
+
+  // Determine momentum label
+  const getMomentumLabel = () => {
+    if (change7d > 15) return { label: 'Surging', color: c.green };
+    if (change7d > 8) return { label: 'Hot', color: c.green };
+    if (change7d > 3) return { label: 'Climbing', color: c.cyan };
+    if (change7d > -3) return { label: 'Stable', color: '#8b949e' };
+    if (change7d > -8) return { label: 'Cooling', color: '#f59e0b' };
+    return { label: 'Cold', color: c.red };
+  };
+
+  const momentum = getMomentumLabel();
+
+  return (
+    <div>
+      {/* MOMENTUM & HYPE */}
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+          MOMENTUM & HYPE
+        </h3>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          <div style={{ textAlign: 'center', padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>24h</div>
+            <div style={{ color: change24h >= 0 ? c.green : c.red, fontSize: '18px', fontWeight: '600' }}>
+              {change24h >= 0 ? '+' : ''}{safeToFixed(change24h, 2)}%
+            </div>
+          </div>
+          <div style={{ textAlign: 'center', padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>7d</div>
+            <div style={{ color: change7d >= 0 ? c.green : c.red, fontSize: '18px', fontWeight: '600' }}>
+              {change7d >= 0 ? '+' : ''}{safeToFixed(change7d, 2)}%
+            </div>
+          </div>
+          <div style={{ textAlign: 'center', padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>30d</div>
+            <div style={{ color: change30d >= 0 ? c.green : c.red, fontSize: '18px', fontWeight: '600' }}>
+              {change30d >= 0 ? '+' : ''}{safeToFixed(change30d, 2)}%
+            </div>
+          </div>
+        </div>
+
+        <PinnableInsight
+          title="Momentum Read"
+          value={momentum.label}
+          explanation={`${asset.symbol} is ${change7d >= 0 ? 'up' : 'down'} ${Math.abs(change7d).toFixed(1)}% over 7 days. ${
+            change7d > 10
+              ? 'Strong crypto momentum often continues but corrections can be sharp and sudden.'
+              : change7d < -10
+              ? 'Significant pullback - could be oversold or beginning of larger downtrend.'
+              : 'Moderate activity suggests consolidation phase.'
+          }`}
+          symbol={asset.symbol}
+          onPin={onPinInsight}
+          isPinned={isPinned('Momentum Read')}
+          colors={c}
+        />
+      </div>
+
+      {/* MARKET POSITION */}
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+          MARKET POSITION
+        </h3>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          <div style={{ padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>Market Cap</div>
+            <div style={{ color: '#e6edf3', fontSize: '16px', fontWeight: '600' }}>
+              ${asset.marketCap ? (asset.marketCap / 1e9).toFixed(1) + 'B' : 'N/A'}
+            </div>
+          </div>
+          <div style={{ padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>Category</div>
+            <div style={{ color: c.cyan, fontSize: '16px', fontWeight: '600' }}>
+              {asset.category || 'N/A'}
+            </div>
+          </div>
+        </div>
+
+        <PinnableInsight
+          title="Size Context"
+          value={safeNumber(asset.marketCap) > 50e9 ? 'Large Cap' : safeNumber(asset.marketCap) > 10e9 ? 'Mid Cap' : 'Small Cap'}
+          explanation={`${asset.symbol} is a ${safeNumber(asset.marketCap) > 50e9 ? 'large' : safeNumber(asset.marketCap) > 10e9 ? 'mid' : 'small'}-cap crypto. ${
+            safeNumber(asset.marketCap) > 50e9
+              ? 'Larger coins tend to be less volatile but still swing more than stocks.'
+              : safeNumber(asset.marketCap) > 10e9
+              ? 'Mid-size coins balance liquidity with growth potential.'
+              : 'Smaller caps can see explosive moves but carry higher risk.'
+          }`}
+          symbol={asset.symbol}
+          onPin={onPinInsight}
+          isPinned={isPinned('Size Context')}
+          colors={c}
+        />
+      </div>
+
+      {/* BTC CORRELATION */}
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+          BTC CORRELATION
+        </h3>
+
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ color: '#8b949e' }}>Correlation Score</span>
+            <span style={{ color: '#e6edf3', fontWeight: '600' }}>{btcCorrelation.toFixed(2)}</span>
+          </div>
+          <div style={{ position: 'relative', height: '8px', background: '#161b22', borderRadius: '4px' }}>
+            <div style={{
+              width: `${btcCorrelation * 100}%`,
+              height: '100%',
+              background: 'linear-gradient(90deg, #00d9ff, #f7931a)',
+              borderRadius: '4px',
+            }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '10px', color: '#6e7681' }}>
+            <span>Independent</span>
+            <span>Correlated</span>
+          </div>
+        </div>
+
+        <PinnableInsight
+          title="BTC Relationship"
+          value={btcCorrelation > 0.7 ? 'High Correlation' : btcCorrelation > 0.4 ? 'Moderate' : 'Low Correlation'}
+          explanation={`${asset.symbol} has a ${btcCorrelation.toFixed(2)} correlation with Bitcoin. ${
+            btcCorrelation > 0.7
+              ? 'Tends to follow BTC direction - if BTC dumps, expect this to dump too, often harder.'
+              : btcCorrelation > 0.4
+              ? 'Some relationship with BTC but can move independently on its own catalysts.'
+              : 'Moves relatively independently from Bitcoin - useful for diversification.'
+          }`}
+          symbol={asset.symbol}
+          onPin={onPinInsight}
+          isPinned={isPinned('BTC Relationship')}
+          colors={c}
+        />
+      </div>
+
+      {/* TRADING ACTIVITY */}
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+          TRADING ACTIVITY
+        </h3>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          <div style={{ padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>24h Volume</div>
+            <div style={{ color: '#e6edf3', fontSize: '16px', fontWeight: '600' }}>
+              ${safeNumber(asset.volume24h) >= 1e9 ? (safeNumber(asset.volume24h) / 1e9).toFixed(2) + 'B' : (safeNumber(asset.volume24h) / 1e6).toFixed(0) + 'M'}
+            </div>
+          </div>
+          <div style={{ padding: '12px', background: '#161b22', borderRadius: '8px' }}>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>Vol/MCap Ratio</div>
+            <div style={{ color: '#e6edf3', fontSize: '16px', fontWeight: '600' }}>
+              {safeNumber(asset.volume24h) && safeNumber(asset.marketCap)
+                ? ((safeNumber(asset.volume24h) / safeNumber(asset.marketCap)) * 100).toFixed(1) + '%'
+                : 'N/A'}
+            </div>
+          </div>
+        </div>
+
+        <PinnableInsight
+          title="Liquidity Check"
+          value={safeNumber(asset.volume24h) > 1e9 ? 'High Activity' : safeNumber(asset.volume24h) > 100e6 ? 'Normal' : 'Low Volume'}
+          explanation={`${asset.symbol} has ${safeNumber(asset.volume24h) > 1e9 ? 'high' : safeNumber(asset.volume24h) > 100e6 ? 'moderate' : 'low'} trading volume. ${
+            safeNumber(asset.volume24h) > 1e9
+              ? 'Active trading means the price is being actively discovered - more movement potential.'
+              : 'Lower volume can mean less price discovery but also potential for sudden moves on news.'
+          }`}
+          symbol={asset.symbol}
+          onPin={onPinInsight}
+          isPinned={isPinned('Liquidity Check')}
+          colors={c}
+        />
+      </div>
+
+      {/* CATEGORY CONTEXT */}
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
+          CATEGORY CONTEXT
+        </h3>
+
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '12px',
+          background: '#161b22',
+          borderRadius: '8px',
+          marginBottom: '12px',
+        }}>
+          <span style={{ fontSize: '24px' }}>
+            {asset.category === 'Layer 1' ? '[]' :
+             asset.category === 'Layer 2' ? '>' :
+             asset.category === 'DeFi' ? '#' :
+             asset.category === 'Meme' ? '@' :
+             asset.category === 'Stablecoin' ? '$' :
+             asset.category === 'Payment' ? '*' : '~'}
+          </span>
+          <div>
+            <div style={{ color: '#e6edf3', fontWeight: '600' }}>{asset.category || 'Unknown'}</div>
+            <div style={{ color: '#8b949e', fontSize: '12px' }}>
+              {asset.category === 'Layer 1' ? 'Base blockchain protocol' :
+               asset.category === 'Layer 2' ? 'Scaling solution' :
+               asset.category === 'DeFi' ? 'Decentralized finance' :
+               asset.category === 'Meme' ? 'Community-driven token' :
+               asset.category === 'Stablecoin' ? 'Dollar-pegged token' :
+               asset.category === 'Payment' ? 'Payment & utility' : 'Alternative chain'}
+            </div>
+          </div>
+        </div>
+
+        <PinnableInsight
+          title="Category Dynamics"
+          value={asset.category || 'Unknown'}
+          explanation={`${asset.symbol} is a ${asset.category || 'crypto'} token. ${
+            asset.category === 'Meme'
+              ? 'Meme coins are highly volatile and sentiment-driven - can see 20%+ swings on social media hype.'
+              : asset.category === 'Stablecoin'
+              ? 'Stablecoins maintain ~$1 value - useful for defensive positioning but won\'t generate battle returns.'
+              : asset.category === 'Layer 1'
+              ? 'Layer 1 chains often move together. When one pumps, peers may follow.'
+              : asset.category === 'DeFi'
+              ? 'DeFi tokens correlate with overall crypto sentiment and TVL flows.'
+              : 'Category performance can influence individual token movements.'
+          }`}
+          symbol={asset.symbol}
+          onPin={onPinInsight}
+          isPinned={isPinned('Category Dynamics')}
+          colors={c}
+        />
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// CONVICTION CHECK COMPONENT (Research Phase 4)
+// ============================================
+
+/**
+ * ConvictionCheck - Collect user preferences before generating game plan
+ * Must-have assets, must-avoid assets, and confidence level
+ */
+const ConvictionCheck = ({
+  thesis,
+  recommendations,
+  onComplete,
+  onBack,
+  onOpenAssetPicker,
+  convictionData,
+  setConvictionData,
+  colors,
+}) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  const confidenceLevels = [
+    { value: 'high', label: 'High', description: 'Concentrated positions OK', icon: '🎯' },
+    { value: 'medium', label: 'Medium', description: 'Balanced approach', icon: '⚖️' },
+    { value: 'low', label: 'Low', description: 'More diversification', icon: '🛡️' },
+  ];
+
+  const handleRemoveMustHave = (symbol) => {
+    setConvictionData(prev => ({
+      ...prev,
+      mustHave: prev.mustHave.filter(s => s !== symbol),
+    }));
+  };
+
+  const handleRemoveMustAvoid = (symbol) => {
+    setConvictionData(prev => ({
+      ...prev,
+      mustAvoid: prev.mustAvoid.filter(s => s !== symbol),
+    }));
+  };
+
+  const canProceed = convictionData.confidence !== null;
+
+  return (
+    <div style={{
+      background: '#1a1f2e',
+      borderRadius: '16px',
+      padding: '24px',
+      border: '1px solid #2d3548',
+    }}>
+      {/* Header */}
+      <div style={{ marginBottom: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #9333ea, #6366f1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '16px',
+          }}>
+            4
+          </div>
+          <h3 style={{ color: '#e6edf3', margin: 0, fontSize: '18px' }}>
+            Conviction Check
+          </h3>
+        </div>
+        <p style={{ color: '#8b949e', fontSize: '14px', margin: 0 }}>
+          Fine-tune your preferences before we generate your personalized game plan
+        </p>
+      </div>
+
+      {/* Must-Have Assets */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '12px',
+        }}>
+          <label style={{ color: '#e6edf3', fontSize: '14px', fontWeight: '500' }}>
+            Must-Have Assets
+          </label>
+          <button
+            onClick={() => onOpenAssetPicker('mustHave')}
+            style={{
+              background: 'rgba(0, 217, 255, 0.1)',
+              border: '1px solid rgba(0, 217, 255, 0.3)',
+              borderRadius: '8px',
+              padding: '6px 12px',
+              color: c.cyan,
+              fontSize: '12px',
+              cursor: 'pointer',
+            }}
+          >
+            + Add Asset
+          </button>
+        </div>
+        <div style={{
+          background: '#1a1f2e',
+          borderRadius: '8px',
+          padding: '12px',
+          minHeight: '48px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px',
+          alignItems: 'center',
+        }}>
+          {convictionData.mustHave.length === 0 ? (
+            <span style={{ color: '#6e7681', fontSize: '13px' }}>
+              No must-have assets selected
+            </span>
+          ) : (
+            convictionData.mustHave.map(symbol => (
+              <div
+                key={symbol}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  borderRadius: '6px',
+                  padding: '4px 8px',
+                }}
+              >
+                <span style={{ color: c.green, fontSize: '13px', fontWeight: '500' }}>
+                  {symbol}
+                </span>
+                <button
+                  onClick={() => handleRemoveMustHave(symbol)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#8b949e',
+                    cursor: 'pointer',
+                    padding: '0',
+                    fontSize: '14px',
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Must-Avoid Assets */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '12px',
+        }}>
+          <label style={{ color: '#e6edf3', fontSize: '14px', fontWeight: '500' }}>
+            Must-Avoid Assets
+          </label>
+          <button
+            onClick={() => onOpenAssetPicker('mustAvoid')}
+            style={{
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: '8px',
+              padding: '6px 12px',
+              color: '#ef4444',
+              fontSize: '12px',
+              cursor: 'pointer',
+            }}
+          >
+            + Add Asset
+          </button>
+        </div>
+        <div style={{
+          background: '#1a1f2e',
+          borderRadius: '8px',
+          padding: '12px',
+          minHeight: '48px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px',
+          alignItems: 'center',
+        }}>
+          {convictionData.mustAvoid.length === 0 ? (
+            <span style={{ color: '#6e7681', fontSize: '13px' }}>
+              No must-avoid assets selected
+            </span>
+          ) : (
+            convictionData.mustAvoid.map(symbol => (
+              <div
+                key={symbol}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: '6px',
+                  padding: '4px 8px',
+                }}
+              >
+                <span style={{ color: '#ef4444', fontSize: '13px', fontWeight: '500' }}>
+                  {symbol}
+                </span>
+                <button
+                  onClick={() => handleRemoveMustAvoid(symbol)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#8b949e',
+                    cursor: 'pointer',
+                    padding: '0',
+                    fontSize: '14px',
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Confidence Level */}
+      <div style={{ marginBottom: '24px' }}>
+        <label style={{
+          color: '#e6edf3',
+          fontSize: '14px',
+          fontWeight: '500',
+          marginBottom: '12px',
+          display: 'block',
+        }}>
+          Confidence in Your Thesis
+        </label>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          {confidenceLevels.map(level => (
+            <button
+              key={level.value}
+              onClick={() => setConvictionData(prev => ({ ...prev, confidence: level.value }))}
+              style={{
+                flex: 1,
+                background: convictionData.confidence === level.value
+                  ? 'rgba(0, 217, 255, 0.15)'
+                  : '#1a1f2e',
+                border: convictionData.confidence === level.value
+                  ? '2px solid #00d9ff'
+                  : '1px solid #2d3548',
+                borderRadius: '12px',
+                padding: '16px 12px',
+                cursor: 'pointer',
+                textAlign: 'center',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <div style={{ fontSize: '24px', marginBottom: '8px' }}>{level.icon}</div>
+              <div style={{
+                color: convictionData.confidence === level.value ? c.cyan : '#e6edf3',
+                fontSize: '14px',
+                fontWeight: '600',
+                marginBottom: '4px',
+              }}>
+                {level.label}
+              </div>
+              <div style={{ color: '#8b949e', fontSize: '11px' }}>
+                {level.description}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div style={{ display: 'flex', gap: '12px' }}>
+        <button
+          onClick={onBack}
+          style={{
+            flex: 1,
+            background: 'transparent',
+            border: '1px solid #2d3548',
+            borderRadius: '12px',
+            padding: '14px',
+            color: '#00d9ff',
+            fontSize: '16px',
+            fontWeight: '500',
+            cursor: 'pointer',
+          }}
+        >
+          ← Back
+        </button>
+        <button
+          onClick={() => onComplete(convictionData)}
+          disabled={!canProceed}
+          style={{
+            flex: 2,
+            background: canProceed
+              ? 'linear-gradient(135deg, #9333ea, #6366f1)'
+              : '#2d3548',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '14px',
+            color: canProceed ? '#ffffff' : '#6e7681',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: canProceed ? 'pointer' : 'not-allowed',
+          }}
+        >
+          Generate Game Plan →
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// ASSET PICKER MODAL (for Conviction Check)
+// ============================================
+
+/**
+ * AssetPickerModal - Search and select assets for must-have/must-avoid
+ */
+const AssetPickerModal = ({
+  isOpen,
+  onClose,
+  onSelect,
+  type, // 'mustHave' or 'mustAvoid'
+  stocksData,
+  cryptoData,
+  excludeSymbols = [],
+  colors,
+}) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [assetType, setAssetType] = useState('all');
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  if (!isOpen) return null;
+
+  // Combine and filter assets
+  const allAssets = [
+    ...stocksData.map(s => ({ ...s, assetType: 'stock' })),
+    ...cryptoData.map(c => ({ ...c, assetType: 'crypto' })),
+  ].filter(asset => !excludeSymbols.includes(asset.symbol));
+
+  const filteredAssets = allAssets.filter(asset => {
+    const matchesSearch = searchTerm === '' ||
+      asset.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      asset.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesType = assetType === 'all' ||
+      (assetType === 'stocks' && asset.assetType === 'stock') ||
+      (assetType === 'crypto' && asset.assetType === 'crypto');
+    return matchesSearch && matchesType;
+  }).slice(0, 20);
+
+  const titleColor = type === 'mustHave' ? c.green : '#ef4444';
+  const titleText = type === 'mustHave' ? 'Add Must-Have Asset' : 'Add Must-Avoid Asset';
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0, 0, 0, 0.8)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      padding: '20px',
+    }}>
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '16px',
+        padding: '24px',
+        width: '100%',
+        maxWidth: '480px',
+        maxHeight: '80vh',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '16px',
+        }}>
+          <h3 style={{ color: titleColor, margin: 0, fontSize: '18px' }}>
+            {titleText}
+          </h3>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#8b949e',
+              fontSize: '24px',
+              cursor: 'pointer',
+              padding: '0',
+              lineHeight: 1,
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Search & Filter */}
+        <div style={{ marginBottom: '16px' }}>
+          <input
+            type="text"
+            placeholder="Search assets..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{
+              width: '100%',
+              background: '#1a1f2e',
+              border: '1px solid #2d3548',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#e6edf3',
+              fontSize: '14px',
+              marginBottom: '12px',
+              boxSizing: 'border-box',
+            }}
+          />
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {['all', 'stocks', 'crypto'].map(t => (
+              <button
+                key={t}
+                onClick={() => setAssetType(t)}
+                style={{
+                  flex: 1,
+                  background: assetType === t ? 'rgba(0, 217, 255, 0.15)' : 'transparent',
+                  border: assetType === t ? '1px solid #00d9ff' : '1px solid #2d3548',
+                  borderRadius: '6px',
+                  padding: '8px',
+                  color: assetType === t ? c.cyan : '#8b949e',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  textTransform: 'capitalize',
+                }}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Asset List */}
+        <div style={{
+          flex: 1,
+          overflowY: 'auto',
+          marginRight: '-8px',
+          paddingRight: '8px',
+        }}>
+          {filteredAssets.length === 0 ? (
+            <div style={{
+              textAlign: 'center',
+              padding: '32px',
+              color: '#6e7681',
+            }}>
+              No assets found
+            </div>
+          ) : (
+            filteredAssets.map(asset => (
+              <button
+                key={asset.symbol}
+                onClick={() => {
+                  onSelect(asset.symbol);
+                  onClose();
+                }}
+                style={{
+                  width: '100%',
+                  background: '#1a1f2e',
+                  border: '1px solid #2d3548',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  marginBottom: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  textAlign: 'left',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#21262d';
+                  e.currentTarget.style.borderColor = type === 'mustHave' ? c.green : '#ef4444';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#1a1f2e';
+                  e.currentTarget.style.borderColor = '#2d3548';
+                }}
+              >
+                <div>
+                  <div style={{ color: '#e6edf3', fontWeight: '600', fontSize: '14px' }}>
+                    {asset.symbol}
+                  </div>
+                  <div style={{ color: '#8b949e', fontSize: '12px' }}>
+                    {asset.name}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ color: '#e6edf3', fontSize: '14px' }}>
+                    ${safeToFixed(asset.price, 2)}
+                  </div>
+                  <div style={{
+                    color: safeNumber(asset.percentChange || asset.change24h) >= 0 ? c.green : '#ef4444',
+                    fontSize: '12px',
+                  }}>
+                    {safeNumber(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}
+                    {safeToFixed(asset.percentChange || asset.change24h, 2)}%
+                  </div>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// GAME PLAN COMPONENT (Research Phase 5)
+// ============================================
+
+/**
+ * GamePlan - Display the AI-generated portfolio strategy
+ */
+const GamePlan = ({
+  gamePlan,
+  thesis,
+  convictionData,
+  onUsePortfolio,
+  onSaveToNotes,
+  onBack,
+  isLoading,
+  colors,
+}) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  if (isLoading) {
+    return (
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '16px',
+        padding: '48px 24px',
+        border: '1px solid #2d3548',
+        textAlign: 'center',
+      }}>
+        <div style={{
+          width: '48px',
+          height: '48px',
+          border: '3px solid #2d3548',
+          borderTopColor: c.cyan,
+          borderRadius: '50%',
+          margin: '0 auto 16px',
+          animation: 'spin 1s linear infinite',
+        }} />
+        <style>
+          {`@keyframes spin { to { transform: rotate(360deg); } }`}
+        </style>
+        <p style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '8px' }}>
+          Analyzing your thesis...
+        </p>
+        <p style={{ color: '#8b949e', fontSize: '14px', margin: 0 }}>
+          Building your personalized game plan
+        </p>
+      </div>
+    );
+  }
+
+  if (!gamePlan) {
+    return (
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '16px',
+        padding: '32px 24px',
+        border: '1px solid #2d3548',
+        textAlign: 'center',
+      }}>
+        <p style={{ color: '#ef4444', fontSize: '16px', marginBottom: '16px' }}>
+          Failed to generate game plan
+        </p>
+        <button
+          onClick={onBack}
+          style={{
+            background: 'rgba(0, 217, 255, 0.1)',
+            border: '1px solid rgba(0, 217, 255, 0.3)',
+            borderRadius: '8px',
+            padding: '10px 20px',
+            color: c.cyan,
+            fontSize: '14px',
+            cursor: 'pointer',
+          }}
+        >
+          ← Back to Conviction Check
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      background: '#1a1f2e',
+      borderRadius: '16px',
+      padding: '24px',
+      border: '1px solid #2d3548',
+    }}>
+      {/* Header */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #f59e0b, #eab308)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '16px',
+          }}>
+            5
+          </div>
+          <h3 style={{ color: '#e6edf3', margin: 0, fontSize: '18px' }}>
+            Your Game Plan
+          </h3>
+        </div>
+      </div>
+
+      {/* Strategy Summary */}
+      <div style={{
+        background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.1), rgba(99, 102, 241, 0.1))',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '20px',
+        border: '1px solid rgba(0, 217, 255, 0.2)',
+      }}>
+        <div style={{ color: c.cyan, fontSize: '12px', marginBottom: '8px', fontWeight: '600' }}>
+          STRATEGY
+        </div>
+        <p style={{ color: '#e6edf3', fontSize: '14px', lineHeight: '1.6', margin: 0 }}>
+          {gamePlan.strategySummary}
+        </p>
+      </div>
+
+      {/* Portfolio Allocations */}
+      <div style={{ marginBottom: '20px' }}>
+        <h4 style={{ color: '#e6edf3', fontSize: '14px', marginBottom: '12px' }}>
+          Recommended Portfolio
+        </h4>
+        <div style={{
+          background: '#1a1f2e',
+          borderRadius: '12px',
+          overflow: 'hidden',
+        }}>
+          {gamePlan.portfolio?.map((position, index) => (
+            <div
+              key={position.symbol}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '12px 16px',
+                borderBottom: index < gamePlan.portfolio.length - 1 ? '1px solid #2d3548' : 'none',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '40px',
+                  height: '24px',
+                  background: `linear-gradient(90deg, ${c.cyan} ${position.allocation}%, #2d3548 ${position.allocation}%)`,
+                  borderRadius: '4px',
+                }} />
+                <div>
+                  <div style={{ color: '#e6edf3', fontWeight: '600', fontSize: '14px' }}>
+                    {position.symbol}
+                  </div>
+                  {position.rationale && (
+                    <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '200px' }}>
+                      {position.rationale}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div style={{
+                color: c.cyan,
+                fontWeight: '600',
+                fontSize: '16px',
+              }}>
+                {safeToFixed(position.allocation, 1)}%
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Insight Connections */}
+      {gamePlan.insightConnections && (
+        <div style={{
+          background: '#1a1f2e',
+          borderRadius: '12px',
+          padding: '16px',
+          marginBottom: '20px',
+          borderLeft: '3px solid #9333ea',
+        }}>
+          <div style={{ color: '#9333ea', fontSize: '12px', marginBottom: '8px', fontWeight: '600' }}>
+            HOW THIS CONNECTS TO YOUR RESEARCH
+          </div>
+          <p style={{ color: '#c9d1d9', fontSize: '13px', lineHeight: '1.5', margin: 0 }}>
+            {gamePlan.insightConnections}
+          </p>
+        </div>
+      )}
+
+      {/* Risks */}
+      {gamePlan.risks && gamePlan.risks.length > 0 && (
+        <div style={{ marginBottom: '24px' }}>
+          <h4 style={{ color: '#ef4444', fontSize: '14px', marginBottom: '12px' }}>
+            ⚠️ Key Risks
+          </h4>
+          <div style={{
+            background: 'rgba(239, 68, 68, 0.1)',
+            borderRadius: '12px',
+            padding: '16px',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+          }}>
+            {gamePlan.risks.map((risk, i) => (
+              <div
+                key={i}
+                style={{
+                  display: 'flex',
+                  gap: '8px',
+                  marginBottom: i < gamePlan.risks.length - 1 ? '8px' : 0,
+                }}
+              >
+                <span style={{ color: '#ef4444' }}>•</span>
+                <span style={{ color: '#c9d1d9', fontSize: '13px' }}>{risk}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <button
+          onClick={() => onUsePortfolio(gamePlan.portfolio)}
+          style={{
+            width: '100%',
+            background: 'linear-gradient(135deg, #10b981, #059669)',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '16px',
+            color: '#ffffff',
+            fontSize: '16px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+          }}
+        >
+          Use This Portfolio →
+        </button>
+
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button
+            onClick={() => onSaveToNotes(gamePlan)}
+            style={{
+              flex: 1,
+              background: 'rgba(147, 51, 234, 0.15)',
+              border: '1px solid rgba(147, 51, 234, 0.3)',
+              borderRadius: '12px',
+              padding: '12px',
+              color: '#9333ea',
+              fontSize: '14px',
+              cursor: 'pointer',
+            }}
+          >
+            Save to Notes
+          </button>
+          <button
+            onClick={onBack}
+            style={{
+              flex: 1,
+              background: 'transparent',
+              border: '1px solid #2d3548',
+              borderRadius: '12px',
+              padding: '12px',
+              color: '#8b949e',
+              fontSize: '14px',
+              cursor: 'pointer',
+            }}
+          >
+            ← Adjust Preferences
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// PHASE 1: MARKET BRIEFING
+// ============================================
+
+const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  // Calculate market data from props
+  const marketData = React.useMemo(() => {
+    if (!stocksData?.length && !cryptoData?.length) return null;
+
+    // Calculate sector performance
+    const sectorPerformance = {};
+    stocksData.forEach(stock => {
+      const sector = stock.sector || 'Other';
+      if (!sectorPerformance[sector]) {
+        sectorPerformance[sector] = { total: 0, count: 0 };
+      }
+      sectorPerformance[sector].total += safeNumber(stock.percentChange, 0);
+      sectorPerformance[sector].count += 1;
+    });
+
+    const sectors = Object.entries(sectorPerformance)
+      .map(([name, data]) => ({
+        name,
+        avgChange: data.count > 0 ? data.total / data.count : 0,
+      }))
+      .sort((a, b) => b.avgChange - a.avgChange);
+
+    // Top movers
+    const allAssets = [...stocksData, ...cryptoData];
+    const topGainers = [...allAssets]
+      .sort((a, b) => safeNumber(b.percentChange || b.change24h, 0) - safeNumber(a.percentChange || a.change24h, 0))
+      .slice(0, 3);
+    const topLosers = [...allAssets]
+      .sort((a, b) => safeNumber(a.percentChange || a.change24h, 0) - safeNumber(b.percentChange || b.change24h, 0))
+      .slice(0, 3);
+
+    return {
+      sectors,
+      topGainers,
+      topLosers,
+      stocksUp: stocksData.filter(s => safeNumber(s.percentChange, 0) > 0).length,
+      stocksDown: stocksData.filter(s => safeNumber(s.percentChange, 0) < 0).length,
+      cryptoUp: cryptoData.filter(c => safeNumber(c.change24h, 0) > 0).length,
+      cryptoDown: cryptoData.filter(c => safeNumber(c.change24h, 0) < 0).length,
+    };
+  }, [stocksData, cryptoData]);
+
+  if (!marketData) {
+    return (
+      <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+        <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
+        <h2 style={{ color: '#e6edf3' }}>Loading Market Data...</h2>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+        <h1 style={{ color: '#e6edf3', fontSize: '24px', marginBottom: '8px' }}>
+          📊 Market Briefing
+        </h1>
+        <p style={{ color: '#8b949e', fontSize: '14px' }}>
+          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+        </p>
+      </div>
+
+      {/* Market Pulse */}
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '16px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px' }}>
+          Market Pulse
+        </h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+          <div>
+            <div style={{ color: '#e6edf3', fontSize: '14px', marginBottom: '4px' }}>Stocks</div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <span style={{ color: c.green }}>↑ {marketData.stocksUp}</span>
+              <span style={{ color: c.red }}>↓ {marketData.stocksDown}</span>
+            </div>
+          </div>
+          <div>
+            <div style={{ color: '#e6edf3', fontSize: '14px', marginBottom: '4px' }}>Crypto</div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <span style={{ color: c.green }}>↑ {marketData.cryptoUp}</span>
+              <span style={{ color: c.red }}>↓ {marketData.cryptoDown}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sector Snapshot */}
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '16px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px' }}>
+          Sector Snapshot
+        </h3>
+        {marketData.sectors.slice(0, 5).map((sector, idx) => (
+          <div
+            key={sector.name}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '8px 0',
+              borderBottom: idx < 4 ? '1px solid #2d3548' : 'none',
+            }}
+          >
+            <span style={{ color: '#e6edf3', fontSize: '14px' }}>{sector.name}</span>
+            <span style={{
+              color: sector.avgChange >= 0 ? c.green : c.red,
+              fontSize: '14px',
+              fontWeight: '600',
+            }}>
+              {sector.avgChange >= 0 ? '+' : ''}{sector.avgChange.toFixed(2)}%
+            </span>
+          </div>
+        ))}
+
+        <div style={{
+          marginTop: '12px',
+          padding: '12px',
+          background: '#161b22',
+          borderRadius: '8px',
+          borderLeft: `3px solid ${c.cyan}`,
+        }}>
+          <span style={{ color: c.cyan }}>💡</span>
+          <span style={{ color: '#c9d1d9', fontSize: '13px', marginLeft: '8px' }}>
+            {marketData.sectors[0]?.avgChange > 0
+              ? `${marketData.sectors[0].name} is leading today. Consider sector momentum in your thesis.`
+              : 'Markets are mixed. A balanced approach may be wise.'}
+          </span>
+        </div>
+      </div>
+
+      {/* Top Movers */}
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '24px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px' }}>
+          Top Movers Today
+        </h3>
+
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ color: c.green, fontSize: '12px', marginBottom: '8px' }}>🚀 GAINERS</div>
+          {marketData.topGainers.map(asset => (
+            <div
+              key={asset.symbol}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: '6px 0',
+              }}
+            >
+              <span style={{ color: '#e6edf3', fontSize: '14px' }}>{asset.symbol}</span>
+              <span style={{ color: c.green, fontSize: '14px' }}>
+                +{safeToFixed(asset.percentChange || asset.change24h, 2)}%
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div>
+          <div style={{ color: c.red, fontSize: '12px', marginBottom: '8px' }}>📉 LAGGARDS</div>
+          {marketData.topLosers.map(asset => (
+            <div
+              key={asset.symbol}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: '6px 0',
+              }}
+            >
+              <span style={{ color: '#e6edf3', fontSize: '14px' }}>{asset.symbol}</span>
+              <span style={{ color: c.red, fontSize: '14px' }}>
+                {safeToFixed(asset.percentChange || asset.change24h, 2)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Continue Button */}
+      <button
+        onClick={onContinue}
+        style={{
+          width: '100%',
+          padding: '16px',
+          background: `linear-gradient(135deg, ${c.cyan}, ${c.green})`,
+          border: 'none',
+          borderRadius: '12px',
+          color: '#000',
+          fontSize: '16px',
+          fontWeight: '700',
+          cursor: 'pointer',
+        }}
+      >
+        BUILD MY THESIS →
+      </button>
+    </div>
+  );
+};
+
+// ============================================
+// PHASE 2: THESIS BUILDER
+// ============================================
+
+const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
+  const [currentQuestion, setCurrentQuestion] = useState(1);
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  const questions = [
+    {
+      id: 1,
+      title: "What type of battle?",
+      subtitle: "This affects which strategies work best",
+      options: [
+        { id: 'head-to-head', label: '⚔️ Head-to-Head', description: '24-hour battle', color: c.cyan },
+        { id: 'snake-draft', label: '🐍 Snake Draft', description: 'Week-long competition', color: c.green },
+        { id: 'training', label: '🎯 Training', description: 'Practice mode', color: '#f59e0b' },
+      ],
+      field: 'battleType',
+    },
+    {
+      id: 2,
+      title: "What's your market stance?",
+      subtitle: "How do you feel about the market direction?",
+      options: [
+        { id: 'bullish', label: '📈 Bullish', description: 'Expecting markets to rise', color: c.green },
+        { id: 'bearish', label: '📉 Bearish', description: 'Expecting markets to fall', color: c.red },
+        { id: 'neutral', label: '➡️ Neutral', description: 'No strong direction', color: '#f59e0b' },
+      ],
+      field: 'stance',
+    },
+    {
+      id: 3,
+      title: "Any sector focus?",
+      subtitle: "Select up to 2 sectors, or skip for all",
+      multiSelect: true,
+      maxSelections: 2,
+      options: [
+        { id: 'Technology', label: '💻 Tech', color: c.cyan },
+        { id: 'Financials', label: '🏦 Finance', color: '#10b981' },
+        { id: 'Healthcare', label: '🏥 Healthcare', color: '#f43f5e' },
+        { id: 'Energy', label: '⚡ Energy', color: '#ef4444' },
+        { id: 'Consumer Discretionary', label: '🛍️ Consumer', color: '#f59e0b' },
+        { id: 'Industrials', label: '🏭 Industrial', color: '#6366f1' },
+        { id: 'Layer 1', label: '🔷 L1 Crypto', color: '#8b5cf6' },
+        { id: 'DeFi', label: '🏛️ DeFi', color: '#14b8a6' },
+        { id: 'Meme', label: '🐕 Meme Coins', color: '#ec4899' },
+      ],
+      field: 'sectors',
+      skippable: true,
+    },
+    {
+      id: 4,
+      title: "Risk tolerance?",
+      subtitle: "How much volatility can you handle?",
+      options: [
+        { id: 'aggressive', label: '🔥 Aggressive', description: 'High risk, high reward', color: c.red },
+        { id: 'balanced', label: '⚖️ Balanced', description: 'Mix of growth and stability', color: '#f59e0b' },
+        { id: 'conservative', label: '🛡️ Conservative', description: 'Protect downside first', color: c.green },
+      ],
+      field: 'risk',
+    },
+  ];
+
+  const currentQ = questions[currentQuestion - 1];
+  const isLastQuestion = currentQuestion === questions.length;
+
+  const handleSelect = (optionId) => {
+    if (currentQ.multiSelect) {
+      const current = thesis[currentQ.field] || [];
+      if (current.includes(optionId)) {
+        onUpdate({ ...thesis, [currentQ.field]: current.filter(id => id !== optionId) });
+      } else if (current.length < currentQ.maxSelections) {
+        onUpdate({ ...thesis, [currentQ.field]: [...current, optionId] });
+      }
+    } else {
+      onUpdate({ ...thesis, [currentQ.field]: optionId });
+      // Auto-advance for single select
+      setTimeout(() => {
+        if (isLastQuestion) {
+          onComplete({ ...thesis, [currentQ.field]: optionId });
+        } else {
+          setCurrentQuestion(prev => prev + 1);
+        }
+      }, 300);
+    }
+  };
+
+  const handleContinue = () => {
+    if (isLastQuestion) {
+      onComplete(thesis);
+    } else {
+      setCurrentQuestion(prev => prev + 1);
+    }
+  };
+
+  const handleBack = () => {
+    if (currentQuestion > 1) {
+      setCurrentQuestion(prev => prev - 1);
+    } else {
+      onBack();
+    }
+  };
+
+  const isSelected = (optionId) => {
+    if (currentQ.multiSelect) {
+      return (thesis[currentQ.field] || []).includes(optionId);
+    }
+    return thesis[currentQ.field] === optionId;
+  };
+
+  return (
+    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '24px',
+      }}>
+        <button
+          onClick={handleBack}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: c.cyan,
+            fontSize: '16px',
+            cursor: 'pointer',
+          }}
+        >
+          ← Back
+        </button>
+        <span style={{ color: '#8b949e', fontSize: '14px' }}>
+          Question {currentQuestion} of {questions.length}
+        </span>
+      </div>
+
+      {/* Question */}
+      <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+        <h2 style={{ color: '#e6edf3', fontSize: '24px', marginBottom: '8px' }}>
+          {currentQ.title}
+        </h2>
+        <p style={{ color: '#8b949e', fontSize: '14px' }}>
+          {currentQ.subtitle}
+        </p>
+      </div>
+
+      {/* Options */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        marginBottom: '24px',
+      }}>
+        {currentQ.options.map(option => (
+          <button
+            key={option.id}
+            onClick={() => handleSelect(option.id)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '16px 20px',
+              background: isSelected(option.id) ? `${option.color}15` : '#1a1f2e',
+              border: `2px solid ${isSelected(option.id) ? option.color : '#2d3548'}`,
+              borderRadius: '12px',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            <div style={{ textAlign: 'left' }}>
+              <div style={{
+                color: isSelected(option.id) ? option.color : '#e6edf3',
+                fontSize: '18px',
+                fontWeight: '600',
+                marginBottom: option.description ? '4px' : '0',
+              }}>
+                {option.label}
+              </div>
+              {option.description && (
+                <div style={{ color: '#8b949e', fontSize: '13px' }}>
+                  {option.description}
+                </div>
+              )}
+            </div>
+            {isSelected(option.id) && (
+              <div style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '50%',
+                background: option.color,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#000',
+                fontSize: '14px',
+                fontWeight: '700',
+              }}>
+                ✓
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Multi-select continue button */}
+      {currentQ.multiSelect && (
+        <button
+          onClick={handleContinue}
+          style={{
+            width: '100%',
+            padding: '16px',
+            background: `linear-gradient(135deg, ${c.cyan}, ${c.green})`,
+            border: 'none',
+            borderRadius: '12px',
+            color: '#000',
+            fontSize: '16px',
+            fontWeight: '700',
+            cursor: 'pointer',
+          }}
+        >
+          {(thesis[currentQ.field] || []).length === 0
+            ? 'SKIP (ALL SECTORS)'
+            : `CONTINUE WITH ${(thesis[currentQ.field] || []).length} SELECTED`}
+        </button>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// PHASE 3: ASSET EXPLORER
+// ============================================
+
+const AssetExplorer = ({
+  thesis,
+  recommendations,
+  isEnhancing,
+  pinnedInsights,
+  stocksData,
+  cryptoData,
+  onSelectAsset,
+  onContinue,
+  onBack,
+  colors,
+}) => {
+  const [viewMode, setViewMode] = useState('recommended'); // 'recommended' | 'all'
+  const [searchQuery, setSearchQuery] = useState('');
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  const allAssets = [...(stocksData || []), ...(cryptoData || [])];
+
+  const filteredAssets = viewMode === 'recommended'
+    ? recommendations
+    : allAssets.filter(a =>
+        a.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.name.toLowerCase().includes(searchQuery.toLowerCase())
+      ).slice(0, 30);
+
+  const thesisSummary = [
+    thesis.battleType === 'head-to-head' ? '24hr' : thesis.battleType === 'snake-draft' ? 'Week' : 'Training',
+    thesis.stance,
+    ...(thesis.sectors || []),
+    thesis.risk,
+  ].filter(Boolean).join(' • ');
+
+  return (
+    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '16px',
+      }}>
+        <button
+          onClick={onBack}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: c.cyan,
+            fontSize: '16px',
+            cursor: 'pointer',
+          }}
+        >
+          ← Back
+        </button>
+        <span style={{ color: '#8b949e', fontSize: '14px' }}>Step 3 of 5</span>
+      </div>
+
+      <h2 style={{ color: '#e6edf3', fontSize: '20px', marginBottom: '4px' }}>
+        🔍 Explore Assets
+      </h2>
+      <p style={{ color: c.cyan, fontSize: '13px', marginBottom: '20px' }}>
+        {thesisSummary}
+      </p>
+
+      {/* View Toggle */}
+      <div style={{
+        display: 'flex',
+        gap: '8px',
+        marginBottom: '16px',
+      }}>
+        <button
+          onClick={() => setViewMode('recommended')}
+          style={{
+            flex: 1,
+            padding: '10px',
+            background: viewMode === 'recommended' ? c.cyan : '#1a1f2e',
+            border: 'none',
+            borderRadius: '8px',
+            color: viewMode === 'recommended' ? '#000' : '#8b949e',
+            fontSize: '13px',
+            fontWeight: '600',
+            cursor: 'pointer',
+          }}
+        >
+          🎯 Recommended ({recommendations.length})
+        </button>
+        <button
+          onClick={() => setViewMode('all')}
+          style={{
+            flex: 1,
+            padding: '10px',
+            background: viewMode === 'all' ? c.cyan : '#1a1f2e',
+            border: 'none',
+            borderRadius: '8px',
+            color: viewMode === 'all' ? '#000' : '#8b949e',
+            fontSize: '13px',
+            fontWeight: '600',
+            cursor: 'pointer',
+          }}
+        >
+          📊 All Assets ({allAssets.length})
+        </button>
+      </div>
+
+      {/* Search (only for all view) */}
+      {viewMode === 'all' && (
+        <input
+          type="text"
+          placeholder="Search by symbol or name..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            background: '#1a1f2e',
+            border: '1px solid #2d3548',
+            borderRadius: '8px',
+            color: '#e6edf3',
+            fontSize: '14px',
+            marginBottom: '16px',
+            boxSizing: 'border-box',
+          }}
+        />
+      )}
+
+      {/* Enhancing indicator */}
+      {isEnhancing && viewMode === 'recommended' && (
+        <div style={{
+          padding: '8px 12px',
+          background: `rgba(0, 217, 255, 0.1)`,
+          borderRadius: '8px',
+          marginBottom: '16px',
+          fontSize: '13px',
+          color: c.cyan,
+        }}>
+          ✨ AI is enhancing recommendations...
+        </div>
+      )}
+
+      {/* Asset List */}
+      <div style={{ marginBottom: '100px' }}>
+        {filteredAssets.map((asset) => (
+          <div
+            key={asset.symbol}
+            onClick={() => onSelectAsset(asset)}
+            style={{
+              background: '#1a1f2e',
+              borderRadius: '12px',
+              padding: '16px',
+              marginBottom: '12px',
+              border: '1px solid #2d3548',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <div>
+                <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '18px' }}>
+                  {asset.symbol}
+                </div>
+                <div style={{ color: '#8b949e', fontSize: '13px' }}>
+                  {asset.name}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ color: '#e6edf3', fontWeight: '600' }}>
+                  ${safeToFixed(asset.price, 2)}
+                </div>
+                <div style={{
+                  color: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red,
+                  fontSize: '14px',
+                }}>
+                  {safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? '▲' : '▼'} {Math.abs(safeNumber(asset.percentChange || asset.change24h, 0)).toFixed(2)}%
+                </div>
+              </div>
+            </div>
+
+            {/* Recommendation explanation */}
+            {viewMode === 'recommended' && (
+              <div style={{
+                padding: '10px',
+                background: '#161b22',
+                borderRadius: '8px',
+                marginTop: '8px',
+              }}>
+                <p style={{
+                  color: '#c9d1d9',
+                  fontSize: '13px',
+                  margin: 0,
+                  lineHeight: '1.5',
+                }}>
+                  {asset.enhancedExplanation || asset.genericExplanation || 'Matches your thesis criteria.'}
+                </p>
+                {asset.thesisScore && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginTop: '8px',
+                  }}>
+                    <span style={{
+                      color: asset.thesisScore.alignment === 'strong' ? c.green
+                           : asset.thesisScore.alignment === 'moderate' ? '#f59e0b'
+                           : '#8b949e',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                    }}>
+                      {asset.thesisScore.alignment?.toUpperCase()} MATCH
+                    </span>
+                    <span style={{ color: '#6e7681', fontSize: '12px' }}>
+                      Score: {asset.thesisScore.score}/100
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              marginTop: '8px',
+            }}>
+              <span style={{ color: c.cyan, fontSize: '13px' }}>
+                Tap to explore →
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Continue Button - Fixed at bottom */}
+      <div style={{
+        position: 'fixed',
+        bottom: '0',
+        left: '0',
+        right: '0',
+        padding: '16px 20px',
+        background: 'linear-gradient(transparent, #0d1117 30%)',
+      }}>
+        <button
+          onClick={onContinue}
+          style={{
+            width: '100%',
+            maxWidth: '560px',
+            margin: '0 auto',
+            display: 'block',
+            padding: '16px',
+            background: `linear-gradient(135deg, ${c.cyan}, ${c.green})`,
+            border: 'none',
+            borderRadius: '12px',
+            color: '#000',
+            fontSize: '16px',
+            fontWeight: '700',
+            cursor: 'pointer',
+          }}
+        >
+          CONTINUE TO CONVICTION CHECK →
+        </button>
+        {pinnedInsights.length > 0 && (
+          <p style={{
+            textAlign: 'center',
+            color: '#8b949e',
+            fontSize: '12px',
+            marginTop: '8px',
+          }}>
+            📌 {pinnedInsights.length} insight{pinnedInsights.length !== 1 ? 's' : ''} saved
+          </p>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// ASSET DETAIL VIEW (from Phase 3)
+// ============================================
+
+const AssetDetailView = ({ asset, thesis, pinnedInsights, onPin, onBack, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+  const isCrypto = asset.category !== undefined;
+
+  const isPinned = (metricName) => {
+    return pinnedInsights?.some(n =>
+      n.symbol === asset.symbol && n.metricName === metricName
+    );
+  };
+
+  return (
+    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '24px',
+      }}>
+        <button
+          onClick={onBack}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: c.cyan,
+            fontSize: '16px',
+            cursor: 'pointer',
+          }}
+        >
+          ← Back to List
+        </button>
+      </div>
+
+      {/* Asset Header */}
+      <div style={{
+        textAlign: 'center',
+        marginBottom: '24px',
+        padding: '20px',
+        background: '#1a1f2e',
+        borderRadius: '16px',
+        border: '1px solid #2d3548',
+      }}>
+        <h1 style={{ color: '#e6edf3', fontSize: '32px', marginBottom: '4px' }}>
+          {asset.symbol}
+        </h1>
+        <p style={{ color: '#8b949e', fontSize: '14px', marginBottom: '12px' }}>
+          {asset.name}
+        </p>
+        <div style={{
+          display: 'inline-block',
+          padding: '4px 12px',
+          background: '#161b22',
+          borderRadius: '16px',
+          color: c.cyan,
+          fontSize: '12px',
+        }}>
+          {isCrypto ? `🔷 ${asset.category}` : `💼 ${asset.sector}`}
+        </div>
+
+        <div style={{ marginTop: '16px' }}>
+          <div style={{ color: '#e6edf3', fontSize: '28px', fontWeight: '700' }}>
+            ${safeToFixed(asset.price, 2)}
+          </div>
+          <div style={{
+            color: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red,
+            fontSize: '18px',
+            marginTop: '4px',
+          }}>
+            {safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? '▲' : '▼'} {Math.abs(safeNumber(asset.percentChange || asset.change24h, 0)).toFixed(2)}% today
+          </div>
+        </div>
+      </div>
+
+      {/* Metrics Display */}
+      {isCrypto ? (
+        <CryptoMetricsDisplay
+          asset={asset}
+          thesis={thesis}
+          pinnedNotes={pinnedInsights}
+          onPinInsight={onPin}
+          colors={c}
+        />
+      ) : (
+        <StockMetricsDisplay
+          asset={asset}
+          thesis={thesis}
+          pinnedNotes={pinnedInsights}
+          onPinInsight={onPin}
+          colors={c}
+        />
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// RESEARCH FLOW - MAIN CONTAINER
+// ============================================
+
+const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  // Flow state
+  const [flowPhase, setFlowPhase] = useState(1);
+  const [thesis, setThesis] = useState({
+    battleType: null,
+    stance: null,
+    sectors: [],
+    risk: null,
+  });
+  const [recommendations, setRecommendations] = useState([]);
+  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState(null);
+  const [pinnedInsights, setPinnedInsights] = useState([]);
+  const [convictionData, setConvictionData] = useState({
+    mustHave: [],
+    mustAvoid: [],
+    confidence: null,
+  });
+  const [gamePlan, setGamePlan] = useState(null);
+  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
+  const [showAssetPicker, setShowAssetPicker] = useState(false);
+  const [assetPickerType, setAssetPickerType] = useState(null);
+
+  // Reset flow
+  const resetFlow = () => {
+    setFlowPhase(1);
+    setThesis({ battleType: null, stance: null, sectors: [], risk: null });
+    setRecommendations([]);
+    setPinnedInsights([]);
+    setConvictionData({ mustHave: [], mustAvoid: [], confidence: null });
+    setGamePlan(null);
+    setSelectedAsset(null);
+  };
+
+  // Handle thesis completion (Phase 2 → 3)
+  const handleThesisComplete = async (completedThesis) => {
+    setThesis(completedThesis);
+    setFlowPhase(3);
+
+    // Get all assets
+    const allAssets = [...(stocksData || []), ...(cryptoData || [])];
+
+    // Get instant recommendations using recommendation engine
+    const recs = getRecommendations(allAssets, completedThesis, 8);
+    const withGenericExplanations = recs.map(rec => ({
+      ...rec,
+      genericExplanation: generateGenericExplanation(rec, completedThesis),
+    }));
+
+    setRecommendations(withGenericExplanations);
+    setIsEnhancing(true);
+
+    // Enhance with Claude in background
+    try {
+      const enhanced = await enhanceRecommendations(withGenericExplanations, completedThesis, {});
+      setRecommendations(enhanced);
+    } catch (err) {
+      console.warn('Enhancement failed, using generic explanations:', err);
+    } finally {
+      setIsEnhancing(false);
+    }
+  };
+
+  // Handle pin insight
+  const handlePinInsight = (insight) => {
+    setPinnedInsights(prev => [...prev, { ...insight, id: Date.now().toString() }]);
+  };
+
+  // Handle unpin insight
+  const handleUnpinInsight = (insightId) => {
+    setPinnedInsights(prev => prev.filter(p => p.id !== insightId));
+  };
+
+  // Handle open asset picker
+  const handleOpenAssetPicker = (type) => {
+    setAssetPickerType(type);
+    setShowAssetPicker(true);
+  };
+
+  // Handle asset picker select
+  const handleAssetPickerSelect = (symbol) => {
+    if (assetPickerType === 'mustHave') {
+      setConvictionData(prev => ({
+        ...prev,
+        mustHave: prev.mustHave.includes(symbol) ? prev.mustHave : [...prev.mustHave, symbol],
+      }));
+    } else if (assetPickerType === 'mustAvoid') {
+      setConvictionData(prev => ({
+        ...prev,
+        mustAvoid: prev.mustAvoid.includes(symbol) ? prev.mustAvoid : [...prev.mustAvoid, symbol],
+      }));
+    }
+  };
+
+  // Handle generate game plan (Phase 4 → 5)
+  const handleGeneratePlan = async () => {
+    setFlowPhase(5);
+    setIsGeneratingPlan(true);
+
+    try {
+      const plan = await generateGamePlan(thesis, convictionData, pinnedInsights, recommendations);
+      setGamePlan(plan);
+    } catch (err) {
+      console.error('Game plan generation failed:', err);
+    } finally {
+      setIsGeneratingPlan(false);
+    }
+  };
+
+  // Handle use portfolio
+  const handleUsePortfolio = (portfolio) => {
+    if (portfolio && onUsePortfolio) {
+      onUsePortfolio(portfolio);
+    }
+    resetFlow();
+  };
+
+  // Handle save to notes
+  const handleSaveToNotes = (plan) => {
+    // Could integrate with existing notes system
+    // TODO: Implement notes integration
+  };
+
+  // Render current phase
+  const renderPhase = () => {
+    // If viewing asset detail, show that instead
+    if (selectedAsset) {
+      return (
+        <AssetDetailView
+          asset={selectedAsset}
+          thesis={thesis}
+          pinnedInsights={pinnedInsights}
+          onPin={handlePinInsight}
+          onBack={() => setSelectedAsset(null)}
+          colors={c}
+        />
+      );
+    }
+
+    switch (flowPhase) {
+      case 1:
+        return (
+          <MarketBriefing
+            stocksData={stocksData}
+            cryptoData={cryptoData}
+            onContinue={() => setFlowPhase(2)}
+            colors={c}
+          />
+        );
+
+      case 2:
+        return (
+          <ThesisBuilder
+            thesis={thesis}
+            onUpdate={setThesis}
+            onComplete={handleThesisComplete}
+            onBack={() => setFlowPhase(1)}
+            colors={c}
+          />
+        );
+
+      case 3:
+        return (
+          <AssetExplorer
+            thesis={thesis}
+            recommendations={recommendations}
+            isEnhancing={isEnhancing}
+            pinnedInsights={pinnedInsights}
+            stocksData={stocksData}
+            cryptoData={cryptoData}
+            onSelectAsset={setSelectedAsset}
+            onContinue={() => setFlowPhase(4)}
+            onBack={() => setFlowPhase(2)}
+            colors={c}
+          />
+        );
+
+      case 4:
+        return (
+          <>
+            <ConvictionCheck
+              thesis={thesis}
+              recommendations={recommendations}
+              convictionData={convictionData}
+              setConvictionData={setConvictionData}
+              onComplete={handleGeneratePlan}
+              onBack={() => setFlowPhase(3)}
+              onOpenAssetPicker={handleOpenAssetPicker}
+              colors={c}
+            />
+            <AssetPickerModal
+              isOpen={showAssetPicker}
+              onClose={() => setShowAssetPicker(false)}
+              onSelect={handleAssetPickerSelect}
+              type={assetPickerType}
+              stocksData={stocksData}
+              cryptoData={cryptoData}
+              excludeSymbols={[...convictionData.mustHave, ...convictionData.mustAvoid]}
+              colors={c}
+            />
+          </>
+        );
+
+      case 5:
+        return (
+          <GamePlan
+            gamePlan={gamePlan}
+            thesis={thesis}
+            convictionData={convictionData}
+            isLoading={isGeneratingPlan}
+            onUsePortfolio={handleUsePortfolio}
+            onSaveToNotes={handleSaveToNotes}
+            onBack={() => setFlowPhase(4)}
+            colors={c}
+          />
+        );
+
+      default:
+        return <MarketBriefing stocksData={stocksData} cryptoData={cryptoData} onContinue={() => setFlowPhase(2)} colors={c} />;
+    }
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+      {/* Progress indicator */}
+      {!selectedAsset && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '16px',
+          gap: '8px',
+        }}>
+          {[1, 2, 3, 4, 5].map(phase => (
+            <div
+              key={phase}
+              style={{
+                width: phase === flowPhase ? '24px' : '8px',
+                height: '8px',
+                borderRadius: '4px',
+                background: phase <= flowPhase ? c.cyan : '#2d3548',
+                transition: 'all 0.3s',
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {renderPhase()}
+    </div>
   );
 };
 
@@ -526,7 +3259,8 @@ const PERCENTAGE_OPTIONS = [7.5, 10, 12.5, 15, 17.5, 20];
 // Dark Gaming Theme Colors
 const colors = {
   background: '#0d1117',
-  cardBg: '#161b22',
+  cardBg: '#1a1f2e',
+  cardInner: '#161b22',
   cardHover: '#1c2128',
   cardElevated: '#21262d',
   elevated: '#21262d',
@@ -548,6 +3282,362 @@ const colors = {
   border: 'rgba(0, 217, 255, 0.2)',
   borderSubtle: 'rgba(255, 255, 255, 0.1)',
   borderFocus: '#00d9ff'
+};
+
+// ============================================
+// SECTOR COLORS FOR STOCK RESEARCH
+// ============================================
+
+const sectorColors = {
+  Technology: {
+    primary: '#4a9ead',
+    background: 'rgba(74, 158, 173, 0.12)',
+    border: 'rgba(74, 158, 173, 0.25)',
+  },
+  Healthcare: {
+    primary: '#5a8a7a',
+    background: 'rgba(90, 138, 122, 0.12)',
+    border: 'rgba(90, 138, 122, 0.25)',
+  },
+  Financials: {
+    primary: '#a89a6a',
+    background: 'rgba(168, 154, 106, 0.12)',
+    border: 'rgba(168, 154, 106, 0.25)',
+  },
+  Energy: {
+    primary: '#b08a5a',
+    background: 'rgba(176, 138, 90, 0.12)',
+    border: 'rgba(176, 138, 90, 0.25)',
+  },
+  'Consumer Discretionary': {
+    primary: '#a07a8a',
+    background: 'rgba(160, 122, 138, 0.12)',
+    border: 'rgba(160, 122, 138, 0.25)',
+  },
+  'Consumer Staples': {
+    primary: '#8a7a9a',
+    background: 'rgba(138, 122, 154, 0.12)',
+    border: 'rgba(138, 122, 154, 0.25)',
+  },
+  Retail: {
+    primary: '#8a7a9a',
+    background: 'rgba(138, 122, 154, 0.12)',
+    border: 'rgba(138, 122, 154, 0.25)',
+  },
+  Industrials: {
+    primary: '#7a8a8a',
+    background: 'rgba(122, 138, 138, 0.12)',
+    border: 'rgba(122, 138, 138, 0.25)',
+  },
+  Communication: {
+    primary: '#6a7a9a',
+    background: 'rgba(106, 122, 154, 0.12)',
+    border: 'rgba(106, 122, 154, 0.25)',
+  },
+  Entertainment: {
+    primary: '#6a7a9a',
+    background: 'rgba(106, 122, 154, 0.12)',
+    border: 'rgba(106, 122, 154, 0.25)',
+  },
+  Utilities: {
+    primary: '#6a7a7a',
+    background: 'rgba(106, 122, 122, 0.12)',
+    border: 'rgba(106, 122, 122, 0.25)',
+  },
+  'Real Estate': {
+    primary: '#8a7a6a',
+    background: 'rgba(138, 122, 106, 0.12)',
+    border: 'rgba(138, 122, 106, 0.25)',
+  },
+  REIT: {
+    primary: '#8a7a6a',
+    background: 'rgba(138, 122, 106, 0.12)',
+    border: 'rgba(138, 122, 106, 0.25)',
+  },
+  Materials: {
+    primary: '#9a7a6a',
+    background: 'rgba(154, 122, 106, 0.12)',
+    border: 'rgba(154, 122, 106, 0.25)',
+  },
+  Biotech: {
+    primary: '#5a8a7a',
+    background: 'rgba(90, 138, 122, 0.12)',
+    border: 'rgba(90, 138, 122, 0.25)',
+  },
+  Automotive: {
+    primary: '#7a8a8a',
+    background: 'rgba(122, 138, 138, 0.12)',
+    border: 'rgba(122, 138, 138, 0.25)',
+  },
+  Fintech: {
+    primary: '#a89a6a',
+    background: 'rgba(168, 154, 106, 0.12)',
+    border: 'rgba(168, 154, 106, 0.25)',
+  },
+  Conglomerate: {
+    primary: '#7a8a8a',
+    background: 'rgba(122, 138, 138, 0.12)',
+    border: 'rgba(122, 138, 138, 0.25)',
+  },
+  Defense: {
+    primary: '#7a8a8a',
+    background: 'rgba(122, 138, 138, 0.12)',
+    border: 'rgba(122, 138, 138, 0.25)',
+  },
+  Unknown: {
+    primary: '#8b949e',
+    background: 'rgba(139, 148, 158, 0.12)',
+    border: 'rgba(139, 148, 158, 0.25)',
+  }
+};
+
+// Crypto uses a single color since there are no "sectors"
+const cryptoColor = {
+  primary: '#8a6aaa',
+  background: 'rgba(138, 106, 170, 0.12)',
+  border: 'rgba(138, 106, 170, 0.25)',
+};
+
+// ============================================
+// STOCK METRIC EXPLANATIONS
+// ============================================
+
+const stockMetricExplanations = {
+  beta: {
+    intermediate: (value) => `When the market moves 1%, this stock typically moves ${value?.toFixed(2) || '?'}%. ${value > 1.2 ? 'Higher beta means amplified swings - great for comeback potential, risky if the market dips.' : value < 0.8 ? 'Lower beta means steadier performance with smaller swings.' : 'Moderate volatility, moves roughly with the market.'}`,
+    moreDepth: `Beta measures how much a stock moves compared to the overall market. Think of it like sensitivity:
+
+• Beta = 1.0: Moves exactly with the market
+• Beta > 1.0: More volatile (amplifies gains AND losses)
+• Beta < 1.0: Less volatile (steadier, smaller swings)
+
+For a 24-hour battle, high beta stocks can make or break your portfolio. If you're confident the market will go up, high beta gives you an edge. If uncertain, lower beta is safer.`
+  },
+  momentum7d: {
+    intermediate: (value, upDays) => `${value >= 0 ? 'Up' : 'Down'} ${Math.abs(value || 0).toFixed(1)}% over the past week. ${upDays || 0}/7 trading days were positive. ${Math.abs(value || 0) > 3 ? 'Strong' : Math.abs(value || 0) > 1 ? 'Moderate' : 'Weak'} short-term momentum.`,
+    moreDepth: `Momentum shows which direction a stock has been trending recently. Stocks in motion tend to stay in motion (at least in the short term).
+
+For MarketClash battles:
+• Strong upward momentum: Stock has tailwind, may continue
+• Downward momentum: Could be a dip-buy opportunity OR a falling knife
+• Flat momentum: Stable but may not give you the edge you need`
+  },
+  analystConsensus: {
+    intermediate: (rating, totalAnalysts, buyPercent) => `${totalAnalysts || 0} analysts covering this stock. ${(buyPercent || 0).toFixed(0)}% recommend buying. Average rating: ${(rating || 3).toFixed(1)}/5.`,
+    moreDepth: `Wall Street analysts study companies professionally and issue ratings:
+
+• Strong Buy: Very bullish, expect significant gains
+• Buy: Positive outlook
+• Hold: Neutral, wait and see
+• Sell / Strong Sell: Negative outlook
+
+A high consensus (4.0+) means most experts are optimistic. But remember: analysts aren't always right, and their targets are often 6-12 month outlooks, not 24-hour predictions.`
+  },
+  priceTarget: {
+    intermediate: (target, current) => {
+      if (!target || !current) return 'No price target data available.';
+      const upside = ((target - current) / current * 100).toFixed(0);
+      const progress = (current / target * 100).toFixed(0);
+      return `Analysts' average target: $${target.toFixed(2)} (${upside > 0 ? '+' : ''}${upside}% from current). Price is at ${progress}% of target.`;
+    },
+    moreDepth: `Analysts set price targets - where they think the stock will be in 6-12 months.
+
+For MarketClash:
+• Stock well below target: Room to run, analysts see upside
+• Stock at or above target: May be "priced in," limited near-term catalyst
+
+This doesn't predict tomorrow's price, but shows overall sentiment.`
+  },
+  pegRatio: {
+    intermediate: (value) => {
+      if (!value) return 'PEG ratio data not available.';
+      return `PEG of ${value.toFixed(2)}. ${value < 1 ? 'Potentially undervalued relative to growth.' : value > 2 ? 'Premium valuation - growth expectations priced in.' : 'Fairly valued relative to growth expectations.'}`;
+    },
+    moreDepth: `PEG = P/E ratio divided by earnings growth rate. It tells you if a stock's price makes sense given how fast the company is growing.
+
+• PEG < 1.0: Potentially undervalued - growth isn't fully priced in
+• PEG 1.0 - 2.0: Fairly valued
+• PEG > 2.0: Expensive - you're paying a premium for growth
+
+Lower PEG can mean more upside potential if the company delivers on growth.`
+  },
+  range52w: {
+    intermediate: (position, low, high) => {
+      if (!position && position !== 0) return '52-week range data not available.';
+      return `Trading at ${position.toFixed(0)}% of its yearly range ($${low?.toFixed(2) || '?'} - $${high?.toFixed(2) || '?'}). ${position > 75 ? 'Near 52-week highs - strong momentum but limited upside.' : position < 25 ? 'Near 52-week lows - potential value or falling knife.' : 'Mid-range territory.'}`;
+    },
+    moreDepth: `This shows where the current price sits between its lowest and highest points of the past year.
+
+• Near 52-week high (80%+): Stock has been on a run. Could keep going, or may be due for pullback.
+• Near 52-week low (20%-): Stock has been beaten down. Could be a bargain, or there's a reason it's low.
+• Mid-range (40-60%): Neutral territory.`
+  },
+  ma50: {
+    intermediate: (price, ma, isAbove) => {
+      if (!ma) return '50-day moving average data not available.';
+      const pctDiff = ((price - ma) / ma * 100).toFixed(1);
+      return `Price is ${isAbove ? 'ABOVE' : 'BELOW'} the 50-day MA ($${ma.toFixed(2)}) by ${Math.abs(pctDiff)}%. ${isAbove ? 'Short-term bullish signal.' : 'Short-term bearish signal.'}`;
+    },
+    moreDepth: `The 50-day moving average is the average closing price over the last 50 trading days. It's a key technical indicator:
+
+• Price ABOVE 50 MA: Stock is in a short-term uptrend. Buyers are in control.
+• Price BELOW 50 MA: Stock is in a short-term downtrend. Sellers are in control.
+• Price crossing above 50 MA: Potential bullish signal (trend reversal)
+• Price crossing below 50 MA: Potential bearish signal
+
+For 24-hour battles, stocks above their 50 MA tend to have momentum on their side.`
+  },
+  ma200: {
+    intermediate: (price, ma, isAbove) => {
+      if (!ma) return '200-day moving average data not available.';
+      const pctDiff = ((price - ma) / ma * 100).toFixed(1);
+      return `Price is ${isAbove ? 'ABOVE' : 'BELOW'} the 200-day MA ($${ma.toFixed(2)}) by ${Math.abs(pctDiff)}%. ${isAbove ? 'Long-term uptrend intact.' : 'Long-term downtrend - caution advised.'}`;
+    },
+    moreDepth: `The 200-day moving average represents the long-term trend. It's one of the most watched indicators:
+
+• Price ABOVE 200 MA: Stock is in a long-term bull market. Major institutions often buy above this level.
+• Price BELOW 200 MA: Stock is in a long-term bear market. Often signals fundamental problems.
+
+Key signals:
+• "Golden Cross": 50 MA crosses ABOVE 200 MA - very bullish
+• "Death Cross": 50 MA crosses BELOW 200 MA - very bearish
+
+Stocks above both their 50 and 200 MA have the strongest technical setup.`
+  }
+};
+
+// ============================================
+// CRYPTO METRIC EXPLANATIONS
+// ============================================
+
+const cryptoMetricExplanations = {
+  volatility7d: {
+    intermediate: (value) => `Average daily swing of ${(value || 0).toFixed(1)}% over the past week. ${value > 5 ? 'Very high volatility - big swings both ways.' : value > 3 ? 'Moderate volatility - expect meaningful daily moves.' : 'Relatively stable for crypto.'}`,
+    moreDepth: `Volatility measures how much the price swings up and down. In crypto, this is measured as the average daily percentage change:
+
+• Low volatility (<3%): Relatively stable, smaller daily moves
+• Medium volatility (3-5%): Typical for major altcoins
+• High volatility (>5%): Expect big swings, both gains and losses
+
+For 24-hour battles:
+• High volatility = high risk/reward. You could win big or lose big.
+• Low volatility = steadier but may not give you the edge you need.`
+  },
+  volatility30d: {
+    intermediate: (value, vol7d) => {
+      const trend = vol7d > value ? 'Volatility is increasing' : vol7d < value ? 'Volatility is decreasing' : 'Volatility is stable';
+      return `30-day average volatility: ${(value || 0).toFixed(1)}%. ${trend} compared to recent week.`;
+    },
+    moreDepth: `Comparing 30-day to 7-day volatility shows if the asset is becoming more or less volatile:
+
+• 7-day > 30-day: Volatility is INCREASING. Market is getting more uncertain. Bigger swings likely.
+• 7-day < 30-day: Volatility is DECREASING. Market is calming down. Potentially safer entry.
+• 7-day ≈ 30-day: Stable volatility. Expect similar patterns to continue.`
+  },
+  volatilityVsBtc: {
+    intermediate: (ratio) => `This asset is ${(ratio || 1).toFixed(1)}x ${ratio > 1 ? 'more' : 'less'} volatile than Bitcoin. ${ratio > 2 ? 'Significantly amplified risk/reward.' : ratio > 1.2 ? 'Moderately more volatile than BTC.' : ratio < 0.8 ? 'Surprisingly stable for an altcoin.' : 'Similar volatility to BTC.'}`,
+    moreDepth: `Bitcoin is the benchmark for crypto volatility. Comparing other coins to BTC helps you understand relative risk:
+
+• 2x+ BTC volatility: Very aggressive. Big potential gains but also big potential losses.
+• 1-2x BTC volatility: Typical for major altcoins. Moderately more volatile.
+• <1x BTC volatility: Rare for altcoins. Often stablecoins or very established tokens.
+
+For MarketClash: If you want to play it "safe" in crypto battles, lower volatility vs BTC is better. If you need a comeback, higher volatility gives more upside (and downside).`
+  },
+  volume24h: {
+    intermediate: (value) => {
+      const formatted = value >= 1e9 ? `$${(value/1e9).toFixed(1)}B` : `$${(value/1e6).toFixed(0)}M`;
+      return `${formatted} traded in the last 24 hours. ${value > 1e9 ? 'Very liquid - easy to trade.' : value > 100e6 ? 'Good liquidity.' : 'Lower liquidity - price can move on smaller trades.'}`;
+    },
+    moreDepth: `24-hour volume shows how much money is flowing through this asset:
+
+• High volume (>$1B): Very liquid. Large trades don't move the price much.
+• Medium volume ($100M-$1B): Good liquidity for most purposes.
+• Low volume (<$100M): Be careful. Price can spike or crash on relatively small trades.
+
+Volume also indicates interest. Rising volume often precedes big price moves.`
+  },
+  volumeVsAvg: {
+    intermediate: (pctDiff) => {
+      const direction = pctDiff > 0 ? 'higher' : 'lower';
+      const magnitude = Math.abs(pctDiff || 0);
+      return `Today's volume is ${magnitude.toFixed(0)}% ${direction} than the 7-day average. ${magnitude > 50 ? 'Unusual activity - something may be happening.' : magnitude > 20 ? 'Elevated interest today.' : 'Normal trading activity.'}`;
+    },
+    moreDepth: `Comparing today's volume to the recent average reveals unusual activity:
+
+• Volume 50%+ above average: Something is happening. News, rumors, or whale activity. Expect bigger moves.
+• Volume 20-50% above average: Elevated interest. Worth paying attention.
+• Volume near average: Normal day. No unusual catalysts.
+• Volume below average: Quiet day. Less likely to see big moves.
+
+Unusual volume often comes BEFORE big price moves, making it a leading indicator.`
+  },
+  momentum7d: {
+    intermediate: (value) => `${value >= 0 ? 'Up' : 'Down'} ${Math.abs(value || 0).toFixed(1)}% over the past 7 days. ${Math.abs(value || 0) > 15 ? 'Very strong move.' : Math.abs(value || 0) > 5 ? 'Solid momentum.' : 'Relatively flat.'}`,
+    moreDepth: `7-day momentum shows the short-term trend direction and strength:
+
+• Strong positive (>15%): Asset is hot. Could continue or be due for pullback.
+• Moderate positive (5-15%): Healthy uptrend.
+• Flat (-5% to +5%): Consolidating. Waiting for direction.
+• Moderate negative (-5% to -15%): Downtrend. Could be buying opportunity or falling knife.
+• Strong negative (<-15%): Significant selling pressure.
+
+In 24-hour battles, momentum often continues in the short term. But extreme momentum (>20%) often reverts.`
+  },
+  momentum30d: {
+    intermediate: (value, mom7d) => {
+      const trend = mom7d > value ? 'accelerating' : mom7d < value ? 'decelerating' : 'steady';
+      return `${value >= 0 ? 'Up' : 'Down'} ${Math.abs(value || 0).toFixed(1)}% over 30 days. Short-term momentum is ${trend}.`;
+    },
+    moreDepth: `Comparing 30-day to 7-day momentum reveals trend strength:
+
+• 7-day > 30-day (both positive): Momentum is ACCELERATING. Trend is strengthening.
+• 7-day < 30-day (both positive): Momentum is SLOWING. Trend may be weakening.
+• 7-day positive, 30-day negative: Potential REVERSAL. Recent bounce off lows.
+• 7-day negative, 30-day positive: Potential BREAKDOWN. Recent weakness in uptrend.
+
+Accelerating momentum has the best chance of continuing into your battle window.`
+  },
+  distanceFromATH: {
+    intermediate: (pctFromATH, athPrice, athDate) => {
+      if (!athPrice) return 'All-time high data not available.';
+      return `Currently ${Math.abs(pctFromATH || 0).toFixed(0)}% below all-time high of $${athPrice.toFixed(2)} (${athDate || 'Unknown'}). ${Math.abs(pctFromATH || 0) < 20 ? 'Near ATH - strong momentum.' : Math.abs(pctFromATH || 0) > 70 ? 'Far from ATH - high risk or value opportunity.' : 'Significant room to recover.'}`;
+    },
+    moreDepth: `Distance from All-Time High shows where the current price sits vs the asset's peak:
+
+• Within 20% of ATH: Asset is strong. Hitting new highs is realistic.
+• 20-50% below ATH: Meaningful correction. Could recover or drop further.
+• 50-80% below ATH: Major drawdown. Either a value opportunity or fundamental problems.
+• 80%+ below ATH: Extreme drawdown. Very high risk. Many never recover.
+
+Note: In crypto, ATHs are often from bull market peaks. Don't assume every coin will return to ATH.`
+  }
+};
+
+// Research requirements and rewards
+const RESEARCH_REQUIREMENTS = {
+  minimumNotes: 20,
+  minimumAssets: 4,
+  mustFinalize: true
+};
+
+const calculateResearchXP = (streak) => {
+  const baseXP = 100;
+  const streakBonuses = {
+    1: 0, 2: 25, 3: 50, 4: 75, 5: 100,
+    6: 100, 7: 100, 8: 100, 9: 100, 10: 200
+  };
+  const bonus = streak >= 10 ? 200 : (streakBonuses[streak] || 100);
+  return { base: baseXP, streakBonus: bonus, total: baseXP + bonus };
+};
+
+// Get current week's Monday in ISO format
+const getCurrentWeekMonday = () => {
+  const now = new Date();
+  const day = now.getUTCDay();
+  const diff = now.getUTCDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(now.setUTCDate(diff));
+  return monday.toISOString().split('T')[0];
 };
 
 // ============================================
@@ -771,7 +3861,7 @@ const MiniSparkline = ({ isPositive, width = 70, height = 24 }) => {
 };
 
 // Battle History Card Component
-const BattleHistoryCard = ({ battle, userId }) => {
+const BattleHistoryCard = ({ battle, userId, onRematch }) => {
   const [expanded, setExpanded] = useState(false);
 
   // Determine if user won
@@ -1018,6 +4108,41 @@ const BattleHistoryCard = ({ battle, userId }) => {
               </div>
             </div>
           </div>
+
+          {/* Rematch Button */}
+          {onRematch && opponentPlayer && (
+            <div style={{
+              marginTop: '16px',
+              paddingTop: '16px',
+              borderTop: '1px solid #21262d'
+            }}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRematch(battle.id, opponentPlayer.odUserId || opponentPlayer.odM, opponentPlayer.username || 'Opponent');
+                }}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  backgroundColor: '#f59e0b',
+                  color: '#000000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <span>⚔️</span>
+                Quick Rematch
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1309,6 +4434,48 @@ export default function PortfolioDuel() {
   const [researchExpandedAsset, setResearchExpandedAsset] = useState(null);
   const [researchCompareAssets, setResearchCompareAssets] = useState([]);
 
+  // Enhanced Research Mode state
+  const [researchActiveTab, setResearchActiveTab] = useState('stocks'); // 'stocks' | 'crypto' | 'notes' | 'advisor'
+  const [selectedAssetDetail, setSelectedAssetDetail] = useState(null);
+  const [selectedAssetType, setSelectedAssetType] = useState(null); // 'stock' | 'crypto'
+  const [stockFundamentals, setStockFundamentals] = useState({}); // { AAPL: {...}, MSFT: {...} }
+  const [cryptoMetrics, setCryptoMetrics] = useState({}); // { BTC: {...}, ETH: {...} }
+  const [showMoreDepth, setShowMoreDepth] = useState({}); // { metricName: boolean }
+  const [fundamentalsLoading, setFundamentalsLoading] = useState({});
+  const [cryptoMetricsLoading, setCryptoMetricsLoading] = useState({});
+
+  // Notes system state
+  const [userNotes, setUserNotes] = useState([]);
+  const [weeklyProgress, setWeeklyProgress] = useState(null);
+  const [notesExpanded, setNotesExpanded] = useState({});
+  const [draftNotesExpanded, setDraftNotesExpanded] = useState(false);
+  const [customNoteText, setCustomNoteText] = useState('');
+
+  // Research rewards state
+  const [researchStreak, setResearchStreak] = useState(0);
+  const [showResearchComplete, setShowResearchComplete] = useState(false);
+
+  // Game Plan state (AI-powered strategy from notes)
+  const [gamePlanResponse, setGamePlanResponse] = useState(null);
+  const [gamePlanLoading, setGamePlanLoading] = useState(false);
+
+  // Research Flow Phase 4 & 5 state (Conviction Check + Game Plan)
+  const [researchPhase, setResearchPhase] = useState('explore'); // 'explore' | 'conviction' | 'gameplan'
+  const [convictionData, setConvictionData] = useState({
+    mustHave: [],
+    mustAvoid: [],
+    confidence: null,
+  });
+  const [researchGamePlan, setResearchGamePlan] = useState(null);
+  const [researchGamePlanLoading, setResearchGamePlanLoading] = useState(false);
+  const [showAssetPicker, setShowAssetPicker] = useState(false);
+  const [assetPickerType, setAssetPickerType] = useState(null); // 'mustHave' | 'mustAvoid'
+  const [researchThesis, setResearchThesis] = useState(null); // Store thesis from advisor
+  const [researchViewMode, setResearchViewMode] = useState('guided'); // 'guided' | 'classic'
+
+  // Desktop background state
+  const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' && window.innerWidth > 768);
+
   // Weekly Challenges State
   const [showWeeklyChallenges, setShowWeeklyChallenges] = useState(false);
   const [weeklyChallenges, setWeeklyChallenges] = useState([]);
@@ -1321,6 +4488,561 @@ export default function PortfolioDuel() {
   const [showChallengeToast, setShowChallengeToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [challengeHistory, setChallengeHistory] = useState([]);
+  const [weeklyChallengesChecked, setWeeklyChallengesChecked] = useState(false); // Session-level flag
+
+  // ============================================
+  // NOTIFICATIONS STATE
+  // ============================================
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // ============================================
+  // TOAST NOTIFICATION STATE
+  // ============================================
+  const [toast, setToast] = useState(null);
+
+  // Toast helper function
+  const showToast = (message, type = 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  // ============================================
+  // PORTFOLIO TEMPLATES STATE
+  // ============================================
+  const [portfolioTemplates, setPortfolioTemplates] = useState([]);
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
+  const [saveTemplateModal, setSaveTemplateModal] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+
+  // ============================================
+  // WEEK AHEAD CALENDAR STATE
+  // ============================================
+  const [showWeekAhead, setShowWeekAhead] = useState(false);
+  const [weekAheadEvents, setWeekAheadEvents] = useState([]);
+  const [weekAheadEarnings, setWeekAheadEarnings] = useState([]);
+  const [weekAheadHolidays, setWeekAheadHolidays] = useState([]);
+  const [weekAheadLoading, setWeekAheadLoading] = useState(false);
+  const [weekAheadRange, setWeekAheadRange] = useState({ start: null, end: null, isNextWeek: false });
+  const [expandedEventId, setExpandedEventId] = useState(null);
+
+  // ============================================
+  // REMATCH STATE
+  // ============================================
+  const [pendingRematch, setPendingRematch] = useState(null);
+  const [showRematchModal, setShowRematchModal] = useState(false);
+  const [rematchRequest, setRematchRequest] = useState(null);
+
+  // ============================================
+  // HIGH VOLATILITY ALERT STATE
+  // ============================================
+  const [upcomingHighImpactEvents, setUpcomingHighImpactEvents] = useState([]);
+  const [showVolatilityAlert, setShowVolatilityAlert] = useState(false);
+
+  // ============================================
+  // NOTIFICATION HELPER FUNCTIONS
+  // ============================================
+
+  // System templates for portfolios
+  const SYSTEM_PORTFOLIO_TEMPLATES = [
+    {
+      id: 'sys_tech_giants',
+      name: 'Tech Giants',
+      description: 'Top technology companies',
+      type: 'stocks',
+      assets: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META'],
+      icon: '💻',
+      isSystem: true
+    },
+    {
+      id: 'sys_blue_chip',
+      name: 'Blue Chip Mix',
+      description: 'Stable, established companies',
+      type: 'stocks',
+      assets: ['JNJ', 'JPM', 'PG', 'KO', 'V'],
+      icon: '🏛️',
+      isSystem: true
+    },
+    {
+      id: 'sys_growth',
+      name: 'High Growth',
+      description: 'High-growth momentum stocks',
+      type: 'stocks',
+      assets: ['NVDA', 'TSLA', 'AMD', 'CRM', 'SHOP'],
+      icon: '🚀',
+      isSystem: true
+    },
+    {
+      id: 'sys_crypto_majors',
+      name: 'Crypto Majors',
+      description: 'Top cryptocurrency by market cap',
+      type: 'crypto',
+      assets: ['BTC', 'ETH', 'BNB', 'SOL', 'XRP'],
+      icon: '🪙',
+      isSystem: true
+    },
+    {
+      id: 'sys_defi',
+      name: 'DeFi Leaders',
+      description: 'Decentralized finance tokens',
+      type: 'crypto',
+      assets: ['UNI', 'AAVE', 'LINK', 'MKR', 'SNX'],
+      icon: '🔗',
+      isSystem: true
+    },
+    {
+      id: 'sys_meme',
+      name: 'Meme Coins',
+      description: 'High-risk community tokens',
+      type: 'crypto',
+      assets: ['DOGE', 'SHIB', 'PEPE', 'BONK', 'FLOKI'],
+      icon: '🐕',
+      isSystem: true
+    }
+  ];
+
+  // Notification type config
+  const NOTIFICATION_TYPES = {
+    rematch_request: { icon: '⚔️', color: '#f59e0b', title: 'Rematch Request' },
+    rematch_accepted: { icon: '✅', color: '#22c55e', title: 'Rematch Accepted' },
+    rematch_declined: { icon: '❌', color: '#ef4444', title: 'Rematch Declined' },
+    battle_result: { icon: '🏆', color: '#8b5cf6', title: 'Battle Complete' },
+    flash_challenge: { icon: '⚡', color: '#f59e0b', title: 'Flash Challenge' },
+    price_alert: { icon: '📈', color: '#22c55e', title: 'Price Alert' },
+    event_reminder: { icon: '📅', color: '#3b82f6', title: 'Event Reminder' },
+    challenge_unlocked: { icon: '🎯', color: '#ec4899', title: 'Challenge Unlocked' },
+    streak_milestone: { icon: '🔥', color: '#f97316', title: 'Streak Milestone' },
+    xp_earned: { icon: '⭐', color: '#eab308', title: 'XP Earned' },
+    rank_up: { icon: '🎖️', color: '#6366f1', title: 'Rank Up' },
+    friend_battle: { icon: '👋', color: '#06b6d4', title: 'Friend Battle' },
+    system: { icon: '📢', color: '#8b949e', title: 'System' }
+  };
+
+  // Load notifications from localStorage
+  const loadNotifications = () => {
+    try {
+      const storageKey = `notifications_${user?.uid || user?.username}`;
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const data = JSON.parse(saved);
+        setNotifications(data.notifications || []);
+        setUnreadCount(data.notifications?.filter(n => !n.read).length || 0);
+      }
+    } catch (error) {
+      console.error('Error loading notifications:', error);
+    }
+  };
+
+  // Save notifications to localStorage
+  const saveNotifications = (newNotifications) => {
+    try {
+      const storageKey = `notifications_${user?.uid || user?.username}`;
+      localStorage.setItem(storageKey, JSON.stringify({ notifications: newNotifications }));
+    } catch (error) {
+      console.error('Error saving notifications:', error);
+    }
+  };
+
+  // Add a new notification
+  const addNotification = (type, title, body, data = {}) => {
+    const newNotification = {
+      id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      type,
+      title,
+      body,
+      data,
+      read: false,
+      createdAt: new Date().toISOString()
+    };
+
+    setNotifications(prev => {
+      const updated = [newNotification, ...prev].slice(0, 50); // Keep last 50
+      saveNotifications(updated);
+      return updated;
+    });
+    setUnreadCount(prev => prev + 1);
+  };
+
+  // Mark notification as read
+  const markNotificationRead = (notificationId) => {
+    setNotifications(prev => {
+      const updated = prev.map(n =>
+        n.id === notificationId ? { ...n, read: true } : n
+      );
+      saveNotifications(updated);
+      return updated;
+    });
+    setUnreadCount(prev => Math.max(0, prev - 1));
+  };
+
+  // Mark all notifications as read
+  const markAllNotificationsRead = () => {
+    setNotifications(prev => {
+      const updated = prev.map(n => ({ ...n, read: true }));
+      saveNotifications(updated);
+      return updated;
+    });
+    setUnreadCount(0);
+  };
+
+  // Delete notification
+  const deleteNotification = (notificationId) => {
+    setNotifications(prev => {
+      const notif = prev.find(n => n.id === notificationId);
+      const updated = prev.filter(n => n.id !== notificationId);
+      saveNotifications(updated);
+      if (notif && !notif.read) {
+        setUnreadCount(p => Math.max(0, p - 1));
+      }
+      return updated;
+    });
+  };
+
+  // ============================================
+  // PORTFOLIO TEMPLATES HELPER FUNCTIONS
+  // ============================================
+
+  // Load user's saved templates from localStorage
+  const loadPortfolioTemplates = () => {
+    try {
+      const storageKey = `portfolioTemplates_${user?.uid || user?.username}`;
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        setPortfolioTemplates(JSON.parse(saved));
+      }
+    } catch (error) {
+      console.error('Error loading portfolio templates:', error);
+    }
+  };
+
+  // Save a new portfolio template
+  const savePortfolioTemplate = (name, assets, type) => {
+    try {
+      const newTemplate = {
+        id: `tpl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name,
+        assets,
+        type,
+        createdAt: new Date().toISOString(),
+        isSystem: false
+      };
+
+      setPortfolioTemplates(prev => {
+        const updated = [...prev, newTemplate];
+        const storageKey = `portfolioTemplates_${user?.uid || user?.username}`;
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+        return updated;
+      });
+
+      return newTemplate;
+    } catch (error) {
+      console.error('Error saving portfolio template:', error);
+      return null;
+    }
+  };
+
+  // Delete a user template
+  const deletePortfolioTemplate = (templateId) => {
+    setPortfolioTemplates(prev => {
+      const updated = prev.filter(t => t.id !== templateId);
+      const storageKey = `portfolioTemplates_${user?.uid || user?.username}`;
+      localStorage.setItem(storageKey, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // Load template into portfolio builder
+  const loadTemplateToPortfolio = (template) => {
+    // Get full asset data from stocksData or cryptoData
+    const assetSource = template.type === 'stocks' ? stocksData : cryptoData;
+    const portfolioAssets = template.assets
+      .map(symbol => assetSource.find(a => a.symbol === symbol))
+      .filter(Boolean)
+      .slice(0, 5);
+
+    if (portfolioAssets.length > 0) {
+      setPortfolio(portfolioAssets);
+      setPortfolioType(template.type);
+      setAssetType(template.type);
+      setShowTemplatesModal(false);
+    }
+  };
+
+  // ============================================
+  // WEEK AHEAD HELPER FUNCTIONS
+  // ============================================
+
+  // Get week range (Monday to Sunday)
+  const getWeekRange = (showNextWeek = false) => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+
+    // Get Monday of current week
+    let monday = new Date(now);
+    monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+    monday.setHours(0, 0, 0, 0);
+
+    // If weekend (Sat=6, Sun=0), show next week
+    if (dayOfWeek === 0 || dayOfWeek === 6 || showNextWeek) {
+      monday.setDate(monday.getDate() + 7);
+    }
+
+    // Get Sunday
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+
+    return {
+      start: monday,
+      end: sunday,
+      isNextWeek: dayOfWeek === 0 || dayOfWeek === 6 || showNextWeek
+    };
+  };
+
+  // Load Week Ahead data (dynamic events from EODHD API + earnings)
+  const loadWeekAheadData = async () => {
+    setWeekAheadLoading(true);
+    setExpandedEventId(null);
+
+    try {
+      const range = getWeekRange();
+      setWeekAheadRange(range);
+
+      const fromStr = range.start.toISOString().split('T')[0];
+      const toStr = range.end.toISOString().split('T')[0];
+
+      console.log(`[WeekAhead] Loading data from ${fromStr} to ${toStr}`);
+
+      // Get economic events from static data (manual file)
+      try {
+        const events = getWeekAheadEvents(fromStr, toStr);
+        console.log(`[WeekAhead] Found ${events.length} economic events from static data`);
+        setWeekAheadEvents(events);
+      } catch (err) {
+        console.error('[WeekAhead] Failed to load events:', err);
+        setWeekAheadEvents([]);
+      }
+
+      // Get earnings from API
+      try {
+        const earningsRes = await fetch(`/api/week-ahead-earnings?from=${fromStr}&to=${toStr}`);
+        if (earningsRes.ok) {
+          const earningsData = await earningsRes.json();
+          console.log(`[WeekAhead] Found ${earningsData.length} earnings`);
+          setWeekAheadEarnings(earningsData);
+        } else {
+          console.log('[WeekAhead] No earnings data available');
+          setWeekAheadEarnings([]);
+        }
+      } catch (err) {
+        console.error('[WeekAhead] Failed to load earnings:', err);
+        setWeekAheadEarnings([]);
+      }
+
+      // Holidays are now included in the API response (no separate fetch needed)
+      setWeekAheadHolidays([]);
+
+    } catch (error) {
+      console.error('[WeekAhead] Error loading data:', error);
+    } finally {
+      setWeekAheadLoading(false);
+    }
+  };
+
+  // Check for upcoming high-impact events (next 3 days) - uses static data
+  const checkUpcomingHighImpactEvents = () => {
+    try {
+      const today = new Date();
+      const threeDaysLater = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
+      const fromStr = today.toISOString().split('T')[0];
+      const toStr = threeDaysLater.toISOString().split('T')[0];
+
+      const events = getWeekAheadEvents(fromStr, toStr);
+      const highImpact = events.filter(e => e.impact === 'high');
+      setUpcomingHighImpactEvents(highImpact);
+      return highImpact;
+    } catch (err) {
+      console.error('[WeekAhead] Failed to check upcoming events:', err);
+    }
+    setUpcomingHighImpactEvents([]);
+    return [];
+  };
+
+  // Get event impact color
+  const getEventImpactColor = (impact) => {
+    switch (impact) {
+      case 'high': return '#ef4444';
+      case 'medium': return '#f59e0b';
+      case 'low': return '#22c55e';
+      default: return '#6b7280';
+    }
+  };
+
+  // Get event icon by type
+  const getEventIcon = (type) => {
+    const config = EVENT_TYPE_CONFIG[type];
+    return config ? config.icon : '📅';
+  };
+
+  // Helper to extract just the date part from various formats
+  // EODHD returns '2025-12-18 16:00:00' (space separator)
+  // ISO format is '2025-12-18T16:00:00' (T separator)
+  const extractDatePart = (dateInput) => {
+    if (!dateInput) return null;
+    const str = String(dateInput);
+    // Check for space separator first (EODHD format), then T separator (ISO format)
+    if (str.includes(' ')) return str.split(' ')[0];
+    if (str.includes('T')) return str.split('T')[0];
+    return str; // Already just a date
+  };
+
+  // Format date for display (handles both Date objects and ISO strings)
+  const formatWeekDate = (dateInput) => {
+    if (!dateInput) return 'N/A';
+
+    let date;
+    if (dateInput instanceof Date) {
+      date = dateInput;
+    } else {
+      // Handle string dates - extract date part and add noon to avoid timezone issues
+      const dateStr = extractDatePart(dateInput);
+      if (!dateStr) return 'N/A';
+      date = new Date(dateStr + 'T12:00:00');
+    }
+
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      console.error('[WeekAhead] Invalid date in formatWeekDate:', dateInput);
+      return 'Invalid';
+    }
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[date.getMonth()]} ${date.getDate()}`;
+  };
+
+  // Format date for API (ISO format)
+  const formatDateForAPI = (date) => {
+    return date instanceof Date ? date.toISOString().split('T')[0] : date;
+  };
+
+  // Get display info for a date
+  const getDateDisplay = (dateStr) => {
+    if (!dateStr) {
+      console.error('[WeekAhead] getDateDisplay called with empty date');
+      return { dayName: '???', dayNum: '?' };
+    }
+
+    // Handle different date formats - EODHD uses space, ISO uses T
+    const cleanDateStr = extractDatePart(dateStr);
+    if (!cleanDateStr) {
+      console.error('[WeekAhead] Could not extract date from:', dateStr);
+      return { dayName: '???', dayNum: '?' };
+    }
+
+    const date = new Date(cleanDateStr + 'T12:00:00');
+
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      console.error('[WeekAhead] Invalid date in getDateDisplay:', dateStr, '→', cleanDateStr);
+      return { dayName: '???', dayNum: '?' };
+    }
+
+    const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+    return {
+      dayName: days[date.getDay()],
+      dayNum: date.getDate()
+    };
+  };
+
+  // ============================================
+  // REMATCH HELPER FUNCTIONS
+  // ============================================
+
+  // Send rematch request (stored in localStorage for demo)
+  const sendRematchRequest = (battleId, opponentId, opponentUsername) => {
+    try {
+      const rematch = {
+        id: `rematch_${Date.now()}`,
+        battleId,
+        fromUserId: user?.uid || user?.username,
+        fromUsername: user?.username,
+        toUserId: opponentId,
+        toUsername: opponentUsername,
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+
+      // Save to localStorage (in real app, this would go to Firebase)
+      const storageKey = `rematchRequests_${opponentId}`;
+      const existing = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      localStorage.setItem(storageKey, JSON.stringify([...existing, rematch]));
+
+      // Add notification for self
+      addNotification('rematch_request', 'Rematch Sent!', `You challenged ${opponentUsername} to a rematch`, { battleId, opponentId });
+
+      setPendingRematch(rematch);
+      return rematch;
+    } catch (error) {
+      console.error('Error sending rematch request:', error);
+      return null;
+    }
+  };
+
+  // Check for incoming rematch requests
+  const checkRematchRequests = () => {
+    try {
+      const storageKey = `rematchRequests_${user?.uid || user?.username}`;
+      const requests = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      const pending = requests.filter(r => r.status === 'pending');
+      if (pending.length > 0) {
+        setRematchRequest(pending[0]);
+        setShowRematchModal(true);
+      }
+    } catch (error) {
+      console.error('Error checking rematch requests:', error);
+    }
+  };
+
+  // Accept rematch request
+  const acceptRematch = (rematchId) => {
+    try {
+      const storageKey = `rematchRequests_${user?.uid || user?.username}`;
+      const requests = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      const updated = requests.map(r =>
+        r.id === rematchId ? { ...r, status: 'accepted' } : r
+      );
+      localStorage.setItem(storageKey, JSON.stringify(updated));
+
+      // Add notification
+      if (rematchRequest) {
+        addNotification('rematch_accepted', 'Rematch Accepted!', `Starting rematch with ${rematchRequest.fromUsername}`, { rematchId });
+      }
+
+      setShowRematchModal(false);
+      setRematchRequest(null);
+
+      // Navigate to builder for rematch
+      setScreen('builder');
+    } catch (error) {
+      console.error('Error accepting rematch:', error);
+    }
+  };
+
+  // Decline rematch request
+  const declineRematch = (rematchId) => {
+    try {
+      const storageKey = `rematchRequests_${user?.uid || user?.username}`;
+      const requests = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      const updated = requests.filter(r => r.id !== rematchId);
+      localStorage.setItem(storageKey, JSON.stringify(updated));
+
+      setShowRematchModal(false);
+      setRematchRequest(null);
+    } catch (error) {
+      console.error('Error declining rematch:', error);
+    }
+  };
 
   // Toggle asset expansion
   const toggleAssetExpansion = (symbol) => {
@@ -1352,6 +5074,7 @@ export default function PortfolioDuel() {
       const storageKey = `weeklyChallenges_${user?.odM || user?.username}`;
       const saved = localStorage.getItem(storageKey);
       const currentWeekStart = getWeekStartDate();
+      let shouldShowSlotMachine = false;
 
       if (saved) {
         const data = JSON.parse(saved);
@@ -1374,18 +5097,18 @@ export default function PortfolioDuel() {
           setActiveDailyChallenge(null);
           setChallengeProgress({});
           setCompletedWeeklyChallenges([]);
-          setShowSlotMachine(true);
-          return;
-        }
+          shouldShowSlotMachine = true; // Will show after delay
+        } else {
+          // Same week - load existing data
+          setWeeklyChallenges(data.challenges || []);
+          setActiveDailyChallenge(data.activeDailyChallenge);
+          setChallengeProgress(data.progress || {});
+          setCompletedWeeklyChallenges(data.completedChallenges || []);
 
-        setWeeklyChallenges(data.challenges || []);
-        setActiveDailyChallenge(data.activeDailyChallenge);
-        setChallengeProgress(data.progress || {});
-        setCompletedWeeklyChallenges(data.completedChallenges || []);
-
-        // Show slot machine if new week and hasn't been shown
-        if (!data.slotMachineShown && data.weekStartDate === currentWeekStart) {
-          setShowSlotMachine(true);
+          // Show slot machine only if it hasn't been shown this week
+          if (!data.slotMachineShown) {
+            shouldShowSlotMachine = true;
+          }
         }
       } else {
         // No data exists - create initial
@@ -1401,7 +5124,14 @@ export default function PortfolioDuel() {
         localStorage.setItem(storageKey, JSON.stringify(newData));
 
         setWeeklyChallenges(newChallenges);
-        setShowSlotMachine(true);
+        shouldShowSlotMachine = true; // Will show after delay
+      }
+
+      // Show slot machine with a delay to ensure app is fully rendered
+      if (shouldShowSlotMachine) {
+        setTimeout(() => {
+          setShowSlotMachine(true);
+        }, 500);
       }
     } catch (error) {
       console.error('Error loading weekly challenges:', error);
@@ -1571,16 +5301,38 @@ export default function PortfolioDuel() {
     }
   }, [user]);
 
-  // Load weekly challenges when user logs in
+  // Handle window resize for desktop background
   useEffect(() => {
-    if (user) {
+    const handleResize = () => {
+      setIsDesktop(window.innerWidth > 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Load weekly challenges when user logs in - RUNS ONCE PER SESSION
+  useEffect(() => {
+    // Only run if user is logged in AND we haven't checked this session
+    if (user && !weeklyChallengesChecked) {
+      setWeeklyChallengesChecked(true); // Mark as checked for this session
       loadWeeklyChallenges();
+
       // Also load challenge history
       const historyKey = `challengeHistory_${user?.odM || user?.username}`;
       const savedHistory = localStorage.getItem(historyKey);
       if (savedHistory) {
         setChallengeHistory(JSON.parse(savedHistory));
       }
+    }
+  }, [user, weeklyChallengesChecked]);
+
+  // Load notifications and portfolio templates when user logs in
+  useEffect(() => {
+    if (user) {
+      loadNotifications();
+      loadPortfolioTemplates();
+      // Check for rematch requests
+      checkRematchRequests();
     }
   }, [user]);
 
@@ -1601,6 +5353,7 @@ export default function PortfolioDuel() {
         console.error('Error loading market data:', error);
         setStocksData([]);
         setCryptoData([]);
+        showToast('Failed to load market data. Please try again.');
       }
 
       setLoadingMarketData(false);
@@ -1863,6 +5616,7 @@ export default function PortfolioDuel() {
         setBattlePrices(priceMap);
       } catch (error) {
         console.error('Error fetching battle prices:', error);
+        showToast('Failed to load prices. Please try again.');
       }
 
       setLoadingBattlePrices(false);
@@ -1873,7 +5627,7 @@ export default function PortfolioDuel() {
     // ⭐ Only refresh for active battles, not completed ones
     const battleStatus = battleTimer.getBattleStatus(currentBattle);
     if (battleStatus === 'active') {
-      const interval = setInterval(fetchBattlePrices, 30000);
+      const interval = setInterval(fetchBattlePrices, 60000); // 60s refresh (was 30s)
       return () => clearInterval(interval);
     }
   }, [screen, currentBattle]);
@@ -2421,17 +6175,12 @@ export default function PortfolioDuel() {
   };
 
   const handleCreateBattle = () => {
-    console.log('=== CREATE BATTLE CLICKED ===');
-    console.log('Portfolio Valid:', isPortfolioValid);
-    console.log('Portfolio Name:', portfolioName);
-    
     if (!isPortfolioValid || !portfolioName.trim()) {
       alert('Please complete your portfolio with a name before creating a battle');
       return;
     }
 
     const challengeCode = generateChallengeCode();
-    console.log('Generated Challenge Code:', challengeCode);
     
     // Convert portfolio to battle format (percentage to dollar amounts)
     const portfolioAssets = portfolio.map(asset => ({
@@ -2471,11 +6220,6 @@ export default function PortfolioDuel() {
   };
 
   const handleJoinBattle = async () => {
-    console.log('=== JOIN BATTLE CLICKED ===');
-    console.log('Join Code:', joinCode);
-    console.log('Portfolio Valid:', isPortfolioValid);
-    console.log('Portfolio Name:', portfolioName);
-    
     if (!joinCode.trim()) {
       alert('Please enter a challenge code');
       return;
@@ -2486,16 +6230,12 @@ export default function PortfolioDuel() {
       return;
     }
 
-    // CRITICAL: Load battles from localStorage to see battles from other tabs/users
+    // Load battles from localStorage to see battles from other tabs/users
     const allBattles = loadBattlesSafe();
-    console.log('All battles from localStorage:', allBattles);
-    console.log('Looking for code:', joinCode.trim().toUpperCase());
-    
+
     const battleToJoin = allBattles.find(
       b => b.challengeCode === joinCode.trim().toUpperCase() && b.status === 'waiting'
     );
-
-    console.log('Battle found:', battleToJoin);
 
     if (!battleToJoin) {
       alert(`Battle not found or already started. Searched for: ${joinCode.trim().toUpperCase()}\nFound ${allBattles.length} total battles in storage.`);
@@ -2517,9 +6257,6 @@ export default function PortfolioDuel() {
     const joinerIsCrypto = portfolioType === 'crypto';
     const joinerIsStocks = portfolioType === 'stocks';
     
-    console.log('Creator portfolio type:', creatorIsCrypto ? 'crypto' : 'stocks');
-    console.log('Joiner portfolio type:', joinerIsCrypto ? 'crypto' : 'stocks');
-    
     // Validate portfolio types match
     if ((creatorIsCrypto && joinerIsStocks) || (creatorIsStocks && joinerIsCrypto)) {
       alert(`Portfolio type mismatch!\n\nThis battle requires a ${creatorIsCrypto ? 'CRYPTO' : 'STOCKS'} portfolio, but you built a ${joinerIsCrypto ? 'CRYPTO' : 'STOCKS'} portfolio.\n\nPlease create a ${creatorIsCrypto ? 'crypto' : 'stocks'} portfolio to join this battle.`);
@@ -2539,8 +6276,7 @@ export default function PortfolioDuel() {
     const startDate = new Date(now); // Start immediately for testing
     const endDate = new Date(startDate.getTime() + battleTimer.BATTLE_DURATION);
 
-    // ⭐ FETCH STARTING PRICES - Lock in prices when battle starts
-    console.log('🔒 Fetching starting prices for battle...');
+    // Fetch starting prices - Lock in prices when battle starts
     const startingPrices = {};
     
     // Get all unique assets from both portfolios
@@ -2565,10 +6301,8 @@ export default function PortfolioDuel() {
         startingPrices[symbol] = asset.price; // Fallback to stored price
       }
     }
-    
-    console.log('✅ Starting prices locked:', startingPrices);
 
-    // ⭐ UPDATE BOTH PORTFOLIOS TO USE THE SAME STARTING PRICES
+    // Update both portfolios to use the same starting prices
     const updatedCreatorPortfolio = battleToJoin.creatorPortfolio.map(asset => ({
       ...asset,
       price: startingPrices[asset.symbol] || asset.price
@@ -2597,21 +6331,15 @@ export default function PortfolioDuel() {
 
     // Save to localStorage immediately
     saveBattlesSafe(updatedBattles);
-    console.log('✅ Saved updated battles to localStorage');
-    console.log('Updated battle:', updatedBattles.find(b => b.id === battleToJoin.id));
-    
+
     // Update component state
     setBattles(updatedBattles);
-    console.log('✅ Updated component state with battles');
-
     setActiveBattleId(battleToJoin.id);
-    console.log('✅ Set active battle ID:', battleToJoin.id);
-    
+
     setPortfolio([]); setPortfolioType(null);
     setPortfolioName('');
     setJoinCode('');
-    
-    console.log('✅ Navigating to dashboard...');
+
     setScreen('dashboard');
   };
 
@@ -2619,8 +6347,6 @@ export default function PortfolioDuel() {
   // TRAINING MODE: CREATE TRAINING BATTLE
   // ============================================
   const handleCreateTrainingBattle = async () => {
-    console.log('=== CREATE TRAINING BATTLE ===');
-    
     if (!isPortfolioValid || !portfolioName.trim()) {
       alert('Please complete your portfolio with a name before starting training');
       return;
@@ -2635,9 +6361,7 @@ export default function PortfolioDuel() {
     }));
 
     // Generate CPU opponent portfolio
-    console.log('🤖 Generating CPU opponent portfolio...');
     const cpuPortfolio = generateCPUPortfolio(portfolioType, stocksData, cryptoData);
-    console.log('✅ CPU portfolio generated:', cpuPortfolio);
 
     // Calculate start and end dates (1 hour for training)
     const now = new Date();
@@ -2646,7 +6370,6 @@ export default function PortfolioDuel() {
     const endDate = new Date(startDate.getTime() + TRAINING_DURATION);
 
     // Fetch starting prices for all assets
-    console.log('🔒 Fetching starting prices for training battle...');
     const startingPrices = {};
     
     const allAssets = [...userPortfolioAssets, ...cpuPortfolio];
@@ -2670,8 +6393,6 @@ export default function PortfolioDuel() {
         startingPrices[symbol] = asset.price;
       }
     }
-    
-    console.log('✅ Starting prices locked for training battle:', startingPrices);
 
     // Update both portfolios with locked starting prices
     const updatedUserPortfolio = userPortfolioAssets.map(asset => ({
@@ -2715,8 +6436,7 @@ export default function PortfolioDuel() {
     setPortfolio([]);
     setPortfolioType(null);
     setPortfolioName('');
-    
-    console.log('✅ Training battle created:', trainingBattle);
+
     setScreen('dashboard');
   };
 
@@ -2960,6 +6680,9 @@ export default function PortfolioDuel() {
   if (screen === 'home') {
     return (
       <div style={containerStyle}>
+        {/* Animated Desktop Background */}
+        <DesktopBackground isDesktop={isDesktop} />
+
         <div style={{
           minHeight: '100vh',
           backgroundColor: '#0d1117',
@@ -2967,7 +6690,9 @@ export default function PortfolioDuel() {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '20px'
+          padding: '20px',
+          position: 'relative',
+          zIndex: 1,
         }}>
 
           {/* LOGO ONLY - CENTERED */}
@@ -2982,7 +6707,7 @@ export default function PortfolioDuel() {
           <div style={{
             width: '100%',
             maxWidth: '400px',
-            backgroundColor: '#161b22',
+            backgroundColor: '#1a1f2e',
             border: '2px solid #21262d',
             borderRadius: '16px',
             padding: '32px',
@@ -3054,11 +6779,99 @@ export default function PortfolioDuel() {
     );
   }
 
-  // RESEARCH MODE SCREEN
+  // RESEARCH MODE SCREEN - ENHANCED VERSION
   if (showResearchMode) {
+    // Handler to use portfolio from ResearchFlow
+    const handleUseResearchFlowPortfolio = (portfolioAllocations) => {
+      // Convert allocations to portfolio format
+      const allAssets = [...stocksData, ...cryptoData];
+      const newPortfolio = portfolioAllocations.map(allocation => {
+        const asset = allAssets.find(a => a.symbol === allocation.symbol);
+        if (!asset) return null;
+        return {
+          symbol: allocation.symbol,
+          name: asset.name,
+          price: asset.price,
+          amount: (allocation.allocation / 100) * 1000000,
+        };
+      }).filter(Boolean);
+
+      setPortfolio(newPortfolio);
+      setPortfolioType(newPortfolio.some(p => cryptoData.find(c => c.symbol === p.symbol)) ? 'crypto' : 'stocks');
+      setShowResearchMode(false);
+      setScreen('portfolio');
+    };
+
+    // GUIDED RESEARCH FLOW MODE
+    if (researchViewMode === 'guided') {
+      return (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: '#0d1117',
+          zIndex: 1000,
+          overflow: 'auto',
+        }}>
+          {/* Header with back and mode toggle */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '16px 20px',
+            borderBottom: '1px solid #2d3548',
+          }}>
+            <button
+              onClick={() => setShowResearchMode(false)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: colors.cyan,
+                fontSize: '16px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              ← Exit Research
+            </button>
+            <button
+              onClick={() => setResearchViewMode('classic')}
+              style={{
+                background: 'rgba(139, 148, 158, 0.1)',
+                border: '1px solid #2d3548',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                color: '#8b949e',
+                fontSize: '12px',
+                cursor: 'pointer',
+              }}
+            >
+              Classic View
+            </button>
+          </div>
+
+          {/* ResearchFlow Component */}
+          <ResearchFlow
+            stocksData={stocksData}
+            cryptoData={cryptoData}
+            onUsePortfolio={handleUseResearchFlowPortfolio}
+            colors={colors}
+          />
+        </div>
+      );
+    }
+
+    // CLASSIC RESEARCH MODE (existing implementation)
     // Enrich assets with research data
     const { stocks: enrichedStocks, crypto: enrichedCrypto } = enrichAllAssetsWithResearch(stocksData, cryptoData);
-    const currentAssets = researchAssetType === 'stocks' ? enrichedStocks : enrichedCrypto;
+
+    // Get assets based on current tab
+    const currentAssets = researchActiveTab === 'stocks' ? enrichedStocks :
+                          researchActiveTab === 'crypto' ? enrichedCrypto : [];
 
     // Filter by search term
     const filteredAssets = currentAssets.filter(asset =>
@@ -3066,18 +6879,13 @@ export default function PortfolioDuel() {
       asset.name.toLowerCase().includes(researchSearchTerm.toLowerCase())
     );
 
-    // Sort assets
+    // Sort assets by 30-day momentum + market cap (hidden from user)
     const sortedAssets = [...filteredAssets].sort((a, b) => {
-      switch (researchSortBy) {
-        case 'rank': return (a.categoryRank7d || 999) - (b.categoryRank7d || 999);
-        case '7d': return (b.priceChange7d || 0) - (a.priceChange7d || 0);
-        case '30d': return (b.priceChange30d || 0) - (a.priceChange30d || 0);
-        case 'winRate': return (b.communityData?.winRate || 0) - (a.communityData?.winRate || 0);
-        case 'volatility':
-          const volOrder = { high: 3, medium: 2, low: 1 };
-          return (volOrder[b.volatility] || 0) - (volOrder[a.volatility] || 0);
-        default: return 0;
-      }
+      // Primary: 30-day momentum
+      const momentumDiff = (b.priceChange30d || 0) - (a.priceChange30d || 0);
+      if (Math.abs(momentumDiff) > 5) return momentumDiff;
+      // Secondary: category rank (proxy for market cap importance)
+      return (a.categoryRank7d || 999) - (b.categoryRank7d || 999);
     });
 
     // Sparkline component for research cards
@@ -3100,14 +6908,14 @@ export default function PortfolioDuel() {
       return (
         <svg width={width} height={height} style={{ display: 'block' }}>
           <defs>
-            <linearGradient id={`spark-grad-${isPositive}`} x1="0%" y1="0%" x2="0%" y2="100%">
+            <linearGradient id={`spark-grad-${isPositive}-${width}`} x1="0%" y1="0%" x2="0%" y2="100%">
               <stop offset="0%" stopColor={color} stopOpacity="0.3" />
               <stop offset="100%" stopColor={color} stopOpacity="0" />
             </linearGradient>
           </defs>
           <polygon
             points={`0,${height} ${points} ${width},${height}`}
-            fill={`url(#spark-grad-${isPositive})`}
+            fill={`url(#spark-grad-${isPositive}-${width})`}
           />
           <polyline
             points={points}
@@ -3121,21 +6929,819 @@ export default function PortfolioDuel() {
       );
     };
 
-    // Handle adding to compare
-    const handleAddToCompare = (asset) => {
-      if (researchCompareAssets.length >= 3) {
-        return; // Max 3 assets
+    // Fetch stock fundamentals
+    const fetchStockFundamentals = async (symbol) => {
+      if (stockFundamentals[symbol] || fundamentalsLoading[symbol]) return;
+
+      setFundamentalsLoading(prev => ({ ...prev, [symbol]: true }));
+      try {
+        const response = await fetch(`/api/stocks/fundamentals?symbol=${symbol}`);
+        const data = await response.json();
+        if (data.success) {
+          setStockFundamentals(prev => ({ ...prev, [symbol]: data.data }));
+        }
+      } catch (error) {
+        console.error('Failed to fetch fundamentals:', error);
       }
-      if (researchCompareAssets.find(a => a.symbol === asset.symbol)) {
-        return; // Already added
-      }
-      setResearchCompareAssets([...researchCompareAssets, asset]);
+      setFundamentalsLoading(prev => ({ ...prev, [symbol]: false }));
     };
 
-    const handleRemoveFromCompare = (symbol) => {
-      setResearchCompareAssets(researchCompareAssets.filter(a => a.symbol !== symbol));
+    // Fetch crypto metrics
+    const fetchCryptoMetrics = async (symbol) => {
+      if (cryptoMetrics[symbol] || cryptoMetricsLoading[symbol]) return;
+
+      setCryptoMetricsLoading(prev => ({ ...prev, [symbol]: true }));
+      try {
+        const response = await fetch(`/api/crypto/metrics?symbol=${symbol}`);
+        const data = await response.json();
+        if (data.success) {
+          setCryptoMetrics(prev => ({ ...prev, [symbol]: data.data }));
+        }
+      } catch (error) {
+        console.error('Failed to fetch crypto metrics:', error);
+      }
+      setCryptoMetricsLoading(prev => ({ ...prev, [symbol]: false }));
     };
 
+    // Handle opening asset detail
+    const handleOpenDetail = (asset, type) => {
+      setSelectedAssetDetail(asset);
+      setSelectedAssetType(type);
+      setShowMoreDepth({});
+
+      // Fetch data based on type
+      if (type === 'stock') {
+        fetchStockFundamentals(asset.symbol);
+      } else {
+        fetchCryptoMetrics(asset.symbol);
+      }
+    };
+
+    // Handle clipping a note
+    const handleClipNote = (metricName, metricValue, explanation, symbol, assetType) => {
+      const newNote = {
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        symbol,
+        assetType,
+        type: 'clipped',
+        metricName,
+        metricValue: String(metricValue),
+        explanation,
+        userAnnotation: '',
+        createdAt: new Date().toISOString(),
+        weekOf: getCurrentWeekMonday(),
+        isFinalized: false
+      };
+      setUserNotes(prev => [...prev, newNote]);
+    };
+
+    // Handle adding custom note
+    const handleAddCustomNote = (symbol, assetType) => {
+      if (!customNoteText.trim()) return;
+
+      const newNote = {
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        symbol,
+        assetType,
+        type: 'custom',
+        customText: customNoteText.trim(),
+        userAnnotation: '',
+        createdAt: new Date().toISOString(),
+        weekOf: getCurrentWeekMonday(),
+        isFinalized: false
+      };
+      setUserNotes(prev => [...prev, newNote]);
+      setCustomNoteText('');
+    };
+
+    // Handle deleting a note
+    const handleDeleteNote = (noteId) => {
+      setUserNotes(prev => prev.filter(n => n.id !== noteId));
+    };
+
+    // Handle pinning AI insight from Research Advisor
+    const handlePinAINote = (noteData) => {
+      const newNote = {
+        id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        symbol: null,
+        assetType: 'ai_insight',
+        type: 'ai_insight',
+        customText: noteData.content,
+        source: noteData.source || 'Research Advisor',
+        userAnnotation: '',
+        createdAt: noteData.timestamp || new Date().toISOString(),
+        weekOf: getCurrentWeekMonday(),
+        isFinalized: false
+      };
+      setUserNotes(prev => [...prev, newNote]);
+    };
+
+    // Generate Game Plan from notes using AI
+    const handleGenerateGamePlan = async () => {
+      const currentWeekNotes = userNotes.filter(n => n.weekOf === getCurrentWeekMonday());
+
+      if (currentWeekNotes.length === 0) {
+        return;
+      }
+
+      setGamePlanLoading(true);
+      setGamePlanResponse(null);
+
+      try {
+        // Format notes for the AI
+        const formattedNotes = currentWeekNotes.map(note => ({
+          asset: note.symbol || 'General',
+          content: note.type === 'clipped'
+            ? `${note.metricName}: ${note.metricValue} - ${note.explanation}`
+            : note.customText,
+          timestamp: note.createdAt
+        }));
+
+        const response = await fetch('/api/ai-advisor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            advisorType: 'research',
+            action: 'game-plan',
+            context: {
+              userNotes: formattedNotes
+            }
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to generate game plan');
+        }
+
+        const data = await response.json();
+
+        if (data.emptyState) {
+          setGamePlanResponse({ isEmpty: true, message: data.emptyStateMessage });
+        } else {
+          setGamePlanResponse({ message: data.message });
+        }
+      } catch (error) {
+        console.error('[GamePlan] Error:', error);
+        setGamePlanResponse({ error: 'Failed to generate game plan. Please try again.' });
+      } finally {
+        setGamePlanLoading(false);
+      }
+    };
+
+    // ============================================
+    // RESEARCH FLOW PHASE 4 & 5 HANDLERS
+    // ============================================
+
+    // Handler to open the asset picker modal
+    const handleOpenAssetPicker = (pickerType) => {
+      setAssetPickerType(pickerType);
+      setShowAssetPicker(true);
+    };
+
+    // Handler for selecting an asset in the picker
+    const handleAssetPickerSelect = (symbol) => {
+      if (assetPickerType === 'mustHave') {
+        setConvictionData(prev => ({
+          ...prev,
+          mustHave: prev.mustHave.includes(symbol) ? prev.mustHave : [...prev.mustHave, symbol],
+        }));
+      } else if (assetPickerType === 'mustAvoid') {
+        setConvictionData(prev => ({
+          ...prev,
+          mustAvoid: prev.mustAvoid.includes(symbol) ? prev.mustAvoid : [...prev.mustAvoid, symbol],
+        }));
+      }
+    };
+
+    // Handler to transition to conviction check phase
+    const handleStartConvictionCheck = (thesis, recommendations) => {
+      setResearchThesis(thesis);
+      // Pre-populate with top recommendations as suggested must-haves
+      setConvictionData({
+        mustHave: [],
+        mustAvoid: [],
+        confidence: null,
+      });
+      setResearchPhase('conviction');
+    };
+
+    // Handler when conviction check is complete - generate game plan
+    const handleConvictionComplete = async (convictionData) => {
+      setResearchPhase('gameplan');
+      setResearchGamePlanLoading(true);
+      setResearchGamePlan(null);
+
+      try {
+        // Get current notes for context
+        const currentWeekNotes = userNotes.filter(n => n.weekOf === getCurrentWeekMonday());
+
+        // Get recommendations based on thesis
+        const allAssets = [...stocksData, ...cryptoData];
+
+        // Generate the game plan using the imported function
+        const gamePlanResult = await generateGamePlan(
+          researchThesis,
+          convictionData,
+          currentWeekNotes,
+          allAssets
+        );
+
+        setResearchGamePlan(gamePlanResult);
+      } catch (error) {
+        console.error('[ResearchFlow] Game plan generation failed:', error);
+        setResearchGamePlan(null);
+        showToast('Failed to generate game plan. Please try again.');
+      } finally {
+        setResearchGamePlanLoading(false);
+      }
+    };
+
+    // Handler to use the generated portfolio
+    const handleUseResearchPortfolio = (portfolioAllocations) => {
+      // Convert allocations to portfolio format
+      const allAssets = [...stocksData, ...cryptoData];
+      const newPortfolio = portfolioAllocations.map(allocation => {
+        const asset = allAssets.find(a => a.symbol === allocation.symbol);
+        if (!asset) return null;
+        return {
+          symbol: allocation.symbol,
+          name: asset.name,
+          price: asset.price,
+          amount: (allocation.allocation / 100) * 1000000, // Convert % to amount based on $1M portfolio
+        };
+      }).filter(Boolean);
+
+      // Set the portfolio and navigate to portfolio builder
+      setPortfolio(newPortfolio);
+      setPortfolioType(newPortfolio.some(p => cryptoData.find(c => c.symbol === p.symbol)) ? 'crypto' : 'stocks');
+      setShowResearchMode(false);
+      setResearchPhase('explore');
+      setScreen('portfolio');
+    };
+
+    // Handler to save game plan to notes
+    const handleSaveGamePlanToNotes = (gamePlan) => {
+      const newNote = {
+        id: `gameplan-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        symbol: null,
+        assetType: 'ai_insight',
+        type: 'game_plan',
+        customText: `**Game Plan Strategy:** ${gamePlan.strategySummary}\n\n**Portfolio:** ${gamePlan.portfolio?.map(p => `${p.symbol}: ${p.allocation}%`).join(', ')}\n\n**Key Risks:** ${gamePlan.risks?.join('; ')}`,
+        source: 'Research Flow Game Plan',
+        userAnnotation: '',
+        createdAt: new Date().toISOString(),
+        weekOf: getCurrentWeekMonday(),
+        isFinalized: false,
+      };
+      setUserNotes(prev => [...prev, newNote]);
+      // Show a toast or feedback (using existing system if available)
+    };
+
+    // Handler to go back from game plan to conviction check
+    const handleBackFromGamePlan = () => {
+      setResearchPhase('conviction');
+    };
+
+    // Handler to go back from conviction check to explore
+    const handleBackFromConviction = () => {
+      setResearchPhase('explore');
+    };
+
+    // Get sector color for stock
+    const getSectorColor = (sector) => {
+      return sectorColors[sector] || sectorColors['Unknown'];
+    };
+
+    // Toggle more depth for a metric
+    const toggleMoreDepth = (metricKey) => {
+      setShowMoreDepth(prev => ({ ...prev, [metricKey]: !prev[metricKey] }));
+    };
+
+    // Calculate weekly progress
+    const currentWeekNotes = userNotes.filter(n => n.weekOf === getCurrentWeekMonday());
+    const assetsWithNotes = [...new Set(currentWeekNotes.map(n => n.symbol))];
+    const progressPercent = Math.min(100, (currentWeekNotes.length / RESEARCH_REQUIREMENTS.minimumNotes) * 100);
+    const canFinalize = currentWeekNotes.length >= RESEARCH_REQUIREMENTS.minimumNotes &&
+                        assetsWithNotes.length >= RESEARCH_REQUIREMENTS.minimumAssets;
+
+    // ASSET DETAIL PAGE
+    if (selectedAssetDetail) {
+      const isStock = selectedAssetType === 'stock';
+      const fundamentals = isStock ? stockFundamentals[selectedAssetDetail.symbol] : null;
+      const metrics = !isStock ? cryptoMetrics[selectedAssetDetail.symbol] : null;
+      const isLoading = isStock ? fundamentalsLoading[selectedAssetDetail.symbol] : cryptoMetricsLoading[selectedAssetDetail.symbol];
+      const color = isStock ? getSectorColor(selectedAssetDetail.sector || 'Unknown') : cryptoColor;
+
+      // Metric card component
+      const MetricCard = ({ title, value, subValue, metricKey, explanationFn, moreDepth, valueColor }) => (
+        <div style={{
+          background: '#0d1117',
+          borderRadius: '12px',
+          border: '1px solid #21262d',
+          padding: '16px',
+          marginBottom: '12px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+            <span style={{ color: '#8b949e', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' }}>{title}</span>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => handleClipNote(title, value, explanationFn, selectedAssetDetail.symbol, selectedAssetType)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#6e7681',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  fontSize: '14px'
+                }}
+                title="Save to notes"
+              >
+                📌
+              </button>
+              <button
+                onClick={() => toggleMoreDepth(metricKey)}
+                style={{
+                  background: showMoreDepth[metricKey] ? 'rgba(0, 217, 255, 0.2)' : 'transparent',
+                  border: 'none',
+                  color: showMoreDepth[metricKey] ? colors.cyan : '#6e7681',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  fontSize: '14px',
+                  borderRadius: '4px'
+                }}
+                title="More info"
+              >
+                ℹ️
+              </button>
+            </div>
+          </div>
+          <div style={{ color: valueColor || '#ffffff', fontSize: '24px', fontWeight: 'bold', marginBottom: subValue ? '4px' : '8px' }}>
+            {value}
+          </div>
+          {subValue && (
+            <div style={{ color: '#8b949e', fontSize: '13px', marginBottom: '8px' }}>{subValue}</div>
+          )}
+          <div style={{ color: '#e6edf3', fontSize: '13px', lineHeight: '1.5' }}>
+            {explanationFn}
+          </div>
+          {showMoreDepth[metricKey] && moreDepth && (
+            <div style={{
+              marginTop: '12px',
+              padding: '12px',
+              background: 'rgba(0, 217, 255, 0.05)',
+              borderRadius: '8px',
+              border: '1px solid rgba(0, 217, 255, 0.2)',
+              color: '#e6edf3',
+              fontSize: '12px',
+              lineHeight: '1.6',
+              whiteSpace: 'pre-line'
+            }}>
+              {moreDepth}
+            </div>
+          )}
+        </div>
+      );
+
+      return (
+        <div style={containerStyle}>
+          <div style={{ minHeight: '100vh', background: colors.background }}>
+            {/* Header */}
+            <div style={{
+              background: '#161b22',
+              borderBottom: '1px solid #21262d',
+              padding: '16px',
+              position: 'sticky',
+              top: 0,
+              zIndex: 20
+            }}>
+              <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <button
+                    onClick={() => setSelectedAssetDetail(null)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      color: colors.cyan,
+                      fontWeight: '600',
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: '14px'
+                    }}
+                  >
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back
+                  </button>
+                  <button
+                    onClick={() => handleClipNote('Asset Overview', selectedAssetDetail.symbol, `${selectedAssetDetail.name} - Price: $${selectedAssetDetail.price?.toFixed(2)}`, selectedAssetDetail.symbol, selectedAssetType)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 12px',
+                      background: 'rgba(0, 217, 255, 0.1)',
+                      border: '1px solid rgba(0, 217, 255, 0.3)',
+                      borderRadius: '8px',
+                      color: colors.cyan,
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    📌 Add to Notes
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Asset Header */}
+            <div style={{
+              background: color.background,
+              borderBottom: `3px solid ${color.primary}`,
+              padding: '20px 16px'
+            }}>
+              <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <span style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '24px' }}>{selectedAssetDetail.symbol}</span>
+                  <span style={{ color: '#8b949e', fontSize: '14px' }}>·</span>
+                  <span style={{ color: '#8b949e', fontSize: '14px' }}>{selectedAssetDetail.name}</span>
+                  {isStock && selectedAssetDetail.sector && (
+                    <>
+                      <span style={{ color: '#8b949e', fontSize: '14px' }}>·</span>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        color: color.primary,
+                        fontSize: '12px'
+                      }}>
+                        <span style={{
+                          width: '6px',
+                          height: '6px',
+                          borderRadius: '50%',
+                          background: color.primary
+                        }} />
+                        {selectedAssetDetail.sector}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                  <span style={{ color: '#ffffff', fontSize: '32px', fontWeight: 'bold' }}>
+                    ${selectedAssetDetail.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span style={{
+                    color: safeNumber(selectedAssetDetail.percentChange) >= 0 ? colors.green : colors.red,
+                    fontSize: '16px',
+                    fontWeight: '600'
+                  }}>
+                    {safeNumber(selectedAssetDetail.percentChange) >= 0 ? '▲' : '▼'} {safeNumber(selectedAssetDetail.percentChange) >= 0 ? '+' : ''}{safeToFixed(selectedAssetDetail.percentChange, 2)}% today
+                  </span>
+                </div>
+                {!isStock && metrics?.marketCapRank && (
+                  <span style={{ color: '#8b949e', fontSize: '13px' }}>Rank #{metrics.marketCapRank} by Market Cap</span>
+                )}
+              </div>
+            </div>
+
+            {/* Content */}
+            <div style={{ maxWidth: '900px', margin: '0 auto', padding: '20px 16px' }}>
+              {isLoading ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                  <Loader2 className="animate-spin" style={{ width: '32px', height: '32px', margin: '0 auto 12px' }} />
+                  <p>Loading {isStock ? 'fundamentals' : 'metrics'}...</p>
+                </div>
+              ) : isStock ? (
+                // STOCK METRICS
+                <>
+                  <h3 style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Fundamentals
+                  </h3>
+
+                  <MetricCard
+                    title="Beta"
+                    value={fundamentals?.beta?.toFixed(2) || 'N/A'}
+                    metricKey="beta"
+                    explanationFn={stockMetricExplanations.beta.intermediate(fundamentals?.beta)}
+                    moreDepth={stockMetricExplanations.beta.moreDepth}
+                    valueColor={fundamentals?.beta > 1.2 ? colors.red : fundamentals?.beta < 0.8 ? colors.green : '#ffffff'}
+                  />
+
+                  <MetricCard
+                    title="Analyst Consensus"
+                    value={fundamentals?.analystConsensus ? `${fundamentals.analystConsensus.rating?.toFixed(1)} / 5.0` : 'N/A'}
+                    subValue={fundamentals?.analystConsensus ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span>{'●'.repeat(Math.round(fundamentals.analystConsensus.rating || 0))}{'○'.repeat(5 - Math.round(fundamentals.analystConsensus.rating || 0))}</span>
+                        <span style={{ fontSize: '11px' }}>
+                          {fundamentals.analystConsensus.strongBuy} Strong Buy | {fundamentals.analystConsensus.buy} Buy | {fundamentals.analystConsensus.hold} Hold | {fundamentals.analystConsensus.sell + (fundamentals.analystConsensus.strongSell || 0)} Sell
+                        </span>
+                      </div>
+                    ) : null}
+                    metricKey="analystConsensus"
+                    explanationFn={stockMetricExplanations.analystConsensus.intermediate(
+                      fundamentals?.analystConsensus?.rating,
+                      fundamentals?.analystConsensus?.totalAnalysts,
+                      fundamentals?.analystConsensus?.buyPercent
+                    )}
+                    moreDepth={stockMetricExplanations.analystConsensus.moreDepth}
+                    valueColor={fundamentals?.analystConsensus?.rating >= 4 ? colors.green : fundamentals?.analystConsensus?.rating <= 2 ? colors.red : '#ffffff'}
+                  />
+
+                  <MetricCard
+                    title="Avg. Price Target"
+                    value={fundamentals?.targetPrice ? `$${fundamentals.targetPrice.toFixed(2)}` : 'N/A'}
+                    subValue={fundamentals?.targetPrice && fundamentals?.currentPrice ? (
+                      <div>
+                        <div style={{
+                          height: '6px',
+                          background: '#21262d',
+                          borderRadius: '3px',
+                          overflow: 'hidden',
+                          marginBottom: '4px'
+                        }}>
+                          <div style={{
+                            width: `${Math.min(100, (fundamentals.currentPrice / fundamentals.targetPrice) * 100)}%`,
+                            height: '100%',
+                            background: fundamentals.currentPrice < fundamentals.targetPrice ? colors.green : colors.red,
+                            borderRadius: '3px'
+                          }} />
+                        </div>
+                        <span style={{ fontSize: '11px' }}>
+                          {((fundamentals.currentPrice / fundamentals.targetPrice) * 100).toFixed(0)}% of target ({((fundamentals.targetPrice - fundamentals.currentPrice) / fundamentals.currentPrice * 100).toFixed(0)}% {fundamentals.targetPrice > fundamentals.currentPrice ? 'upside' : 'downside'})
+                        </span>
+                      </div>
+                    ) : null}
+                    metricKey="priceTarget"
+                    explanationFn={stockMetricExplanations.priceTarget.intermediate(fundamentals?.targetPrice, fundamentals?.currentPrice)}
+                    moreDepth={stockMetricExplanations.priceTarget.moreDepth}
+                  />
+
+                  <MetricCard
+                    title="PEG Ratio"
+                    value={fundamentals?.pegRatio?.toFixed(2) || 'N/A'}
+                    metricKey="pegRatio"
+                    explanationFn={stockMetricExplanations.pegRatio.intermediate(fundamentals?.pegRatio)}
+                    moreDepth={stockMetricExplanations.pegRatio.moreDepth}
+                    valueColor={fundamentals?.pegRatio < 1 ? colors.green : fundamentals?.pegRatio > 2 ? colors.red : '#ffffff'}
+                  />
+
+                  <h3 style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '16px', marginTop: '24px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Technicals
+                  </h3>
+
+                  <MetricCard
+                    title="7-Day Momentum"
+                    value={`${fundamentals?.momentum7d >= 0 ? '+' : ''}${fundamentals?.momentum7d?.toFixed(1) || 0}%`}
+                    subValue={`Up ${fundamentals?.upDays7d || 0} of last 7 days`}
+                    metricKey="momentum7d"
+                    explanationFn={stockMetricExplanations.momentum7d.intermediate(fundamentals?.momentum7d, fundamentals?.upDays7d)}
+                    moreDepth={stockMetricExplanations.momentum7d.moreDepth}
+                    valueColor={fundamentals?.momentum7d >= 0 ? colors.green : colors.red}
+                  />
+
+                  <MetricCard
+                    title="50-Day Moving Average"
+                    value={fundamentals?.ma50 ? `$${fundamentals.ma50.toFixed(2)}` : 'N/A'}
+                    subValue={fundamentals?.aboveMA50 !== undefined ? (
+                      <span style={{ color: fundamentals.aboveMA50 ? colors.green : colors.red }}>
+                        {fundamentals.aboveMA50 ? '✓' : '✗'} Price {fundamentals.aboveMA50 ? 'ABOVE' : 'BELOW'} 50 MA ({fundamentals.ma50Diff >= 0 ? '+' : ''}{fundamentals.ma50Diff?.toFixed(1)}%)
+                      </span>
+                    ) : null}
+                    metricKey="ma50"
+                    explanationFn={stockMetricExplanations.ma50.intermediate(fundamentals?.currentPrice, fundamentals?.ma50, fundamentals?.aboveMA50)}
+                    moreDepth={stockMetricExplanations.ma50.moreDepth}
+                  />
+
+                  <MetricCard
+                    title="200-Day Moving Average"
+                    value={fundamentals?.ma200 ? `$${fundamentals.ma200.toFixed(2)}` : 'N/A'}
+                    subValue={fundamentals?.aboveMA200 !== undefined ? (
+                      <span style={{ color: fundamentals.aboveMA200 ? colors.green : colors.red }}>
+                        {fundamentals.aboveMA200 ? '✓' : '✗'} Price {fundamentals.aboveMA200 ? 'ABOVE' : 'BELOW'} 200 MA ({fundamentals.ma200Diff >= 0 ? '+' : ''}{fundamentals.ma200Diff?.toFixed(1)}%)
+                      </span>
+                    ) : null}
+                    metricKey="ma200"
+                    explanationFn={stockMetricExplanations.ma200.intermediate(fundamentals?.currentPrice, fundamentals?.ma200, fundamentals?.aboveMA200)}
+                    moreDepth={stockMetricExplanations.ma200.moreDepth}
+                  />
+
+                  <MetricCard
+                    title="52-Week Range"
+                    value={fundamentals?.range52wPosition !== undefined ? `${fundamentals.range52wPosition.toFixed(0)}% of range` : 'N/A'}
+                    subValue={fundamentals?.week52Low && fundamentals?.week52High ? (
+                      <div>
+                        <div style={{
+                          height: '8px',
+                          background: '#21262d',
+                          borderRadius: '4px',
+                          position: 'relative',
+                          marginBottom: '4px'
+                        }}>
+                          <div style={{
+                            position: 'absolute',
+                            left: `${fundamentals.range52wPosition}%`,
+                            top: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            width: '12px',
+                            height: '12px',
+                            borderRadius: '50%',
+                            background: colors.cyan,
+                            border: '2px solid #161b22'
+                          }} />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                          <span>${fundamentals.week52Low?.toFixed(2)}</span>
+                          <span>${fundamentals.week52High?.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    ) : null}
+                    metricKey="range52w"
+                    explanationFn={stockMetricExplanations.range52w.intermediate(fundamentals?.range52wPosition, fundamentals?.week52Low, fundamentals?.week52High)}
+                    moreDepth={stockMetricExplanations.range52w.moreDepth}
+                  />
+
+                  {fundamentals?.nextEarningsDate && (
+                    <div style={{
+                      background: 'rgba(251, 191, 36, 0.1)',
+                      border: '1px solid rgba(251, 191, 36, 0.3)',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      marginTop: '16px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fbbf24', fontWeight: '600', marginBottom: '4px' }}>
+                        ⚠️ UPCOMING EVENT
+                      </div>
+                      <div style={{ color: '#e6edf3', fontSize: '14px' }}>
+                        Earnings Report: {fundamentals.nextEarningsDate} ({fundamentals.nextEarningsTime || 'Time TBD'})
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                // CRYPTO METRICS
+                <>
+                  <h3 style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Volatility
+                  </h3>
+
+                  <MetricCard
+                    title="7-Day Volatility"
+                    value={`${metrics?.volatility7d?.toFixed(1) || 0}%`}
+                    subValue="Average daily price swing over the past week"
+                    metricKey="volatility7d"
+                    explanationFn={cryptoMetricExplanations.volatility7d.intermediate(metrics?.volatility7d)}
+                    moreDepth={cryptoMetricExplanations.volatility7d.moreDepth}
+                    valueColor={metrics?.volatility7d > 5 ? colors.red : metrics?.volatility7d < 3 ? colors.green : '#ffffff'}
+                  />
+
+                  <MetricCard
+                    title="30-Day Volatility"
+                    value={`${metrics?.volatility30d?.toFixed(1) || 0}%`}
+                    metricKey="volatility30d"
+                    explanationFn={cryptoMetricExplanations.volatility30d.intermediate(metrics?.volatility30d, metrics?.volatility7d)}
+                    moreDepth={cryptoMetricExplanations.volatility30d.moreDepth}
+                  />
+
+                  <MetricCard
+                    title="Volatility vs Bitcoin"
+                    value={`${metrics?.volatilityVsBtc?.toFixed(1) || 1}x`}
+                    subValue={
+                      <div style={{ marginTop: '4px' }}>
+                        <div style={{
+                          height: '6px',
+                          background: '#21262d',
+                          borderRadius: '3px',
+                          overflow: 'hidden'
+                        }}>
+                          <div style={{
+                            width: `${Math.min(100, (metrics?.volatilityVsBtc || 1) * 33)}%`,
+                            height: '100%',
+                            background: metrics?.volatilityVsBtc > 2 ? colors.red : metrics?.volatilityVsBtc > 1.2 ? '#fbbf24' : colors.green,
+                            borderRadius: '3px'
+                          }} />
+                        </div>
+                        <span style={{ fontSize: '11px', color: '#8b949e' }}>
+                          {selectedAssetDetail.symbol} is {metrics?.volatilityVsBtc?.toFixed(1) || 1}x {metrics?.volatilityVsBtc > 1 ? 'more' : 'less'} volatile than BTC
+                        </span>
+                      </div>
+                    }
+                    metricKey="volatilityVsBtc"
+                    explanationFn={cryptoMetricExplanations.volatilityVsBtc.intermediate(metrics?.volatilityVsBtc)}
+                    moreDepth={cryptoMetricExplanations.volatilityVsBtc.moreDepth}
+                  />
+
+                  <h3 style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '16px', marginTop: '24px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Volume
+                  </h3>
+
+                  <MetricCard
+                    title="24-Hour Volume"
+                    value={metrics?.volume24h >= 1e9 ? `$${(metrics.volume24h / 1e9).toFixed(1)}B` : `$${((metrics?.volume24h || 0) / 1e6).toFixed(0)}M`}
+                    metricKey="volume24h"
+                    explanationFn={cryptoMetricExplanations.volume24h.intermediate(metrics?.volume24h)}
+                    moreDepth={cryptoMetricExplanations.volume24h.moreDepth}
+                  />
+
+                  <MetricCard
+                    title="Volume vs 7-Day Avg"
+                    value={`${metrics?.volumeVsAvg >= 0 ? '+' : ''}${metrics?.volumeVsAvg?.toFixed(0) || 0}%`}
+                    subValue={Math.abs(metrics?.volumeVsAvg || 0) > 50 ? '⚡ Unusually high volume today' : null}
+                    metricKey="volumeVsAvg"
+                    explanationFn={cryptoMetricExplanations.volumeVsAvg.intermediate(metrics?.volumeVsAvg)}
+                    moreDepth={cryptoMetricExplanations.volumeVsAvg.moreDepth}
+                    valueColor={metrics?.volumeVsAvg > 50 ? '#fbbf24' : '#ffffff'}
+                  />
+
+                  <h3 style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '16px', marginTop: '24px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Momentum
+                  </h3>
+
+                  <MetricCard
+                    title="7-Day Momentum"
+                    value={`${metrics?.momentum7d >= 0 ? '+' : ''}${metrics?.momentum7d?.toFixed(1) || 0}%`}
+                    metricKey="cryptoMomentum7d"
+                    explanationFn={cryptoMetricExplanations.momentum7d.intermediate(metrics?.momentum7d)}
+                    moreDepth={cryptoMetricExplanations.momentum7d.moreDepth}
+                    valueColor={metrics?.momentum7d >= 0 ? colors.green : colors.red}
+                  />
+
+                  <MetricCard
+                    title="30-Day Momentum"
+                    value={`${metrics?.momentum30d >= 0 ? '+' : ''}${metrics?.momentum30d?.toFixed(1) || 0}%`}
+                    metricKey="cryptoMomentum30d"
+                    explanationFn={cryptoMetricExplanations.momentum30d.intermediate(metrics?.momentum30d, metrics?.momentum7d)}
+                    moreDepth={cryptoMetricExplanations.momentum30d.moreDepth}
+                    valueColor={metrics?.momentum30d >= 0 ? colors.green : colors.red}
+                  />
+
+                  <MetricCard
+                    title="Distance from ATH"
+                    value={`${metrics?.distanceFromATH?.toFixed(0) || 0}%`}
+                    subValue={metrics?.athPrice ? `All-Time High: $${metrics.athPrice.toFixed(2)} (${metrics.athDate || 'Unknown'})` : null}
+                    metricKey="distanceFromATH"
+                    explanationFn={cryptoMetricExplanations.distanceFromATH.intermediate(metrics?.distanceFromATH, metrics?.athPrice, metrics?.athDate)}
+                    moreDepth={cryptoMetricExplanations.distanceFromATH.moreDepth}
+                    valueColor={Math.abs(metrics?.distanceFromATH || 0) < 20 ? colors.green : Math.abs(metrics?.distanceFromATH || 0) > 70 ? colors.red : '#ffffff'}
+                  />
+                </>
+              )}
+
+              {/* Custom Note Input */}
+              <div style={{
+                background: '#161b22',
+                borderRadius: '12px',
+                border: '1px solid #21262d',
+                padding: '16px',
+                marginTop: '24px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: '#8b949e', fontSize: '13px' }}>
+                  ✏️ ADD CUSTOM NOTE
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    value={customNoteText}
+                    onChange={(e) => setCustomNoteText(e.target.value)}
+                    placeholder="Add your insight about this asset..."
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      background: '#0d1117',
+                      border: '1px solid #21262d',
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      fontSize: '14px',
+                      outline: 'none'
+                    }}
+                  />
+                  <button
+                    onClick={() => handleAddCustomNote(selectedAssetDetail.symbol, selectedAssetType)}
+                    disabled={!customNoteText.trim()}
+                    style={{
+                      padding: '12px 20px',
+                      background: customNoteText.trim() ? colors.cyan : '#21262d',
+                      color: customNoteText.trim() ? '#000' : '#6e7681',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontWeight: '600',
+                      cursor: customNoteText.trim() ? 'pointer' : 'not-allowed'
+                    }}
+                  >
+                    Save Note
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // MAIN RESEARCH MODE VIEW
     return (
       <div style={containerStyle}>
         <div style={{ minHeight: '100vh', background: colors.background }}>
@@ -3153,8 +7759,7 @@ export default function PortfolioDuel() {
                 <button
                   onClick={() => {
                     setShowResearchMode(false);
-                    setResearchExpandedAsset(null);
-                    setResearchCompareAssets([]);
+                    setSelectedAssetDetail(null);
                     setResearchSearchTerm('');
                   }}
                   style={{
@@ -3178,574 +7783,735 @@ export default function PortfolioDuel() {
                   <Brain style={{ width: '24px', height: '24px', color: colors.cyan }} />
                   Research Mode
                 </h1>
-                <div style={{ width: '60px' }}></div>
+                <button
+                  onClick={() => setResearchViewMode('guided')}
+                  style={{
+                    background: 'linear-gradient(135deg, #9333ea, #6366f1)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '8px 12px',
+                    color: '#ffffff',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  ✨ Guided Flow
+                </button>
               </div>
 
-              {/* Asset Type Toggle */}
+              {/* Three-Tab Toggle: Stocks | Crypto | Notes */}
               <div style={{
                 display: 'flex',
-                gap: '8px',
+                gap: '4px',
                 marginBottom: '12px',
                 padding: '4px',
                 background: '#0d1117',
                 borderRadius: '10px'
               }}>
                 <button
-                  onClick={() => setResearchAssetType('stocks')}
+                  onClick={() => setResearchActiveTab('stocks')}
                   style={{
                     flex: 1,
-                    padding: '10px 16px',
+                    padding: '10px 12px',
                     borderRadius: '8px',
                     border: 'none',
-                    background: researchAssetType === 'stocks' ? colors.cyan : 'transparent',
-                    color: researchAssetType === 'stocks' ? '#000' : '#8b949e',
+                    background: researchActiveTab === 'stocks' ? colors.cyan : 'transparent',
+                    color: researchActiveTab === 'stocks' ? '#000' : '#8b949e',
                     fontWeight: '600',
-                    fontSize: '14px',
+                    fontSize: '13px',
                     cursor: 'pointer'
                   }}
                 >
                   Stocks ({stocksData.length})
                 </button>
                 <button
-                  onClick={() => setResearchAssetType('crypto')}
+                  onClick={() => setResearchActiveTab('crypto')}
                   style={{
                     flex: 1,
-                    padding: '10px 16px',
+                    padding: '10px 12px',
                     borderRadius: '8px',
                     border: 'none',
-                    background: researchAssetType === 'crypto' ? colors.cyan : 'transparent',
-                    color: researchAssetType === 'crypto' ? '#000' : '#8b949e',
+                    background: researchActiveTab === 'crypto' ? colors.cyan : 'transparent',
+                    color: researchActiveTab === 'crypto' ? '#000' : '#8b949e',
                     fontWeight: '600',
-                    fontSize: '14px',
+                    fontSize: '13px',
                     cursor: 'pointer'
                   }}
                 >
                   Crypto ({cryptoData.length})
                 </button>
-              </div>
-
-              {/* Search */}
-              <div style={{ position: 'relative', marginBottom: '12px' }}>
-                <input
-                  type="text"
-                  placeholder="Search by symbol or name..."
-                  value={researchSearchTerm}
-                  onChange={(e) => setResearchSearchTerm(e.target.value)}
+                <button
+                  onClick={() => setResearchActiveTab('notes')}
                   style={{
-                    width: '100%',
-                    padding: '12px 16px 12px 44px',
-                    background: '#0d1117',
-                    border: '1px solid #21262d',
-                    borderRadius: '10px',
-                    color: '#ffffff',
-                    fontSize: '14px',
-                    outline: 'none'
+                    flex: 1,
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: researchActiveTab === 'notes' ? colors.cyan : 'transparent',
+                    color: researchActiveTab === 'notes' ? '#000' : '#8b949e',
+                    fontWeight: '600',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px'
                   }}
-                />
-                <svg
-                  style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#6e7681' }}
-                  width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"
                 >
-                  <circle cx="11" cy="11" r="8" />
-                  <path d="m21 21-4.35-4.35" />
-                </svg>
+                  My Notes {currentWeekNotes.length > 0 && <span style={{
+                    background: researchActiveTab === 'notes' ? '#000' : colors.cyan,
+                    color: researchActiveTab === 'notes' ? colors.cyan : '#000',
+                    fontSize: '10px',
+                    padding: '2px 6px',
+                    borderRadius: '10px',
+                    fontWeight: '700'
+                  }}>{currentWeekNotes.length}</span>}
+                </button>
+                <button
+                  onClick={() => setResearchActiveTab('advisor')}
+                  style={{
+                    flex: 1,
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: researchActiveTab === 'advisor' ? colors.cyan : 'transparent',
+                    color: researchActiveTab === 'advisor' ? '#000' : '#8b949e',
+                    fontWeight: '600',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  AI
+                </button>
               </div>
 
-              {/* Sort Options */}
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                {[
-                  { key: 'rank', label: 'Top Ranked' },
-                  { key: '7d', label: '7D Perf' },
-                  { key: '30d', label: '30D Perf' },
-                  { key: 'winRate', label: 'Win Rate' },
-                  { key: 'volatility', label: 'Volatility' }
-                ].map(option => (
-                  <button
-                    key={option.key}
-                    onClick={() => setResearchSortBy(option.key)}
+              {/* Search (only for stocks/crypto tabs) */}
+              {researchActiveTab !== 'notes' && researchActiveTab !== 'advisor' && (
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    placeholder="Search by symbol or name..."
+                    value={researchSearchTerm}
+                    onChange={(e) => setResearchSearchTerm(e.target.value)}
                     style={{
-                      padding: '6px 12px',
-                      borderRadius: '6px',
-                      border: researchSortBy === option.key ? `1px solid ${colors.cyan}` : '1px solid #21262d',
-                      background: researchSortBy === option.key ? 'rgba(0, 217, 255, 0.1)' : 'transparent',
-                      color: researchSortBy === option.key ? colors.cyan : '#8b949e',
-                      fontSize: '12px',
-                      fontWeight: '500',
-                      cursor: 'pointer'
+                      width: '100%',
+                      padding: '12px 16px 12px 44px',
+                      background: '#0d1117',
+                      border: '1px solid #21262d',
+                      borderRadius: '10px',
+                      color: '#ffffff',
+                      fontSize: '14px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
                     }}
+                  />
+                  <svg
+                    style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#6e7681' }}
+                    width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"
                   >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.35-4.35" />
+                  </svg>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Asset List */}
-          <div style={{ maxWidth: '900px', margin: '0 auto', padding: '16px', paddingBottom: researchCompareAssets.length > 0 ? '200px' : '80px' }}>
-            {sortedAssets.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '60px 20px', color: '#8b949e' }}>
-                <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
-                <p>No assets found matching "{researchSearchTerm}"</p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {sortedAssets.map((asset, index) => {
-                  const isExpanded = researchExpandedAsset === asset.symbol;
-                  const isInCompare = researchCompareAssets.find(a => a.symbol === asset.symbol);
-                  const isInPortfolio = portfolio.find(p => p.symbol === asset.symbol);
+          {/* Content */}
+          <div style={{ maxWidth: '900px', margin: '0 auto', padding: '16px', paddingBottom: '100px' }}>
 
-                  return (
-                    <motion.div
-                      key={asset.symbol}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.02 }}
-                      style={{
-                        background: '#161b22',
-                        border: isExpanded ? `2px solid ${colors.cyan}` : '1px solid #21262d',
-                        borderRadius: '16px',
-                        overflow: 'hidden'
-                      }}
-                    >
-                      {/* Card Header - Always Visible */}
-                      <div
-                        onClick={() => setResearchExpandedAsset(isExpanded ? null : asset.symbol)}
-                        style={{
-                          padding: '16px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px'
-                        }}
-                      >
-                        {/* Rank Badge */}
+            {/* NOTES TAB */}
+            {researchActiveTab === 'notes' && (
+              <div>
+                {/* Weekly Progress */}
+                <div style={{
+                  background: '#161b22',
+                  borderRadius: '16px',
+                  border: '1px solid #21262d',
+                  padding: '20px',
+                  marginBottom: '20px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <span style={{ color: '#ffffff', fontWeight: '700', fontSize: '14px' }}>WEEKLY RESEARCH PROGRESS</span>
+                    <span style={{ color: '#8b949e', fontSize: '12px' }}>Week of {getCurrentWeekMonday()}</span>
+                  </div>
+                  <div style={{
+                    height: '10px',
+                    background: '#21262d',
+                    borderRadius: '5px',
+                    overflow: 'hidden',
+                    marginBottom: '8px'
+                  }}>
+                    <div style={{
+                      width: `${progressPercent}%`,
+                      height: '100%',
+                      background: `linear-gradient(90deg, ${colors.green} 0%, ${colors.cyan} 100%)`,
+                      borderRadius: '5px',
+                      transition: 'width 0.3s ease'
+                    }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <span style={{ color: '#8b949e', fontSize: '13px' }}>{currentWeekNotes.length}/{RESEARCH_REQUIREMENTS.minimumNotes} notes</span>
+                    <span style={{ color: '#8b949e', fontSize: '13px' }}>{assetsWithNotes.length}/{RESEARCH_REQUIREMENTS.minimumAssets} assets covered</span>
+                  </div>
+                  <div style={{
+                    background: 'rgba(0, 217, 255, 0.1)',
+                    borderRadius: '8px',
+                    padding: '12px',
+                    color: '#e6edf3',
+                    fontSize: '13px'
+                  }}>
+                    <span style={{ color: colors.cyan }}>Complete {RESEARCH_REQUIREMENTS.minimumNotes} notes on {RESEARCH_REQUIREMENTS.minimumAssets}+ assets to earn:</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                      <span style={{ fontSize: '16px' }}>🔥</span>
+                      <span style={{ fontWeight: '700' }}>{calculateResearchXP(researchStreak + 1).total} XP</span>
+                      {researchStreak > 0 && (
+                        <span style={{ color: '#8b949e', fontSize: '12px' }}>
+                          ({researchStreak}-week streak bonus: +{calculateResearchXP(researchStreak + 1).streakBonus} XP)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Game Plan Section */}
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%)',
+                  border: '1px solid rgba(0, 217, 255, 0.3)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  marginBottom: '20px'
+                }}>
+                  <button
+                    onClick={handleGenerateGamePlan}
+                    disabled={gamePlanLoading || currentWeekNotes.length === 0}
+                    style={{
+                      width: '100%',
+                      background: currentWeekNotes.length === 0
+                        ? '#21262d'
+                        : 'linear-gradient(135deg, #00d9ff 0%, #a855f7 100%)',
+                      border: 'none',
+                      color: currentWeekNotes.length === 0 ? '#8b949e' : '#000',
+                      fontWeight: '600',
+                      fontSize: '15px',
+                      padding: '14px 20px',
+                      borderRadius: '8px',
+                      cursor: gamePlanLoading || currentWeekNotes.length === 0 ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s',
+                      opacity: gamePlanLoading ? 0.7 : 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    {gamePlanLoading ? (
+                      <>
+                        <span style={{ animation: 'pulse 1.5s infinite' }}>⏳</span>
+                        Analyzing your research...
+                      </>
+                    ) : (
+                      <>🎯 Generate Game Plan</>
+                    )}
+                  </button>
+
+                  {currentWeekNotes.length === 0 && (
+                    <p style={{
+                      color: '#8b949e',
+                      fontSize: '13px',
+                      textAlign: 'center',
+                      marginTop: '10px',
+                      marginBottom: '0'
+                    }}>
+                      Save some research notes first, then I'll help you build a strategy!
+                    </p>
+                  )}
+
+                  {/* Game Plan Response */}
+                  {gamePlanResponse && (
+                    <div style={{
+                      marginTop: '16px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+                    }}>
+                      {gamePlanResponse.error ? (
                         <div style={{
-                          width: '32px',
-                          height: '32px',
+                          background: 'rgba(248, 81, 73, 0.1)',
+                          border: '1px solid rgba(248, 81, 73, 0.3)',
                           borderRadius: '8px',
-                          background: asset.categoryRank7d <= 3 ? 'rgba(16, 185, 129, 0.2)' : '#21262d',
-                          border: asset.categoryRank7d <= 3 ? '1px solid #10b981' : '1px solid #30363d',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: asset.categoryRank7d <= 3 ? '#10b981' : '#8b949e',
-                          fontSize: '12px',
-                          fontWeight: 'bold'
+                          padding: '12px',
+                          color: '#f85149',
+                          fontSize: '13px'
                         }}>
-                          #{asset.categoryRank7d || '-'}
+                          {gamePlanResponse.error}
                         </div>
-
-                        {/* Asset Info */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                            <span style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '16px' }}>{asset.symbol}</span>
-                            {asset.communityData?.isHot && <span style={{ fontSize: '12px' }}>🔥</span>}
-                            {asset.communityData?.championPick && <span style={{ fontSize: '12px' }}>👑</span>}
-                          </div>
-                          <div style={{ color: '#8b949e', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {asset.name}
-                          </div>
-                        </div>
-
-                        {/* Sparkline */}
-                        <div style={{ width: '80px', height: '36px' }}>
-                          <ResearchSparkline prices={asset.historicalPrices} width={80} height={36} />
-                        </div>
-
-                        {/* Price & Change */}
-                        <div style={{ textAlign: 'right', minWidth: '90px' }}>
-                          <div style={{ color: '#ffffff', fontWeight: '600', fontSize: '14px' }}>
-                            ${asset.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </div>
+                      ) : (
+                        <div style={{
+                          background: '#0d1117',
+                          borderRadius: '8px',
+                          padding: '16px',
+                          color: '#e6edf3',
+                          fontSize: '13px',
+                          lineHeight: '1.6',
+                          whiteSpace: 'pre-wrap'
+                        }}>
                           <div style={{
-                            color: (asset.percentChange || 0) >= 0 ? colors.green : colors.red,
-                            fontSize: '12px',
-                            fontWeight: '500'
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            marginBottom: '12px',
+                            paddingBottom: '12px',
+                            borderBottom: '1px solid #21262d'
                           }}>
-                            {(asset.percentChange || 0) >= 0 ? '+' : ''}{(asset.percentChange || 0).toFixed(2)}%
+                            <span style={{ fontSize: '18px' }}>🎯</span>
+                            <span style={{ fontWeight: '700', color: colors.cyan }}>Your Game Plan</span>
                           </div>
+                          {gamePlanResponse.message}
                         </div>
+                      )}
+                    </div>
+                  )}
+                </div>
 
-                        {/* Expand Icon */}
-                        <div style={{ color: '#6e7681' }}>
-                          {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                        </div>
-                      </div>
+                {/* Notes Divider */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  margin: '20px 0 16px 0',
+                  color: '#8b949e',
+                  fontSize: '13px',
+                  fontWeight: '600'
+                }}>
+                  <span>📝 Your Saved Notes ({currentWeekNotes.length})</span>
+                  <div style={{
+                    flex: 1,
+                    height: '1px',
+                    background: '#21262d',
+                    marginLeft: '12px'
+                  }} />
+                </div>
 
-                      {/* Quick Badges Row */}
-                      <div style={{
-                        padding: '0 16px 12px',
-                        display: 'flex',
-                        gap: '6px',
-                        flexWrap: 'wrap'
-                      }}>
-                        {/* 7D Performance */}
-                        <span style={{
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          fontWeight: '500',
-                          background: (asset.priceChange7d || 0) >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                          color: (asset.priceChange7d || 0) >= 0 ? '#10b981' : '#ef4444'
-                        }}>
-                          7D: {(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(1)}%
-                        </span>
-
-                        {/* 30D Performance */}
-                        <span style={{
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          fontWeight: '500',
-                          background: (asset.priceChange30d || 0) >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                          color: (asset.priceChange30d || 0) >= 0 ? '#10b981' : '#ef4444'
-                        }}>
-                          30D: {(asset.priceChange30d || 0) >= 0 ? '+' : ''}{(asset.priceChange30d || 0).toFixed(1)}%
-                        </span>
-
-                        {/* Win Rate */}
-                        {asset.communityData?.winRate && (
-                          <span style={{
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            fontSize: '11px',
-                            fontWeight: '500',
-                            background: asset.communityData.winRate >= 55 ? 'rgba(0, 217, 255, 0.1)' : '#21262d',
-                            color: asset.communityData.winRate >= 55 ? colors.cyan : '#8b949e'
-                          }}>
-                            🎯 {asset.communityData.winRate}% WR
-                          </span>
-                        )}
-
-                        {/* Volatility */}
-                        <span style={{
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          fontWeight: '500',
-                          background: asset.volatility === 'high' ? 'rgba(239, 68, 68, 0.1)' : asset.volatility === 'low' ? 'rgba(16, 185, 129, 0.1)' : '#21262d',
-                          color: asset.volatility === 'high' ? '#ef4444' : asset.volatility === 'low' ? '#10b981' : '#8b949e'
-                        }}>
-                          {asset.volatility || 'med'}
-                        </span>
-                      </div>
-
-                      {/* Expanded Content */}
-                      {isExpanded && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          style={{
-                            borderTop: '1px solid #21262d',
-                            padding: '16px'
-                          }}
-                        >
-                          {/* Why Pick This? */}
-                          {asset.insights?.reasons?.length > 0 && (
-                            <div style={{
-                              background: 'rgba(16, 185, 129, 0.1)',
-                              border: '1px solid rgba(16, 185, 129, 0.3)',
+                {/* Notes by Asset */}
+                {currentWeekNotes.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '60px 20px', color: '#8b949e' }}>
+                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>📝</div>
+                    <p style={{ marginBottom: '8px' }}>No notes yet this week</p>
+                    <p style={{ fontSize: '13px' }}>Tap on any stock or crypto to view metrics and clip notes</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Stock Notes */}
+                    {currentWeekNotes.filter(n => n.assetType === 'stock').length > 0 && (
+                      <div style={{ marginBottom: '20px' }}>
+                        <h3 style={{ color: '#8b949e', fontSize: '12px', fontWeight: '600', marginBottom: '12px', textTransform: 'uppercase' }}>
+                          STOCKS
+                        </h3>
+                        {[...new Set(currentWeekNotes.filter(n => n.assetType === 'stock').map(n => n.symbol))].map(symbol => {
+                          const notes = currentWeekNotes.filter(n => n.symbol === symbol && n.assetType === 'stock');
+                          const isExpanded = notesExpanded[`stock-${symbol}`];
+                          return (
+                            <div key={symbol} style={{
+                              background: '#161b22',
                               borderRadius: '12px',
-                              padding: '14px',
-                              marginBottom: '12px'
+                              border: '1px solid #21262d',
+                              marginBottom: '8px',
+                              overflow: 'hidden'
                             }}>
-                              <div style={{ color: '#10b981', fontWeight: 'bold', fontSize: '13px', marginBottom: '10px' }}>
-                                Why Pick This?
-                              </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {asset.insights.reasons.map((reason, i) => (
-                                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', color: '#e6edf3', fontSize: '13px' }}>
-                                    <span>{reason.icon}</span>
-                                    <span>{reason.text}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Things to Consider */}
-                          {asset.insights?.considerations?.length > 0 && (
-                            <div style={{
-                              background: 'rgba(251, 191, 36, 0.1)',
-                              border: '1px solid rgba(251, 191, 36, 0.3)',
-                              borderRadius: '12px',
-                              padding: '14px',
-                              marginBottom: '12px'
-                            }}>
-                              <div style={{ color: '#fbbf24', fontWeight: 'bold', fontSize: '13px', marginBottom: '10px' }}>
-                                Things to Consider
-                              </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {asset.insights.considerations.map((item, i) => (
-                                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', color: '#e6edf3', fontSize: '13px' }}>
-                                    <span>{item.icon}</span>
-                                    <span>{item.text}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Detailed Metrics Grid */}
-                          <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(2, 1fr)',
-                            gap: '12px',
-                            marginBottom: '16px'
-                          }}>
-                            {/* Range Position */}
-                            <div style={{ background: '#0d1117', borderRadius: '10px', padding: '12px' }}>
-                              <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '6px' }}>30-DAY RANGE</div>
-                              <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600', marginBottom: '8px' }}>
-                                {asset.rangePosition?.label || 'Unknown'}
-                              </div>
-                              <div style={{
-                                height: '6px',
-                                background: '#21262d',
-                                borderRadius: '3px',
-                                position: 'relative',
-                                overflow: 'hidden'
-                              }}>
-                                <div style={{
-                                  position: 'absolute',
-                                  left: `${Math.min(100, Math.max(0, asset.rangePosition?.position30d || 50))}%`,
-                                  top: '50%',
-                                  transform: 'translate(-50%, -50%)',
-                                  width: '10px',
-                                  height: '10px',
-                                  borderRadius: '50%',
-                                  background: colors.cyan,
-                                  border: '2px solid #161b22'
-                                }} />
-                              </div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '10px', color: '#6e7681' }}>
-                                <span>Low</span>
-                                <span>High</span>
-                              </div>
-                            </div>
-
-                            {/* Category Rank */}
-                            <div style={{ background: '#0d1117', borderRadius: '10px', padding: '12px' }}>
-                              <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '6px' }}>CATEGORY RANK</div>
-                              <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                                <span style={{
-                                  color: asset.relativePerformance?.rank7d <= 5 ? '#10b981' : '#ffffff',
-                                  fontSize: '24px',
-                                  fontWeight: 'bold'
-                                }}>
-                                  #{asset.relativePerformance?.rank7d || '-'}
+                              <button
+                                onClick={() => setNotesExpanded(prev => ({ ...prev, [`stock-${symbol}`]: !prev[`stock-${symbol}`] }))}
+                                style={{
+                                  width: '100%',
+                                  padding: '14px 16px',
+                                  background: 'transparent',
+                                  border: 'none',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  cursor: 'pointer',
+                                  color: '#ffffff'
+                                }}
+                              >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  📁 {symbol} <span style={{ color: '#8b949e', fontSize: '13px' }}>({notes.length} note{notes.length !== 1 ? 's' : ''})</span>
                                 </span>
-                                <span style={{ color: '#6e7681', fontSize: '12px' }}>
-                                  of {asset.relativePerformance?.totalInCategory || '-'}
-                                </span>
-                              </div>
-                              <div style={{ color: '#8b949e', fontSize: '11px', marginTop: '4px' }}>
-                                {asset.relativePerformance?.description}
-                              </div>
-                            </div>
-
-                            {/* Volatility Context */}
-                            <div style={{ background: '#0d1117', borderRadius: '10px', padding: '12px' }}>
-                              <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '6px' }}>VOLATILITY</div>
-                              <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600', marginBottom: '4px', textTransform: 'capitalize' }}>
-                                {asset.volatilityContext?.level || 'Unknown'}
-                              </div>
-                              <div style={{ color: '#8b949e', fontSize: '11px' }}>
-                                {asset.volatilityContext?.description}
-                              </div>
-                              {asset.volatilityContext?.avgDailySwing > 0 && (
-                                <div style={{ color: '#6e7681', fontSize: '10px', marginTop: '4px' }}>
-                                  Avg daily: +/-{asset.volatilityContext.avgDailySwing}%
+                                <span style={{ color: '#6e7681' }}>{isExpanded ? '▼' : '▶'}</span>
+                              </button>
+                              {isExpanded && (
+                                <div style={{ padding: '0 16px 16px' }}>
+                                  {notes.map(note => (
+                                    <div key={note.id} style={{
+                                      background: '#0d1117',
+                                      borderRadius: '8px',
+                                      padding: '12px',
+                                      marginBottom: '8px',
+                                      position: 'relative'
+                                    }}>
+                                      <button
+                                        onClick={() => handleDeleteNote(note.id)}
+                                        style={{
+                                          position: 'absolute',
+                                          top: '8px',
+                                          right: '8px',
+                                          background: 'transparent',
+                                          border: 'none',
+                                          color: '#6e7681',
+                                          cursor: 'pointer',
+                                          fontSize: '12px'
+                                        }}
+                                      >✕</button>
+                                      {note.type === 'clipped' ? (
+                                        <>
+                                          <div style={{ color: colors.cyan, fontSize: '12px', fontWeight: '600', marginBottom: '4px' }}>{note.metricName}</div>
+                                          <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>{note.metricValue}</div>
+                                          <div style={{ color: '#8b949e', fontSize: '12px' }}>{note.explanation}</div>
+                                        </>
+                                      ) : (
+                                        <div style={{ color: '#e6edf3', fontSize: '13px' }}>{note.customText}</div>
+                                      )}
+                                    </div>
+                                  ))}
                                 </div>
                               )}
                             </div>
+                          );
+                        })}
+                      </div>
+                    )}
 
-                            {/* MarketClash Stats */}
-                            <div style={{ background: '#0d1117', borderRadius: '10px', padding: '12px' }}>
-                              <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '6px' }}>MARKETCLASH STATS</div>
-                              {asset.communityData ? (
-                                <>
-                                  <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
-                                    {asset.communityData.winRate}% Win Rate
-                                  </div>
-                                  <div style={{ color: '#8b949e', fontSize: '11px' }}>
-                                    {asset.communityData.totalBattles?.toLocaleString()} battles
-                                  </div>
-                                  <div style={{ color: '#6e7681', fontSize: '10px', marginTop: '4px' }}>
-                                    {asset.communityData.picksThisWeek?.toLocaleString()} picks this week
-                                  </div>
-                                </>
-                              ) : (
-                                <div style={{ color: '#6e7681', fontSize: '12px' }}>No data available</div>
+                    {/* Crypto Notes */}
+                    {currentWeekNotes.filter(n => n.assetType === 'crypto').length > 0 && (
+                      <div>
+                        <h3 style={{ color: '#8b949e', fontSize: '12px', fontWeight: '600', marginBottom: '12px', textTransform: 'uppercase' }}>
+                          CRYPTO
+                        </h3>
+                        {[...new Set(currentWeekNotes.filter(n => n.assetType === 'crypto').map(n => n.symbol))].map(symbol => {
+                          const notes = currentWeekNotes.filter(n => n.symbol === symbol && n.assetType === 'crypto');
+                          const isExpanded = notesExpanded[`crypto-${symbol}`];
+                          return (
+                            <div key={symbol} style={{
+                              background: '#161b22',
+                              borderRadius: '12px',
+                              border: '1px solid #21262d',
+                              marginBottom: '8px',
+                              overflow: 'hidden'
+                            }}>
+                              <button
+                                onClick={() => setNotesExpanded(prev => ({ ...prev, [`crypto-${symbol}`]: !prev[`crypto-${symbol}`] }))}
+                                style={{
+                                  width: '100%',
+                                  padding: '14px 16px',
+                                  background: 'transparent',
+                                  border: 'none',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  cursor: 'pointer',
+                                  color: '#ffffff'
+                                }}
+                              >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  📁 {symbol} <span style={{ color: '#8b949e', fontSize: '13px' }}>({notes.length} note{notes.length !== 1 ? 's' : ''})</span>
+                                </span>
+                                <span style={{ color: '#6e7681' }}>{isExpanded ? '▼' : '▶'}</span>
+                              </button>
+                              {isExpanded && (
+                                <div style={{ padding: '0 16px 16px' }}>
+                                  {notes.map(note => (
+                                    <div key={note.id} style={{
+                                      background: '#0d1117',
+                                      borderRadius: '8px',
+                                      padding: '12px',
+                                      marginBottom: '8px',
+                                      position: 'relative'
+                                    }}>
+                                      <button
+                                        onClick={() => handleDeleteNote(note.id)}
+                                        style={{
+                                          position: 'absolute',
+                                          top: '8px',
+                                          right: '8px',
+                                          background: 'transparent',
+                                          border: 'none',
+                                          color: '#6e7681',
+                                          cursor: 'pointer',
+                                          fontSize: '12px'
+                                        }}
+                                      >✕</button>
+                                      {note.type === 'clipped' ? (
+                                        <>
+                                          <div style={{ color: cryptoColor.primary, fontSize: '12px', fontWeight: '600', marginBottom: '4px' }}>{note.metricName}</div>
+                                          <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>{note.metricValue}</div>
+                                          <div style={{ color: '#8b949e', fontSize: '12px' }}>{note.explanation}</div>
+                                        </>
+                                      ) : (
+                                        <div style={{ color: '#e6edf3', fontSize: '13px' }}>{note.customText}</div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
                               )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* AI Insights */}
+                    {currentWeekNotes.filter(n => n.assetType === 'ai_insight').length > 0 && (
+                      <div style={{ marginTop: '20px' }}>
+                        <h3 style={{ color: '#8b949e', fontSize: '12px', fontWeight: '600', marginBottom: '12px', textTransform: 'uppercase' }}>
+                          AI INSIGHTS
+                        </h3>
+                        {currentWeekNotes.filter(n => n.assetType === 'ai_insight').map(note => (
+                          <div key={note.id} style={{
+                            background: '#161b22',
+                            borderRadius: '12px',
+                            border: '1px solid #21262d',
+                            marginBottom: '8px',
+                            padding: '14px 16px',
+                            position: 'relative'
+                          }}>
+                            <button
+                              onClick={() => handleDeleteNote(note.id)}
+                              style={{
+                                position: 'absolute',
+                                top: '12px',
+                                right: '12px',
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#6e7681',
+                                cursor: 'pointer',
+                                fontSize: '12px'
+                              }}
+                            >✕</button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                              <span style={{
+                                background: 'rgba(139, 92, 246, 0.2)',
+                                color: '#a78bfa',
+                                fontSize: '11px',
+                                padding: '2px 8px',
+                                borderRadius: '10px',
+                                fontWeight: '600'
+                              }}>
+                                🤖 AI Insight
+                              </span>
+                              <span style={{ color: '#6e7681', fontSize: '11px' }}>
+                                from {note.source || 'Research Advisor'}
+                              </span>
+                            </div>
+                            <div style={{ color: '#e6edf3', fontSize: '13px', lineHeight: '1.5', whiteSpace: 'pre-wrap', paddingRight: '20px' }}>
+                              {note.customText}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Finalize Button */}
+                {canFinalize && (
+                  <button
+                    onClick={() => {
+                      setShowResearchComplete(true);
+                      setResearchStreak(prev => prev + 1);
+                      // Award XP here
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '16px',
+                      marginTop: '20px',
+                      background: 'linear-gradient(90deg, #10b981 0%, #00d9ff 100%)',
+                      border: 'none',
+                      borderRadius: '12px',
+                      color: '#000',
+                      fontSize: '16px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    ✓ Finalize & Complete Weekly Research
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* AI ADVISOR TAB */}
+            {researchActiveTab === 'advisor' && (
+              <>
+                {/* Phase 1-3: Research Advisor (Explore Phase) */}
+                {researchPhase === 'explore' && (
+                  <ResearchAdvisor
+                    portfolio={[]}
+                    weekAheadEvents={weekAheadEvents}
+                    userNotes={currentWeekNotes}
+                    stocksData={stocksData}
+                    cryptoData={cryptoData}
+                    onPinNote={handlePinAINote}
+                    onStartConvictionCheck={handleStartConvictionCheck}
+                    colors={colors}
+                  />
+                )}
+
+                {/* Phase 4: Conviction Check */}
+                {researchPhase === 'conviction' && (
+                  <ConvictionCheck
+                    thesis={researchThesis}
+                    recommendations={[...stocksData, ...cryptoData].slice(0, 20)}
+                    convictionData={convictionData}
+                    setConvictionData={setConvictionData}
+                    onComplete={handleConvictionComplete}
+                    onBack={handleBackFromConviction}
+                    onOpenAssetPicker={handleOpenAssetPicker}
+                    colors={colors}
+                  />
+                )}
+
+                {/* Phase 5: Game Plan */}
+                {researchPhase === 'gameplan' && (
+                  <GamePlan
+                    gamePlan={researchGamePlan}
+                    thesis={researchThesis}
+                    convictionData={convictionData}
+                    isLoading={researchGamePlanLoading}
+                    onUsePortfolio={handleUseResearchPortfolio}
+                    onSaveToNotes={handleSaveGamePlanToNotes}
+                    onBack={handleBackFromGamePlan}
+                    colors={colors}
+                  />
+                )}
+
+                {/* Asset Picker Modal */}
+                <AssetPickerModal
+                  isOpen={showAssetPicker}
+                  onClose={() => setShowAssetPicker(false)}
+                  onSelect={handleAssetPickerSelect}
+                  type={assetPickerType}
+                  stocksData={stocksData}
+                  cryptoData={cryptoData}
+                  excludeSymbols={[...convictionData.mustHave, ...convictionData.mustAvoid]}
+                  colors={colors}
+                />
+              </>
+            )}
+
+            {/* STOCKS/CRYPTO TAB - Asset List */}
+            {researchActiveTab !== 'notes' && researchActiveTab !== 'advisor' && (
+              <>
+                {sortedAssets.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '60px 20px', color: '#8b949e' }}>
+                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
+                    <p>No assets found matching "{researchSearchTerm}"</p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {sortedAssets.map((asset, index) => {
+                      const isStock = researchActiveTab === 'stocks';
+                      const color = isStock ? getSectorColor(asset.sector || 'Unknown') : cryptoColor;
+
+                      return (
+                        <motion.div
+                          key={asset.symbol}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.02 }}
+                          onClick={() => handleOpenDetail(asset, isStock ? 'stock' : 'crypto')}
+                          style={{
+                            background: '#161b22',
+                            border: '1px solid #21262d',
+                            borderLeft: `3px solid ${color.primary}`,
+                            borderRadius: '12px',
+                            padding: '16px',
+                            cursor: 'pointer',
+                            transition: 'background 0.2s, border-color 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = color.background;
+                            e.currentTarget.style.borderColor = color.border;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = '#161b22';
+                            e.currentTarget.style.borderColor = '#21262d';
+                          }}
+                        >
+                          {/* Card Header */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                            <div>
+                              <div style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '16px', marginBottom: '2px' }}>
+                                {asset.symbol}
+                              </div>
+                              <div style={{ color: '#8b949e', fontSize: '13px' }}>
+                                {asset.name}
+                              </div>
+                              {isStock && asset.sector && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                                  <span style={{
+                                    width: '6px',
+                                    height: '6px',
+                                    borderRadius: '50%',
+                                    background: color.primary
+                                  }} />
+                                  <span style={{ color: color.primary, fontSize: '11px' }}>{asset.sector}</span>
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ color: '#ffffff', fontWeight: '600', fontSize: '16px' }}>
+                                ${asset.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                              <div style={{
+                                color: safeNumber(asset.percentChange) >= 0 ? colors.green : colors.red,
+                                fontSize: '13px',
+                                fontWeight: '500'
+                              }}>
+                                {safeNumber(asset.percentChange) >= 0 ? '▲' : '▼'} {safeNumber(asset.percentChange) >= 0 ? '+' : ''}{safeToFixed(asset.percentChange, 2)}%
+                              </div>
                             </div>
                           </div>
 
-                          {/* Action Buttons */}
-                          <div style={{ display: 'flex', gap: '10px' }}>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (isInPortfolio) return;
-                                // Add to portfolio with default 10%
-                                const newAsset = {
-                                  symbol: asset.symbol,
-                                  name: asset.name,
-                                  price: asset.price,
-                                  allocation: 10
-                                };
-                                setPortfolio([...portfolio, newAsset]);
-                                setPortfolioType(researchAssetType);
-                              }}
-                              disabled={isInPortfolio}
-                              style={{
-                                flex: 1,
-                                padding: '12px',
-                                borderRadius: '10px',
-                                border: 'none',
-                                background: isInPortfolio ? '#21262d' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                                color: isInPortfolio ? '#6e7681' : '#ffffff',
-                                fontWeight: '600',
-                                fontSize: '14px',
-                                cursor: isInPortfolio ? 'not-allowed' : 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '6px'
-                              }}
-                            >
-                              {isInPortfolio ? 'In Portfolio' : '+ Add to Portfolio'}
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (isInCompare) {
-                                  handleRemoveFromCompare(asset.symbol);
-                                } else {
-                                  handleAddToCompare(asset);
-                                }
-                              }}
-                              disabled={!isInCompare && researchCompareAssets.length >= 3}
-                              style={{
-                                padding: '12px 16px',
-                                borderRadius: '10px',
-                                border: isInCompare ? `2px solid ${colors.cyan}` : '2px solid #21262d',
-                                background: isInCompare ? 'rgba(0, 217, 255, 0.1)' : 'transparent',
-                                color: isInCompare ? colors.cyan : (!isInCompare && researchCompareAssets.length >= 3) ? '#6e7681' : '#8b949e',
-                                fontWeight: '600',
-                                fontSize: '14px',
-                                cursor: (!isInCompare && researchCompareAssets.length >= 3) ? 'not-allowed' : 'pointer'
-                              }}
-                            >
-                              {isInCompare ? 'Comparing' : 'Compare'}
-                            </button>
+                          {/* Quick Stats */}
+                          <div style={{
+                            display: 'flex',
+                            gap: '12px',
+                            paddingTop: '8px',
+                            borderTop: '1px solid #21262d',
+                            fontSize: '12px',
+                            color: '#8b949e'
+                          }}>
+                            {isStock ? (
+                              <>
+                                <span>Beta: <span style={{ color: '#ffffff' }}>{stockFundamentals[asset.symbol]?.beta?.toFixed(2) || '-'}</span></span>
+                                <span>7D: <span style={{ color: (asset.priceChange7d || 0) >= 0 ? colors.green : colors.red }}>{(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(1)}%</span></span>
+                                <span>Analysts: <span style={{ color: '#ffffff' }}>{stockFundamentals[asset.symbol]?.analystConsensus?.rating?.toFixed(1) || '-'}★</span></span>
+                              </>
+                            ) : (
+                              <>
+                                <span>Vol: <span style={{ color: '#ffffff' }}>{cryptoMetrics[asset.symbol]?.volatility7d?.toFixed(1) || '-'}%</span></span>
+                                <span>7D: <span style={{ color: (asset.priceChange7d || 0) >= 0 ? colors.green : colors.red }}>{(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(1)}%</span></span>
+                                <span>vs BTC: <span style={{ color: '#ffffff' }}>{cryptoMetrics[asset.symbol]?.volatilityVsBtc?.toFixed(1) || '-'}x</span></span>
+                              </>
+                            )}
                           </div>
                         </motion.div>
-                      )}
-                    </motion.div>
-                  );
-                })}
-              </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
-
-          {/* Comparison Panel */}
-          {researchCompareAssets.length > 0 && (
-            <motion.div
-              initial={{ y: 200 }}
-              animate={{ y: 0 }}
-              style={{
-                position: 'fixed',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                background: '#161b22',
-                borderTop: '2px solid #00d9ff',
-                padding: '16px',
-                zIndex: 30
-              }}
-            >
-              <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <span style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '14px' }}>
-                    Comparing {researchCompareAssets.length}/3 Assets
-                  </span>
-                  <button
-                    onClick={() => setResearchCompareAssets([])}
-                    style={{
-                      padding: '6px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid #ef4444',
-                      background: 'transparent',
-                      color: '#ef4444',
-                      fontSize: '12px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Clear All
-                  </button>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${researchCompareAssets.length}, 1fr)`, gap: '12px' }}>
-                  {researchCompareAssets.map(asset => (
-                    <div key={asset.symbol} style={{
-                      background: '#0d1117',
-                      borderRadius: '10px',
-                      padding: '12px',
-                      position: 'relative'
-                    }}>
-                      <button
-                        onClick={() => handleRemoveFromCompare(asset.symbol)}
-                        style={{
-                          position: 'absolute',
-                          top: '8px',
-                          right: '8px',
-                          width: '20px',
-                          height: '20px',
-                          borderRadius: '50%',
-                          border: 'none',
-                          background: '#21262d',
-                          color: '#8b949e',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '12px'
-                        }}
-                      >
-                        x
-                      </button>
-                      <div style={{ fontWeight: 'bold', color: '#ffffff', marginBottom: '8px' }}>{asset.symbol}</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: '#8b949e' }}>7D</span>
-                          <span style={{ color: (asset.priceChange7d || 0) >= 0 ? '#10b981' : '#ef4444' }}>
-                            {(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(1)}%
-                          </span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: '#8b949e' }}>30D</span>
-                          <span style={{ color: (asset.priceChange30d || 0) >= 0 ? '#10b981' : '#ef4444' }}>
-                            {(asset.priceChange30d || 0) >= 0 ? '+' : ''}{(asset.priceChange30d || 0).toFixed(1)}%
-                          </span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: '#8b949e' }}>Win Rate</span>
-                          <span style={{ color: colors.cyan }}>{asset.communityData?.winRate || '-'}%</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: '#8b949e' }}>Rank</span>
-                          <span style={{ color: '#ffffff' }}>#{asset.categoryRank7d || '-'}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
         </div>
       </div>
     );
@@ -3753,14 +8519,6 @@ export default function PortfolioDuel() {
 
   // DASHBOARD SCREEN - New Flowing Card Layout
   if (screen === 'dashboard') {
-    // Debug logging
-    console.log('📊 DASHBOARD RENDER');
-    console.log('Current user:', user?.username);
-    console.log('Total battles in state:', battles.length);
-    console.log('User battles:', userBattles.length);
-    console.log('Active battles:', activeBattles.length, activeBattles.map(b => ({code: b.challengeCode, creator: b.creator, opponent: b.opponent, status: b.status})));
-    console.log('Waiting battles:', waitingBattles.length, waitingBattles.map(b => ({code: b.challengeCode, creator: b.creator, opponent: b.opponent, status: b.status})));
-
     // Get first active battle for preview card
     const primaryActiveBattle = activeBattles[0];
     const hasActiveBattle = activeBattles.length > 0;
@@ -3803,6 +8561,9 @@ export default function PortfolioDuel() {
 
     return (
       <div style={containerStyle}>
+        {/* Animated Desktop Background */}
+        <DesktopBackground isDesktop={isDesktop} />
+
         {/* Global Overlays */}
         <ChallengeToast />
         <SlotMachineOverlay />
@@ -3811,7 +8572,9 @@ export default function PortfolioDuel() {
           minHeight: '100vh',
           display: 'flex',
           flexDirection: 'column',
-          background: colors.background
+          background: colors.background,
+          position: 'relative',
+          zIndex: 1
         }}>
           {/* XP Progress Modal */}
           {showXPModal && (
@@ -4089,10 +8852,7 @@ export default function PortfolioDuel() {
 
               {/* Hamburger Menu Button - LEFT */}
               <button
-                onClick={() => {
-                  console.log('🍔 HAMBURGER CLICKED!');
-                  setSidebarOpen(true);
-                }}
+                onClick={() => setSidebarOpen(true)}
                 style={{
                   minWidth: '44px',
                   minHeight: '44px',
@@ -4155,7 +8915,8 @@ export default function PortfolioDuel() {
           <div style={{
             background: '#161b22',
             borderBottom: '1px solid #21262d',
-            padding: '12px 16px'
+            padding: '12px 16px',
+            marginBottom: '16px'
           }}>
             <div style={{
               maxWidth: '900px',
@@ -4630,7 +9391,7 @@ export default function PortfolioDuel() {
             )}
 
             {/* Create & Join Battle Cards - TRUE SIDE-BY-SIDE on all screens */}
-            <div className="grid grid-cols-2 gap-3 mb-5">
+            <div className="grid grid-cols-2 gap-4 mb-4">
               {/* CREATE BATTLE Card */}
               {(() => {
                 const createColor = gameMode === 'draft' ? '#10b981' : colors.cyan;
@@ -4639,11 +9400,18 @@ export default function PortfolioDuel() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.2 }}
-                    onClick={() => {
+                    onClick={async () => {
                       setPortfolio([]); setPortfolioType(null);
                       setPortfolioName('');
                       setAssetType('stocks');
                       setSearchTerm('');
+
+                      // Check for upcoming high-impact events and show alert
+                      const highImpact = await checkUpcomingHighImpactEvents();
+                      if (highImpact && highImpact.length > 0) {
+                        setShowVolatilityAlert(true);
+                      }
+
                       // Route based on game mode
                       if (gameMode === 'draft') {
                         setScreen('draftSetup');  // New screen for draft
@@ -4908,6 +9676,7 @@ export default function PortfolioDuel() {
                 gap: '16px',
                 cursor: 'pointer',
                 transition: 'all 0.3s',
+                marginTop: '12px',
                 marginBottom: '24px'
               }}
               onMouseEnter={(e) => {
@@ -5561,10 +10330,7 @@ export default function PortfolioDuel() {
           <>
             {/* Backdrop/Overlay */}
             <div
-              onClick={() => {
-                console.log('🎯 BACKDROP CLICKED - CLOSING SIDEBAR');
-                setSidebarOpen(false);
-              }}
+              onClick={() => setSidebarOpen(false)}
               style={{
                 position: 'fixed',
                 top: 0,
@@ -5602,10 +10368,7 @@ export default function PortfolioDuel() {
                   <span className="text-white">Clash</span>
                 </h2>
                 <button
-                  onClick={() => {
-                    console.log('❌ CLOSE BUTTON CLICKED');
-                    setSidebarOpen(false);
-                  }}
+                  onClick={() => setSidebarOpen(false)}
                   className="text-gray-400 hover:text-white p-2 hover:bg-white/10 rounded-lg transition-colors"
                   aria-label="Close menu"
                 >
@@ -5703,7 +10466,6 @@ export default function PortfolioDuel() {
                 {/* BATTLE HISTORY (replaces Wins + Losses) */}
                 <button
                   onClick={() => {
-                    console.log('📜 Battle History clicked');
                     setHistoryTab(gameMode === 'draft' ? 'draft' : 'classic');
                     setScreen('battleHistory');
                     setSidebarOpen(false);
@@ -5740,7 +10502,6 @@ export default function PortfolioDuel() {
                 {/* PROFILE */}
                 <button
                   onClick={() => {
-                    console.log('👤 Profile clicked');
                     setScreen('profile');
                     setSidebarOpen(false);
                   }}
@@ -5765,13 +10526,92 @@ export default function PortfolioDuel() {
                   <span style={{ fontWeight: '600', fontSize: '14px' }}>Profile</span>
                 </button>
 
+                {/* NOTIFICATIONS */}
+                <button
+                  onClick={() => {
+                    setShowNotifications(true);
+                    setSidebarOpen(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    backgroundColor: 'transparent',
+                    color: '#d1d5db',
+                    border: 'none',
+                    marginBottom: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    position: 'relative'
+                  }}
+                >
+                  <svg style={{ width: '20px', height: '20px', flexShrink: 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
+                  <span style={{ fontWeight: '600', fontSize: '14px' }}>Notifications</span>
+                  {/* Unread badge */}
+                  {unreadCount > 0 && (
+                    <span style={{
+                      position: 'absolute',
+                      right: '16px',
+                      backgroundColor: '#ef4444',
+                      color: 'white',
+                      fontSize: '11px',
+                      fontWeight: 'bold',
+                      padding: '2px 6px',
+                      borderRadius: '10px',
+                      minWidth: '18px',
+                      textAlign: 'center'
+                    }}>
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* WEEK AHEAD CALENDAR */}
+                <button
+                  onClick={() => {
+                    setShowWeekAhead(true);
+                    setSidebarOpen(false);
+                    loadWeekAheadData();
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    backgroundColor: 'transparent',
+                    color: '#d1d5db',
+                    border: 'none',
+                    marginBottom: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <svg style={{ width: '20px', height: '20px', flexShrink: 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <div style={{ flex: 1, textAlign: 'left' }}>
+                    <div style={{ fontWeight: '600', fontSize: '14px' }}>Week Ahead</div>
+                    {upcomingHighImpactEvents.length > 0 && (
+                      <div style={{ fontSize: '11px', color: '#ef4444' }}>
+                        {upcomingHighImpactEvents.length} high-impact event{upcomingHighImpactEvents.length > 1 ? 's' : ''} soon
+                      </div>
+                    )}
+                  </div>
+                </button>
+
                 {/* DIVIDER */}
                 <div style={{ borderTop: '1px solid #374151', margin: '16px 0' }}></div>
 
                 {/* LOGOUT */}
                 <button
                   onClick={() => {
-                    console.log('🚪 Logout clicked');
                     setUser(null);
                     setScreen('home');
                     localStorage.removeItem('user');
@@ -5801,6 +10641,928 @@ export default function PortfolioDuel() {
             </div>
           </>
         )}
+
+        {/* ============================================ */}
+        {/* NOTIFICATIONS MODAL */}
+        {/* ============================================ */}
+        {showNotifications && (
+          <>
+            {/* Backdrop */}
+            <div
+              onClick={() => setShowNotifications(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 200,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+            {/* Modal Panel */}
+            <div style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '90%',
+              maxWidth: '500px',
+              maxHeight: '80vh',
+              backgroundColor: '#161b22',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              zIndex: 210,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              {/* Header */}
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #21262d',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff' }}>
+                  Notifications
+                  {unreadCount > 0 && (
+                    <span style={{
+                      marginLeft: '8px',
+                      backgroundColor: '#ef4444',
+                      color: 'white',
+                      fontSize: '12px',
+                      padding: '2px 8px',
+                      borderRadius: '10px'
+                    }}>
+                      {unreadCount}
+                    </span>
+                  )}
+                </h2>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={markAllNotificationsRead}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        backgroundColor: '#21262d',
+                        color: '#8b949e',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowNotifications(false)}
+                    style={{
+                      padding: '6px',
+                      backgroundColor: 'transparent',
+                      color: '#8b949e',
+                      border: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Notifications List */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
+                {notifications.length === 0 ? (
+                  <div style={{
+                    textAlign: 'center',
+                    padding: '40px 20px',
+                    color: '#8b949e'
+                  }}>
+                    <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ margin: '0 auto 16px', opacity: 0.5 }}>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg>
+                    <p style={{ fontSize: '14px' }}>No notifications yet</p>
+                    <p style={{ fontSize: '12px', marginTop: '4px' }}>Battle results, challenges, and alerts will appear here</p>
+                  </div>
+                ) : (
+                  notifications.map(notif => {
+                    const typeConfig = NOTIFICATION_TYPES[notif.type] || NOTIFICATION_TYPES.system;
+                    return (
+                      <div
+                        key={notif.id}
+                        onClick={() => markNotificationRead(notif.id)}
+                        style={{
+                          padding: '12px 16px',
+                          marginBottom: '4px',
+                          borderRadius: '8px',
+                          backgroundColor: notif.read ? 'transparent' : 'rgba(59, 130, 246, 0.1)',
+                          border: notif.read ? '1px solid #21262d' : '1px solid rgba(59, 130, 246, 0.3)',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                          <span style={{
+                            fontSize: '24px',
+                            width: '36px',
+                            height: '36px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: `${typeConfig.color}20`,
+                            borderRadius: '8px'
+                          }}>
+                            {typeConfig.icon}
+                          </span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{
+                              fontSize: '14px',
+                              fontWeight: notif.read ? '500' : '600',
+                              color: '#ffffff',
+                              marginBottom: '2px'
+                            }}>
+                              {notif.title}
+                            </div>
+                            <div style={{
+                              fontSize: '13px',
+                              color: '#8b949e'
+                            }}>
+                              {notif.body}
+                            </div>
+                            <div style={{
+                              fontSize: '11px',
+                              color: '#6e7681',
+                              marginTop: '4px'
+                            }}>
+                              {new Date(notif.createdAt).toLocaleDateString()} at {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteNotification(notif.id);
+                            }}
+                            style={{
+                              padding: '4px',
+                              backgroundColor: 'transparent',
+                              color: '#6e7681',
+                              border: 'none',
+                              cursor: 'pointer',
+                              opacity: 0.6
+                            }}
+                          >
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ============================================ */}
+        {/* WEEK AHEAD CALENDAR MODAL */}
+        {/* ============================================ */}
+        {showWeekAhead && (
+          <>
+            {/* Backdrop */}
+            <div
+              onClick={() => setShowWeekAhead(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 200,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+            {/* Modal Panel */}
+            <div style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '95%',
+              maxWidth: '600px',
+              maxHeight: '85vh',
+              backgroundColor: '#161b22',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              zIndex: 210,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              {/* Header */}
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #21262d',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>📅</span> Week Ahead
+                  {weekAheadRange.isNextWeek && (
+                    <span style={{ fontSize: '12px', color: '#8b949e', fontWeight: 'normal' }}>(Next Week)</span>
+                  )}
+                </h2>
+                <button
+                  onClick={() => setShowWeekAhead(false)}
+                  style={{
+                    padding: '6px',
+                    backgroundColor: 'transparent',
+                    color: '#8b949e',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Week Range Header */}
+              <div style={{
+                padding: '12px 20px',
+                borderBottom: '1px solid #21262d',
+                textAlign: 'center'
+              }}>
+                <span style={{ fontSize: '14px', color: '#d1d5db' }}>
+                  {weekAheadRange.start && weekAheadRange.end && (
+                    `${formatWeekDate(weekAheadRange.start)} - ${formatWeekDate(weekAheadRange.end)}`
+                  )}
+                </span>
+              </div>
+
+              {/* Impact Legend */}
+              <div style={{
+                padding: '8px 20px',
+                borderBottom: '1px solid #21262d',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '16px',
+                fontSize: '12px'
+              }}>
+                <span style={{ color: '#8b949e' }}>Impact:</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ef4444' }}></span>
+                  <span style={{ color: '#ef4444' }}>High</span>
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b' }}></span>
+                  <span style={{ color: '#f59e0b' }}>Medium</span>
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#22c55e' }}></span>
+                  <span style={{ color: '#22c55e' }}>Low</span>
+                </span>
+              </div>
+
+              {/* Summary Bar */}
+              <div style={{
+                padding: '12px 20px',
+                background: '#0d1117',
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '16px',
+                fontSize: '13px',
+                borderBottom: '1px solid #21262d'
+              }}>
+                {weekAheadEvents.filter(e => e.impact === 'high').length > 0 && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#ef4444', fontSize: '10px' }}>●</span>
+                    <span style={{ color: '#8b949e' }}>High Impact: {weekAheadEvents.filter(e => e.impact === 'high').length}</span>
+                  </span>
+                )}
+                {weekAheadEarnings.length > 0 && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#a855f7', fontSize: '10px' }}>●</span>
+                    <span style={{ color: '#8b949e' }}>Earnings: {weekAheadEarnings.length}</span>
+                  </span>
+                )}
+                {weekAheadHolidays.length > 0 && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#6b7280', fontSize: '10px' }}>●</span>
+                    <span style={{ color: '#8b949e' }}>Market Closures</span>
+                  </span>
+                )}
+                {weekAheadEvents.length === 0 && weekAheadEarnings.length === 0 && weekAheadHolidays.length === 0 && !weekAheadLoading && (
+                  <span style={{ color: '#22c55e' }}>✓ Quiet week ahead</span>
+                )}
+              </div>
+
+              {/* Events List */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                {weekAheadLoading ? (
+                  <div style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <div style={{ fontSize: '24px', marginBottom: '8px' }}>⏳</div>
+                    Loading week ahead...
+                  </div>
+                ) : (weekAheadEvents.length === 0 && weekAheadEarnings.length === 0 && weekAheadHolidays.length === 0) ? (
+                  <div style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <div style={{ fontSize: '32px', marginBottom: '8px' }}>📭</div>
+                    <p>No major events this week</p>
+                    <p style={{ fontSize: '12px', marginTop: '8px' }}>Check back on the weekend for next week's events</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Combine and sort all events including holidays */}
+                    {[
+                      ...weekAheadEvents,
+                      ...weekAheadEarnings,
+                      ...weekAheadHolidays.map(h => ({
+                        id: `${h.date}-${h.type}`,
+                        name: h.name,
+                        type: h.type,
+                        date: h.date,
+                        time: h.closeTime || null,
+                        impact: 'info',
+                        note: h.note,
+                        strategyTip: h.type === 'early_close'
+                          ? 'Low volume trading - prices can be erratic. Consider avoiding battles.'
+                          : 'Markets closed. Crypto still trades 24/7.'
+                      }))
+                    ]
+                      .sort((a, b) => {
+                        const dateCompare = a.date.localeCompare(b.date);
+                        if (dateCompare !== 0) return dateCompare;
+                        // Sort by impact within same day
+                        const impactOrder = { high: 0, medium: 1, low: 2, info: 3 };
+                        return (impactOrder[a.impact] || 3) - (impactOrder[b.impact] || 3);
+                      })
+                      .map(event => (
+                        <div
+                          key={event.id}
+                          onClick={() => setExpandedEventId(expandedEventId === event.id ? null : event.id)}
+                          style={{
+                            padding: '12px 16px',
+                            marginBottom: '8px',
+                            borderRadius: '10px',
+                            backgroundColor: expandedEventId === event.id ? '#21262d' : '#0d1117',
+                            border: `1px solid ${expandedEventId === event.id ? getEventImpactColor(event.impact) : '#21262d'}`,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                            {/* Date badge */}
+                            <div style={{
+                              minWidth: '50px',
+                              textAlign: 'center',
+                              padding: '8px',
+                              backgroundColor: '#21262d',
+                              borderRadius: '8px'
+                            }}>
+                              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff' }}>
+                                {getDateDisplay(event.date).dayNum}
+                              </div>
+                              <div style={{ fontSize: '10px', color: '#8b949e', textTransform: 'uppercase' }}>
+                                {getDateDisplay(event.date).dayName}
+                              </div>
+                            </div>
+
+                            {/* Event details */}
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                <span style={{ fontSize: '16px' }}>{getEventIcon(event.type)}</span>
+                                <span style={{
+                                  width: '8px',
+                                  height: '8px',
+                                  borderRadius: '50%',
+                                  backgroundColor: getEventImpactColor(event.impact)
+                                }}></span>
+                                <span style={{ fontSize: '14px', fontWeight: '600', color: '#ffffff' }}>
+                                  {event.name}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#8b949e' }}>
+                                {event.time} ET
+                                {event.beforeAfterMarket && (
+                                  <span style={{ marginLeft: '8px', color: '#8b949e' }}>
+                                    ({event.beforeAfterMarket === 'BeforeMarket' ? 'Pre-market' : 'After-hours'})
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Expanded details */}
+                              {expandedEventId === event.id && (
+                                <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #21262d' }}>
+                                  {/* Expected value for economic events */}
+                                  {event.expected && (
+                                    <div style={{ marginBottom: '12px' }}>
+                                      <div style={{ fontSize: '10px', color: '#8b949e', marginBottom: '2px' }}>Expected</div>
+                                      <div style={{ fontSize: '14px', color: '#3b82f6', fontWeight: '600' }}>{event.expected}</div>
+                                    </div>
+                                  )}
+
+                                  {/* Historical Volatility */}
+                                  {event.historicalMove && (
+                                    <div style={{
+                                      padding: '10px',
+                                      backgroundColor: '#161b22',
+                                      borderRadius: '8px',
+                                      marginBottom: '12px'
+                                    }}>
+                                      <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '8px', fontWeight: '600', letterSpacing: '0.5px' }}>AVG HISTORICAL MOVES</div>
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', fontSize: '13px' }}>
+                                        {event.type === 'earnings' ? (
+                                          <>
+                                            <span>
+                                              <span style={{ color: '#8b949e' }}>Stock: </span>
+                                              <span style={{ color: '#00d9ff', fontWeight: '600' }}>±{event.historicalMove.stock}%</span>
+                                            </span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            {event.historicalMove.market && (
+                                              <span>
+                                                <span style={{ color: '#8b949e' }}>Market: </span>
+                                                <span style={{ color: '#00d9ff', fontWeight: '600' }}>±{event.historicalMove.market}%</span>
+                                              </span>
+                                            )}
+                                            {event.historicalMove.highBeta && (
+                                              <span>
+                                                <span style={{ color: '#8b949e' }}>High-Beta: </span>
+                                                <span style={{ color: '#f59e0b', fontWeight: '600' }}>±{event.historicalMove.highBeta}%</span>
+                                              </span>
+                                            )}
+                                            {event.historicalMove.crypto && (
+                                              <span>
+                                                <span style={{ color: '#8b949e' }}>Crypto: </span>
+                                                <span style={{ color: '#a855f7', fontWeight: '600' }}>±{event.historicalMove.crypto}%</span>
+                                              </span>
+                                            )}
+                                          </>
+                                        )}
+                                      </div>
+                                      {/* Earnings-specific: last moves */}
+                                      {event.historicalMove.lastMoves && event.historicalMove.lastMoves.length > 0 && (
+                                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#8b949e' }}>
+                                          Last 4: {event.historicalMove.lastMoves.join(' · ')}
+                                          {event.historicalMove.beatRate && (
+                                            <span style={{ marginLeft: '12px' }}>Beat rate: {event.historicalMove.beatRate}</span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Strategy Tip */}
+                                  {event.strategyTip && (
+                                    <div style={{
+                                      padding: '10px',
+                                      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                      borderRadius: '8px',
+                                      border: '1px solid rgba(59, 130, 246, 0.2)'
+                                    }}>
+                                      <div style={{ fontSize: '11px', color: '#3b82f6', marginBottom: '4px', fontWeight: '600' }}>💡 Strategy Tip</div>
+                                      <div style={{ fontSize: '12px', color: '#d1d5db', lineHeight: '1.4' }}>{event.strategyTip}</div>
+                                    </div>
+                                  )}
+
+                                  {/* Affected Sectors for economic events */}
+                                  {event.affectedSectors && event.affectedSectors.length > 0 && (
+                                    <div style={{ marginTop: '12px' }}>
+                                      <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px' }}>Affected Sectors</div>
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                        {event.affectedSectors.map(sector => (
+                                          <span key={sector} style={{
+                                            padding: '4px 8px',
+                                            backgroundColor: '#21262d',
+                                            borderRadius: '4px',
+                                            fontSize: '11px',
+                                            color: '#00d9ff'
+                                          }}>
+                                            {sector}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ============================================ */}
+        {/* REMATCH REQUEST MODAL */}
+        {/* ============================================ */}
+        {showRematchModal && rematchRequest && (
+          <>
+            {/* Backdrop */}
+            <div
+              onClick={() => setShowRematchModal(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 200,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+            {/* Modal */}
+            <div style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '90%',
+              maxWidth: '400px',
+              backgroundColor: '#161b22',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              zIndex: 210,
+              padding: '24px',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚔️</div>
+              <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#ffffff', marginBottom: '8px' }}>
+                Rematch Request!
+              </h2>
+              <p style={{ fontSize: '14px', color: '#8b949e', marginBottom: '24px' }}>
+                <span style={{ color: '#00d9ff', fontWeight: '600' }}>{rematchRequest.fromUsername}</span> wants a rematch!
+              </p>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  onClick={() => declineRematch(rematchRequest.id)}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: '#21262d',
+                    color: '#8b949e',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Decline
+                </button>
+                <button
+                  onClick={() => acceptRematch(rematchRequest.id)}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: '#22c55e',
+                    color: '#000000',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Accept Rematch
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ============================================ */}
+        {/* PORTFOLIO TEMPLATES MODAL */}
+        {/* ============================================ */}
+        {showTemplatesModal && (
+          <>
+            {/* Backdrop */}
+            <div
+              onClick={() => setShowTemplatesModal(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 200,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+            {/* Modal Panel */}
+            <div style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '90%',
+              maxWidth: '500px',
+              maxHeight: '80vh',
+              backgroundColor: '#161b22',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              zIndex: 210,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              {/* Header */}
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #21262d',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff' }}>
+                  Portfolio Templates
+                </h2>
+                <button
+                  onClick={() => setShowTemplatesModal(false)}
+                  style={{
+                    padding: '6px',
+                    backgroundColor: 'transparent',
+                    color: '#8b949e',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Template Type Tabs */}
+              <div style={{
+                padding: '12px 20px',
+                borderBottom: '1px solid #21262d',
+                display: 'flex',
+                gap: '8px'
+              }}>
+                <button
+                  onClick={() => setAssetType('stocks')}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: assetType === 'stocks' ? '#22c55e' : '#21262d',
+                    color: assetType === 'stocks' ? '#000' : '#8b949e',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Stocks
+                </button>
+                <button
+                  onClick={() => setAssetType('crypto')}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: assetType === 'crypto' ? '#f59e0b' : '#21262d',
+                    color: assetType === 'crypto' ? '#000' : '#8b949e',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Crypto
+                </button>
+              </div>
+
+              {/* Templates List */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                {/* System Templates Section */}
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '8px', paddingLeft: '4px' }}>
+                    SYSTEM TEMPLATES
+                  </div>
+                  {SYSTEM_PORTFOLIO_TEMPLATES
+                    .filter(t => t.type === assetType)
+                    .map(template => (
+                      <div
+                        key={template.id}
+                        onClick={() => loadTemplateToPortfolio(template)}
+                        style={{
+                          padding: '12px 16px',
+                          marginBottom: '8px',
+                          borderRadius: '10px',
+                          backgroundColor: '#0d1117',
+                          border: '1px solid #21262d',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={{ fontSize: '24px' }}>{template.icon}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#ffffff' }}>
+                              {template.name}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#8b949e' }}>
+                              {template.description}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#6e7681', marginTop: '4px' }}>
+                              {template.assets.join(', ')}
+                            </div>
+                          </div>
+                          <svg width="20" height="20" fill="none" stroke="#8b949e" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </div>
+                      </div>
+                    ))
+                  }
+                </div>
+
+                {/* User Templates Section */}
+                <div>
+                  <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '8px', paddingLeft: '4px' }}>
+                    YOUR TEMPLATES
+                  </div>
+                  {portfolioTemplates.filter(t => t.type === assetType).length === 0 ? (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: '24px',
+                      color: '#6e7681',
+                      backgroundColor: '#0d1117',
+                      borderRadius: '10px',
+                      border: '1px dashed #21262d'
+                    }}>
+                      <div style={{ fontSize: '24px', marginBottom: '8px' }}>📁</div>
+                      <p style={{ fontSize: '13px' }}>No saved templates yet</p>
+                      <p style={{ fontSize: '11px', marginTop: '4px' }}>Save your portfolio during battle creation</p>
+                    </div>
+                  ) : (
+                    portfolioTemplates
+                      .filter(t => t.type === assetType)
+                      .map(template => (
+                        <div
+                          key={template.id}
+                          style={{
+                            padding: '12px 16px',
+                            marginBottom: '8px',
+                            borderRadius: '10px',
+                            backgroundColor: '#0d1117',
+                            border: '1px solid #21262d',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px'
+                          }}
+                        >
+                          <div
+                            style={{ flex: 1, cursor: 'pointer' }}
+                            onClick={() => loadTemplateToPortfolio(template)}
+                          >
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#ffffff' }}>
+                              {template.name}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#6e7681', marginTop: '2px' }}>
+                              {template.assets.join(', ')}
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deletePortfolioTemplate(template.id);
+                            }}
+                            style={{
+                              padding: '6px',
+                              backgroundColor: 'transparent',
+                              color: '#ef4444',
+                              border: 'none',
+                              cursor: 'pointer',
+                              opacity: 0.7
+                            }}
+                          >
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ============================================ */}
+        {/* HIGH VOLATILITY ALERT MODAL */}
+        {/* ============================================ */}
+        {showVolatilityAlert && upcomingHighImpactEvents.length > 0 && (
+          <>
+            {/* Backdrop */}
+            <div
+              onClick={() => setShowVolatilityAlert(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 200,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+            {/* Modal */}
+            <div style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '90%',
+              maxWidth: '450px',
+              backgroundColor: '#161b22',
+              borderRadius: '16px',
+              border: '2px solid #ef4444',
+              zIndex: 210,
+              padding: '24px',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '48px', marginBottom: '12px' }}>⚠️</div>
+              <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#ef4444', marginBottom: '8px' }}>
+                High Volatility Alert!
+              </h2>
+              <p style={{ fontSize: '14px', color: '#8b949e', marginBottom: '20px' }}>
+                Major economic events are scheduled in the next 3 days. Expect increased market volatility!
+              </p>
+
+              {/* Events list */}
+              <div style={{
+                backgroundColor: '#0d1117',
+                borderRadius: '10px',
+                padding: '12px',
+                marginBottom: '20px',
+                textAlign: 'left',
+                maxHeight: '150px',
+                overflowY: 'auto'
+              }}>
+                {upcomingHighImpactEvents.slice(0, 3).map(event => (
+                  <div key={event.id} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px',
+                    borderBottom: '1px solid #21262d'
+                  }}>
+                    <span style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: '#ef4444'
+                    }}></span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '13px', color: '#ffffff', fontWeight: '500' }}>{event.name}</div>
+                      <div style={{ fontSize: '11px', color: '#8b949e' }}>
+                        {new Date(event.date).toLocaleDateString()} at {event.time}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <p style={{ fontSize: '12px', color: '#6e7681', marginBottom: '16px' }}>
+                Consider this when building your portfolio strategy!
+              </p>
+
+              <button
+                onClick={() => setShowVolatilityAlert(false)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                Got it, continue
+              </button>
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -5809,7 +11571,10 @@ export default function PortfolioDuel() {
   if (screen === 'builder') {
     return (
       <div style={containerStyle}>
-        <div className="min-h-screen pb-20" style={{ background: colors.background }}>
+        {/* Animated Desktop Background */}
+        <DesktopBackground isDesktop={isDesktop} />
+
+        <div className="min-h-screen pb-20" style={{ background: colors.background, position: 'relative', zIndex: 1 }}>
           {/* Portfolio Builder Header - NO CART BUTTON */}
           <div className="bg-[#161b22] border-b border-gray-800 p-4">
             <div className="max-w-6xl mx-auto flex items-center justify-between">
@@ -5831,16 +11596,12 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* FLOATING CART BUTTON - GUARANTEED TO WORK */}
+          {/* FLOATING CART BUTTON */}
           <button
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              console.log('🛒🛒🛒 CART CLICKED!!! 🛒🛒🛒');
-              console.log('Portfolio length:', portfolio?.length);
-              console.log('showPortfolioManager BEFORE:', showPortfolioManager);
               setShowPortfolioManager(true);
-              console.log('Called setShowPortfolioManager(true)');
             }}
             style={{
               position: 'fixed',
@@ -5902,7 +11663,7 @@ export default function PortfolioDuel() {
           <div className="max-w-6xl mx-auto px-4 md:px-6 pt-4">
             {/* GAME RULES BOX */}
             <div style={{
-              backgroundColor: '#161b22',
+              backgroundColor: '#1a1f2e',
               border: '2px solid #00d9ff',
               borderRadius: '12px',
               padding: '20px',
@@ -5990,6 +11751,58 @@ export default function PortfolioDuel() {
                         >
                           ₿ Crypto
                         </button>
+                      </div>
+
+                      {/* Quick Actions: Templates & Save */}
+                      <div style={{
+                        display: 'flex',
+                        gap: '8px',
+                        marginBottom: '16px'
+                      }}>
+                        <button
+                          onClick={() => setShowTemplatesModal(true)}
+                          style={{
+                            flex: 1,
+                            padding: '10px 16px',
+                            backgroundColor: '#21262d',
+                            color: '#d1d5db',
+                            border: '1px solid #30363d',
+                            borderRadius: '8px',
+                            fontSize: '13px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          <span>📂</span> Load Template
+                        </button>
+                        {portfolio.length >= 5 && (
+                          <button
+                            onClick={() => setSaveTemplateModal(true)}
+                            style={{
+                              flex: 1,
+                              padding: '10px 16px',
+                              backgroundColor: '#22c55e20',
+                              color: '#22c55e',
+                              border: '1px solid #22c55e40',
+                              borderRadius: '8px',
+                              fontSize: '13px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            <span>💾</span> Save as Template
+                          </button>
+                        )}
                       </div>
 
                       {/* Portfolio Type Indicator */}
@@ -6090,14 +11903,14 @@ export default function PortfolioDuel() {
                                 {/* Price & 24h Change */}
                                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
                                   <span style={{ fontSize: '16px', fontWeight: '600', color: colors.cyan }}>
-                                    ${asset.price.toFixed(2)}
+                                    ${safeToFixed(asset.price, 2)}
                                   </span>
                                   {(asset.percentChange !== undefined || asset.change24h !== undefined) && (
                                     <span style={{
                                       fontSize: '11px',
-                                      color: (asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
+                                      color: safeNumber(asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
                                     }}>
-                                      {(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{(asset.percentChange || asset.change24h || 0).toFixed(2)}%
+                                      {safeNumber(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{safeToFixed(asset.percentChange || asset.change24h, 2)}%
                                     </span>
                                   )}
                                 </div>
@@ -6654,6 +12467,302 @@ export default function PortfolioDuel() {
             </div>
           </div>
         )}
+
+        {/* SAVE TEMPLATE MODAL */}
+        {saveTemplateModal && (
+          <>
+            <div
+              onClick={() => setSaveTemplateModal(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 200,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+            <div style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '90%',
+              maxWidth: '400px',
+              backgroundColor: '#161b22',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              zIndex: 210,
+              padding: '24px'
+            }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff', marginBottom: '16px' }}>
+                Save Portfolio Template
+              </h2>
+              <input
+                type="text"
+                placeholder="Template name..."
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  backgroundColor: '#0d1117',
+                  border: '1px solid #21262d',
+                  borderRadius: '8px',
+                  color: '#ffffff',
+                  fontSize: '14px',
+                  marginBottom: '16px'
+                }}
+              />
+              <div style={{
+                backgroundColor: '#0d1117',
+                borderRadius: '8px',
+                padding: '12px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '8px' }}>Assets to save:</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {portfolio.map(asset => (
+                    <span key={asset.symbol} style={{
+                      padding: '4px 8px',
+                      backgroundColor: '#21262d',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      color: '#00d9ff'
+                    }}>
+                      {asset.symbol}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => {
+                    setSaveTemplateModal(false);
+                    setTemplateName('');
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    backgroundColor: '#21262d',
+                    color: '#8b949e',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (templateName.trim() && portfolio.length > 0) {
+                      const symbols = portfolio.map(a => a.symbol);
+                      savePortfolioTemplate(templateName.trim(), symbols, portfolioType || assetType);
+                      setSaveTemplateModal(false);
+                      setTemplateName('');
+                      // Show toast or notification
+                      addNotification('system', 'Template Saved!', `Your "${templateName.trim()}" template has been saved.`);
+                    }
+                  }}
+                  disabled={!templateName.trim()}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    backgroundColor: templateName.trim() ? '#22c55e' : '#21262d',
+                    color: templateName.trim() ? '#000000' : '#6e7681',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: templateName.trim() ? 'pointer' : 'not-allowed'
+                  }}
+                >
+                  Save Template
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* PORTFOLIO TEMPLATES MODAL (shared from dashboard) */}
+        {showTemplatesModal && (
+          <>
+            <div
+              onClick={() => setShowTemplatesModal(false)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 200,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+            <div style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '90%',
+              maxWidth: '500px',
+              maxHeight: '80vh',
+              backgroundColor: '#161b22',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              zIndex: 210,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #21262d',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff' }}>
+                  Portfolio Templates
+                </h2>
+                <button
+                  onClick={() => setShowTemplatesModal(false)}
+                  style={{
+                    padding: '6px',
+                    backgroundColor: 'transparent',
+                    color: '#8b949e',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div style={{
+                padding: '12px 20px',
+                borderBottom: '1px solid #21262d',
+                display: 'flex',
+                gap: '8px'
+              }}>
+                <button
+                  onClick={() => setAssetType('stocks')}
+                  disabled={portfolioType === 'crypto'}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: assetType === 'stocks' ? '#22c55e' : '#21262d',
+                    color: assetType === 'stocks' ? '#000' : '#8b949e',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: portfolioType === 'crypto' ? 'not-allowed' : 'pointer',
+                    opacity: portfolioType === 'crypto' ? 0.5 : 1
+                  }}
+                >
+                  Stocks
+                </button>
+                <button
+                  onClick={() => setAssetType('crypto')}
+                  disabled={portfolioType === 'stocks'}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: assetType === 'crypto' ? '#f59e0b' : '#21262d',
+                    color: assetType === 'crypto' ? '#000' : '#8b949e',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: portfolioType === 'stocks' ? 'not-allowed' : 'pointer',
+                    opacity: portfolioType === 'stocks' ? 0.5 : 1
+                  }}
+                >
+                  Crypto
+                </button>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '8px', paddingLeft: '4px' }}>
+                    SYSTEM TEMPLATES
+                  </div>
+                  {SYSTEM_PORTFOLIO_TEMPLATES
+                    .filter(t => t.type === assetType)
+                    .map(template => (
+                      <div
+                        key={template.id}
+                        onClick={() => loadTemplateToPortfolio(template)}
+                        style={{
+                          padding: '12px 16px',
+                          marginBottom: '8px',
+                          borderRadius: '10px',
+                          backgroundColor: '#0d1117',
+                          border: '1px solid #21262d',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={{ fontSize: '24px' }}>{template.icon}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#ffffff' }}>{template.name}</div>
+                            <div style={{ fontSize: '12px', color: '#8b949e' }}>{template.description}</div>
+                            <div style={{ fontSize: '11px', color: '#6e7681', marginTop: '4px' }}>{template.assets.join(', ')}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  }
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '8px', paddingLeft: '4px' }}>
+                    YOUR TEMPLATES
+                  </div>
+                  {portfolioTemplates.filter(t => t.type === assetType).length === 0 ? (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: '24px',
+                      color: '#6e7681',
+                      backgroundColor: '#0d1117',
+                      borderRadius: '10px',
+                      border: '1px dashed #21262d'
+                    }}>
+                      <div style={{ fontSize: '24px', marginBottom: '8px' }}>📁</div>
+                      <p style={{ fontSize: '13px' }}>No saved templates yet</p>
+                    </div>
+                  ) : (
+                    portfolioTemplates
+                      .filter(t => t.type === assetType)
+                      .map(template => (
+                        <div
+                          key={template.id}
+                          onClick={() => loadTemplateToPortfolio(template)}
+                          style={{
+                            padding: '12px 16px',
+                            marginBottom: '8px',
+                            borderRadius: '10px',
+                            backgroundColor: '#0d1117',
+                            border: '1px solid #21262d',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <div style={{ fontSize: '14px', fontWeight: '600', color: '#ffffff' }}>{template.name}</div>
+                          <div style={{ fontSize: '11px', color: '#6e7681', marginTop: '2px' }}>{template.assets.join(', ')}</div>
+                        </div>
+                      ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -6662,7 +12771,10 @@ export default function PortfolioDuel() {
   if (screen === 'join') {
     return (
       <div style={containerStyle}>
-        <div className="min-h-screen pb-20" style={{ background: colors.background }}>
+        {/* Animated Desktop Background */}
+        <DesktopBackground isDesktop={isDesktop} />
+
+        <div className="min-h-screen pb-20" style={{ background: colors.background, position: 'relative', zIndex: 1 }}>
           {/* Join Battle Header - NO CART BUTTON */}
           <div className="bg-[#161b22] border-b border-gray-800 p-4">
             <div className="max-w-6xl mx-auto flex items-center justify-between">
@@ -6684,16 +12796,12 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* FLOATING CART BUTTON - GUARANTEED TO WORK */}
+          {/* FLOATING CART BUTTON */}
           <button
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              console.log('🛒🛒🛒 CART CLICKED!!! 🛒🛒🛒');
-              console.log('Portfolio length:', portfolio?.length);
-              console.log('showPortfolioManager BEFORE:', showPortfolioManager);
               setShowPortfolioManager(true);
-              console.log('Called setShowPortfolioManager(true)');
             }}
             style={{
               position: 'fixed',
@@ -6755,7 +12863,7 @@ export default function PortfolioDuel() {
           <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
             {/* GAME RULES BOX */}
             <div style={{
-              backgroundColor: '#161b22',
+              backgroundColor: '#1a1f2e',
               border: '2px solid #8b5cf6',
               borderRadius: '12px',
               padding: '20px',
@@ -6998,14 +13106,14 @@ export default function PortfolioDuel() {
                                 {/* Price & 24h Change */}
                                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
                                   <span style={{ fontSize: '16px', fontWeight: '600', color: colors.cyan }}>
-                                    ${asset.price.toFixed(2)}
+                                    ${safeToFixed(asset.price, 2)}
                                   </span>
                                   {(asset.percentChange !== undefined || asset.change24h !== undefined) && (
                                     <span style={{
                                       fontSize: '11px',
-                                      color: (asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
+                                      color: safeNumber(asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
                                     }}>
-                                      {(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{(asset.percentChange || asset.change24h || 0).toFixed(2)}%
+                                      {safeNumber(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{safeToFixed(asset.percentChange || asset.change24h, 2)}%
                                     </span>
                                   )}
                                 </div>
@@ -7578,7 +13686,10 @@ export default function PortfolioDuel() {
   if (screen === 'training') {
     return (
       <div style={containerStyle}>
-        <div className="min-h-screen pb-20" style={{ background: colors.background }}>
+        {/* Animated Desktop Background */}
+        <DesktopBackground isDesktop={isDesktop} />
+
+        <div className="min-h-screen pb-20" style={{ background: colors.background, position: 'relative', zIndex: 1 }}>
           {/* Training Header - NO CART BUTTON */}
           <div className="bg-[#161b22] border-b border-gray-800 p-4">
             <div className="max-w-6xl mx-auto flex items-center justify-between">
@@ -7603,16 +13714,12 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* FLOATING CART BUTTON - GUARANTEED TO WORK */}
+          {/* FLOATING CART BUTTON */}
           <button
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              console.log('🛒🛒🛒 CART CLICKED!!! 🛒🛒🛒');
-              console.log('Portfolio length:', portfolio?.length);
-              console.log('showPortfolioManager BEFORE:', showPortfolioManager);
               setShowPortfolioManager(true);
-              console.log('Called setShowPortfolioManager(true)');
             }}
             style={{
               position: 'fixed',
@@ -7910,9 +14017,9 @@ export default function PortfolioDuel() {
                                   {(asset.percentChange !== undefined || asset.change24h !== undefined) && (
                                     <span style={{
                                       fontSize: '11px',
-                                      color: (asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
+                                      color: safeNumber(asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
                                     }}>
-                                      {(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{(asset.percentChange || asset.change24h || 0).toFixed(2)}%
+                                      {safeNumber(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{safeToFixed(asset.percentChange || asset.change24h, 2)}%
                                     </span>
                                   )}
                                 </div>
@@ -9520,6 +15627,30 @@ export default function PortfolioDuel() {
                 </button>
               ))}
             </div>
+
+            {/* Draft Advisor Panel */}
+            <div style={{ marginTop: '16px', maxWidth: '400px' }}>
+              <DraftAdvisor
+                myPicks={myPlayer?.picks || []}
+                availableStocks={availableAssets}
+                availableSteady={roomDraft?.availableAssets?.steady || []}
+                availableRisky={roomDraft?.availableAssets?.risky || []}
+                availableDefensive={roomDraft?.availableAssets?.defensive || []}
+                categoryRequirements={{
+                  steadyPicked: myPlayer?.categories?.steady || 0,
+                  steadyRequired: 3,
+                  riskyPicked: myPlayer?.categories?.risky || 0,
+                  riskyRequired: 3,
+                  defensivePicked: myPlayer?.categories?.defensive || 0,
+                  defensiveRequired: 3
+                }}
+                draftPosition={roomDraft?.players?.findIndex(p => p.odUserId === currentUserId) + 1}
+                round={currentRound}
+                compareStocks={[]}
+                colors={colors}
+                notes={userNotes.map(n => ({ header: n.header || n.symbol, content: n.content || n.note }))}
+              />
+            </div>
           </div>
 
           {/* Swipeable Portfolio Drawer - Draft Fixes */}
@@ -10924,8 +17055,8 @@ export default function PortfolioDuel() {
 
         calculateStandings();
 
-        // Refresh every 30 seconds (EODHD has 100k calls/day limit - plenty of headroom)
-        const refreshInterval = setInterval(calculateStandings, 30000);
+        // Refresh every 60 seconds (was 30s - EODHD has 100k calls/day limit)
+        const refreshInterval = setInterval(calculateStandings, 60000);
         return () => clearInterval(refreshInterval);
       }, [currentDraft, currentUserId, battleType]);
 
@@ -12186,11 +18317,16 @@ export default function PortfolioDuel() {
 
     return (
       <div style={containerStyle}>
+        {/* Animated Desktop Background */}
+        <DesktopBackground isDesktop={isDesktop} />
+
         <div style={{
           minHeight: '100vh',
           backgroundColor: '#0d1117',
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          position: 'relative',
+          zIndex: 1
         }}>
           {/* COMPACT DARK HEADER */}
           <div style={{
@@ -12700,10 +18836,15 @@ export default function PortfolioDuel() {
   if (screen === 'previousBattles') {
     return (
       <div style={containerStyle}>
+        {/* Animated Desktop Background */}
+        <DesktopBackground isDesktop={isDesktop} />
+
         <div style={{
           minHeight: '100vh',
           paddingBottom: '32px',
-          background: colors.background
+          background: colors.background,
+          position: 'relative',
+          zIndex: 1
         }}>
           {/* Header */}
           <div style={{
@@ -13603,6 +19744,7 @@ export default function PortfolioDuel() {
                       key={battle.battleId || index}
                       battle={battle}
                       userId={user?.odUserId}
+                      onRematch={sendRematchRequest}
                     />
                   );
                 })}
@@ -13626,7 +19768,10 @@ export default function PortfolioDuel() {
 
     return (
       <div style={containerStyle}>
-        <div style={{ minHeight: '100vh', backgroundColor: '#0d1117' }}>
+        {/* Animated Desktop Background */}
+        <DesktopBackground isDesktop={isDesktop} />
+
+        <div style={{ minHeight: '100vh', backgroundColor: '#0d1117', position: 'relative', zIndex: 1 }}>
 
           {/* HEADER */}
           <div style={{
@@ -14074,7 +20219,30 @@ export default function PortfolioDuel() {
   return (
     <>
       <ChallengeModal />
-      {null}
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '100px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            padding: '12px 24px',
+            borderRadius: '8px',
+            background: toast.type === 'error' ? '#ff4757' :
+                        toast.type === 'success' ? '#00ff88' : '#f59e0b',
+            color: toast.type === 'success' ? '#000' : '#fff',
+            fontSize: '14px',
+            fontWeight: '600',
+            zIndex: 9999,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            maxWidth: '90%',
+            textAlign: 'center',
+          }}
+        >
+          {toast.message}
+        </div>
+      )}
     </>
   );
 }
