@@ -8887,26 +8887,50 @@ export default function PortfolioDuel() {
                 <MarketClashLogo size="small" />
               </div>
 
-              {/* Right Side - User Info */}
+              {/* Right Side - User Info with Avatar */}
               <div style={{
                 display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-end',
-                fontSize: '12px'
+                alignItems: 'center',
+                gap: '10px',
+                padding: '4px 8px'
               }}>
-                <span style={{
-                  color: '#ffffff',
+                {/* Avatar Circle */}
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '50%',
+                  background: '#1a1f2e',
+                  border: '2px solid #00d9ff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '16px',
                   fontWeight: '600',
-                  fontSize: '13px'
+                  color: '#ffffff'
                 }}>
-                  {user?.username || 'Player'}
-                </span>
-                <span style={{
-                  color: '#8b949e',
-                  fontSize: '11px'
+                  {(user?.username || 'P')[0].toUpperCase()}
+                </div>
+                {/* User Text Info */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start'
                 }}>
-                  {user?.rank || 'Rookie'}
-                </span>
+                  <span style={{
+                    color: '#ffffff',
+                    fontWeight: '600',
+                    fontSize: '14px'
+                  }}>
+                    {user?.username || 'Player'}
+                  </span>
+                  <span style={{
+                    color: '#8b949e',
+                    fontSize: '12px',
+                    fontWeight: '500'
+                  }}>
+                    {user?.rank || 'Rookie'}
+                  </span>
+                </div>
               </div>
             </div>
           </header>
@@ -9668,7 +9692,7 @@ export default function PortfolioDuel() {
               style={{
                 background: gameMode === 'draft'
                   ? 'rgba(16, 185, 129, 0.1)'
-                  : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                  : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
                 border: gameMode === 'draft' ? '1px solid rgba(16, 185, 129, 0.3)' : 'none',
                 borderRadius: '14px',
                 padding: '16px 24px',
@@ -9677,13 +9701,14 @@ export default function PortfolioDuel() {
                 cursor: 'pointer',
                 transition: 'all 0.3s',
                 marginTop: '12px',
-                marginBottom: '24px'
+                marginBottom: '24px',
+                boxShadow: gameMode === 'draft' ? 'none' : '0 4px 12px rgba(139, 92, 246, 0.3)'
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.transform = 'translateY(-2px)';
                 e.currentTarget.style.boxShadow = gameMode === 'draft'
                   ? '0 8px 30px rgba(16, 185, 129, 0.2)'
-                  : '0 8px 30px rgba(245, 158, 11, 0.4)';
+                  : '0 8px 30px rgba(139, 92, 246, 0.4)';
                 if (gameMode === 'draft') {
                   e.currentTarget.style.background = 'rgba(16, 185, 129, 0.2)';
                   e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.5)';
@@ -9691,19 +9716,19 @@ export default function PortfolioDuel() {
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = 'none';
+                e.currentTarget.style.boxShadow = gameMode === 'draft' ? 'none' : '0 4px 12px rgba(139, 92, 246, 0.3)';
                 if (gameMode === 'draft') {
                   e.currentTarget.style.background = 'rgba(16, 185, 129, 0.1)';
                   e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.3)';
                 }
               }}
             >
-              <Brain style={{ height: '28px', width: '28px', color: gameMode === 'draft' ? '#10b981' : colors.background }} />
+              <Brain style={{ height: '28px', width: '28px', color: gameMode === 'draft' ? '#10b981' : '#ffffff' }} />
               <div style={{ flex: 1 }}>
                 <span style={{
                   fontSize: '16px',
                   fontWeight: '700',
-                  color: gameMode === 'draft' ? '#10b981' : colors.background,
+                  color: gameMode === 'draft' ? '#10b981' : '#ffffff',
                   textTransform: 'uppercase',
                   letterSpacing: '1px'
                 }}>
@@ -9711,13 +9736,13 @@ export default function PortfolioDuel() {
                 </span>
                 <span style={{
                   fontSize: '14px',
-                  color: gameMode === 'draft' ? '#8b949e' : 'rgba(0, 0, 0, 0.7)',
+                  color: gameMode === 'draft' ? '#8b949e' : 'rgba(255, 255, 255, 0.85)',
                   marginLeft: '12px'
                 }}>
                   Practice your strategy
                 </span>
               </div>
-              <ArrowRight style={{ height: '20px', width: '20px', color: gameMode === 'draft' ? '#10b981' : colors.background }} />
+              <ArrowRight style={{ height: '20px', width: '20px', color: gameMode === 'draft' ? '#10b981' : '#ffffff' }} />
             </motion.div>
 
             {/* Research Mode Banner */}
