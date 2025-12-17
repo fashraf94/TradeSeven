@@ -112,8 +112,7 @@ const MarketClashLogo = ({ size = 'large' }) => {
                 fill="url(#potGrad)" stroke="#78350f" strokeWidth="2"/>
           <ellipse cx="0" cy="0" rx="45" ry="12" fill="#92400e" stroke="#78350f" strokeWidth="2"/>
           <ellipse cx="0" cy="2" rx="38" ry="8" fill="url(#honeyGrad)"/>
-          <path d="M30 5 Q35 15 32 30 Q30 40 35 45"
-                stroke="#fbbf24" strokeWidth="6" fill="none" strokeLinecap="round"/>
+          {/* HONEY DRIP REMOVED */}
           <rect x="-32" y="18" width="64" height="28" rx="3" fill="#fef3c7" stroke="#d97706" strokeWidth="1"/>
           <text x="0" y="28" textAnchor="middle" fontFamily="'Segoe UI', system-ui, sans-serif"
                 fontSize="7" fontWeight="600" fill="#78350f">FROM</text>
@@ -4277,6 +4276,7 @@ export default function PortfolioDuel() {
   const [showChallengeToast, setShowChallengeToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [challengeHistory, setChallengeHistory] = useState([]);
+  const [weeklyChallengesChecked, setWeeklyChallengesChecked] = useState(false); // Session-level flag
 
   // ============================================
   // NOTIFICATIONS STATE
@@ -4862,6 +4862,7 @@ export default function PortfolioDuel() {
       const storageKey = `weeklyChallenges_${user?.odM || user?.username}`;
       const saved = localStorage.getItem(storageKey);
       const currentWeekStart = getWeekStartDate();
+      let shouldShowSlotMachine = false;
 
       if (saved) {
         const data = JSON.parse(saved);
@@ -4884,18 +4885,18 @@ export default function PortfolioDuel() {
           setActiveDailyChallenge(null);
           setChallengeProgress({});
           setCompletedWeeklyChallenges([]);
-          setShowSlotMachine(true);
-          return;
-        }
+          shouldShowSlotMachine = true; // Will show after delay
+        } else {
+          // Same week - load existing data
+          setWeeklyChallenges(data.challenges || []);
+          setActiveDailyChallenge(data.activeDailyChallenge);
+          setChallengeProgress(data.progress || {});
+          setCompletedWeeklyChallenges(data.completedChallenges || []);
 
-        setWeeklyChallenges(data.challenges || []);
-        setActiveDailyChallenge(data.activeDailyChallenge);
-        setChallengeProgress(data.progress || {});
-        setCompletedWeeklyChallenges(data.completedChallenges || []);
-
-        // Show slot machine if new week and hasn't been shown
-        if (!data.slotMachineShown && data.weekStartDate === currentWeekStart) {
-          setShowSlotMachine(true);
+          // Show slot machine only if it hasn't been shown this week
+          if (!data.slotMachineShown) {
+            shouldShowSlotMachine = true;
+          }
         }
       } else {
         // No data exists - create initial
@@ -4911,7 +4912,14 @@ export default function PortfolioDuel() {
         localStorage.setItem(storageKey, JSON.stringify(newData));
 
         setWeeklyChallenges(newChallenges);
-        setShowSlotMachine(true);
+        shouldShowSlotMachine = true; // Will show after delay
+      }
+
+      // Show slot machine with a delay to ensure app is fully rendered
+      if (shouldShowSlotMachine) {
+        setTimeout(() => {
+          setShowSlotMachine(true);
+        }, 500);
       }
     } catch (error) {
       console.error('Error loading weekly challenges:', error);
@@ -5081,10 +5089,13 @@ export default function PortfolioDuel() {
     }
   }, [user]);
 
-  // Load weekly challenges when user logs in
+  // Load weekly challenges when user logs in - RUNS ONCE PER SESSION
   useEffect(() => {
-    if (user) {
+    // Only run if user is logged in AND we haven't checked this session
+    if (user && !weeklyChallengesChecked) {
+      setWeeklyChallengesChecked(true); // Mark as checked for this session
       loadWeeklyChallenges();
+
       // Also load challenge history
       const historyKey = `challengeHistory_${user?.odM || user?.username}`;
       const savedHistory = localStorage.getItem(historyKey);
@@ -5092,7 +5103,7 @@ export default function PortfolioDuel() {
         setChallengeHistory(JSON.parse(savedHistory));
       }
     }
-  }, [user]);
+  }, [user, weeklyChallengesChecked]);
 
   // Load notifications and portfolio templates when user logs in
   useEffect(() => {
