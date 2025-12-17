@@ -874,7 +874,7 @@ const ConvictionCheck = ({
 
   return (
     <div style={{
-      background: '#161b22',
+      background: '#1a1f2e',
       borderRadius: '16px',
       padding: '24px',
       border: '1px solid #2d3548',
@@ -1115,8 +1115,8 @@ const ConvictionCheck = ({
             border: '1px solid #2d3548',
             borderRadius: '12px',
             padding: '14px',
-            color: '#8b949e',
-            fontSize: '14px',
+            color: '#00d9ff',
+            fontSize: '16px',
             fontWeight: '500',
             cursor: 'pointer',
           }}
@@ -1204,7 +1204,7 @@ const AssetPickerModal = ({
       padding: '20px',
     }}>
       <div style={{
-        background: '#161b22',
+        background: '#1a1f2e',
         borderRadius: '16px',
         padding: '24px',
         width: '100%',
@@ -1379,7 +1379,7 @@ const GamePlan = ({
   if (isLoading) {
     return (
       <div style={{
-        background: '#161b22',
+        background: '#1a1f2e',
         borderRadius: '16px',
         padding: '48px 24px',
         border: '1px solid #2d3548',
@@ -1410,7 +1410,7 @@ const GamePlan = ({
   if (!gamePlan) {
     return (
       <div style={{
-        background: '#161b22',
+        background: '#1a1f2e',
         borderRadius: '16px',
         padding: '32px 24px',
         border: '1px solid #2d3548',
@@ -1439,7 +1439,7 @@ const GamePlan = ({
 
   return (
     <div style={{
-      background: '#161b22',
+      background: '#1a1f2e',
       borderRadius: '16px',
       padding: '24px',
       border: '1px solid #2d3548',
@@ -2590,7 +2590,7 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
   // Handle save to notes
   const handleSaveToNotes = (plan) => {
     // Could integrate with existing notes system
-    console.log('Saving game plan to notes:', plan);
+    // TODO: Implement notes integration
   };
 
   // Render current phase
@@ -2699,6 +2699,7 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
         <div style={{
           display: 'flex',
           justifyContent: 'center',
+          alignItems: 'center',
           padding: '16px',
           gap: '8px',
         }}>
@@ -3050,7 +3051,8 @@ const PERCENTAGE_OPTIONS = [7.5, 10, 12.5, 15, 17.5, 20];
 // Dark Gaming Theme Colors
 const colors = {
   background: '#0d1117',
-  cardBg: '#161b22',
+  cardBg: '#1a1f2e',
+  cardInner: '#161b22',
   cardHover: '#1c2128',
   cardElevated: '#21262d',
   elevated: '#21262d',
@@ -4284,6 +4286,17 @@ export default function PortfolioDuel() {
   const [showNotifications, setShowNotifications] = useState(false);
 
   // ============================================
+  // TOAST NOTIFICATION STATE
+  // ============================================
+  const [toast, setToast] = useState(null);
+
+  // Toast helper function
+  const showToast = (message, type = 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  // ============================================
   // PORTFOLIO TEMPLATES STATE
   // ============================================
   const [portfolioTemplates, setPortfolioTemplates] = useState([]);
@@ -5108,6 +5121,7 @@ export default function PortfolioDuel() {
         console.error('Error loading market data:', error);
         setStocksData([]);
         setCryptoData([]);
+        showToast('Failed to load market data. Please try again.');
       }
 
       setLoadingMarketData(false);
@@ -5370,6 +5384,7 @@ export default function PortfolioDuel() {
         setBattlePrices(priceMap);
       } catch (error) {
         console.error('Error fetching battle prices:', error);
+        showToast('Failed to load prices. Please try again.');
       }
 
       setLoadingBattlePrices(false);
@@ -5928,17 +5943,12 @@ export default function PortfolioDuel() {
   };
 
   const handleCreateBattle = () => {
-    console.log('=== CREATE BATTLE CLICKED ===');
-    console.log('Portfolio Valid:', isPortfolioValid);
-    console.log('Portfolio Name:', portfolioName);
-    
     if (!isPortfolioValid || !portfolioName.trim()) {
       alert('Please complete your portfolio with a name before creating a battle');
       return;
     }
 
     const challengeCode = generateChallengeCode();
-    console.log('Generated Challenge Code:', challengeCode);
     
     // Convert portfolio to battle format (percentage to dollar amounts)
     const portfolioAssets = portfolio.map(asset => ({
@@ -5978,11 +5988,6 @@ export default function PortfolioDuel() {
   };
 
   const handleJoinBattle = async () => {
-    console.log('=== JOIN BATTLE CLICKED ===');
-    console.log('Join Code:', joinCode);
-    console.log('Portfolio Valid:', isPortfolioValid);
-    console.log('Portfolio Name:', portfolioName);
-    
     if (!joinCode.trim()) {
       alert('Please enter a challenge code');
       return;
@@ -5993,16 +5998,12 @@ export default function PortfolioDuel() {
       return;
     }
 
-    // CRITICAL: Load battles from localStorage to see battles from other tabs/users
+    // Load battles from localStorage to see battles from other tabs/users
     const allBattles = loadBattlesSafe();
-    console.log('All battles from localStorage:', allBattles);
-    console.log('Looking for code:', joinCode.trim().toUpperCase());
-    
+
     const battleToJoin = allBattles.find(
       b => b.challengeCode === joinCode.trim().toUpperCase() && b.status === 'waiting'
     );
-
-    console.log('Battle found:', battleToJoin);
 
     if (!battleToJoin) {
       alert(`Battle not found or already started. Searched for: ${joinCode.trim().toUpperCase()}\nFound ${allBattles.length} total battles in storage.`);
@@ -6024,9 +6025,6 @@ export default function PortfolioDuel() {
     const joinerIsCrypto = portfolioType === 'crypto';
     const joinerIsStocks = portfolioType === 'stocks';
     
-    console.log('Creator portfolio type:', creatorIsCrypto ? 'crypto' : 'stocks');
-    console.log('Joiner portfolio type:', joinerIsCrypto ? 'crypto' : 'stocks');
-    
     // Validate portfolio types match
     if ((creatorIsCrypto && joinerIsStocks) || (creatorIsStocks && joinerIsCrypto)) {
       alert(`Portfolio type mismatch!\n\nThis battle requires a ${creatorIsCrypto ? 'CRYPTO' : 'STOCKS'} portfolio, but you built a ${joinerIsCrypto ? 'CRYPTO' : 'STOCKS'} portfolio.\n\nPlease create a ${creatorIsCrypto ? 'crypto' : 'stocks'} portfolio to join this battle.`);
@@ -6046,8 +6044,7 @@ export default function PortfolioDuel() {
     const startDate = new Date(now); // Start immediately for testing
     const endDate = new Date(startDate.getTime() + battleTimer.BATTLE_DURATION);
 
-    // ⭐ FETCH STARTING PRICES - Lock in prices when battle starts
-    console.log('🔒 Fetching starting prices for battle...');
+    // Fetch starting prices - Lock in prices when battle starts
     const startingPrices = {};
     
     // Get all unique assets from both portfolios
@@ -6072,10 +6069,8 @@ export default function PortfolioDuel() {
         startingPrices[symbol] = asset.price; // Fallback to stored price
       }
     }
-    
-    console.log('✅ Starting prices locked:', startingPrices);
 
-    // ⭐ UPDATE BOTH PORTFOLIOS TO USE THE SAME STARTING PRICES
+    // Update both portfolios to use the same starting prices
     const updatedCreatorPortfolio = battleToJoin.creatorPortfolio.map(asset => ({
       ...asset,
       price: startingPrices[asset.symbol] || asset.price
@@ -6104,21 +6099,15 @@ export default function PortfolioDuel() {
 
     // Save to localStorage immediately
     saveBattlesSafe(updatedBattles);
-    console.log('✅ Saved updated battles to localStorage');
-    console.log('Updated battle:', updatedBattles.find(b => b.id === battleToJoin.id));
-    
+
     // Update component state
     setBattles(updatedBattles);
-    console.log('✅ Updated component state with battles');
-
     setActiveBattleId(battleToJoin.id);
-    console.log('✅ Set active battle ID:', battleToJoin.id);
-    
+
     setPortfolio([]); setPortfolioType(null);
     setPortfolioName('');
     setJoinCode('');
-    
-    console.log('✅ Navigating to dashboard...');
+
     setScreen('dashboard');
   };
 
@@ -6126,8 +6115,6 @@ export default function PortfolioDuel() {
   // TRAINING MODE: CREATE TRAINING BATTLE
   // ============================================
   const handleCreateTrainingBattle = async () => {
-    console.log('=== CREATE TRAINING BATTLE ===');
-    
     if (!isPortfolioValid || !portfolioName.trim()) {
       alert('Please complete your portfolio with a name before starting training');
       return;
@@ -6142,9 +6129,7 @@ export default function PortfolioDuel() {
     }));
 
     // Generate CPU opponent portfolio
-    console.log('🤖 Generating CPU opponent portfolio...');
     const cpuPortfolio = generateCPUPortfolio(portfolioType, stocksData, cryptoData);
-    console.log('✅ CPU portfolio generated:', cpuPortfolio);
 
     // Calculate start and end dates (1 hour for training)
     const now = new Date();
@@ -6153,7 +6138,6 @@ export default function PortfolioDuel() {
     const endDate = new Date(startDate.getTime() + TRAINING_DURATION);
 
     // Fetch starting prices for all assets
-    console.log('🔒 Fetching starting prices for training battle...');
     const startingPrices = {};
     
     const allAssets = [...userPortfolioAssets, ...cpuPortfolio];
@@ -6177,8 +6161,6 @@ export default function PortfolioDuel() {
         startingPrices[symbol] = asset.price;
       }
     }
-    
-    console.log('✅ Starting prices locked for training battle:', startingPrices);
 
     // Update both portfolios with locked starting prices
     const updatedUserPortfolio = userPortfolioAssets.map(asset => ({
@@ -6222,8 +6204,7 @@ export default function PortfolioDuel() {
     setPortfolio([]);
     setPortfolioType(null);
     setPortfolioName('');
-    
-    console.log('✅ Training battle created:', trainingBattle);
+
     setScreen('dashboard');
   };
 
@@ -6489,7 +6470,7 @@ export default function PortfolioDuel() {
           <div style={{
             width: '100%',
             maxWidth: '400px',
-            backgroundColor: '#161b22',
+            backgroundColor: '#1a1f2e',
             border: '2px solid #21262d',
             borderRadius: '16px',
             padding: '32px',
@@ -6932,6 +6913,7 @@ export default function PortfolioDuel() {
       } catch (error) {
         console.error('[ResearchFlow] Game plan generation failed:', error);
         setResearchGamePlan(null);
+        showToast('Failed to generate game plan. Please try again.');
       } finally {
         setResearchGamePlanLoading(false);
       }
@@ -8300,14 +8282,6 @@ export default function PortfolioDuel() {
 
   // DASHBOARD SCREEN - New Flowing Card Layout
   if (screen === 'dashboard') {
-    // Debug logging
-    console.log('📊 DASHBOARD RENDER');
-    console.log('Current user:', user?.username);
-    console.log('Total battles in state:', battles.length);
-    console.log('User battles:', userBattles.length);
-    console.log('Active battles:', activeBattles.length, activeBattles.map(b => ({code: b.challengeCode, creator: b.creator, opponent: b.opponent, status: b.status})));
-    console.log('Waiting battles:', waitingBattles.length, waitingBattles.map(b => ({code: b.challengeCode, creator: b.creator, opponent: b.opponent, status: b.status})));
-
     // Get first active battle for preview card
     const primaryActiveBattle = activeBattles[0];
     const hasActiveBattle = activeBattles.length > 0;
@@ -8636,10 +8610,7 @@ export default function PortfolioDuel() {
 
               {/* Hamburger Menu Button - LEFT */}
               <button
-                onClick={() => {
-                  console.log('🍔 HAMBURGER CLICKED!');
-                  setSidebarOpen(true);
-                }}
+                onClick={() => setSidebarOpen(true)}
                 style={{
                   minWidth: '44px',
                   minHeight: '44px',
@@ -10115,10 +10086,7 @@ export default function PortfolioDuel() {
           <>
             {/* Backdrop/Overlay */}
             <div
-              onClick={() => {
-                console.log('🎯 BACKDROP CLICKED - CLOSING SIDEBAR');
-                setSidebarOpen(false);
-              }}
+              onClick={() => setSidebarOpen(false)}
               style={{
                 position: 'fixed',
                 top: 0,
@@ -10156,10 +10124,7 @@ export default function PortfolioDuel() {
                   <span className="text-white">Clash</span>
                 </h2>
                 <button
-                  onClick={() => {
-                    console.log('❌ CLOSE BUTTON CLICKED');
-                    setSidebarOpen(false);
-                  }}
+                  onClick={() => setSidebarOpen(false)}
                   className="text-gray-400 hover:text-white p-2 hover:bg-white/10 rounded-lg transition-colors"
                   aria-label="Close menu"
                 >
@@ -10257,7 +10222,6 @@ export default function PortfolioDuel() {
                 {/* BATTLE HISTORY (replaces Wins + Losses) */}
                 <button
                   onClick={() => {
-                    console.log('📜 Battle History clicked');
                     setHistoryTab(gameMode === 'draft' ? 'draft' : 'classic');
                     setScreen('battleHistory');
                     setSidebarOpen(false);
@@ -10294,7 +10258,6 @@ export default function PortfolioDuel() {
                 {/* PROFILE */}
                 <button
                   onClick={() => {
-                    console.log('👤 Profile clicked');
                     setScreen('profile');
                     setSidebarOpen(false);
                   }}
@@ -10322,7 +10285,6 @@ export default function PortfolioDuel() {
                 {/* NOTIFICATIONS */}
                 <button
                   onClick={() => {
-                    console.log('🔔 Notifications clicked');
                     setShowNotifications(true);
                     setSidebarOpen(false);
                   }}
@@ -10368,7 +10330,6 @@ export default function PortfolioDuel() {
                 {/* WEEK AHEAD CALENDAR */}
                 <button
                   onClick={() => {
-                    console.log('📅 Week Ahead clicked');
                     setShowWeekAhead(true);
                     setSidebarOpen(false);
                     loadWeekAheadData();
@@ -10407,7 +10368,6 @@ export default function PortfolioDuel() {
                 {/* LOGOUT */}
                 <button
                   onClick={() => {
-                    console.log('🚪 Logout clicked');
                     setUser(null);
                     setScreen('home');
                     localStorage.removeItem('user');
@@ -11389,16 +11349,12 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* FLOATING CART BUTTON - GUARANTEED TO WORK */}
+          {/* FLOATING CART BUTTON */}
           <button
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              console.log('🛒🛒🛒 CART CLICKED!!! 🛒🛒🛒');
-              console.log('Portfolio length:', portfolio?.length);
-              console.log('showPortfolioManager BEFORE:', showPortfolioManager);
               setShowPortfolioManager(true);
-              console.log('Called setShowPortfolioManager(true)');
             }}
             style={{
               position: 'fixed',
@@ -11460,7 +11416,7 @@ export default function PortfolioDuel() {
           <div className="max-w-6xl mx-auto px-4 md:px-6 pt-4">
             {/* GAME RULES BOX */}
             <div style={{
-              backgroundColor: '#161b22',
+              backgroundColor: '#1a1f2e',
               border: '2px solid #00d9ff',
               borderRadius: '12px',
               padding: '20px',
@@ -12590,16 +12546,12 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* FLOATING CART BUTTON - GUARANTEED TO WORK */}
+          {/* FLOATING CART BUTTON */}
           <button
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              console.log('🛒🛒🛒 CART CLICKED!!! 🛒🛒🛒');
-              console.log('Portfolio length:', portfolio?.length);
-              console.log('showPortfolioManager BEFORE:', showPortfolioManager);
               setShowPortfolioManager(true);
-              console.log('Called setShowPortfolioManager(true)');
             }}
             style={{
               position: 'fixed',
@@ -12661,7 +12613,7 @@ export default function PortfolioDuel() {
           <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
             {/* GAME RULES BOX */}
             <div style={{
-              backgroundColor: '#161b22',
+              backgroundColor: '#1a1f2e',
               border: '2px solid #8b5cf6',
               borderRadius: '12px',
               padding: '20px',
@@ -13509,16 +13461,12 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* FLOATING CART BUTTON - GUARANTEED TO WORK */}
+          {/* FLOATING CART BUTTON */}
           <button
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              console.log('🛒🛒🛒 CART CLICKED!!! 🛒🛒🛒');
-              console.log('Portfolio length:', portfolio?.length);
-              console.log('showPortfolioManager BEFORE:', showPortfolioManager);
               setShowPortfolioManager(true);
-              console.log('Called setShowPortfolioManager(true)');
             }}
             style={{
               position: 'fixed',
@@ -20005,7 +19953,30 @@ export default function PortfolioDuel() {
   return (
     <>
       <ChallengeModal />
-      {null}
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '100px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            padding: '12px 24px',
+            borderRadius: '8px',
+            background: toast.type === 'error' ? '#ff4757' :
+                        toast.type === 'success' ? '#00ff88' : '#f59e0b',
+            color: toast.type === 'success' ? '#000' : '#fff',
+            fontSize: '14px',
+            fontWeight: '600',
+            zIndex: 9999,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            maxWidth: '90%',
+            textAlign: 'center',
+          }}
+        >
+          {toast.message}
+        </div>
+      )}
     </>
   );
 }
