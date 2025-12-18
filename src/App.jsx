@@ -11731,7 +11731,8 @@ export default function PortfolioDuel() {
     // Stock category definitions
     const LEADERSHIP_STOCKS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'BRK.B', 'JPM', 'V', 'MA', 'UNH', 'JNJ', 'WMT', 'PG', 'HD', 'XOM'];
     const STABLE_STOCKS = ['KO', 'PEP', 'MCD', 'COST', 'VZ', 'T', 'PFE', 'MRK', 'ABBV', 'LLY', 'NEE', 'DUK', 'SO', 'D', 'CVX', 'COP'];
-    const SHORT_STOCKS = ['TSLA', 'RIVN', 'LCID', 'SNAP', 'HOOD', 'COIN', 'GME', 'AMC', 'PLTR', 'SMCI'];
+    // Expanded shorts: volatile stocks + index ETFs for hedging
+    const SHORT_STOCKS = ['TSLA', 'RIVN', 'LCID', 'SNAP', 'HOOD', 'COIN', 'GME', 'AMC', 'PLTR', 'SMCI', 'BYND', 'UPST', 'AFRM', 'SOFI', 'SPY', 'QQQ', 'DIA', 'IWM'];
 
     // Allowed crypto
     const ALLOWED_CRYPTO = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE'];
@@ -11815,12 +11816,12 @@ export default function PortfolioDuel() {
       }
     };
 
-    // Handle crypto selection with Buy/Short toggle
-    const handleCryptoSelect = (symbol, position) => {
-      if (selectedCrypto?.symbol === symbol && selectedCrypto?.position === position) {
+    // Handle crypto selection - simple BUY only
+    const handleCryptoSelect = (symbol) => {
+      if (selectedCrypto === symbol) {
         setSelectedCrypto(null);
       } else {
-        setSelectedCrypto({ symbol, position });
+        setSelectedCrypto(symbol);
       }
     };
 
@@ -11935,7 +11936,7 @@ export default function PortfolioDuel() {
                   <span style={{ fontSize: '16px' }}>📊</span>
                   <span style={{ color: '#ffffff', fontSize: '16px', fontWeight: '700' }}>Your Portfolio</span>
                 </div>
-                <span style={{ color: '#8b949e', fontSize: '12px' }}>6-12 Longs • 0-2 Shorts • 1 Crypto</span>
+                <span style={{ color: '#8b949e', fontSize: '12px' }}>6-12 Longs • 0-2 Shorts (optional) • 1 Crypto</span>
               </div>
 
               <div style={{ width: '100%', height: '8px', background: '#21262d', borderRadius: '4px', overflow: 'hidden', marginBottom: '10px' }}>
@@ -12100,105 +12101,63 @@ export default function PortfolioDuel() {
                   })}
                 </div>
 
-                {/* CRYPTO SECTION */}
+                {/* CRYPTO SECTION - Simple BUY only tiles */}
                 <div style={{ padding: '12px', marginTop: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
                     <div style={{ flex: 1, height: '1px', background: '#f59e0b', opacity: 0.3 }} />
                     <span style={{ color: '#f59e0b', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                      ₿ Crypto (Pick 1 - Buy or Short)
+                      ₿ Crypto (Pick 1)
                     </span>
                     <div style={{ flex: 1, height: '1px', background: '#f59e0b', opacity: 0.3 }} />
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(${getGridColumns()}, 1fr)`,
+                    gap: '8px'
+                  }}>
                     {allowedCryptoData.map((crypto) => {
-                      const isSelectedBuy = selectedCrypto?.symbol === crypto.symbol && selectedCrypto?.position === 'long';
-                      const isSelectedShort = selectedCrypto?.symbol === crypto.symbol && selectedCrypto?.position === 'short';
+                      const isSelected = selectedCrypto === crypto.symbol;
                       const changePercent = crypto.percentChange || crypto.change24h || 0;
-                      const getBorderColor = () => {
-                        if (isSelectedBuy) return '#22c55e';
-                        if (isSelectedShort) return '#ef4444';
-                        return '#21262d';
-                      };
-                      const getBackground = () => {
-                        if (isSelectedBuy) return 'rgba(34, 197, 94, 0.08)';
-                        if (isSelectedShort) return 'rgba(239, 68, 68, 0.08)';
-                        return '#161b22';
-                      };
 
                       return (
-                        <div
+                        <button
                           key={crypto.symbol}
+                          onClick={() => handleCryptoSelect(crypto.symbol)}
                           style={{
-                            background: getBackground(),
-                            border: `2px solid ${getBorderColor()}`,
+                            background: isSelected ? 'rgba(245, 158, 11, 0.12)' : '#161b22',
+                            border: isSelected ? '2px solid #f59e0b' : '1px solid #21262d',
                             borderRadius: '10px',
-                            padding: '10px 8px',
+                            padding: '10px 6px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
+                            justifyContent: 'center',
                             textAlign: 'center',
-                            transition: 'all 0.2s ease'
+                            minHeight: '90px'
                           }}
                         >
-                          <div style={{ color: isSelectedBuy ? '#22c55e' : isSelectedShort ? '#ef4444' : '#ffffff', fontSize: '15px', fontWeight: '700', marginBottom: '2px' }}>
+                          {isSelected && (
+                            <div style={{ color: '#f59e0b', fontSize: '8px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                              <svg width="8" height="8" viewBox="0 0 12 12" fill="#f59e0b"><path d="M6 1L11 8H1L6 1Z" /></svg>
+                              BUY
+                            </div>
+                          )}
+                          <div style={{ color: isSelected ? '#f59e0b' : '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '2px' }}>
                             {crypto.symbol}
                           </div>
-                          <div style={{ color: '#6b7280', fontSize: '9px', marginBottom: '6px' }}>{crypto.name}</div>
+                          <div style={{ color: '#6b7280', fontSize: '9px', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', padding: '0 2px' }}>
+                            {crypto.name}
+                          </div>
                           <div style={{ color: '#e6edf3', fontSize: '12px', fontWeight: '600', marginBottom: '2px' }}>
                             ${formatBuilderPrice(crypto.price)}
                           </div>
-                          <div style={{ color: changePercent >= 0 ? '#22c55e' : '#ef4444', fontSize: '11px', fontWeight: '600', marginBottom: '8px' }}>
+                          <div style={{ color: changePercent >= 0 ? '#22c55e' : '#ef4444', fontSize: '11px', fontWeight: '600' }}>
                             {changePercent >= 0 ? '+' : ''}{safeToFixed(changePercent, 1)}%
                           </div>
-
-                          <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
-                            <button
-                              onClick={() => handleCryptoSelect(crypto.symbol, 'long')}
-                              style={{
-                                flex: 1,
-                                padding: '6px 8px',
-                                background: isSelectedBuy ? 'rgba(34, 197, 94, 0.2)' : 'transparent',
-                                border: isSelectedBuy ? '1.5px solid #22c55e' : '1.5px solid #21262d',
-                                borderRadius: '6px',
-                                color: isSelectedBuy ? '#22c55e' : '#6b7280',
-                                fontSize: '10px',
-                                fontWeight: '600',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '3px',
-                                transition: 'all 0.2s ease'
-                              }}
-                            >
-                              <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor"><path d="M6 1L11 8H1L6 1Z" /></svg>
-                              Buy
-                            </button>
-                            <button
-                              onClick={() => handleCryptoSelect(crypto.symbol, 'short')}
-                              style={{
-                                flex: 1,
-                                padding: '6px 8px',
-                                background: isSelectedShort ? 'rgba(239, 68, 68, 0.2)' : 'transparent',
-                                border: isSelectedShort ? '1.5px solid #ef4444' : '1.5px solid #21262d',
-                                borderRadius: '6px',
-                                color: isSelectedShort ? '#ef4444' : '#6b7280',
-                                fontSize: '10px',
-                                fontWeight: '600',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '3px',
-                                transition: 'all 0.2s ease'
-                              }}
-                            >
-                              <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor"><path d="M6 11L1 4H11L6 11Z" /></svg>
-                              Short
-                            </button>
-                          </div>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -12438,14 +12397,19 @@ export default function PortfolioDuel() {
               )}
 
               {/* VALIDATION MESSAGES */}
-              {portfolio.length > 0 && (
+              {(portfolio.length > 0 || !selectedCrypto) && (
                 <div style={{ marginTop: '16px' }}>
-                  {portfolio.length < 7 && (
+                  {portfolio.length < 7 && portfolio.length > 0 && (
                     <p style={{ color: '#ef4444', fontSize: '13px', marginBottom: '4px' }}>
                       • Need at least 7 assets (have {portfolio.length})
                     </p>
                   )}
-                  {Math.abs(totalPercentage - 100) >= 0.01 && (
+                  {!selectedCrypto && (
+                    <p style={{ color: '#f59e0b', fontSize: '13px', marginBottom: '4px' }}>
+                      • You must select 1 crypto to continue
+                    </p>
+                  )}
+                  {Math.abs(totalPercentage - 100) >= 0.01 && portfolio.length > 0 && (
                     <p style={{ color: '#ef4444', fontSize: '13px' }}>
                       • Total must equal 100% (currently {totalPercentage.toFixed(1)}%)
                     </p>
@@ -12463,14 +12427,15 @@ export default function PortfolioDuel() {
                   !portfolioName ||
                   portfolio.length < 7 ||
                   portfolio.length > 13 ||
+                  !selectedCrypto ||
                   Math.abs(totalPercentage - 100) >= 0.01
                 }
                 style={{
                   width: '100%',
-                  backgroundColor: portfolioName && portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01
+                  backgroundColor: portfolioName && portfolio.length >= 7 && portfolio.length <= 13 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01
                     ? '#8b5cf6'
                     : '#21262d',
-                  color: portfolioName && portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01
+                  color: portfolioName && portfolio.length >= 7 && portfolio.length <= 13 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01
                     ? '#ffffff'
                     : '#6e7681',
                   border: 'none',
@@ -12478,7 +12443,7 @@ export default function PortfolioDuel() {
                   padding: '16px',
                   fontSize: '16px',
                   fontWeight: 'bold',
-                  cursor: portfolioName && portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01
+                  cursor: portfolioName && portfolio.length >= 7 && portfolio.length <= 13 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01
                     ? 'pointer'
                     : 'not-allowed',
                   marginTop: '20px',
@@ -12500,6 +12465,8 @@ export default function PortfolioDuel() {
                   ? `Need ${7 - portfolio.length} More Assets`
                   : portfolio.length > 13
                   ? `Remove ${portfolio.length - 13} Assets`
+                  : !selectedCrypto
+                  ? 'Select 1 Crypto'
                   : Math.abs(totalPercentage - 100) >= 0.01
                   ? `Adjust to 100% (${totalPercentage.toFixed(1)}%)`
                   : 'Create Battle ⚔️'}
