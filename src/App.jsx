@@ -4365,7 +4365,9 @@ export default function PortfolioDuel() {
   const [searchTerm, setSearchTerm] = useState('');
   const [portfolio, setPortfolio] = useState([]);
   const [portfolioType, setPortfolioType] = useState(null); // 'stocks' or 'crypto'
-  const [builderCategory, setBuilderCategory] = useState('Steady'); // Steady/Risky/Defensive tabs
+  const [builderCategory, setBuilderCategory] = useState('Leadership'); // Leadership/Momentum/Stable/Short tabs
+  const [selectedCrypto, setSelectedCrypto] = useState(null); // { symbol: 'BTC', position: 'long' | 'short' }
+  const [showRulesModal, setShowRulesModal] = useState(false); // Rules modal state
 
   // Battle joining state
   const [joinCode, setJoinCode] = useState('');
@@ -10632,6 +10634,34 @@ export default function PortfolioDuel() {
                   </div>
                 </button>
 
+                {/* RULES & HOW TO PLAY */}
+                <button
+                  onClick={() => {
+                    setShowRulesModal(true);
+                    setSidebarOpen(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    backgroundColor: 'transparent',
+                    color: '#d1d5db',
+                    border: 'none',
+                    marginBottom: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <svg style={{ width: '20px', height: '20px', flexShrink: 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 16v-4M12 8h.01" />
+                  </svg>
+                  <span style={{ fontWeight: '600', fontSize: '14px' }}>Rules & How to Play</span>
+                </button>
+
                 {/* DIVIDER */}
                 <div style={{ borderTop: '1px solid #374151', margin: '16px 0' }}></div>
 
@@ -10852,6 +10882,109 @@ export default function PortfolioDuel() {
                   })
                 )}
               </div>
+            </div>
+          </>
+        )}
+
+        {/* ============================================ */}
+        {/* RULES MODAL */}
+        {/* ============================================ */}
+        {showRulesModal && (
+          <>
+            <div
+              onClick={() => setShowRulesModal(false)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0, 0, 0, 0.8)',
+                zIndex: 200,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+            <div style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              background: '#161b22',
+              border: '1px solid #21262d',
+              borderRadius: '16px',
+              padding: '24px',
+              maxWidth: '400px',
+              width: '90%',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              zIndex: 210
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h2 style={{ color: '#ffffff', fontSize: '20px', fontWeight: '700', margin: 0 }}>
+                  📋 MarketClash Rules
+                </h2>
+                <button
+                  onClick={() => setShowRulesModal(false)}
+                  style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: '24px', cursor: 'pointer', padding: '4px' }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div style={{ color: '#e6edf3', fontSize: '14px', lineHeight: '1.6' }}>
+                <h3 style={{ color: '#00d9ff', fontSize: '16px', marginBottom: '8px' }}>
+                  Building Your Portfolio
+                </h3>
+                <ul style={{ paddingLeft: '20px', marginBottom: '16px', color: '#8b949e' }}>
+                  <li>Select <strong style={{ color: '#ffffff' }}>6-12 stocks</strong> to go LONG (buy)</li>
+                  <li>Optionally select <strong style={{ color: '#ffffff' }}>0-2 stocks</strong> to SHORT</li>
+                  <li>Select exactly <strong style={{ color: '#ffffff' }}>1 crypto</strong> (buy OR short)</li>
+                  <li>Total portfolio: <strong style={{ color: '#ffffff' }}>7-13 assets</strong></li>
+                  <li>Each asset: <strong style={{ color: '#ffffff' }}>7.5% - 20%</strong> allocation</li>
+                </ul>
+
+                <h3 style={{ color: '#22c55e', fontSize: '16px', marginBottom: '8px' }}>
+                  How Positions Work
+                </h3>
+                <ul style={{ paddingLeft: '20px', marginBottom: '16px', color: '#8b949e' }}>
+                  <li><strong style={{ color: '#22c55e' }}>LONG (Buy)</strong>: You profit when price goes UP</li>
+                  <li><strong style={{ color: '#ef4444' }}>SHORT</strong>: You profit when price goes DOWN</li>
+                </ul>
+
+                <h3 style={{ color: '#f59e0b', fontSize: '16px', marginBottom: '8px' }}>
+                  Battle Rules
+                </h3>
+                <ul style={{ paddingLeft: '20px', marginBottom: '16px', color: '#8b949e' }}>
+                  <li>Battles last <strong style={{ color: '#ffffff' }}>24 hours</strong></li>
+                  <li>Uses <strong style={{ color: '#ffffff' }}>real market prices</strong></li>
+                  <li>Highest portfolio % gain wins!</li>
+                </ul>
+
+                <h3 style={{ color: '#8b5cf6', fontSize: '16px', marginBottom: '8px' }}>
+                  Stock Categories
+                </h3>
+                <ul style={{ paddingLeft: '20px', color: '#8b949e' }}>
+                  <li><strong style={{ color: '#00d9ff' }}>Leadership</strong>: Large-cap market leaders</li>
+                  <li><strong style={{ color: '#8b5cf6' }}>Momentum</strong>: Best 30-day performers</li>
+                  <li><strong style={{ color: '#22c55e' }}>Stable</strong>: Defensive, dividend stocks</li>
+                  <li><strong style={{ color: '#ef4444' }}>Short</strong>: Volatile stocks (short only)</li>
+                </ul>
+              </div>
+
+              <button
+                onClick={() => setShowRulesModal(false)}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
+                  border: 'none',
+                  borderRadius: '10px',
+                  color: '#0d1117',
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  marginTop: '20px'
+                }}
+              >
+                Got It!
+              </button>
             </div>
           </>
         )}
@@ -11593,36 +11726,56 @@ export default function PortfolioDuel() {
     );
   }
 
-  // PORTFOLIO BUILDER SCREEN (Create Game) - REDESIGNED
+  // PORTFOLIO BUILDER SCREEN (Create Game) - COMPLETE OVERHAUL
   if (screen === 'builder') {
-    // Stock category mapping for Steady/Risky/Defensive
-    const STOCK_CATEGORIES = {
-      Steady: ['AAPL', 'MSFT', 'GOOGL', 'BRK.B', 'JPM', 'V', 'MA', 'BAC', 'WFC', 'GS', 'AXP', 'WMT', 'PG', 'KO', 'PEP', 'COST', 'JNJ', 'MRK', 'PFE', 'VZ', 'T', 'TMUS'],
-      Risky: ['NVDA', 'TSLA', 'AMD', 'META', 'AMZN', 'AVGO', 'CRM', 'HD', 'MCD', 'NKE', 'SBUX', 'TGT', 'UNH', 'LLY', 'ABBV'],
-      Defensive: ['NEE', 'DUK', 'SO', 'D', 'XOM', 'CVX', 'COP', 'SLB', 'EOG', 'CAT', 'RTX', 'UPS', 'HON', 'AMT', 'PLD', 'CCI', 'EQIX']
-    };
+    // Stock category definitions
+    const LEADERSHIP_STOCKS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'BRK.B', 'JPM', 'V', 'MA', 'UNH', 'JNJ', 'WMT', 'PG', 'HD', 'XOM'];
+    const STABLE_STOCKS = ['KO', 'PEP', 'MCD', 'COST', 'VZ', 'T', 'PFE', 'MRK', 'ABBV', 'LLY', 'NEE', 'DUK', 'SO', 'D', 'CVX', 'COP'];
+    const SHORT_STOCKS = ['TSLA', 'RIVN', 'LCID', 'SNAP', 'HOOD', 'COIN', 'GME', 'AMC', 'PLTR', 'SMCI'];
 
-    // Only these 6 crypto for simplified selection
+    // Allowed crypto
     const ALLOWED_CRYPTO = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE'];
 
-    // Calculate counts
-    const selectedStocks = portfolio.filter(p => !ALLOWED_CRYPTO.includes(p.symbol));
-    const selectedCrypto = portfolio.filter(p => ALLOWED_CRYPTO.includes(p.symbol));
-    const stockCount = selectedStocks.length;
-    const cryptoCount = selectedCrypto.length;
-    const totalSelected = stockCount + cryptoCount;
-    const isPortfolioComplete = stockCount === 6 && cryptoCount === 1;
-
-    // Filter stocks by category
-    const getCategoryStocks = (category) => {
-      const categorySymbols = STOCK_CATEGORIES[category] || [];
-      return stocksData.filter(s => categorySymbols.includes(s.symbol));
+    // Get Momentum stocks dynamically (best 30-day performers from remaining stocks)
+    const getMomentumStocks = () => {
+      const excludeSymbols = [...LEADERSHIP_STOCKS, ...STABLE_STOCKS, ...SHORT_STOCKS];
+      const remainingStocks = stocksData.filter(s => !excludeSymbols.includes(s.symbol));
+      return remainingStocks
+        .sort((a, b) => (b.priceChange30d || 0) - (a.priceChange30d || 0))
+        .slice(0, 16)
+        .map(s => s.symbol);
     };
 
-    // Get filtered crypto (only 6 allowed)
+    const MOMENTUM_STOCKS = getMomentumStocks();
+
+    // Get stocks for a category
+    const getCategoryStocks = (category) => {
+      let symbols = [];
+      switch (category) {
+        case 'Leadership': symbols = LEADERSHIP_STOCKS; break;
+        case 'Momentum': symbols = MOMENTUM_STOCKS; break;
+        case 'Stable': symbols = STABLE_STOCKS; break;
+        case 'Short': symbols = SHORT_STOCKS; break;
+        default: symbols = [];
+      }
+      return stocksData.filter(s => symbols.includes(s.symbol));
+    };
+
+    // Calculate counts - separate longs from shorts
+    const longPositions = portfolio.filter(p => !SHORT_STOCKS.includes(p.symbol) && !ALLOWED_CRYPTO.includes(p.symbol));
+    const shortPositions = portfolio.filter(p => SHORT_STOCKS.includes(p.symbol) || (p.position === 'short'));
+    const longCount = longPositions.length;
+    const shortCount = shortPositions.length;
+    const hasCrypto = selectedCrypto !== null;
+    const totalSelected = longCount + shortCount + (hasCrypto ? 1 : 0);
+
+    // Validation: 6-12 longs + 0-2 shorts + 1 crypto = 7-13 total
+    const isPortfolioValid = longCount >= 6 && longCount <= 12 && shortCount <= 2 && hasCrypto && totalSelected >= 7 && totalSelected <= 13;
+
+    // Get filtered crypto
     const allowedCryptoData = cryptoData.filter(c => ALLOWED_CRYPTO.includes(c.symbol));
 
-    // Search filter for current category
+    // Filter stocks by category and search
     const categoryStocks = getCategoryStocks(builderCategory);
     const filteredCategoryStocks = categoryStocks.filter(asset =>
       searchTerm === '' ||
@@ -11630,37 +11783,50 @@ export default function PortfolioDuel() {
       asset.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    // Toggle asset in portfolio
-    const toggleBuilderAsset = (asset, isCrypto = false) => {
+    // Responsive columns
+    const getGridColumns = () => {
+      if (typeof window === 'undefined') return 4;
+      const w = window.innerWidth;
+      if (w < 400) return 3;
+      if (w < 640) return 4;
+      if (w < 1024) return 6;
+      return 8;
+    };
+
+    // Toggle stock in portfolio
+    const toggleBuilderStock = (asset) => {
       const inPortfolio = portfolio.some(p => p.symbol === asset.symbol);
+      const isShortCategory = builderCategory === 'Short';
 
       if (inPortfolio) {
-        // Remove from portfolio
         setPortfolio(prev => prev.filter(p => p.symbol !== asset.symbol));
       } else {
-        // Add to portfolio with validation
-        if (isCrypto) {
-          if (cryptoCount >= 1) return; // Already have 1 crypto
-        } else {
-          if (stockCount >= 6) return; // Already have 6 stocks
-        }
+        // Validate limits
+        if (isShortCategory && shortCount >= 2) return;
+        if (!isShortCategory && longCount >= 12) return;
 
-        // Add with default percentage
-        const defaultPercentage = isCrypto ? 14.29 : 14.29; // Will be adjusted in cart
         setPortfolio(prev => [...prev, {
           ...asset,
-          percentage: defaultPercentage
+          percentage: 14.29,
+          position: isShortCategory ? 'short' : 'long'
         }]);
 
-        // Set portfolio type on first add
-        if (!portfolioType) {
-          setPortfolioType('stocks'); // Always stocks since we mix stocks + crypto
-        }
+        if (!portfolioType) setPortfolioType('stocks');
+      }
+    };
+
+    // Handle crypto selection with Buy/Short toggle
+    const handleCryptoSelect = (symbol, position) => {
+      if (selectedCrypto?.symbol === symbol && selectedCrypto?.position === position) {
+        setSelectedCrypto(null);
+      } else {
+        setSelectedCrypto({ symbol, position });
       }
     };
 
     // Format price helper
     const formatBuilderPrice = (price) => {
+      if (!price) return '0.00';
       if (price >= 1000) return `${(price / 1000).toFixed(1)}K`;
       if (price >= 1) return price.toFixed(2);
       return price.toFixed(4);
@@ -11668,25 +11834,23 @@ export default function PortfolioDuel() {
 
     return (
       <div style={containerStyle}>
-        {/* Animated Desktop Background */}
         <DesktopBackground isDesktop={isDesktop} />
 
         <div style={{ minHeight: '100vh', background: '#0d1117', position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column' }}>
-          {/* COMPACT HEADER - Snake Draft Style */}
+          {/* HEADER */}
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             padding: '12px 16px',
-            background: '#161b22',
+            background: '#0d1117',
             borderBottom: '1px solid #21262d',
             position: 'sticky',
             top: 0,
             zIndex: 50
           }}>
-            {/* Back Button */}
             <button
-              onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setScreen('dashboard'); }}
+              onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setSelectedCrypto(null); setScreen('dashboard'); }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -11700,20 +11864,16 @@ export default function PortfolioDuel() {
                 padding: '8px'
               }}
             >
-              <span>←</span> Back
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+              Back
             </button>
 
-            {/* Title */}
-            <h1 style={{
-              color: '#ffffff',
-              fontSize: '18px',
-              fontWeight: '700',
-              margin: 0
-            }}>
+            <h1 style={{ color: '#ffffff', fontSize: '18px', fontWeight: '700', margin: 0, position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
               Build Portfolio
             </h1>
 
-            {/* Cart Button - GREEN */}
             <button
               onClick={() => setShowPortfolioManager(true)}
               style={{
@@ -11723,7 +11883,7 @@ export default function PortfolioDuel() {
                 background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
                 border: 'none',
                 borderRadius: '8px',
-                padding: '8px 12px',
+                padding: '8px 14px',
                 color: '#ffffff',
                 fontSize: '14px',
                 fontWeight: '600',
@@ -11732,386 +11892,349 @@ export default function PortfolioDuel() {
                 position: 'relative'
               }}
             >
-              🛒 Cart
-              {portfolio.length > 0 && (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="9" cy="21" r="1" />
+                <circle cx="20" cy="21" r="1" />
+                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+              </svg>
+              Cart
+              {totalSelected > 0 && (
                 <span style={{
                   position: 'absolute',
                   top: '-6px',
                   right: '-6px',
-                  backgroundColor: '#ef4444',
+                  background: '#ef4444',
                   color: '#ffffff',
-                  fontSize: '10px',
-                  fontWeight: 'bold',
+                  fontSize: '11px',
+                  fontWeight: '700',
                   borderRadius: '50%',
-                  minWidth: '18px',
+                  width: '18px',
                   height: '18px',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  border: '2px solid #0d1117'
+                  justifyContent: 'center'
                 }}>
-                  {portfolio.length}
+                  {totalSelected}
                 </span>
               )}
             </button>
           </div>
 
           {/* MAIN CONTENT */}
-          <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
-            <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-
-              {/* PORTFOLIO STATUS CARD */}
-              <div style={{
-                background: '#161b22',
-                border: '1px solid #21262d',
-                borderRadius: '12px',
-                padding: '16px',
-                marginBottom: '16px'
-              }}>
-                {/* Header row */}
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '12px'
-                }}>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}>
-                    <span style={{ fontSize: '16px' }}>📊</span>
-                    <span style={{
-                      color: '#ffffff',
-                      fontSize: '16px',
-                      fontWeight: '700'
-                    }}>Your Portfolio</span>
-                  </div>
-                  <span style={{
-                    color: '#8b949e',
-                    fontSize: '13px'
-                  }}>
-                    6 Stocks + 1 Crypto
-                  </span>
+          <div style={{ flex: 1, overflow: 'auto', width: '100%', maxWidth: '100vw', overflowX: 'hidden' }}>
+            {/* PORTFOLIO STATUS CARD */}
+            <div style={{
+              background: '#161b22',
+              border: '1px solid #21262d',
+              borderRadius: '12px',
+              padding: '16px',
+              margin: '12px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '16px' }}>📊</span>
+                  <span style={{ color: '#ffffff', fontSize: '16px', fontWeight: '700' }}>Your Portfolio</span>
                 </div>
+                <span style={{ color: '#8b949e', fontSize: '12px' }}>6-12 Longs • 0-2 Shorts • 1 Crypto</span>
+              </div>
 
-                {/* Progress bar */}
+              <div style={{ width: '100%', height: '8px', background: '#21262d', borderRadius: '4px', overflow: 'hidden', marginBottom: '10px' }}>
                 <div style={{
-                  width: '100%',
-                  height: '8px',
-                  background: '#21262d',
+                  height: '100%',
+                  width: `${Math.min((totalSelected / 7) * 100, 100)}%`,
+                  background: totalSelected >= 7 ? 'linear-gradient(90deg, #22c55e 0%, #16a34a 100%)' : 'linear-gradient(90deg, #00d9ff 0%, #0099cc 100%)',
                   borderRadius: '4px',
-                  overflow: 'hidden',
-                  marginBottom: '8px'
-                }}>
-                  <div style={{
-                    height: '100%',
-                    width: `${(totalSelected / 7) * 100}%`,
-                    background: isPortfolioComplete
-                      ? 'linear-gradient(90deg, #22c55e 0%, #16a34a 100%)'
-                      : 'linear-gradient(90deg, #00d9ff 0%, #0099cc 100%)',
-                    borderRadius: '4px',
-                    transition: 'width 0.3s ease'
-                  }} />
-                </div>
+                  transition: 'all 0.3s ease'
+                }} />
+              </div>
 
-                {/* Status text */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#8b949e', fontSize: '12px' }}>
+                  Longs: <span style={{ color: longCount >= 6 ? '#22c55e' : '#00d9ff', fontWeight: '600' }}>{longCount}/6 min</span>
+                  {' • '}
+                  Shorts: <span style={{ color: shortCount > 0 ? '#ef4444' : '#8b949e', fontWeight: '600' }}>{shortCount}/2</span>
+                  {' • '}
+                  Crypto: <span style={{ color: hasCrypto ? '#22c55e' : '#f59e0b', fontWeight: '600' }}>{hasCrypto ? '1/1' : '0/1'}</span>
+                </span>
+                <span style={{ color: totalSelected >= 7 ? '#22c55e' : '#ffffff', fontSize: '14px', fontWeight: '600' }}>
+                  {totalSelected >= 7 ? `${totalSelected} selected ✓` : `${totalSelected}/7 minimum`}
+                </span>
+              </div>
+            </div>
+
+            {/* CATEGORY TABS */}
+            <div style={{ display: 'flex', gap: '6px', padding: '0 12px', marginBottom: '12px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              {[
+                { id: 'Leadership', label: 'Leadership', color: '#00d9ff' },
+                { id: 'Momentum', label: 'Momentum', color: '#8b5cf6' },
+                { id: 'Stable', label: 'Stable', color: '#22c55e' },
+                { id: 'Short', label: 'Short', color: '#ef4444' }
+              ].map((cat) => {
+                const isActive = builderCategory === cat.id;
+                const count = getCategoryStocks(cat.id).length;
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => setBuilderCategory(cat.id)}
+                    style={{
+                      flex: '1 0 auto',
+                      minWidth: '80px',
+                      padding: '10px 14px',
+                      background: isActive ? cat.color : '#161b22',
+                      border: isActive ? 'none' : '1px solid #21262d',
+                      borderRadius: '8px',
+                      color: isActive ? (cat.id === 'Short' ? '#ffffff' : '#0d1117') : '#8b949e',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {cat.label} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* SHORT CATEGORY HEADER */}
+            {builderCategory === 'Short' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', marginBottom: '8px' }}>
+                <div style={{ flex: 1, height: '1px', background: '#ef4444', opacity: 0.3 }} />
+                <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="#ef4444"><path d="M6 11L1 4H11L6 11Z" /></svg>
+                  Short Positions (Max 2)
+                </span>
+                <div style={{ flex: 1, height: '1px', background: '#ef4444', opacity: 0.3 }} />
+              </div>
+            )}
+
+            {/* SEARCH BAR */}
+            <div style={{ position: 'relative', padding: '0 12px', marginBottom: '12px' }}>
+              <span style={{ position: 'absolute', left: '24px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontSize: '14px' }}>🔍</span>
+              <input
+                type="text"
+                placeholder="Search assets..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px 10px 36px',
+                  background: '#0d1117',
+                  border: '1px solid #21262d',
+                  borderRadius: '8px',
+                  color: '#ffffff',
+                  fontSize: '14px',
+                  outline: 'none',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            {/* STOCK GRID */}
+            {loadingMarketData ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px' }}>
+                <Loader2 style={{ height: '32px', width: '32px', color: '#00d9ff', animation: 'spin 1s linear infinite' }} />
+              </div>
+            ) : (
+              <>
                 <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${getGridColumns()}, 1fr)`,
+                  gap: '8px',
+                  padding: '0 12px',
+                  width: '100%',
+                  boxSizing: 'border-box'
                 }}>
-                  <span style={{
-                    color: '#8b949e',
-                    fontSize: '13px'
-                  }}>
-                    Stocks: <span style={{ color: stockCount === 6 ? '#22c55e' : '#00d9ff', fontWeight: '600' }}>{stockCount}/6</span>
-                    {' • '}
-                    Crypto: <span style={{ color: cryptoCount === 1 ? '#22c55e' : '#f59e0b', fontWeight: '600' }}>{cryptoCount}/1</span>
-                  </span>
-                  <span style={{
-                    color: isPortfolioComplete ? '#22c55e' : '#ffffff',
-                    fontSize: '14px',
-                    fontWeight: '600'
-                  }}>
-                    {totalSelected}/7 selected
-                  </span>
+                  {filteredCategoryStocks.map((asset) => {
+                    const isSelected = portfolio.some(p => p.symbol === asset.symbol);
+                    const isShortCategory = builderCategory === 'Short';
+                    const isDisabled = !isSelected && (isShortCategory ? shortCount >= 2 : longCount >= 12);
+                    const changePercent = asset.percentChange || asset.change24h || 0;
+
+                    return (
+                      <button
+                        key={asset.symbol}
+                        onClick={() => !isDisabled && toggleBuilderStock(asset)}
+                        disabled={isDisabled}
+                        style={{
+                          background: isSelected
+                            ? (isShortCategory ? 'rgba(239, 68, 68, 0.12)' : 'rgba(0, 217, 255, 0.12)')
+                            : '#161b22',
+                          border: isSelected
+                            ? `2px solid ${isShortCategory ? '#ef4444' : '#00d9ff'}`
+                            : '1px solid #21262d',
+                          borderRadius: '10px',
+                          padding: '10px 6px',
+                          cursor: isDisabled ? 'not-allowed' : 'pointer',
+                          opacity: isDisabled ? 0.4 : 1,
+                          transition: 'all 0.2s ease',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          textAlign: 'center',
+                          minHeight: '90px'
+                        }}
+                      >
+                        {isSelected && isShortCategory && (
+                          <div style={{ color: '#ef4444', fontSize: '8px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                            <svg width="8" height="8" viewBox="0 0 12 12" fill="#ef4444"><path d="M6 11L1 4H11L6 11Z" /></svg>
+                            SHORT
+                          </div>
+                        )}
+                        <div style={{ color: isSelected ? (isShortCategory ? '#ef4444' : '#00d9ff') : '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '2px' }}>
+                          {asset.symbol}
+                        </div>
+                        <div style={{ color: '#6b7280', fontSize: '9px', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', padding: '0 2px' }}>
+                          {asset.name}
+                        </div>
+                        <div style={{ color: '#e6edf3', fontSize: '12px', fontWeight: '600', marginBottom: '2px' }}>
+                          ${formatBuilderPrice(asset.price)}
+                        </div>
+                        <div style={{ color: changePercent >= 0 ? '#22c55e' : '#ef4444', fontSize: '11px', fontWeight: '600' }}>
+                          {changePercent >= 0 ? '+' : ''}{safeToFixed(changePercent, 1)}%
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-              </div>
 
-              {/* CATEGORY TABS - Steady / Risky / Defensive */}
-              <div style={{
-                display: 'flex',
-                gap: '8px',
-                marginBottom: '16px'
-              }}>
-                {['Steady', 'Risky', 'Defensive'].map((category) => {
-                  const isActive = builderCategory === category;
-                  const count = getCategoryStocks(category).length;
-                  const catColors = {
-                    Steady: '#10b981',
-                    Risky: '#f59e0b',
-                    Defensive: '#3b82f6'
-                  };
+                {/* CRYPTO SECTION */}
+                <div style={{ padding: '12px', marginTop: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ flex: 1, height: '1px', background: '#f59e0b', opacity: 0.3 }} />
+                    <span style={{ color: '#f59e0b', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      ₿ Crypto (Pick 1 - Buy or Short)
+                    </span>
+                    <div style={{ flex: 1, height: '1px', background: '#f59e0b', opacity: 0.3 }} />
+                  </div>
 
-                  return (
-                    <button
-                      key={category}
-                      onClick={() => setBuilderCategory(category)}
-                      style={{
-                        flex: 1,
-                        padding: '12px 16px',
-                        background: isActive ? `${catColors[category]}20` : '#161b22',
-                        border: isActive ? `2px solid ${catColors[category]}` : '1px solid #21262d',
-                        borderRadius: '10px',
-                        color: isActive ? catColors[category] : '#8b949e',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease'
-                      }}
-                    >
-                      {category} ({count})
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* SEARCH BAR */}
-              <div style={{
-                position: 'relative',
-                marginBottom: '16px'
-              }}>
-                <span style={{
-                  position: 'absolute',
-                  left: '12px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: '#8b949e',
-                  fontSize: '14px'
-                }}>🔍</span>
-                <input
-                  type="text"
-                  placeholder="Search assets..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px 10px 36px',
-                    background: '#0d1117',
-                    border: '1px solid #21262d',
-                    borderRadius: '8px',
-                    color: '#ffffff',
-                    fontSize: '14px',
-                    outline: 'none',
-                    boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-
-              {/* STOCK ASSET GRID - Compact tiles */}
-              {loadingMarketData ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px' }}>
-                  <Loader2 style={{ height: '32px', width: '32px', color: '#00d9ff', animation: 'spin 1s linear infinite' }} />
-                </div>
-              ) : (
-                <>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: window.innerWidth >= 768 ? 'repeat(6, 1fr)' : 'repeat(4, 1fr)',
-                    gap: '8px',
-                    marginBottom: '24px'
-                  }}>
-                    {filteredCategoryStocks.map((asset) => {
-                      const isSelected = portfolio.some(p => p.symbol === asset.symbol);
-                      const isDisabled = !isSelected && stockCount >= 6;
-                      const changePercent = asset.percentChange || asset.change24h || 0;
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                    {allowedCryptoData.map((crypto) => {
+                      const isSelectedBuy = selectedCrypto?.symbol === crypto.symbol && selectedCrypto?.position === 'long';
+                      const isSelectedShort = selectedCrypto?.symbol === crypto.symbol && selectedCrypto?.position === 'short';
+                      const changePercent = crypto.percentChange || crypto.change24h || 0;
+                      const getBorderColor = () => {
+                        if (isSelectedBuy) return '#22c55e';
+                        if (isSelectedShort) return '#ef4444';
+                        return '#21262d';
+                      };
+                      const getBackground = () => {
+                        if (isSelectedBuy) return 'rgba(34, 197, 94, 0.08)';
+                        if (isSelectedShort) return 'rgba(239, 68, 68, 0.08)';
+                        return '#161b22';
+                      };
 
                       return (
-                        <button
-                          key={asset.symbol}
-                          onClick={() => !isDisabled && toggleBuilderAsset(asset, false)}
-                          disabled={isDisabled}
+                        <div
+                          key={crypto.symbol}
                           style={{
-                            background: isSelected
-                              ? 'rgba(0, 217, 255, 0.15)'
-                              : '#161b22',
-                            border: isSelected
-                              ? '2px solid #00d9ff'
-                              : '1px solid #21262d',
+                            background: getBackground(),
+                            border: `2px solid ${getBorderColor()}`,
                             borderRadius: '10px',
-                            padding: '12px 8px',
-                            cursor: isDisabled ? 'not-allowed' : 'pointer',
-                            opacity: isDisabled ? 0.5 : 1,
-                            transition: 'all 0.2s ease',
+                            padding: '10px 8px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
                             textAlign: 'center',
-                            minHeight: '90px'
+                            transition: 'all 0.2s ease'
                           }}
                         >
-                          {/* Symbol */}
-                          <div style={{
-                            color: isSelected ? '#00d9ff' : '#ffffff',
-                            fontSize: '14px',
-                            fontWeight: '700',
-                            marginBottom: '4px'
-                          }}>
-                            {asset.symbol}
+                          <div style={{ color: isSelectedBuy ? '#22c55e' : isSelectedShort ? '#ef4444' : '#ffffff', fontSize: '15px', fontWeight: '700', marginBottom: '2px' }}>
+                            {crypto.symbol}
                           </div>
-
-                          {/* Company name (truncated) */}
-                          <div style={{
-                            color: '#8b949e',
-                            fontSize: '10px',
-                            marginBottom: '6px',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis'
-                          }}>
-                            {asset.name}
+                          <div style={{ color: '#6b7280', fontSize: '9px', marginBottom: '6px' }}>{crypto.name}</div>
+                          <div style={{ color: '#e6edf3', fontSize: '12px', fontWeight: '600', marginBottom: '2px' }}>
+                            ${formatBuilderPrice(crypto.price)}
                           </div>
-
-                          {/* Price */}
-                          <div style={{
-                            color: '#e6edf3',
-                            fontSize: '12px',
-                            fontWeight: '600'
-                          }}>
-                            ${formatBuilderPrice(asset.price)}
-                          </div>
-
-                          {/* Change % */}
-                          <div style={{
-                            color: changePercent >= 0 ? '#22c55e' : '#ef4444',
-                            fontSize: '11px',
-                            fontWeight: '600'
-                          }}>
+                          <div style={{ color: changePercent >= 0 ? '#22c55e' : '#ef4444', fontSize: '11px', fontWeight: '600', marginBottom: '8px' }}>
                             {changePercent >= 0 ? '+' : ''}{safeToFixed(changePercent, 1)}%
                           </div>
-                        </button>
+
+                          <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
+                            <button
+                              onClick={() => handleCryptoSelect(crypto.symbol, 'long')}
+                              style={{
+                                flex: 1,
+                                padding: '6px 8px',
+                                background: isSelectedBuy ? 'rgba(34, 197, 94, 0.2)' : 'transparent',
+                                border: isSelectedBuy ? '1.5px solid #22c55e' : '1.5px solid #21262d',
+                                borderRadius: '6px',
+                                color: isSelectedBuy ? '#22c55e' : '#6b7280',
+                                fontSize: '10px',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '3px',
+                                transition: 'all 0.2s ease'
+                              }}
+                            >
+                              <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor"><path d="M6 1L11 8H1L6 1Z" /></svg>
+                              Buy
+                            </button>
+                            <button
+                              onClick={() => handleCryptoSelect(crypto.symbol, 'short')}
+                              style={{
+                                flex: 1,
+                                padding: '6px 8px',
+                                background: isSelectedShort ? 'rgba(239, 68, 68, 0.2)' : 'transparent',
+                                border: isSelectedShort ? '1.5px solid #ef4444' : '1.5px solid #21262d',
+                                borderRadius: '6px',
+                                color: isSelectedShort ? '#ef4444' : '#6b7280',
+                                fontSize: '10px',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '3px',
+                                transition: 'all 0.2s ease'
+                              }}
+                            >
+                              <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor"><path d="M6 11L1 4H11L6 11Z" /></svg>
+                              Short
+                            </button>
+                          </div>
+                        </div>
                       );
                     })}
                   </div>
+                </div>
 
-                  {/* CRYPTO SECTION */}
-                  <div style={{ marginTop: '8px' }}>
-                    {/* Section header with divider */}
-                    <div style={{
+                {/* TEMPLATE BUTTONS */}
+                <div style={{ display: 'flex', gap: '8px', margin: '16px 12px', paddingTop: '16px', borderTop: '1px solid #21262d' }}>
+                  <button
+                    onClick={() => setShowTemplatesModal(true)}
+                    style={{
+                      flex: 1,
+                      padding: '12px 16px',
+                      backgroundColor: '#21262d',
+                      color: '#d1d5db',
+                      border: '1px solid #30363d',
+                      borderRadius: '8px',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '12px',
-                      marginBottom: '12px'
-                    }}>
-                      <div style={{
-                        flex: 1,
-                        height: '1px',
-                        background: '#21262d'
-                      }} />
-                      <span style={{
-                        color: '#f59e0b',
-                        fontSize: '12px',
-                        fontWeight: '700',
-                        textTransform: 'uppercase',
-                        letterSpacing: '1px'
-                      }}>
-                        ₿ Crypto (Pick 1)
-                      </span>
-                      <div style={{
-                        flex: 1,
-                        height: '1px',
-                        background: '#21262d'
-                      }} />
-                    </div>
-
-                    {/* Crypto grid - 6 coins */}
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: window.innerWidth >= 768 ? 'repeat(6, 1fr)' : 'repeat(3, 1fr)',
-                      gap: '8px'
-                    }}>
-                      {allowedCryptoData.map((crypto) => {
-                        const isSelected = portfolio.some(p => p.symbol === crypto.symbol);
-                        const isDisabled = !isSelected && cryptoCount >= 1;
-                        const changePercent = crypto.percentChange || crypto.change24h || 0;
-
-                        return (
-                          <button
-                            key={crypto.symbol}
-                            onClick={() => !isDisabled && toggleBuilderAsset(crypto, true)}
-                            disabled={isDisabled}
-                            style={{
-                              background: isSelected
-                                ? 'rgba(245, 158, 11, 0.15)'
-                                : '#161b22',
-                              border: isSelected
-                                ? '2px solid #f59e0b'
-                                : '1px solid #21262d',
-                              borderRadius: '10px',
-                              padding: '12px 8px',
-                              cursor: isDisabled ? 'not-allowed' : 'pointer',
-                              opacity: isDisabled ? 0.5 : 1,
-                              transition: 'all 0.2s ease',
-                              textAlign: 'center',
-                              minHeight: '90px'
-                            }}
-                          >
-                            {/* Symbol */}
-                            <div style={{
-                              color: isSelected ? '#f59e0b' : '#ffffff',
-                              fontSize: '14px',
-                              fontWeight: '700',
-                              marginBottom: '4px'
-                            }}>
-                              {crypto.symbol}
-                            </div>
-
-                            {/* Name */}
-                            <div style={{
-                              color: '#8b949e',
-                              fontSize: '10px',
-                              marginBottom: '6px'
-                            }}>
-                              {crypto.name}
-                            </div>
-
-                            {/* Price */}
-                            <div style={{
-                              color: '#e6edf3',
-                              fontSize: '12px',
-                              fontWeight: '600'
-                            }}>
-                              ${formatBuilderPrice(crypto.price)}
-                            </div>
-
-                            {/* Change */}
-                            <div style={{
-                              color: changePercent >= 0 ? '#22c55e' : '#ef4444',
-                              fontSize: '11px',
-                              fontWeight: '600'
-                            }}>
-                              {changePercent >= 0 ? '+' : ''}{safeToFixed(changePercent, 1)}%
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* TEMPLATE BUTTONS */}
-                  <div style={{
-                    display: 'flex',
-                    gap: '8px',
-                    marginTop: '24px',
-                    paddingTop: '16px',
-                    borderTop: '1px solid #21262d'
-                  }}>
+                      justifyContent: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    📂 Load Template
+                  </button>
+                  {portfolio.length >= 5 && (
                     <button
-                      onClick={() => setShowTemplatesModal(true)}
+                      onClick={() => setSaveTemplateModal(true)}
                       style={{
                         flex: 1,
                         padding: '12px 16px',
-                        backgroundColor: '#21262d',
-                        color: '#d1d5db',
-                        border: '1px solid #30363d',
+                        backgroundColor: '#22c55e20',
+                        color: '#22c55e',
+                        border: '1px solid #22c55e40',
                         borderRadius: '8px',
                         fontSize: '13px',
                         fontWeight: '600',
@@ -12122,34 +12245,12 @@ export default function PortfolioDuel() {
                         gap: '6px'
                       }}
                     >
-                      <span>📂</span> Load Template
+                      💾 Save Template
                     </button>
-                    {portfolio.length >= 5 && (
-                      <button
-                        onClick={() => setSaveTemplateModal(true)}
-                        style={{
-                          flex: 1,
-                          padding: '12px 16px',
-                          backgroundColor: '#22c55e20',
-                          color: '#22c55e',
-                          border: '1px solid #22c55e40',
-                          borderRadius: '8px',
-                          fontSize: '13px',
-                          fontWeight: '600',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px'
-                        }}
-                      >
-                        <span>💾</span> Save Template
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
 
