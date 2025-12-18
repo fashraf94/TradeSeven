@@ -4368,6 +4368,7 @@ export default function PortfolioDuel() {
   const [builderCategory, setBuilderCategory] = useState('Leadership'); // Leadership/Momentum/Stable/Short tabs
   const [selectedCrypto, setSelectedCrypto] = useState(null); // { symbol: 'BTC', position: 'long' | 'short' }
   const [showRulesModal, setShowRulesModal] = useState(false); // Rules modal state
+  const [rulesActiveTab, setRulesActiveTab] = useState('classic'); // Rules modal active tab
 
   // Battle joining state
   const [joinCode, setJoinCode] = useState('');
@@ -10891,7 +10892,7 @@ export default function PortfolioDuel() {
         )}
 
         {/* ============================================ */}
-        {/* RULES MODAL */}
+        {/* RULES MODAL - With 3 Tabs */}
         {/* ============================================ */}
         {showRulesModal && (
           <>
@@ -10900,7 +10901,7 @@ export default function PortfolioDuel() {
               style={{
                 position: 'fixed',
                 inset: 0,
-                background: 'rgba(0, 0, 0, 0.8)',
+                background: 'rgba(0, 0, 0, 0.85)',
                 zIndex: 200,
                 backdropFilter: 'blur(4px)'
               }}
@@ -10913,82 +10914,288 @@ export default function PortfolioDuel() {
               background: '#161b22',
               border: '1px solid #21262d',
               borderRadius: '16px',
-              padding: '24px',
-              maxWidth: '400px',
-              width: '90%',
-              maxHeight: '80vh',
-              overflowY: 'auto',
+              width: '100%',
+              maxWidth: '500px',
+              maxHeight: '85vh',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
               zIndex: 210
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h2 style={{ color: '#ffffff', fontSize: '20px', fontWeight: '700', margin: 0 }}>
-                  📋 MarketClash Rules
-                </h2>
+              {/* Header */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '20px 20px 16px 20px',
+                borderBottom: '1px solid #21262d'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '20px' }}>📋</span>
+                  <h2 style={{ color: '#ffffff', fontSize: '20px', fontWeight: '700', margin: 0 }}>
+                    MarketClash Rules
+                  </h2>
+                </div>
                 <button
                   onClick={() => setShowRulesModal(false)}
-                  style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: '24px', cursor: 'pointer', padding: '4px' }}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#8b949e',
+                    fontSize: '24px',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    lineHeight: 1
+                  }}
                 >
                   ×
                 </button>
               </div>
 
-              <div style={{ color: '#e6edf3', fontSize: '14px', lineHeight: '1.6' }}>
-                <h3 style={{ color: '#00d9ff', fontSize: '16px', marginBottom: '8px' }}>
-                  Building Your Portfolio
-                </h3>
-                <ul style={{ paddingLeft: '20px', marginBottom: '16px', color: '#8b949e' }}>
-                  <li>Select <strong style={{ color: '#ffffff' }}>6-12 stocks</strong> to go LONG (buy)</li>
-                  <li>Optionally select <strong style={{ color: '#ffffff' }}>0-2 stocks</strong> to SHORT</li>
-                  <li>Select exactly <strong style={{ color: '#ffffff' }}>1 crypto</strong> (buy OR short)</li>
-                  <li>Total portfolio: <strong style={{ color: '#ffffff' }}>7-13 assets</strong></li>
-                  <li>Each asset: <strong style={{ color: '#ffffff' }}>7.5% - 20%</strong> allocation</li>
-                </ul>
-
-                <h3 style={{ color: '#22c55e', fontSize: '16px', marginBottom: '8px' }}>
-                  How Positions Work
-                </h3>
-                <ul style={{ paddingLeft: '20px', marginBottom: '16px', color: '#8b949e' }}>
-                  <li><strong style={{ color: '#22c55e' }}>LONG (Buy)</strong>: You profit when price goes UP</li>
-                  <li><strong style={{ color: '#ef4444' }}>SHORT</strong>: You profit when price goes DOWN</li>
-                </ul>
-
-                <h3 style={{ color: '#f59e0b', fontSize: '16px', marginBottom: '8px' }}>
-                  Battle Rules
-                </h3>
-                <ul style={{ paddingLeft: '20px', marginBottom: '16px', color: '#8b949e' }}>
-                  <li>Battles last <strong style={{ color: '#ffffff' }}>24 hours</strong></li>
-                  <li>Uses <strong style={{ color: '#ffffff' }}>real market prices</strong></li>
-                  <li>Highest portfolio % gain wins!</li>
-                </ul>
-
-                <h3 style={{ color: '#8b5cf6', fontSize: '16px', marginBottom: '8px' }}>
-                  Stock Categories
-                </h3>
-                <ul style={{ paddingLeft: '20px', color: '#8b949e' }}>
-                  <li><strong style={{ color: '#00d9ff' }}>Leadership</strong>: Large-cap market leaders</li>
-                  <li><strong style={{ color: '#8b5cf6' }}>Momentum</strong>: Best 30-day performers</li>
-                  <li><strong style={{ color: '#22c55e' }}>Stable</strong>: Defensive, dividend stocks</li>
-                  <li><strong style={{ color: '#ef4444' }}>Short</strong>: Volatile stocks (short only)</li>
-                </ul>
+              {/* Tab Buttons */}
+              <div style={{
+                display: 'flex',
+                gap: '8px',
+                padding: '16px 20px',
+                borderBottom: '1px solid #21262d'
+              }}>
+                {[
+                  { id: 'classic', label: 'Classic Battle', icon: '⚔️', color: '#00d9ff' },
+                  { id: 'snake', label: 'Snake Draft', icon: '🐍', color: '#10b981' },
+                  { id: 'challenges', label: 'Challenges', icon: '🎯', color: '#f59e0b' }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setRulesActiveTab(tab.id)}
+                    style={{
+                      flex: 1,
+                      padding: '10px 8px',
+                      background: rulesActiveTab === tab.id ? `${tab.color}15` : 'transparent',
+                      border: rulesActiveTab === tab.id
+                        ? `2px solid ${tab.color}`
+                        : '2px solid #21262d',
+                      borderRadius: '8px',
+                      color: rulesActiveTab === tab.id ? tab.color : '#6b7280',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <span style={{ fontSize: '18px' }}>{tab.icon}</span>
+                    {tab.label}
+                  </button>
+                ))}
               </div>
 
-              <button
-                onClick={() => setShowRulesModal(false)}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
-                  border: 'none',
-                  borderRadius: '10px',
-                  color: '#0d1117',
-                  fontSize: '16px',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  marginTop: '20px'
-                }}
-              >
-                Got It!
-              </button>
+              {/* Content Area - Scrollable */}
+              <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '20px'
+              }}>
+                {/* CLASSIC BATTLE TAB */}
+                {rulesActiveTab === 'classic' && (
+                  <div style={{ color: '#e6edf3', fontSize: '14px', lineHeight: '1.6' }}>
+                    <h3 style={{ color: '#00d9ff', fontSize: '16px', marginBottom: '10px', marginTop: 0 }}>
+                      Building Your Portfolio
+                    </h3>
+                    <ul style={{ paddingLeft: '20px', marginBottom: '20px', color: '#8b949e' }}>
+                      <li>Select <strong style={{ color: '#ffffff' }}>6-12 stocks</strong> to go LONG (buy)</li>
+                      <li>Optionally select <strong style={{ color: '#ef4444' }}>0-2 stocks</strong> to SHORT</li>
+                      <li>Select exactly <strong style={{ color: '#f59e0b' }}>1 crypto</strong> (buy OR short)</li>
+                      <li>Total portfolio: <strong style={{ color: '#ffffff' }}>7-13 assets</strong></li>
+                      <li>Each asset: <strong style={{ color: '#22c55e' }}>7.5% - 20%</strong> allocation</li>
+                    </ul>
+
+                    <h3 style={{ color: '#22c55e', fontSize: '16px', marginBottom: '10px' }}>
+                      How Positions Work
+                    </h3>
+                    <ul style={{ paddingLeft: '20px', marginBottom: '20px', color: '#8b949e' }}>
+                      <li><strong style={{ color: '#22c55e' }}>LONG (Buy)</strong>: You profit when price goes UP</li>
+                      <li><strong style={{ color: '#ef4444' }}>SHORT</strong>: You profit when price goes DOWN</li>
+                    </ul>
+
+                    <h3 style={{ color: '#f59e0b', fontSize: '16px', marginBottom: '10px' }}>
+                      Battle Rules
+                    </h3>
+                    <ul style={{ paddingLeft: '20px', marginBottom: '20px', color: '#8b949e' }}>
+                      <li>Battles last <strong style={{ color: '#ffffff' }}>24 hours</strong></li>
+                      <li>Uses <strong style={{ color: '#ffffff' }}>real market prices</strong></li>
+                      <li>Highest portfolio % gain wins!</li>
+                    </ul>
+
+                    <h3 style={{ color: '#8b5cf6', fontSize: '16px', marginBottom: '10px' }}>
+                      Stock Categories
+                    </h3>
+                    <ul style={{ paddingLeft: '20px', color: '#8b949e' }}>
+                      <li><strong style={{ color: '#00d9ff' }}>Leadership</strong>: Large-cap market leaders</li>
+                      <li><strong style={{ color: '#8b5cf6' }}>Momentum</strong>: Best 30-day performers</li>
+                      <li><strong style={{ color: '#22c55e' }}>Stable</strong>: Defensive, dividend stocks</li>
+                      <li><strong style={{ color: '#ef4444' }}>Short</strong>: Volatile stocks (short only)</li>
+                    </ul>
+                  </div>
+                )}
+
+                {/* SNAKE DRAFT TAB */}
+                {rulesActiveTab === 'snake' && (
+                  <div style={{ color: '#e6edf3', fontSize: '14px', lineHeight: '1.6' }}>
+                    <h3 style={{ color: '#10b981', fontSize: '16px', marginBottom: '10px', marginTop: 0 }}>
+                      What is Snake Draft?
+                    </h3>
+                    <p style={{ color: '#8b949e', marginBottom: '16px' }}>
+                      A <strong style={{ color: '#ffffff' }}>4-player</strong> fantasy-style draft where players take turns
+                      picking stocks. The pick order reverses each round (like a snake), giving everyone a fair shot
+                      at the best assets.
+                    </p>
+
+                    <h3 style={{ color: '#00d9ff', fontSize: '16px', marginBottom: '10px' }}>
+                      How the Draft Works
+                    </h3>
+                    <ul style={{ paddingLeft: '20px', marginBottom: '20px', color: '#8b949e' }}>
+                      <li><strong style={{ color: '#ffffff' }}>4 players</strong> compete (you + 3 others or CPUs)</li>
+                      <li><strong style={{ color: '#ffffff' }}>9 rounds</strong> of drafting</li>
+                      <li>Pick order <strong style={{ color: '#10b981' }}>reverses</strong> each round</li>
+                      <li>Example: Round 1 → 1,2,3,4 | Round 2 → 4,3,2,1</li>
+                      <li><strong style={{ color: '#f59e0b' }}>30 seconds</strong> per pick (auto-pick if time runs out)</li>
+                    </ul>
+
+                    <h3 style={{ color: '#8b5cf6', fontSize: '16px', marginBottom: '10px' }}>
+                      Category Requirements
+                    </h3>
+                    <p style={{ color: '#8b949e', marginBottom: '10px' }}>
+                      You must draft from each category:
+                    </p>
+                    <ul style={{ paddingLeft: '20px', marginBottom: '20px', color: '#8b949e' }}>
+                      <li><strong style={{ color: '#22c55e' }}>Steady</strong>: 3 picks (blue chips, stable)</li>
+                      <li><strong style={{ color: '#ef4444' }}>Risky</strong>: 3 picks (growth, volatile)</li>
+                      <li><strong style={{ color: '#00d9ff' }}>Defensive</strong>: 3 picks (utilities, healthcare)</li>
+                    </ul>
+
+                    <h3 style={{ color: '#f59e0b', fontSize: '16px', marginBottom: '10px' }}>
+                      After the Draft
+                    </h3>
+                    <ul style={{ paddingLeft: '20px', marginBottom: '20px', color: '#8b949e' }}>
+                      <li>Battle runs for <strong style={{ color: '#ffffff' }}>1 week</strong></li>
+                      <li>All 9 picks are <strong style={{ color: '#ffffff' }}>equally weighted</strong></li>
+                      <li>Uses <strong style={{ color: '#ffffff' }}>real market prices</strong></li>
+                      <li>Highest portfolio % gain wins!</li>
+                    </ul>
+
+                    <h3 style={{ color: '#22c55e', fontSize: '16px', marginBottom: '10px' }}>
+                      Placement & Rewards
+                    </h3>
+                    <ul style={{ paddingLeft: '20px', color: '#8b949e' }}>
+                      <li>🥇 <strong style={{ color: '#fbbf24' }}>1st Place</strong>: Most XP + Win recorded</li>
+                      <li>🥈 <strong style={{ color: '#9ca3af' }}>2nd Place</strong>: Moderate XP</li>
+                      <li>🥉 <strong style={{ color: '#d97706' }}>3rd Place</strong>: Small XP</li>
+                      <li>4th Place: Participation XP</li>
+                    </ul>
+                  </div>
+                )}
+
+                {/* CHALLENGES TAB */}
+                {rulesActiveTab === 'challenges' && (
+                  <div style={{ color: '#e6edf3', fontSize: '14px', lineHeight: '1.6' }}>
+                    <h3 style={{ color: '#f59e0b', fontSize: '16px', marginBottom: '10px', marginTop: 0 }}>
+                      What are Challenges?
+                    </h3>
+                    <p style={{ color: '#8b949e', marginBottom: '16px' }}>
+                      Challenges are <strong style={{ color: '#ffffff' }}>bonus objectives</strong> that reward you with
+                      extra XP. Complete them to level up faster and show off your skills!
+                    </p>
+
+                    <h3 style={{ color: '#ec4899', fontSize: '16px', marginBottom: '10px' }}>
+                      🎯 Weekly Challenges
+                    </h3>
+                    <p style={{ color: '#8b949e', marginBottom: '10px' }}>
+                      Found on your <strong style={{ color: '#ffffff' }}>Dashboard</strong>. These reset every week.
+                    </p>
+                    <ul style={{ paddingLeft: '20px', marginBottom: '16px', color: '#8b949e' }}>
+                      <li><strong style={{ color: '#ffffff' }}>Win 3 Battles</strong> - Win any 3 battles this week</li>
+                      <li><strong style={{ color: '#ffffff' }}>Try Snake Draft</strong> - Complete a snake draft battle</li>
+                      <li><strong style={{ color: '#ffffff' }}>Diversify</strong> - Use all 4 stock categories in one portfolio</li>
+                      <li><strong style={{ color: '#ffffff' }}>Perfect Portfolio</strong> - Win with 10%+ gains</li>
+                    </ul>
+                    <div style={{
+                      background: 'rgba(236, 72, 153, 0.1)',
+                      border: '1px solid rgba(236, 72, 153, 0.3)',
+                      borderRadius: '8px',
+                      padding: '10px 12px',
+                      marginBottom: '20px'
+                    }}>
+                      <span style={{ color: '#ec4899', fontSize: '12px' }}>
+                        💡 Check the Dashboard to see your weekly progress!
+                      </span>
+                    </div>
+
+                    <h3 style={{ color: '#8b5cf6', fontSize: '16px', marginBottom: '10px' }}>
+                      ⚡ Mid-Game Challenges
+                    </h3>
+                    <p style={{ color: '#8b949e', marginBottom: '10px' }}>
+                      These appear <strong style={{ color: '#ffffff' }}>during active battles</strong> and reward quick thinking.
+                    </p>
+                    <ul style={{ paddingLeft: '20px', marginBottom: '20px', color: '#8b949e' }}>
+                      <li><strong style={{ color: '#22c55e' }}>Leading at Halftime</strong> - Be ahead at the 12-hour mark</li>
+                      <li><strong style={{ color: '#00d9ff' }}>Comeback King</strong> - Win after being down at halftime</li>
+                      <li><strong style={{ color: '#f59e0b' }}>Streak Master</strong> - Win 3 battles in a row</li>
+                      <li><strong style={{ color: '#ef4444' }}>Underdog Victory</strong> - Win with a risky portfolio</li>
+                    </ul>
+
+                    <h3 style={{ color: '#22c55e', fontSize: '16px', marginBottom: '10px' }}>
+                      💰 XP Rewards
+                    </h3>
+                    <ul style={{ paddingLeft: '20px', marginBottom: '16px', color: '#8b949e' }}>
+                      <li>Weekly challenges: <strong style={{ color: '#22c55e' }}>+50-200 XP</strong> each</li>
+                      <li>Mid-game challenges: <strong style={{ color: '#22c55e' }}>+25-100 XP</strong> each</li>
+                      <li>Complete all weekly: <strong style={{ color: '#fbbf24' }}>+500 XP bonus!</strong></li>
+                    </ul>
+
+                    <div style={{
+                      background: 'rgba(34, 197, 94, 0.1)',
+                      border: '1px solid rgba(34, 197, 94, 0.3)',
+                      borderRadius: '8px',
+                      padding: '12px'
+                    }}>
+                      <h4 style={{ color: '#22c55e', fontSize: '13px', marginTop: 0, marginBottom: '8px' }}>
+                        💡 Pro Tips
+                      </h4>
+                      <ul style={{ paddingLeft: '16px', margin: 0, color: '#8b949e', fontSize: '12px' }}>
+                        <li>Check challenges before building your portfolio</li>
+                        <li>Some challenges stack - plan accordingly!</li>
+                        <li>Training mode battles count toward challenges</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div style={{
+                padding: '16px 20px',
+                borderTop: '1px solid #21262d'
+              }}>
+                <button
+                  onClick={() => setShowRulesModal(false)}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
+                    border: 'none',
+                    borderRadius: '10px',
+                    color: '#0d1117',
+                    fontSize: '16px',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Got It!
+                </button>
+              </div>
             </div>
           </>
         )}
