@@ -9433,10 +9433,14 @@ export default function PortfolioDuel() {
                       setAssetType('stocks');
                       setSearchTerm('');
 
-                      // Check for upcoming high-impact events and show alert
-                      const highImpact = await checkUpcomingHighImpactEvents();
-                      if (highImpact && highImpact.length > 0) {
-                        setShowVolatilityAlert(true);
+                      // Check for upcoming high-impact events and show alert (only once per session)
+                      const alreadyShown = sessionStorage.getItem('volatilityAlertShown');
+                      if (!alreadyShown) {
+                        const highImpact = await checkUpcomingHighImpactEvents();
+                        if (highImpact && highImpact.length > 0) {
+                          setShowVolatilityAlert(true);
+                          sessionStorage.setItem('volatilityAlertShown', 'true');
+                        }
                       }
 
                       // Route based on game mode
@@ -11731,11 +11735,23 @@ export default function PortfolioDuel() {
     // Stock category definitions
     const LEADERSHIP_STOCKS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'BRK.B', 'JPM', 'V', 'MA', 'UNH', 'JNJ', 'WMT', 'PG', 'HD', 'XOM'];
     const STABLE_STOCKS = ['KO', 'PEP', 'MCD', 'COST', 'VZ', 'T', 'PFE', 'MRK', 'ABBV', 'LLY', 'NEE', 'DUK', 'SO', 'D', 'CVX', 'COP'];
-    // Expanded shorts: volatile stocks + index ETFs for hedging
-    const SHORT_STOCKS = ['TSLA', 'RIVN', 'LCID', 'SNAP', 'HOOD', 'COIN', 'GME', 'AMC', 'PLTR', 'SMCI', 'BYND', 'UPST', 'AFRM', 'SOFI', 'SPY', 'QQQ', 'DIA', 'IWM'];
 
-    // Allowed crypto
+    // Short category - organized by type
+    const SHORT_VOLATILE_STOCKS = ['TSLA', 'RIVN', 'LCID', 'SNAP', 'HOOD', 'COIN', 'GME', 'AMC', 'PLTR', 'SMCI'];
+    const SHORT_INDEX_ETFS = ['SPY', 'QQQ', 'DIA', 'IWM'];
+    const SHORT_CRYPTO = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE'];
+    const SHORT_STOCKS = [...SHORT_VOLATILE_STOCKS, ...SHORT_INDEX_ETFS];
+
+    // Allowed crypto for BUY section
     const ALLOWED_CRYPTO = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE'];
+
+    // ETF placeholder data (in case not in stocksData)
+    const ETF_DATA = {
+      'SPY': { symbol: 'SPY', name: 'S&P 500 ETF', price: 450, percentChange: 0.5 },
+      'QQQ': { symbol: 'QQQ', name: 'Nasdaq 100 ETF', price: 380, percentChange: 0.7 },
+      'DIA': { symbol: 'DIA', name: 'Dow Jones ETF', price: 350, percentChange: 0.3 },
+      'IWM': { symbol: 'IWM', name: 'Russell 2000 ETF', price: 200, percentChange: 0.4 }
+    };
 
     // Get Momentum stocks dynamically (best 30-day performers from remaining stocks)
     const getMomentumStocks = () => {
@@ -11756,15 +11772,38 @@ export default function PortfolioDuel() {
         case 'Leadership': symbols = LEADERSHIP_STOCKS; break;
         case 'Momentum': symbols = MOMENTUM_STOCKS; break;
         case 'Stable': symbols = STABLE_STOCKS; break;
-        case 'Short': symbols = SHORT_STOCKS; break;
+        case 'Short': symbols = SHORT_VOLATILE_STOCKS; break; // Only volatile stocks for regular grid
         default: symbols = [];
       }
       return stocksData.filter(s => symbols.includes(s.symbol));
     };
 
-    // Calculate counts - separate longs from shorts
-    const longPositions = portfolio.filter(p => !SHORT_STOCKS.includes(p.symbol) && !ALLOWED_CRYPTO.includes(p.symbol));
-    const shortPositions = portfolio.filter(p => SHORT_STOCKS.includes(p.symbol) || (p.position === 'short'));
+    // Get short assets by sub-category with fallback data
+    const getShortVolatileStocks = () => {
+      return SHORT_VOLATILE_STOCKS.map(symbol => {
+        const stockData = stocksData.find(s => s.symbol === symbol);
+        return stockData || { symbol, name: symbol, price: 0, percentChange: 0 };
+      }).filter(s => s.price > 0 || stocksData.some(sd => sd.symbol === s.symbol));
+    };
+
+    const getShortETFs = () => {
+      return SHORT_INDEX_ETFS.map(symbol => {
+        const stockData = stocksData.find(s => s.symbol === symbol);
+        return stockData || ETF_DATA[symbol] || { symbol, name: symbol, price: 0, percentChange: 0 };
+      });
+    };
+
+    const getShortCrypto = () => {
+      return SHORT_CRYPTO.map(symbol => {
+        const crypto = cryptoData.find(c => c.symbol === symbol);
+        return crypto || { symbol, name: symbol, price: 0, percentChange: 0 };
+      }).filter(c => c.price > 0);
+    };
+
+    // Calculate counts - separate longs from shorts (includes crypto shorts)
+    const ALL_SHORT_SYMBOLS = [...SHORT_STOCKS, ...SHORT_CRYPTO];
+    const longPositions = portfolio.filter(p => !ALL_SHORT_SYMBOLS.includes(p.symbol) && p.position !== 'short');
+    const shortPositions = portfolio.filter(p => ALL_SHORT_SYMBOLS.includes(p.symbol) || p.position === 'short');
     const longCount = longPositions.length;
     const shortCount = shortPositions.length;
     const hasCrypto = selectedCrypto !== null;
@@ -11998,46 +12037,36 @@ export default function PortfolioDuel() {
               })}
             </div>
 
-            {/* SHORT CATEGORY HEADER */}
-            {builderCategory === 'Short' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', marginBottom: '8px' }}>
-                <div style={{ flex: 1, height: '1px', background: '#ef4444', opacity: 0.3 }} />
-                <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <svg width="10" height="10" viewBox="0 0 12 12" fill="#ef4444"><path d="M6 11L1 4H11L6 11Z" /></svg>
-                  Short Positions (Max 2)
-                </span>
-                <div style={{ flex: 1, height: '1px', background: '#ef4444', opacity: 0.3 }} />
+            {/* SEARCH BAR - Only for non-Short categories */}
+            {builderCategory !== 'Short' && (
+              <div style={{ position: 'relative', padding: '0 12px', marginBottom: '12px' }}>
+                <span style={{ position: 'absolute', left: '24px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontSize: '14px' }}>🔍</span>
+                <input
+                  type="text"
+                  placeholder="Search assets..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px 10px 36px',
+                    background: '#0d1117',
+                    border: '1px solid #21262d',
+                    borderRadius: '8px',
+                    color: '#ffffff',
+                    fontSize: '14px',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
               </div>
             )}
 
-            {/* SEARCH BAR */}
-            <div style={{ position: 'relative', padding: '0 12px', marginBottom: '12px' }}>
-              <span style={{ position: 'absolute', left: '24px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontSize: '14px' }}>🔍</span>
-              <input
-                type="text"
-                placeholder="Search assets..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px 10px 36px',
-                  background: '#0d1117',
-                  border: '1px solid #21262d',
-                  borderRadius: '8px',
-                  color: '#ffffff',
-                  fontSize: '14px',
-                  outline: 'none',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
-
-            {/* STOCK GRID */}
+            {/* STOCK GRID - For non-Short categories */}
             {loadingMarketData ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px' }}>
                 <Loader2 style={{ height: '32px', width: '32px', color: '#00d9ff', animation: 'spin 1s linear infinite' }} />
               </div>
-            ) : (
+            ) : builderCategory !== 'Short' ? (
               <>
                 <div style={{
                   display: 'grid',
@@ -12049,8 +12078,7 @@ export default function PortfolioDuel() {
                 }}>
                   {filteredCategoryStocks.map((asset) => {
                     const isSelected = portfolio.some(p => p.symbol === asset.symbol);
-                    const isShortCategory = builderCategory === 'Short';
-                    const isDisabled = !isSelected && (isShortCategory ? shortCount >= 2 : longCount >= 12);
+                    const isDisabled = !isSelected && longCount >= 12;
                     const changePercent = asset.percentChange || asset.change24h || 0;
 
                     return (
@@ -12059,12 +12087,8 @@ export default function PortfolioDuel() {
                         onClick={() => !isDisabled && toggleBuilderStock(asset)}
                         disabled={isDisabled}
                         style={{
-                          background: isSelected
-                            ? (isShortCategory ? 'rgba(239, 68, 68, 0.12)' : 'rgba(0, 217, 255, 0.12)')
-                            : '#161b22',
-                          border: isSelected
-                            ? `2px solid ${isShortCategory ? '#ef4444' : '#00d9ff'}`
-                            : '1px solid #21262d',
+                          background: isSelected ? 'rgba(0, 217, 255, 0.12)' : '#161b22',
+                          border: isSelected ? '2px solid #00d9ff' : '1px solid #21262d',
                           borderRadius: '10px',
                           padding: '10px 6px',
                           cursor: isDisabled ? 'not-allowed' : 'pointer',
@@ -12078,13 +12102,7 @@ export default function PortfolioDuel() {
                           minHeight: '90px'
                         }}
                       >
-                        {isSelected && isShortCategory && (
-                          <div style={{ color: '#ef4444', fontSize: '8px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                            <svg width="8" height="8" viewBox="0 0 12 12" fill="#ef4444"><path d="M6 11L1 4H11L6 11Z" /></svg>
-                            SHORT
-                          </div>
-                        )}
-                        <div style={{ color: isSelected ? (isShortCategory ? '#ef4444' : '#00d9ff') : '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '2px' }}>
+                        <div style={{ color: isSelected ? '#00d9ff' : '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '2px' }}>
                           {asset.symbol}
                         </div>
                         <div style={{ color: '#6b7280', fontSize: '9px', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', padding: '0 2px' }}>
@@ -12100,36 +12118,105 @@ export default function PortfolioDuel() {
                     );
                   })}
                 </div>
+              </>
+            ) : (
+              /* SHORT CATEGORY - Organized Sub-sections */
+              <>
+                {/* Main Short Header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', marginBottom: '16px' }}>
+                  <div style={{ flex: 1, height: '1px', background: '#ef4444', opacity: 0.3 }} />
+                  <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="#ef4444"><path d="M6 11L1 4H11L6 11Z" /></svg>
+                    Short Positions (Max 2)
+                  </span>
+                  <div style={{ flex: 1, height: '1px', background: '#ef4444', opacity: 0.3 }} />
+                </div>
 
-                {/* CRYPTO SECTION - Simple BUY only tiles */}
-                <div style={{ padding: '12px', marginTop: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                    <div style={{ flex: 1, height: '1px', background: '#f59e0b', opacity: 0.3 }} />
-                    <span style={{ color: '#f59e0b', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                      ₿ Crypto (Pick 1)
-                    </span>
-                    <div style={{ flex: 1, height: '1px', background: '#f59e0b', opacity: 0.3 }} />
-                  </div>
-
+                {/* Volatile Stocks Sub-section */}
+                <div style={{ marginBottom: '20px', padding: '0 12px' }}>
+                  <h4 style={{ color: '#ef4444', fontSize: '12px', fontWeight: '600', marginBottom: '10px', paddingLeft: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    📉 Volatile Stocks
+                  </h4>
                   <div style={{
                     display: 'grid',
                     gridTemplateColumns: `repeat(${getGridColumns()}, 1fr)`,
                     gap: '8px'
                   }}>
-                    {allowedCryptoData.map((crypto) => {
-                      const isSelected = selectedCrypto === crypto.symbol;
-                      const changePercent = crypto.percentChange || crypto.change24h || 0;
-
+                    {getShortVolatileStocks().map((asset) => {
+                      const isSelected = portfolio.some(p => p.symbol === asset.symbol);
+                      const isDisabled = !isSelected && shortCount >= 2;
+                      const changePercent = asset.percentChange || asset.change24h || 0;
                       return (
                         <button
-                          key={crypto.symbol}
-                          onClick={() => handleCryptoSelect(crypto.symbol)}
+                          key={asset.symbol}
+                          onClick={() => !isDisabled && toggleBuilderStock(asset)}
+                          disabled={isDisabled}
+                          style={{
+                            background: isSelected ? 'rgba(239, 68, 68, 0.12)' : '#161b22',
+                            border: isSelected ? '2px solid #ef4444' : '1px solid #21262d',
+                            borderRadius: '10px',
+                            padding: '10px 6px',
+                            cursor: isDisabled ? 'not-allowed' : 'pointer',
+                            opacity: isDisabled ? 0.4 : 1,
+                            transition: 'all 0.2s ease',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            textAlign: 'center',
+                            minHeight: '90px'
+                          }}
+                        >
+                          {isSelected && (
+                            <div style={{ color: '#ef4444', fontSize: '8px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                              <svg width="8" height="8" viewBox="0 0 12 12" fill="#ef4444"><path d="M6 11L1 4H11L6 11Z" /></svg>
+                              SHORT
+                            </div>
+                          )}
+                          <div style={{ color: isSelected ? '#ef4444' : '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '2px' }}>
+                            {asset.symbol}
+                          </div>
+                          <div style={{ color: '#6b7280', fontSize: '9px', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', padding: '0 2px' }}>
+                            {asset.name}
+                          </div>
+                          <div style={{ color: '#e6edf3', fontSize: '12px', fontWeight: '600', marginBottom: '2px' }}>
+                            ${formatBuilderPrice(asset.price)}
+                          </div>
+                          <div style={{ color: changePercent >= 0 ? '#22c55e' : '#ef4444', fontSize: '11px', fontWeight: '600' }}>
+                            {changePercent >= 0 ? '+' : ''}{safeToFixed(changePercent, 1)}%
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Index ETFs Sub-section */}
+                <div style={{ marginBottom: '20px', padding: '0 12px' }}>
+                  <h4 style={{ color: '#f59e0b', fontSize: '12px', fontWeight: '600', marginBottom: '10px', paddingLeft: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    📊 Index ETFs (Hedge)
+                  </h4>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(${getGridColumns()}, 1fr)`,
+                    gap: '8px'
+                  }}>
+                    {getShortETFs().map((asset) => {
+                      const isSelected = portfolio.some(p => p.symbol === asset.symbol);
+                      const isDisabled = !isSelected && shortCount >= 2;
+                      const changePercent = asset.percentChange || asset.change24h || 0;
+                      return (
+                        <button
+                          key={asset.symbol}
+                          onClick={() => !isDisabled && toggleBuilderStock(asset)}
+                          disabled={isDisabled}
                           style={{
                             background: isSelected ? 'rgba(245, 158, 11, 0.12)' : '#161b22',
                             border: isSelected ? '2px solid #f59e0b' : '1px solid #21262d',
                             borderRadius: '10px',
                             padding: '10px 6px',
-                            cursor: 'pointer',
+                            cursor: isDisabled ? 'not-allowed' : 'pointer',
+                            opacity: isDisabled ? 0.4 : 1,
                             transition: 'all 0.2s ease',
                             display: 'flex',
                             flexDirection: 'column',
@@ -12141,11 +12228,78 @@ export default function PortfolioDuel() {
                         >
                           {isSelected && (
                             <div style={{ color: '#f59e0b', fontSize: '8px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                              <svg width="8" height="8" viewBox="0 0 12 12" fill="#f59e0b"><path d="M6 1L11 8H1L6 1Z" /></svg>
-                              BUY
+                              <svg width="8" height="8" viewBox="0 0 12 12" fill="#f59e0b"><path d="M6 11L1 4H11L6 11Z" /></svg>
+                              SHORT
                             </div>
                           )}
                           <div style={{ color: isSelected ? '#f59e0b' : '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '2px' }}>
+                            {asset.symbol}
+                          </div>
+                          <div style={{ color: '#6b7280', fontSize: '9px', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', padding: '0 2px' }}>
+                            {asset.name}
+                          </div>
+                          <div style={{ color: '#e6edf3', fontSize: '12px', fontWeight: '600', marginBottom: '2px' }}>
+                            ${formatBuilderPrice(asset.price)}
+                          </div>
+                          <div style={{ color: changePercent >= 0 ? '#22c55e' : '#ef4444', fontSize: '11px', fontWeight: '600' }}>
+                            {changePercent >= 0 ? '+' : ''}{safeToFixed(changePercent, 1)}%
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Crypto Shorts Sub-section */}
+                <div style={{ marginBottom: '20px', padding: '0 12px' }}>
+                  <h4 style={{ color: '#8b5cf6', fontSize: '12px', fontWeight: '600', marginBottom: '10px', paddingLeft: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    ₿ Crypto Shorts
+                  </h4>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(${getGridColumns()}, 1fr)`,
+                    gap: '8px'
+                  }}>
+                    {getShortCrypto().map((crypto) => {
+                      const isSelected = portfolio.some(p => p.symbol === crypto.symbol && p.position === 'short');
+                      const isDisabled = !isSelected && shortCount >= 2;
+                      const changePercent = crypto.percentChange || crypto.change24h || 0;
+                      return (
+                        <button
+                          key={crypto.symbol}
+                          onClick={() => {
+                            if (isDisabled) return;
+                            const inPortfolio = portfolio.some(p => p.symbol === crypto.symbol && p.position === 'short');
+                            if (inPortfolio) {
+                              setPortfolio(prev => prev.filter(p => !(p.symbol === crypto.symbol && p.position === 'short')));
+                            } else {
+                              setPortfolio(prev => [...prev, { ...crypto, percentage: 14.29, position: 'short' }]);
+                            }
+                          }}
+                          disabled={isDisabled}
+                          style={{
+                            background: isSelected ? 'rgba(139, 92, 246, 0.12)' : '#161b22',
+                            border: isSelected ? '2px solid #8b5cf6' : '1px solid #21262d',
+                            borderRadius: '10px',
+                            padding: '10px 6px',
+                            cursor: isDisabled ? 'not-allowed' : 'pointer',
+                            opacity: isDisabled ? 0.4 : 1,
+                            transition: 'all 0.2s ease',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            textAlign: 'center',
+                            minHeight: '90px'
+                          }}
+                        >
+                          {isSelected && (
+                            <div style={{ color: '#8b5cf6', fontSize: '8px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                              <svg width="8" height="8" viewBox="0 0 12 12" fill="#8b5cf6"><path d="M6 11L1 4H11L6 11Z" /></svg>
+                              SHORT
+                            </div>
+                          )}
+                          <div style={{ color: isSelected ? '#8b5cf6' : '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '2px' }}>
                             {crypto.symbol}
                           </div>
                           <div style={{ color: '#6b7280', fontSize: '9px', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', padding: '0 2px' }}>
@@ -12160,6 +12314,80 @@ export default function PortfolioDuel() {
                         </button>
                       );
                     })}
+                  </div>
+                </div>
+              </>
+            )}
+
+                {/* CRYPTO SECTION - Simple BUY only tiles - Centered */}
+                <div style={{ padding: '12px', marginTop: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ flex: 1, maxWidth: '100px', height: '1px', background: '#f59e0b', opacity: 0.3 }} />
+                    <span style={{ color: '#f59e0b', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      ₿ Crypto (Pick 1)
+                    </span>
+                    <div style={{ flex: 1, maxWidth: '100px', height: '1px', background: '#f59e0b', opacity: 0.3 }} />
+                  </div>
+
+                  {/* Centered crypto grid */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    width: '100%'
+                  }}>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: typeof window !== 'undefined' && window.innerWidth < 500
+                        ? 'repeat(3, minmax(80px, 110px))'
+                        : 'repeat(6, minmax(80px, 110px))',
+                      gap: '8px',
+                      maxWidth: '720px'
+                    }}>
+                      {allowedCryptoData.map((crypto) => {
+                        const isSelected = selectedCrypto === crypto.symbol;
+                        const changePercent = crypto.percentChange || crypto.change24h || 0;
+
+                        return (
+                          <button
+                            key={crypto.symbol}
+                            onClick={() => handleCryptoSelect(crypto.symbol)}
+                            style={{
+                              background: isSelected ? 'rgba(245, 158, 11, 0.12)' : '#161b22',
+                              border: isSelected ? '2px solid #f59e0b' : '1px solid #21262d',
+                              borderRadius: '10px',
+                              padding: '10px 6px',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              textAlign: 'center',
+                              minHeight: '90px'
+                            }}
+                          >
+                            {isSelected && (
+                              <div style={{ color: '#f59e0b', fontSize: '8px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                <svg width="8" height="8" viewBox="0 0 12 12" fill="#f59e0b"><path d="M6 1L11 8H1L6 1Z" /></svg>
+                                BUY
+                              </div>
+                            )}
+                            <div style={{ color: isSelected ? '#f59e0b' : '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '2px' }}>
+                              {crypto.symbol}
+                            </div>
+                            <div style={{ color: '#6b7280', fontSize: '9px', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', padding: '0 2px' }}>
+                              {crypto.name}
+                            </div>
+                            <div style={{ color: '#e6edf3', fontSize: '12px', fontWeight: '600', marginBottom: '2px' }}>
+                              ${formatBuilderPrice(crypto.price)}
+                            </div>
+                            <div style={{ color: changePercent >= 0 ? '#22c55e' : '#ef4444', fontSize: '11px', fontWeight: '600' }}>
+                              {changePercent >= 0 ? '+' : ''}{safeToFixed(changePercent, 1)}%
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
@@ -12208,8 +12436,7 @@ export default function PortfolioDuel() {
                     </button>
                   )}
                 </div>
-              </>
-            )}
+
           </div>
         </div>
 
@@ -12355,6 +12582,50 @@ export default function PortfolioDuel() {
                   }} />
                 </div>
               </div>
+
+              {/* DISTRIBUTE EVENLY BUTTON */}
+              {portfolio.length > 0 && (
+                <button
+                  onClick={() => {
+                    const totalAssets = portfolio.length;
+                    if (totalAssets === 0) return;
+
+                    // Calculate even percentage
+                    const evenPercentage = Math.round((100 / totalAssets) * 100) / 100;
+                    const remainder = Math.round((100 - (evenPercentage * totalAssets)) * 100) / 100;
+
+                    // Update all assets with even distribution
+                    setPortfolio(prev => prev.map((asset, index) => ({
+                      ...asset,
+                      percentage: index === 0 ? evenPercentage + remainder : evenPercentage,
+                      amount: ((index === 0 ? evenPercentage + remainder : evenPercentage) / 100) * 1000000
+                    })));
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: '#0d1117',
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    marginBottom: '16px',
+                    boxShadow: '0 2px 8px rgba(0, 217, 255, 0.3)',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                  ⚖️ Distribute Evenly
+                </button>
+              )}
 
               {/* ASSETS LIST */}
               {portfolio.length === 0 ? (
