@@ -4365,6 +4365,7 @@ export default function PortfolioDuel() {
   const [searchTerm, setSearchTerm] = useState('');
   const [portfolio, setPortfolio] = useState([]);
   const [portfolioType, setPortfolioType] = useState(null); // 'stocks' or 'crypto'
+  const [builderCategory, setBuilderCategory] = useState('Steady'); // Steady/Risky/Defensive tabs
 
   // Battle joining state
   const [joinCode, setJoinCode] = useState('');
@@ -11592,649 +11593,562 @@ export default function PortfolioDuel() {
     );
   }
 
-  // PORTFOLIO BUILDER SCREEN (Create Game)
+  // PORTFOLIO BUILDER SCREEN (Create Game) - REDESIGNED
   if (screen === 'builder') {
+    // Stock category mapping for Steady/Risky/Defensive
+    const STOCK_CATEGORIES = {
+      Steady: ['AAPL', 'MSFT', 'GOOGL', 'BRK.B', 'JPM', 'V', 'MA', 'BAC', 'WFC', 'GS', 'AXP', 'WMT', 'PG', 'KO', 'PEP', 'COST', 'JNJ', 'MRK', 'PFE', 'VZ', 'T', 'TMUS'],
+      Risky: ['NVDA', 'TSLA', 'AMD', 'META', 'AMZN', 'AVGO', 'CRM', 'HD', 'MCD', 'NKE', 'SBUX', 'TGT', 'UNH', 'LLY', 'ABBV'],
+      Defensive: ['NEE', 'DUK', 'SO', 'D', 'XOM', 'CVX', 'COP', 'SLB', 'EOG', 'CAT', 'RTX', 'UPS', 'HON', 'AMT', 'PLD', 'CCI', 'EQIX']
+    };
+
+    // Only these 6 crypto for simplified selection
+    const ALLOWED_CRYPTO = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE'];
+
+    // Calculate counts
+    const selectedStocks = portfolio.filter(p => !ALLOWED_CRYPTO.includes(p.symbol));
+    const selectedCrypto = portfolio.filter(p => ALLOWED_CRYPTO.includes(p.symbol));
+    const stockCount = selectedStocks.length;
+    const cryptoCount = selectedCrypto.length;
+    const totalSelected = stockCount + cryptoCount;
+    const isPortfolioComplete = stockCount === 6 && cryptoCount === 1;
+
+    // Filter stocks by category
+    const getCategoryStocks = (category) => {
+      const categorySymbols = STOCK_CATEGORIES[category] || [];
+      return stocksData.filter(s => categorySymbols.includes(s.symbol));
+    };
+
+    // Get filtered crypto (only 6 allowed)
+    const allowedCryptoData = cryptoData.filter(c => ALLOWED_CRYPTO.includes(c.symbol));
+
+    // Search filter for current category
+    const categoryStocks = getCategoryStocks(builderCategory);
+    const filteredCategoryStocks = categoryStocks.filter(asset =>
+      searchTerm === '' ||
+      asset.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      asset.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    // Toggle asset in portfolio
+    const toggleBuilderAsset = (asset, isCrypto = false) => {
+      const inPortfolio = portfolio.some(p => p.symbol === asset.symbol);
+
+      if (inPortfolio) {
+        // Remove from portfolio
+        setPortfolio(prev => prev.filter(p => p.symbol !== asset.symbol));
+      } else {
+        // Add to portfolio with validation
+        if (isCrypto) {
+          if (cryptoCount >= 1) return; // Already have 1 crypto
+        } else {
+          if (stockCount >= 6) return; // Already have 6 stocks
+        }
+
+        // Add with default percentage
+        const defaultPercentage = isCrypto ? 14.29 : 14.29; // Will be adjusted in cart
+        setPortfolio(prev => [...prev, {
+          ...asset,
+          percentage: defaultPercentage
+        }]);
+
+        // Set portfolio type on first add
+        if (!portfolioType) {
+          setPortfolioType('stocks'); // Always stocks since we mix stocks + crypto
+        }
+      }
+    };
+
+    // Format price helper
+    const formatBuilderPrice = (price) => {
+      if (price >= 1000) return `${(price / 1000).toFixed(1)}K`;
+      if (price >= 1) return price.toFixed(2);
+      return price.toFixed(4);
+    };
+
     return (
       <div style={containerStyle}>
         {/* Animated Desktop Background */}
         <DesktopBackground isDesktop={isDesktop} />
 
-        <div className="min-h-screen pb-20" style={{ background: colors.background, position: 'relative', zIndex: 1 }}>
-          {/* Portfolio Builder Header - NO CART BUTTON */}
-          <div className="bg-[#161b22] border-b border-gray-800 p-4">
-            <div className="max-w-6xl mx-auto flex items-center justify-between">
+        <div style={{ minHeight: '100vh', background: '#0d1117', position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column' }}>
+          {/* COMPACT HEADER - Snake Draft Style */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '12px 16px',
+            background: '#161b22',
+            borderBottom: '1px solid #21262d',
+            position: 'sticky',
+            top: 0,
+            zIndex: 50
+          }}>
+            {/* Back Button */}
+            <button
+              onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setScreen('dashboard'); }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'transparent',
+                border: 'none',
+                color: '#ffffff',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                padding: '8px'
+              }}
+            >
+              <span>←</span> Back
+            </button>
 
-              {/* Back Button - White text, transparent bg */}
-              <button
-                onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setScreen('dashboard'); }}
-                className="flex items-center gap-2 text-white hover:text-gray-300 font-semibold bg-transparent"
-              >
-                <span className="text-xl">←</span>
-                <span className="text-sm">Back</span>
-              </button>
+            {/* Title */}
+            <h1 style={{
+              color: '#ffffff',
+              fontSize: '18px',
+              fontWeight: '700',
+              margin: 0
+            }}>
+              Build Portfolio
+            </h1>
 
-              {/* Centered Title */}
-              <h1 className="text-lg font-bold text-center flex-1">Build Portfolio</h1>
-
-              {/* Empty spacer for centering */}
-              <div className="w-20"></div>
-            </div>
+            {/* Cart Button - GREEN */}
+            <button
+              onClick={() => setShowPortfolioManager(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                color: '#ffffff',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(34, 197, 94, 0.3)',
+                position: 'relative'
+              }}
+            >
+              🛒 Cart
+              {portfolio.length > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: '-6px',
+                  right: '-6px',
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                  fontSize: '10px',
+                  fontWeight: 'bold',
+                  borderRadius: '50%',
+                  minWidth: '18px',
+                  height: '18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: '2px solid #0d1117'
+                }}>
+                  {portfolio.length}
+                </span>
+              )}
+            </button>
           </div>
 
-          {/* FLOATING CART BUTTON */}
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setShowPortfolioManager(true);
-            }}
-            style={{
-              position: 'fixed',
-              top: '80px',
-              right: '16px',
-              zIndex: 50,
-              width: '56px',
-              height: '56px',
-              backgroundColor: '#4ade80',
-              borderRadius: '12px',
-              border: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
-              touchAction: 'manipulation'
-            }}
-            aria-label="View Portfolio"
-          >
-            {/* Cart Icon - pure SVG */}
-            <svg
-              width="28"
-              height="28"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#000000"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
+          {/* MAIN CONTENT */}
+          <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
+            <div style={{ maxWidth: '900px', margin: '0 auto' }}>
 
-            {/* Red badge */}
-            {portfolio && portfolio.length > 0 && (
-              <span style={{
-                position: 'absolute',
-                top: '-6px',
-                right: '-6px',
-                backgroundColor: '#ef4444',
-                color: '#ffffff',
-                fontSize: '11px',
-                fontWeight: 'bold',
-                borderRadius: '50%',
-                minWidth: '20px',
-                height: '20px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '0 5px',
-                border: '2px solid #0d1117'
-              }}>
-                {portfolio.length}
-              </span>
-            )}
-          </button>
-
-          <div className="max-w-6xl mx-auto px-4 md:px-6 pt-4">
-            {/* GAME RULES BOX */}
-            <div style={{
-              backgroundColor: '#1a1f2e',
-              border: '2px solid #00d9ff',
-              borderRadius: '12px',
-              padding: '20px',
-              marginBottom: '24px'
-            }}>
+              {/* PORTFOLIO STATUS CARD */}
               <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
+                background: '#161b22',
+                border: '1px solid #21262d',
+                borderRadius: '12px',
+                padding: '16px',
                 marginBottom: '16px'
               }}>
-                <span style={{ fontSize: '24px' }}>🎮</span>
-                <h3 style={{
-                  fontSize: '18px',
-                  fontWeight: 'bold',
-                  color: '#ffffff',
-                  margin: 0
+                {/* Header row */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '12px'
                 }}>
-                  MarketClash Rules
-                </h3>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <span style={{ fontSize: '16px' }}>📊</span>
+                    <span style={{
+                      color: '#ffffff',
+                      fontSize: '16px',
+                      fontWeight: '700'
+                    }}>Your Portfolio</span>
+                  </div>
+                  <span style={{
+                    color: '#8b949e',
+                    fontSize: '13px'
+                  }}>
+                    6 Stocks + 1 Crypto
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                <div style={{
+                  width: '100%',
+                  height: '8px',
+                  background: '#21262d',
+                  borderRadius: '4px',
+                  overflow: 'hidden',
+                  marginBottom: '8px'
+                }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${(totalSelected / 7) * 100}%`,
+                    background: isPortfolioComplete
+                      ? 'linear-gradient(90deg, #22c55e 0%, #16a34a 100%)'
+                      : 'linear-gradient(90deg, #00d9ff 0%, #0099cc 100%)',
+                    borderRadius: '4px',
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+
+                {/* Status text */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <span style={{
+                    color: '#8b949e',
+                    fontSize: '13px'
+                  }}>
+                    Stocks: <span style={{ color: stockCount === 6 ? '#22c55e' : '#00d9ff', fontWeight: '600' }}>{stockCount}/6</span>
+                    {' • '}
+                    Crypto: <span style={{ color: cryptoCount === 1 ? '#22c55e' : '#f59e0b', fontWeight: '600' }}>{cryptoCount}/1</span>
+                  </span>
+                  <span style={{
+                    color: isPortfolioComplete ? '#22c55e' : '#ffffff',
+                    fontSize: '14px',
+                    fontWeight: '600'
+                  }}>
+                    {totalSelected}/7 selected
+                  </span>
+                </div>
               </div>
 
-              <ul style={{
-                margin: 0,
-                paddingLeft: '20px',
-                color: '#e6edf3',
-                fontSize: '14px',
-                lineHeight: '1.8'
+              {/* CATEGORY TABS - Steady / Risky / Defensive */}
+              <div style={{
+                display: 'flex',
+                gap: '8px',
+                marginBottom: '16px'
               }}>
-                <li>Build a portfolio with 7-13 assets (stocks or crypto)</li>
-                <li>Each asset must be 7.5-20% of your $1M portfolio</li>
-                <li>Battles last 24 hours using real market prices</li>
-                <li>Winner has the highest portfolio percentage gain</li>
-              </ul>
-            </div>
+                {['Steady', 'Risky', 'Defensive'].map((category) => {
+                  const isActive = builderCategory === category;
+                  const count = getCategoryStocks(category).length;
+                  const catColors = {
+                    Steady: '#10b981',
+                    Risky: '#f59e0b',
+                    Defensive: '#3b82f6'
+                  };
 
-            {/* Asset Selection - Full Width (portfolio management in cart modal only) */}
-            <div>
-                <div className="rounded-xl p-4 md:p-6" style={{
-                  background: colors.cardBg,
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-                  border: `1px solid ${colors.border}`
-                }}>
-                  <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '16px', color: colors.textPrimary }}>Available Assets</h2>
+                  return (
+                    <button
+                      key={category}
+                      onClick={() => setBuilderCategory(category)}
+                      style={{
+                        flex: 1,
+                        padding: '12px 16px',
+                        background: isActive ? `${catColors[category]}20` : '#161b22',
+                        border: isActive ? `2px solid ${catColors[category]}` : '1px solid #21262d',
+                        borderRadius: '10px',
+                        color: isActive ? catColors[category] : '#8b949e',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      {category} ({count})
+                    </button>
+                  );
+                })}
+              </div>
 
-                  {loadingMarketData ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px' }}>
-                      <Loader2 style={{ height: '32px', width: '32px', color: colors.cyan, animation: 'spin 1s linear infinite' }} />
-                    </div>
-                  ) : (
-                    <>
-                      {/* Asset Type Tabs - Mobile-first responsive */}
-                      <div className="grid grid-cols-2 gap-3 mb-4">
+              {/* SEARCH BAR */}
+              <div style={{
+                position: 'relative',
+                marginBottom: '16px'
+              }}>
+                <span style={{
+                  position: 'absolute',
+                  left: '12px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: '#8b949e',
+                  fontSize: '14px'
+                }}>🔍</span>
+                <input
+                  type="text"
+                  placeholder="Search assets..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px 10px 36px',
+                    background: '#0d1117',
+                    border: '1px solid #21262d',
+                    borderRadius: '8px',
+                    color: '#ffffff',
+                    fontSize: '14px',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              {/* STOCK ASSET GRID - Compact tiles */}
+              {loadingMarketData ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px' }}>
+                  <Loader2 style={{ height: '32px', width: '32px', color: '#00d9ff', animation: 'spin 1s linear infinite' }} />
+                </div>
+              ) : (
+                <>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: window.innerWidth >= 768 ? 'repeat(6, 1fr)' : 'repeat(4, 1fr)',
+                    gap: '8px',
+                    marginBottom: '24px'
+                  }}>
+                    {filteredCategoryStocks.map((asset) => {
+                      const isSelected = portfolio.some(p => p.symbol === asset.symbol);
+                      const isDisabled = !isSelected && stockCount >= 6;
+                      const changePercent = asset.percentChange || asset.change24h || 0;
+
+                      return (
                         <button
-                          onClick={() => setAssetType('stocks')}
-                          disabled={portfolioType === 'crypto'}
-                          className="py-3 md:py-2.5 rounded-lg font-semibold text-sm md:text-base transition-all"
+                          key={asset.symbol}
+                          onClick={() => !isDisabled && toggleBuilderAsset(asset, false)}
+                          disabled={isDisabled}
                           style={{
-                            background: assetType === 'stocks'
-                              ? `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`
-                              : colors.elevated,
-                            color: assetType === 'stocks' ? colors.background : colors.textSecondary,
-                            border: `2px solid ${assetType === 'stocks' ? colors.cyan : colors.borderSubtle}`,
-                            opacity: portfolioType === 'crypto' ? 0.4 : 1,
-                            cursor: portfolioType === 'crypto' ? 'not-allowed' : 'pointer',
-                            minHeight: '44px'
+                            background: isSelected
+                              ? 'rgba(0, 217, 255, 0.15)'
+                              : '#161b22',
+                            border: isSelected
+                              ? '2px solid #00d9ff'
+                              : '1px solid #21262d',
+                            borderRadius: '10px',
+                            padding: '12px 8px',
+                            cursor: isDisabled ? 'not-allowed' : 'pointer',
+                            opacity: isDisabled ? 0.5 : 1,
+                            transition: 'all 0.2s ease',
+                            textAlign: 'center',
+                            minHeight: '90px'
                           }}
                         >
-                          📈 Stocks
-                        </button>
-                        <button
-                          onClick={() => setAssetType('crypto')}
-                          disabled={portfolioType === 'stocks'}
-                          className="py-3 md:py-2.5 rounded-lg font-semibold text-sm md:text-base transition-all"
-                          style={{
-                            background: assetType === 'crypto'
-                              ? `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.cyanDim} 100%)`
-                              : colors.elevated,
-                            color: assetType === 'crypto' ? colors.background : colors.textSecondary,
-                            border: `2px solid ${assetType === 'crypto' ? colors.cyan : colors.borderSubtle}`,
-                            opacity: portfolioType === 'stocks' ? 0.4 : 1,
-                            cursor: portfolioType === 'stocks' ? 'not-allowed' : 'pointer',
-                            minHeight: '44px'
-                          }}
-                        >
-                          ₿ Crypto
-                        </button>
-                      </div>
+                          {/* Symbol */}
+                          <div style={{
+                            color: isSelected ? '#00d9ff' : '#ffffff',
+                            fontSize: '14px',
+                            fontWeight: '700',
+                            marginBottom: '4px'
+                          }}>
+                            {asset.symbol}
+                          </div>
 
-                      {/* Quick Actions: Templates & Save */}
+                          {/* Company name (truncated) */}
+                          <div style={{
+                            color: '#8b949e',
+                            fontSize: '10px',
+                            marginBottom: '6px',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          }}>
+                            {asset.name}
+                          </div>
+
+                          {/* Price */}
+                          <div style={{
+                            color: '#e6edf3',
+                            fontSize: '12px',
+                            fontWeight: '600'
+                          }}>
+                            ${formatBuilderPrice(asset.price)}
+                          </div>
+
+                          {/* Change % */}
+                          <div style={{
+                            color: changePercent >= 0 ? '#22c55e' : '#ef4444',
+                            fontSize: '11px',
+                            fontWeight: '600'
+                          }}>
+                            {changePercent >= 0 ? '+' : ''}{safeToFixed(changePercent, 1)}%
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* CRYPTO SECTION */}
+                  <div style={{ marginTop: '8px' }}>
+                    {/* Section header with divider */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      marginBottom: '12px'
+                    }}>
                       <div style={{
-                        display: 'flex',
-                        gap: '8px',
-                        marginBottom: '16px'
+                        flex: 1,
+                        height: '1px',
+                        background: '#21262d'
+                      }} />
+                      <span style={{
+                        color: '#f59e0b',
+                        fontSize: '12px',
+                        fontWeight: '700',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px'
                       }}>
-                        <button
-                          onClick={() => setShowTemplatesModal(true)}
-                          style={{
-                            flex: 1,
-                            padding: '10px 16px',
-                            backgroundColor: '#21262d',
-                            color: '#d1d5db',
-                            border: '1px solid #30363d',
-                            borderRadius: '8px',
-                            fontSize: '13px',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            transition: 'all 0.2s'
-                          }}
-                        >
-                          <span>📂</span> Load Template
-                        </button>
-                        {portfolio.length >= 5 && (
+                        ₿ Crypto (Pick 1)
+                      </span>
+                      <div style={{
+                        flex: 1,
+                        height: '1px',
+                        background: '#21262d'
+                      }} />
+                    </div>
+
+                    {/* Crypto grid - 6 coins */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: window.innerWidth >= 768 ? 'repeat(6, 1fr)' : 'repeat(3, 1fr)',
+                      gap: '8px'
+                    }}>
+                      {allowedCryptoData.map((crypto) => {
+                        const isSelected = portfolio.some(p => p.symbol === crypto.symbol);
+                        const isDisabled = !isSelected && cryptoCount >= 1;
+                        const changePercent = crypto.percentChange || crypto.change24h || 0;
+
+                        return (
                           <button
-                            onClick={() => setSaveTemplateModal(true)}
+                            key={crypto.symbol}
+                            onClick={() => !isDisabled && toggleBuilderAsset(crypto, true)}
+                            disabled={isDisabled}
                             style={{
-                              flex: 1,
-                              padding: '10px 16px',
-                              backgroundColor: '#22c55e20',
-                              color: '#22c55e',
-                              border: '1px solid #22c55e40',
-                              borderRadius: '8px',
-                              fontSize: '13px',
-                              fontWeight: '600',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '6px',
-                              transition: 'all 0.2s'
+                              background: isSelected
+                                ? 'rgba(245, 158, 11, 0.15)'
+                                : '#161b22',
+                              border: isSelected
+                                ? '2px solid #f59e0b'
+                                : '1px solid #21262d',
+                              borderRadius: '10px',
+                              padding: '12px 8px',
+                              cursor: isDisabled ? 'not-allowed' : 'pointer',
+                              opacity: isDisabled ? 0.5 : 1,
+                              transition: 'all 0.2s ease',
+                              textAlign: 'center',
+                              minHeight: '90px'
                             }}
                           >
-                            <span>💾</span> Save as Template
-                          </button>
-                        )}
-                      </div>
+                            {/* Symbol */}
+                            <div style={{
+                              color: isSelected ? '#f59e0b' : '#ffffff',
+                              fontSize: '14px',
+                              fontWeight: '700',
+                              marginBottom: '4px'
+                            }}>
+                              {crypto.symbol}
+                            </div>
 
-                      {/* Portfolio Type Indicator */}
-                      {portfolioType && (
-                        <div style={{
+                            {/* Name */}
+                            <div style={{
+                              color: '#8b949e',
+                              fontSize: '10px',
+                              marginBottom: '6px'
+                            }}>
+                              {crypto.name}
+                            </div>
+
+                            {/* Price */}
+                            <div style={{
+                              color: '#e6edf3',
+                              fontSize: '12px',
+                              fontWeight: '600'
+                            }}>
+                              ${formatBuilderPrice(crypto.price)}
+                            </div>
+
+                            {/* Change */}
+                            <div style={{
+                              color: changePercent >= 0 ? '#22c55e' : '#ef4444',
+                              fontSize: '11px',
+                              fontWeight: '600'
+                            }}>
+                              {changePercent >= 0 ? '+' : ''}{safeToFixed(changePercent, 1)}%
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* TEMPLATE BUTTONS */}
+                  <div style={{
+                    display: 'flex',
+                    gap: '8px',
+                    marginTop: '24px',
+                    paddingTop: '16px',
+                    borderTop: '1px solid #21262d'
+                  }}>
+                    <button
+                      onClick={() => setShowTemplatesModal(true)}
+                      style={{
+                        flex: 1,
+                        padding: '12px 16px',
+                        backgroundColor: '#21262d',
+                        color: '#d1d5db',
+                        border: '1px solid #30363d',
+                        borderRadius: '8px',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      <span>📂</span> Load Template
+                    </button>
+                    {portfolio.length >= 5 && (
+                      <button
+                        onClick={() => setSaveTemplateModal(true)}
+                        style={{
+                          flex: 1,
                           padding: '12px 16px',
-                          marginBottom: '16px',
-                          background: portfolioType === 'stocks' ? `${colors.blue}20` : `${colors.purple}20`,
-                          border: `1px solid ${portfolioType === 'stocks' ? colors.blue : colors.purple}`,
+                          backgroundColor: '#22c55e20',
+                          color: '#22c55e',
+                          border: '1px solid #22c55e40',
                           borderRadius: '8px',
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '8px'
-                        }}>
-                          <span style={{ fontSize: '18px' }}>
-                            {portfolioType === 'stocks' ? '📈' : '₿'}
-                          </span>
-                          <div>
-                            <div style={{ fontSize: '13px', fontWeight: '600', color: colors.textPrimary }}>
-                              {portfolioType === 'stocks' ? 'Stocks Portfolio' : 'Crypto Portfolio'}
-                            </div>
-                            <div style={{ fontSize: '11px', color: colors.textSecondary }}>
-                              You can only add {portfolioType === 'stocks' ? 'stocks' : 'crypto'} to this portfolio
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Search */}
-                      <input
-                        type="text"
-                        placeholder="Search assets..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '12px 16px',
-                          marginBottom: '16px',
-                          border: `1px solid ${searchTerm ? colors.cyan : colors.borderSubtle}`,
-                          borderRadius: '8px',
-                          outline: 'none',
-                          transition: 'all 0.2s',
-                          boxSizing: 'border-box',
-                          background: 'rgba(0, 0, 0, 0.2)',
-                          color: colors.textPrimary,
-                          fontSize: '14px'
+                          justifyContent: 'center',
+                          gap: '6px'
                         }}
-                      />
-
-                      {/* Asset Grid - Responsive: 1 col mobile, 2 col tablet+ */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
-                        {filteredAssets.map(asset => {
-                          const inPortfolio = portfolio.some(p => p.symbol === asset.symbol);
-                          const isExpanded = expandedAssets.has(asset.symbol);
-
-                          return (
-                            <div
-                              key={asset.symbol}
-                              style={{
-                                borderRadius: '8px',
-                                border: `1px solid ${inPortfolio ? colors.cyan : colors.borderSubtle}`,
-                                background: inPortfolio ? `${colors.cyan}15` : 'rgba(0, 217, 255, 0.05)',
-                                transition: 'all 0.2s',
-                                overflow: 'hidden'
-                              }}
-                            >
-                              {/* Main Card - Always Visible */}
-                              <div
-                                style={{ padding: '14px', cursor: 'pointer' }}
-                                onClick={(e) => {
-                                  // Toggle expansion on card click
-                                  toggleAssetExpansion(asset.symbol);
-                                }}
-                              >
-                                {/* Symbol & Volatility Badge */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                                  <span style={{ fontWeight: 'bold', color: colors.textPrimary }}>{asset.symbol}</span>
-                                  {asset.volatility && (
-                                    <span style={{
-                                      fontSize: '9px',
-                                      padding: '3px 8px',
-                                      borderRadius: '4px',
-                                      background: asset.volatility === 'high' ? `${colors.red}20` :
-                                                 asset.volatility === 'medium' ? `${colors.gold}20` : `${colors.green}20`,
-                                      color: asset.volatility === 'high' ? colors.red :
-                                            asset.volatility === 'medium' ? colors.gold : colors.green,
-                                      fontWeight: '600'
-                                    }}>
-                                      {asset.volatility === 'low' ? 'Low Vol' :
-                                       asset.volatility === 'medium' ? 'Med Vol' : 'High Vol'}
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Name */}
-                                <div style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '6px' }}>{asset.name}</div>
-
-                                {/* Price & 24h Change */}
-                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                                  <span style={{ fontSize: '16px', fontWeight: '600', color: colors.cyan }}>
-                                    ${safeToFixed(asset.price, 2)}
-                                  </span>
-                                  {(asset.percentChange !== undefined || asset.change24h !== undefined) && (
-                                    <span style={{
-                                      fontSize: '11px',
-                                      color: safeNumber(asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
-                                    }}>
-                                      {safeNumber(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{safeToFixed(asset.percentChange || asset.change24h, 2)}%
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Community Quick Stats */}
-                                {asset.communityData && (
-                                  <div style={{
-                                    display: 'flex',
-                                    gap: '8px',
-                                    marginTop: '8px',
-                                    flexWrap: 'wrap'
-                                  }}>
-                                    {asset.communityData.isHot && (
-                                      <span style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '3px',
-                                        fontSize: '9px',
-                                        padding: '2px 6px',
-                                        borderRadius: '4px',
-                                        background: `${colors.red}25`,
-                                        color: colors.red,
-                                        fontWeight: '600'
-                                      }}>
-                                        <Flame style={{ width: '10px', height: '10px' }} />
-                                        HOT
-                                      </span>
-                                    )}
-                                    {asset.communityData.championPick && (
-                                      <span style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '3px',
-                                        fontSize: '9px',
-                                        padding: '2px 6px',
-                                        borderRadius: '4px',
-                                        background: `${colors.gold}25`,
-                                        color: colors.gold,
-                                        fontWeight: '600'
-                                      }}>
-                                        <Trophy style={{ width: '10px', height: '10px' }} />
-                                        CHAMP
-                                      </span>
-                                    )}
-                                    <span style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '3px',
-                                      fontSize: '9px',
-                                      padding: '2px 6px',
-                                      borderRadius: '4px',
-                                      background: `${colors.cyan}15`,
-                                      color: colors.cyan,
-                                      fontWeight: '500'
-                                    }}>
-                                      <Users style={{ width: '10px', height: '10px' }} />
-                                      {asset.communityData.picksThisWeek.toLocaleString()}
-                                    </span>
-                                  </div>
-                                )}
-
-                                {/* Add Button */}
-                                <button
-                                  className="add-button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleAddAsset(asset);
-                                  }}
-                                  disabled={inPortfolio || portfolio.length >= 13}
-                                  style={{
-                                    marginTop: '10px',
-                                    width: '100%',
-                                    padding: '6px 10px',
-                                    borderRadius: '6px',
-                                    fontSize: '12px',
-                                    fontWeight: '600',
-                                    border: 'none',
-                                    cursor: inPortfolio || portfolio.length >= 13 ? 'not-allowed' : 'pointer',
-                                    background: inPortfolio ? colors.green : colors.cyan,
-                                    color: '#000'
-                                  }}
-                                >
-                                  {inPortfolio ? '✓ Added' : 'Add to Portfolio'}
-                                </button>
-
-                                {/* Click for Details Hint */}
-                                <div style={{
-                                  marginTop: '12px',
-                                  paddingTop: '8px',
-                                  borderTop: `1px solid ${colors.borderSubtle}`,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '6px',
-                                  fontSize: '11px',
-                                  color: colors.textMuted,
-                                  fontWeight: '500'
-                                }}>
-                                  {isExpanded ? (
-                                    <ChevronUp style={{ height: '14px', width: '14px' }} />
-                                  ) : (
-                                    <ChevronDown style={{ height: '14px', width: '14px' }} />
-                                  )}
-                                  {isExpanded ? 'Click to collapse' : 'Click for details'}
-                                </div>
-                              </div>
-
-                              {/* Expanded Details */}
-                              {isExpanded && (
-                                <div style={{
-                                  padding: '12px 14px',
-                                  borderTop: `1px solid ${colors.borderSubtle}`,
-                                  background: 'rgba(0, 0, 0, 0.2)'
-                                }}>
-                                  {/* Community Activity Section */}
-                                  {asset.communityData && (
-                                    <div style={{ marginBottom: '12px' }}>
-                                      {/* Trending Badge */}
-                                      {asset.communityData.isTrending && (
-                                        <div style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '6px',
-                                          padding: '6px 10px',
-                                          borderRadius: '6px',
-                                          background: `linear-gradient(135deg, ${colors.cyan}20, ${colors.purple}20)`,
-                                          border: `1px solid ${colors.cyan}40`,
-                                          marginBottom: '10px'
-                                        }}>
-                                          <TrendingUp style={{ width: '14px', height: '14px', color: colors.cyan }} />
-                                          <span style={{ fontSize: '11px', fontWeight: '600', color: colors.cyan }}>
-                                            TRENDING +{asset.communityData.trendPercentage}%
-                                          </span>
-                                        </div>
-                                      )}
-
-                                      {/* Community Picks */}
-                                      <div style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                        marginBottom: '8px'
-                                      }}>
-                                        <Users style={{ width: '14px', height: '14px', color: colors.textSecondary }} />
-                                        <span style={{ fontSize: '12px', color: colors.textPrimary, fontWeight: '600' }}>
-                                          {asset.communityData.picksThisWeek.toLocaleString()} picks this week
-                                        </span>
-                                        {asset.communityData.popularityRank <= 3 && (
-                                          <span style={{
-                                            fontSize: '10px',
-                                            padding: '2px 6px',
-                                            borderRadius: '4px',
-                                            background: colors.gold,
-                                            color: '#000',
-                                            fontWeight: '700'
-                                          }}>
-                                            #{asset.communityData.popularityRank}
-                                          </span>
-                                        )}
-                                      </div>
-
-                                      {/* Champion's Choice */}
-                                      {asset.communityData.championPick && (
-                                        <div style={{
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          gap: '6px',
-                                          padding: '6px 10px',
-                                          borderRadius: '6px',
-                                          background: `${colors.gold}15`,
-                                          border: `1px solid ${colors.gold}30`,
-                                          marginBottom: '10px'
-                                        }}>
-                                          <Trophy style={{ width: '14px', height: '14px', color: colors.gold }} />
-                                          <span style={{ fontSize: '11px', color: colors.gold, fontWeight: '600' }}>
-                                            Champion's Choice - {asset.communityData.championPercentage}% of top players pick this
-                                          </span>
-                                        </div>
-                                      )}
-
-                                      {/* Battle Performance */}
-                                      <div style={{
-                                        padding: '8px 10px',
-                                        borderRadius: '6px',
-                                        background: 'rgba(0, 0, 0, 0.3)',
-                                        border: `1px solid ${colors.borderSubtle}`
-                                      }}>
-                                        <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '6px', fontWeight: '600' }}>
-                                          BATTLE PERFORMANCE
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                                          <div>
-                                            <span style={{ color: colors.textSecondary }}>Win Rate: </span>
-                                            <span style={{ color: asset.communityData.winRate >= 55 ? colors.green : colors.textPrimary, fontWeight: '600' }}>
-                                              {asset.communityData.winRate}%
-                                            </span>
-                                          </div>
-                                          <div>
-                                            <span style={{ color: colors.textSecondary }}>Avg Return: </span>
-                                            <span style={{ color: colors.green, fontWeight: '600' }}>
-                                              +{asset.communityData.avgReturnWhenWinning}%
-                                            </span>
-                                          </div>
-                                        </div>
-                                        <div style={{ fontSize: '10px', color: colors.textMuted, marginTop: '4px' }}>
-                                          {asset.communityData.totalBattles.toLocaleString()} battles ({asset.communityData.wins}W - {asset.communityData.losses}L)
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Performance */}
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                                    <div>
-                                      <div style={{ fontSize: '10px', color: colors.textSecondary }}>7d</div>
-                                      <div style={{
-                                        fontSize: '13px',
-                                        fontWeight: '600',
-                                        color: (asset.priceChange7d || 0) >= 0 ? colors.green : colors.red
-                                      }}>
-                                        {(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(2)}%
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <div style={{ fontSize: '10px', color: colors.textSecondary }}>30d</div>
-                                      <div style={{
-                                        fontSize: '13px',
-                                        fontWeight: '600',
-                                        color: (asset.priceChange30d || 0) >= 0 ? colors.green : colors.red
-                                      }}>
-                                        {(asset.priceChange30d || 0) >= 0 ? '+' : ''}{(asset.priceChange30d || 0).toFixed(2)}%
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  {/* Market Data */}
-                                  <div style={{ fontSize: '11px', color: colors.textSecondary }}>
-                                    {asset.marketCap > 0 && (
-                                      <div>Mkt Cap: ${(asset.marketCap / 1e9).toFixed(2)}B</div>
-                                    )}
-                                    {asset.volume24h > 0 && (
-                                      <div>24h Vol: ${(asset.volume24h / 1e6).toFixed(2)}M</div>
-                                    )}
-                                  </div>
-
-                                  {/* 52-Week Range */}
-                                  {asset.week52Low && asset.week52High && (
-                                    <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `1px solid ${colors.borderSubtle}` }}>
-                                      <div style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        fontSize: '11px',
-                                        marginBottom: '6px'
-                                      }}>
-                                        <span style={{ color: colors.textMuted }}>52-Week Range:</span>
-                                        <span style={{ color: colors.textPrimary, fontWeight: '500' }}>
-                                          ${asset.week52Low.toFixed(2)} - ${asset.week52High.toFixed(2)}
-                                        </span>
-                                      </div>
-                                      <div style={{
-                                        height: '4px',
-                                        background: colors.borderSubtle,
-                                        borderRadius: '2px',
-                                        position: 'relative',
-                                        overflow: 'visible'
-                                      }}>
-                                        <div style={{
-                                          position: 'absolute',
-                                          left: `${Math.min(Math.max(((asset.price - asset.week52Low) / (asset.week52High - asset.week52Low)) * 100, 0), 100)}%`,
-                                          top: '-2px',
-                                          width: '8px',
-                                          height: '8px',
-                                          background: colors.cyan,
-                                          borderRadius: '50%',
-                                          transform: 'translateX(-50%)',
-                                          boxShadow: `0 0 6px ${colors.cyan}`
-                                        }} />
-                                      </div>
-                                      <div style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        fontSize: '9px',
-                                        color: colors.textMuted,
-                                        marginTop: '4px'
-                                      }}>
-                                        <span>Low</span>
-                                        <span>High</span>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-                </div>
+                      >
+                        <span>💾</span> Save Template
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
