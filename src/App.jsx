@@ -4347,6 +4347,7 @@ export default function PortfolioDuel() {
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
   const [portfolioName, setPortfolioName] = useState('');
+  const [builderMode, setBuilderMode] = useState('create'); // 'create', 'join', or 'training'
 
   // Market data state
   const [stocksData, setStocksData] = useState([]);
@@ -5027,6 +5028,7 @@ export default function PortfolioDuel() {
       setRematchRequest(null);
 
       // Navigate to builder for rematch
+      setBuilderMode('create');
       setScreen('builder');
     } catch (error) {
       console.error('Error accepting rematch:', error);
@@ -9433,6 +9435,8 @@ export default function PortfolioDuel() {
                       setPortfolioName('');
                       setAssetType('stocks');
                       setSearchTerm('');
+                      setSelectedCrypto(null);
+                      setBuilderMode('create');
 
                       // Check for upcoming high-impact events and show alert (only once per session)
                       const alreadyShown = sessionStorage.getItem('volatilityAlertShown');
@@ -9566,11 +9570,12 @@ export default function PortfolioDuel() {
                       setAssetType('stocks');
                       setSearchTerm('');
                       setJoinCode('');
+                      setBuilderMode('join');
                       // Route based on game mode
                       if (gameMode === 'draft') {
                         setScreen('draftJoin');   // New screen for draft join
                       } else {
-                        setScreen('join');        // Existing classic mode
+                        setScreen('join');        // Code entry screen first
                       }
                     }}
                     style={{
@@ -9690,11 +9695,13 @@ export default function PortfolioDuel() {
                 setPortfolioName('');
                 setAssetType('stocks');
                 setSearchTerm('');
+                setSelectedCrypto(null);
+                setBuilderMode('training');
                 // Route based on game mode
                 if (gameMode === 'draft') {
                   setScreen('draftTraining');  // New screen for draft training
                 } else {
-                  setScreen('training');       // Existing classic mode
+                  setScreen('builder');        // Go directly to builder for classic
                 }
               }}
               style={{
@@ -12111,7 +12118,7 @@ export default function PortfolioDuel() {
             zIndex: 50
           }}>
             <button
-              onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setSelectedCrypto(null); setScreen('dashboard'); }}
+              onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setSelectedCrypto(null); setBuilderMode('create'); setJoinCode(''); setScreen('dashboard'); }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -12131,9 +12138,47 @@ export default function PortfolioDuel() {
               Back
             </button>
 
-            <h1 style={{ color: '#ffffff', fontSize: '18px', fontWeight: '700', margin: 0, position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
-              Build Portfolio
-            </h1>
+            <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+              <h1 style={{ color: '#ffffff', fontSize: '18px', fontWeight: '700', margin: 0 }}>
+                {builderMode === 'training' ? 'Training Mode' : builderMode === 'join' ? 'Join Battle' : 'Build Portfolio'}
+              </h1>
+              {/* Mode-specific badge */}
+              {builderMode === 'join' && joinCode && (
+                <span style={{
+                  background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
+                  color: '#ffffff',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  padding: '3px 10px',
+                  borderRadius: '10px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
+                }}>
+                  Joining: {joinCode}
+                </span>
+              )}
+              {builderMode === 'training' && (
+                <span style={{
+                  background: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)',
+                  color: '#ffffff',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  padding: '3px 10px',
+                  borderRadius: '10px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                    <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+                    <path d="M6 12v5c3 3 9 3 12 0v-5" />
+                  </svg>
+                  vs CPU
+                </span>
+              )}
+            </div>
 
             <button
               onClick={() => setShowPortfolioManager(true)}
@@ -13335,1737 +13380,183 @@ export default function PortfolioDuel() {
     );
   }
 
-  // JOIN GAME SCREEN
+  // JOIN GAME SCREEN - Simplified code entry, redirects to builder
   if (screen === 'join') {
     return (
       <div style={containerStyle}>
-        {/* Animated Desktop Background */}
         <DesktopBackground isDesktop={isDesktop} />
 
-        <div className="min-h-screen pb-20" style={{ background: colors.background, position: 'relative', zIndex: 1 }}>
-          {/* Join Battle Header - NO CART BUTTON */}
-          <div className="bg-[#161b22] border-b border-gray-800 p-4">
-            <div className="max-w-6xl mx-auto flex items-center justify-between">
+        <div style={{ minHeight: '100vh', background: '#0d1117', position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column' }}>
+          {/* HEADER */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '12px 16px',
+            background: '#0d1117',
+            borderBottom: '1px solid #21262d',
+            position: 'sticky',
+            top: 0,
+            zIndex: 50
+          }}>
+            <button
+              onClick={() => { setJoinCode(''); setBuilderMode('create'); setScreen('dashboard'); }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'transparent',
+                border: 'none',
+                color: '#ffffff',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                padding: '8px'
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+              Back
+            </button>
 
-              {/* Back Button - WHITE TEXT */}
-              <button
-                onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setJoinCode(''); setScreen('dashboard'); }}
-                className="flex items-center gap-2 text-white hover:text-gray-300 font-semibold transition-colors bg-transparent"
-              >
-                <span className="text-xl">←</span>
-                <span className="text-sm">Back</span>
-              </button>
+            <h1 style={{ color: '#ffffff', fontSize: '18px', fontWeight: '700', margin: 0, position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+              Join Battle
+            </h1>
 
-              {/* Centered Title */}
-              <h1 className="text-lg font-bold text-center flex-1">Join Battle</h1>
-
-              {/* Empty spacer for centering */}
-              <div className="w-20"></div>
-            </div>
+            <div style={{ width: '60px' }}></div>
           </div>
 
-          {/* FLOATING CART BUTTON */}
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setShowPortfolioManager(true);
-            }}
-            style={{
-              position: 'fixed',
-              top: '80px',
-              right: '16px',
-              zIndex: 50,
-              width: '56px',
-              height: '56px',
-              backgroundColor: '#4ade80',
-              borderRadius: '12px',
-              border: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
-              touchAction: 'manipulation'
-            }}
-            aria-label="View Portfolio"
-          >
-            {/* Cart Icon - pure SVG */}
-            <svg
-              width="28"
-              height="28"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#000000"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-
-            {/* Red badge */}
-            {portfolio && portfolio.length > 0 && (
-              <span style={{
-                position: 'absolute',
-                top: '-6px',
-                right: '-6px',
-                backgroundColor: '#ef4444',
-                color: '#ffffff',
-                fontSize: '11px',
-                fontWeight: 'bold',
-                borderRadius: '50%',
-                minWidth: '20px',
-                height: '20px',
+          {/* MAIN CONTENT */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+            {/* Challenge Code Card */}
+            <div style={{
+              background: '#161b22',
+              border: '1px solid #21262d',
+              borderRadius: '16px',
+              padding: '32px',
+              width: '100%',
+              maxWidth: '400px',
+              textAlign: 'center'
+            }}>
+              {/* Icon */}
+              <div style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '16px',
+                background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                padding: '0 5px',
-                border: '2px solid #0d1117'
+                margin: '0 auto 20px'
               }}>
-                {portfolio.length}
-              </span>
-            )}
-          </button>
-
-          <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
-            {/* GAME RULES BOX */}
-            <div style={{
-              backgroundColor: '#1a1f2e',
-              border: '2px solid #8b5cf6',
-              borderRadius: '12px',
-              padding: '20px',
-              marginBottom: '24px'
-            }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                marginBottom: '16px'
-              }}>
-                <span style={{ fontSize: '24px' }}>🎮</span>
-                <h3 style={{
-                  fontSize: '18px',
-                  fontWeight: 'bold',
-                  color: '#ffffff',
-                  margin: 0
-                }}>
-                  MarketClash Rules
-                </h3>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 6v6l4 2" />
+                </svg>
               </div>
 
-              <ul style={{
-                margin: 0,
-                paddingLeft: '20px',
-                color: '#e6edf3',
-                fontSize: '14px',
-                lineHeight: '1.8'
-              }}>
-                <li>Build a portfolio with 7-13 assets (stocks or crypto)</li>
-                <li>Each asset must be 7.5-20% of your $1M portfolio</li>
-                <li>Battles last 24 hours using real market prices</li>
-                <li>Winner has the highest portfolio percentage gain</li>
-              </ul>
-            </div>
+              <h2 style={{ color: '#ffffff', fontSize: '20px', fontWeight: '700', marginBottom: '8px' }}>
+                Enter Challenge Code
+              </h2>
+              <p style={{ color: '#8b949e', fontSize: '14px', marginBottom: '24px' }}>
+                Get the 6-character code from your opponent
+              </p>
 
-            {/* Challenge Code Input */}
-            <div style={{
-              background: colors.cardBg,
-              borderRadius: '12px',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-              padding: '24px',
-              marginBottom: '24px',
-              border: `1px solid ${colors.border}`
-            }}>
-              <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: colors.textPrimary }}>Challenge Code</h2>
+              {/* Code Input */}
               <input
                 type="text"
-                placeholder="Enter 6-character code"
+                placeholder="XXXXXX"
                 value={joinCode}
                 onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                 maxLength={6}
                 style={{
                   width: '100%',
                   padding: '16px 24px',
-                  fontSize: '24px',
-                  fontWeight: 'bold',
+                  fontSize: '28px',
+                  fontWeight: '700',
                   textAlign: 'center',
-                  border: `2px solid ${joinCode ? colors.cyan : colors.borderSubtle}`,
+                  letterSpacing: '8px',
+                  border: `2px solid ${joinCode.length === 6 ? '#22c55e' : joinCode ? '#06b6d4' : '#21262d'}`,
                   borderRadius: '12px',
                   outline: 'none',
                   textTransform: 'uppercase',
                   transition: 'border-color 0.2s',
                   boxSizing: 'border-box',
-                  background: 'rgba(0, 0, 0, 0.2)',
-                  color: colors.textPrimary
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  color: '#ffffff',
+                  marginBottom: '24px'
                 }}
               />
-            </div>
 
-            {/* Asset Selection - Full Width (portfolio management in cart modal only) */}
-            <div>
-                <div style={{
-                  background: colors.cardBg,
-                  borderRadius: '12px',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-                  padding: '24px',
-                  border: `1px solid ${colors.border}`
-                }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: colors.textPrimary }}>Available Assets</h2>
-
-                  {loadingMarketData ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px' }}>
-                      <Loader2 style={{ height: '32px', width: '32px', color: colors.cyan, animation: 'spin 1s linear infinite' }} />
-                    </div>
-                  ) : (
-                    <>
-                      {/* Tabs */}
-                      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-                        <button
-                          onClick={() => setAssetType('stocks')}
-                          style={{
-                            padding: '10px 24px',
-                            borderRadius: '8px',
-                            fontWeight: '600',
-                            border: 'none',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            ...(assetType === 'stocks' ? {
-                              color: colors.background,
-                              background: colors.cyan,
-                              boxShadow: `0 0 15px ${colors.cyan}50`
-                            } : {
-                              color: colors.textSecondary,
-                              background: 'rgba(255, 255, 255, 0.1)'
-                            })
-                          }}
-                          onMouseEnter={(e) => {
-                            if (assetType !== 'stocks') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                          }}
-                          onMouseLeave={(e) => {
-                            if (assetType !== 'stocks') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                          }}
-                        >
-                          Stocks
-                        </button>
-                        <button
-                          onClick={() => setAssetType('crypto')}
-                          style={{
-                            padding: '10px 24px',
-                            borderRadius: '8px',
-                            fontWeight: '600',
-                            border: 'none',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            ...(assetType === 'crypto' ? {
-                              color: colors.background,
-                              background: colors.cyan,
-                              boxShadow: `0 0 15px ${colors.cyan}50`
-                            } : {
-                              color: colors.textSecondary,
-                              background: 'rgba(255, 255, 255, 0.1)'
-                            })
-                          }}
-                          onMouseEnter={(e) => {
-                            if (assetType !== 'crypto') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                          }}
-                          onMouseLeave={(e) => {
-                            if (assetType !== 'crypto') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                          }}
-                        >
-                          Crypto
-                        </button>
-                      </div>
-
-                      {/* Portfolio Type Indicator */}
-                      {portfolioType && (
-                        <div style={{
-                          padding: '12px 16px',
-                          marginBottom: '16px',
-                          background: portfolioType === 'stocks' ? `${colors.blue}20` : `${colors.purple}20`,
-                          border: `1px solid ${portfolioType === 'stocks' ? colors.blue : colors.purple}`,
-                          borderRadius: '8px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px'
-                        }}>
-                          <span style={{ fontSize: '20px' }}>
-                            {portfolioType === 'stocks' ? '📈' : '₿'}
-                          </span>
-                          <div>
-                            <div style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
-                              {portfolioType === 'stocks' ? 'Stocks Portfolio' : 'Crypto Portfolio'}
-                            </div>
-                            <div style={{ fontSize: '12px', color: colors.textSecondary }}>
-                              You can only add {portfolioType === 'stocks' ? 'stocks' : 'crypto'} to this portfolio
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Search */}
-                      <input
-                        type="text"
-                        placeholder="Search assets..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '12px 16px',
-                          marginBottom: '16px',
-                          border: `1px solid ${searchTerm ? colors.cyan : colors.borderSubtle}`,
-                          borderRadius: '8px',
-                          outline: 'none',
-                          transition: 'border-color 0.2s',
-                          boxSizing: 'border-box',
-                          background: 'rgba(0, 0, 0, 0.2)',
-                          color: colors.textPrimary
-                        }}
-                      />
-
-                      {/* Asset Grid - Responsive: 1 col mobile, 2 col tablet+ */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
-                        {filteredAssets.map(asset => {
-                          const inPortfolio = portfolio.some(p => p.symbol === asset.symbol);
-                          const isExpanded = expandedAssets.has(asset.symbol);
-
-                          return (
-                            <div
-                              key={asset.symbol}
-                              style={{
-                                borderRadius: '8px',
-                                border: `1px solid ${inPortfolio ? colors.cyan : colors.borderSubtle}`,
-                                background: inPortfolio ? `${colors.cyan}15` : 'rgba(0, 217, 255, 0.05)',
-                                transition: 'all 0.2s',
-                                overflow: 'hidden'
-                              }}
-                            >
-                              {/* Main Card - Always Visible */}
-                              <div
-                                style={{ padding: '14px', cursor: 'pointer' }}
-                                onClick={(e) => {
-                                  // Toggle expansion on card click
-                                  toggleAssetExpansion(asset.symbol);
-                                }}
-                              >
-                                {/* Symbol & Volatility Badge */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                                  <span style={{ fontWeight: 'bold', color: colors.textPrimary }}>{asset.symbol}</span>
-                                  {asset.volatility && (
-                                    <span style={{
-                                      fontSize: '9px',
-                                      padding: '3px 8px',
-                                      borderRadius: '4px',
-                                      background: asset.volatility === 'high' ? `${colors.red}20` :
-                                                 asset.volatility === 'medium' ? `${colors.gold}20` : `${colors.green}20`,
-                                      color: asset.volatility === 'high' ? colors.red :
-                                            asset.volatility === 'medium' ? colors.gold : colors.green,
-                                      fontWeight: '600'
-                                    }}>
-                                      {asset.volatility === 'low' ? 'Low Vol' :
-                                       asset.volatility === 'medium' ? 'Med Vol' : 'High Vol'}
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Name */}
-                                <div style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '6px' }}>{asset.name}</div>
-
-                                {/* Price & 24h Change */}
-                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                                  <span style={{ fontSize: '16px', fontWeight: '600', color: colors.cyan }}>
-                                    ${safeToFixed(asset.price, 2)}
-                                  </span>
-                                  {(asset.percentChange !== undefined || asset.change24h !== undefined) && (
-                                    <span style={{
-                                      fontSize: '11px',
-                                      color: safeNumber(asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
-                                    }}>
-                                      {safeNumber(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{safeToFixed(asset.percentChange || asset.change24h, 2)}%
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Community Quick Stats */}
-                                {asset.communityData && (
-                                  <div style={{
-                                    display: 'flex',
-                                    gap: '8px',
-                                    marginTop: '8px',
-                                    flexWrap: 'wrap'
-                                  }}>
-                                    {asset.communityData.isHot && (
-                                      <span style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '3px',
-                                        fontSize: '9px',
-                                        padding: '2px 6px',
-                                        borderRadius: '4px',
-                                        background: `${colors.red}25`,
-                                        color: colors.red,
-                                        fontWeight: '600'
-                                      }}>
-                                        <Flame style={{ width: '10px', height: '10px' }} />
-                                        HOT
-                                      </span>
-                                    )}
-                                    {asset.communityData.championPick && (
-                                      <span style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '3px',
-                                        fontSize: '9px',
-                                        padding: '2px 6px',
-                                        borderRadius: '4px',
-                                        background: `${colors.gold}25`,
-                                        color: colors.gold,
-                                        fontWeight: '600'
-                                      }}>
-                                        <Trophy style={{ width: '10px', height: '10px' }} />
-                                        CHAMP
-                                      </span>
-                                    )}
-                                    <span style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '3px',
-                                      fontSize: '9px',
-                                      padding: '2px 6px',
-                                      borderRadius: '4px',
-                                      background: `${colors.cyan}15`,
-                                      color: colors.cyan,
-                                      fontWeight: '500'
-                                    }}>
-                                      <Users style={{ width: '10px', height: '10px' }} />
-                                      {asset.communityData.picksThisWeek.toLocaleString()}
-                                    </span>
-                                  </div>
-                                )}
-
-                                {/* Add Button */}
-                                <button
-                                  className="add-button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleAddAsset(asset);
-                                  }}
-                                  disabled={inPortfolio || portfolio.length >= 13}
-                                  style={{
-                                    marginTop: '10px',
-                                    width: '100%',
-                                    padding: '6px 10px',
-                                    borderRadius: '6px',
-                                    fontSize: '12px',
-                                    fontWeight: '600',
-                                    border: 'none',
-                                    cursor: inPortfolio || portfolio.length >= 13 ? 'not-allowed' : 'pointer',
-                                    background: inPortfolio ? colors.green : colors.cyan,
-                                    color: '#000'
-                                  }}
-                                >
-                                  {inPortfolio ? '✓ Added' : 'Add to Portfolio'}
-                                </button>
-
-                                {/* Click for Details Hint */}
-                                <div style={{
-                                  marginTop: '12px',
-                                  paddingTop: '8px',
-                                  borderTop: `1px solid ${colors.borderSubtle}`,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '6px',
-                                  fontSize: '11px',
-                                  color: colors.textMuted,
-                                  fontWeight: '500'
-                                }}>
-                                  {isExpanded ? (
-                                    <ChevronUp style={{ height: '14px', width: '14px' }} />
-                                  ) : (
-                                    <ChevronDown style={{ height: '14px', width: '14px' }} />
-                                  )}
-                                  {isExpanded ? 'Click to collapse' : 'Click for details'}
-                                </div>
-                              </div>
-
-                              {/* Expanded Details */}
-                              {isExpanded && (
-                                <div style={{
-                                  padding: '12px 14px',
-                                  borderTop: `1px solid ${colors.borderSubtle}`,
-                                  background: 'rgba(0, 0, 0, 0.2)'
-                                }}>
-                                  {/* Community Activity Section */}
-                                  {asset.communityData && (
-                                    <div style={{ marginBottom: '12px' }}>
-                                      {/* Trending Badge */}
-                                      {asset.communityData.isTrending && (
-                                        <div style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '6px',
-                                          padding: '6px 10px',
-                                          borderRadius: '6px',
-                                          background: `linear-gradient(135deg, ${colors.cyan}20, ${colors.purple}20)`,
-                                          border: `1px solid ${colors.cyan}40`,
-                                          marginBottom: '10px'
-                                        }}>
-                                          <TrendingUp style={{ width: '14px', height: '14px', color: colors.cyan }} />
-                                          <span style={{ fontSize: '11px', fontWeight: '600', color: colors.cyan }}>
-                                            TRENDING +{asset.communityData.trendPercentage}%
-                                          </span>
-                                        </div>
-                                      )}
-
-                                      {/* Community Picks */}
-                                      <div style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                        marginBottom: '8px'
-                                      }}>
-                                        <Users style={{ width: '14px', height: '14px', color: colors.textSecondary }} />
-                                        <span style={{ fontSize: '12px', color: colors.textPrimary, fontWeight: '600' }}>
-                                          {asset.communityData.picksThisWeek.toLocaleString()} picks this week
-                                        </span>
-                                        {asset.communityData.popularityRank <= 3 && (
-                                          <span style={{
-                                            fontSize: '10px',
-                                            padding: '2px 6px',
-                                            borderRadius: '4px',
-                                            background: colors.gold,
-                                            color: '#000',
-                                            fontWeight: '700'
-                                          }}>
-                                            #{asset.communityData.popularityRank}
-                                          </span>
-                                        )}
-                                      </div>
-
-                                      {/* Champion's Choice */}
-                                      {asset.communityData.championPick && (
-                                        <div style={{
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          gap: '6px',
-                                          padding: '6px 10px',
-                                          borderRadius: '6px',
-                                          background: `${colors.gold}15`,
-                                          border: `1px solid ${colors.gold}30`,
-                                          marginBottom: '10px'
-                                        }}>
-                                          <Trophy style={{ width: '14px', height: '14px', color: colors.gold }} />
-                                          <span style={{ fontSize: '11px', color: colors.gold, fontWeight: '600' }}>
-                                            Champion's Choice - {asset.communityData.championPercentage}% of top players pick this
-                                          </span>
-                                        </div>
-                                      )}
-
-                                      {/* Battle Performance */}
-                                      <div style={{
-                                        padding: '8px 10px',
-                                        borderRadius: '6px',
-                                        background: 'rgba(0, 0, 0, 0.3)',
-                                        border: `1px solid ${colors.borderSubtle}`
-                                      }}>
-                                        <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '6px', fontWeight: '600' }}>
-                                          BATTLE PERFORMANCE
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                                          <div>
-                                            <span style={{ color: colors.textSecondary }}>Win Rate: </span>
-                                            <span style={{ color: asset.communityData.winRate >= 55 ? colors.green : colors.textPrimary, fontWeight: '600' }}>
-                                              {asset.communityData.winRate}%
-                                            </span>
-                                          </div>
-                                          <div>
-                                            <span style={{ color: colors.textSecondary }}>Avg Return: </span>
-                                            <span style={{ color: colors.green, fontWeight: '600' }}>
-                                              +{asset.communityData.avgReturnWhenWinning}%
-                                            </span>
-                                          </div>
-                                        </div>
-                                        <div style={{ fontSize: '10px', color: colors.textMuted, marginTop: '4px' }}>
-                                          {asset.communityData.totalBattles.toLocaleString()} battles ({asset.communityData.wins}W - {asset.communityData.losses}L)
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Performance */}
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                                    <div>
-                                      <div style={{ fontSize: '10px', color: colors.textSecondary }}>7d</div>
-                                      <div style={{
-                                        fontSize: '13px',
-                                        fontWeight: '600',
-                                        color: (asset.priceChange7d || 0) >= 0 ? colors.green : colors.red
-                                      }}>
-                                        {(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(2)}%
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <div style={{ fontSize: '10px', color: colors.textSecondary }}>30d</div>
-                                      <div style={{
-                                        fontSize: '13px',
-                                        fontWeight: '600',
-                                        color: (asset.priceChange30d || 0) >= 0 ? colors.green : colors.red
-                                      }}>
-                                        {(asset.priceChange30d || 0) >= 0 ? '+' : ''}{(asset.priceChange30d || 0).toFixed(2)}%
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  {/* Market Data */}
-                                  <div style={{ fontSize: '11px', color: colors.textSecondary }}>
-                                    {asset.marketCap > 0 && (
-                                      <div>Mkt Cap: ${(asset.marketCap / 1e9).toFixed(2)}B</div>
-                                    )}
-                                    {asset.volume24h > 0 && (
-                                      <div>24h Vol: ${(asset.volume24h / 1e6).toFixed(2)}M</div>
-                                    )}
-                                  </div>
-
-                                  {/* 52-Week Range */}
-                                  {asset.week52Low && asset.week52High && (
-                                    <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `1px solid ${colors.borderSubtle}` }}>
-                                      <div style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        fontSize: '11px',
-                                        marginBottom: '6px'
-                                      }}>
-                                        <span style={{ color: colors.textMuted }}>52-Week Range:</span>
-                                        <span style={{ color: colors.textPrimary, fontWeight: '500' }}>
-                                          ${asset.week52Low.toFixed(2)} - ${asset.week52High.toFixed(2)}
-                                        </span>
-                                      </div>
-                                      <div style={{
-                                        height: '4px',
-                                        background: colors.borderSubtle,
-                                        borderRadius: '2px',
-                                        position: 'relative',
-                                        overflow: 'visible'
-                                      }}>
-                                        <div style={{
-                                          position: 'absolute',
-                                          left: `${Math.min(Math.max(((asset.price - asset.week52Low) / (asset.week52High - asset.week52Low)) * 100, 0), 100)}%`,
-                                          top: '-2px',
-                                          width: '8px',
-                                          height: '8px',
-                                          background: colors.cyan,
-                                          borderRadius: '50%',
-                                          transform: 'translateX(-50%)',
-                                          boxShadow: `0 0 6px ${colors.cyan}`
-                                        }} />
-                                      </div>
-                                      <div style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        fontSize: '9px',
-                                        color: colors.textMuted,
-                                        marginTop: '4px'
-                                      }}>
-                                        <span>Low</span>
-                                        <span>High</span>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-                </div>
-            </div>
-          </div>
-        </div>
-
-        {/* PORTFOLIO MANAGER MODAL - REDESIGNED (Join) */}
-        {showPortfolioManager && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: '#0d1117',
-            zIndex: 60,
-            overflowY: 'auto'
-          }}>
-
-            {/* MODAL HEADER */}
-            <div style={{
-              backgroundColor: '#161b22',
-              borderBottom: '1px solid #21262d',
-              padding: '16px',
-              position: 'sticky',
-              top: 0,
-              zIndex: 10
-            }}>
-              <div style={{
-                maxWidth: '600px',
-                margin: '0 auto',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}>
-                <button
-                  onClick={() => setShowPortfolioManager(false)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    color: '#22c55e',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: '8px'
-                  }}
-                >
-                  <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                  </svg>
-                  <span>Back</span>
-                </button>
-
-                <h1 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff' }}>
-                  Your Portfolio
-                </h1>
-
-                <div style={{ width: '60px' }}></div>
-              </div>
-            </div>
-
-            <div style={{
-              maxWidth: '600px',
-              margin: '0 auto',
-              padding: '16px',
-              paddingBottom: '120px'
-            }}>
-
-              {/* PORTFOLIO NAME - AT TOP */}
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#8b949e',
-                  marginBottom: '8px'
-                }}>
-                  Portfolio Name <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <input
-                  type="text"
-                  value={portfolioName}
-                  onChange={(e) => setPortfolioName(e.target.value)}
-                  placeholder="Enter portfolio name"
-                  style={{
-                    width: '100%',
-                    backgroundColor: '#161b22',
-                    border: portfolioName ? '1px solid #30363d' : '2px solid #ef4444',
-                    borderRadius: '8px',
-                    padding: '12px 16px',
-                    color: '#ffffff',
-                    fontSize: '15px',
-                    outline: 'none',
-                    boxSizing: 'border-box'
-                  }}
-                />
-                {!portfolioName && (
-                  <p style={{ color: '#ef4444', fontSize: '12px', marginTop: '6px' }}>
-                    Portfolio name is required
-                  </p>
-                )}
-              </div>
-
-              {/* SUMMARY CARD */}
-              <div style={{
-                backgroundColor: '#161b22',
-                border: '1px solid #30363d',
-                borderRadius: '12px',
-                padding: '16px',
-                marginBottom: '20px'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '8px'
-                }}>
-                  <span style={{ color: '#8b949e', fontSize: '14px' }}>
-                    {portfolio.length}/13 assets
-                  </span>
-                  <span style={{
-                    color: Math.abs(totalPercentage - 100) < 0.01 ? '#22c55e' : totalPercentage > 100 ? '#ef4444' : '#fbbf24',
-                    fontSize: '18px',
-                    fontWeight: 'bold'
-                  }}>
-                    {totalPercentage.toFixed(1)}%
-                  </span>
-                </div>
-
-                {/* Progress Bar */}
-                <div style={{
-                  width: '100%',
-                  height: '8px',
-                  backgroundColor: '#21262d',
-                  borderRadius: '4px',
-                  overflow: 'hidden'
-                }}>
-                  <div style={{
-                    height: '100%',
-                    width: `${Math.min(100, totalPercentage)}%`,
-                    backgroundColor: Math.abs(totalPercentage - 100) < 0.01 ? '#22c55e' : totalPercentage > 100 ? '#ef4444' : '#22c55e',
-                    transition: 'all 0.3s ease'
-                  }} />
-                </div>
-              </div>
-
-              {/* ASSETS LIST */}
-              {portfolio.length === 0 ? (
-                <div style={{
-                  backgroundColor: '#161b22',
-                  border: '1px solid #30363d',
-                  borderRadius: '12px',
-                  padding: '48px 16px',
-                  textAlign: 'center'
-                }}>
-                  <div style={{ fontSize: '56px', marginBottom: '16px' }}>📂</div>
-                  <p style={{ color: '#8b949e', fontSize: '16px', marginBottom: '8px' }}>
-                    No assets selected
-                  </p>
-                  <p style={{ color: '#6e7681', fontSize: '14px' }}>
-                    Go back and add assets to your portfolio
-                  </p>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {portfolio.map((asset, index) => (
-                    <AssetWeightCard
-                      key={`${asset.symbol}-${index}`}
-                      asset={{
-                        ...asset,
-                        allocation: asset.percentage || ((asset.amount / 1000000) * 100)
-                      }}
-                      onWeightChange={(newWeight) => {
-                        const newAmount = (newWeight / 100) * 1000000;
-                        setPortfolio(prev => prev.map(a =>
-                          a.symbol === asset.symbol
-                            ? { ...a, amount: newAmount, percentage: newWeight }
-                            : a
-                        ));
-                      }}
-                      onRemove={() => handleRemoveAsset(asset.symbol)}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* VALIDATION MESSAGES */}
-              {portfolio.length > 0 && (
-                <div style={{ marginTop: '16px' }}>
-                  {!joinCode.trim() && (
-                    <p style={{ color: '#ef4444', fontSize: '13px', marginBottom: '4px' }}>
-                      • Enter a challenge code to join
-                    </p>
-                  )}
-                  {portfolio.length < 7 && (
-                    <p style={{ color: '#ef4444', fontSize: '13px', marginBottom: '4px' }}>
-                      • Need at least 7 assets (have {portfolio.length})
-                    </p>
-                  )}
-                  {Math.abs(totalPercentage - 100) >= 0.01 && (
-                    <p style={{ color: '#ef4444', fontSize: '13px' }}>
-                      • Total must equal 100% (currently {totalPercentage.toFixed(1)}%)
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* SUBMIT BUTTON */}
+              {/* Continue Button */}
               <button
                 onClick={() => {
-                  handleJoinBattle();
-                  setShowPortfolioManager(false);
+                  if (joinCode.length === 6) {
+                    setScreen('builder');
+                  }
                 }}
-                disabled={
-                  !portfolioName ||
-                  !joinCode.trim() ||
-                  portfolio.length < 7 ||
-                  portfolio.length > 13 ||
-                  Math.abs(totalPercentage - 100) >= 0.01
-                }
+                disabled={joinCode.length !== 6}
                 style={{
                   width: '100%',
-                  backgroundColor: portfolioName && joinCode.trim() && portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01
-                    ? '#22c55e'
-                    : '#21262d',
-                  color: portfolioName && joinCode.trim() && portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01
-                    ? '#000000'
-                    : '#6e7681',
+                  padding: '14px 24px',
+                  fontSize: '16px',
+                  fontWeight: '700',
                   border: 'none',
                   borderRadius: '12px',
-                  padding: '16px',
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                  cursor: portfolioName && joinCode.trim() && portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01
-                    ? 'pointer'
-                    : 'not-allowed',
-                  marginTop: '20px',
+                  cursor: joinCode.length === 6 ? 'pointer' : 'not-allowed',
+                  background: joinCode.length === 6
+                    ? 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)'
+                    : '#21262d',
+                  color: joinCode.length === 6 ? '#ffffff' : '#6e7681',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '8px',
-                  transition: 'all 0.2s'
+                  transition: 'all 0.2s',
+                  boxShadow: joinCode.length === 6 ? '0 4px 12px rgba(6, 182, 212, 0.3)' : 'none'
                 }}
               >
-                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M5 12h14M12 5l7 7-7 7" />
                 </svg>
-                {!joinCode.trim()
-                  ? 'Enter Challenge Code'
-                  : !portfolioName
-                  ? 'Enter Portfolio Name'
-                  : portfolio.length === 0
-                  ? 'Add Assets'
-                  : portfolio.length < 7
-                  ? `Need ${7 - portfolio.length} More Assets`
-                  : portfolio.length > 13
-                  ? `Remove ${portfolio.length - 13} Assets`
-                  : Math.abs(totalPercentage - 100) >= 0.01
-                  ? `Adjust to 100% (${totalPercentage.toFixed(1)}%)`
-                  : 'Join Battle ⚔️'}
+                {joinCode.length === 6 ? 'Continue to Portfolio Builder' : `Enter ${6 - joinCode.length} more character${6 - joinCode.length !== 1 ? 's' : ''}`}
               </button>
             </div>
+
+            {/* Rules reminder */}
+            <div style={{
+              marginTop: '24px',
+              padding: '16px 20px',
+              background: 'rgba(139, 92, 246, 0.1)',
+              border: '1px solid rgba(139, 92, 246, 0.3)',
+              borderRadius: '12px',
+              maxWidth: '400px',
+              width: '100%'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a855f7" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4M12 8h.01" />
+                </svg>
+                <span style={{ color: '#a855f7', fontSize: '13px', fontWeight: '600' }}>Quick Reminder</span>
+              </div>
+              <p style={{ color: '#8b949e', fontSize: '12px', margin: 0, lineHeight: '1.5' }}>
+                After entering the code, you'll build your portfolio with 6-12 stocks + 0-2 shorts + 1 crypto. The battle starts when both players are ready!
+              </p>
+            </div>
           </div>
-        )}
+        </div>
       </div>
     );
   }
 
-  // TRAINING MODE SCREEN
+  // TRAINING MODE SCREEN - Now redirects to builder, keeping for backwards compatibility
   if (screen === 'training') {
-    return (
-      <div style={containerStyle}>
-        {/* Animated Desktop Background */}
-        <DesktopBackground isDesktop={isDesktop} />
-
-        <div className="min-h-screen pb-20" style={{ background: colors.background, position: 'relative', zIndex: 1 }}>
-          {/* Training Header - NO CART BUTTON */}
-          <div className="bg-[#161b22] border-b border-gray-800 p-4">
-            <div className="max-w-6xl mx-auto flex items-center justify-between">
-
-              {/* Back Button - WHITE TEXT */}
-              <button
-                onClick={() => { setPortfolio([]); setPortfolioType(null); setPortfolioName(''); setScreen('dashboard'); }}
-                className="flex items-center gap-2 text-white hover:text-gray-300 font-semibold transition-colors bg-transparent"
-              >
-                <span className="text-xl">←</span>
-                <span className="text-sm">Back</span>
-              </button>
-
-              {/* Centered Title */}
-              <h1 className="text-lg font-bold text-center flex-1 flex items-center justify-center gap-2">
-                <GraduationCap className="w-5 h-5" />
-                Training
-              </h1>
-
-              {/* Empty spacer for centering */}
-              <div className="w-20"></div>
-            </div>
-          </div>
-
-          {/* FLOATING CART BUTTON */}
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setShowPortfolioManager(true);
-            }}
-            style={{
-              position: 'fixed',
-              top: '80px',
-              right: '16px',
-              zIndex: 50,
-              width: '56px',
-              height: '56px',
-              backgroundColor: '#4ade80',
-              borderRadius: '12px',
-              border: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
-              touchAction: 'manipulation'
-            }}
-            aria-label="View Portfolio"
-          >
-            {/* Cart Icon - pure SVG */}
-            <svg
-              width="28"
-              height="28"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#000000"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-
-            {/* Red badge */}
-            {portfolio && portfolio.length > 0 && (
-              <span style={{
-                position: 'absolute',
-                top: '-6px',
-                right: '-6px',
-                backgroundColor: '#ef4444',
-                color: '#ffffff',
-                fontSize: '11px',
-                fontWeight: 'bold',
-                borderRadius: '50%',
-                minWidth: '20px',
-                height: '20px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '0 5px',
-                border: '2px solid #0d1117'
-              }}>
-                {portfolio.length}
-              </span>
-            )}
-          </button>
-
-          <div className="max-w-7xl mx-auto px-4 md:px-6 pt-4">
-            {/* TRAINING INFO - TWO COLUMNS */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: window.innerWidth > 768 ? '1fr 1fr' : '1fr',
-              gap: '16px',
-              marginBottom: '24px'
-            }}>
-
-              {/* LEFT: HOW TRAINING MODE WORKS */}
-              <div style={{
-                backgroundColor: '#161b22',
-                border: '2px solid #8b5cf6',
-                borderRadius: '12px',
-                padding: '20px'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  marginBottom: '16px'
-                }}>
-                  <span style={{ fontSize: '24px' }}>🤖</span>
-                  <h3 style={{
-                    fontSize: '18px',
-                    fontWeight: 'bold',
-                    color: '#ffffff',
-                    margin: 0
-                  }}>
-                    How Training Mode Works
-                  </h3>
-                </div>
-
-                <ul style={{
-                  margin: 0,
-                  paddingLeft: '20px',
-                  color: '#e6edf3',
-                  fontSize: '14px',
-                  lineHeight: '1.8'
-                }}>
-                  <li>Battle against a randomly-generated CPU opponent</li>
-                  <li>Win: +10 XP • Lose: +5 XP (reduced rewards)</li>
-                  <li>Does NOT affect your Win/Loss record</li>
-                  <li>Perfect for learning and experimenting risk-free!</li>
-                </ul>
-              </div>
-
-              {/* RIGHT: MARKETCLASH RULES */}
-              <div style={{
-                backgroundColor: '#161b22',
-                border: '2px solid #00d9ff',
-                borderRadius: '12px',
-                padding: '20px'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  marginBottom: '16px'
-                }}>
-                  <span style={{ fontSize: '24px' }}>🎮</span>
-                  <h3 style={{
-                    fontSize: '18px',
-                    fontWeight: 'bold',
-                    color: '#ffffff',
-                    margin: 0
-                  }}>
-                    MarketClash Rules
-                  </h3>
-                </div>
-
-                <ul style={{
-                  margin: 0,
-                  paddingLeft: '20px',
-                  color: '#e6edf3',
-                  fontSize: '14px',
-                  lineHeight: '1.8'
-                }}>
-                  <li>Build a portfolio with 7-13 assets (stocks or crypto)</li>
-                  <li>Each asset must be 7.5-20% of your $1M portfolio</li>
-                  <li>Battles last 24 hours using real market prices</li>
-                  <li>Winner has the highest portfolio percentage gain</li>
-                </ul>
-              </div>
-
-            </div>
-
-            {/* Asset Selection - Full Width (portfolio management in cart modal only) */}
-            <div>
-              <div className="rounded-xl p-4 md:p-6" style={{
-                  background: colors.cardBg,
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-                  border: `1px solid ${colors.border}`
-                }}>
-                  <h2 className="text-lg md:text-xl font-bold mb-4" style={{ color: colors.textPrimary }}>Available Assets</h2>
-
-                  {loadingMarketData ? (
-                    <div className="flex items-center justify-center p-12">
-                      <Loader2 className="w-8 h-8 animate-spin" style={{ color: colors.purple }} />
-                    </div>
-                  ) : (
-                    <>
-                      {/* Asset Type Tabs - Mobile-first responsive */}
-                      <div className="grid grid-cols-2 gap-3 mb-4">
-                        <button
-                          onClick={() => setAssetType('stocks')}
-                          disabled={portfolioType === 'crypto'}
-                          className="py-3 md:py-2.5 rounded-lg font-semibold text-sm md:text-base transition-all"
-                          style={{
-                            background: assetType === 'stocks' ? colors.purple : colors.elevated,
-                            color: assetType === 'stocks' ? 'white' : colors.textSecondary,
-                            border: `2px solid ${assetType === 'stocks' ? colors.purple : colors.borderSubtle}`,
-                            opacity: portfolioType === 'crypto' ? 0.4 : 1,
-                            cursor: portfolioType === 'crypto' ? 'not-allowed' : 'pointer',
-                            minHeight: '44px'
-                          }}
-                        >
-                          📈 Stocks
-                        </button>
-                        <button
-                          onClick={() => setAssetType('crypto')}
-                          disabled={portfolioType === 'stocks'}
-                          className="py-3 md:py-2.5 rounded-lg font-semibold text-sm md:text-base transition-all"
-                          style={{
-                            background: assetType === 'crypto' ? colors.purple : colors.elevated,
-                            color: assetType === 'crypto' ? 'white' : colors.textSecondary,
-                            border: `2px solid ${assetType === 'crypto' ? colors.purple : colors.borderSubtle}`,
-                            opacity: portfolioType === 'stocks' ? 0.4 : 1,
-                            cursor: portfolioType === 'stocks' ? 'not-allowed' : 'pointer',
-                            minHeight: '44px'
-                          }}
-                        >
-                          ₿ Crypto
-                        </button>
-                      </div>
-
-                      {/* Portfolio Type Indicator */}
-                      {portfolioType && (
-                        <div style={{
-                          padding: '12px 16px',
-                          marginBottom: '16px',
-                          background: `${colors.purple}15`,
-                          border: `1px solid ${colors.purple}`,
-                          borderRadius: '8px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px'
-                        }}>
-                          <span style={{ fontSize: '20px' }}>
-                            {portfolioType === 'stocks' ? '📈' : '₿'}
-                          </span>
-                          <div>
-                            <div style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
-                              {portfolioType === 'stocks' ? 'Stocks Portfolio' : 'Crypto Portfolio'}
-                            </div>
-                            <div style={{ fontSize: '12px', color: colors.textSecondary }}>
-                              You can only add {portfolioType === 'stocks' ? 'stocks' : 'crypto'} to this portfolio
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Search */}
-                      <input
-                        type="text"
-                        placeholder="Search assets..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '12px 16px',
-                          marginBottom: '16px',
-                          border: `1px solid ${searchTerm ? colors.purple : colors.borderSubtle}`,
-                          borderRadius: '8px',
-                          outline: 'none',
-                          transition: 'border-color 0.2s',
-                          boxSizing: 'border-box',
-                          background: 'rgba(0, 0, 0, 0.2)',
-                          color: colors.textPrimary,
-                          fontSize: '14px'
-                        }}
-                      />
-
-                      {/* Asset Grid - Responsive: 1 col mobile, 2 col tablet+ */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
-                        {filteredAssets.map(asset => {
-                          const inPortfolio = portfolio.some(p => p.symbol === asset.symbol);
-                          const isExpanded = expandedAssets.has(asset.symbol);
-
-                          return (
-                            <div
-                              key={asset.symbol}
-                              style={{
-                                borderRadius: '8px',
-                                border: `1px solid ${inPortfolio ? colors.purple : colors.borderSubtle}`,
-                                background: inPortfolio ? `${colors.purple}15` : colors.cardBg,
-                                transition: 'all 0.2s',
-                                overflow: 'hidden'
-                              }}
-                            >
-                              {/* Main Card - Always Visible */}
-                              <div
-                                style={{ padding: '14px', cursor: 'pointer' }}
-                                onClick={(e) => {
-                                  // Toggle expansion on card click
-                                  toggleAssetExpansion(asset.symbol);
-                                }}
-                              >
-                                {/* Symbol & Volatility Badge */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                                  <span style={{ fontWeight: 'bold', color: colors.textPrimary }}>{asset.symbol}</span>
-                                  {asset.volatility && (
-                                    <span style={{
-                                      fontSize: '9px',
-                                      padding: '3px 8px',
-                                      borderRadius: '4px',
-                                      background: asset.volatility === 'high' ? `${colors.red}20` :
-                                                 asset.volatility === 'medium' ? `${colors.gold}20` : `${colors.green}20`,
-                                      color: asset.volatility === 'high' ? colors.red :
-                                            asset.volatility === 'medium' ? colors.gold : colors.green,
-                                      fontWeight: '600'
-                                    }}>
-                                      {asset.volatility === 'low' ? 'Low Vol' :
-                                       asset.volatility === 'medium' ? 'Med Vol' : 'High Vol'}
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Name */}
-                                <div style={{ fontSize: '12px', color: colors.textSecondary, marginBottom: '6px' }}>{asset.name}</div>
-
-                                {/* Price & 24h Change */}
-                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                                  <span style={{ fontSize: '16px', fontWeight: '600', color: colors.purple }}>
-                                    ${asset.price.toFixed(2)}
-                                  </span>
-                                  {(asset.percentChange !== undefined || asset.change24h !== undefined) && (
-                                    <span style={{
-                                      fontSize: '11px',
-                                      color: safeNumber(asset.percentChange || asset.change24h) >= 0 ? colors.green : colors.red
-                                    }}>
-                                      {safeNumber(asset.percentChange || asset.change24h) >= 0 ? '+' : ''}{safeToFixed(asset.percentChange || asset.change24h, 2)}%
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Add Button */}
-                                <button
-                                  className="add-button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleAddAsset(asset);
-                                  }}
-                                  disabled={inPortfolio || portfolio.length >= 13}
-                                  style={{
-                                    marginTop: '10px',
-                                    width: '100%',
-                                    padding: '6px 10px',
-                                    borderRadius: '6px',
-                                    fontSize: '12px',
-                                    fontWeight: '600',
-                                    border: 'none',
-                                    cursor: inPortfolio || portfolio.length >= 13 ? 'not-allowed' : 'pointer',
-                                    background: inPortfolio ? colors.green : colors.purple,
-                                    color: 'white'
-                                  }}
-                                >
-                                  {inPortfolio ? '✓ Added' : 'Add to Portfolio'}
-                                </button>
-
-                                {/* Click for Details Hint */}
-                                <div style={{
-                                  marginTop: '12px',
-                                  paddingTop: '8px',
-                                  borderTop: `1px solid ${colors.borderSubtle}`,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '6px',
-                                  fontSize: '11px',
-                                  color: colors.textMuted,
-                                  fontWeight: '500'
-                                }}>
-                                  {isExpanded ? (
-                                    <ChevronUp style={{ height: '14px', width: '14px' }} />
-                                  ) : (
-                                    <ChevronDown style={{ height: '14px', width: '14px' }} />
-                                  )}
-                                  {isExpanded ? 'Click to collapse' : 'Click for details'}
-                                </div>
-                              </div>
-
-                              {/* Expanded Details */}
-                              {isExpanded && (
-                                <div style={{
-                                  padding: '12px 14px',
-                                  borderTop: `1px solid ${colors.borderSubtle}`,
-                                  background: 'rgba(0, 0, 0, 0.2)'
-                                }}>
-                                  {/* Community Activity Section */}
-                                  {asset.communityData && (
-                                    <div style={{ marginBottom: '12px' }}>
-                                      {/* Trending Badge */}
-                                      {asset.communityData.isTrending && (
-                                        <div style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '6px',
-                                          padding: '6px 10px',
-                                          borderRadius: '6px',
-                                          background: `linear-gradient(135deg, ${colors.cyan}20, ${colors.purple}20)`,
-                                          border: `1px solid ${colors.cyan}40`,
-                                          marginBottom: '10px'
-                                        }}>
-                                          <TrendingUp style={{ width: '14px', height: '14px', color: colors.cyan }} />
-                                          <span style={{ fontSize: '11px', fontWeight: '600', color: colors.cyan }}>
-                                            TRENDING +{asset.communityData.trendPercentage}%
-                                          </span>
-                                        </div>
-                                      )}
-
-                                      {/* Community Picks */}
-                                      <div style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                        marginBottom: '8px'
-                                      }}>
-                                        <Users style={{ width: '14px', height: '14px', color: colors.textSecondary }} />
-                                        <span style={{ fontSize: '12px', color: colors.textPrimary, fontWeight: '600' }}>
-                                          {asset.communityData.picksThisWeek.toLocaleString()} picks this week
-                                        </span>
-                                        {asset.communityData.popularityRank <= 3 && (
-                                          <span style={{
-                                            fontSize: '10px',
-                                            padding: '2px 6px',
-                                            borderRadius: '4px',
-                                            background: colors.gold,
-                                            color: '#000',
-                                            fontWeight: '700'
-                                          }}>
-                                            #{asset.communityData.popularityRank}
-                                          </span>
-                                        )}
-                                      </div>
-
-                                      {/* Champion's Choice */}
-                                      {asset.communityData.championPick && (
-                                        <div style={{
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          gap: '6px',
-                                          padding: '6px 10px',
-                                          borderRadius: '6px',
-                                          background: `${colors.gold}15`,
-                                          border: `1px solid ${colors.gold}30`,
-                                          marginBottom: '10px'
-                                        }}>
-                                          <Trophy style={{ width: '14px', height: '14px', color: colors.gold }} />
-                                          <span style={{ fontSize: '11px', color: colors.gold, fontWeight: '600' }}>
-                                            Champion's Choice - {asset.communityData.championPercentage}% of top players pick this
-                                          </span>
-                                        </div>
-                                      )}
-
-                                      {/* Battle Performance */}
-                                      <div style={{
-                                        padding: '8px 10px',
-                                        borderRadius: '6px',
-                                        background: 'rgba(0, 0, 0, 0.3)',
-                                        border: `1px solid ${colors.borderSubtle}`
-                                      }}>
-                                        <div style={{ fontSize: '10px', color: colors.textSecondary, marginBottom: '6px', fontWeight: '600' }}>
-                                          BATTLE PERFORMANCE
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                                          <div>
-                                            <span style={{ color: colors.textSecondary }}>Win Rate: </span>
-                                            <span style={{ color: asset.communityData.winRate >= 55 ? colors.green : colors.textPrimary, fontWeight: '600' }}>
-                                              {asset.communityData.winRate}%
-                                            </span>
-                                          </div>
-                                          <div>
-                                            <span style={{ color: colors.textSecondary }}>Avg Return: </span>
-                                            <span style={{ color: colors.green, fontWeight: '600' }}>
-                                              +{asset.communityData.avgReturnWhenWinning}%
-                                            </span>
-                                          </div>
-                                        </div>
-                                        <div style={{ fontSize: '10px', color: colors.textMuted, marginTop: '4px' }}>
-                                          {asset.communityData.totalBattles.toLocaleString()} battles ({asset.communityData.wins}W - {asset.communityData.losses}L)
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Performance */}
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                                    <div>
-                                      <div style={{ fontSize: '10px', color: colors.textSecondary }}>7d</div>
-                                      <div style={{
-                                        fontSize: '13px',
-                                        fontWeight: '600',
-                                        color: (asset.priceChange7d || 0) >= 0 ? colors.green : colors.red
-                                      }}>
-                                        {(asset.priceChange7d || 0) >= 0 ? '+' : ''}{(asset.priceChange7d || 0).toFixed(2)}%
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <div style={{ fontSize: '10px', color: colors.textSecondary }}>30d</div>
-                                      <div style={{
-                                        fontSize: '13px',
-                                        fontWeight: '600',
-                                        color: (asset.priceChange30d || 0) >= 0 ? colors.green : colors.red
-                                      }}>
-                                        {(asset.priceChange30d || 0) >= 0 ? '+' : ''}{(asset.priceChange30d || 0).toFixed(2)}%
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  {/* Market Data */}
-                                  <div style={{ fontSize: '11px', color: colors.textSecondary }}>
-                                    {asset.marketCap > 0 && (
-                                      <div>Mkt Cap: ${(asset.marketCap / 1e9).toFixed(2)}B</div>
-                                    )}
-                                    {asset.volume24h > 0 && (
-                                      <div>24h Vol: ${(asset.volume24h / 1e6).toFixed(2)}M</div>
-                                    )}
-                                  </div>
-
-                                  {/* 52-Week Range */}
-                                  {asset.week52Low && asset.week52High && (
-                                    <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `1px solid ${colors.borderSubtle}` }}>
-                                      <div style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        fontSize: '11px',
-                                        marginBottom: '6px'
-                                      }}>
-                                        <span style={{ color: colors.textMuted }}>52-Week Range:</span>
-                                        <span style={{ color: colors.textPrimary, fontWeight: '500' }}>
-                                          ${asset.week52Low.toFixed(2)} - ${asset.week52High.toFixed(2)}
-                                        </span>
-                                      </div>
-                                      <div style={{
-                                        height: '4px',
-                                        background: colors.borderSubtle,
-                                        borderRadius: '2px',
-                                        position: 'relative',
-                                        overflow: 'visible'
-                                      }}>
-                                        <div style={{
-                                          position: 'absolute',
-                                          left: `${Math.min(Math.max(((asset.price - asset.week52Low) / (asset.week52High - asset.week52Low)) * 100, 0), 100)}%`,
-                                          top: '-2px',
-                                          width: '8px',
-                                          height: '8px',
-                                          background: colors.purple,
-                                          borderRadius: '50%',
-                                          transform: 'translateX(-50%)',
-                                          boxShadow: `0 0 6px ${colors.purple}`
-                                        }} />
-                                      </div>
-                                      <div style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        fontSize: '9px',
-                                        color: colors.textMuted,
-                                        marginTop: '4px'
-                                      }}>
-                                        <span>Low</span>
-                                        <span>High</span>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-                </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Portfolio Manager Modal - Full Screen (Training) - REDESIGNED */}
-        {showPortfolioManager && (
-          <div style={{ position: 'fixed', inset: 0, backgroundColor: '#0d1117', zIndex: 60, overflowY: 'auto' }}>
-            {/* Header */}
-            <div style={{
-              background: '#161b22',
-              borderBottom: '1px solid #21262d',
-              padding: '16px',
-              position: 'sticky',
-              top: 0,
-              zIndex: 10
-            }}>
-              <div style={{ maxWidth: '600px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <button
-                  onClick={() => setShowPortfolioManager(false)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    color: '#f59e0b',
-                    fontWeight: '600',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '14px'
-                  }}
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M15 18l-6-6 6-6" />
-                  </svg>
-                  Back to Assets
-                </button>
-                <h1 style={{ fontSize: '18px', fontWeight: '700', color: '#e6edf3' }}>Finalize Portfolio</h1>
-                <div style={{ width: '100px' }}></div>
-              </div>
-            </div>
-
-            <div style={{ maxWidth: '600px', margin: '0 auto', padding: '16px' }}>
-              {/* Portfolio Name - AT THE TOP */}
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#e6edf3', marginBottom: '8px' }}>
-                  Portfolio Name <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <input
-                  type="text"
-                  value={portfolioName}
-                  onChange={(e) => setPortfolioName(e.target.value)}
-                  placeholder="Enter a name for your portfolio"
-                  style={{
-                    width: '100%',
-                    background: '#161b22',
-                    border: portfolioName.trim() ? '2px solid #21262d' : '2px solid #ef4444',
-                    borderRadius: '12px',
-                    padding: '14px 16px',
-                    color: '#e6edf3',
-                    fontSize: '16px',
-                    outline: 'none',
-                    boxSizing: 'border-box'
-                  }}
-                />
-                {!portfolioName.trim() && (
-                  <p style={{ color: '#ef4444', fontSize: '12px', marginTop: '6px' }}>Portfolio name is required</p>
-                )}
-              </div>
-
-              {/* Portfolio Summary Card */}
-              <div style={{
-                background: 'linear-gradient(135deg, #161b22 0%, #1c2128 100%)',
-                border: '2px solid #f59e0b',
-                borderRadius: '16px',
-                padding: '20px',
-                marginBottom: '20px'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#e6edf3' }}>Portfolio Summary</h2>
-                  <div style={{
-                    background: portfolio.length >= 7 && portfolio.length <= 13 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-                    color: portfolio.length >= 7 && portfolio.length <= 13 ? '#10b981' : '#f59e0b',
-                    padding: '4px 12px',
-                    borderRadius: '20px',
-                    fontSize: '13px',
-                    fontWeight: '600'
-                  }}>
-                    {portfolio.length}/13 assets
-                  </div>
-                </div>
-
-                {/* Progress Bar */}
-                <div style={{ marginBottom: '12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <span style={{ color: '#8b949e', fontSize: '13px' }}>Total Allocation</span>
-                    <span style={{
-                      color: Math.abs(totalPercentage - 100) < 0.01 ? '#10b981' : totalPercentage > 100 ? '#ef4444' : '#f59e0b',
-                      fontSize: '14px',
-                      fontWeight: '700'
-                    }}>
-                      {totalPercentage.toFixed(1)}%
-                    </span>
-                  </div>
-                  <div style={{
-                    width: '100%',
-                    height: '10px',
-                    background: '#21262d',
-                    borderRadius: '5px',
-                    overflow: 'hidden'
-                  }}>
-                    <div style={{
-                      width: `${Math.min(100, totalPercentage)}%`,
-                      height: '100%',
-                      background: Math.abs(totalPercentage - 100) < 0.01
-                        ? 'linear-gradient(90deg, #10b981 0%, #34d399 100%)'
-                        : totalPercentage > 100
-                        ? 'linear-gradient(90deg, #ef4444 0%, #f87171 100%)'
-                        : 'linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%)',
-                      transition: 'width 0.3s ease'
-                    }} />
-                  </div>
-                </div>
-
-                {/* Status Message */}
-                {portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && portfolioName.trim() && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontSize: '14px', fontWeight: '600' }}>
-                    <span>✓</span>
-                    <span>Ready to start training!</span>
-                  </div>
-                )}
-                {portfolio.length < 7 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f59e0b', fontSize: '14px' }}>
-                    <span>⚠️</span>
-                    <span>Need {7 - portfolio.length} more asset{7 - portfolio.length !== 1 ? 's' : ''}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Selected Assets with Weight Cards */}
-              <div style={{ marginBottom: '20px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#e6edf3', marginBottom: '12px' }}>
-                  Adjust Weights
-                </h3>
-
-                {portfolio.length === 0 ? (
-                  <div style={{
-                    background: '#161b22',
-                    border: '1px solid #21262d',
-                    borderRadius: '16px',
-                    padding: '48px 24px',
-                    textAlign: 'center'
-                  }}>
-                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>📂</div>
-                    <p style={{ color: '#8b949e' }}>No assets selected yet</p>
-                    <p style={{ color: '#6e7681', fontSize: '14px', marginTop: '8px' }}>Go back and add assets to your portfolio</p>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {portfolio.map(asset => (
-                      <AssetWeightCard
-                        key={asset.symbol}
-                        asset={asset}
-                        onWeightChange={(newPercentage) => {
-                          setPortfolio(prev => prev.map(a =>
-                            a.symbol === asset.symbol
-                              ? { ...a, amount: (newPercentage / 100) * 1000000, percentage: newPercentage }
-                              : a
-                          ));
-                        }}
-                        onRemove={() => handleRemoveAsset(asset.symbol)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '24px' }}>
-                <button
-                  onClick={() => setShowPortfolioManager(false)}
-                  style={{
-                    width: '100%',
-                    background: '#21262d',
-                    color: '#e6edf3',
-                    fontWeight: '600',
-                    padding: '16px',
-                    borderRadius: '12px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '16px'
-                  }}
-                >
-                  ← Continue Browsing Assets
-                </button>
-
-                <button
-                  onClick={() => {
-                    handleCreateTrainingBattle();
-                    setShowPortfolioManager(false);
-                  }}
-                  disabled={portfolio.length < 7 || portfolio.length > 13 || Math.abs(totalPercentage - 100) >= 0.01 || !portfolioName.trim()}
-                  style={{
-                    width: '100%',
-                    background: portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && portfolioName.trim()
-                      ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
-                      : '#21262d',
-                    color: portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && portfolioName.trim()
-                      ? '#000000'
-                      : '#6e7681',
-                    fontWeight: '700',
-                    padding: '18px',
-                    borderRadius: '12px',
-                    border: 'none',
-                    cursor: portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && portfolioName.trim()
-                      ? 'pointer'
-                      : 'not-allowed',
-                    fontSize: '16px',
-                    boxShadow: portfolio.length >= 7 && portfolio.length <= 13 && Math.abs(totalPercentage - 100) < 0.01 && portfolioName.trim()
-                      ? '0 4px 20px rgba(245, 158, 11, 0.4)'
-                      : 'none'
-                  }}
-                >
-                  {portfolio.length < 7
-                    ? `Add ${7 - portfolio.length} More Asset${7 - portfolio.length !== 1 ? 's' : ''}`
-                    : Math.abs(totalPercentage - 100) >= 0.01
-                    ? `Adjust Allocation (${totalPercentage.toFixed(1)}%)`
-                    : !portfolioName.trim()
-                    ? 'Enter Portfolio Name'
-                    : 'Start Training 🎓'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    );
+    // Redirect to builder with training mode
+    setBuilderMode('training');
+    setScreen('builder');
+    return null;
   }
 
   // DRAFT SETUP SCREEN - Phase 2
