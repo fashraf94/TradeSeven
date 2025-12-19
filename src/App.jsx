@@ -3713,6 +3713,82 @@ const CHALLENGE_COLORS = {
 };
 
 // ============================================
+// INTERACTIVE RISK CHALLENGES SYSTEM
+// ============================================
+
+// Risk Challenge Types - Optional mid-battle mini-games
+const RISK_CHALLENGE_TYPES = {
+  SP_CLOSE: {
+    id: 'sp_close',
+    name: 'S&P Close Prediction',
+    emoji: '📊',
+    description: 'Predict if the S&P 500 will close above or below the current price',
+    riskRewardPercent: 0.35,
+    resolutionType: 'market_close',
+    timeToAccept: 300, // 5 minutes
+  },
+  DOUBLE_DOWN: {
+    id: 'double_down',
+    name: 'Double Down',
+    emoji: '🎲',
+    description: 'Pick one of your stocks to double its weight for 1 hour',
+    riskRewardPercent: 0.50,
+    resolutionType: 'timed',
+    resolutionDuration: 3600, // 1 hour
+    timeToAccept: 300,
+  },
+  STOCK_DUEL: {
+    id: 'stock_duel',
+    name: 'Stock Duel',
+    emoji: '⚔️',
+    description: 'Both players pick a stock - best performer in 1 hour wins',
+    riskRewardPercent: 0.30,
+    resolutionType: 'timed',
+    resolutionDuration: 3600,
+    timeToAccept: 300,
+    requiresBothPlayers: true,
+    duelStocks: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'AMD'],
+  },
+  CRYPTO_CALL: {
+    id: 'crypto_call',
+    name: 'Crypto Call',
+    emoji: '₿',
+    description: 'Predict if Bitcoin will be higher or lower in 1 hour',
+    riskRewardPercent: 0.40,
+    resolutionType: 'timed',
+    resolutionDuration: 3600,
+    timeToAccept: 300,
+  },
+  STOCK_DIRECTION: {
+    id: 'stock_direction',
+    name: 'Stock Direction',
+    emoji: '📈',
+    description: 'Predict if a volatile stock will go up or down by market close',
+    riskRewardPercent: 0.25,
+    resolutionType: 'market_close',
+    timeToAccept: 300,
+    volatileStocks: ['TSLA', 'NVDA', 'AMD', 'COIN', 'GME', 'RIVN', 'PLTR', 'SNAP'],
+  },
+};
+
+// Challenge Schedule - When to trigger challenges during battles
+const RISK_CHALLENGE_SCHEDULE = {
+  // For 24-hour battles
+  '24h': [
+    { triggerAtPercent: 15, types: ['STOCK_DIRECTION', 'CRYPTO_CALL'] },
+    { triggerAtPercent: 30, types: ['SP_CLOSE', 'DOUBLE_DOWN'] },
+    { triggerAtPercent: 50, types: ['STOCK_DUEL', 'CRYPTO_CALL'] },
+    { triggerAtPercent: 70, types: ['DOUBLE_DOWN', 'STOCK_DIRECTION'] },
+    { triggerAtPercent: 85, types: ['SP_CLOSE', 'STOCK_DUEL'] },
+  ],
+  // For 1-hour training battles
+  '1h': [
+    { triggerAtPercent: 25, types: ['CRYPTO_CALL', 'STOCK_DIRECTION'] },
+    { triggerAtPercent: 60, types: ['DOUBLE_DOWN'] },
+  ],
+};
+
+// ============================================
 // WEEKLY CHALLENGES - HELPER FUNCTIONS
 // ============================================
 
@@ -4500,6 +4576,12 @@ export default function PortfolioDuel() {
   // ⭐ Mid-Game Challenge System
   const [midGameChallengePopup, setMidGameChallengePopup] = useState(null); // { id, title, description, xp }
   const [earnedMidGameChallenges, setEarnedMidGameChallenges] = useState({}); // { battleId: ['challenge_id1', 'challenge_id2'] }
+
+  // ⭐ Interactive Risk Challenges System
+  const [activeRiskChallenge, setActiveRiskChallenge] = useState(null); // Current risk challenge data
+  const [showRiskChallengePopup, setShowRiskChallengePopup] = useState(false); // Show challenge popup
+  const [riskChallengeResult, setRiskChallengeResult] = useState(null); // { challenge, result } for result popup
+  const [triggeredRiskChallenges, setTriggeredRiskChallenges] = useState({}); // { battleId: [triggerPercent1, triggerPercent2] }
 
   // ============================================
   // NOTIFICATIONS STATE
@@ -5777,6 +5859,396 @@ export default function PortfolioDuel() {
     const challengeInterval = setInterval(checkMidGameChallenges, 30000);
     return () => clearInterval(challengeInterval);
   }, [screen, currentBattle, battlePrices, user, earnedMidGameChallenges]);
+
+  // ⭐ INTERACTIVE RISK CHALLENGES - Generation and Resolution
+  // Helper: Get market close time (4 PM EST)
+  const getMarketCloseTime = () => {
+    const now = new Date();
+    const marketClose = new Date(now);
+    marketClose.setUTCHours(21, 0, 0, 0); // 4 PM EST = 21:00 UTC
+    if (now > marketClose) {
+      marketClose.setDate(marketClose.getDate() + 1);
+    }
+    return marketClose;
+  };
+
+  // Generate a risk challenge
+  const generateRiskChallenge = async (battle, challengeTypeKey) => {
+    const typeConfig = RISK_CHALLENGE_TYPES[challengeTypeKey];
+    const now = new Date();
+
+    let challengeData = {
+      id: `risk_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      battleId: battle.id,
+      type: typeConfig.id,
+      name: typeConfig.name,
+      emoji: typeConfig.emoji,
+      description: typeConfig.description,
+      riskRewardPercent: typeConfig.riskRewardPercent,
+      createdAt: now.toISOString(),
+      acceptDeadline: new Date(now.getTime() + typeConfig.timeToAccept * 1000).toISOString(),
+      status: 'pending',
+      player1Response: null,
+      player2Response: null,
+      result: null,
+    };
+
+    // Add challenge-specific data
+    try {
+      switch (challengeTypeKey) {
+        case 'SP_CLOSE':
+          const spyData = await stockAPI.getStockPrice('SPY');
+          challengeData.targetSymbol = 'SPY';
+          challengeData.targetPrice = spyData.price;
+          challengeData.question = `Will the S&P 500 close ABOVE or BELOW $${spyData.price.toFixed(2)}?`;
+          challengeData.options = ['above', 'below'];
+          challengeData.resolvesAt = getMarketCloseTime().toISOString();
+          break;
+
+        case 'DOUBLE_DOWN':
+          challengeData.question = 'Pick one of your stocks to DOUBLE its weight for 1 hour';
+          challengeData.resolvesAt = new Date(now.getTime() + 3600000).toISOString();
+          challengeData.options = []; // Set per player based on their portfolio
+          break;
+
+        case 'STOCK_DUEL':
+          const duelStocks = typeConfig.duelStocks;
+          challengeData.question = 'Pick a stock to duel! Best performer in 1 hour wins';
+          challengeData.options = duelStocks;
+          challengeData.startPrices = {};
+          for (const symbol of duelStocks) {
+            try {
+              const data = await stockAPI.getStockPrice(symbol);
+              challengeData.startPrices[symbol] = data.price;
+            } catch (e) {
+              challengeData.startPrices[symbol] = 100; // Fallback
+            }
+          }
+          challengeData.resolvesAt = new Date(now.getTime() + 3600000).toISOString();
+          break;
+
+        case 'CRYPTO_CALL':
+          const btcData = await stockAPI.getCryptoPrice('bitcoin');
+          challengeData.targetSymbol = 'BTC';
+          challengeData.targetPrice = btcData.price;
+          challengeData.question = `Will Bitcoin be HIGHER or LOWER than $${btcData.price.toLocaleString()} in 1 hour?`;
+          challengeData.options = ['higher', 'lower'];
+          challengeData.resolvesAt = new Date(now.getTime() + 3600000).toISOString();
+          break;
+
+        case 'STOCK_DIRECTION':
+          const volatileStocks = typeConfig.volatileStocks;
+          const randomStock = volatileStocks[Math.floor(Math.random() * volatileStocks.length)];
+          const stockData = await stockAPI.getStockPrice(randomStock);
+          challengeData.targetSymbol = randomStock;
+          challengeData.targetPrice = stockData.price;
+          challengeData.question = `Will ${randomStock} go UP or DOWN by market close?`;
+          challengeData.options = ['up', 'down'];
+          challengeData.resolvesAt = getMarketCloseTime().toISOString();
+          break;
+      }
+    } catch (error) {
+      console.error('Error generating challenge data:', error);
+      return null;
+    }
+
+    return challengeData;
+  };
+
+  // Handle player response to risk challenge
+  const respondToRiskChallenge = async (prediction) => {
+    if (!activeRiskChallenge) return;
+
+    const now = new Date();
+    if (now > new Date(activeRiskChallenge.acceptDeadline)) {
+      showToast('Challenge deadline has passed!');
+      return;
+    }
+
+    const userId = user?.odUserId || user?.username;
+    const isCreator = currentBattle?.creator === user?.username;
+
+    // Get start price for double down
+    let startPrice = null;
+    if (activeRiskChallenge.type === 'double_down') {
+      try {
+        const data = await stockAPI.getStockPrice(prediction);
+        startPrice = data.price;
+      } catch (e) {
+        startPrice = battlePrices?.[prediction] || 100;
+      }
+    }
+
+    const response = {
+      odUserId: userId,
+      accepted: true,
+      prediction,
+      acceptedAt: now.toISOString(),
+      startPrice,
+    };
+
+    // Update the challenge
+    const updatedChallenge = { ...activeRiskChallenge };
+    if (isCreator) {
+      updatedChallenge.player1Response = response;
+    } else {
+      updatedChallenge.player2Response = response;
+    }
+    updatedChallenge.status = 'active';
+
+    setActiveRiskChallenge(updatedChallenge);
+    setShowRiskChallengePopup(false);
+
+    // Save to localStorage for this battle
+    const challengeKey = `riskChallenge_${currentBattle?.id}`;
+    localStorage.setItem(challengeKey, JSON.stringify(updatedChallenge));
+
+    // For training battles, trigger CPU response
+    if (currentBattle?.isTrainingBattle || currentBattle?.challengeCode === 'TRAINING') {
+      setTimeout(() => cpuRespondToRiskChallenge(updatedChallenge), 1500 + Math.random() * 2000);
+    }
+
+    showToast(`Challenge accepted! You predicted: ${prediction.toUpperCase()}`);
+  };
+
+  // CPU responds to risk challenge
+  const cpuRespondToRiskChallenge = (challenge) => {
+    // CPU has 70% chance to participate
+    if (Math.random() > 0.7) return;
+
+    let prediction;
+    switch (challenge.type) {
+      case 'sp_close':
+      case 'stock_direction':
+        prediction = Math.random() > 0.5 ? challenge.options[0] : challenge.options[1];
+        break;
+      case 'crypto_call':
+        prediction = Math.random() > 0.5 ? 'higher' : 'lower';
+        break;
+      case 'stock_duel':
+        prediction = challenge.options[Math.floor(Math.random() * challenge.options.length)];
+        break;
+      case 'double_down':
+        // CPU picks from its portfolio
+        const cpuPortfolio = currentBattle?.opponentPortfolio || [];
+        const cpuStocks = cpuPortfolio.filter(a => a.position !== 'short').map(a => a.symbol);
+        if (cpuStocks.length > 0) {
+          prediction = cpuStocks[Math.floor(Math.random() * cpuStocks.length)];
+        } else {
+          return; // Can't participate without stocks
+        }
+        break;
+    }
+
+    const updatedChallenge = { ...challenge };
+    updatedChallenge.player2Response = {
+      odUserId: 'cpu',
+      accepted: true,
+      prediction,
+      acceptedAt: new Date().toISOString(),
+      startPrice: challenge.type === 'double_down' ? (battlePrices?.[prediction] || 100) : null,
+    };
+
+    setActiveRiskChallenge(updatedChallenge);
+
+    // Save to localStorage
+    const challengeKey = `riskChallenge_${currentBattle?.id}`;
+    localStorage.setItem(challengeKey, JSON.stringify(updatedChallenge));
+  };
+
+  // Resolve risk challenge
+  const resolveRiskChallenge = async (challenge) => {
+    if (!challenge || challenge.status === 'resolved') return;
+
+    const result = {
+      resolvedAt: new Date().toISOString(),
+    };
+
+    try {
+      switch (challenge.type) {
+        case 'sp_close':
+        case 'stock_direction':
+          const stockData = await stockAPI.getStockPrice(challenge.targetSymbol);
+          result.actualPrice = stockData.price;
+          result.actualDirection = stockData.price > challenge.targetPrice
+            ? (challenge.type === 'sp_close' ? 'above' : 'up')
+            : (challenge.type === 'sp_close' ? 'below' : 'down');
+          break;
+
+        case 'crypto_call':
+          const btcData = await stockAPI.getCryptoPrice('bitcoin');
+          result.actualPrice = btcData.price;
+          result.actualDirection = btcData.price > challenge.targetPrice ? 'higher' : 'lower';
+          break;
+
+        case 'stock_duel':
+          if (challenge.player1Response && challenge.player2Response) {
+            const stock1 = challenge.player1Response.prediction;
+            const stock2 = challenge.player2Response.prediction;
+            const data1 = await stockAPI.getStockPrice(stock1);
+            const data2 = await stockAPI.getStockPrice(stock2);
+            const change1 = ((data1.price - challenge.startPrices[stock1]) / challenge.startPrices[stock1]) * 100;
+            const change2 = ((data2.price - challenge.startPrices[stock2]) / challenge.startPrices[stock2]) * 100;
+
+            result.player1Stock = stock1;
+            result.player2Stock = stock2;
+            result.player1StockChange = change1;
+            result.player2StockChange = change2;
+            result.actualDirection = change1 > change2 ? 'player1' : change2 > change1 ? 'player2' : 'tie';
+          }
+          break;
+
+        case 'double_down':
+          if (challenge.player1Response) {
+            const stock = challenge.player1Response.prediction;
+            const data = await stockAPI.getStockPrice(stock);
+            const startPrice = challenge.player1Response.startPrice || challenge.startPrices?.[stock] || data.price;
+            result.player1StockChange = ((data.price - startPrice) / startPrice) * 100;
+            result.player1Won = result.player1StockChange > 0;
+          }
+          if (challenge.player2Response) {
+            const stock = challenge.player2Response.prediction;
+            const data = await stockAPI.getStockPrice(stock);
+            const startPrice = challenge.player2Response.startPrice || data.price;
+            result.player2StockChange = ((data.price - startPrice) / startPrice) * 100;
+            result.player2Won = result.player2StockChange > 0;
+          }
+          break;
+      }
+
+      // Determine winners for prediction challenges
+      if (challenge.type !== 'double_down' && challenge.type !== 'stock_duel') {
+        result.player1Won = challenge.player1Response?.prediction === result.actualDirection;
+        result.player2Won = challenge.player2Response?.prediction === result.actualDirection;
+      } else if (challenge.type === 'stock_duel') {
+        result.player1Won = result.actualDirection === 'player1';
+        result.player2Won = result.actualDirection === 'player2';
+      }
+
+      // Calculate portfolio adjustments (based on $1M starting value)
+      const swingPercent = challenge.riskRewardPercent / 100;
+      const baseValue = 1000000;
+
+      result.player1Adjustment = 0;
+      result.player2Adjustment = 0;
+
+      if (challenge.player1Response?.accepted) {
+        result.player1Adjustment = result.player1Won
+          ? Math.round(baseValue * swingPercent)
+          : -Math.round(baseValue * swingPercent);
+      }
+
+      if (challenge.player2Response?.accepted) {
+        result.player2Adjustment = result.player2Won
+          ? Math.round(baseValue * swingPercent)
+          : -Math.round(baseValue * swingPercent);
+      }
+
+    } catch (error) {
+      console.error('Error resolving challenge:', error);
+      return;
+    }
+
+    // Update challenge status
+    const resolvedChallenge = {
+      ...challenge,
+      status: 'resolved',
+      result,
+    };
+
+    // Save resolved challenge
+    const challengeKey = `riskChallenge_${currentBattle?.id}`;
+    localStorage.setItem(challengeKey, JSON.stringify(resolvedChallenge));
+
+    // Show result popup
+    setRiskChallengeResult({ challenge: resolvedChallenge, result });
+    setActiveRiskChallenge(null);
+  };
+
+  // Check for new risk challenges and resolution
+  useEffect(() => {
+    if (screen !== 'battle' || !currentBattle) return;
+
+    const battleStatus = battleTimer.getBattleStatus(currentBattle);
+    if (battleStatus !== 'active') return;
+
+    const checkRiskChallenges = async () => {
+      const battleId = currentBattle.id;
+
+      // Load existing challenge from localStorage
+      const challengeKey = `riskChallenge_${battleId}`;
+      const savedChallenge = localStorage.getItem(challengeKey);
+
+      if (savedChallenge) {
+        const challenge = JSON.parse(savedChallenge);
+
+        // Check if challenge needs resolution
+        if (challenge.status === 'active' && new Date() >= new Date(challenge.resolvesAt)) {
+          await resolveRiskChallenge(challenge);
+          return;
+        }
+
+        // Check if challenge expired (no response before deadline)
+        if (challenge.status === 'pending' && new Date() > new Date(challenge.acceptDeadline)) {
+          localStorage.removeItem(challengeKey);
+          setActiveRiskChallenge(null);
+          return;
+        }
+
+        // Set active challenge if still valid
+        if (challenge.status !== 'resolved') {
+          setActiveRiskChallenge(challenge);
+        }
+        return;
+      }
+
+      // Check if we should generate a new challenge
+      const startTime = new Date(currentBattle.startDate);
+      const endTime = new Date(currentBattle.endDate);
+      const totalDuration = endTime - startTime;
+      const elapsed = new Date() - startTime;
+      const progressPercent = (elapsed / totalDuration) * 100;
+
+      // Determine schedule based on battle duration
+      const durationHours = totalDuration / (1000 * 60 * 60);
+      const schedule = durationHours <= 2 ? RISK_CHALLENGE_SCHEDULE['1h'] : RISK_CHALLENGE_SCHEDULE['24h'];
+
+      // Get already triggered challenges for this battle
+      const triggered = triggeredRiskChallenges[battleId] || [];
+
+      for (const trigger of schedule) {
+        // Within trigger window and not already triggered
+        if (progressPercent >= trigger.triggerAtPercent &&
+            progressPercent <= trigger.triggerAtPercent + 3 &&
+            !triggered.includes(trigger.triggerAtPercent)) {
+
+          // Pick random challenge type
+          const challengeType = trigger.types[Math.floor(Math.random() * trigger.types.length)];
+          const newChallenge = await generateRiskChallenge(currentBattle, challengeType);
+
+          if (newChallenge) {
+            setActiveRiskChallenge(newChallenge);
+            setShowRiskChallengePopup(true);
+            localStorage.setItem(challengeKey, JSON.stringify(newChallenge));
+
+            // Mark as triggered
+            setTriggeredRiskChallenges(prev => ({
+              ...prev,
+              [battleId]: [...(prev[battleId] || []), trigger.triggerAtPercent]
+            }));
+
+            console.log('🎯 New risk challenge generated:', newChallenge.name);
+          }
+          break;
+        }
+      }
+    };
+
+    // Check immediately and every 15 seconds
+    checkRiskChallenges();
+    const interval = setInterval(checkRiskChallenges, 15000);
+    return () => clearInterval(interval);
+  }, [screen, currentBattle, triggeredRiskChallenges]);
 
   // Fetch completed draft battles for history
   useEffect(() => {
@@ -7157,6 +7629,557 @@ export default function PortfolioDuel() {
           }}
         />
       </motion.div>
+    );
+  };
+
+  // ⭐ RISK CHALLENGE POPUP - Accept/Skip Challenge
+  const RiskChallengePopup = () => {
+    const [selectedOption, setSelectedOption] = useState(null);
+    const [timeLeft, setTimeLeft] = useState(300);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // Get user's portfolio for double down challenge
+    const isCreator = currentBattle?.creator === user?.username;
+    const userPortfolio = isCreator
+      ? currentBattle?.creatorPortfolio || []
+      : currentBattle?.opponentPortfolio || [];
+    const userStocks = userPortfolio.filter(a => a.position !== 'short').map(a => a.symbol);
+
+    // Countdown timer
+    useEffect(() => {
+      if (!activeRiskChallenge || !showRiskChallengePopup) return;
+
+      const deadline = new Date(activeRiskChallenge.acceptDeadline);
+      const interval = setInterval(() => {
+        const now = new Date();
+        const remaining = Math.max(0, Math.floor((deadline - now) / 1000));
+        setTimeLeft(remaining);
+
+        if (remaining === 0) {
+          clearInterval(interval);
+          setShowRiskChallengePopup(false);
+        }
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }, [activeRiskChallenge, showRiskChallengePopup]);
+
+    if (!activeRiskChallenge || !showRiskChallengePopup) return null;
+
+    // Get options based on challenge type
+    const getOptions = () => {
+      if (activeRiskChallenge.type === 'double_down') {
+        return userStocks;
+      }
+      return activeRiskChallenge.options || [];
+    };
+
+    const handleSubmit = async () => {
+      if (!selectedOption) return;
+      setIsSubmitting(true);
+      await respondToRiskChallenge(selectedOption);
+      setIsSubmitting(false);
+      setSelectedOption(null);
+    };
+
+    const formatTimeLeft = (seconds) => {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    const potentialSwing = Math.round(1000000 * (activeRiskChallenge.riskRewardPercent / 100));
+    const options = getOptions();
+
+    return (
+      <div style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.9)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+        zIndex: 10001
+      }}>
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          style={{
+            background: 'linear-gradient(135deg, #161b22 0%, #1a1f2e 100%)',
+            border: '2px solid #f59e0b',
+            borderRadius: '20px',
+            width: '100%',
+            maxWidth: '400px',
+            overflow: 'hidden',
+            boxShadow: '0 0 40px rgba(245, 158, 11, 0.3)'
+          }}
+        >
+          {/* Header */}
+          <div style={{
+            background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+            padding: '20px',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '40px', marginBottom: '8px' }}>
+              {activeRiskChallenge.emoji}
+            </div>
+            <h2 style={{
+              color: '#0d1117',
+              fontSize: '20px',
+              fontWeight: '800',
+              margin: 0,
+              textTransform: 'uppercase',
+              letterSpacing: '1px'
+            }}>
+              {activeRiskChallenge.name}
+            </h2>
+            <div style={{
+              color: 'rgba(0,0,0,0.7)',
+              fontSize: '12px',
+              marginTop: '4px'
+            }}>
+              RISK CHALLENGE
+            </div>
+          </div>
+
+          {/* Timer Bar */}
+          <div style={{
+            background: '#0d1117',
+            padding: '12px 20px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <span style={{ color: '#8b949e', fontSize: '13px' }}>
+              Time to decide:
+            </span>
+            <span style={{
+              color: timeLeft < 60 ? '#ef4444' : '#f59e0b',
+              fontSize: '18px',
+              fontWeight: '700',
+              fontFamily: 'monospace'
+            }}>
+              {formatTimeLeft(timeLeft)}
+            </span>
+          </div>
+
+          {/* Question */}
+          <div style={{ padding: '20px' }}>
+            <p style={{
+              color: '#ffffff',
+              fontSize: '16px',
+              textAlign: 'center',
+              marginBottom: '20px',
+              lineHeight: '1.5'
+            }}>
+              {activeRiskChallenge.question}
+            </p>
+
+            {/* Risk/Reward Display */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              gap: '20px',
+              marginBottom: '20px'
+            }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ color: '#22c55e', fontSize: '12px', marginBottom: '2px' }}>
+                  WIN
+                </div>
+                <div style={{ color: '#22c55e', fontSize: '18px', fontWeight: '700' }}>
+                  +${potentialSwing.toLocaleString()}
+                </div>
+              </div>
+              <div style={{ width: '1px', background: '#21262d' }} />
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ color: '#ef4444', fontSize: '12px', marginBottom: '2px' }}>
+                  LOSE
+                </div>
+                <div style={{ color: '#ef4444', fontSize: '18px', fontWeight: '700' }}>
+                  -${potentialSwing.toLocaleString()}
+                </div>
+              </div>
+            </div>
+
+            {/* Options */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: options.length <= 2 ? 'repeat(2, 1fr)' : 'repeat(2, 1fr)',
+              gap: '10px',
+              marginBottom: '20px',
+              maxHeight: options.length > 4 ? '200px' : 'auto',
+              overflowY: options.length > 4 ? 'auto' : 'visible'
+            }}>
+              {options.map(option => {
+                const isUp = option === 'above' || option === 'higher' || option === 'up';
+                const isDown = option === 'below' || option === 'lower' || option === 'down';
+                const isStock = !isUp && !isDown;
+
+                return (
+                  <button
+                    key={option}
+                    onClick={() => setSelectedOption(option)}
+                    style={{
+                      padding: '14px 16px',
+                      background: selectedOption === option
+                        ? isStock ? 'rgba(0, 217, 255, 0.2)'
+                          : isUp ? 'rgba(34, 197, 94, 0.2)'
+                          : 'rgba(239, 68, 68, 0.2)'
+                        : '#0d1117',
+                      border: selectedOption === option
+                        ? isStock ? '2px solid #00d9ff'
+                          : isUp ? '2px solid #22c55e'
+                          : '2px solid #ef4444'
+                        : '2px solid #21262d',
+                      borderRadius: '10px',
+                      color: '#ffffff',
+                      fontSize: '15px',
+                      fontWeight: '700',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    {isUp ? '▲ ' : isDown ? '▼ ' : ''}
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div style={{
+            padding: '0 20px 20px 20px',
+            display: 'flex',
+            gap: '12px'
+          }}>
+            <button
+              onClick={() => {
+                setShowRiskChallengePopup(false);
+                setSelectedOption(null);
+              }}
+              style={{
+                flex: 1,
+                padding: '14px',
+                background: 'transparent',
+                border: '2px solid #21262d',
+                borderRadius: '10px',
+                color: '#8b949e',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              Skip
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!selectedOption || isSubmitting}
+              style={{
+                flex: 2,
+                padding: '14px',
+                background: selectedOption
+                  ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                  : '#21262d',
+                border: 'none',
+                borderRadius: '10px',
+                color: selectedOption ? '#0d1117' : '#6b7280',
+                fontSize: '14px',
+                fontWeight: '700',
+                cursor: selectedOption ? 'pointer' : 'not-allowed',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px'
+              }}
+            >
+              {isSubmitting ? 'Submitting...' : '🎯 Accept Challenge'}
+            </button>
+          </div>
+
+          {/* Warning */}
+          <div style={{
+            padding: '12px 20px',
+            background: 'rgba(239, 68, 68, 0.1)',
+            borderTop: '1px solid rgba(239, 68, 68, 0.2)',
+            textAlign: 'center'
+          }}>
+            <span style={{ color: '#ef4444', fontSize: '11px' }}>
+              ⚠️ This is a risk! You could lose ${potentialSwing.toLocaleString()} if wrong
+            </span>
+          </div>
+        </motion.div>
+      </div>
+    );
+  };
+
+  // ⭐ ACTIVE RISK CHALLENGE INDICATOR - Shows in battle view
+  const ActiveRiskChallengeIndicator = () => {
+    if (!activeRiskChallenge || activeRiskChallenge.status === 'resolved') return null;
+
+    const isCreator = currentBattle?.creator === user?.username;
+    const userResponse = isCreator
+      ? activeRiskChallenge.player1Response
+      : activeRiskChallenge.player2Response;
+    const hasResponded = !!userResponse;
+
+    // Calculate time until resolution
+    const resolvesAt = new Date(activeRiskChallenge.resolvesAt);
+    const now = new Date();
+    const timeUntilResolve = Math.max(0, Math.floor((resolvesAt - now) / 1000 / 60));
+
+    return (
+      <div
+        onClick={() => !hasResponded && setShowRiskChallengePopup(true)}
+        style={{
+          background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.1) 100%)',
+          border: '2px solid #f59e0b',
+          borderRadius: '12px',
+          padding: '14px 16px',
+          marginBottom: '16px',
+          cursor: hasResponded ? 'default' : 'pointer',
+          animation: hasResponded ? 'none' : 'pulse 2s infinite'
+        }}
+      >
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '24px' }}>{activeRiskChallenge.emoji}</span>
+            <div>
+              <div style={{
+                color: '#f59e0b',
+                fontSize: '12px',
+                fontWeight: '700',
+                textTransform: 'uppercase',
+                marginBottom: '2px'
+              }}>
+                {hasResponded ? '⏳ Challenge Active' : '🎯 New Challenge!'}
+              </div>
+              <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600' }}>
+                {activeRiskChallenge.name}
+              </div>
+              {hasResponded && (
+                <div style={{ color: '#8b949e', fontSize: '11px', marginTop: '2px' }}>
+                  Resolves in ~{timeUntilResolve} min
+                </div>
+              )}
+            </div>
+          </div>
+
+          {hasResponded ? (
+            <div style={{
+              background: 'rgba(34, 197, 94, 0.2)',
+              color: '#22c55e',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: '600'
+            }}>
+              ✓ {userResponse.prediction.toUpperCase()}
+            </div>
+          ) : (
+            <div style={{
+              background: '#f59e0b',
+              color: '#0d1117',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: '700'
+            }}>
+              RESPOND →
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ⭐ RISK CHALLENGE RESULT POPUP - Shows when challenge resolves
+  const RiskChallengeResultPopup = () => {
+    if (!riskChallengeResult) return null;
+
+    const { challenge, result } = riskChallengeResult;
+    const isCreator = currentBattle?.creator === user?.username;
+    const userWon = isCreator ? result.player1Won : result.player2Won;
+    const adjustment = isCreator ? result.player1Adjustment : result.player2Adjustment;
+    const userParticipated = isCreator
+      ? challenge.player1Response?.accepted
+      : challenge.player2Response?.accepted;
+
+    // If user didn't participate, just close
+    if (!userParticipated) {
+      setTimeout(() => setRiskChallengeResult(null), 100);
+      return null;
+    }
+
+    return (
+      <div style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.9)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+        zIndex: 10001
+      }}>
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          style={{
+            background: '#161b22',
+            border: `2px solid ${userWon ? '#22c55e' : '#ef4444'}`,
+            borderRadius: '20px',
+            width: '100%',
+            maxWidth: '350px',
+            textAlign: 'center',
+            overflow: 'hidden',
+            boxShadow: `0 0 40px ${userWon ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+          }}
+        >
+          {/* Result Header */}
+          <div style={{
+            background: userWon
+              ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+              : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+            padding: '30px 20px'
+          }}>
+            <div style={{ fontSize: '60px', marginBottom: '12px' }}>
+              {userWon ? '🎉' : '😔'}
+            </div>
+            <h2 style={{
+              color: '#ffffff',
+              fontSize: '24px',
+              fontWeight: '800',
+              margin: 0,
+              textShadow: '0 2px 4px rgba(0,0,0,0.3)'
+            }}>
+              {userWon ? 'YOU WON!' : 'YOU LOST'}
+            </h2>
+          </div>
+
+          {/* Challenge Details */}
+          <div style={{ padding: '24px' }}>
+            <div style={{
+              color: '#8b949e',
+              fontSize: '13px',
+              marginBottom: '8px'
+            }}>
+              {challenge.name}
+            </div>
+
+            {/* Result Details */}
+            <div style={{
+              background: '#0d1117',
+              borderRadius: '10px',
+              padding: '16px',
+              marginBottom: '20px'
+            }}>
+              {(challenge.type === 'sp_close' || challenge.type === 'crypto_call' || challenge.type === 'stock_direction') && (
+                <>
+                  <div style={{ color: '#8b949e', fontSize: '12px', marginBottom: '4px' }}>
+                    {challenge.targetSymbol} closed at
+                  </div>
+                  <div style={{ color: '#ffffff', fontSize: '20px', fontWeight: '700' }}>
+                    ${result.actualPrice?.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </div>
+                  <div style={{
+                    color: result.actualDirection === 'above' || result.actualDirection === 'higher' || result.actualDirection === 'up'
+                      ? '#22c55e'
+                      : '#ef4444',
+                    fontSize: '14px',
+                    marginTop: '4px'
+                  }}>
+                    {result.actualDirection?.toUpperCase()} the target
+                  </div>
+                </>
+              )}
+
+              {challenge.type === 'stock_duel' && (
+                <>
+                  <div style={{ color: '#8b949e', fontSize: '12px', marginBottom: '8px' }}>
+                    Stock Performance
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-around' }}>
+                    <div>
+                      <div style={{ color: '#ffffff', fontWeight: '700' }}>
+                        {result.player1Stock}
+                      </div>
+                      <div style={{
+                        color: result.player1StockChange >= 0 ? '#22c55e' : '#ef4444'
+                      }}>
+                        {result.player1StockChange >= 0 ? '+' : ''}{result.player1StockChange?.toFixed(2)}%
+                      </div>
+                    </div>
+                    <div style={{ color: '#8b949e' }}>vs</div>
+                    <div>
+                      <div style={{ color: '#ffffff', fontWeight: '700' }}>
+                        {result.player2Stock}
+                      </div>
+                      <div style={{
+                        color: result.player2StockChange >= 0 ? '#22c55e' : '#ef4444'
+                      }}>
+                        {result.player2StockChange >= 0 ? '+' : ''}{result.player2StockChange?.toFixed(2)}%
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {challenge.type === 'double_down' && (
+                <>
+                  <div style={{ color: '#8b949e', fontSize: '12px', marginBottom: '4px' }}>
+                    Your stock performance
+                  </div>
+                  <div style={{
+                    color: (isCreator ? result.player1StockChange : result.player2StockChange) >= 0
+                      ? '#22c55e' : '#ef4444',
+                    fontSize: '20px',
+                    fontWeight: '700'
+                  }}>
+                    {(isCreator ? result.player1StockChange : result.player2StockChange) >= 0 ? '+' : ''}
+                    {(isCreator ? result.player1StockChange : result.player2StockChange)?.toFixed(2)}%
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Portfolio Adjustment */}
+            <div style={{
+              fontSize: '28px',
+              fontWeight: '800',
+              color: adjustment >= 0 ? '#22c55e' : '#ef4444',
+              marginBottom: '20px'
+            }}>
+              {adjustment >= 0 ? '+' : ''}${Math.abs(adjustment).toLocaleString()}
+            </div>
+
+            <button
+              onClick={() => setRiskChallengeResult(null)}
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: userWon
+                  ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                  : 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)',
+                border: 'none',
+                borderRadius: '10px',
+                color: '#ffffff',
+                fontSize: '16px',
+                fontWeight: '700',
+                cursor: 'pointer'
+              }}
+            >
+              Continue Battle
+            </button>
+          </div>
+        </motion.div>
+      </div>
     );
   };
 
@@ -9213,6 +10236,8 @@ export default function PortfolioDuel() {
         {/* Global Overlays */}
         <ChallengeToast />
         <MidGameChallengePopup />
+        <RiskChallengePopup />
+        <RiskChallengeResultPopup />
         <SlotMachineOverlay />
 
         <div style={{
@@ -18456,6 +19481,11 @@ export default function PortfolioDuel() {
               Training Battle • 1 Hour • Reduced XP
             </div>
           )}
+
+          {/* ⭐ ACTIVE RISK CHALLENGE INDICATOR */}
+          <div style={{ padding: '16px 16px 0 16px' }}>
+            <ActiveRiskChallengeIndicator />
+          </div>
 
           {/* COMPARISON CARD */}
           <div style={{ padding: '16px', backgroundColor: '#0d1117' }}>
