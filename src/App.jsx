@@ -4368,6 +4368,7 @@ export default function PortfolioDuel() {
   const [portfolioType, setPortfolioType] = useState(null); // 'stocks' or 'crypto'
   const [builderCategory, setBuilderCategory] = useState('Leadership'); // Leadership/Momentum/Stable/Short tabs
   const [selectedCrypto, setSelectedCrypto] = useState(null); // { symbol: 'BTC', position: 'long' | 'short' }
+  const [cryptoPercentage, setCryptoPercentage] = useState(10); // Default 10% for crypto
   const [showRulesModal, setShowRulesModal] = useState(false); // Rules modal state
   const [rulesActiveTab, setRulesActiveTab] = useState('classic'); // Rules modal active tab
 
@@ -6299,17 +6300,15 @@ export default function PortfolioDuel() {
       position: asset.position || 'long'
     }));
 
-    // Add selected crypto to portfolio
+    // Add selected crypto to portfolio using user-defined allocation
     if (selectedCrypto) {
       const cryptoInfo = cryptoData.find(c => c.symbol === selectedCrypto);
       if (cryptoInfo) {
-        const usedPercentage = portfolio.reduce((sum, p) => sum + (p.percentage || 0), 0);
-        const cryptoPercentage = Math.max(7.5, 100 - usedPercentage);
         portfolioAssets.push({
           symbol: selectedCrypto,
           name: cryptoInfo.name || selectedCrypto,
           price: cryptoInfo.price || 0,
-          amount: (cryptoPercentage / 100) * 1000000,
+          amount: (cryptoPercentage / 100) * 1000000, // Use user-defined cryptoPercentage state
           position: 'long'
         });
       }
@@ -6343,6 +6342,7 @@ export default function PortfolioDuel() {
     setPortfolioType(null);
     setPortfolioName('');
     setSelectedCrypto(null);
+    setCryptoPercentage(10); // Reset to default
     setBuilderMode('create');
     setScreen('dashboard');
   };
@@ -6405,17 +6405,15 @@ export default function PortfolioDuel() {
       position: asset.position || 'long'
     }));
 
-    // Add selected crypto to portfolio
+    // Add selected crypto to portfolio using user-defined allocation
     if (selectedCrypto) {
       const cryptoInfo = cryptoData.find(c => c.symbol === selectedCrypto);
       if (cryptoInfo) {
-        const usedPercentage = portfolio.reduce((sum, p) => sum + (p.percentage || 0), 0);
-        const cryptoPercentage = Math.max(7.5, 100 - usedPercentage);
         portfolioAssets.push({
           symbol: selectedCrypto,
           name: cryptoInfo.name || selectedCrypto,
           price: cryptoInfo.price || 0,
-          amount: (cryptoPercentage / 100) * 1000000,
+          amount: (cryptoPercentage / 100) * 1000000, // Use user-defined cryptoPercentage state
           position: 'long'
         });
       }
@@ -6490,6 +6488,7 @@ export default function PortfolioDuel() {
     setPortfolioType(null);
     setPortfolioName('');
     setSelectedCrypto(null);
+    setCryptoPercentage(10); // Reset to default
     setBuilderMode('create');
     setJoinCode('');
 
@@ -6519,13 +6518,10 @@ export default function PortfolioDuel() {
       position: asset.position || 'long'
     }));
 
-    // Add selected crypto to user portfolio
+    // Add selected crypto to user portfolio using user-defined cryptoPercentage
     if (selectedCrypto) {
       const cryptoInfo = cryptoData.find(c => c.symbol === selectedCrypto);
       if (cryptoInfo) {
-        // Calculate remaining percentage for crypto
-        const usedPercentage = portfolio.reduce((sum, p) => sum + (p.percentage || 0), 0);
-        const cryptoPercentage = Math.max(7.5, 100 - usedPercentage); // At least 7.5%
         userPortfolioAssets.push({
           symbol: selectedCrypto,
           name: cryptoInfo.name || selectedCrypto,
@@ -6613,6 +6609,7 @@ export default function PortfolioDuel() {
     setPortfolioType(null);
     setPortfolioName('');
     setSelectedCrypto(null);
+    setCryptoPercentage(10);
     setBuilderMode('create');
 
     // Navigate to dashboard (battle will show as active)
@@ -6623,11 +6620,15 @@ export default function PortfolioDuel() {
   // 5. COMPUTED VALUES
   // ============================================
 
-  const totalPercentage = portfolio.reduce((sum, p) => sum + p.percentage, 0);
-  const isPortfolioValid = portfolio.length >= 7 && 
-    portfolio.length <= 13 && 
+  // Total percentage including stocks AND crypto
+  const stockPercentage = portfolio.reduce((sum, p) => sum + (p.percentage || 0), 0);
+  const totalPercentage = stockPercentage + (selectedCrypto ? cryptoPercentage : 0);
+  const isPortfolioValid = portfolio.length >= 6 &&
+    portfolio.length <= 12 &&
+    selectedCrypto &&
     Math.abs(totalPercentage - 100) < 0.01 &&
-    portfolio.every(p => p.percentage >= 7.5 && p.percentage <= 20);
+    portfolio.every(p => p.percentage >= 7.5 && p.percentage <= 20) &&
+    cryptoPercentage >= 7.5 && cryptoPercentage <= 20;
 
   const availableAssets = assetType === 'stocks' ? stocksData : cryptoData;
   const filteredAssets = availableAssets.filter(asset =>
@@ -13092,22 +13093,32 @@ export default function PortfolioDuel() {
               </div>
 
               {/* DISTRIBUTE EVENLY BUTTON */}
-              {portfolio.length > 0 && (
+              {(portfolio.length > 0 || selectedCrypto) && (
                 <button
                   onClick={() => {
-                    const totalAssets = portfolio.length;
+                    // Count total assets INCLUDING crypto
+                    const totalAssets = portfolio.length + (selectedCrypto ? 1 : 0);
                     if (totalAssets === 0) return;
 
                     // Calculate even percentage
-                    const evenPercentage = Math.round((100 / totalAssets) * 100) / 100;
-                    const remainder = Math.round((100 - (evenPercentage * totalAssets)) * 100) / 100;
+                    const evenPercentage = Math.floor((100 / totalAssets) * 100) / 100;
+                    let remainder = Math.round((100 - (evenPercentage * totalAssets)) * 100) / 100;
 
-                    // Update all assets with even distribution
-                    setPortfolio(prev => prev.map((asset, index) => ({
-                      ...asset,
-                      percentage: index === 0 ? evenPercentage + remainder : evenPercentage,
-                      amount: ((index === 0 ? evenPercentage + remainder : evenPercentage) / 100) * 1000000
-                    })));
+                    // Update all stock assets with even distribution
+                    setPortfolio(prev => prev.map((asset, index) => {
+                      const extra = index < Math.floor(remainder) ? 0.01 : 0;
+                      return {
+                        ...asset,
+                        percentage: Math.round((evenPercentage + extra) * 100) / 100,
+                        amount: ((evenPercentage + extra) / 100) * 1000000
+                      };
+                    }));
+
+                    // Update crypto percentage if selected
+                    if (selectedCrypto) {
+                      const cryptoExtra = portfolio.length < Math.floor(remainder) ? 0.01 : 0;
+                      setCryptoPercentage(Math.round((evenPercentage + cryptoExtra) * 100) / 100);
+                    }
                   }}
                   style={{
                     width: '100%',
@@ -13175,12 +13186,146 @@ export default function PortfolioDuel() {
                 </div>
               )}
 
+              {/* CRYPTO SECTION - Show selected crypto with adjustable allocation */}
+              {selectedCrypto && (
+                <div style={{ marginTop: '20px' }}>
+                  <h3 style={{
+                    color: '#f59e0b',
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    marginBottom: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    <span style={{ fontSize: '14px' }}>₿</span>
+                    CRYPTO (1)
+                  </h3>
+                  <div style={{
+                    backgroundColor: '#161b22',
+                    border: '2px solid #f59e0b',
+                    borderRadius: '12px',
+                    padding: '14px'
+                  }}>
+                    {/* Header Row */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      marginBottom: '12px'
+                    }}>
+                      <div>
+                        <div style={{
+                          color: '#ffffff',
+                          fontSize: '16px',
+                          fontWeight: '700'
+                        }}>
+                          {selectedCrypto}
+                        </div>
+                        <div style={{
+                          color: '#f59e0b',
+                          fontSize: '14px',
+                          fontWeight: '600'
+                        }}>
+                          {cryptoData.find(c => c.symbol === selectedCrypto)?.name || selectedCrypto}
+                        </div>
+                      </div>
+
+                      {/* Remove Button */}
+                      <button
+                        onClick={() => {
+                          setSelectedCrypto(null);
+                          setCryptoPercentage(10);
+                        }}
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          background: 'rgba(239, 68, 68, 0.1)',
+                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                          borderRadius: '6px',
+                          color: '#ef4444',
+                          fontSize: '16px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    {/* Allocation Dropdown */}
+                    <div style={{
+                      background: '#0d1117',
+                      border: '1px solid #21262d',
+                      borderRadius: '8px',
+                      padding: '10px 14px',
+                      marginBottom: '10px'
+                    }}>
+                      <select
+                        value={cryptoPercentage}
+                        onChange={(e) => setCryptoPercentage(Number(e.target.value))}
+                        style={{
+                          width: '100%',
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#ffffff',
+                          fontSize: '16px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          outline: 'none'
+                        }}
+                      >
+                        {[7.5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(val => (
+                          <option key={val} value={val} style={{ background: '#0d1117' }}>{val}%</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Fine Tune Slider */}
+                    <div>
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        marginBottom: '6px'
+                      }}>
+                        <span style={{ color: '#8b949e', fontSize: '12px' }}>Fine tune</span>
+                        <span style={{ color: '#f59e0b', fontSize: '14px', fontWeight: '600' }}>
+                          {cryptoPercentage}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="7.5"
+                        max="20"
+                        step="0.5"
+                        value={cryptoPercentage}
+                        onChange={(e) => setCryptoPercentage(Number(e.target.value))}
+                        style={{
+                          width: '100%',
+                          accentColor: '#f59e0b'
+                        }}
+                      />
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        marginTop: '4px'
+                      }}>
+                        <span style={{ color: '#6b7280', fontSize: '11px' }}>7.5%</span>
+                        <span style={{ color: '#6b7280', fontSize: '11px' }}>20%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* VALIDATION MESSAGES */}
-              {(portfolio.length > 0 || !selectedCrypto) && (
+              {(portfolio.length > 0 || selectedCrypto) && (
                 <div style={{ marginTop: '16px' }}>
-                  {portfolio.length < 7 && portfolio.length > 0 && (
+                  {portfolio.length < 6 && portfolio.length > 0 && (
                     <p style={{ color: '#ef4444', fontSize: '13px', marginBottom: '4px' }}>
-                      • Need at least 7 assets (have {portfolio.length})
+                      • Need at least 6 stocks (have {portfolio.length})
                     </p>
                   )}
                   {!selectedCrypto && (
@@ -13188,9 +13333,14 @@ export default function PortfolioDuel() {
                       • You must select 1 crypto to continue
                     </p>
                   )}
-                  {Math.abs(totalPercentage - 100) >= 0.01 && portfolio.length > 0 && (
+                  {Math.abs(totalPercentage - 100) >= 0.01 && (portfolio.length > 0 || selectedCrypto) && (
                     <p style={{ color: '#ef4444', fontSize: '13px' }}>
                       • Total must equal 100% (currently {totalPercentage.toFixed(1)}%)
+                    </p>
+                  )}
+                  {(cryptoPercentage < 7.5 || cryptoPercentage > 20) && selectedCrypto && (
+                    <p style={{ color: '#ef4444', fontSize: '13px' }}>
+                      • Crypto allocation must be 7.5-20%
                     </p>
                   )}
                 </div>
@@ -13211,18 +13361,19 @@ export default function PortfolioDuel() {
                 }}
                 disabled={
                   !portfolioName ||
-                  portfolio.length < 7 ||
-                  portfolio.length > 13 ||
+                  portfolio.length < 6 ||
+                  portfolio.length > 12 ||
                   !selectedCrypto ||
                   Math.abs(totalPercentage - 100) >= 0.01 ||
+                  cryptoPercentage < 7.5 || cryptoPercentage > 20 ||
                   (builderMode === 'join' && (!joinCode || joinCode.length !== 6))
                 }
                 style={{
                   width: '100%',
-                  backgroundColor: portfolioName && portfolio.length >= 7 && portfolio.length <= 13 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01
+                  backgroundColor: portfolioName && portfolio.length >= 6 && portfolio.length <= 12 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01 && cryptoPercentage >= 7.5 && cryptoPercentage <= 20
                     ? builderMode === 'training' ? '#a855f7' : builderMode === 'join' ? '#06b6d4' : '#8b5cf6'
                     : '#21262d',
-                  color: portfolioName && portfolio.length >= 7 && portfolio.length <= 13 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01
+                  color: portfolioName && portfolio.length >= 6 && portfolio.length <= 12 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01 && cryptoPercentage >= 7.5 && cryptoPercentage <= 20
                     ? '#ffffff'
                     : '#6e7681',
                   border: 'none',
@@ -13230,7 +13381,7 @@ export default function PortfolioDuel() {
                   padding: '16px',
                   fontSize: '16px',
                   fontWeight: 'bold',
-                  cursor: portfolioName && portfolio.length >= 7 && portfolio.length <= 13 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01
+                  cursor: portfolioName && portfolio.length >= 6 && portfolio.length <= 12 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01 && cryptoPercentage >= 7.5 && cryptoPercentage <= 20
                     ? 'pointer'
                     : 'not-allowed',
                   marginTop: '20px',
