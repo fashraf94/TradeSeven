@@ -4360,6 +4360,7 @@ export default function PortfolioDuel() {
   const [activeBattleId, setActiveBattleId] = useState(null);
   const [activeDraftBattles, setActiveDraftBattles] = useState([]);
   const [completedDraftBattles, setCompletedDraftBattles] = useState([]);
+  const [activeTrainingBattles, setActiveTrainingBattles] = useState([]); // Firebase-persisted training battles
 
   // Portfolio builder state
   const [assetType, setAssetType] = useState('stocks');
@@ -4495,6 +4496,10 @@ export default function PortfolioDuel() {
   const [toastMessage, setToastMessage] = useState('');
   const [challengeHistory, setChallengeHistory] = useState([]);
   const [weeklyChallengesChecked, setWeeklyChallengesChecked] = useState(false); // Session-level flag
+
+  // ⭐ Mid-Game Challenge System
+  const [midGameChallengePopup, setMidGameChallengePopup] = useState(null); // { id, title, description, xp }
+  const [earnedMidGameChallenges, setEarnedMidGameChallenges] = useState({}); // { battleId: ['challenge_id1', 'challenge_id2'] }
 
   // ============================================
   // NOTIFICATIONS STATE
@@ -5509,6 +5514,269 @@ export default function PortfolioDuel() {
     const refreshInterval = setInterval(fetchActiveDraftBattles, 30000);
     return () => clearInterval(refreshInterval);
   }, [screen, user]);
+
+  // ⭐ Fetch training battles from Firebase (persists across sessions)
+  useEffect(() => {
+    if (screen !== 'dashboard') return;
+
+    const fetchTrainingBattles = async () => {
+      try {
+        const currentUserId = user?.odUserId || user?.username;
+        if (!currentUserId) return;
+
+        const { collection, query, where, getDocs, doc, updateDoc } = await import('firebase/firestore');
+        const { db } = await import('./firebase/config');
+
+        // Query Firebase for training battles where user is a player
+        const trainingRef = collection(db, 'trainingBattles');
+        const q = query(
+          trainingRef,
+          where('playerIds', 'array-contains', currentUserId),
+          where('state.status', 'in', ['active', 'waiting'])
+        );
+
+        const snapshot = await getDocs(q);
+
+        const allBattles = snapshot.docs.map(d => ({
+          id: d.id,
+          ...d.data()
+        }));
+
+        // Filter out expired battles and complete them
+        const now = new Date();
+        const activeBattles = [];
+        const expiredBattles = [];
+
+        for (const battle of allBattles) {
+          const endTime = battle.timeline?.endDate ? new Date(battle.timeline.endDate) : null;
+          if (endTime && endTime <= now) {
+            expiredBattles.push(battle);
+          } else {
+            activeBattles.push(battle);
+          }
+        }
+
+        // Auto-complete expired training battles
+        for (const battle of expiredBattles) {
+          try {
+            await updateDoc(doc(db, 'trainingBattles', battle.id), {
+              'state.status': 'completed',
+              'timeline.completedAt': now.toISOString(),
+              updatedAt: now.toISOString()
+            });
+            console.log('⏰ Auto-completed expired training battle:', battle.id);
+          } catch (err) {
+            console.error('Error completing expired battle:', err);
+          }
+        }
+
+        // Sort by end time (soonest first)
+        activeBattles.sort((a, b) => {
+          const aEnd = new Date(a.timeline?.endDate || 0);
+          const bEnd = new Date(b.timeline?.endDate || 0);
+          return aEnd - bEnd;
+        });
+
+        setActiveTrainingBattles(activeBattles);
+      } catch (error) {
+        console.error('Error fetching training battles:', error);
+        setActiveTrainingBattles([]);
+      }
+    };
+
+    fetchTrainingBattles();
+
+    // Refresh every 30 seconds
+    const refreshInterval = setInterval(fetchTrainingBattles, 30000);
+    return () => clearInterval(refreshInterval);
+  }, [screen, user]);
+
+  // ⭐ MID-GAME CHALLENGE CHECKING SYSTEM
+  // Check for mid-game challenges periodically during active battles
+  useEffect(() => {
+    if (screen !== 'battle' || !currentBattle) return;
+
+    const battleStatus = battleTimer.getBattleStatus(currentBattle);
+    if (battleStatus !== 'active') return;
+
+    const checkMidGameChallenges = async () => {
+      try {
+        const battleId = currentBattle.id;
+        const userId = user?.odUserId || user?.username;
+        if (!userId) return;
+
+        // Get already earned challenges for this battle
+        const alreadyEarned = earnedMidGameChallenges[battleId] || [];
+
+        // Calculate battle progress
+        const startTime = new Date(currentBattle.startDate);
+        const endTime = new Date(currentBattle.endDate);
+        const now = new Date();
+        const totalDuration = endTime - startTime;
+        const elapsed = now - startTime;
+        const progressPercent = (elapsed / totalDuration) * 100;
+
+        // Calculate current portfolio values
+        const isCreator = currentBattle.creator === user?.username;
+        const myPortfolio = isCreator ? currentBattle.creatorPortfolio : currentBattle.opponentPortfolio;
+        const theirPortfolio = isCreator ? currentBattle.opponentPortfolio : currentBattle.creatorPortfolio;
+
+        // Calculate gains using current battle prices
+        let myTotalValue = 0;
+        let theirTotalValue = 0;
+
+        if (battlePrices && Object.keys(battlePrices).length > 0) {
+          // User portfolio value
+          for (const asset of myPortfolio || []) {
+            const startPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
+            const currentPrice = battlePrices[asset.symbol] || startPrice;
+            const shares = asset.amount / startPrice;
+            const isShort = asset.position === 'short';
+
+            if (isShort) {
+              const priceChange = startPrice - currentPrice;
+              myTotalValue += asset.amount + (shares * priceChange);
+            } else {
+              myTotalValue += shares * currentPrice;
+            }
+          }
+
+          // Opponent portfolio value
+          for (const asset of theirPortfolio || []) {
+            const startPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
+            const currentPrice = battlePrices[asset.symbol] || startPrice;
+            const shares = asset.amount / startPrice;
+            const isShort = asset.position === 'short';
+
+            if (isShort) {
+              const priceChange = startPrice - currentPrice;
+              theirTotalValue += asset.amount + (shares * priceChange);
+            } else {
+              theirTotalValue += shares * currentPrice;
+            }
+          }
+        } else {
+          myTotalValue = 1000000;
+          theirTotalValue = 1000000;
+        }
+
+        const myGain = ((myTotalValue - 1000000) / 1000000) * 100;
+        const theirGain = ((theirTotalValue - 1000000) / 1000000) * 100;
+        const isLeading = myGain > theirGain;
+        const leadAmount = myGain - theirGain;
+
+        const newChallenges = [];
+
+        // 🎯 HALFTIME LEAD CHECK (at ~50% duration)
+        if (progressPercent >= 48 && progressPercent <= 55 && !alreadyEarned.includes('halftime_lead') && isLeading) {
+          newChallenges.push({
+            id: 'halftime_lead',
+            title: '⏰ Leading at Halftime!',
+            description: "You're ahead at the halfway mark",
+            xp: 50
+          });
+
+          // Update Firebase to track halftime leader (for comeback challenge)
+          if (currentBattle.isTrainingBattle || currentBattle.challengeCode === 'TRAINING') {
+            try {
+              const { doc, updateDoc } = await import('firebase/firestore');
+              const { db } = await import('./firebase/config');
+              await updateDoc(doc(db, 'trainingBattles', battleId), {
+                halftimeLeader: userId,
+                updatedAt: new Date().toISOString()
+              });
+            } catch (err) {
+              console.error('Error updating halftime leader:', err);
+            }
+          }
+        }
+
+        // 🚀 BIG LEAD CHECK (leading by 5%+)
+        if (leadAmount >= 5 && !alreadyEarned.includes('big_lead')) {
+          newChallenges.push({
+            id: 'big_lead',
+            title: '🚀 Big Lead!',
+            description: "You're dominating with a 5%+ lead",
+            xp: 30
+          });
+        }
+
+        // 📈 EARLY GAINS CHECK (10%+ gains before halftime)
+        if (progressPercent < 50 && myGain >= 10 && !alreadyEarned.includes('early_gains')) {
+          newChallenges.push({
+            id: 'early_gains',
+            title: '📈 Early Gains!',
+            description: '10%+ gains before halftime',
+            xp: 40
+          });
+        }
+
+        // 🎯 STEADY LEAD CHECK (leading for 30+ minutes)
+        // This would require tracking lead history - simplified version
+        if (progressPercent >= 30 && isLeading && !alreadyEarned.includes('steady_lead')) {
+          newChallenges.push({
+            id: 'steady_lead',
+            title: '🎯 Steady Lead!',
+            description: 'Maintaining your lead strong',
+            xp: 25
+          });
+        }
+
+        // Award and show popup for new challenges
+        if (newChallenges.length > 0) {
+          const firstChallenge = newChallenges[0];
+
+          // Update earned challenges state
+          setEarnedMidGameChallenges(prev => ({
+            ...prev,
+            [battleId]: [...(prev[battleId] || []), ...newChallenges.map(c => c.id)]
+          }));
+
+          // Award XP
+          const totalXP = newChallenges.reduce((sum, c) => sum + c.xp, 0);
+          if (user) {
+            const updatedUser = {
+              ...user,
+              xp: (user.xp || 0) + totalXP
+            };
+            setUser(updatedUser);
+            saveUser(updatedUser);
+          }
+
+          // Show popup
+          setMidGameChallengePopup(firstChallenge);
+
+          // Update Firebase with earned challenges
+          if (currentBattle.isTrainingBattle || currentBattle.challengeCode === 'TRAINING') {
+            try {
+              const { doc, updateDoc, arrayUnion } = await import('firebase/firestore');
+              const { db } = await import('./firebase/config');
+              await updateDoc(doc(db, 'trainingBattles', battleId), {
+                midGameChallenges: arrayUnion(...newChallenges.map(c => ({
+                  id: c.id,
+                  title: c.title,
+                  xp: c.xp,
+                  earnedAt: new Date().toISOString()
+                }))),
+                updatedAt: new Date().toISOString()
+              });
+            } catch (err) {
+              console.error('Error saving mid-game challenges:', err);
+            }
+          }
+
+          console.log('🎯 Mid-game challenges earned:', newChallenges.map(c => c.title));
+        }
+      } catch (error) {
+        console.error('Error checking mid-game challenges:', error);
+      }
+    };
+
+    // Check immediately and then every 30 seconds
+    checkMidGameChallenges();
+    const challengeInterval = setInterval(checkMidGameChallenges, 30000);
+    return () => clearInterval(challengeInterval);
+  }, [screen, currentBattle, battlePrices, user, earnedMidGameChallenges]);
 
   // Fetch completed draft battles for history
   useEffect(() => {
@@ -6577,9 +6845,13 @@ export default function PortfolioDuel() {
       price: startingPrices[asset.symbol] || asset.price
     }));
 
-    // Create training battle object
+    // Generate unique battle ID for Firebase
+    const battleId = `training_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const userId = user.odUserId || user.username;
+
+    // Create training battle object (for localStorage compatibility)
     const trainingBattle = {
-      id: Date.now().toString(),
+      id: battleId,
       challengeCode: 'TRAINING', // Special code for training battles
       creator: user.username,
       opponent: 'CPU Opponent', // ⭐ Special opponent name
@@ -6598,10 +6870,81 @@ export default function PortfolioDuel() {
     // Load current battles and add training battle
     const currentBattles = loadBattlesSafe();
     const updatedBattles = [...currentBattles, trainingBattle];
-    
-    // Save to localStorage
+
+    // Save to localStorage (for backward compatibility)
     saveBattlesSafe(updatedBattles);
-    
+
+    // ⭐ SAVE TO FIREBASE for persistence across sessions
+    try {
+      const { doc, setDoc } = await import('firebase/firestore');
+      const { db } = await import('./firebase/config');
+
+      const firebaseBattle = {
+        _v: 1,
+        id: battleId,
+        mode: 'training', // ⭐ Key identifier for training battles
+        type: 'classic',
+
+        // Players
+        player1: {
+          odUserId: userId,
+          username: user.username,
+          portfolioName: portfolioName.trim(),
+          portfolio: updatedUserPortfolio,
+          portfolioType: portfolioType,
+          startValue: 1000000,
+          currentValue: 1000000,
+          percentChange: 0,
+          isCreator: true
+        },
+        player2: {
+          odUserId: 'cpu',
+          username: 'CPU Opponent',
+          portfolioName: 'CPU Strategy',
+          portfolio: updatedCPUPortfolio,
+          portfolioType: portfolioType,
+          startValue: 1000000,
+          currentValue: 1000000,
+          percentChange: 0,
+          isCPU: true
+        },
+
+        // Timing
+        timeline: {
+          createdAt: now.toISOString(),
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          completedAt: null
+        },
+
+        // State
+        state: {
+          status: 'active',
+          startingPrices: startingPrices,
+          endingPrices: null
+        },
+
+        // For querying
+        playerIds: [userId, 'cpu'],
+        creatorId: userId,
+
+        // Metadata
+        challengeCode: null, // No battle code for training
+        result: null,
+        challengeIds: [],
+        midGameChallenges: [], // Track earned mid-game challenges
+        halftimeLeader: null, // Track halftime leader for comeback challenge
+        archived: false,
+        updatedAt: now.toISOString()
+      };
+
+      await setDoc(doc(db, 'trainingBattles', battleId), firebaseBattle);
+      console.log('✅ Training battle saved to Firebase:', battleId);
+    } catch (firebaseError) {
+      console.error('⚠️ Failed to save training battle to Firebase:', firebaseError);
+      // Continue anyway - localStorage backup exists
+    }
+
     // Update component state
     setBattles(updatedBattles);
     setActiveBattleId(trainingBattle.id);
@@ -6693,6 +7036,129 @@ export default function PortfolioDuel() {
       </motion.div>
     )
   );
+
+  // ⭐ Mid-Game Challenge Achievement Popup
+  const MidGameChallengePopup = () => {
+    useEffect(() => {
+      if (midGameChallengePopup) {
+        // Auto-close after 4 seconds
+        const timer = setTimeout(() => {
+          setMidGameChallengePopup(null);
+        }, 4000);
+        return () => clearTimeout(timer);
+      }
+    }, [midGameChallengePopup]);
+
+    if (!midGameChallengePopup) return null;
+
+    return (
+      <motion.div
+        initial={{ y: -100, opacity: 0, scale: 0.8 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        exit={{ y: -100, opacity: 0, scale: 0.8 }}
+        style={{
+          position: 'fixed',
+          top: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'linear-gradient(135deg, #161b22 0%, #1a1f2e 100%)',
+          border: '2px solid #f59e0b',
+          borderRadius: '16px',
+          padding: '20px 24px',
+          zIndex: 10000,
+          boxShadow: '0 8px 32px rgba(245, 158, 11, 0.3)',
+          minWidth: '280px',
+          maxWidth: '90%'
+        }}
+      >
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '16px'
+        }}>
+          {/* Icon */}
+          <div style={{
+            width: '50px',
+            height: '50px',
+            background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+            borderRadius: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '24px',
+            flexShrink: 0
+          }}>
+            🎯
+          </div>
+
+          {/* Content */}
+          <div style={{ flex: 1 }}>
+            <div style={{
+              color: '#f59e0b',
+              fontSize: '11px',
+              fontWeight: '700',
+              textTransform: 'uppercase',
+              letterSpacing: '1px',
+              marginBottom: '4px'
+            }}>
+              Challenge Complete!
+            </div>
+            <div style={{
+              color: '#ffffff',
+              fontSize: '16px',
+              fontWeight: '700',
+              marginBottom: '2px'
+            }}>
+              {midGameChallengePopup.title}
+            </div>
+            <div style={{
+              color: '#8b949e',
+              fontSize: '12px',
+              marginBottom: '4px'
+            }}>
+              {midGameChallengePopup.description}
+            </div>
+            <div style={{
+              color: '#22c55e',
+              fontSize: '14px',
+              fontWeight: '700'
+            }}>
+              +{midGameChallengePopup.xp} XP
+            </div>
+          </div>
+
+          {/* Close button */}
+          <button
+            onClick={() => setMidGameChallengePopup(null)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#6e7681',
+              cursor: 'pointer',
+              padding: '4px',
+              fontSize: '18px',
+              lineHeight: 1
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Progress bar animation */}
+        <motion.div
+          initial={{ width: '100%' }}
+          animate={{ width: '0%' }}
+          transition={{ duration: 4, ease: 'linear' }}
+          style={{
+            height: '3px',
+            background: 'linear-gradient(90deg, #f59e0b, #d97706)',
+            borderRadius: '2px',
+            marginTop: '12px'
+          }}
+        />
+      </motion.div>
+    );
+  };
 
   // Slot Machine Reveal - New Week Animation
   const SlotMachineOverlay = () => (
@@ -8746,6 +9212,7 @@ export default function PortfolioDuel() {
 
         {/* Global Overlays */}
         <ChallengeToast />
+        <MidGameChallengePopup />
         <SlotMachineOverlay />
 
         <div style={{
@@ -9495,6 +9962,183 @@ export default function PortfolioDuel() {
                         </div>
                         <div style={{
                           color: '#10b981',
+                          fontWeight: 'bold',
+                          fontSize: '14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}>
+                          View Battle →
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ⭐ Active Training Battles Section (Firebase-persisted) */}
+            {activeTrainingBattles.length > 0 && (
+              <div style={{ marginBottom: '24px' }}>
+                <h3 style={{
+                  color: '#a855f7',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  marginBottom: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span style={{ fontSize: '20px' }}>🤖</span> Training Battles
+                </h3>
+
+                {activeTrainingBattles.map(battle => {
+                  // Calculate time remaining
+                  const endTime = battle.timeline?.endDate ? new Date(battle.timeline.endDate) : null;
+                  const now = new Date();
+                  let timeRemaining = '';
+
+                  if (endTime) {
+                    const diff = endTime - now;
+                    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+                    if (hours > 0) {
+                      timeRemaining = `${hours}h ${minutes}m left`;
+                    } else if (minutes > 0) {
+                      timeRemaining = `${minutes}m left`;
+                    } else {
+                      timeRemaining = 'Ending soon';
+                    }
+                  }
+
+                  // Calculate current gains (simplified - uses stored values)
+                  const myGain = battle.player1?.percentChange || 0;
+                  const cpuGain = battle.player2?.percentChange || 0;
+                  const isWinning = myGain > cpuGain;
+
+                  return (
+                    <div
+                      key={battle.id}
+                      onClick={() => {
+                        // Convert Firebase format to localStorage format for battle view
+                        const convertedBattle = {
+                          id: battle.id,
+                          challengeCode: 'TRAINING',
+                          creator: battle.player1?.username || user.username,
+                          opponent: 'CPU Opponent',
+                          creatorPortfolio: battle.player1?.portfolio || [],
+                          opponentPortfolio: battle.player2?.portfolio || [],
+                          portfolioName: battle.player1?.portfolioName || 'Training Portfolio',
+                          portfolioType: battle.player1?.portfolioType || 'stocks',
+                          status: 'active',
+                          startDate: battle.timeline?.startDate,
+                          endDate: battle.timeline?.endDate,
+                          startingPrices: battle.state?.startingPrices || {},
+                          isTrainingBattle: true,
+                          createdAt: battle.timeline?.createdAt
+                        };
+                        setCurrentBattle(convertedBattle);
+                        setActiveBattleId(battle.id);
+                        setScreen('battle');
+                      }}
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(168, 85, 247, 0.05) 100%)',
+                        border: '2px solid #a855f7',
+                        borderRadius: '16px',
+                        padding: '16px',
+                        marginBottom: '12px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      {/* Header Row */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '12px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '24px' }}>🤖</span>
+                          <div>
+                            <div style={{
+                              color: '#a855f7',
+                              fontWeight: 'bold',
+                              fontSize: '16px'
+                            }}>
+                              {battle.player1?.portfolioName || 'Training Battle'}
+                            </div>
+                            <div style={{
+                              color: '#8b949e',
+                              fontSize: '12px'
+                            }}>
+                              vs CPU Opponent • {battle.player1?.portfolioType === 'crypto' ? '🪙 Crypto' : '📈 Stocks'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Training Badge */}
+                        <div style={{
+                          background: 'rgba(168, 85, 247, 0.2)',
+                          padding: '4px 10px',
+                          borderRadius: '6px',
+                          color: '#a855f7',
+                          fontSize: '11px',
+                          fontWeight: 'bold'
+                        }}>
+                          TRAINING
+                        </div>
+                      </div>
+
+                      {/* Progress Row */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: '12px'
+                      }}>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px'
+                        }}>
+                          <div style={{
+                            background: isWinning ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                            padding: '6px 12px',
+                            borderRadius: '8px',
+                            color: isWinning ? '#22c55e' : '#ef4444',
+                            fontSize: '14px',
+                            fontWeight: 'bold'
+                          }}>
+                            {myGain >= 0 ? '+' : ''}{myGain.toFixed(2)}%
+                          </div>
+                          <span style={{ color: '#6e7681', fontSize: '12px' }}>
+                            {isWinning ? 'Leading' : myGain === cpuGain ? 'Tied' : 'Behind'}
+                          </span>
+                        </div>
+
+                        {/* Time Remaining */}
+                        <div style={{
+                          background: 'rgba(168, 85, 247, 0.2)',
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          color: '#a855f7',
+                          fontSize: '12px',
+                          fontWeight: 'bold'
+                        }}>
+                          ⏱️ {timeRemaining}
+                        </div>
+                      </div>
+
+                      {/* View Battle Link */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end'
+                      }}>
+                        <div style={{
+                          color: '#a855f7',
                           fontWeight: 'bold',
                           fontSize: '14px',
                           display: 'flex',
