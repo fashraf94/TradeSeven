@@ -6180,21 +6180,140 @@ export default function PortfolioDuel() {
     ));
   };
 
+  // ============================================
+  // GENERATE CPU PORTFOLIO FOR TRAINING MODE
+  // ============================================
+  const generateCPUPortfolio = (type, stocksDataArr, cryptoDataArr) => {
+    // Stock categories for CPU selection
+    const LEADERSHIP = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'BRK.B', 'JPM', 'V', 'MA', 'UNH', 'JNJ', 'WMT', 'PG', 'HD', 'XOM'];
+    const MOMENTUM = ['TSLA', 'AMD', 'CRM', 'NFLX', 'ADBE', 'PYPL', 'SQ', 'SHOP', 'UBER', 'ABNB', 'DKNG', 'ROKU', 'ZM', 'SNOW', 'PLTR', 'COIN'];
+    const STABLE = ['KO', 'PEP', 'MCD', 'COST', 'VZ', 'T', 'PFE', 'MRK', 'ABBV', 'LLY', 'NEE', 'DUK', 'SO', 'D', 'CVX', 'COP'];
+    const SHORT_OPTIONS = ['TSLA', 'RIVN', 'LCID', 'SNAP', 'HOOD', 'GME', 'AMC', 'PLTR', 'SMCI', 'SPY', 'QQQ'];
+    const CRYPTO_OPTIONS = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE'];
+
+    // Helper to pick random items from array
+    const pickRandom = (arr, count) => {
+      const shuffled = [...arr].sort(() => Math.random() - 0.5);
+      return shuffled.slice(0, count);
+    };
+
+    // Decide portfolio composition (randomize strategy)
+    const numLongs = Math.floor(Math.random() * 7) + 6; // 6-12 longs
+    const includeShorts = Math.random() > 0.5; // 50% chance to include shorts
+    const numShorts = includeShorts ? Math.floor(Math.random() * 2) + 1 : 0; // 0-2 shorts
+
+    // Pick stocks from each category
+    const leadershipCount = Math.ceil(numLongs / 3);
+    const momentumCount = Math.ceil(numLongs / 3);
+    const stableCount = Math.max(0, numLongs - leadershipCount - momentumCount);
+
+    const leadershipPicks = pickRandom(LEADERSHIP, leadershipCount);
+    const momentumPicks = pickRandom(MOMENTUM, momentumCount);
+    const stablePicks = pickRandom(STABLE, stableCount);
+
+    // Combine long positions
+    const longs = [...leadershipPicks, ...momentumPicks, ...stablePicks].slice(0, numLongs);
+
+    // Pick shorts (if any) - exclude any already in longs
+    const availableShorts = SHORT_OPTIONS.filter(s => !longs.includes(s));
+    const shorts = pickRandom(availableShorts, numShorts);
+
+    // Pick crypto
+    const cryptoSymbol = pickRandom(CRYPTO_OPTIONS, 1)[0];
+
+    // Total assets in portfolio
+    const totalAssets = longs.length + shorts.length + 1; // +1 for crypto
+
+    // Generate allocations (must total 100%)
+    const baseAllocation = Math.floor(100 / totalAssets);
+    let remainder = 100 - (baseAllocation * totalAssets);
+
+    const cpuPortfolio = [];
+
+    // Add longs with allocations
+    longs.forEach((symbol, i) => {
+      const extra = i < remainder ? 1 : 0;
+      const allocation = baseAllocation + extra;
+
+      // Try to get real price from stocksData
+      const stockInfo = stocksDataArr?.find(s => s.symbol === symbol);
+      cpuPortfolio.push({
+        symbol,
+        name: stockInfo?.name || symbol,
+        price: stockInfo?.price || 100, // Fallback price
+        amount: (allocation / 100) * 1000000, // $1M portfolio
+        position: 'long'
+      });
+    });
+
+    // Update remainder
+    remainder = Math.max(0, remainder - longs.length);
+
+    // Add shorts with allocations
+    shorts.forEach((symbol, i) => {
+      const extra = i < remainder ? 1 : 0;
+      const allocation = baseAllocation + extra;
+
+      const stockInfo = stocksDataArr?.find(s => s.symbol === symbol);
+      cpuPortfolio.push({
+        symbol,
+        name: stockInfo?.name || symbol,
+        price: stockInfo?.price || 100,
+        amount: (allocation / 100) * 1000000,
+        position: 'short'
+      });
+    });
+
+    // Add crypto
+    const cryptoInfo = cryptoDataArr?.find(c => c.symbol === cryptoSymbol);
+    cpuPortfolio.push({
+      symbol: cryptoSymbol,
+      name: cryptoInfo?.name || cryptoSymbol,
+      price: cryptoInfo?.price || (cryptoSymbol === 'BTC' ? 50000 : 2000),
+      amount: (baseAllocation / 100) * 1000000,
+      position: 'long'
+    });
+
+    return cpuPortfolio;
+  };
+
   const handleCreateBattle = () => {
-    if (!isPortfolioValid || !portfolioName.trim()) {
-      alert('Please complete your portfolio with a name before creating a battle');
+    if (!portfolioName.trim()) {
+      alert('Please enter a portfolio name before creating a battle');
+      return;
+    }
+
+    if (portfolio.length < 6 || !selectedCrypto) {
+      alert('Please complete your portfolio (6-12 stocks + 1 crypto) before creating a battle');
       return;
     }
 
     const challengeCode = generateChallengeCode();
-    
+
     // Convert portfolio to battle format (percentage to dollar amounts)
     const portfolioAssets = portfolio.map(asset => ({
       symbol: asset.symbol,
       name: asset.name,
       price: asset.price,
-      amount: (asset.percentage / 100) * 1000000 // $1M portfolio
+      amount: (asset.percentage / 100) * 1000000, // $1M portfolio
+      position: asset.position || 'long'
     }));
+
+    // Add selected crypto to portfolio
+    if (selectedCrypto) {
+      const cryptoInfo = cryptoData.find(c => c.symbol === selectedCrypto);
+      if (cryptoInfo) {
+        const usedPercentage = portfolio.reduce((sum, p) => sum + (p.percentage || 0), 0);
+        const cryptoPercentage = Math.max(7.5, 100 - usedPercentage);
+        portfolioAssets.push({
+          symbol: selectedCrypto,
+          name: cryptoInfo.name || selectedCrypto,
+          price: cryptoInfo.price || 0,
+          amount: (cryptoPercentage / 100) * 1000000,
+          position: 'long'
+        });
+      }
+    }
 
     const newBattle = {
       id: Date.now().toString(),
@@ -6213,15 +6332,18 @@ export default function PortfolioDuel() {
     // Load current battles from localStorage
     const currentBattles = loadBattlesSafe();
     const updatedBattles = [...currentBattles, newBattle];
-    
+
     // Save to localStorage immediately
     saveBattlesSafe(updatedBattles);
-    
+
     // Update component state
     setBattles(updatedBattles);
     setActiveBattleId(newBattle.id);
-    setPortfolio([]); setPortfolioType(null);
+    setPortfolio([]);
+    setPortfolioType(null);
     setPortfolioName('');
+    setSelectedCrypto(null);
+    setBuilderMode('create');
     setScreen('dashboard');
   };
 
@@ -6231,8 +6353,13 @@ export default function PortfolioDuel() {
       return;
     }
 
-    if (!isPortfolioValid || !portfolioName.trim()) {
-      alert('Please complete your portfolio with a name before joining');
+    if (!portfolioName.trim()) {
+      alert('Please enter a portfolio name before joining');
+      return;
+    }
+
+    if (portfolio.length < 6 || !selectedCrypto) {
+      alert('Please complete your portfolio (6-12 stocks + 1 crypto) before joining');
       return;
     }
 
@@ -6258,11 +6385,11 @@ export default function PortfolioDuel() {
     const creatorFirstAsset = battleToJoin.creatorPortfolio[0];
     const creatorIsCrypto = POPULAR_CRYPTO.some(c => c.symbol === creatorFirstAsset.symbol);
     const creatorIsStocks = POPULAR_STOCKS.some(s => s.symbol === creatorFirstAsset.symbol);
-    
+
     // Determine joiner's portfolio type
     const joinerIsCrypto = portfolioType === 'crypto';
     const joinerIsStocks = portfolioType === 'stocks';
-    
+
     // Validate portfolio types match
     if ((creatorIsCrypto && joinerIsStocks) || (creatorIsStocks && joinerIsCrypto)) {
       alert(`Portfolio type mismatch!\n\nThis battle requires a ${creatorIsCrypto ? 'CRYPTO' : 'STOCKS'} portfolio, but you built a ${joinerIsCrypto ? 'CRYPTO' : 'STOCKS'} portfolio.\n\nPlease create a ${creatorIsCrypto ? 'crypto' : 'stocks'} portfolio to join this battle.`);
@@ -6274,8 +6401,25 @@ export default function PortfolioDuel() {
       symbol: asset.symbol,
       name: asset.name,
       price: asset.price,
-      amount: (asset.percentage / 100) * 1000000
+      amount: (asset.percentage / 100) * 1000000,
+      position: asset.position || 'long'
     }));
+
+    // Add selected crypto to portfolio
+    if (selectedCrypto) {
+      const cryptoInfo = cryptoData.find(c => c.symbol === selectedCrypto);
+      if (cryptoInfo) {
+        const usedPercentage = portfolio.reduce((sum, p) => sum + (p.percentage || 0), 0);
+        const cryptoPercentage = Math.max(7.5, 100 - usedPercentage);
+        portfolioAssets.push({
+          symbol: selectedCrypto,
+          name: cryptoInfo.name || selectedCrypto,
+          price: cryptoInfo.price || 0,
+          amount: (cryptoPercentage / 100) * 1000000,
+          position: 'long'
+        });
+      }
+    }
 
     // Calculate start and end dates
     const now = new Date();
@@ -6342,8 +6486,11 @@ export default function PortfolioDuel() {
     setBattles(updatedBattles);
     setActiveBattleId(battleToJoin.id);
 
-    setPortfolio([]); setPortfolioType(null);
+    setPortfolio([]);
+    setPortfolioType(null);
     setPortfolioName('');
+    setSelectedCrypto(null);
+    setBuilderMode('create');
     setJoinCode('');
 
     setScreen('dashboard');
@@ -6353,8 +6500,13 @@ export default function PortfolioDuel() {
   // TRAINING MODE: CREATE TRAINING BATTLE
   // ============================================
   const handleCreateTrainingBattle = async () => {
-    if (!isPortfolioValid || !portfolioName.trim()) {
-      alert('Please complete your portfolio with a name before starting training');
+    if (!portfolioName.trim()) {
+      alert('Please enter a portfolio name before starting training');
+      return;
+    }
+
+    if (portfolio.length < 6 || !selectedCrypto) {
+      alert('Please complete your portfolio (6-12 stocks + 1 crypto) before starting training');
       return;
     }
 
@@ -6363,8 +6515,26 @@ export default function PortfolioDuel() {
       symbol: asset.symbol,
       name: asset.name,
       price: asset.price,
-      amount: (asset.percentage / 100) * 1000000
+      amount: (asset.percentage / 100) * 1000000,
+      position: asset.position || 'long'
     }));
+
+    // Add selected crypto to user portfolio
+    if (selectedCrypto) {
+      const cryptoInfo = cryptoData.find(c => c.symbol === selectedCrypto);
+      if (cryptoInfo) {
+        // Calculate remaining percentage for crypto
+        const usedPercentage = portfolio.reduce((sum, p) => sum + (p.percentage || 0), 0);
+        const cryptoPercentage = Math.max(7.5, 100 - usedPercentage); // At least 7.5%
+        userPortfolioAssets.push({
+          symbol: selectedCrypto,
+          name: cryptoInfo.name || selectedCrypto,
+          price: cryptoInfo.price || 0,
+          amount: (cryptoPercentage / 100) * 1000000,
+          position: 'long'
+        });
+      }
+    }
 
     // Generate CPU opponent portfolio
     const cpuPortfolio = generateCPUPortfolio(portfolioType, stocksData, cryptoData);
@@ -6442,7 +6612,10 @@ export default function PortfolioDuel() {
     setPortfolio([]);
     setPortfolioType(null);
     setPortfolioName('');
+    setSelectedCrypto(null);
+    setBuilderMode('create');
 
+    // Navigate to dashboard (battle will show as active)
     setScreen('dashboard');
   };
 
@@ -13023,10 +13196,17 @@ export default function PortfolioDuel() {
                 </div>
               )}
 
-              {/* SUBMIT BUTTON */}
+              {/* SUBMIT BUTTON - Handles different modes */}
               <button
                 onClick={() => {
-                  handleCreateBattle();
+                  // Call appropriate handler based on mode
+                  if (builderMode === 'training') {
+                    handleCreateTrainingBattle();
+                  } else if (builderMode === 'join') {
+                    handleJoinBattle();
+                  } else {
+                    handleCreateBattle();
+                  }
                   setShowPortfolioManager(false);
                 }}
                 disabled={
@@ -13034,12 +13214,13 @@ export default function PortfolioDuel() {
                   portfolio.length < 7 ||
                   portfolio.length > 13 ||
                   !selectedCrypto ||
-                  Math.abs(totalPercentage - 100) >= 0.01
+                  Math.abs(totalPercentage - 100) >= 0.01 ||
+                  (builderMode === 'join' && (!joinCode || joinCode.length !== 6))
                 }
                 style={{
                   width: '100%',
                   backgroundColor: portfolioName && portfolio.length >= 7 && portfolio.length <= 13 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01
-                    ? '#8b5cf6'
+                    ? builderMode === 'training' ? '#a855f7' : builderMode === 'join' ? '#06b6d4' : '#8b5cf6'
                     : '#21262d',
                   color: portfolioName && portfolio.length >= 7 && portfolio.length <= 13 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01
                     ? '#ffffff'
@@ -13075,7 +13256,11 @@ export default function PortfolioDuel() {
                   ? 'Select 1 Crypto'
                   : Math.abs(totalPercentage - 100) >= 0.01
                   ? `Adjust to 100% (${totalPercentage.toFixed(1)}%)`
-                  : 'Create Battle ⚔️'}
+                  : builderMode === 'training'
+                  ? '🤖 Start Training Battle'
+                  : builderMode === 'join'
+                  ? '🎯 Join Battle'
+                  : '⚔️ Create Battle'}
               </button>
             </div>
           </div>
