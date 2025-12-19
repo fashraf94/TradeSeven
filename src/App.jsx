@@ -11960,6 +11960,20 @@ export default function PortfolioDuel() {
       'IWM': { symbol: 'IWM', name: 'Russell 2000 ETF', price: 200, percentChange: 0.4 }
     };
 
+    // Volatile stock placeholder data (in case not in stocksData)
+    const VOLATILE_STOCK_DATA = {
+      'TSLA': { symbol: 'TSLA', name: 'Tesla', price: 250, percentChange: -1.2 },
+      'RIVN': { symbol: 'RIVN', name: 'Rivian', price: 15, percentChange: -2.1 },
+      'LCID': { symbol: 'LCID', name: 'Lucid Motors', price: 4, percentChange: -1.8 },
+      'SNAP': { symbol: 'SNAP', name: 'Snap', price: 12, percentChange: -0.9 },
+      'HOOD': { symbol: 'HOOD', name: 'Robinhood', price: 18, percentChange: 1.5 },
+      'COIN': { symbol: 'COIN', name: 'Coinbase', price: 180, percentChange: 2.3 },
+      'GME': { symbol: 'GME', name: 'GameStop', price: 25, percentChange: -3.2 },
+      'AMC': { symbol: 'AMC', name: 'AMC Entertainment', price: 5, percentChange: -1.5 },
+      'PLTR': { symbol: 'PLTR', name: 'Palantir', price: 45, percentChange: 1.8 },
+      'SMCI': { symbol: 'SMCI', name: 'Super Micro', price: 35, percentChange: -4.2 }
+    };
+
     // Get Momentum stocks dynamically (best 30-day performers from remaining stocks)
     const getMomentumStocks = () => {
       const excludeSymbols = [...LEADERSHIP_STOCKS, ...STABLE_STOCKS, ...SHORT_STOCKS];
@@ -11989,8 +12003,8 @@ export default function PortfolioDuel() {
     const getShortVolatileStocks = () => {
       return SHORT_VOLATILE_STOCKS.map(symbol => {
         const stockData = stocksData.find(s => s.symbol === symbol);
-        return stockData || { symbol, name: symbol, price: 0, percentChange: 0 };
-      }).filter(s => s.price > 0 || stocksData.some(sd => sd.symbol === s.symbol));
+        return stockData || VOLATILE_STOCK_DATA[symbol] || { symbol, name: symbol, price: 0, percentChange: 0 };
+      });
     };
 
     const getShortETFs = () => {
@@ -12340,15 +12354,37 @@ export default function PortfolioDuel() {
                 </div>
 
                 {/* Volatile Stocks Sub-section */}
-                <div style={{ marginBottom: '20px', padding: '0 12px' }}>
-                  <h4 style={{ color: '#ef4444', fontSize: '12px', fontWeight: '600', marginBottom: '10px', paddingLeft: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    📉 Volatile Stocks
-                  </h4>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: `repeat(${getGridColumns()}, 1fr)`,
-                    gap: '8px'
-                  }}>
+                <div style={{ marginBottom: '28px', padding: '0 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', paddingLeft: '4px' }}>
+                    <div style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '6px',
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      border: '1.5px solid rgba(239, 68, 68, 0.3)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="23 18 13.5 8.5 8.5 13.5 1 6" />
+                        <polyline points="17 18 23 18 23 12" />
+                      </svg>
+                    </div>
+                    <span style={{ color: '#ef4444', fontSize: '13px', fontWeight: '700', letterSpacing: '0.3px' }}>
+                      Volatile Stocks
+                    </span>
+                    <div style={{ flex: 1, height: '1px', background: 'linear-gradient(to right, rgba(239, 68, 68, 0.4), transparent)', marginLeft: '8px' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 120px))',
+                      gap: '10px',
+                      justifyContent: 'center',
+                      width: '100%',
+                      maxWidth: '700px'
+                    }}>
                     {getShortVolatileStocks().map((asset) => {
                       const isSelected = portfolio.some(p => p.symbol === asset.symbol);
                       const isDisabled = !isSelected && shortCount >= 2;
@@ -12395,19 +12431,43 @@ export default function PortfolioDuel() {
                         </button>
                       );
                     })}
+                    </div>
                   </div>
                 </div>
 
                 {/* Index ETFs Sub-section */}
-                <div style={{ marginBottom: '20px', padding: '0 12px' }}>
-                  <h4 style={{ color: '#f59e0b', fontSize: '12px', fontWeight: '600', marginBottom: '10px', paddingLeft: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    📊 Index ETFs (Hedge)
-                  </h4>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: `repeat(${getGridColumns()}, 1fr)`,
-                    gap: '8px'
-                  }}>
+                <div style={{ marginBottom: '28px', padding: '0 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', paddingLeft: '4px' }}>
+                    <div style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '6px',
+                      background: 'rgba(245, 158, 11, 0.1)',
+                      border: '1.5px solid rgba(245, 158, 11, 0.3)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="20" x2="18" y2="10" />
+                        <line x1="12" y1="20" x2="12" y2="4" />
+                        <line x1="6" y1="20" x2="6" y2="14" />
+                      </svg>
+                    </div>
+                    <span style={{ color: '#f59e0b', fontSize: '13px', fontWeight: '700', letterSpacing: '0.3px' }}>
+                      Index ETFs (Hedge)
+                    </span>
+                    <div style={{ flex: 1, height: '1px', background: 'linear-gradient(to right, rgba(245, 158, 11, 0.4), transparent)', marginLeft: '8px' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 120px))',
+                      gap: '10px',
+                      justifyContent: 'center',
+                      width: '100%',
+                      maxWidth: '550px'
+                    }}>
                     {getShortETFs().map((asset) => {
                       const isSelected = portfolio.some(p => p.symbol === asset.symbol);
                       const isDisabled = !isSelected && shortCount >= 2;
@@ -12454,19 +12514,41 @@ export default function PortfolioDuel() {
                         </button>
                       );
                     })}
+                    </div>
                   </div>
                 </div>
 
                 {/* Crypto Shorts Sub-section */}
                 <div style={{ marginBottom: '20px', padding: '0 12px' }}>
-                  <h4 style={{ color: '#8b5cf6', fontSize: '12px', fontWeight: '600', marginBottom: '10px', paddingLeft: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    ₿ Crypto Shorts
-                  </h4>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: `repeat(${getGridColumns()}, 1fr)`,
-                    gap: '8px'
-                  }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', paddingLeft: '4px' }}>
+                    <div style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '6px',
+                      background: 'rgba(139, 92, 246, 0.1)',
+                      border: '1.5px solid rgba(139, 92, 246, 0.3)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11.767 19.089c4.924.868 6.14-6.025 1.216-6.894m-1.216 6.894L5.86 18.047m5.908 1.042-.347 1.97m1.563-8.864c4.924.869 6.14-6.025 1.215-6.893m-1.215 6.893-3.94-.694m5.155-6.2L8.29 4.26m5.908 1.042.348-1.97M7.48 20.364l3.126-17.727" />
+                      </svg>
+                    </div>
+                    <span style={{ color: '#8b5cf6', fontSize: '13px', fontWeight: '700', letterSpacing: '0.3px' }}>
+                      Crypto Shorts
+                    </span>
+                    <div style={{ flex: 1, height: '1px', background: 'linear-gradient(to right, rgba(139, 92, 246, 0.4), transparent)', marginLeft: '8px' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 120px))',
+                      gap: '10px',
+                      justifyContent: 'center',
+                      width: '100%',
+                      maxWidth: '800px'
+                    }}>
                     {getShortCrypto().map((crypto) => {
                       const isSelected = portfolio.some(p => p.symbol === crypto.symbol && p.position === 'short');
                       const isDisabled = !isSelected && shortCount >= 2;
@@ -12521,6 +12603,7 @@ export default function PortfolioDuel() {
                         </button>
                       );
                     })}
+                    </div>
                   </div>
                 </div>
               </>
