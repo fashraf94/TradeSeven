@@ -444,6 +444,81 @@ const getAssetTypePrefix = (assetType) => {
   }
 };
 
+// Handle market_summary type for AI Market Summary component
+async function handleMarketSummary(req, res, API_KEY, context) {
+  const today = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
+  // Build a concise summary of the market data
+  const gainersText = context?.topGainers?.length > 0
+    ? context.topGainers.map(g => `${g.symbol} +${g.change?.toFixed(1)}%`).join(', ')
+    : 'none notable';
+
+  const losersText = context?.topLosers?.length > 0
+    ? context.topLosers.map(l => `${l.symbol} ${l.change?.toFixed(1)}%`).join(', ')
+    : 'none notable';
+
+  const newsText = context?.recentNews?.length > 0
+    ? context.recentNews.slice(0, 3).join(' | ')
+    : 'no recent headlines';
+
+  const userPrompt = `Today: ${today}
+Market Stats: ${context?.stocksUp || 0} stocks up, ${context?.stocksDown || 0} stocks down. ${context?.cryptoUp || 0} crypto up, ${context?.cryptoDown || 0} crypto down.
+Top Gainers: ${gainersText}
+Biggest Decliners: ${losersText}
+Recent News: ${newsText}
+
+Provide a brief, insightful 2-3 sentence market summary suitable for a trading game. Focus on:
+1. Overall market sentiment (bullish/bearish/mixed)
+2. One key driver or theme (if apparent from the data)
+3. A quick strategic tip for 24-hour battles
+
+Be concise, engaging, and actionable. No bullet points - flowing prose only.`;
+
+  const systemPrompt = `You are a market analyst providing brief daily market summaries for MarketClash, a competitive portfolio battle game. Keep responses under 100 words. Be insightful but concise. Focus on actionable insights for short-term trading battles.`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-haiku-20241022',
+        max_tokens: 200,
+        system: systemPrompt,
+        messages: [
+          { role: 'user', content: userPrompt }
+        ],
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.error || !response.ok) {
+      console.error('[AI Advisor] Market summary error:', data.error);
+      return res.status(200).json({ success: false, error: 'AI unavailable' });
+    }
+
+    const advice = data.content?.[0]?.text || null;
+
+    return res.status(200).json({
+      success: !!advice,
+      advice,
+    });
+
+  } catch (error) {
+    console.error('[AI Advisor] Market summary error:', error.message);
+    return res.status(200).json({ success: false, error: error.message });
+  }
+}
+
 export default async function handler(req, res) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -469,7 +544,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { advisorType, message, action, context } = req.body;
+    const { advisorType, message, action, context, type } = req.body;
+
+    // Handle market_summary type for AI Market Summary component
+    if (type === 'market_summary') {
+      return await handleMarketSummary(req, res, API_KEY, context);
+    }
 
     if (!advisorType || (!message && !action)) {
       return res.status(400).json({ error: 'Missing advisorType and message/action' });

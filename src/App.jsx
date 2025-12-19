@@ -3,7 +3,7 @@ import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } f
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
-import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES } from './services/eodhdAPI';
+import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews } from './services/eodhdAPI';
 import './firebase/config';
 import { motion } from 'framer-motion';
 // Event watchlist configuration for Week Ahead calendar
@@ -1848,11 +1848,433 @@ const GamePlan = ({
 };
 
 // ============================================
+// NEWS COMPONENTS FOR MARKET BRIEFING
+// ============================================
+
+/**
+ * TopNewsStories - Displays dynamic news headlines
+ * Replaces the static Sector Snapshot
+ */
+const TopNewsStories = ({ news, isLoading, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  if (isLoading) {
+    return (
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '16px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px' }}>
+          Top News Stories
+        </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {[1, 2, 3].map(i => (
+            <div key={i} style={{
+              background: '#161b22',
+              borderRadius: '8px',
+              padding: '12px',
+              animation: 'pulse 1.5s ease-in-out infinite',
+            }}>
+              <div style={{ height: '14px', background: '#2d3548', borderRadius: '4px', width: '80%', marginBottom: '8px' }} />
+              <div style={{ height: '12px', background: '#2d3548', borderRadius: '4px', width: '40%' }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!news || news.length === 0) {
+    return null;
+  }
+
+  // Format time ago
+  const getTimeAgo = (dateStr) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${Math.floor(diffHours / 24)}d ago`;
+  };
+
+  return (
+    <div style={{
+      background: '#1a1f2e',
+      borderRadius: '12px',
+      padding: '16px',
+      marginBottom: '16px',
+      border: '1px solid #2d3548',
+    }}>
+      <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <span style={{ fontSize: '14px' }}>📰</span> Top News Stories
+      </h3>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {news.slice(0, 4).map((item, idx) => (
+          <div
+            key={item.id || idx}
+            style={{
+              background: '#161b22',
+              borderRadius: '8px',
+              padding: '12px',
+              cursor: item.url !== '#' ? 'pointer' : 'default',
+              transition: 'all 0.2s',
+              borderLeft: `3px solid ${idx === 0 ? c.cyan : '#2d3548'}`,
+            }}
+            onClick={() => item.url !== '#' && window.open(item.url, '_blank')}
+          >
+            <div style={{
+              color: '#e6edf3',
+              fontSize: '13px',
+              lineHeight: '1.4',
+              marginBottom: '6px',
+              fontWeight: idx === 0 ? '500' : '400',
+            }}>
+              {item.title}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#6e7681', fontSize: '11px' }}>{item.source}</span>
+              <span style={{ color: '#6e7681', fontSize: '11px' }}>•</span>
+              <span style={{ color: '#6e7681', fontSize: '11px' }}>{getTimeAgo(item.publishedAt)}</span>
+              {item.symbols && item.symbols.length > 0 && (
+                <>
+                  <span style={{ color: '#6e7681', fontSize: '11px' }}>•</span>
+                  <span style={{ color: c.cyan, fontSize: '11px' }}>${item.symbols[0]}</span>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * StocksInTheNews - Top movers with news-driven context
+ * Replaces plain top movers with "why it's moving" explanations
+ */
+const StocksInTheNews = ({ moversData, isLoading, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  if (isLoading) {
+    return (
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '16px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px' }}>
+          Stocks in the News
+        </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} style={{
+              background: '#161b22',
+              borderRadius: '8px',
+              padding: '12px',
+              animation: 'pulse 1.5s ease-in-out infinite',
+            }}>
+              <div style={{ height: '14px', background: '#2d3548', borderRadius: '4px', width: '60%' }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!moversData || (!moversData.gainers?.length && !moversData.losers?.length)) {
+    return null;
+  }
+
+  const renderMover = (stock, isGainer) => (
+    <div
+      key={stock.symbol}
+      style={{
+        background: '#161b22',
+        borderRadius: '8px',
+        padding: '12px',
+        borderLeft: `3px solid ${isGainer ? c.green : c.red}`,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+        <div>
+          <span style={{ color: '#e6edf3', fontWeight: '600', fontSize: '14px' }}>{stock.symbol}</span>
+          <span style={{ color: '#6e7681', fontSize: '12px', marginLeft: '8px' }}>{stock.name}</span>
+        </div>
+        <span style={{
+          color: isGainer ? c.green : c.red,
+          fontWeight: '600',
+          fontSize: '14px',
+        }}>
+          {isGainer ? '+' : ''}{stock.percentChange?.toFixed(2)}%
+        </span>
+      </div>
+      {stock.reason && (
+        <div style={{
+          color: '#8b949e',
+          fontSize: '12px',
+          lineHeight: '1.4',
+        }}>
+          {stock.reason}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={{
+      background: '#1a1f2e',
+      borderRadius: '12px',
+      padding: '16px',
+      marginBottom: '16px',
+      border: '1px solid #2d3548',
+    }}>
+      <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <span style={{ fontSize: '14px' }}>📈</span> Stocks in the News
+      </h3>
+
+      {/* Gainers Section */}
+      {moversData.gainers?.length > 0 && (
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ color: c.green, fontSize: '11px', textTransform: 'uppercase', marginBottom: '8px', fontWeight: '600' }}>
+            Top Gainers
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {moversData.gainers.slice(0, 3).map(stock => renderMover(stock, true))}
+          </div>
+        </div>
+      )}
+
+      {/* Losers Section */}
+      {moversData.losers?.length > 0 && (
+        <div>
+          <div style={{ color: c.red, fontSize: '11px', textTransform: 'uppercase', marginBottom: '8px', fontWeight: '600' }}>
+            Biggest Decliners
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {moversData.losers.slice(0, 3).map(stock => renderMover(stock, false))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/**
+ * AIMarketSummary - Claude Haiku powered market summary
+ * Provides AI-generated insights on current market conditions
+ */
+const AIMarketSummary = ({ marketData, news, moversData, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+  const [summary, setSummary] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const generateSummary = async () => {
+      if (!marketData) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        // Call the AI advisor API for market summary
+        const response = await fetch('/api/ai-advisor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'market_summary',
+            context: {
+              stocksUp: marketData.stocksUp,
+              stocksDown: marketData.stocksDown,
+              cryptoUp: marketData.cryptoUp,
+              cryptoDown: marketData.cryptoDown,
+              topGainers: moversData?.gainers?.slice(0, 3).map(s => ({ symbol: s.symbol, change: s.percentChange })) || [],
+              topLosers: moversData?.losers?.slice(0, 3).map(s => ({ symbol: s.symbol, change: s.percentChange })) || [],
+              recentNews: news?.slice(0, 3).map(n => n.title) || [],
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('AI summary unavailable');
+        }
+
+        const data = await response.json();
+        if (data.success && data.advice) {
+          setSummary(data.advice);
+        } else {
+          // Generate a simple fallback summary
+          setSummary(generateFallbackSummary(marketData, moversData));
+        }
+      } catch (err) {
+        console.warn('AI summary failed, using fallback:', err);
+        setSummary(generateFallbackSummary(marketData, moversData));
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    // Small delay to let other components load first
+    const timer = setTimeout(generateSummary, 500);
+    return () => clearTimeout(timer);
+  }, [marketData, news, moversData]);
+
+  // Generate a fallback summary when AI is unavailable
+  const generateFallbackSummary = (data, movers) => {
+    const totalStocks = (data?.stocksUp || 0) + (data?.stocksDown || 0);
+    const stockRatio = totalStocks > 0 ? (data?.stocksUp || 0) / totalStocks : 0.5;
+
+    let sentiment = 'mixed';
+    if (stockRatio > 0.6) sentiment = 'bullish';
+    else if (stockRatio < 0.4) sentiment = 'bearish';
+
+    const topGainer = movers?.gainers?.[0];
+    const topLoser = movers?.losers?.[0];
+
+    let summaryText = '';
+    if (sentiment === 'bullish') {
+      summaryText = `Markets are showing strength today with ${data?.stocksUp || 0} stocks advancing. `;
+      if (topGainer) {
+        summaryText += `${topGainer.symbol} leads the way with gains of ${topGainer.percentChange?.toFixed(1)}%. `;
+      }
+      summaryText += 'Consider momentum plays but watch for overextended names.';
+    } else if (sentiment === 'bearish') {
+      summaryText = `Caution advised as ${data?.stocksDown || 0} stocks are declining today. `;
+      if (topLoser) {
+        summaryText += `${topLoser.symbol} is under pressure, down ${Math.abs(topLoser.percentChange || 0).toFixed(1)}%. `;
+      }
+      summaryText += 'Look for quality names at support levels or consider defensive positions.';
+    } else {
+      summaryText = `Markets are trading mixed with ${data?.stocksUp || 0} gainers and ${data?.stocksDown || 0} decliners. `;
+      summaryText += 'A balanced approach may work best in this environment. Focus on your strongest convictions.';
+    }
+
+    return summaryText;
+  };
+
+  if (!marketData) {
+    return null;
+  }
+
+  return (
+    <div style={{
+      background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(147, 51, 234, 0.1))',
+      borderRadius: '12px',
+      padding: '16px',
+      marginBottom: '16px',
+      border: '1px solid rgba(99, 102, 241, 0.2)',
+    }}>
+      <h3 style={{
+        color: '#8b949e',
+        fontSize: '12px',
+        textTransform: 'uppercase',
+        marginBottom: '12px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+      }}>
+        <span style={{ fontSize: '14px' }}>🤖</span> AI Market Summary
+        <span style={{
+          background: 'rgba(147, 51, 234, 0.2)',
+          color: '#a78bfa',
+          fontSize: '10px',
+          padding: '2px 6px',
+          borderRadius: '4px',
+          marginLeft: '4px',
+        }}>
+          CLAUDE
+        </span>
+      </h3>
+
+      {isLoading ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{
+            width: '12px',
+            height: '12px',
+            border: '2px solid rgba(147, 51, 234, 0.3)',
+            borderTop: '2px solid #9333ea',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+          }} />
+          <span style={{ color: '#8b949e', fontSize: '13px' }}>Analyzing market conditions...</span>
+        </div>
+      ) : (
+        <div style={{
+          color: '#c9d1d9',
+          fontSize: '14px',
+          lineHeight: '1.6',
+        }}>
+          {summary}
+        </div>
+      )}
+
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+// ============================================
 // PHASE 1: MARKET BRIEFING
 // ============================================
 
 const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  // News and movers state
+  const [marketNews, setMarketNews] = useState([]);
+  const [moversData, setMoversData] = useState({ gainers: [], losers: [] });
+  const [isLoadingNews, setIsLoadingNews] = useState(true);
+  const [isLoadingMovers, setIsLoadingMovers] = useState(true);
+
+  // Fetch news and movers on mount
+  useEffect(() => {
+    const fetchNewsData = async () => {
+      try {
+        // Fetch market news
+        const news = await getMarketNews(6);
+        setMarketNews(news);
+      } catch (err) {
+        console.warn('Failed to fetch market news:', err);
+      } finally {
+        setIsLoadingNews(false);
+      }
+    };
+
+    const fetchMoversData = async () => {
+      try {
+        // Fetch top movers with news context
+        const movers = await getTopMoversWithNews();
+        setMoversData(movers);
+      } catch (err) {
+        console.warn('Failed to fetch top movers:', err);
+      } finally {
+        setIsLoadingMovers(false);
+      }
+    };
+
+    fetchNewsData();
+    fetchMoversData();
+  }, []);
 
   // Calculate market data from props
   const marketData = React.useMemo(() => {
@@ -1876,7 +2298,7 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
       }))
       .sort((a, b) => b.avgChange - a.avgChange);
 
-    // Top movers
+    // Top movers (fallback if news-based movers fail)
     const allAssets = [...stocksData, ...cryptoData];
     const topGainers = [...allAssets]
       .sort((a, b) => safeNumber(b.percentChange || b.change24h, 0) - safeNumber(a.percentChange || a.change24h, 0))
@@ -1946,105 +2368,27 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
         </div>
       </div>
 
-      {/* Sector Snapshot */}
-      <div style={{
-        background: '#1a1f2e',
-        borderRadius: '12px',
-        padding: '16px',
-        marginBottom: '16px',
-        border: '1px solid #2d3548',
-      }}>
-        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px' }}>
-          Sector Snapshot
-        </h3>
-        {marketData.sectors.slice(0, 5).map((sector, idx) => (
-          <div
-            key={sector.name}
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '8px 0',
-              borderBottom: idx < 4 ? '1px solid #2d3548' : 'none',
-            }}
-          >
-            <span style={{ color: '#e6edf3', fontSize: '14px' }}>{sector.name}</span>
-            <span style={{
-              color: sector.avgChange >= 0 ? c.green : c.red,
-              fontSize: '14px',
-              fontWeight: '600',
-            }}>
-              {sector.avgChange >= 0 ? '+' : ''}{sector.avgChange.toFixed(2)}%
-            </span>
-          </div>
-        ))}
+      {/* AI Market Summary */}
+      <AIMarketSummary
+        marketData={marketData}
+        news={marketNews}
+        moversData={moversData}
+        colors={c}
+      />
 
-        <div style={{
-          marginTop: '12px',
-          padding: '12px',
-          background: '#161b22',
-          borderRadius: '8px',
-          borderLeft: `3px solid ${c.cyan}`,
-        }}>
-          <span style={{ color: c.cyan }}>💡</span>
-          <span style={{ color: '#c9d1d9', fontSize: '13px', marginLeft: '8px' }}>
-            {marketData.sectors[0]?.avgChange > 0
-              ? `${marketData.sectors[0].name} is leading today. Consider sector momentum in your thesis.`
-              : 'Markets are mixed. A balanced approach may be wise.'}
-          </span>
-        </div>
-      </div>
+      {/* Top News Stories (replaces Sector Snapshot) */}
+      <TopNewsStories
+        news={marketNews}
+        isLoading={isLoadingNews}
+        colors={c}
+      />
 
-      {/* Top Movers */}
-      <div style={{
-        background: '#1a1f2e',
-        borderRadius: '12px',
-        padding: '16px',
-        marginBottom: '24px',
-        border: '1px solid #2d3548',
-      }}>
-        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px' }}>
-          Top Movers Today
-        </h3>
-
-        <div style={{ marginBottom: '16px' }}>
-          <div style={{ color: c.green, fontSize: '12px', marginBottom: '8px' }}>🚀 GAINERS</div>
-          {marketData.topGainers.map(asset => (
-            <div
-              key={asset.symbol}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '6px 0',
-              }}
-            >
-              <span style={{ color: '#e6edf3', fontSize: '14px' }}>{asset.symbol}</span>
-              <span style={{ color: c.green, fontSize: '14px' }}>
-                +{safeToFixed(asset.percentChange || asset.change24h, 2)}%
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <div>
-          <div style={{ color: c.red, fontSize: '12px', marginBottom: '8px' }}>📉 LAGGARDS</div>
-          {marketData.topLosers.map(asset => (
-            <div
-              key={asset.symbol}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '6px 0',
-              }}
-            >
-              <span style={{ color: '#e6edf3', fontSize: '14px' }}>{asset.symbol}</span>
-              <span style={{ color: c.red, fontSize: '14px' }}>
-                {safeToFixed(asset.percentChange || asset.change24h, 2)}%
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Stocks in the News (replaces basic Top Movers) */}
+      <StocksInTheNews
+        moversData={moversData}
+        isLoading={isLoadingMovers}
+        colors={c}
+      />
 
       {/* Continue Button */}
       <button

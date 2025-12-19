@@ -47,6 +47,16 @@ const priceCache = {
 };
 
 // ============================================
+// NEWS CACHE (reduces API calls)
+// ============================================
+
+const newsCache = {
+  market: { data: null, timestamp: 0 },
+  stocks: {}, // keyed by symbol
+  CACHE_DURATION: 300000, // 5 minute cache for news
+};
+
+// ============================================
 // FETCH WITH TIMEOUT
 // ============================================
 
@@ -365,6 +375,258 @@ export async function getCryptoExtendedData(cryptoId) {
 }
 
 // ============================================
+// NEWS FUNCTIONS (via Vercel Proxy)
+// ============================================
+
+/**
+ * Get general market news
+ * @param {number} limit - Number of news items (default 10)
+ * @returns {Promise<Array>} - Array of news items
+ */
+export async function getMarketNews(limit = 10) {
+  const now = Date.now();
+
+  // Check cache
+  if (now - newsCache.market.timestamp < newsCache.CACHE_DURATION && newsCache.market.data) {
+    console.log('[EODHD] Using cached market news');
+    return newsCache.market.data.slice(0, limit);
+  }
+
+  console.log(`[EODHD] Fetching market news (limit: ${limit})...`);
+
+  try {
+    const response = await fetchWithTimeout(
+      `${API_BASE}/news/market?limit=${limit}`
+    );
+
+    if (!response.ok) {
+      throw new Error(`Proxy error: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data.success && data.news) {
+      // Update cache
+      newsCache.market = {
+        data: data.news,
+        timestamp: now
+      };
+
+      console.log(`[EODHD] Got ${data.news.length} market news items`);
+      return data.news;
+    }
+
+    throw new Error(data.error || 'Unknown proxy error');
+
+  } catch (error) {
+    console.warn('[EODHD] Market news fetch failed:', error.message);
+    return getFallbackMarketNews();
+  }
+}
+
+/**
+ * Get news for a specific stock
+ * @param {string} symbol - Stock symbol
+ * @param {number} limit - Number of news items (default 5)
+ * @returns {Promise<Array>} - Array of news items
+ */
+export async function getStockNews(symbol, limit = 5) {
+  const now = Date.now();
+  const upperSymbol = symbol.toUpperCase();
+
+  // Check cache
+  const cached = newsCache.stocks[upperSymbol];
+  if (cached && now - cached.timestamp < newsCache.CACHE_DURATION) {
+    console.log(`[EODHD] Using cached news for ${upperSymbol}`);
+    return cached.data.slice(0, limit);
+  }
+
+  console.log(`[EODHD] Fetching news for ${upperSymbol}...`);
+
+  try {
+    const response = await fetchWithTimeout(
+      `${API_BASE}/news/stock?symbol=${upperSymbol}&limit=${limit}`
+    );
+
+    if (!response.ok) {
+      throw new Error(`Proxy error: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data.success && data.news) {
+      // Update cache
+      newsCache.stocks[upperSymbol] = {
+        data: data.news,
+        timestamp: now
+      };
+
+      console.log(`[EODHD] Got ${data.news.length} news items for ${upperSymbol}`);
+      return data.news;
+    }
+
+    throw new Error(data.error || 'Unknown proxy error');
+
+  } catch (error) {
+    console.warn(`[EODHD] Stock news fetch failed for ${upperSymbol}:`, error.message);
+    return [];
+  }
+}
+
+/**
+ * Get news for multiple stocks
+ * @param {string[]} symbols - Array of stock symbols
+ * @param {number} limitPerStock - News items per stock (default 2)
+ * @returns {Promise<Object>} - News keyed by symbol
+ */
+export async function getMultipleStockNews(symbols, limitPerStock = 2) {
+  const results = {};
+
+  // Fetch news for all symbols in parallel
+  const newsPromises = symbols.map(async (symbol) => {
+    const news = await getStockNews(symbol, limitPerStock);
+    return { symbol: symbol.toUpperCase(), news };
+  });
+
+  const allNews = await Promise.all(newsPromises);
+  allNews.forEach(({ symbol, news }) => {
+    results[symbol] = news;
+  });
+
+  return results;
+}
+
+/**
+ * Get top movers with their associated news
+ * Combines price data with relevant news for context
+ * @returns {Promise<Object>} - { gainers: [...], losers: [...] }
+ */
+export async function getTopMoversWithNews() {
+  console.log('[EODHD] Fetching top movers with news...');
+
+  try {
+    // Get all stock prices first
+    const prices = await getMultipleStockPrices(POPULAR_STOCK_SYMBOLS);
+
+    // Convert to array and sort by percent change
+    const stocksWithPrices = POPULAR_STOCK_SYMBOLS.map(symbol => ({
+      symbol,
+      name: STOCK_NAMES[symbol] || symbol,
+      price: prices[symbol]?.price || FALLBACK_STOCK_PRICES[symbol] || 100,
+      change: prices[symbol]?.change || 0,
+      percentChange: prices[symbol]?.percentChange || 0
+    }));
+
+    // Sort and get top 5 gainers and losers
+    const sorted = [...stocksWithPrices].sort((a, b) => b.percentChange - a.percentChange);
+    const gainers = sorted.slice(0, 5);
+    const losers = sorted.slice(-5).reverse();
+
+    // Fetch news for top movers (gainers and losers)
+    const moverSymbols = [...gainers, ...losers].map(s => s.symbol);
+    const newsMap = await getMultipleStockNews(moverSymbols, 1);
+
+    // Attach news to movers
+    const attachNews = (movers) => movers.map(mover => ({
+      ...mover,
+      news: newsMap[mover.symbol] || [],
+      reason: generateMoveReason(mover, newsMap[mover.symbol])
+    }));
+
+    return {
+      gainers: attachNews(gainers),
+      losers: attachNews(losers)
+    };
+
+  } catch (error) {
+    console.warn('[EODHD] Top movers with news failed:', error.message);
+    return { gainers: [], losers: [] };
+  }
+}
+
+/**
+ * Generate a human-readable reason for stock movement
+ * @param {Object} stock - Stock data with price info
+ * @param {Array} news - Related news items
+ * @returns {string} - Reason string
+ */
+function generateMoveReason(stock, news) {
+  if (news && news.length > 0) {
+    // Use first news headline as reason
+    const headline = news[0].title;
+    if (headline.length > 60) {
+      return headline.substring(0, 57) + '...';
+    }
+    return headline;
+  }
+
+  // Fallback reasons based on movement direction and magnitude
+  const absChange = Math.abs(stock.percentChange);
+  const direction = stock.percentChange > 0 ? 'up' : 'down';
+
+  if (absChange > 5) {
+    return direction === 'up'
+      ? 'Strong buying pressure, possible institutional activity'
+      : 'Heavy selling pressure, potential sector rotation';
+  } else if (absChange > 2) {
+    return direction === 'up'
+      ? 'Positive market sentiment lifting shares'
+      : 'Market pullback affecting shares';
+  } else {
+    return direction === 'up'
+      ? 'Modest gains on light trading'
+      : 'Minor pullback on mixed signals';
+  }
+}
+
+/**
+ * Fallback market news when API fails
+ */
+function getFallbackMarketNews() {
+  return [
+    {
+      id: 'fallback-1',
+      title: 'Markets Mixed Amid Economic Data',
+      summary: 'Stock markets show mixed performance as investors digest latest economic indicators and Fed commentary.',
+      source: 'Market Watch',
+      url: '#',
+      publishedAt: new Date().toISOString(),
+      symbols: [],
+      tags: ['markets', 'economy']
+    },
+    {
+      id: 'fallback-2',
+      title: 'Tech Sector Leads Trading Activity',
+      summary: 'Technology stocks continue to drive market activity as earnings season approaches.',
+      source: 'Financial Times',
+      url: '#',
+      publishedAt: new Date().toISOString(),
+      symbols: ['AAPL', 'MSFT', 'GOOGL'],
+      tags: ['tech', 'earnings']
+    },
+    {
+      id: 'fallback-3',
+      title: 'Global Markets Update',
+      summary: 'International markets show varied performance amid geopolitical developments and currency movements.',
+      source: 'Reuters',
+      url: '#',
+      publishedAt: new Date().toISOString(),
+      symbols: [],
+      tags: ['global', 'forex']
+    }
+  ];
+}
+
+/**
+ * Clear news cache
+ */
+export function clearNewsCache() {
+  newsCache.market = { data: null, timestamp: 0 };
+  newsCache.stocks = {};
+  logDebug('News cache cleared');
+}
+
+// ============================================
 // UTILITY FUNCTIONS
 // ============================================
 
@@ -501,6 +763,12 @@ export const stockAPI = {
   // Symbol utilities (simplified for EODHD)
   symbolToCoinGeckoId,
   coinGeckoIdToSymbol,
+  // News functions
+  getMarketNews,
+  getStockNews,
+  getMultipleStockNews,
+  getTopMoversWithNews,
+  clearNewsCache,
   // Constants
   POPULAR_STOCKS,
   POPULAR_CRYPTO,
