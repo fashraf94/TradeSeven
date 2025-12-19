@@ -2329,12 +2329,47 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
 
   return (
     <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
-      {/* Header */}
+      {/* Header - Polished Icon */}
       <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-        <h1 style={{ color: '#e6edf3', fontSize: '24px', marginBottom: '8px' }}>
-          📊 Market Briefing
-        </h1>
-        <p style={{ color: '#8b949e', fontSize: '14px' }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '12px',
+          marginBottom: '8px'
+        }}>
+          {/* Icon Container */}
+          <div style={{
+            width: '40px',
+            height: '40px',
+            background: 'linear-gradient(135deg, #00d9ff 0%, #0ea5e9 100%)',
+            borderRadius: '10px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 12px rgba(0, 217, 255, 0.3)'
+          }}>
+            {/* Chart Bar Icon */}
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#0d1117"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="18" y1="20" x2="18" y2="10" />
+              <line x1="12" y1="20" x2="12" y2="4" />
+              <line x1="6" y1="20" x2="6" y2="14" />
+            </svg>
+          </div>
+          <h1 style={{ color: '#ffffff', fontSize: '24px', fontWeight: '700', margin: 0 }}>
+            Market Briefing
+          </h1>
+        </div>
+        <p style={{ color: '#8b949e', fontSize: '14px', margin: 0 }}>
           {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
         </p>
       </div>
@@ -2376,6 +2411,41 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
         colors={c}
       />
 
+      {/* Build My Thesis Button - Moved here after AI Summary */}
+      <div style={{ marginBottom: '20px' }}>
+        <button
+          onClick={onContinue}
+          style={{
+            width: '100%',
+            padding: '18px 24px',
+            background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+            border: 'none',
+            borderRadius: '12px',
+            color: '#ffffff',
+            fontSize: '16px',
+            fontWeight: '700',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+            boxShadow: '0 4px 16px rgba(34, 197, 94, 0.35)',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L9.19 8.63L2 9.24L7.46 13.97L5.82 21L12 17.27L18.18 21L16.54 13.97L22 9.24L14.81 8.63L12 2Z" />
+          </svg>
+          BUILD MY THESIS
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <path d="M5 12h14M12 5l7 7-7 7" />
+          </svg>
+        </button>
+        <p style={{ color: '#8b949e', fontSize: '12px', textAlign: 'center', marginTop: '8px' }}>
+          Get AI-powered portfolio recommendations
+        </p>
+      </div>
+
       {/* Top News Stories (replaces Sector Snapshot) */}
       <TopNewsStories
         news={marketNews}
@@ -2389,24 +2459,6 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
         isLoading={isLoadingMovers}
         colors={c}
       />
-
-      {/* Continue Button */}
-      <button
-        onClick={onContinue}
-        style={{
-          width: '100%',
-          padding: '16px',
-          background: `linear-gradient(135deg, ${c.cyan}, ${c.green})`,
-          border: 'none',
-          borderRadius: '12px',
-          color: '#000',
-          fontSize: '16px',
-          fontWeight: '700',
-          cursor: 'pointer',
-        }}
-      >
-        BUILD MY THESIS →
-      </button>
     </div>
   );
 };
