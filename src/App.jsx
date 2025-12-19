@@ -15113,24 +15113,32 @@ export default function PortfolioDuel() {
                     const totalAssets = portfolio.length + (selectedCrypto ? 1 : 0);
                     if (totalAssets === 0) return;
 
-                    // Calculate even percentage
-                    const evenPercentage = Math.floor((100 / totalAssets) * 100) / 100;
-                    let remainder = Math.round((100 - (evenPercentage * totalAssets)) * 100) / 100;
+                    // Use integer basis points (10000 = 100%) to avoid floating point issues
+                    const TOTAL_BASIS_POINTS = 10000;
+                    const basePointsPerAsset = Math.floor(TOTAL_BASIS_POINTS / totalAssets);
+                    const remainderPoints = TOTAL_BASIS_POINTS - (basePointsPerAsset * totalAssets);
 
                     // Update all stock assets with even distribution
                     setPortfolio(prev => prev.map((asset, index) => {
-                      const extra = index < Math.floor(remainder) ? 0.01 : 0;
+                      // First 'remainderPoints' assets each get +1 basis point (0.01%)
+                      const bonusPoint = index < remainderPoints ? 1 : 0;
+                      const totalPoints = basePointsPerAsset + bonusPoint;
+                      const percentage = totalPoints / 100; // Convert basis points to percentage
+
                       return {
                         ...asset,
-                        percentage: Math.round((evenPercentage + extra) * 100) / 100,
-                        amount: ((evenPercentage + extra) / 100) * 1000000
+                        percentage: percentage,
+                        amount: (percentage / 100) * 1000000
                       };
                     }));
 
                     // Update crypto percentage if selected
                     if (selectedCrypto) {
-                      const cryptoExtra = portfolio.length < Math.floor(remainder) ? 0.01 : 0;
-                      setCryptoPercentage(Math.round((evenPercentage + cryptoExtra) * 100) / 100);
+                      // Crypto gets its share - account for portfolio assets that got bonus points
+                      const cryptoIndex = portfolio.length; // Crypto comes after portfolio assets
+                      const cryptoBonusPoint = cryptoIndex < remainderPoints ? 1 : 0;
+                      const cryptoPoints = basePointsPerAsset + cryptoBonusPoint;
+                      setCryptoPercentage(cryptoPoints / 100);
                     }
                   }}
                   style={{
