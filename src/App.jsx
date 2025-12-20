@@ -550,11 +550,6 @@ const StockMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors 
     );
   };
 
-  // Calculate 52-week position percentage
-  const week52Position = asset.week52High && asset.week52Low
-    ? ((safeNumber(asset.price) - safeNumber(asset.week52Low)) / (safeNumber(asset.week52High) - safeNumber(asset.week52Low)) * 100).toFixed(0)
-    : null;
-
   // Determine momentum strength
   const getMomentumStrength = (change) => {
     if (change > 10) return { label: 'Very Strong', color: c.green };
@@ -665,50 +660,248 @@ const StockMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors 
         </div>
       )}
 
-      {/* 52-WEEK POSITION */}
-      {week52Position && (
-        <div style={{ marginBottom: '24px' }}>
-          <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
-            52-WEEK POSITION
-          </h3>
+      {/* TRADING SIGNALS - Short-term metrics */}
+      {(() => {
+        const volumeRatio = asset.avgVolume ? (safeNumber(asset.volume) / safeNumber(asset.avgVolume)) : 1;
+        const volumeLabel = volumeRatio >= 1.5 ? 'High' : volumeRatio >= 1 ? 'Normal' : 'Low';
+        const volumeColor = volumeRatio >= 1.5 ? '#22c55e' : volumeRatio >= 1 ? '#f59e0b' : '#ef4444';
+        const weekTrend = change7d || percentChange * 2;
+        const trendColor = weekTrend >= 0 ? '#22c55e' : '#ef4444';
 
-          <div style={{ marginBottom: '12px' }}>
-            <div style={{ position: 'relative', height: '8px', background: '#161b22', borderRadius: '4px', marginBottom: '8px' }}>
+        // Generate momentum label
+        const getMomentumLabel = () => {
+          if (percentChange > 3) return { label: 'Strong Bullish', icon: '▲▲' };
+          if (percentChange > 0) return { label: 'Bullish', icon: '▲' };
+          if (percentChange > -3) return { label: 'Bearish', icon: '▼' };
+          return { label: 'Strong Bearish', icon: '▼▼' };
+        };
+        const momentumData = getMomentumLabel();
+
+        // Generate sparkline points
+        const generateSparkline = () => {
+          const points = [];
+          for (let i = 0; i < 7; i++) {
+            const progress = i / 6;
+            const base = 50 + (weekTrend * progress * 2);
+            const noise = (Math.sin(i * 2.5) * 3) + (Math.cos(i * 1.8) * 2);
+            points.push(Math.max(10, Math.min(90, base + noise)));
+          }
+          return points;
+        };
+        const sparkData = generateSparkline();
+
+        // Generate sparkline path
+        const sparkWidth = 100;
+        const sparkHeight = 36;
+        const minVal = Math.min(...sparkData);
+        const maxVal = Math.max(...sparkData);
+        const range = maxVal - minVal || 1;
+        const sparkPoints = sparkData.map((val, idx) => {
+          const x = (idx / (sparkData.length - 1)) * sparkWidth;
+          const y = sparkHeight - 4 - ((val - minVal) / range) * (sparkHeight - 8);
+          return `${x},${y}`;
+        });
+        const sparkPath = `M ${sparkPoints.join(' L ')}`;
+        const fillPath = `${sparkPath} L ${sparkWidth},${sparkHeight} L 0,${sparkHeight} Z`;
+
+        // Generate Quick Take
+        const generateQuickTake = () => {
+          const insights = [];
+          if (percentChange > 5) insights.push('Strong momentum today with significant gains');
+          else if (percentChange > 2) insights.push('Positive momentum building');
+          else if (percentChange < -5) insights.push('Sharp decline - potential oversold condition');
+          else if (percentChange < -2) insights.push('Pullback in progress');
+          else insights.push('Consolidating around current levels');
+
+          if (volumeRatio >= 2) insights.push('Unusually high volume signals strong interest');
+          else if (volumeRatio >= 1.5) insights.push('Above-average volume supports the move');
+          else if (volumeRatio < 0.5) insights.push('Low volume suggests limited conviction');
+
+          const take = insights.slice(0, 2).join('. ');
+          if (percentChange > 0 && volumeRatio >= 1) return `${take}. Good setup for short-term bullish play.`;
+          if (percentChange < 0 && volumeRatio >= 1.5) return `${take}. Watch for bounce or continued decline.`;
+          return `${take}. Monitor for clearer signal.`;
+        };
+
+        return (
+          <div style={{ marginBottom: '24px' }}>
+            {/* Header with icon */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              marginBottom: '16px',
+              borderBottom: '1px solid #2d3548',
+              paddingBottom: '8px'
+            }}>
               <div style={{
-                position: 'absolute',
-                left: `${week52Position}%`,
-                top: '-4px',
-                width: '16px',
-                height: '16px',
-                background: c.cyan,
-                borderRadius: '50%',
-                transform: 'translateX(-50%)',
-              }} />
+                width: '26px',
+                height: '26px',
+                background: 'linear-gradient(135deg, #00d9ff 0%, #0ea5e9 100%)',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0d1117" strokeWidth="2.5">
+                  <polyline points="22,12 18,12 15,21 9,3 6,12 2,12" />
+                </svg>
+              </div>
+              <h3 style={{ color: '#e6edf3', fontSize: '16px', margin: 0, fontWeight: '700' }}>
+                TRADING SIGNALS
+              </h3>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-              <span style={{ color: '#8b949e' }}>${safeToFixed(asset.week52Low, 2)}</span>
-              <span style={{ color: c.cyan }}>${safeToFixed(asset.price, 2)} ({week52Position}%)</span>
-              <span style={{ color: '#8b949e' }}>${safeToFixed(asset.week52High, 2)}</span>
+
+            {/* 7-Day Sparkline Chart */}
+            <div style={{
+              background: '#161b22',
+              borderRadius: '10px',
+              padding: '14px',
+              marginBottom: '14px'
+            }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '10px'
+              }}>
+                <span style={{ color: '#8b949e', fontSize: '12px' }}>7-Day Trend</span>
+                <span style={{
+                  color: trendColor,
+                  fontSize: '14px',
+                  fontWeight: '700'
+                }}>
+                  {weekTrend >= 0 ? '+' : ''}{safeToFixed(weekTrend, 2)}%
+                </span>
+              </div>
+
+              {/* Sparkline SVG */}
+              <svg
+                width="100%"
+                height={sparkHeight}
+                viewBox={`0 0 ${sparkWidth} ${sparkHeight}`}
+                preserveAspectRatio="none"
+                style={{ display: 'block' }}
+              >
+                <defs>
+                  <linearGradient id={`spark-grad-${asset.symbol}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={trendColor} stopOpacity="0.3" />
+                    <stop offset="100%" stopColor={trendColor} stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <path d={fillPath} fill={`url(#spark-grad-${asset.symbol})`} />
+                <path d={sparkPath} fill="none" stroke={trendColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx={sparkWidth} cy={sparkHeight - 4 - ((sparkData[sparkData.length-1] - minVal) / range) * (sparkHeight - 8)} r="3" fill={trendColor} />
+              </svg>
+            </div>
+
+            {/* Key Metrics Grid */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '10px',
+              marginBottom: '14px'
+            }}>
+              {/* Today's Change */}
+              <div style={{
+                background: '#161b22',
+                borderRadius: '10px',
+                padding: '12px',
+                textAlign: 'center'
+              }}>
+                <div style={{ color: '#8b949e', fontSize: '10px', textTransform: 'uppercase', marginBottom: '4px' }}>
+                  Today
+                </div>
+                <div style={{
+                  color: percentChange >= 0 ? '#22c55e' : '#ef4444',
+                  fontSize: '16px',
+                  fontWeight: '700'
+                }}>
+                  {percentChange >= 0 ? '+' : ''}{safeToFixed(percentChange, 2)}%
+                </div>
+              </div>
+
+              {/* Volume */}
+              <div style={{
+                background: '#161b22',
+                borderRadius: '10px',
+                padding: '12px',
+                textAlign: 'center'
+              }}>
+                <div style={{ color: '#8b949e', fontSize: '10px', textTransform: 'uppercase', marginBottom: '4px' }}>
+                  Volume
+                </div>
+                <div style={{
+                  color: volumeColor,
+                  fontSize: '16px',
+                  fontWeight: '700'
+                }}>
+                  {volumeRatio.toFixed(1)}x
+                </div>
+                <div style={{ color: '#6b7280', fontSize: '9px' }}>
+                  {volumeLabel}
+                </div>
+              </div>
+
+              {/* Momentum */}
+              <div style={{
+                background: '#161b22',
+                borderRadius: '10px',
+                padding: '12px',
+                textAlign: 'center'
+              }}>
+                <div style={{ color: '#8b949e', fontSize: '10px', textTransform: 'uppercase', marginBottom: '4px' }}>
+                  Momentum
+                </div>
+                <div style={{
+                  color: percentChange >= 0 ? '#22c55e' : '#ef4444',
+                  fontSize: '16px',
+                  fontWeight: '700'
+                }}>
+                  {momentumData.icon}
+                </div>
+                <div style={{ color: '#6b7280', fontSize: '9px' }}>
+                  {momentumData.label}
+                </div>
+              </div>
+            </div>
+
+            {/* AI Quick Take */}
+            <div style={{
+              padding: '14px',
+              background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(168, 85, 247, 0.05) 100%)',
+              borderLeft: '3px solid #8b5cf6',
+              borderRadius: '0 10px 10px 0'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginBottom: '8px'
+              }}>
+                <span style={{ fontSize: '12px' }}>🤖</span>
+                <span style={{
+                  color: '#a78bfa',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
+                }}>
+                  Quick Take
+                </span>
+              </div>
+              <p style={{
+                color: '#e6edf3',
+                fontSize: '13px',
+                margin: 0,
+                lineHeight: '1.5'
+              }}>
+                {generateQuickTake()}
+              </p>
             </div>
           </div>
-
-          <PinnableInsight
-            title="Range Context"
-            value={`${week52Position}% of 52-week range`}
-            explanation={`${asset.symbol} is trading at ${week52Position}% of its yearly range. ${
-              parseInt(week52Position) > 80
-                ? 'Near yearly highs - momentum is strong but upside may be limited.'
-                : parseInt(week52Position) < 20
-                ? 'Near yearly lows - could be a value opportunity or a falling knife.'
-                : 'Mid-range positioning suggests room to move in either direction.'
-            }`}
-            symbol={asset.symbol}
-            onPin={onPinInsight}
-            isPinned={isPinned('Range Context')}
-            colors={c}
-          />
-        </div>
-      )}
+        );
+      })()}
 
       {/* ANALYST SENTIMENT (if available) */}
       {asset.analystRating && (

@@ -301,10 +301,10 @@ export function calculateThesisAlignment(asset, thesis) {
 }
 
 /**
- * Get top recommendations based on thesis - v2.0
- * Now limits crypto and enforces minimum score threshold
+ * Get top recommendations based on thesis - v3.0
+ * GUARANTEES: Exactly 8 stocks + exactly 2 crypto (defaults to BTC/ETH)
  */
-export function getRecommendations(allAssets, thesis, count = 8) {
+export function getRecommendations(allAssets, thesis, count = 10) {
   // Score all assets
   const scored = allAssets.map(asset => ({
     ...asset,
@@ -320,61 +320,100 @@ export function getRecommendations(allAssets, thesis, count = 8) {
   crypto.sort((a, b) => b.thesisScore.score - a.thesisScore.score);
 
   // ============================================
-  // APPLY FILTERS
+  // GUARANTEE 8 STOCKS
   // ============================================
 
-  // Filter 1: Minimum score threshold (55+ for good match)
-  const MIN_SCORE = 55;
-  const qualifiedStocks = stocks.filter(s => s.thesisScore.score >= MIN_SCORE);
-  const qualifiedCrypto = crypto.filter(c => c.thesisScore.score >= MIN_SCORE);
+  const TARGET_STOCKS = 8;
+  let selectedStocks = [];
 
-  // Filter 2: Prioritize sector matches if user selected sectors
-  let sectorPrioritizedStocks = qualifiedStocks;
+  // Prioritize sector matches if user selected sectors
   if (thesis.sectors && thesis.sectors.length > 0) {
-    const sectorMatches = qualifiedStocks.filter(s =>
+    // First: High-scoring sector matches
+    const sectorMatches = stocks.filter(s =>
+      s.thesisScore.score >= 50 &&
       thesis.sectors.some(sector =>
         s.thesisScore.sector?.toLowerCase().includes(sector.toLowerCase()) ||
         sector.toLowerCase().includes(s.thesisScore.sector?.toLowerCase() || '')
       )
     );
-    const otherStocks = qualifiedStocks.filter(s => !sectorMatches.includes(s));
-    sectorPrioritizedStocks = [...sectorMatches, ...otherStocks];
+    selectedStocks.push(...sectorMatches.slice(0, TARGET_STOCKS));
+
+    // If not enough, add other high-scoring stocks
+    if (selectedStocks.length < TARGET_STOCKS) {
+      const otherHighScoring = stocks.filter(s =>
+        !selectedStocks.includes(s) && s.thesisScore.score >= 40
+      );
+      selectedStocks.push(...otherHighScoring.slice(0, TARGET_STOCKS - selectedStocks.length));
+    }
+  } else {
+    // No sector preference - take top scoring stocks
+    const highScoring = stocks.filter(s => s.thesisScore.score >= 40);
+    selectedStocks.push(...highScoring.slice(0, TARGET_STOCKS));
   }
 
-  // ============================================
-  // BUILD FINAL RECOMMENDATIONS
-  // ============================================
-
-  // Take top 6 stocks (sector-prioritized)
-  const recommendedStocks = sectorPrioritizedStocks.slice(0, 6);
-
-  // Take max 2 crypto
-  const MAX_CRYPTO = 2;
-  const recommendedCrypto = qualifiedCrypto.slice(0, MAX_CRYPTO);
-
-  // Combine and sort by score
-  const recommendations = [...recommendedStocks, ...recommendedCrypto]
-    .sort((a, b) => b.thesisScore.score - a.thesisScore.score)
-    .slice(0, count);
-
-  // ============================================
-  // FALLBACK: If not enough qualified assets
-  // ============================================
-
-  if (recommendations.length < 4) {
-    // Lower threshold and try again
-    const FALLBACK_MIN_SCORE = 40;
-    const fallbackStocks = stocks
-      .filter(s => s.thesisScore.score >= FALLBACK_MIN_SCORE)
-      .slice(0, 6);
-    const fallbackCrypto = crypto
-      .filter(c => c.thesisScore.score >= FALLBACK_MIN_SCORE)
-      .slice(0, 2);
-
-    return [...fallbackStocks, ...fallbackCrypto]
-      .sort((a, b) => b.thesisScore.score - a.thesisScore.score)
-      .slice(0, count);
+  // FALLBACK: If still not 8 stocks, just take top performers regardless of score
+  if (selectedStocks.length < TARGET_STOCKS) {
+    const remaining = stocks.filter(s => !selectedStocks.includes(s));
+    selectedStocks.push(...remaining.slice(0, TARGET_STOCKS - selectedStocks.length));
   }
+
+  // Ensure exactly 8 stocks
+  selectedStocks = selectedStocks.slice(0, TARGET_STOCKS);
+
+  // ============================================
+  // GUARANTEE 2 CRYPTO (Default to BTC/ETH)
+  // ============================================
+
+  const TARGET_CRYPTO = 2;
+  let selectedCrypto = [];
+
+  // Try to find matching crypto with decent scores
+  const qualifiedCrypto = crypto.filter(c => c.thesisScore.score >= 40);
+
+  if (qualifiedCrypto.length >= TARGET_CRYPTO) {
+    // Use top 2 matching crypto
+    selectedCrypto = qualifiedCrypto.slice(0, TARGET_CRYPTO);
+  } else if (qualifiedCrypto.length === 1) {
+    // Use 1 matching + find BTC or ETH as backup
+    selectedCrypto.push(qualifiedCrypto[0]);
+
+    // Add BTC or ETH as second (whichever isn't already selected)
+    const defaultCrypto = crypto.find(c =>
+      (c.symbol === 'BTC' || c.symbol === 'ETH' || c.symbol === 'BTC-USD' || c.symbol === 'ETH-USD') &&
+      !selectedCrypto.some(sc => sc.symbol === c.symbol)
+    );
+    if (defaultCrypto) {
+      selectedCrypto.push(defaultCrypto);
+    } else {
+      // Just take next best crypto
+      const nextBest = crypto.find(c => !selectedCrypto.includes(c));
+      if (nextBest) selectedCrypto.push(nextBest);
+    }
+  } else {
+    // NO matching crypto - default to BTC and ETH
+    const btc = crypto.find(c => c.symbol === 'BTC' || c.symbol === 'BTC-USD');
+    const eth = crypto.find(c => c.symbol === 'ETH' || c.symbol === 'ETH-USD');
+
+    if (btc) selectedCrypto.push(btc);
+    if (eth && selectedCrypto.length < TARGET_CRYPTO) selectedCrypto.push(eth);
+
+    // If BTC/ETH not in list, take top 2 crypto anyway
+    if (selectedCrypto.length < TARGET_CRYPTO) {
+      const remaining = crypto.filter(c => !selectedCrypto.includes(c));
+      selectedCrypto.push(...remaining.slice(0, TARGET_CRYPTO - selectedCrypto.length));
+    }
+  }
+
+  // Ensure exactly 2 crypto
+  selectedCrypto = selectedCrypto.slice(0, TARGET_CRYPTO);
+
+  // ============================================
+  // COMBINE AND RETURN
+  // ============================================
+
+  // Sort combined list by score
+  const recommendations = [...selectedStocks, ...selectedCrypto]
+    .sort((a, b) => b.thesisScore.score - a.thesisScore.score);
 
   return recommendations;
 }
