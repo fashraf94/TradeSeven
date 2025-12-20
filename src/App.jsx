@@ -4815,7 +4815,7 @@ export default function PortfolioDuel() {
   // 1. ALL STATE DECLARATIONS
   // ============================================
   const [screen, setScreen] = useState('home');
-  const [historyTab, setHistoryTab] = useState('classic'); // 'classic' or 'draft'
+  const [historyTab, setHistoryTab] = useState('draft'); // 'classic' or 'draft'
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
   const [portfolioName, setPortfolioName] = useState('');
@@ -4883,7 +4883,7 @@ export default function PortfolioDuel() {
   // Game Mode state - Phase 1: Foundation
   // 'classic' = Builder 1v1 (existing gameplay)
   // 'draft' = Snake Draft 4P (new draft mode)
-  const [gameMode, setGameMode] = useState('classic');
+  const [gameMode, setGameMode] = useState('draft'); // Snake Draft is default
 
   // Draft Mode state - Phase 2
   const [currentDraft, setCurrentDraft] = useState(null);
@@ -11979,217 +11979,189 @@ export default function PortfolioDuel() {
                   Start drafting now!
                 </p>
 
+                {/* CSS Animations for Training Buttons */}
+                <style>{`
+                  @keyframes pulse-green {
+                    0%, 100% { transform: scale(1); opacity: 0.3; }
+                    50% { transform: scale(1.15); opacity: 0.1; }
+                  }
+                  @keyframes pulse-amber {
+                    0%, 100% { transform: scale(1); opacity: 0.3; }
+                    50% { transform: scale(1.15); opacity: 0.1; }
+                  }
+                  @keyframes rotate-arc {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                  }
+                `}</style>
+
                 {/* Circular Buttons Container */}
                 <div style={{
                   display: 'flex',
                   justifyContent: 'center',
                   gap: '32px'
                 }}>
-                  {/* Stocks Training Button */}
-                  {(() => {
-                    const [stocksPulse, setStocksPulse] = React.useState(1);
-                    const [stocksArc, setStocksArc] = React.useState(0);
-
-                    React.useEffect(() => {
-                      const pulseInterval = setInterval(() => {
-                        setStocksPulse(prev => prev === 1 ? 1.12 : 1);
-                      }, 1200);
-                      const arcInterval = setInterval(() => {
-                        setStocksArc(prev => (prev + 2) % 360);
-                      }, 30);
-                      return () => {
-                        clearInterval(pulseInterval);
-                        clearInterval(arcInterval);
-                      };
-                    }, []);
-
-                    return (
-                      <button
-                        onClick={() => {
-                          setPortfolio([]); setPortfolioType('stocks');
-                          setPortfolioName('');
-                          setAssetType('stocks');
-                          setSearchTerm('');
-                          setSelectedCrypto(null);
-                          setBuilderMode('training');
-                          setScreen('draftTraining');
-                        }}
+                  {/* Stocks Training Button - CSS Animation */}
+                  <button
+                    onClick={() => {
+                      setPortfolio([]); setPortfolioType('stocks');
+                      setPortfolioName('');
+                      setAssetType('stocks');
+                      setSearchTerm('');
+                      setSelectedCrypto(null);
+                      setBuilderMode('training');
+                      setScreen('draftTraining');
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px',
+                      transition: 'transform 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                    onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                  >
+                    <div style={{ position: 'relative', width: '80px', height: '80px' }}>
+                      {/* Pulsing Ring - CSS Animation */}
+                      <div
                         style={{
-                          background: 'transparent',
-                          border: 'none',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          gap: '8px',
-                          padding: '8px',
-                          transition: 'transform 0.2s ease'
+                          position: 'absolute',
+                          inset: '-6px',
+                          borderRadius: '50%',
+                          border: '3px solid #22c55e',
+                          animation: 'pulse-green 2s ease-in-out infinite'
                         }}
-                        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-                        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                      >
-                        <div style={{ position: 'relative', width: '80px', height: '80px' }}>
-                          {/* Pulsing Ring */}
-                          <div
-                            style={{
-                              position: 'absolute',
-                              inset: '-6px',
-                              borderRadius: '50%',
-                              border: '3px solid #22c55e',
-                              opacity: stocksPulse === 1 ? 0.3 : 0.1,
-                              transform: `scale(${stocksPulse})`,
-                              transition: 'all 1.2s ease-out'
-                            }}
-                          />
-                          {/* Main Circle */}
-                          <div style={{
-                            width: '80px',
-                            height: '80px',
-                            borderRadius: '50%',
-                            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.1) 100%)',
-                            border: '3px solid #22c55e',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: '0 0 20px rgba(34, 197, 94, 0.3)'
-                          }}>
-                            <span style={{ fontSize: '28px' }}>📈</span>
-                          </div>
-                          {/* Rotating Arc */}
-                          <svg
-                            style={{
-                              position: 'absolute',
-                              top: '-2px',
-                              left: '-2px',
-                              width: '84px',
-                              height: '84px',
-                              transform: `rotate(${stocksArc - 90}deg)`,
-                              pointerEvents: 'none'
-                            }}
-                          >
-                            <circle
-                              cx="42"
-                              cy="42"
-                              r="38"
-                              fill="none"
-                              stroke="#22c55e"
-                              strokeWidth="3"
-                              strokeDasharray="60 180"
-                              strokeLinecap="round"
-                              opacity="0.5"
-                            />
-                          </svg>
-                        </div>
-                        <span style={{ color: '#ffffff', fontSize: '13px', fontWeight: '700', letterSpacing: '0.5px' }}>
-                          STOCKS
-                        </span>
-                        <span style={{ color: '#8b949e', fontSize: '11px' }}>~5 min</span>
-                      </button>
-                    );
-                  })()}
-
-                  {/* Crypto Training Button */}
-                  {(() => {
-                    const [cryptoPulse, setCryptoPulse] = React.useState(1);
-                    const [cryptoArc, setCryptoArc] = React.useState(0);
-
-                    React.useEffect(() => {
-                      const pulseInterval = setInterval(() => {
-                        setCryptoPulse(prev => prev === 1 ? 1.12 : 1);
-                      }, 1200);
-                      const arcInterval = setInterval(() => {
-                        setCryptoArc(prev => (prev + 2) % 360);
-                      }, 30);
-                      return () => {
-                        clearInterval(pulseInterval);
-                        clearInterval(arcInterval);
-                      };
-                    }, []);
-
-                    return (
-                      <button
-                        onClick={() => {
-                          setPortfolio([]); setPortfolioType('crypto');
-                          setPortfolioName('');
-                          setAssetType('crypto');
-                          setSearchTerm('');
-                          setSelectedCrypto(null);
-                          setBuilderMode('training');
-                          setScreen('draftTraining');
-                        }}
+                      />
+                      {/* Main Circle */}
+                      <div style={{
+                        width: '80px',
+                        height: '80px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.1) 100%)',
+                        border: '3px solid #22c55e',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 0 20px rgba(34, 197, 94, 0.3)'
+                      }}>
+                        <span style={{ fontSize: '28px' }}>📈</span>
+                      </div>
+                      {/* Rotating Arc - CSS Animation */}
+                      <svg
                         style={{
-                          background: 'transparent',
-                          border: 'none',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          gap: '8px',
-                          padding: '8px',
-                          transition: 'transform 0.2s ease'
+                          position: 'absolute',
+                          top: '-2px',
+                          left: '-2px',
+                          width: '84px',
+                          height: '84px',
+                          animation: 'rotate-arc 3s linear infinite',
+                          pointerEvents: 'none'
                         }}
-                        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-                        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                       >
-                        <div style={{ position: 'relative', width: '80px', height: '80px' }}>
-                          {/* Pulsing Ring */}
-                          <div
-                            style={{
-                              position: 'absolute',
-                              inset: '-6px',
-                              borderRadius: '50%',
-                              border: '3px solid #f59e0b',
-                              opacity: cryptoPulse === 1 ? 0.3 : 0.1,
-                              transform: `scale(${cryptoPulse})`,
-                              transition: 'all 1.2s ease-out'
-                            }}
-                          />
-                          {/* Main Circle */}
-                          <div style={{
-                            width: '80px',
-                            height: '80px',
-                            borderRadius: '50%',
-                            background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(245, 158, 11, 0.1) 100%)',
-                            border: '3px solid #f59e0b',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: '0 0 20px rgba(245, 158, 11, 0.3)'
-                          }}>
-                            <span style={{ fontSize: '28px' }}>₿</span>
-                          </div>
-                          {/* Rotating Arc */}
-                          <svg
-                            style={{
-                              position: 'absolute',
-                              top: '-2px',
-                              left: '-2px',
-                              width: '84px',
-                              height: '84px',
-                              transform: `rotate(${cryptoArc - 90}deg)`,
-                              pointerEvents: 'none'
-                            }}
-                          >
-                            <circle
-                              cx="42"
-                              cy="42"
-                              r="38"
-                              fill="none"
-                              stroke="#f59e0b"
-                              strokeWidth="3"
-                              strokeDasharray="60 180"
-                              strokeLinecap="round"
-                              opacity="0.5"
-                            />
-                          </svg>
-                        </div>
-                        <span style={{ color: '#ffffff', fontSize: '13px', fontWeight: '700', letterSpacing: '0.5px' }}>
-                          CRYPTO
-                        </span>
-                        <span style={{ color: '#8b949e', fontSize: '11px' }}>~5 min</span>
-                      </button>
-                    );
-                  })()}
+                        <circle
+                          cx="42"
+                          cy="42"
+                          r="38"
+                          fill="none"
+                          stroke="#22c55e"
+                          strokeWidth="3"
+                          strokeDasharray="60 180"
+                          strokeLinecap="round"
+                          opacity="0.5"
+                        />
+                      </svg>
+                    </div>
+                    <span style={{ color: '#ffffff', fontSize: '13px', fontWeight: '700', letterSpacing: '0.5px' }}>
+                      STOCKS
+                    </span>
+                    <span style={{ color: '#8b949e', fontSize: '11px' }}>~5 min</span>
+                  </button>
+
+                  {/* Crypto Training Button - CSS Animation */}
+                  <button
+                    onClick={() => {
+                      setPortfolio([]); setPortfolioType('crypto');
+                      setPortfolioName('');
+                      setAssetType('crypto');
+                      setSearchTerm('');
+                      setSelectedCrypto(null);
+                      setBuilderMode('training');
+                      setScreen('draftTraining');
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px',
+                      transition: 'transform 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                    onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                  >
+                    <div style={{ position: 'relative', width: '80px', height: '80px' }}>
+                      {/* Pulsing Ring - CSS Animation */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          inset: '-6px',
+                          borderRadius: '50%',
+                          border: '3px solid #f59e0b',
+                          animation: 'pulse-amber 2s ease-in-out infinite'
+                        }}
+                      />
+                      {/* Main Circle */}
+                      <div style={{
+                        width: '80px',
+                        height: '80px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(245, 158, 11, 0.1) 100%)',
+                        border: '3px solid #f59e0b',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 0 20px rgba(245, 158, 11, 0.3)'
+                      }}>
+                        <span style={{ fontSize: '28px' }}>₿</span>
+                      </div>
+                      {/* Rotating Arc - CSS Animation */}
+                      <svg
+                        style={{
+                          position: 'absolute',
+                          top: '-2px',
+                          left: '-2px',
+                          width: '84px',
+                          height: '84px',
+                          animation: 'rotate-arc 3s linear infinite',
+                          pointerEvents: 'none'
+                        }}
+                      >
+                        <circle
+                          cx="42"
+                          cy="42"
+                          r="38"
+                          fill="none"
+                          stroke="#f59e0b"
+                          strokeWidth="3"
+                          strokeDasharray="60 180"
+                          strokeLinecap="round"
+                          opacity="0.5"
+                        />
+                      </svg>
+                    </div>
+                    <span style={{ color: '#ffffff', fontSize: '13px', fontWeight: '700', letterSpacing: '0.5px' }}>
+                      CRYPTO
+                    </span>
+                    <span style={{ color: '#8b949e', fontSize: '11px' }}>~5 min</span>
+                  </button>
                 </div>
 
                 {/* Helper Text */}
