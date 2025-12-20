@@ -11923,81 +11923,345 @@ export default function PortfolioDuel() {
               })()}
             </div>
 
-            {/* Training Mode Banner - Visible on all screens */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.4 }}
-              className="flex"
-              onClick={() => {
-                setPortfolio([]); setPortfolioType(null);
-                setPortfolioName('');
-                setAssetType('stocks');
-                setSearchTerm('');
-                setSelectedCrypto(null);
-                setBuilderMode('training');
-                // Route based on game mode
-                if (gameMode === 'draft') {
-                  setScreen('draftTraining');  // New screen for draft training
-                } else {
-                  setScreen('builder');        // Go directly to builder for classic
-                }
-              }}
-              style={{
-                background: gameMode === 'draft'
-                  ? 'rgba(16, 185, 129, 0.1)'
-                  : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                border: gameMode === 'draft' ? '1px solid rgba(16, 185, 129, 0.3)' : 'none',
-                borderRadius: '14px',
-                padding: '16px 24px',
-                alignItems: 'center',
-                gap: '16px',
-                cursor: 'pointer',
-                transition: 'all 0.3s',
-                marginTop: '12px',
-                marginBottom: '24px',
-                boxShadow: gameMode === 'draft' ? 'none' : '0 4px 12px rgba(139, 92, 246, 0.3)'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = gameMode === 'draft'
-                  ? '0 8px 30px rgba(16, 185, 129, 0.2)'
-                  : '0 8px 30px rgba(139, 92, 246, 0.4)';
-                if (gameMode === 'draft') {
-                  e.currentTarget.style.background = 'rgba(16, 185, 129, 0.2)';
-                  e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.5)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = gameMode === 'draft' ? 'none' : '0 4px 12px rgba(139, 92, 246, 0.3)';
-                if (gameMode === 'draft') {
-                  e.currentTarget.style.background = 'rgba(16, 185, 129, 0.1)';
-                  e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.3)';
-                }
-              }}
-            >
-              <Brain style={{ height: '28px', width: '28px', color: gameMode === 'draft' ? '#10b981' : '#ffffff' }} />
-              <div style={{ flex: 1 }}>
-                <span style={{
-                  fontSize: '16px',
-                  fontWeight: '700',
-                  color: gameMode === 'draft' ? '#10b981' : '#ffffff',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px'
+            {/* Training Mode Section - Different design for draft vs classic */}
+            {gameMode === 'draft' ? (
+              /* SNAKE DRAFT TRAINING SECTION - Redesigned with circular buttons */
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.4 }}
+                style={{
+                  background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(168, 85, 247, 0.05) 100%)',
+                  border: '2px solid rgba(139, 92, 246, 0.3)',
+                  borderRadius: '16px',
+                  padding: '20px',
+                  marginTop: '12px',
+                  marginBottom: '24px'
+                }}
+              >
+                {/* Header */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  marginBottom: '6px'
                 }}>
-                  {gameMode === 'draft' ? '🤖 Training Mode' : 'Training Mode'}
-                </span>
-                <span style={{
+                  <div style={{
+                    width: '28px',
+                    height: '28px',
+                    background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <span style={{ fontSize: '14px' }}>🎯</span>
+                  </div>
+                  <h3 style={{
+                    color: '#ffffff',
+                    fontSize: '16px',
+                    fontWeight: '700',
+                    margin: 0,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    Training Mode
+                  </h3>
+                </div>
+
+                {/* Subheader */}
+                <p style={{
+                  color: '#a78bfa',
                   fontSize: '14px',
-                  color: gameMode === 'draft' ? '#8b949e' : 'rgba(255, 255, 255, 0.85)',
-                  marginLeft: '12px'
+                  fontWeight: '600',
+                  margin: '0 0 20px 0'
                 }}>
-                  Practice your strategy
-                </span>
-              </div>
-              <ArrowRight style={{ height: '20px', width: '20px', color: gameMode === 'draft' ? '#10b981' : '#ffffff' }} />
-            </motion.div>
+                  Start drafting now!
+                </p>
+
+                {/* Circular Buttons Container */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  gap: '32px'
+                }}>
+                  {/* Stocks Training Button */}
+                  {(() => {
+                    const [stocksPulse, setStocksPulse] = React.useState(1);
+                    const [stocksArc, setStocksArc] = React.useState(0);
+
+                    React.useEffect(() => {
+                      const pulseInterval = setInterval(() => {
+                        setStocksPulse(prev => prev === 1 ? 1.12 : 1);
+                      }, 1200);
+                      const arcInterval = setInterval(() => {
+                        setStocksArc(prev => (prev + 2) % 360);
+                      }, 30);
+                      return () => {
+                        clearInterval(pulseInterval);
+                        clearInterval(arcInterval);
+                      };
+                    }, []);
+
+                    return (
+                      <button
+                        onClick={() => {
+                          setPortfolio([]); setPortfolioType('stocks');
+                          setPortfolioName('');
+                          setAssetType('stocks');
+                          setSearchTerm('');
+                          setSelectedCrypto(null);
+                          setBuilderMode('training');
+                          setScreen('draftTraining');
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '8px',
+                          transition: 'transform 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                      >
+                        <div style={{ position: 'relative', width: '80px', height: '80px' }}>
+                          {/* Pulsing Ring */}
+                          <div
+                            style={{
+                              position: 'absolute',
+                              inset: '-6px',
+                              borderRadius: '50%',
+                              border: '3px solid #22c55e',
+                              opacity: stocksPulse === 1 ? 0.3 : 0.1,
+                              transform: `scale(${stocksPulse})`,
+                              transition: 'all 1.2s ease-out'
+                            }}
+                          />
+                          {/* Main Circle */}
+                          <div style={{
+                            width: '80px',
+                            height: '80px',
+                            borderRadius: '50%',
+                            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.1) 100%)',
+                            border: '3px solid #22c55e',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 0 20px rgba(34, 197, 94, 0.3)'
+                          }}>
+                            <span style={{ fontSize: '28px' }}>📈</span>
+                          </div>
+                          {/* Rotating Arc */}
+                          <svg
+                            style={{
+                              position: 'absolute',
+                              top: '-2px',
+                              left: '-2px',
+                              width: '84px',
+                              height: '84px',
+                              transform: `rotate(${stocksArc - 90}deg)`,
+                              pointerEvents: 'none'
+                            }}
+                          >
+                            <circle
+                              cx="42"
+                              cy="42"
+                              r="38"
+                              fill="none"
+                              stroke="#22c55e"
+                              strokeWidth="3"
+                              strokeDasharray="60 180"
+                              strokeLinecap="round"
+                              opacity="0.5"
+                            />
+                          </svg>
+                        </div>
+                        <span style={{ color: '#ffffff', fontSize: '13px', fontWeight: '700', letterSpacing: '0.5px' }}>
+                          STOCKS
+                        </span>
+                        <span style={{ color: '#8b949e', fontSize: '11px' }}>~5 min</span>
+                      </button>
+                    );
+                  })()}
+
+                  {/* Crypto Training Button */}
+                  {(() => {
+                    const [cryptoPulse, setCryptoPulse] = React.useState(1);
+                    const [cryptoArc, setCryptoArc] = React.useState(0);
+
+                    React.useEffect(() => {
+                      const pulseInterval = setInterval(() => {
+                        setCryptoPulse(prev => prev === 1 ? 1.12 : 1);
+                      }, 1200);
+                      const arcInterval = setInterval(() => {
+                        setCryptoArc(prev => (prev + 2) % 360);
+                      }, 30);
+                      return () => {
+                        clearInterval(pulseInterval);
+                        clearInterval(arcInterval);
+                      };
+                    }, []);
+
+                    return (
+                      <button
+                        onClick={() => {
+                          setPortfolio([]); setPortfolioType('crypto');
+                          setPortfolioName('');
+                          setAssetType('crypto');
+                          setSearchTerm('');
+                          setSelectedCrypto(null);
+                          setBuilderMode('training');
+                          setScreen('draftTraining');
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '8px',
+                          transition: 'transform 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                      >
+                        <div style={{ position: 'relative', width: '80px', height: '80px' }}>
+                          {/* Pulsing Ring */}
+                          <div
+                            style={{
+                              position: 'absolute',
+                              inset: '-6px',
+                              borderRadius: '50%',
+                              border: '3px solid #f59e0b',
+                              opacity: cryptoPulse === 1 ? 0.3 : 0.1,
+                              transform: `scale(${cryptoPulse})`,
+                              transition: 'all 1.2s ease-out'
+                            }}
+                          />
+                          {/* Main Circle */}
+                          <div style={{
+                            width: '80px',
+                            height: '80px',
+                            borderRadius: '50%',
+                            background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(245, 158, 11, 0.1) 100%)',
+                            border: '3px solid #f59e0b',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 0 20px rgba(245, 158, 11, 0.3)'
+                          }}>
+                            <span style={{ fontSize: '28px' }}>₿</span>
+                          </div>
+                          {/* Rotating Arc */}
+                          <svg
+                            style={{
+                              position: 'absolute',
+                              top: '-2px',
+                              left: '-2px',
+                              width: '84px',
+                              height: '84px',
+                              transform: `rotate(${cryptoArc - 90}deg)`,
+                              pointerEvents: 'none'
+                            }}
+                          >
+                            <circle
+                              cx="42"
+                              cy="42"
+                              r="38"
+                              fill="none"
+                              stroke="#f59e0b"
+                              strokeWidth="3"
+                              strokeDasharray="60 180"
+                              strokeLinecap="round"
+                              opacity="0.5"
+                            />
+                          </svg>
+                        </div>
+                        <span style={{ color: '#ffffff', fontSize: '13px', fontWeight: '700', letterSpacing: '0.5px' }}>
+                          CRYPTO
+                        </span>
+                        <span style={{ color: '#8b949e', fontSize: '11px' }}>~5 min</span>
+                      </button>
+                    );
+                  })()}
+                </div>
+
+                {/* Helper Text */}
+                <p style={{
+                  color: '#8b949e',
+                  fontSize: '11px',
+                  textAlign: 'center',
+                  margin: '16px 0 0 0'
+                }}>
+                  Practice against CPU opponents - No pressure, just learning
+                </p>
+              </motion.div>
+            ) : (
+              /* Classic Mode Training Banner - Unchanged */
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.4 }}
+                className="flex"
+                onClick={() => {
+                  setPortfolio([]); setPortfolioType(null);
+                  setPortfolioName('');
+                  setAssetType('stocks');
+                  setSearchTerm('');
+                  setSelectedCrypto(null);
+                  setBuilderMode('training');
+                  setScreen('builder');
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                  border: 'none',
+                  borderRadius: '14px',
+                  padding: '16px 24px',
+                  alignItems: 'center',
+                  gap: '16px',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s',
+                  marginTop: '12px',
+                  marginBottom: '24px',
+                  boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 8px 30px rgba(139, 92, 246, 0.4)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(139, 92, 246, 0.3)';
+                }}
+              >
+                <Brain style={{ height: '28px', width: '28px', color: '#ffffff' }} />
+                <div style={{ flex: 1 }}>
+                  <span style={{
+                    fontSize: '16px',
+                    fontWeight: '700',
+                    color: '#ffffff',
+                    textTransform: 'uppercase',
+                    letterSpacing: '1px'
+                  }}>
+                    Training Mode
+                  </span>
+                  <span style={{
+                    fontSize: '14px',
+                    color: 'rgba(255, 255, 255, 0.85)',
+                    marginLeft: '12px'
+                  }}>
+                    Practice your strategy
+                  </span>
+                </div>
+                <ArrowRight style={{ height: '20px', width: '20px', color: '#ffffff' }} />
+              </motion.div>
+            )}
 
             {/* Research Mode Banner */}
             <motion.div
