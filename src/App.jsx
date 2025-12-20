@@ -2753,14 +2753,42 @@ const AssetExplorer = ({
         <span style={{ color: '#8b949e', fontSize: '14px' }}>Step 3 of 5</span>
       </div>
 
-      <h2 style={{ color: '#e6edf3', fontSize: '20px', marginBottom: '4px' }}>
-        🔍 Explore Assets
-      </h2>
+      {/* Header with polished icon */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        marginBottom: '8px'
+      }}>
+        <div style={{
+          width: '36px',
+          height: '36px',
+          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+          borderRadius: '10px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)'
+        }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0d1117" strokeWidth="2.5">
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
+        </div>
+        <h2 style={{
+          color: '#e6edf3',
+          fontSize: '20px',
+          fontWeight: '700',
+          margin: 0
+        }}>
+          Explore Assets
+        </h2>
+      </div>
       <p style={{ color: c.cyan, fontSize: '13px', marginBottom: '20px' }}>
         {thesisSummary}
       </p>
 
-      {/* View Toggle */}
+      {/* View Toggle - Polished tabs */}
       <div style={{
         display: 'flex',
         gap: '8px',
@@ -2770,33 +2798,74 @@ const AssetExplorer = ({
           onClick={() => setViewMode('recommended')}
           style={{
             flex: 1,
-            padding: '10px',
+            padding: '12px 16px',
             background: viewMode === 'recommended' ? c.cyan : '#1a1f2e',
-            border: 'none',
-            borderRadius: '8px',
-            color: viewMode === 'recommended' ? '#000' : '#8b949e',
+            border: viewMode === 'recommended' ? 'none' : '1px solid #21262d',
+            borderRadius: '10px',
+            color: viewMode === 'recommended' ? '#0d1117' : '#8b949e',
             fontSize: '13px',
             fontWeight: '600',
             cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            transition: 'all 0.2s'
           }}
         >
-          🎯 Recommended ({recommendations.length})
+          <div style={{
+            width: '20px',
+            height: '20px',
+            background: viewMode === 'recommended' ? '#0d1117' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="9" stroke={viewMode === 'recommended' ? c.cyan : '#ffffff'} strokeWidth="2" fill="none"/>
+              <circle cx="12" cy="12" r="5" stroke={viewMode === 'recommended' ? c.cyan : '#ffffff'} strokeWidth="2" fill="none"/>
+              <circle cx="12" cy="12" r="1.5" fill={viewMode === 'recommended' ? c.cyan : '#ffffff'}/>
+            </svg>
+          </div>
+          Recommended ({recommendations.length})
         </button>
         <button
           onClick={() => setViewMode('all')}
           style={{
             flex: 1,
-            padding: '10px',
+            padding: '12px 16px',
             background: viewMode === 'all' ? c.cyan : '#1a1f2e',
-            border: 'none',
-            borderRadius: '8px',
-            color: viewMode === 'all' ? '#000' : '#8b949e',
+            border: viewMode === 'all' ? 'none' : '1px solid #21262d',
+            borderRadius: '10px',
+            color: viewMode === 'all' ? '#0d1117' : '#8b949e',
             fontSize: '13px',
             fontWeight: '600',
             cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            transition: 'all 0.2s'
           }}
         >
-          📊 All Assets ({allAssets.length})
+          <div style={{
+            width: '20px',
+            height: '20px',
+            background: viewMode === 'all' ? '#0d1117' : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+            borderRadius: '4px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill={viewMode === 'all' ? c.cyan : '#ffffff'}>
+              <rect x="3" y="3" width="7" height="7" rx="1"/>
+              <rect x="14" y="3" width="7" height="7" rx="1"/>
+              <rect x="3" y="14" width="7" height="7" rx="1"/>
+              <rect x="14" y="14" width="7" height="7" rx="1"/>
+            </svg>
+          </div>
+          All Assets ({allAssets.length})
         </button>
       </div>
 
@@ -2889,27 +2958,62 @@ const AssetExplorer = ({
                 }}>
                   {asset.enhancedExplanation || asset.genericExplanation || 'Matches your thesis criteria.'}
                 </p>
-                {asset.thesisScore && (
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    marginTop: '8px',
-                  }}>
-                    <span style={{
-                      color: asset.thesisScore.alignment === 'strong' ? c.green
-                           : asset.thesisScore.alignment === 'moderate' ? '#f59e0b'
-                           : '#8b949e',
-                      fontSize: '12px',
-                      fontWeight: '600',
+                {asset.thesisScore && (() => {
+                  const alignment = asset.thesisScore.alignment;
+                  const score = asset.thesisScore.score;
+                  const badgeColors = alignment === 'strong'
+                    ? { bg: 'rgba(34, 197, 94, 0.15)', text: '#22c55e', border: '#22c55e' }
+                    : alignment === 'good'
+                    ? { bg: 'rgba(0, 217, 255, 0.15)', text: '#00d9ff', border: '#00d9ff' }
+                    : alignment === 'moderate'
+                    ? { bg: 'rgba(245, 158, 11, 0.15)', text: '#f59e0b', border: '#f59e0b' }
+                    : { bg: 'rgba(107, 114, 128, 0.15)', text: '#6b7280', border: '#6b7280' };
+
+                  return (
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '5px 10px',
+                      background: badgeColors.bg,
+                      border: `1px solid ${badgeColors.border}30`,
+                      borderRadius: '6px',
+                      marginTop: '10px'
                     }}>
-                      {asset.thesisScore.alignment?.toUpperCase()} MATCH
-                    </span>
-                    <span style={{ color: '#6e7681', fontSize: '12px' }}>
-                      Score: {asset.thesisScore.score}/100
-                    </span>
-                  </div>
-                )}
+                      {/* Star rating */}
+                      <div style={{ display: 'flex', gap: '2px' }}>
+                        {[1, 2, 3].map(i => (
+                          <svg
+                            key={i}
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill={score >= (i * 30) ? badgeColors.text : 'transparent'}
+                            stroke={badgeColors.text}
+                            strokeWidth="2"
+                          >
+                            <polygon points="12,2 15,9 22,9 17,14 19,21 12,17 5,21 7,14 2,9 9,9" />
+                          </svg>
+                        ))}
+                      </div>
+                      <span style={{
+                        color: badgeColors.text,
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        textTransform: 'uppercase'
+                      }}>
+                        {alignment} MATCH
+                      </span>
+                      <span style={{
+                        color: badgeColors.text,
+                        fontSize: '11px',
+                        opacity: 0.7
+                      }}>
+                        {score}/100
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
