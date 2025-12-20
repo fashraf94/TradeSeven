@@ -566,48 +566,143 @@ const StockMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors 
 
   return (
     <div>
-      {/* MOMENTUM SECTION */}
+      {/* AI ANALYSIS SECTION */}
       <div style={{ marginBottom: '24px' }}>
-        <h3 style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '16px', borderBottom: '1px solid #2d3548', paddingBottom: '8px' }}>
-          PRICE MOMENTUM
+        <h3 style={{
+          color: '#e6edf3',
+          fontSize: '16px',
+          marginBottom: '16px',
+          borderBottom: '1px solid #2d3548',
+          paddingBottom: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={c.cyan} strokeWidth="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+          AI ANALYSIS
         </h3>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-          <div style={{ textAlign: 'center', padding: '12px', background: '#161b22', borderRadius: '8px' }}>
-            <div style={{ color: '#8b949e', fontSize: '12px' }}>Today</div>
-            <div style={{ color: percentChange >= 0 ? c.green : c.red, fontSize: '18px', fontWeight: '600' }}>
-              {percentChange >= 0 ? '+' : ''}{safeToFixed(percentChange, 2)}%
-            </div>
-          </div>
-          <div style={{ textAlign: 'center', padding: '12px', background: '#161b22', borderRadius: '8px' }}>
-            <div style={{ color: '#8b949e', fontSize: '12px' }}>7 Days</div>
-            <div style={{ color: change7d >= 0 ? c.green : c.red, fontSize: '18px', fontWeight: '600' }}>
-              {change7d >= 0 ? '+' : ''}{safeToFixed(change7d, 2)}%
-            </div>
-          </div>
-          <div style={{ textAlign: 'center', padding: '12px', background: '#161b22', borderRadius: '8px' }}>
-            <div style={{ color: '#8b949e', fontSize: '12px' }}>30 Days</div>
-            <div style={{ color: change30d >= 0 ? c.green : c.red, fontSize: '18px', fontWeight: '600' }}>
-              {change30d >= 0 ? '+' : ''}{safeToFixed(change30d, 2)}%
-            </div>
-          </div>
-        </div>
+        {(() => {
+          // Generate AI insight based on multiple factors
+          const isCrypto = asset.category !== undefined;
+          const trendStrength = Math.abs(change7d) > 5 ? 'strong' : Math.abs(change7d) > 2 ? 'moderate' : 'mild';
+          const direction = change7d >= 0 ? 'upward' : 'downward';
+          const consistency = (change7d >= 0 && change30d >= 0) || (change7d < 0 && change30d < 0);
+          const beta = safeNumber(asset.beta);
+          const volatility = beta > 1.3 ? 'high' : beta < 0.8 ? 'low' : 'moderate';
 
-        <PinnableInsight
-          title="Momentum Read"
-          value={momentum.label}
-          explanation={`${asset.symbol} ${change7d >= 0 ? 'has gained' : 'has lost'} ${Math.abs(change7d).toFixed(1)}% over the past week. ${
-            change7d > 5
-              ? 'Strong momentum often continues short-term, but extended rallies can reverse quickly.'
-              : change7d < -5
-              ? 'Negative momentum may continue, but oversold conditions can lead to bounces.'
-              : 'Moderate movement suggests the stock is in a consolidation phase.'
-          }`}
-          symbol={asset.symbol}
-          onPin={onPinInsight}
-          isPinned={isPinned('Momentum Read')}
-          colors={c}
-        />
+          // Build thesis alignment insight
+          const thesisMatch = thesis?.stance === 'bullish' && change7d > 0
+            ? 'aligns well with your bullish thesis'
+            : thesis?.stance === 'bearish' && change7d < 0
+            ? 'supports your bearish outlook'
+            : thesis?.stance === 'bullish' && change7d < 0
+            ? 'may need patience given your bullish view'
+            : 'fits a balanced strategy';
+
+          // Generate the summary
+          const summary = isCrypto
+            ? `${asset.symbol} shows ${trendStrength} ${direction} momentum with ${Math.abs(change7d).toFixed(1)}% weekly change. ${
+                consistency ? 'Trend consistency over 30 days adds conviction.' : 'Mixed signals suggest cautious positioning.'
+              } ${asset.symbol === 'BTC' || asset.symbol === 'ETH' ? 'As a major crypto asset, it provides relative stability vs altcoins.' : 'As an altcoin, expect higher volatility.'}`
+            : `${asset.symbol} is showing ${trendStrength} ${direction} momentum (${change7d >= 0 ? '+' : ''}${change7d.toFixed(1)}% weekly). ${
+                volatility === 'high' ? 'Higher beta suggests amplified moves in either direction.' : volatility === 'low' ? 'Defensive characteristics may limit upside but protect during downturns.' : 'Market-correlated behavior expected.'
+              } ${consistency ? 'Consistent trend direction adds technical confidence.' : 'Recent reversal warrants attention.'}`;
+
+          const verdict = percentChange > 3 ? { label: 'Strong Buy Signal', color: c.green, icon: '▲▲' }
+            : percentChange > 0.5 ? { label: 'Bullish Lean', color: c.green, icon: '▲' }
+            : percentChange < -3 ? { label: 'Caution Advised', color: c.red, icon: '▼▼' }
+            : percentChange < -0.5 ? { label: 'Bearish Lean', color: c.red, icon: '▼' }
+            : { label: 'Neutral / Consolidating', color: '#f59e0b', icon: '◆' };
+
+          return (
+            <div style={{
+              background: 'linear-gradient(135deg, #161b22 0%, #1a1f2e 100%)',
+              borderRadius: '12px',
+              padding: '16px',
+              border: `1px solid ${c.cyan}30`,
+            }}>
+              {/* Verdict Badge */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginBottom: '12px',
+              }}>
+                <span style={{
+                  fontSize: '16px',
+                  color: verdict.color,
+                }}>{verdict.icon}</span>
+                <span style={{
+                  color: verdict.color,
+                  fontSize: '14px',
+                  fontWeight: '600',
+                }}>{verdict.label}</span>
+                <span style={{
+                  marginLeft: 'auto',
+                  color: '#6e7681',
+                  fontSize: '12px',
+                }}>Today: {percentChange >= 0 ? '+' : ''}{safeToFixed(percentChange, 2)}%</span>
+              </div>
+
+              {/* AI Summary */}
+              <p style={{
+                color: '#c9d1d9',
+                fontSize: '14px',
+                lineHeight: '1.6',
+                marginBottom: '12px',
+              }}>
+                {summary}
+              </p>
+
+              {/* Quick Stats Row */}
+              <div style={{
+                display: 'flex',
+                gap: '16px',
+                paddingTop: '12px',
+                borderTop: '1px solid #2d3548',
+              }}>
+                <div>
+                  <span style={{ color: '#6e7681', fontSize: '11px' }}>7D</span>
+                  <span style={{
+                    color: change7d >= 0 ? c.green : c.red,
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    marginLeft: '6px'
+                  }}>
+                    {change7d >= 0 ? '+' : ''}{safeToFixed(change7d, 1)}%
+                  </span>
+                </div>
+                <div>
+                  <span style={{ color: '#6e7681', fontSize: '11px' }}>30D</span>
+                  <span style={{
+                    color: change30d >= 0 ? c.green : c.red,
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    marginLeft: '6px'
+                  }}>
+                    {change30d >= 0 ? '+' : ''}{safeToFixed(change30d, 1)}%
+                  </span>
+                </div>
+                <div style={{ marginLeft: 'auto' }}>
+                  <span style={{ color: '#6e7681', fontSize: '11px' }}>Thesis:</span>
+                  <span style={{
+                    color: c.cyan,
+                    fontSize: '12px',
+                    marginLeft: '6px',
+                    textTransform: 'capitalize'
+                  }}>
+                    {thesisMatch.split(' ').slice(0, 3).join(' ')}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* VOLATILITY SECTION */}
@@ -3303,42 +3398,174 @@ const AssetDetailView = ({ asset, thesis, pinnedInsights, onPin, onBack, colors 
         </button>
       </div>
 
-      {/* Asset Header */}
+      {/* Animated Background Keyframes */}
+      <style>{`
+        @keyframes ticker-gradient-shift {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        @keyframes ticker-glow-pulse {
+          0%, 100% { opacity: 0.3; transform: scale(1); }
+          50% { opacity: 0.5; transform: scale(1.05); }
+        }
+        @keyframes ticker-particle-float {
+          0% { transform: translateY(0px) rotate(0deg); opacity: 0.4; }
+          50% { transform: translateY(-10px) rotate(180deg); opacity: 0.7; }
+          100% { transform: translateY(0px) rotate(360deg); opacity: 0.4; }
+        }
+      `}</style>
+
+      {/* Asset Header with Animated Background */}
       <div style={{
+        position: 'relative',
         textAlign: 'center',
         marginBottom: '24px',
-        padding: '20px',
-        background: '#1a1f2e',
+        padding: '24px 20px',
         borderRadius: '16px',
-        border: '1px solid #2d3548',
+        border: `1px solid ${c.cyan}30`,
+        overflow: 'hidden',
       }}>
-        <h1 style={{ color: '#e6edf3', fontSize: '32px', marginBottom: '4px' }}>
-          {asset.symbol}
-        </h1>
-        <p style={{ color: '#8b949e', fontSize: '14px', marginBottom: '12px' }}>
-          {asset.name}
-        </p>
+        {/* Animated gradient background */}
         <div style={{
-          display: 'inline-block',
-          padding: '4px 12px',
-          background: '#161b22',
-          borderRadius: '16px',
-          color: c.cyan,
-          fontSize: '12px',
-        }}>
-          {isCrypto ? `🔷 ${asset.category}` : `💼 ${asset.sector}`}
-        </div>
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: `linear-gradient(135deg,
+            ${safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red}15 0%,
+            #1a1f2e 25%,
+            #161b22 50%,
+            #1a1f2e 75%,
+            ${c.cyan}15 100%)`,
+          backgroundSize: '200% 200%',
+          animation: 'ticker-gradient-shift 8s ease infinite',
+        }} />
 
-        <div style={{ marginTop: '16px' }}>
-          <div style={{ color: '#e6edf3', fontSize: '28px', fontWeight: '700' }}>
-            ${safeToFixed(asset.price, 2)}
-          </div>
-          <div style={{
-            color: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red,
-            fontSize: '18px',
-            marginTop: '4px',
+        {/* Floating particles effect */}
+        <div style={{
+          position: 'absolute',
+          top: '10%',
+          left: '10%',
+          width: '8px',
+          height: '8px',
+          borderRadius: '50%',
+          background: c.cyan,
+          opacity: 0.4,
+          animation: 'ticker-particle-float 4s ease-in-out infinite',
+        }} />
+        <div style={{
+          position: 'absolute',
+          top: '20%',
+          right: '15%',
+          width: '6px',
+          height: '6px',
+          borderRadius: '50%',
+          background: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red,
+          opacity: 0.5,
+          animation: 'ticker-particle-float 5s ease-in-out infinite 1s',
+        }} />
+        <div style={{
+          position: 'absolute',
+          bottom: '25%',
+          left: '20%',
+          width: '5px',
+          height: '5px',
+          borderRadius: '50%',
+          background: c.cyan,
+          opacity: 0.3,
+          animation: 'ticker-particle-float 6s ease-in-out infinite 2s',
+        }} />
+        <div style={{
+          position: 'absolute',
+          bottom: '15%',
+          right: '25%',
+          width: '7px',
+          height: '7px',
+          borderRadius: '50%',
+          background: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red,
+          opacity: 0.4,
+          animation: 'ticker-particle-float 4.5s ease-in-out infinite 0.5s',
+        }} />
+
+        {/* Corner glow effect */}
+        <div style={{
+          position: 'absolute',
+          top: '-20%',
+          right: '-10%',
+          width: '150px',
+          height: '150px',
+          borderRadius: '50%',
+          background: `radial-gradient(circle, ${safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red}30 0%, transparent 70%)`,
+          animation: 'ticker-glow-pulse 4s ease-in-out infinite',
+        }} />
+
+        {/* Content (z-indexed above background) */}
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <h1 style={{
+            color: '#e6edf3',
+            fontSize: '32px',
+            marginBottom: '4px',
+            textShadow: '0 2px 8px rgba(0,0,0,0.3)'
           }}>
-            {safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? '▲' : '▼'} {Math.abs(safeNumber(asset.percentChange || asset.change24h, 0)).toFixed(2)}% today
+            {asset.symbol}
+          </h1>
+          <p style={{ color: '#8b949e', fontSize: '14px', marginBottom: '12px' }}>
+            {asset.name}
+          </p>
+          <div style={{
+            display: 'inline-block',
+            padding: '4px 12px',
+            background: 'rgba(22, 27, 34, 0.8)',
+            backdropFilter: 'blur(4px)',
+            borderRadius: '16px',
+            color: c.cyan,
+            fontSize: '12px',
+            border: `1px solid ${c.cyan}30`,
+          }}>
+            {isCrypto ? (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill={c.cyan}>
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+                {asset.category}
+              </span>
+            ) : (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={c.cyan} strokeWidth="2">
+                  <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+                  <path d="M16 3v4M8 3v4"/>
+                </svg>
+                {asset.sector}
+              </span>
+            )}
+          </div>
+
+          <div style={{ marginTop: '16px' }}>
+            <div style={{
+              color: '#e6edf3',
+              fontSize: '32px',
+              fontWeight: '700',
+              textShadow: `0 0 20px ${safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red}40`
+            }}>
+              ${safeToFixed(asset.price, 2)}
+            </div>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              marginTop: '8px',
+              padding: '6px 14px',
+              background: `${safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red}20`,
+              borderRadius: '20px',
+              color: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red,
+              fontSize: '16px',
+              fontWeight: '600',
+            }}>
+              {safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? '▲' : '▼'}
+              {Math.abs(safeNumber(asset.percentChange || asset.change24h, 0)).toFixed(2)}% today
+            </div>
           </div>
         </div>
       </div>
@@ -3414,7 +3641,8 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
     const allAssets = [...(stocksData || []), ...(cryptoData || [])];
 
     // Get instant recommendations using recommendation engine
-    const recs = getRecommendations(allAssets, completedThesis, 8);
+    // Request 10 to get 8 stocks + 2 crypto (guaranteed BTC/ETH)
+    const recs = getRecommendations(allAssets, completedThesis, 10);
     const withGenericExplanations = recs.map(rec => ({
       ...rec,
       genericExplanation: generateGenericExplanation(rec, completedThesis),
