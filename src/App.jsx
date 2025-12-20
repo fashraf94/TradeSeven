@@ -11017,22 +11017,7 @@ export default function PortfolioDuel() {
               justifyContent: 'center',
               gap: '8px'
             }}>
-              <button
-                onClick={() => setGameMode('classic')}
-                style={{
-                  padding: '10px 20px',
-                  borderRadius: '10px',
-                  border: gameMode === 'classic' ? '2px solid #00d9ff' : '2px solid #21262d',
-                  background: gameMode === 'classic' ? 'rgba(0, 217, 255, 0.1)' : 'transparent',
-                  color: gameMode === 'classic' ? '#00d9ff' : '#8b949e',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-              >
-                ⚔️ Builder 1v1
-              </button>
+              {/* Snake Draft 4P - LEFT (default) */}
               <button
                 onClick={() => setGameMode('draft')}
                 style={{
@@ -11048,6 +11033,23 @@ export default function PortfolioDuel() {
                 }}
               >
                 🐍 Snake Draft 4P
+              </button>
+              {/* Builder 1v1 - RIGHT */}
+              <button
+                onClick={() => setGameMode('classic')}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '10px',
+                  border: gameMode === 'classic' ? '2px solid #00d9ff' : '2px solid #21262d',
+                  background: gameMode === 'classic' ? 'rgba(0, 217, 255, 0.1)' : 'transparent',
+                  color: gameMode === 'classic' ? '#00d9ff' : '#8b949e',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                ⚔️ Builder 1v1
               </button>
             </div>
           </div>
@@ -11981,13 +11983,13 @@ export default function PortfolioDuel() {
 
                 {/* CSS Animations for Training Buttons */}
                 <style>{`
-                  @keyframes pulse-green {
-                    0%, 100% { transform: scale(1); opacity: 0.3; }
-                    50% { transform: scale(1.15); opacity: 0.1; }
+                  @keyframes pulse-glow {
+                    0%, 100% { opacity: 0.5; transform: scale(1); }
+                    50% { opacity: 0.8; transform: scale(1.08); }
                   }
-                  @keyframes pulse-amber {
-                    0%, 100% { transform: scale(1); opacity: 0.3; }
-                    50% { transform: scale(1.15); opacity: 0.1; }
+                  @keyframes pulse-ring {
+                    0%, 100% { transform: scale(1); opacity: 0.5; }
+                    50% { transform: scale(1.12); opacity: 0.2; }
                   }
                   @keyframes rotate-arc {
                     from { transform: rotate(0deg); }
@@ -11999,9 +12001,9 @@ export default function PortfolioDuel() {
                 <div style={{
                   display: 'flex',
                   justifyContent: 'center',
-                  gap: '32px'
+                  gap: '40px'
                 }}>
-                  {/* Stocks Training Button - CSS Animation */}
+                  {/* Stocks Training Button - Polished */}
                   <button
                     onClick={() => {
                       setPortfolio([]); setPortfolioType('stocks');
@@ -12019,70 +12021,107 @@ export default function PortfolioDuel() {
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      gap: '8px',
+                      gap: '10px',
                       padding: '8px',
                       transition: 'transform 0.2s ease'
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                    onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.08)'}
                     onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                   >
-                    <div style={{ position: 'relative', width: '80px', height: '80px' }}>
-                      {/* Pulsing Ring - CSS Animation */}
-                      <div
-                        style={{
-                          position: 'absolute',
-                          inset: '-6px',
-                          borderRadius: '50%',
-                          border: '3px solid #22c55e',
-                          animation: 'pulse-green 2s ease-in-out infinite'
-                        }}
-                      />
-                      {/* Main Circle */}
+                    <div style={{ position: 'relative', width: '90px', height: '90px' }}>
+                      {/* Outer glow */}
                       <div style={{
-                        width: '80px',
-                        height: '80px',
+                        position: 'absolute',
+                        inset: '-12px',
                         borderRadius: '50%',
-                        background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.1) 100%)',
-                        border: '3px solid #22c55e',
+                        background: 'radial-gradient(circle, rgba(34, 197, 94, 0.4) 0%, transparent 70%)',
+                        animation: 'pulse-glow 2s ease-in-out infinite'
+                      }} />
+                      {/* Pulsing ring */}
+                      <div style={{
+                        position: 'absolute',
+                        inset: '-4px',
+                        borderRadius: '50%',
+                        border: '2px solid #22c55e',
+                        animation: 'pulse-ring 2s ease-in-out infinite'
+                      }} />
+                      {/* Main circle with gradient */}
+                      <div style={{
+                        width: '90px',
+                        height: '90px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        boxShadow: '0 0 20px rgba(34, 197, 94, 0.3)'
+                        boxShadow: '0 4px 24px rgba(34, 197, 94, 0.5), inset 0 2px 10px rgba(255,255,255,0.2)',
+                        position: 'relative',
+                        overflow: 'hidden'
                       }}>
-                        <span style={{ fontSize: '28px' }}>📈</span>
-                      </div>
-                      {/* Rotating Arc - CSS Animation */}
-                      <svg
-                        style={{
+                        {/* Shine overlay */}
+                        <div style={{
                           position: 'absolute',
-                          top: '-2px',
-                          left: '-2px',
-                          width: '84px',
-                          height: '84px',
-                          animation: 'rotate-arc 3s linear infinite',
-                          pointerEvents: 'none'
-                        }}
-                      >
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: '50%',
+                          background: 'linear-gradient(180deg, rgba(255,255,255,0.25) 0%, transparent 100%)',
+                          borderRadius: '50% 50% 0 0'
+                        }} />
+                        {/* Trending Up Chart SVG Icon */}
+                        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" style={{ position: 'relative', zIndex: 1 }}>
+                          <path
+                            d="M3 17L9 11L13 15L21 7"
+                            stroke="#ffffff"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <path
+                            d="M15 7H21V13"
+                            stroke="#ffffff"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </div>
+                      {/* Rotating arc */}
+                      <svg style={{
+                        position: 'absolute',
+                        top: '-6px',
+                        left: '-6px',
+                        width: '102px',
+                        height: '102px',
+                        animation: 'rotate-arc 4s linear infinite',
+                        pointerEvents: 'none'
+                      }}>
                         <circle
-                          cx="42"
-                          cy="42"
-                          r="38"
+                          cx="51"
+                          cy="51"
+                          r="47"
                           fill="none"
                           stroke="#22c55e"
-                          strokeWidth="3"
-                          strokeDasharray="60 180"
+                          strokeWidth="2"
+                          strokeDasharray="50 250"
                           strokeLinecap="round"
-                          opacity="0.5"
+                          opacity="0.6"
                         />
                       </svg>
                     </div>
-                    <span style={{ color: '#ffffff', fontSize: '13px', fontWeight: '700', letterSpacing: '0.5px' }}>
+                    <span style={{
+                      color: '#ffffff',
+                      fontSize: '14px',
+                      fontWeight: '800',
+                      letterSpacing: '1px',
+                      textShadow: '0 0 12px rgba(34, 197, 94, 0.6)'
+                    }}>
                       STOCKS
                     </span>
-                    <span style={{ color: '#8b949e', fontSize: '11px' }}>~5 min</span>
+                    <span style={{ color: '#8b949e', fontSize: '12px' }}>~5 min</span>
                   </button>
 
-                  {/* Crypto Training Button - CSS Animation */}
+                  {/* Crypto Training Button - Polished */}
                   <button
                     onClick={() => {
                       setPortfolio([]); setPortfolioType('crypto');
@@ -12100,67 +12139,116 @@ export default function PortfolioDuel() {
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      gap: '8px',
+                      gap: '10px',
                       padding: '8px',
                       transition: 'transform 0.2s ease'
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                    onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.08)'}
                     onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                   >
-                    <div style={{ position: 'relative', width: '80px', height: '80px' }}>
-                      {/* Pulsing Ring - CSS Animation */}
-                      <div
-                        style={{
-                          position: 'absolute',
-                          inset: '-6px',
-                          borderRadius: '50%',
-                          border: '3px solid #f59e0b',
-                          animation: 'pulse-amber 2s ease-in-out infinite'
-                        }}
-                      />
-                      {/* Main Circle */}
+                    <div style={{ position: 'relative', width: '90px', height: '90px' }}>
+                      {/* Outer glow */}
                       <div style={{
-                        width: '80px',
-                        height: '80px',
+                        position: 'absolute',
+                        inset: '-12px',
                         borderRadius: '50%',
-                        background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(245, 158, 11, 0.1) 100%)',
-                        border: '3px solid #f59e0b',
+                        background: 'radial-gradient(circle, rgba(245, 158, 11, 0.4) 0%, transparent 70%)',
+                        animation: 'pulse-glow 2s ease-in-out infinite'
+                      }} />
+                      {/* Pulsing ring */}
+                      <div style={{
+                        position: 'absolute',
+                        inset: '-4px',
+                        borderRadius: '50%',
+                        border: '2px solid #f59e0b',
+                        animation: 'pulse-ring 2s ease-in-out infinite'
+                      }} />
+                      {/* Main circle with gradient */}
+                      <div style={{
+                        width: '90px',
+                        height: '90px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        boxShadow: '0 0 20px rgba(245, 158, 11, 0.3)'
+                        boxShadow: '0 4px 24px rgba(245, 158, 11, 0.5), inset 0 2px 10px rgba(255,255,255,0.2)',
+                        position: 'relative',
+                        overflow: 'hidden'
                       }}>
-                        <span style={{ fontSize: '28px' }}>₿</span>
-                      </div>
-                      {/* Rotating Arc - CSS Animation */}
-                      <svg
-                        style={{
+                        {/* Shine overlay */}
+                        <div style={{
                           position: 'absolute',
-                          top: '-2px',
-                          left: '-2px',
-                          width: '84px',
-                          height: '84px',
-                          animation: 'rotate-arc 3s linear infinite',
-                          pointerEvents: 'none'
-                        }}
-                      >
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: '50%',
+                          background: 'linear-gradient(180deg, rgba(255,255,255,0.25) 0%, transparent 100%)',
+                          borderRadius: '50% 50% 0 0'
+                        }} />
+                        {/* Bitcoin SVG Icon */}
+                        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" style={{ position: 'relative', zIndex: 1 }}>
+                          <path
+                            d="M9.5 6.5V5M9.5 19V17.5M14.5 6.5V5M14.5 19V17.5"
+                            stroke="#ffffff"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                          />
+                          <path
+                            d="M8 6.5H14C15.6569 6.5 17 7.84315 17 9.5C17 11.1569 15.6569 12.5 14 12.5H8V6.5Z"
+                            stroke="#ffffff"
+                            strokeWidth="2"
+                            strokeLinejoin="round"
+                            fill="none"
+                          />
+                          <path
+                            d="M8 12.5H15C16.6569 12.5 18 13.8431 18 15.5C18 17.1569 16.6569 18.5 15 18.5H8V12.5Z"
+                            stroke="#ffffff"
+                            strokeWidth="2"
+                            strokeLinejoin="round"
+                            fill="none"
+                          />
+                          <path
+                            d="M8 6.5V18.5"
+                            stroke="#ffffff"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      </div>
+                      {/* Rotating arc */}
+                      <svg style={{
+                        position: 'absolute',
+                        top: '-6px',
+                        left: '-6px',
+                        width: '102px',
+                        height: '102px',
+                        animation: 'rotate-arc 4s linear infinite',
+                        pointerEvents: 'none'
+                      }}>
                         <circle
-                          cx="42"
-                          cy="42"
-                          r="38"
+                          cx="51"
+                          cy="51"
+                          r="47"
                           fill="none"
                           stroke="#f59e0b"
-                          strokeWidth="3"
-                          strokeDasharray="60 180"
+                          strokeWidth="2"
+                          strokeDasharray="50 250"
                           strokeLinecap="round"
-                          opacity="0.5"
+                          opacity="0.6"
                         />
                       </svg>
                     </div>
-                    <span style={{ color: '#ffffff', fontSize: '13px', fontWeight: '700', letterSpacing: '0.5px' }}>
+                    <span style={{
+                      color: '#ffffff',
+                      fontSize: '14px',
+                      fontWeight: '800',
+                      letterSpacing: '1px',
+                      textShadow: '0 0 12px rgba(245, 158, 11, 0.6)'
+                    }}>
                       CRYPTO
                     </span>
-                    <span style={{ color: '#8b949e', fontSize: '11px' }}>~5 min</span>
+                    <span style={{ color: '#8b949e', fontSize: '12px' }}>~5 min</span>
                   </button>
                 </div>
 
