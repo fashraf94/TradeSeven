@@ -5549,6 +5549,12 @@ export default function PortfolioDuel() {
   const [rematchRequest, setRematchRequest] = useState(null);
 
   // ============================================
+  // TRAINING CONFIRM MODAL STATE
+  // ============================================
+  const [showTrainingConfirmModal, setShowTrainingConfirmModal] = useState(false);
+  const [trainingConfirmType, setTrainingConfirmType] = useState('stocks');
+
+  // ============================================
   // HIGH VOLATILITY ALERT STATE
   // ============================================
   const [upcomingHighImpactEvents, setUpcomingHighImpactEvents] = useState([]);
@@ -12531,13 +12537,8 @@ export default function PortfolioDuel() {
                   {/* Stocks Training Button - Polished */}
                   <button
                     onClick={() => {
-                      setPortfolio([]); setPortfolioType('stocks');
-                      setPortfolioName('');
-                      setAssetType('stocks');
-                      setSearchTerm('');
-                      setSelectedCrypto(null);
-                      setBuilderMode('training');
-                      setScreen('draftTraining');
+                      setTrainingConfirmType('stocks');
+                      setShowTrainingConfirmModal(true);
                     }}
                     style={{
                       background: 'transparent',
@@ -12649,13 +12650,8 @@ export default function PortfolioDuel() {
                   {/* Crypto Training Button - Polished */}
                   <button
                     onClick={() => {
-                      setPortfolio([]); setPortfolioType('crypto');
-                      setPortfolioName('');
-                      setAssetType('crypto');
-                      setSearchTerm('');
-                      setSelectedCrypto(null);
-                      setBuilderMode('training');
-                      setScreen('draftTraining');
+                      setTrainingConfirmType('crypto');
+                      setShowTrainingConfirmModal(true);
                     }}
                     style={{
                       background: 'transparent',
@@ -14923,6 +14919,175 @@ export default function PortfolioDuel() {
                         </div>
                       ))
                   )}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ============================================ */}
+        {/* TRAINING CONFIRM MODAL */}
+        {/* ============================================ */}
+        {showTrainingConfirmModal && (
+          <>
+            {/* Backdrop */}
+            <div
+              onClick={() => setShowTrainingConfirmModal(false)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0, 0, 0, 0.8)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000,
+                padding: '20px'
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  background: '#161b22',
+                  borderRadius: '20px',
+                  padding: '28px',
+                  maxWidth: '340px',
+                  width: '100%',
+                  textAlign: 'center',
+                  border: '1px solid #21262d'
+                }}
+              >
+                {/* Icon */}
+                <div style={{
+                  width: '70px',
+                  height: '70px',
+                  background: trainingConfirmType === 'stocks'
+                    ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                    : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 20px',
+                  boxShadow: trainingConfirmType === 'stocks'
+                    ? '0 8px 24px rgba(34, 197, 94, 0.4)'
+                    : '0 8px 24px rgba(245, 158, 11, 0.4)'
+                }}>
+                  {trainingConfirmType === 'stocks' ? (
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
+                      <path d="M3 17L9 11L13 15L21 7M17 7H21V11" />
+                    </svg>
+                  ) : (
+                    <span style={{ fontSize: '32px', color: '#ffffff' }}>₿</span>
+                  )}
+                </div>
+
+                {/* Title */}
+                <h2 style={{
+                  color: '#ffffff',
+                  fontSize: '22px',
+                  fontWeight: '700',
+                  margin: '0 0 8px 0'
+                }}>
+                  Start {trainingConfirmType === 'stocks' ? 'Stocks' : 'Crypto'} Draft?
+                </h2>
+
+                {/* Description */}
+                <p style={{
+                  color: '#8b949e',
+                  fontSize: '14px',
+                  margin: '0 0 8px 0',
+                  lineHeight: '1.5'
+                }}>
+                  You'll draft against 3 CPU opponents
+                </p>
+
+                {/* Details */}
+                <div style={{
+                  background: '#0d1117',
+                  borderRadius: '10px',
+                  padding: '12px',
+                  marginBottom: '20px'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginBottom: '8px'
+                  }}>
+                    <span style={{ color: '#8b949e', fontSize: '12px' }}>Rounds</span>
+                    <span style={{ color: '#ffffff', fontSize: '12px', fontWeight: '600' }}>9 picks</span>
+                  </div>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginBottom: '8px'
+                  }}>
+                    <span style={{ color: '#8b949e', fontSize: '12px' }}>Time per pick</span>
+                    <span style={{ color: '#ffffff', fontSize: '12px', fontWeight: '600' }}>30 seconds</span>
+                  </div>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between'
+                  }}>
+                    <span style={{ color: '#8b949e', fontSize: '12px' }}>Rewards</span>
+                    <span style={{ color: '#f59e0b', fontSize: '12px', fontWeight: '600' }}>+10 XP (win) / +5 XP (loss)</span>
+                  </div>
+                </div>
+
+                {/* Buttons */}
+                <div style={{
+                  display: 'flex',
+                  gap: '12px'
+                }}>
+                  <button
+                    onClick={() => setShowTrainingConfirmModal(false)}
+                    style={{
+                      flex: 1,
+                      padding: '14px',
+                      background: 'transparent',
+                      border: '1px solid #21262d',
+                      borderRadius: '10px',
+                      color: '#8b949e',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setShowTrainingConfirmModal(false);
+                      try {
+                        const draftService = await import('./services/draftService');
+                        const draft = await draftService.createTrainingDraft(
+                          user.odUserId || user.username,
+                          user.username,
+                          trainingConfirmType
+                        );
+                        setCurrentDraft(draft);
+                        setAssetType(trainingConfirmType);
+                        setScreen('draftRoom');
+                      } catch (error) {
+                        console.error('Failed to create training draft:', error);
+                        alert('Failed to start training. Please try again.');
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '14px',
+                      background: trainingConfirmType === 'stocks'
+                        ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                        : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                      border: 'none',
+                      borderRadius: '10px',
+                      color: '#ffffff',
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Start Draft
+                  </button>
                 </div>
               </div>
             </div>
@@ -18702,7 +18867,12 @@ export default function PortfolioDuel() {
             padding: '40px 20px',
             overflow: 'hidden',
             background: 'linear-gradient(180deg, #1a1a2e 0%, #0d1117 100%)',
-            textAlign: 'center'
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+            boxSizing: 'border-box'
           }}>
             {/* Confetti pieces - CSS animation only */}
             {confettiPieces.map(piece => (
@@ -18734,29 +18904,38 @@ export default function PortfolioDuel() {
               marginBottom: '16px',
               animation: 'bounce 1s ease-in-out infinite',
               position: 'relative',
-              zIndex: 10
+              zIndex: 10,
+              display: 'flex',
+              justifyContent: 'center',
+              gap: '8px'
             }}>
               🚀 🎉 🚀
             </div>
 
-            {/* Title */}
+            {/* Title - Centered with flexbox */}
             <h1 style={{
               fontSize: '28px',
-              fontWeight: 'bold',
+              fontWeight: '800',
               color: '#ffffff',
-              marginBottom: '8px',
+              margin: '0 0 8px 0',
+              padding: 0,
               animation: 'fadeIn 0.6s ease-out',
               position: 'relative',
-              zIndex: 10
+              zIndex: 10,
+              width: '100%',
+              textAlign: 'center'
             }}>
               Draft Complete!
             </h1>
             <p style={{
               color: '#8b949e',
               fontSize: '14px',
+              margin: '0',
               animation: 'fadeIn 0.6s ease-out 0.2s both',
               position: 'relative',
-              zIndex: 10
+              zIndex: 10,
+              width: '100%',
+              textAlign: 'center'
             }}>
               All players have made their picks
             </p>
