@@ -6111,6 +6111,21 @@ const isNewWeek = (lastWeekStart) => {
   return getWeekStartDate() !== lastWeekStart;
 };
 
+// ============================================
+// CHALLENGE MODAL COMPONENT (Placeholder)
+// ============================================
+
+/**
+ * ChallengeModal - Placeholder component for challenge system
+ * Returns null as the challenge modal UI is not yet implemented
+ * This prevents the "ChallengeModal is not defined" error
+ */
+const ChallengeModal = () => {
+  // Challenge modal functionality not yet implemented
+  // Return null to prevent rendering errors
+  return null;
+};
+
 // Select 4 weekly challenges: 1 Classic, 1 Snake, 1 Universal, 1 Wild Card
 const selectWeeklyChallenges = () => {
   const getRandomFromArray = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -7708,6 +7723,14 @@ export default function PortfolioDuel() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Handle training mode redirect - redirect 'training' screen to builder
+  useEffect(() => {
+    if (screen === 'training') {
+      setBuilderMode('training');
+      setScreen('builder');
+    }
+  }, [screen]);
 
   // Load weekly challenges when user logs in - RUNS ONCE PER SESSION
   useEffect(() => {
@@ -18630,13 +18653,8 @@ export default function PortfolioDuel() {
     );
   }
 
-  // TRAINING MODE SCREEN - Now redirects to builder, keeping for backwards compatibility
-  if (screen === 'training') {
-    // Redirect to builder with training mode
-    setBuilderMode('training');
-    setScreen('builder');
-    return null;
-  }
+  // TRAINING MODE SCREEN - Handled via useEffect to avoid render-time state updates
+  // The useEffect at the top of the component handles the redirect to builder
 
   // DRAFT SETUP SCREEN - Phase 2
   if (screen === 'draftSetup') {
