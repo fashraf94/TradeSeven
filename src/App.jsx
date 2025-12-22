@@ -2801,7 +2801,8 @@ const GamePlan = ({
   thesis,
   convictionData,
   onUsePortfolio,
-  onSaveToNotes,
+  onStartTraining,
+  onSaveTemplate,
   onBack,
   isLoading,
   colors,
@@ -2936,56 +2937,232 @@ const GamePlan = ({
         </p>
       </div>
 
-      {/* Portfolio Allocations */}
-      <div style={{ marginBottom: '20px' }}>
-        <h4 style={{ color: '#e6edf3', fontSize: '14px', marginBottom: '12px' }}>
-          Recommended Portfolio
-        </h4>
-        <div style={{
-          background: '#1a1f2e',
-          borderRadius: '12px',
-          overflow: 'hidden',
-        }}>
-          {gamePlan.portfolio?.map((position, index) => (
-            <div
-              key={position.symbol}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '12px 16px',
-                borderBottom: index < gamePlan.portfolio.length - 1 ? '1px solid #2d3548' : 'none',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{
-                  width: '40px',
-                  height: '24px',
-                  background: `linear-gradient(90deg, ${c.cyan} ${position.allocation}%, #2d3548 ${position.allocation}%)`,
-                  borderRadius: '4px',
-                }} />
-                <div>
-                  <div style={{ color: '#e6edf3', fontWeight: '600', fontSize: '14px' }}>
-                    {position.symbol}
-                  </div>
-                  {position.rationale && (
-                    <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '200px' }}>
-                      {position.rationale}
-                    </div>
-                  )}
-                </div>
+      {/* Portfolio Stats Summary */}
+      {(() => {
+        const cryptoAssets = gamePlan.portfolio?.filter(p => p.type === 'crypto') || [];
+        const stockAssets = gamePlan.portfolio?.filter(p => p.type !== 'crypto') || [];
+
+        return (
+          <>
+            {/* Stats Row */}
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              marginBottom: '20px',
+            }}>
+              <div style={{
+                background: '#0d1117',
+                borderRadius: '12px',
+                padding: '14px 16px',
+                flex: 1,
+                textAlign: 'center',
+                border: '1px solid #21262d',
+              }}>
+                <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase' }}>Stocks</div>
+                <div style={{ color: '#22c55e', fontSize: '22px', fontWeight: '700' }}>{stockAssets.length}</div>
               </div>
               <div style={{
-                color: c.cyan,
-                fontWeight: '600',
-                fontSize: '16px',
+                background: '#0d1117',
+                borderRadius: '12px',
+                padding: '14px 16px',
+                flex: 1,
+                textAlign: 'center',
+                border: '1px solid #21262d',
               }}>
-                {safeToFixed(position.allocation, 1)}%
+                <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase' }}>Crypto</div>
+                <div style={{ color: '#f59e0b', fontSize: '22px', fontWeight: '700' }}>{cryptoAssets.length}</div>
+              </div>
+              <div style={{
+                background: '#0d1117',
+                borderRadius: '12px',
+                padding: '14px 16px',
+                flex: 1,
+                textAlign: 'center',
+                border: '1px solid #21262d',
+              }}>
+                <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase' }}>Total</div>
+                <div style={{ color: c.cyan, fontSize: '22px', fontWeight: '700' }}>{gamePlan.portfolio?.length || 0}</div>
               </div>
             </div>
-          ))}
-        </div>
-      </div>
+
+            {/* Crypto Section */}
+            {cryptoAssets.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  marginBottom: '12px',
+                }}>
+                  <div style={{
+                    width: '28px',
+                    height: '28px',
+                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
+                  }}>
+                    <span style={{ color: '#fff', fontSize: '14px', fontWeight: '700' }}>₿</span>
+                  </div>
+                  <span style={{
+                    color: '#f59e0b',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                  }}>
+                    Crypto Holdings
+                  </span>
+                </div>
+                <div style={{
+                  background: '#0d1117',
+                  borderRadius: '12px',
+                  overflow: 'hidden',
+                  border: '1px solid rgba(245, 158, 11, 0.2)',
+                }}>
+                  {cryptoAssets.map((position, index) => (
+                    <div
+                      key={position.symbol}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '14px 16px',
+                        borderBottom: index < cryptoAssets.length - 1 ? '1px solid #21262d' : 'none',
+                        borderLeft: '3px solid #f59e0b',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                          width: '36px',
+                          height: '36px',
+                          background: 'linear-gradient(135deg, #f59e0b20 0%, #d9770620 100%)',
+                          borderRadius: '10px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          border: '1px solid rgba(245, 158, 11, 0.3)',
+                        }}>
+                          <span style={{ color: '#f59e0b', fontSize: '12px', fontWeight: '800' }}>
+                            {position.symbol.slice(0, 2)}
+                          </span>
+                        </div>
+                        <div>
+                          <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
+                            {position.symbol}
+                          </div>
+                          {position.rationale && (
+                            <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
+                              {position.rationale}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{
+                        color: '#f59e0b',
+                        fontWeight: '700',
+                        fontSize: '17px',
+                      }}>
+                        {safeToFixed(position.allocation, 1)}%
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Stock Section */}
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                marginBottom: '12px',
+              }}>
+                <div style={{
+                  width: '28px',
+                  height: '28px',
+                  background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 2px 8px rgba(34, 197, 94, 0.3)',
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
+                    <path d="M3 17l6-6 4 4 8-8M17 7h4v4"/>
+                  </svg>
+                </div>
+                <span style={{
+                  color: '#22c55e',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}>
+                  Stock Holdings
+                </span>
+              </div>
+              <div style={{
+                background: '#0d1117',
+                borderRadius: '12px',
+                overflow: 'hidden',
+                border: '1px solid rgba(34, 197, 94, 0.2)',
+              }}>
+                {stockAssets.map((position, index) => (
+                  <div
+                    key={position.symbol}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '14px 16px',
+                      borderBottom: index < stockAssets.length - 1 ? '1px solid #21262d' : 'none',
+                      borderLeft: '3px solid #22c55e',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{
+                        width: '36px',
+                        height: '36px',
+                        background: 'linear-gradient(135deg, #22c55e20 0%, #16a34a20 100%)',
+                        borderRadius: '10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: '1px solid rgba(34, 197, 94, 0.3)',
+                      }}>
+                        <span style={{ color: '#22c55e', fontSize: '12px', fontWeight: '800' }}>
+                          {position.symbol.slice(0, 2)}
+                        </span>
+                      </div>
+                      <div>
+                        <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
+                          {position.symbol}
+                        </div>
+                        {position.rationale && (
+                          <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
+                            {position.rationale}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{
+                      color: '#22c55e',
+                      fontWeight: '700',
+                      fontSize: '17px',
+                    }}>
+                      {safeToFixed(position.allocation, 1)}%
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Insight Connections */}
       {gamePlan.insightConnections && (
@@ -3036,17 +3213,57 @@ const GamePlan = ({
 
       {/* Action Buttons */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {/* Primary: Start Training Battle */}
         <button
-          onClick={() => onUsePortfolio(gamePlan.portfolio)}
+          onClick={() => onStartTraining ? onStartTraining(gamePlan.portfolio) : onUsePortfolio(gamePlan.portfolio)}
           style={{
             width: '100%',
-            background: 'linear-gradient(135deg, #10b981, #059669)',
+            background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
             border: 'none',
+            borderRadius: '14px',
+            padding: '18px',
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '4px',
+            boxShadow: '0 4px 20px rgba(34, 197, 94, 0.3)',
+          }}
+        >
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
+              <polygon points="5,3 19,12 5,21" fill="#ffffff"/>
+            </svg>
+            <span style={{
+              color: '#ffffff',
+              fontSize: '16px',
+              fontWeight: '700',
+            }}>
+              Start Training Battle
+            </span>
+          </div>
+          <span style={{
+            color: 'rgba(255,255,255,0.8)',
+            fontSize: '12px',
+            fontWeight: '500',
+          }}>
+            Test this portfolio in a practice game
+          </span>
+        </button>
+
+        {/* Secondary: Save as Template */}
+        <button
+          onClick={() => onSaveTemplate ? onSaveTemplate(gamePlan) : null}
+          style={{
+            width: '100%',
+            background: 'transparent',
+            border: '2px solid #8b5cf6',
             borderRadius: '12px',
-            padding: '16px',
-            color: '#ffffff',
-            fontSize: '16px',
-            fontWeight: '600',
+            padding: '14px',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
@@ -3054,23 +3271,18 @@ const GamePlan = ({
             gap: '8px',
           }}
         >
-          Use This Portfolio →
-        </button>
-
-        <button
-          onClick={() => onSaveToNotes(gamePlan)}
-          style={{
-            width: '100%',
-            background: 'rgba(147, 51, 234, 0.15)',
-            border: '1px solid rgba(147, 51, 234, 0.3)',
-            borderRadius: '12px',
-            padding: '12px',
-            color: '#9333ea',
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2">
+            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+            <polyline points="17,21 17,13 7,13 7,21"/>
+            <polyline points="7,3 7,8 15,8"/>
+          </svg>
+          <span style={{
+            color: '#8b5cf6',
             fontSize: '14px',
-            cursor: 'pointer',
-          }}
-        >
-          📌 Save to Notes
+            fontWeight: '600',
+          }}>
+            Save as Template
+          </span>
         </button>
       </div>
     </div>
@@ -4658,10 +4870,70 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
     resetFlow();
   };
 
-  // Handle save to notes
-  const handleSaveToNotes = (plan) => {
-    // Could integrate with existing notes system
-    // TODO: Implement notes integration
+  // Handle start training battle
+  const handleStartTrainingBattle = (portfolioAllocations) => {
+    // Convert allocations to portfolio format for training
+    const allAssets = [...stocksData, ...cryptoData];
+    const trainingPortfolio = portfolioAllocations.map(allocation => {
+      const asset = allAssets.find(a => a.symbol === allocation.symbol);
+      return {
+        symbol: allocation.symbol,
+        name: asset?.name || allocation.symbol,
+        type: allocation.type || (cryptoData.find(c => c.symbol === allocation.symbol) ? 'crypto' : 'stock'),
+        price: asset?.price || 0,
+        allocation: allocation.allocation,
+        amount: (allocation.allocation / 100) * 1000000,
+      };
+    }).filter(Boolean);
+
+    // Store for training mode
+    sessionStorage.setItem('training_portfolio', JSON.stringify({
+      assets: trainingPortfolio,
+      totalValue: 1000000,
+      source: 'guided_flow',
+      createdAt: new Date().toISOString()
+    }));
+
+    if (onUsePortfolio) {
+      onUsePortfolio(trainingPortfolio);
+    }
+    resetFlow();
+  };
+
+  // Handle save as template
+  const handleSaveAsTemplate = (gamePlan) => {
+    const topAssets = gamePlan.portfolio?.slice(0, 3).map(a => a.symbol).join('-') || 'Portfolio';
+    const timestamp = new Date().toISOString().split('T')[0];
+
+    const template = {
+      id: `template_${Date.now()}`,
+      name: `Guided_${topAssets}_${timestamp}`,
+      displayName: `${topAssets} Portfolio`,
+      createdAt: new Date().toISOString(),
+      source: 'guided_flow',
+      strategySummary: gamePlan.strategySummary,
+      assets: gamePlan.portfolio?.map(asset => ({
+        symbol: asset.symbol,
+        type: asset.type || 'stock',
+        targetAllocation: asset.allocation,
+        rationale: asset.rationale
+      })) || [],
+      metadata: {
+        stockCount: gamePlan.portfolio?.filter(a => a.type !== 'crypto').length || 0,
+        cryptoCount: gamePlan.portfolio?.filter(a => a.type === 'crypto').length || 0,
+        totalAssets: gamePlan.portfolio?.length || 0
+      }
+    };
+
+    try {
+      const existingTemplates = JSON.parse(localStorage.getItem('portfolio_templates') || '[]');
+      existingTemplates.unshift(template);
+      const limitedTemplates = existingTemplates.slice(0, 20);
+      localStorage.setItem('portfolio_templates', JSON.stringify(limitedTemplates));
+      // Could show toast if available
+    } catch (error) {
+      console.error('Failed to save template:', error);
+    }
   };
 
   // Render current phase
@@ -4752,7 +5024,8 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
             convictionData={convictionData}
             isLoading={isGeneratingPlan}
             onUsePortfolio={handleUsePortfolio}
-            onSaveToNotes={handleSaveToNotes}
+            onStartTraining={handleStartTrainingBattle}
+            onSaveTemplate={handleSaveAsTemplate}
             onBack={() => setFlowPhase(4)}
             colors={c}
           />
@@ -10717,22 +10990,79 @@ export default function PortfolioDuel() {
       setScreen('portfolio');
     };
 
-    // Handler to save game plan to notes
-    const handleSaveGamePlanToNotes = (gamePlan) => {
-      const newNote = {
-        id: `gameplan-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        symbol: null,
-        assetType: 'ai_insight',
-        type: 'game_plan',
-        customText: `**Game Plan Strategy:** ${gamePlan.strategySummary}\n\n**Portfolio:** ${gamePlan.portfolio?.map(p => `${p.symbol}: ${p.allocation}%`).join(', ')}\n\n**Key Risks:** ${gamePlan.risks?.join('; ')}`,
-        source: 'Research Flow Game Plan',
-        userAnnotation: '',
+    // Handler to start training battle with portfolio
+    const handleStartTrainingBattle = (portfolioAllocations) => {
+      // Convert allocations to training portfolio format
+      const allAssets = [...stocksData, ...cryptoData];
+      const trainingPortfolio = portfolioAllocations.map(allocation => {
+        const asset = allAssets.find(a => a.symbol === allocation.symbol);
+        if (!asset) return null;
+        return {
+          symbol: allocation.symbol,
+          name: asset?.name || allocation.symbol,
+          type: allocation.type || (cryptoData.find(c => c.symbol === allocation.symbol) ? 'crypto' : 'stock'),
+          price: asset?.price || 0,
+          allocation: allocation.allocation,
+          amount: (allocation.allocation / 100) * 1000000, // $1M virtual portfolio
+        };
+      }).filter(Boolean);
+
+      // Store portfolio for training mode
+      sessionStorage.setItem('training_portfolio', JSON.stringify({
+        assets: trainingPortfolio,
+        totalValue: 1000000,
+        source: 'research_mode',
+        createdAt: new Date().toISOString()
+      }));
+
+      // Set up for training mode and navigate
+      setPortfolio(trainingPortfolio);
+      setPortfolioType(trainingPortfolio.some(p => p.type === 'crypto') ? 'crypto' : 'stocks');
+      setShowResearchMode(false);
+      setResearchPhase('explore');
+      setScreen('training'); // Navigate to training screen
+      showToast('Portfolio loaded! Starting training battle...');
+    };
+
+    // Handler to save game plan as template
+    const handleSaveAsTemplate = (gamePlan) => {
+      // Generate template name from top assets
+      const topAssets = gamePlan.portfolio?.slice(0, 3).map(a => a.symbol).join('-') || 'Portfolio';
+      const timestamp = new Date().toISOString().split('T')[0];
+
+      const template = {
+        id: `template_${Date.now()}`,
+        name: `Research_${topAssets}_${timestamp}`,
+        displayName: `${topAssets} Portfolio`,
         createdAt: new Date().toISOString(),
-        weekOf: getCurrentWeekMonday(),
-        isFinalized: false,
+        source: 'research_mode',
+        strategySummary: gamePlan.strategySummary,
+        assets: gamePlan.portfolio?.map(asset => ({
+          symbol: asset.symbol,
+          type: asset.type || 'stock',
+          targetAllocation: asset.allocation,
+          rationale: asset.rationale
+        })) || [],
+        metadata: {
+          stockCount: gamePlan.portfolio?.filter(a => a.type !== 'crypto').length || 0,
+          cryptoCount: gamePlan.portfolio?.filter(a => a.type === 'crypto').length || 0,
+          totalAssets: gamePlan.portfolio?.length || 0
+        }
       };
-      setUserNotes(prev => [...prev, newNote]);
-      // Show a toast or feedback (using existing system if available)
+
+      // Save to localStorage
+      try {
+        const existingTemplates = JSON.parse(localStorage.getItem('portfolio_templates') || '[]');
+        existingTemplates.unshift(template);
+        // Keep max 20 templates
+        const limitedTemplates = existingTemplates.slice(0, 20);
+        localStorage.setItem('portfolio_templates', JSON.stringify(limitedTemplates));
+
+        showToast(`Template "${template.displayName}" saved! Load it from Portfolio Builder.`);
+      } catch (error) {
+        console.error('Failed to save template:', error);
+        showToast('Failed to save template. Please try again.');
+      }
     };
 
     // Handler to go back from game plan to conviction check
@@ -12145,7 +12475,8 @@ export default function PortfolioDuel() {
                     convictionData={convictionData}
                     isLoading={researchGamePlanLoading}
                     onUsePortfolio={handleUseResearchPortfolio}
-                    onSaveToNotes={handleSaveGamePlanToNotes}
+                    onStartTraining={handleStartTrainingBattle}
+                    onSaveTemplate={handleSaveAsTemplate}
                     onBack={handleBackFromGamePlan}
                     colors={colors}
                   />
