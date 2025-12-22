@@ -538,6 +538,174 @@ const PinnableInsight = ({ title, value, explanation, symbol, onPin, isPinned, c
 };
 
 // ============================================
+// STYLED ICON COMPONENT - Premium gradient icons
+// ============================================
+
+const StyledIcon = ({ type, size = 'medium' }) => {
+  const sizes = {
+    small: { container: 28, icon: 14 },
+    medium: { container: 36, icon: 18 },
+    large: { container: 48, icon: 24 }
+  };
+
+  const s = sizes[size];
+
+  const iconConfigs = {
+    building: {
+      gradient: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+      shadow: 'rgba(59, 130, 246, 0.4)',
+      svg: (
+        <svg width={s.icon} height={s.icon} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+          <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/>
+        </svg>
+      )
+    },
+    chart: {
+      gradient: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+      shadow: 'rgba(139, 92, 246, 0.4)',
+      svg: (
+        <svg width={s.icon} height={s.icon} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+          <path d="M3 3v18h18M7 16l4-4 4 4 5-6"/>
+        </svg>
+      )
+    },
+    money: {
+      gradient: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+      shadow: 'rgba(34, 197, 94, 0.4)',
+      svg: (
+        <svg width={s.icon} height={s.icon} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
+        </svg>
+      )
+    },
+    percent: {
+      gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+      shadow: 'rgba(245, 158, 11, 0.4)',
+      svg: (
+        <svg width={s.icon} height={s.icon} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+          <path d="M19 5L5 19M6.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM17.5 20a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/>
+        </svg>
+      )
+    },
+    news: {
+      gradient: 'linear-gradient(135deg, #00d9ff 0%, #0ea5e9 100%)',
+      shadow: 'rgba(0, 217, 255, 0.4)',
+      svg: (
+        <svg width={s.icon} height={s.icon} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+          <path d="M4 22h16a2 2 0 002-2V4a2 2 0 00-2-2H8a2 2 0 00-2 2v16a2 2 0 01-2 2zm0 0a2 2 0 01-2-2v-9c0-1.1.9-2 2-2h2M18 14h-8M18 18h-8M18 6h-8v4h8V6z"/>
+        </svg>
+      )
+    },
+    fundamental: {
+      gradient: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+      shadow: 'rgba(139, 92, 246, 0.4)',
+      svg: (
+        <svg width={s.icon} height={s.icon} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+          <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+        </svg>
+      )
+    },
+    technical: {
+      gradient: 'linear-gradient(135deg, #00d9ff 0%, #0ea5e9 100%)',
+      shadow: 'rgba(0, 217, 255, 0.4)',
+      svg: (
+        <svg width={s.icon} height={s.icon} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+          <path d="M3 17l6-6 4 4 8-8M17 7h4v4"/>
+        </svg>
+      )
+    }
+  };
+
+  const config = iconConfigs[type] || iconConfigs.chart;
+
+  return (
+    <div style={{
+      width: `${s.container}px`,
+      height: `${s.container}px`,
+      background: config.gradient,
+      borderRadius: '10px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      boxShadow: `0 4px 12px ${config.shadow}`,
+      flexShrink: 0
+    }}>
+      {config.svg}
+    </div>
+  );
+};
+
+// ============================================
+// NEWS DATA GENERATOR - For Fundamental Tab
+// ============================================
+
+const generateStockNews = (symbol) => {
+  const newsData = {
+    NVDA: [
+      { headline: "NVIDIA announces next-gen Blackwell chips with 4x performance gains", source: "Reuters", timeAgo: "2h ago", sentiment: "positive" },
+      { headline: "Data center revenue exceeds expectations in Q3 earnings", source: "CNBC", timeAgo: "5h ago", sentiment: "positive" },
+      { headline: "China export restrictions may impact Q4 guidance", source: "Bloomberg", timeAgo: "8h ago", sentiment: "negative" },
+      { headline: "Analysts raise price targets after AI demand surge", source: "MarketWatch", timeAgo: "1d ago", sentiment: "positive" }
+    ],
+    AAPL: [
+      { headline: "iPhone 16 sales tracking ahead of expectations in China", source: "Reuters", timeAgo: "3h ago", sentiment: "positive" },
+      { headline: "Apple Intelligence features rolling out globally", source: "TechCrunch", timeAgo: "6h ago", sentiment: "positive" },
+      { headline: "Services revenue hits new all-time high", source: "CNBC", timeAgo: "1d ago", sentiment: "positive" },
+      { headline: "EU antitrust fine may impact European operations", source: "Financial Times", timeAgo: "2d ago", sentiment: "negative" }
+    ],
+    TSLA: [
+      { headline: "Cybertruck deliveries accelerate in Q4", source: "Electrek", timeAgo: "4h ago", sentiment: "positive" },
+      { headline: "FSD v13 shows major improvements in safety metrics", source: "TechCrunch", timeAgo: "8h ago", sentiment: "positive" },
+      { headline: "Price cuts in China intensify competition concerns", source: "Bloomberg", timeAgo: "1d ago", sentiment: "negative" },
+      { headline: "Energy storage business grows 50% year-over-year", source: "Reuters", timeAgo: "2d ago", sentiment: "positive" }
+    ],
+    GOOGL: [
+      { headline: "Gemini 2.0 launch positions Google in AI race", source: "The Verge", timeAgo: "2h ago", sentiment: "positive" },
+      { headline: "YouTube ad revenue beats estimates by 8%", source: "CNBC", timeAgo: "6h ago", sentiment: "positive" },
+      { headline: "DOJ antitrust ruling may require Chrome divestiture", source: "WSJ", timeAgo: "1d ago", sentiment: "negative" },
+      { headline: "Cloud division narrows gap with AWS and Azure", source: "Bloomberg", timeAgo: "2d ago", sentiment: "positive" }
+    ],
+    MSFT: [
+      { headline: "Copilot adoption surges across enterprise customers", source: "CNBC", timeAgo: "3h ago", sentiment: "positive" },
+      { headline: "Azure cloud revenue grows 29% year-over-year", source: "Reuters", timeAgo: "6h ago", sentiment: "positive" },
+      { headline: "Gaming division faces continued headwinds", source: "Bloomberg", timeAgo: "1d ago", sentiment: "negative" },
+      { headline: "Microsoft announces new AI partnerships", source: "TechCrunch", timeAgo: "2d ago", sentiment: "positive" }
+    ],
+    META: [
+      { headline: "Reels engagement surpasses TikTok in key markets", source: "WSJ", timeAgo: "2h ago", sentiment: "positive" },
+      { headline: "AI recommendation engine driving record engagement", source: "Reuters", timeAgo: "5h ago", sentiment: "positive" },
+      { headline: "Reality Labs losses continue to mount", source: "Bloomberg", timeAgo: "1d ago", sentiment: "negative" },
+      { headline: "Threads reaches 200 million monthly active users", source: "TechCrunch", timeAgo: "2d ago", sentiment: "positive" }
+    ],
+    AMZN: [
+      { headline: "AWS announces new AI infrastructure investments", source: "Reuters", timeAgo: "3h ago", sentiment: "positive" },
+      { headline: "Prime membership growth accelerates in Q4", source: "CNBC", timeAgo: "7h ago", sentiment: "positive" },
+      { headline: "Labor costs pressure retail margins", source: "Bloomberg", timeAgo: "1d ago", sentiment: "negative" },
+      { headline: "Pharmacy expansion shows promising results", source: "WSJ", timeAgo: "2d ago", sentiment: "positive" }
+    ],
+    AMD: [
+      { headline: "MI300 AI chips gaining traction in data centers", source: "Reuters", timeAgo: "4h ago", sentiment: "positive" },
+      { headline: "Server market share reaches new high vs Intel", source: "CNBC", timeAgo: "8h ago", sentiment: "positive" },
+      { headline: "Cyclical headwinds expected in PC market", source: "Bloomberg", timeAgo: "1d ago", sentiment: "negative" },
+      { headline: "New laptop processors outperform competition", source: "The Verge", timeAgo: "2d ago", sentiment: "positive" }
+    ]
+  };
+
+  if (newsData[symbol]) {
+    return newsData[symbol];
+  }
+
+  // Generic fallback news
+  return [
+    { headline: `${symbol} trading volume spikes amid market volatility`, source: "MarketWatch", timeAgo: "2h ago", sentiment: "neutral" },
+    { headline: `Analysts maintain neutral rating on ${symbol}`, source: "Seeking Alpha", timeAgo: "6h ago", sentiment: "neutral" },
+    { headline: `${symbol} sector shows mixed signals in Q4`, source: "Reuters", timeAgo: "1d ago", sentiment: "neutral" },
+    { headline: `Institutional investors adjust ${symbol} positions`, source: "Bloomberg", timeAgo: "2d ago", sentiment: "neutral" }
+  ];
+};
+
+// ============================================
 // STOCK METRICS COMPONENT (for Asset Detail)
 // ============================================
 
@@ -663,42 +831,58 @@ const StockMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors 
         {/* Tab Buttons */}
         <div style={{
           display: 'flex',
-          gap: '8px',
-          marginBottom: '16px'
+          gap: '10px',
+          marginBottom: '20px'
         }}>
           <button
             onClick={() => setAnalysisTab('fundamental')}
             style={{
               flex: 1,
-              padding: '12px 16px',
-              background: analysisTab === 'fundamental' ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
+              padding: '14px 16px',
+              background: analysisTab === 'fundamental' ? 'rgba(139, 92, 246, 0.15)' : '#161b22',
               border: analysisTab === 'fundamental' ? '2px solid #8b5cf6' : '1px solid #21262d',
-              borderRadius: '10px',
-              color: analysisTab === 'fundamental' ? '#a78bfa' : '#8b949e',
-              fontSize: '13px',
-              fontWeight: '600',
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '10px',
               cursor: 'pointer',
-              transition: 'all 0.2s'
+              transition: 'all 0.2s ease'
             }}
           >
-            📊 Fundamental
+            <StyledIcon type="fundamental" size="small" />
+            <span style={{
+              color: analysisTab === 'fundamental' ? '#a78bfa' : '#8b949e',
+              fontSize: '14px',
+              fontWeight: '600'
+            }}>
+              Fundamental
+            </span>
           </button>
           <button
             onClick={() => setAnalysisTab('technical')}
             style={{
               flex: 1,
-              padding: '12px 16px',
-              background: analysisTab === 'technical' ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
-              border: analysisTab === 'technical' ? '2px solid #8b5cf6' : '1px solid #21262d',
-              borderRadius: '10px',
-              color: analysisTab === 'technical' ? '#a78bfa' : '#8b949e',
-              fontSize: '13px',
-              fontWeight: '600',
+              padding: '14px 16px',
+              background: analysisTab === 'technical' ? 'rgba(0, 217, 255, 0.15)' : '#161b22',
+              border: analysisTab === 'technical' ? '2px solid #00d9ff' : '1px solid #21262d',
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '10px',
               cursor: 'pointer',
-              transition: 'all 0.2s'
+              transition: 'all 0.2s ease'
             }}
           >
-            📈 Technical
+            <StyledIcon type="technical" size="small" />
+            <span style={{
+              color: analysisTab === 'technical' ? '#00d9ff' : '#8b949e',
+              fontSize: '14px',
+              fontWeight: '600'
+            }}>
+              Technical
+            </span>
           </button>
         </div>
 
@@ -744,68 +928,225 @@ const StockMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors 
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: '10px',
-                marginBottom: '16px'
+                gap: '12px',
+                marginBottom: '20px'
               }}>
-                <div style={{ background: '#161b22', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '14px', marginBottom: '4px' }}>🏢</div>
-                  <div style={{ color: '#ffffff', fontSize: '13px', fontWeight: '700' }}>{fundamentalData.marketCap}</div>
-                  <div style={{ color: '#8b949e', fontSize: '10px' }}>Market Cap</div>
+                <div style={{
+                  background: '#161b22',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <StyledIcon type="building" size="small" />
+                  <div style={{ color: '#ffffff', fontSize: '18px', fontWeight: '700' }}>{fundamentalData.marketCap}</div>
+                  <div style={{ color: '#8b949e', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Market Cap</div>
                 </div>
-                <div style={{ background: '#161b22', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '14px', marginBottom: '4px' }}>📊</div>
-                  <div style={{ color: '#ffffff', fontSize: '13px', fontWeight: '700' }}>{fundamentalData.peRatio}</div>
-                  <div style={{ color: '#8b949e', fontSize: '10px' }}>P/E Ratio</div>
+                <div style={{
+                  background: '#161b22',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <StyledIcon type="chart" size="small" />
+                  <div style={{ color: '#ffffff', fontSize: '18px', fontWeight: '700' }}>{fundamentalData.peRatio}</div>
+                  <div style={{ color: '#8b949e', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>P/E Ratio</div>
                 </div>
-                <div style={{ background: '#161b22', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '14px', marginBottom: '4px' }}>💰</div>
-                  <div style={{ color: fundamentalData.revenueGrowth?.includes('+') ? '#22c55e' : '#ef4444', fontSize: '13px', fontWeight: '700' }}>{fundamentalData.revenueGrowth}</div>
-                  <div style={{ color: '#8b949e', fontSize: '10px' }}>Revenue Growth</div>
+                <div style={{
+                  background: '#161b22',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <StyledIcon type="money" size="small" />
+                  <div style={{ color: fundamentalData.revenueGrowth?.includes('+') ? '#22c55e' : '#ef4444', fontSize: '18px', fontWeight: '700' }}>{fundamentalData.revenueGrowth}</div>
+                  <div style={{ color: '#8b949e', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Revenue Growth</div>
                 </div>
-                <div style={{ background: '#161b22', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '14px', marginBottom: '4px' }}>📈</div>
-                  <div style={{ color: '#ffffff', fontSize: '13px', fontWeight: '700' }}>{fundamentalData.profitMargin}</div>
-                  <div style={{ color: '#8b949e', fontSize: '10px' }}>Profit Margin</div>
+                <div style={{
+                  background: '#161b22',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <StyledIcon type="percent" size="small" />
+                  <div style={{ color: '#ffffff', fontSize: '18px', fontWeight: '700' }}>{fundamentalData.profitMargin}</div>
+                  <div style={{ color: '#8b949e', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Profit Margin</div>
                 </div>
               </div>
 
               {/* Strengths & Weaknesses */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-                    <span style={{ color: '#22c55e' }}>✓</span>
-                    <span style={{ color: '#22c55e', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>Strengths</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{
+                      width: '24px',
+                      height: '24px',
+                      background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                      borderRadius: '6px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 2px 8px rgba(34, 197, 94, 0.3)'
+                    }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3">
+                        <path d="M20 6L9 17l-5-5"/>
+                      </svg>
+                    </div>
+                    <span style={{ color: '#22c55e', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Strengths</span>
                   </div>
                   {fundamentalData.strengths?.map((s, i) => (
                     <div key={i} style={{
                       background: 'rgba(34, 197, 94, 0.1)',
                       borderLeft: '3px solid #22c55e',
-                      borderRadius: '0 6px 6px 0',
-                      padding: '8px 10px',
-                      marginBottom: '6px'
+                      borderRadius: '0 8px 8px 0',
+                      padding: '10px 12px',
+                      marginBottom: '8px'
                     }}>
-                      <p style={{ color: '#e6edf3', fontSize: '11px', margin: 0, lineHeight: '1.4' }}>{s}</p>
+                      <p style={{ color: '#e6edf3', fontSize: '12px', margin: 0, lineHeight: '1.4' }}>{s}</p>
                     </div>
                   ))}
                 </div>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-                    <span style={{ color: '#ef4444' }}>✗</span>
-                    <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>Weaknesses</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{
+                      width: '24px',
+                      height: '24px',
+                      background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                      borderRadius: '6px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 2px 8px rgba(239, 68, 68, 0.3)'
+                    }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3">
+                        <path d="M18 6L6 18M6 6l12 12"/>
+                      </svg>
+                    </div>
+                    <span style={{ color: '#ef4444', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Weaknesses</span>
                   </div>
                   {fundamentalData.weaknesses?.map((w, i) => (
                     <div key={i} style={{
                       background: 'rgba(239, 68, 68, 0.1)',
                       borderLeft: '3px solid #ef4444',
-                      borderRadius: '0 6px 6px 0',
-                      padding: '8px 10px',
-                      marginBottom: '6px'
+                      borderRadius: '0 8px 8px 0',
+                      padding: '10px 12px',
+                      marginBottom: '8px'
                     }}>
-                      <p style={{ color: '#e6edf3', fontSize: '11px', margin: 0, lineHeight: '1.4' }}>{w}</p>
+                      <p style={{ color: '#e6edf3', fontSize: '12px', margin: 0, lineHeight: '1.4' }}>{w}</p>
                     </div>
                   ))}
                 </div>
               </div>
+
+              {/* NEWS SECTION */}
+              {(() => {
+                const news = generateStockNews(asset.symbol);
+                const sentimentColors = {
+                  positive: { bg: 'rgba(34, 197, 94, 0.1)', border: '#22c55e', dot: '#22c55e' },
+                  negative: { bg: 'rgba(239, 68, 68, 0.1)', border: '#ef4444', dot: '#ef4444' },
+                  neutral: { bg: 'rgba(139, 92, 246, 0.1)', border: '#8b5cf6', dot: '#8b5cf6' }
+                };
+                return (
+                  <div style={{
+                    background: '#161b22',
+                    border: '1px solid #21262d',
+                    borderRadius: '16px',
+                    padding: '20px'
+                  }}>
+                    {/* Header */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      marginBottom: '16px'
+                    }}>
+                      <StyledIcon type="news" size="small" />
+                      <h3 style={{
+                        color: '#ffffff',
+                        fontSize: '15px',
+                        fontWeight: '700',
+                        margin: 0
+                      }}>
+                        LATEST NEWS
+                      </h3>
+                      <span style={{
+                        marginLeft: 'auto',
+                        color: '#8b949e',
+                        fontSize: '11px'
+                      }}>
+                        {asset.symbol} related
+                      </span>
+                    </div>
+
+                    {/* News Items */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {news.slice(0, 4).map((item, index) => {
+                        const colors = sentimentColors[item.sentiment] || sentimentColors.neutral;
+                        return (
+                          <div key={index} style={{
+                            background: colors.bg,
+                            borderLeft: `3px solid ${colors.border}`,
+                            borderRadius: '0 10px 10px 0',
+                            padding: '14px 16px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                          }}>
+                            {/* Source & Time */}
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              marginBottom: '6px'
+                            }}>
+                              <span style={{
+                                width: '6px',
+                                height: '6px',
+                                borderRadius: '50%',
+                                background: colors.dot
+                              }} />
+                              <span style={{
+                                color: colors.dot,
+                                fontSize: '10px',
+                                fontWeight: '600',
+                                textTransform: 'uppercase'
+                              }}>
+                                {item.source}
+                              </span>
+                              <span style={{
+                                color: '#6b7280',
+                                fontSize: '10px'
+                              }}>
+                                • {item.timeAgo}
+                              </span>
+                            </div>
+                            {/* Headline */}
+                            <h4 style={{
+                              color: '#e6edf3',
+                              fontSize: '13px',
+                              fontWeight: '600',
+                              margin: 0,
+                              lineHeight: '1.4'
+                            }}>
+                              {item.headline}
+                            </h4>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             /* TECHNICAL TAB */
@@ -10264,55 +10605,275 @@ export default function PortfolioDuel() {
               </div>
             </div>
 
-            {/* Asset Header */}
-            <div style={{
-              background: color.background,
-              borderBottom: `3px solid ${color.primary}`,
-              padding: '20px 16px'
-            }}>
-              <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                  <span style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '24px' }}>{selectedAssetDetail.symbol}</span>
-                  <span style={{ color: '#8b949e', fontSize: '14px' }}>·</span>
-                  <span style={{ color: '#8b949e', fontSize: '14px' }}>{selectedAssetDetail.name}</span>
-                  {isStock && selectedAssetDetail.sector && (
-                    <>
-                      <span style={{ color: '#8b949e', fontSize: '14px' }}>·</span>
-                      <span style={{
-                        display: 'inline-flex',
+            {/* Enhanced Ticker Card */}
+            {(() => {
+              const isPositive = safeNumber(selectedAssetDetail.percentChange) >= 0;
+              const isCrypto = !isStock;
+              const accentColor = isCrypto ? '#f7931a' : (isPositive ? '#22c55e' : '#ef4444');
+              const accentGlow = isCrypto ? 'rgba(247, 147, 26, 0.3)' : (isPositive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)');
+
+              return (
+                <div style={{
+                  position: 'relative',
+                  background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 50%, #131a24 100%)',
+                  borderBottom: `3px solid ${color.primary}`,
+                  padding: '40px 24px',
+                  marginBottom: '0',
+                  overflow: 'hidden'
+                }}>
+                  {/* CSS Animations */}
+                  <style>
+                    {`
+                      @keyframes tickerFloat {
+                        0%, 100% { transform: translateY(0) scale(1); }
+                        50% { transform: translateY(-20px) scale(1.05); }
+                      }
+                      @keyframes tickerFloatParticle {
+                        0%, 100% { transform: translateY(0) translateX(0); opacity: 0.3; }
+                        25% { transform: translateY(-15px) translateX(10px); opacity: 0.6; }
+                        50% { transform: translateY(-5px) translateX(-5px); opacity: 0.4; }
+                        75% { transform: translateY(-20px) translateX(5px); opacity: 0.7; }
+                      }
+                      @keyframes tickerShimmer {
+                        0%, 100% { opacity: 0.3; transform: scaleX(0.5); }
+                        50% { opacity: 1; transform: scaleX(1); }
+                      }
+                      @keyframes tickerPulse {
+                        0%, 100% { opacity: 0.3; }
+                        50% { opacity: 0.7; }
+                      }
+                    `}
+                  </style>
+
+                  {/* Animated Gradient Orbs */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '-60px',
+                    right: '-60px',
+                    width: '200px',
+                    height: '200px',
+                    background: `radial-gradient(circle, ${accentColor}25 0%, transparent 70%)`,
+                    borderRadius: '50%',
+                    animation: 'tickerFloat 8s ease-in-out infinite',
+                    pointerEvents: 'none'
+                  }} />
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '-40px',
+                    left: '-40px',
+                    width: '160px',
+                    height: '160px',
+                    background: `radial-gradient(circle, ${accentColor}15 0%, transparent 70%)`,
+                    borderRadius: '50%',
+                    animation: 'tickerFloat 10s ease-in-out infinite reverse',
+                    pointerEvents: 'none'
+                  }} />
+                  <div style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '20%',
+                    width: '100px',
+                    height: '100px',
+                    background: 'radial-gradient(circle, rgba(139, 92, 246, 0.2) 0%, transparent 70%)',
+                    borderRadius: '50%',
+                    animation: 'tickerPulse 4s ease-in-out infinite',
+                    pointerEvents: 'none'
+                  }} />
+
+                  {/* Floating Particles */}
+                  {[...Array(8)].map((_, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        position: 'absolute',
+                        width: `${6 + (i % 3) * 4}px`,
+                        height: `${6 + (i % 3) * 4}px`,
+                        background: i % 2 === 0 ? accentColor : '#8b5cf6',
+                        borderRadius: '50%',
+                        opacity: 0.4 + (i % 3) * 0.2,
+                        top: `${15 + (i * 10)}%`,
+                        left: `${5 + (i * 12)}%`,
+                        animation: `tickerFloatParticle ${5 + i}s ease-in-out infinite`,
+                        animationDelay: `${i * 0.5}s`,
+                        pointerEvents: 'none'
+                      }}
+                    />
+                  ))}
+
+                  {/* Grid Pattern Overlay */}
+                  <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    backgroundImage: `
+                      linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)
+                    `,
+                    backgroundSize: '30px 30px',
+                    pointerEvents: 'none'
+                  }} />
+
+                  {/* Animated Top Border Glow */}
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: '10%',
+                    right: '10%',
+                    height: '2px',
+                    background: `linear-gradient(90deg, transparent, ${accentColor}, transparent)`,
+                    animation: 'tickerShimmer 3s ease-in-out infinite',
+                    opacity: 0.8
+                  }} />
+
+                  {/* Corner Decorations */}
+                  <svg style={{ position: 'absolute', top: '16px', left: '16px', opacity: 0.4 }} width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <path d="M0 8V0h8" stroke={accentColor} strokeWidth="2"/>
+                    <circle cx="0" cy="0" r="3" fill={accentColor} opacity="0.5"/>
+                  </svg>
+                  <svg style={{ position: 'absolute', top: '16px', right: '16px', opacity: 0.4 }} width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <path d="M32 8V0h-8" stroke={accentColor} strokeWidth="2"/>
+                    <circle cx="32" cy="0" r="3" fill={accentColor} opacity="0.5"/>
+                  </svg>
+                  <svg style={{ position: 'absolute', bottom: '16px', left: '16px', opacity: 0.4 }} width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <path d="M0 24v8h8" stroke={accentColor} strokeWidth="2"/>
+                    <circle cx="0" cy="32" r="3" fill={accentColor} opacity="0.5"/>
+                  </svg>
+                  <svg style={{ position: 'absolute', bottom: '16px', right: '16px', opacity: 0.4 }} width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <path d="M32 24v8h-8" stroke={accentColor} strokeWidth="2"/>
+                    <circle cx="32" cy="32" r="3" fill={accentColor} opacity="0.5"/>
+                  </svg>
+
+                  {/* Animated Horizontal Lines */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '30%',
+                    left: 0,
+                    right: 0,
+                    height: '1px',
+                    background: `linear-gradient(90deg, transparent, ${accentColor}30, transparent)`,
+                    animation: 'tickerPulse 2s ease-in-out infinite'
+                  }} />
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '30%',
+                    left: 0,
+                    right: 0,
+                    height: '1px',
+                    background: `linear-gradient(90deg, transparent, ${accentColor}20, transparent)`,
+                    animation: 'tickerPulse 2s ease-in-out infinite',
+                    animationDelay: '1s'
+                  }} />
+
+                  {/* Content */}
+                  <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', maxWidth: '900px', margin: '0 auto' }}>
+                    {/* Symbol */}
+                    <h1 style={{
+                      color: '#ffffff',
+                      fontSize: '42px',
+                      fontWeight: '800',
+                      margin: '0 0 4px 0',
+                      letterSpacing: '3px',
+                      textShadow: `0 0 40px ${accentGlow}, 0 0 80px ${accentGlow}`
+                    }}>
+                      {selectedAssetDetail.symbol}
+                    </h1>
+
+                    {/* Company Name */}
+                    <p style={{
+                      color: '#8b949e',
+                      fontSize: '14px',
+                      margin: '0 0 16px 0',
+                      fontWeight: '500'
+                    }}>
+                      {selectedAssetDetail.name}
+                    </p>
+
+                    {/* Sector Badge */}
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      background: `${accentColor}15`,
+                      border: `1px solid ${accentColor}40`,
+                      borderRadius: '24px',
+                      padding: '8px 16px',
+                      marginBottom: '20px'
+                    }}>
+                      <div style={{
+                        width: '20px',
+                        height: '20px',
+                        background: `linear-gradient(135deg, ${accentColor} 0%, ${accentColor}cc 100%)`,
+                        borderRadius: '6px',
+                        display: 'flex',
                         alignItems: 'center',
-                        gap: '4px',
-                        color: color.primary,
-                        fontSize: '12px'
+                        justifyContent: 'center'
                       }}>
-                        <span style={{
-                          width: '6px',
-                          height: '6px',
-                          borderRadius: '50%',
-                          background: color.primary
-                        }} />
-                        {selectedAssetDetail.sector}
+                        {isCrypto ? (
+                          <span style={{ color: '#fff', fontSize: '12px', fontWeight: '700' }}>₿</span>
+                        ) : (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
+                            <path d="M3 17l6-6 4 4 8-8M17 7h4v4"/>
+                          </svg>
+                        )}
+                      </div>
+                      <span style={{
+                        color: accentColor,
+                        fontSize: '12px',
+                        fontWeight: '600'
+                      }}>
+                        {selectedAssetDetail.sector || (isCrypto ? 'Cryptocurrency' : 'Stock')}
                       </span>
-                    </>
-                  )}
+                    </div>
+
+                    {/* Price */}
+                    <div style={{
+                      fontSize: '48px',
+                      fontWeight: '700',
+                      color: '#ffffff',
+                      margin: '0 0 12px 0',
+                      fontFamily: 'system-ui, -apple-system, sans-serif',
+                      textShadow: '0 2px 20px rgba(0,0,0,0.3)'
+                    }}>
+                      ${selectedAssetDetail.price?.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: selectedAssetDetail.price < 1 ? 4 : 2
+                      })}
+                    </div>
+
+                    {/* Change Badge */}
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: isPositive ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                      border: `1px solid ${isPositive ? '#22c55e' : '#ef4444'}50`,
+                      borderRadius: '12px',
+                      padding: '10px 20px'
+                    }}>
+                      <span style={{
+                        color: isPositive ? '#22c55e' : '#ef4444',
+                        fontSize: '16px'
+                      }}>
+                        {isPositive ? '▲' : '▼'}
+                      </span>
+                      <span style={{
+                        color: isPositive ? '#22c55e' : '#ef4444',
+                        fontSize: '18px',
+                        fontWeight: '700'
+                      }}>
+                        {Math.abs(safeNumber(selectedAssetDetail.percentChange)).toFixed(2)}% today
+                      </span>
+                    </div>
+
+                    {/* Crypto Rank */}
+                    {!isStock && metrics?.marketCapRank && (
+                      <div style={{ marginTop: '12px' }}>
+                        <span style={{ color: '#8b949e', fontSize: '13px' }}>Rank #{metrics.marketCapRank} by Market Cap</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                  <span style={{ color: '#ffffff', fontSize: '32px', fontWeight: 'bold' }}>
-                    ${selectedAssetDetail.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                  <span style={{
-                    color: safeNumber(selectedAssetDetail.percentChange) >= 0 ? colors.green : colors.red,
-                    fontSize: '16px',
-                    fontWeight: '600'
-                  }}>
-                    {safeNumber(selectedAssetDetail.percentChange) >= 0 ? '▲' : '▼'} {safeNumber(selectedAssetDetail.percentChange) >= 0 ? '+' : ''}{safeToFixed(selectedAssetDetail.percentChange, 2)}% today
-                  </span>
-                </div>
-                {!isStock && metrics?.marketCapRank && (
-                  <span style={{ color: '#8b949e', fontSize: '13px' }}>Rank #{metrics.marketCapRank} by Market Cap</span>
-                )}
-              </div>
-            </div>
+              );
+            })()}
 
             {/* Content */}
             <div style={{ maxWidth: '900px', margin: '0 auto', padding: '20px 16px' }}>
