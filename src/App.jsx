@@ -23,6 +23,50 @@ import {
   getAvailableSectors,
 } from './services/recommendationEngine';
 
+// ============================================
+// SECTOR COLOR DEFINITIONS
+// ============================================
+const SECTOR_COLORS = {
+  // Technology - Blue
+  'Technology': { primary: '#3b82f6', glow: 'rgba(59, 130, 246, 0.4)', gradient: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' },
+  'Information Technology': { primary: '#3b82f6', glow: 'rgba(59, 130, 246, 0.4)', gradient: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' },
+  // Energy - Red/Orange
+  'Energy': { primary: '#ef4444', glow: 'rgba(239, 68, 68, 0.4)', gradient: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' },
+  // Healthcare - Teal
+  'Healthcare': { primary: '#14b8a6', glow: 'rgba(20, 184, 166, 0.4)', gradient: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)' },
+  'Health Care': { primary: '#14b8a6', glow: 'rgba(20, 184, 166, 0.4)', gradient: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)' },
+  // Financials - Green
+  'Financials': { primary: '#22c55e', glow: 'rgba(34, 197, 94, 0.4)', gradient: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)' },
+  'Financial Services': { primary: '#22c55e', glow: 'rgba(34, 197, 94, 0.4)', gradient: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)' },
+  // Consumer Discretionary - Purple
+  'Consumer Cyclical': { primary: '#a855f7', glow: 'rgba(168, 85, 247, 0.4)', gradient: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)' },
+  'Consumer Discretionary': { primary: '#a855f7', glow: 'rgba(168, 85, 247, 0.4)', gradient: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)' },
+  // Consumer Staples - Pink
+  'Consumer Defensive': { primary: '#ec4899', glow: 'rgba(236, 72, 153, 0.4)', gradient: 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)' },
+  'Consumer Staples': { primary: '#ec4899', glow: 'rgba(236, 72, 153, 0.4)', gradient: 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)' },
+  // Industrials - Amber
+  'Industrials': { primary: '#f59e0b', glow: 'rgba(245, 158, 11, 0.4)', gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' },
+  // Materials - Orange
+  'Basic Materials': { primary: '#f97316', glow: 'rgba(249, 115, 22, 0.4)', gradient: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)' },
+  'Materials': { primary: '#f97316', glow: 'rgba(249, 115, 22, 0.4)', gradient: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)' },
+  // Real Estate - Indigo
+  'Real Estate': { primary: '#6366f1', glow: 'rgba(99, 102, 241, 0.4)', gradient: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)' },
+  // Utilities - Slate
+  'Utilities': { primary: '#64748b', glow: 'rgba(100, 116, 139, 0.4)', gradient: 'linear-gradient(135deg, #64748b 0%, #475569 100%)' },
+  // Communication - Cyan
+  'Communication Services': { primary: '#06b6d4', glow: 'rgba(6, 182, 212, 0.4)', gradient: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)' },
+  // Cryptocurrency - Gold
+  'Cryptocurrency': { primary: '#fbbf24', glow: 'rgba(251, 191, 36, 0.4)', gradient: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)' },
+  // Default - Cyan (brand color)
+  'default': { primary: '#00d9ff', glow: 'rgba(0, 217, 255, 0.4)', gradient: 'linear-gradient(135deg, #00d9ff 0%, #0ea5e9 100%)' }
+};
+
+// Helper to get sector colors
+const getSectorColors = (sector, isCrypto = false) => {
+  if (isCrypto) return SECTOR_COLORS['Cryptocurrency'];
+  return SECTOR_COLORS[sector] || SECTOR_COLORS['default'];
+};
+
 // MarketClash Bull & Bear Logo Component
 const MarketClashLogo = ({ size = 'large' }) => {
   const dimensions = {
@@ -4002,17 +4046,6 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
           boxShadow: '0 0 30px rgba(34, 197, 94, 0.4), 0 0 60px rgba(34, 197, 94, 0.2), 0 10px 40px rgba(0, 0, 0, 0.3)',
           animation: 'pulseGlow 2s ease-in-out infinite'
         }}>
-          {/* Animated Border Ring */}
-          <div style={{
-            position: 'absolute',
-            inset: '-2px',
-            borderRadius: '22px',
-            background: 'conic-gradient(from 0deg, #22c55e, #00d9ff, #8b5cf6, #22c55e)',
-            animation: 'spinBorder 4s linear infinite',
-            opacity: 0.5,
-            zIndex: 0
-          }} />
-
           {/* Inner Button */}
           <button
             onClick={onContinue}
@@ -4167,10 +4200,6 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
           @keyframes pulseGlow {
             0%, 100% { box-shadow: 0 0 30px rgba(34, 197, 94, 0.4), 0 0 60px rgba(34, 197, 94, 0.2), 0 10px 40px rgba(0, 0, 0, 0.3); }
             50% { box-shadow: 0 0 40px rgba(34, 197, 94, 0.6), 0 0 80px rgba(34, 197, 94, 0.3), 0 10px 40px rgba(0, 0, 0, 0.3); }
-          }
-          @keyframes spinBorder {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
           }
           @keyframes shimmerEffect {
             0% { left: -100%; }
@@ -11736,21 +11765,20 @@ export default function PortfolioDuel() {
               </div>
             </div>
 
-            {/* Enhanced Ticker Card */}
+            {/* Enhanced Ticker Card with Sector-Based Glow */}
             {(() => {
               const isPositive = safeNumber(selectedAssetDetail.percentChange) >= 0;
               const isCrypto = !isStock;
-              const accentColor = isCrypto ? '#f7931a' : (isPositive ? '#22c55e' : '#ef4444');
-              const accentGlow = isCrypto ? 'rgba(247, 147, 26, 0.3)' : (isPositive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)');
+              // Use sector-based colors instead of just positive/negative
+              const sectorColor = getSectorColors(selectedAssetDetail.sector, isCrypto);
+              const accentColor = sectorColor.primary;
+              const accentGlow = sectorColor.glow;
 
               return (
                 <div style={{
                   position: 'relative',
-                  background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 50%, #131a24 100%)',
-                  borderBottom: `3px solid ${color.primary}`,
-                  padding: '40px 24px',
-                  marginBottom: '0',
-                  overflow: 'hidden'
+                  padding: '16px',
+                  marginBottom: '0'
                 }}>
                   {/* CSS Animations */}
                   <style>
@@ -11773,8 +11801,34 @@ export default function PortfolioDuel() {
                         0%, 100% { opacity: 0.3; }
                         50% { opacity: 0.7; }
                       }
+                      @keyframes tickerGlowPulse {
+                        0%, 100% {
+                          box-shadow: 0 0 20px ${accentGlow}, 0 0 40px ${accentGlow.replace('0.4', '0.2')}, 0 8px 32px rgba(0, 0, 0, 0.3);
+                        }
+                        50% {
+                          box-shadow: 0 0 30px ${accentGlow.replace('0.4', '0.5')}, 0 0 60px ${accentGlow.replace('0.4', '0.3')}, 0 8px 32px rgba(0, 0, 0, 0.3);
+                        }
+                      }
                     `}
                   </style>
+
+                  {/* Outer Glow Container with Pulsing Animation */}
+                  <div style={{
+                    position: 'relative',
+                    borderRadius: '24px',
+                    padding: '3px',
+                    background: sectorColor.gradient,
+                    boxShadow: `0 0 20px ${accentGlow}, 0 0 40px ${accentGlow.replace('0.4', '0.2')}, 0 8px 32px rgba(0, 0, 0, 0.3)`,
+                    animation: 'tickerGlowPulse 3s ease-in-out infinite'
+                  }}>
+                    {/* Inner Card */}
+                    <div style={{
+                      position: 'relative',
+                      background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 50%, #131a24 100%)',
+                      borderRadius: '21px',
+                      padding: '40px 24px',
+                      overflow: 'hidden'
+                    }}>
 
                   {/* Animated Gradient Orbs */}
                   <div style={{
@@ -12002,6 +12056,20 @@ export default function PortfolioDuel() {
                       </div>
                     )}
                   </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom Reflection Glow - Sector colored */}
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '8px',
+                    left: '15%',
+                    right: '15%',
+                    height: '16px',
+                    background: `radial-gradient(ellipse, ${accentGlow} 0%, transparent 70%)`,
+                    filter: 'blur(8px)',
+                    pointerEvents: 'none'
+                  }} />
                 </div>
               );
             })()}
