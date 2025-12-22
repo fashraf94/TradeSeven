@@ -5017,12 +5017,106 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
 
     try {
       const plan = await generateGamePlan(thesis, convictionData, pinnedInsights, recommendations);
-      setGamePlan(plan);
+      // If plan is null/undefined, create a local fallback
+      if (plan) {
+        setGamePlan(plan);
+      } else {
+        console.warn('[GuidedFlow] generateGamePlan returned null, using local fallback');
+        setGamePlan(createLocalFallbackPlan());
+      }
     } catch (err) {
-      console.error('Game plan generation failed:', err);
+      console.error('[GuidedFlow] Game plan generation failed:', err);
+      // Create a basic fallback plan from selections
+      setGamePlan(createLocalFallbackPlan());
     } finally {
       setIsGeneratingPlan(false);
     }
+  };
+
+  // Local fallback plan generator - works without API
+  const createLocalFallbackPlan = () => {
+    const selectedStocks = convictionData.selectedStocks || {};
+    const cryptoPicks = selectedStocks.crypto || [];
+    const stockPicks = [
+      ...(selectedStocks.momentum || []),
+      ...(selectedStocks.steady || []),
+      ...(selectedStocks.wildcard || []),
+    ];
+
+    // Build portfolio from selections
+    const portfolio = [];
+
+    // Add crypto (max 1 for classic mode)
+    cryptoPicks.slice(0, 1).forEach(symbol => {
+      const cryptoNames = { BTC: 'Bitcoin', ETH: 'Ethereum', SOL: 'Solana', XRP: 'Ripple' };
+      portfolio.push({
+        symbol,
+        type: 'crypto',
+        name: cryptoNames[symbol] || symbol,
+        allocation: 0,
+        rationale: 'Selected crypto asset for portfolio diversification'
+      });
+    });
+
+    // Add stocks
+    stockPicks.forEach(symbol => {
+      const asset = recommendations.find(r => r.symbol === symbol);
+      portfolio.push({
+        symbol,
+        type: 'stock',
+        name: asset?.name || symbol,
+        allocation: 0,
+        rationale: asset?.thesisScore?.alignment
+          ? `High thesis alignment (${asset.thesisScore.alignment})`
+          : 'Included per your selection'
+      });
+    });
+
+    // Fill remaining slots with top recommendations if needed (min 7 assets)
+    const usedSymbols = new Set(portfolio.map(p => p.symbol));
+    const remaining = Math.max(0, 7 - portfolio.length);
+    const topRecs = recommendations
+      .filter(r => !usedSymbols.has(r.symbol) && !['BTC', 'ETH', 'SOL', 'XRP'].includes(r.symbol))
+      .slice(0, remaining);
+
+    topRecs.forEach(asset => {
+      portfolio.push({
+        symbol: asset.symbol,
+        type: 'stock',
+        name: asset.name || asset.symbol,
+        allocation: 0,
+        rationale: `High thesis alignment (${asset.thesisScore?.alignment || 'moderate'})`
+      });
+    });
+
+    // Calculate equal-weight allocations
+    if (portfolio.length > 0) {
+      const baseAllocation = Math.floor((100 / portfolio.length) * 10) / 10;
+      let remaining = 100;
+      portfolio.forEach((asset, idx) => {
+        if (idx === portfolio.length - 1) {
+          asset.allocation = Math.round(remaining * 10) / 10;
+        } else {
+          asset.allocation = baseAllocation;
+          remaining -= baseAllocation;
+        }
+      });
+    }
+
+    const cryptoCount = portfolio.filter(p => p.type === 'crypto').length;
+    const stockCount = portfolio.filter(p => p.type === 'stock').length;
+
+    return {
+      strategySummary: `A ${thesis.risk || 'balanced'} ${thesis.stance || 'bullish'} portfolio with ${stockCount} stocks${cryptoCount > 0 ? ` and ${cryptoCount} crypto` : ''}. Built for a ${thesis.battleType === 'head-to-head' ? '24-hour' : 'week-long'} battle.`,
+      portfolio,
+      risks: [
+        thesis.stance === 'bullish' ? 'Market downturn would work against this thesis' : 'Market rally would work against this thesis',
+        thesis.risk === 'aggressive' ? 'High volatility may cause significant swings' : 'Conservative positioning may limit upside',
+        cryptoCount > 0 ? 'Crypto assets add volatility and 24/7 market exposure' : 'Correlated positions may reduce diversification'
+      ],
+      insightConnections: 'Portfolio constructed based on your thesis alignment scoring and stated preferences.',
+      generatedLocally: true
+    };
   };
 
   // Handle use portfolio
@@ -11128,6 +11222,90 @@ export default function PortfolioDuel() {
       setResearchGamePlanLoading(true);
       setResearchGamePlan(null);
 
+      // Local fallback generator for Research Mode
+      const createResearchFallbackPlan = () => {
+        const selectedStocks = convictionData.selectedStocks || {};
+        const cryptoPicks = selectedStocks.crypto || [];
+        const stockPicks = [
+          ...(selectedStocks.momentum || []),
+          ...(selectedStocks.steady || []),
+          ...(selectedStocks.wildcard || []),
+        ];
+
+        const portfolio = [];
+
+        // Add crypto (max 1)
+        cryptoPicks.slice(0, 1).forEach(symbol => {
+          const cryptoNames = { BTC: 'Bitcoin', ETH: 'Ethereum', SOL: 'Solana', XRP: 'Ripple' };
+          const cryptoAsset = cryptoData.find(c => c.symbol === symbol);
+          portfolio.push({
+            symbol,
+            type: 'crypto',
+            name: cryptoNames[symbol] || cryptoAsset?.name || symbol,
+            allocation: 0,
+            rationale: 'Selected crypto asset for portfolio diversification'
+          });
+        });
+
+        // Add stocks
+        stockPicks.forEach(symbol => {
+          const asset = stocksData.find(s => s.symbol === symbol);
+          portfolio.push({
+            symbol,
+            type: 'stock',
+            name: asset?.name || symbol,
+            allocation: 0,
+            rationale: 'Included per your selection'
+          });
+        });
+
+        // Fill remaining slots if needed (min 7)
+        const usedSymbols = new Set(portfolio.map(p => p.symbol));
+        const remaining = Math.max(0, 7 - portfolio.length);
+        const topRecs = stocksData
+          .filter(s => !usedSymbols.has(s.symbol))
+          .slice(0, remaining);
+
+        topRecs.forEach(asset => {
+          portfolio.push({
+            symbol: asset.symbol,
+            type: 'stock',
+            name: asset.name || asset.symbol,
+            allocation: 0,
+            rationale: 'Top-scoring asset for thesis alignment'
+          });
+        });
+
+        // Equal-weight allocations
+        if (portfolio.length > 0) {
+          const baseAllocation = Math.floor((100 / portfolio.length) * 10) / 10;
+          let remainingPct = 100;
+          portfolio.forEach((asset, idx) => {
+            if (idx === portfolio.length - 1) {
+              asset.allocation = Math.round(remainingPct * 10) / 10;
+            } else {
+              asset.allocation = baseAllocation;
+              remainingPct -= baseAllocation;
+            }
+          });
+        }
+
+        const cryptoCount = portfolio.filter(p => p.type === 'crypto').length;
+        const stockCount = portfolio.filter(p => p.type === 'stock').length;
+
+        return {
+          strategySummary: `A ${researchThesis?.risk || 'balanced'} ${researchThesis?.stance || 'bullish'} portfolio with ${stockCount} stocks${cryptoCount > 0 ? ` and ${cryptoCount} crypto` : ''}.`,
+          portfolio,
+          risks: [
+            'Market conditions may work against this thesis',
+            'Position concentration adds volatility',
+            cryptoCount > 0 ? 'Crypto assets add 24/7 exposure' : 'Sector correlation may reduce diversification'
+          ],
+          insightConnections: 'Portfolio constructed based on your selections and thesis.',
+          generatedLocally: true
+        };
+      };
+
       try {
         // Get current notes for context
         const currentWeekNotes = userNotes.filter(n => n.weekOf === getCurrentWeekMonday());
@@ -11143,11 +11321,18 @@ export default function PortfolioDuel() {
           allAssets
         );
 
-        setResearchGamePlan(gamePlanResult);
+        // If result is null, use local fallback
+        if (gamePlanResult) {
+          setResearchGamePlan(gamePlanResult);
+        } else {
+          console.warn('[ResearchFlow] generateGamePlan returned null, using local fallback');
+          setResearchGamePlan(createResearchFallbackPlan());
+        }
       } catch (error) {
         console.error('[ResearchFlow] Game plan generation failed:', error);
-        setResearchGamePlan(null);
-        showToast('Failed to generate game plan. Please try again.');
+        // Use local fallback instead of showing error
+        console.warn('[ResearchFlow] Using local fallback plan');
+        setResearchGamePlan(createResearchFallbackPlan());
       } finally {
         setResearchGamePlanLoading(false);
       }
