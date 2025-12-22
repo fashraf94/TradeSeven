@@ -61,10 +61,81 @@ const SECTOR_COLORS = {
   'default': { primary: '#00d9ff', glow: 'rgba(0, 217, 255, 0.4)', gradient: 'linear-gradient(135deg, #00d9ff 0%, #0ea5e9 100%)' }
 };
 
+// Comprehensive stock sector database for proper sector identification
+const STOCK_SECTORS = {
+  // Technology
+  'AAPL': 'Technology', 'MSFT': 'Technology', 'GOOGL': 'Technology', 'GOOG': 'Technology',
+  'META': 'Technology', 'NVDA': 'Technology', 'AMD': 'Technology', 'INTC': 'Technology',
+  'CRM': 'Technology', 'ADBE': 'Technology', 'NOW': 'Technology', 'SHOP': 'Technology',
+  'UBER': 'Technology', 'TSLA': 'Technology', 'AVGO': 'Technology', 'ORCL': 'Technology',
+  'CSCO': 'Technology', 'IBM': 'Technology', 'QCOM': 'Technology', 'TXN': 'Technology',
+  'MU': 'Technology', 'AMAT': 'Technology', 'LRCX': 'Technology', 'KLAC': 'Technology',
+  'SNPS': 'Technology', 'CDNS': 'Technology', 'PANW': 'Technology', 'CRWD': 'Technology',
+  'ZS': 'Technology', 'NET': 'Technology', 'DDOG': 'Technology', 'SNOW': 'Technology',
+  'PLTR': 'Technology', 'U': 'Technology', 'RBLX': 'Technology', 'COIN': 'Technology',
+  'MSTR': 'Technology', 'DELL': 'Technology', 'HPE': 'Technology', 'HPQ': 'Technology',
+  // Financials
+  'JPM': 'Financials', 'BAC': 'Financials', 'GS': 'Financials', 'MS': 'Financials',
+  'V': 'Financials', 'MA': 'Financials', 'AXP': 'Financials', 'WFC': 'Financials',
+  'C': 'Financials', 'SCHW': 'Financials', 'BLK': 'Financials', 'SPGI': 'Financials',
+  'SQ': 'Financials', 'PYPL': 'Financials', 'COF': 'Financials', 'USB': 'Financials',
+  'PNC': 'Financials', 'TFC': 'Financials', 'BK': 'Financials', 'STT': 'Financials',
+  // Healthcare
+  'JNJ': 'Healthcare', 'UNH': 'Healthcare', 'PFE': 'Healthcare', 'ABBV': 'Healthcare',
+  'MRK': 'Healthcare', 'LLY': 'Healthcare', 'TMO': 'Healthcare', 'ABT': 'Healthcare',
+  'DHR': 'Healthcare', 'BMY': 'Healthcare', 'AMGN': 'Healthcare', 'GILD': 'Healthcare',
+  'CVS': 'Healthcare', 'MDT': 'Healthcare', 'ISRG': 'Healthcare', 'VRTX': 'Healthcare',
+  'REGN': 'Healthcare', 'ZTS': 'Healthcare', 'BIIB': 'Healthcare', 'MRNA': 'Healthcare',
+  // Consumer Discretionary
+  'AMZN': 'Consumer Discretionary', 'HD': 'Consumer Discretionary', 'MCD': 'Consumer Discretionary',
+  'NKE': 'Consumer Discretionary', 'SBUX': 'Consumer Discretionary', 'LOW': 'Consumer Discretionary',
+  'TGT': 'Consumer Discretionary', 'TJX': 'Consumer Discretionary', 'BKNG': 'Consumer Discretionary',
+  'MAR': 'Consumer Discretionary', 'CMG': 'Consumer Discretionary', 'ABNB': 'Consumer Discretionary',
+  'GM': 'Consumer Discretionary', 'F': 'Consumer Discretionary', 'LULU': 'Consumer Discretionary',
+  'ROST': 'Consumer Discretionary', 'DHI': 'Consumer Discretionary', 'LEN': 'Consumer Discretionary',
+  // Consumer Staples
+  'PG': 'Consumer Staples', 'KO': 'Consumer Staples', 'PEP': 'Consumer Staples',
+  'WMT': 'Consumer Staples', 'COST': 'Consumer Staples', 'MDLZ': 'Consumer Staples',
+  'PM': 'Consumer Staples', 'MO': 'Consumer Staples', 'CL': 'Consumer Staples',
+  'GIS': 'Consumer Staples', 'K': 'Consumer Staples', 'KMB': 'Consumer Staples',
+  'STZ': 'Consumer Staples', 'KHC': 'Consumer Staples', 'SYY': 'Consumer Staples',
+  // Energy
+  'XOM': 'Energy', 'CVX': 'Energy', 'COP': 'Energy', 'SLB': 'Energy',
+  'EOG': 'Energy', 'OXY': 'Energy', 'MPC': 'Energy', 'PSX': 'Energy',
+  'VLO': 'Energy', 'PXD': 'Energy', 'DVN': 'Energy', 'HAL': 'Energy',
+  'BKR': 'Energy', 'FANG': 'Energy', 'HES': 'Energy', 'KMI': 'Energy',
+  // Communication Services
+  'VZ': 'Communication Services', 'T': 'Communication Services', 'CMCSA': 'Communication Services',
+  'DIS': 'Communication Services', 'NFLX': 'Communication Services', 'TMUS': 'Communication Services',
+  'CHTR': 'Communication Services', 'WBD': 'Communication Services', 'EA': 'Communication Services',
+  'TTWO': 'Communication Services', 'MTCH': 'Communication Services', 'PARA': 'Communication Services',
+  // Industrials
+  'CAT': 'Industrials', 'DE': 'Industrials', 'BA': 'Industrials', 'HON': 'Industrials',
+  'UNP': 'Industrials', 'UPS': 'Industrials', 'RTX': 'Industrials', 'LMT': 'Industrials',
+  'GE': 'Industrials', 'MMM': 'Industrials', 'FDX': 'Industrials', 'WM': 'Industrials',
+  'CSX': 'Industrials', 'NSC': 'Industrials', 'EMR': 'Industrials', 'ITW': 'Industrials',
+  // Materials
+  'LIN': 'Materials', 'APD': 'Materials', 'SHW': 'Materials', 'ECL': 'Materials',
+  'NEM': 'Materials', 'FCX': 'Materials', 'NUE': 'Materials', 'DOW': 'Materials',
+  // Real Estate
+  'AMT': 'Real Estate', 'PLD': 'Real Estate', 'CCI': 'Real Estate', 'EQIX': 'Real Estate',
+  'SPG': 'Real Estate', 'PSA': 'Real Estate', 'O': 'Real Estate', 'DLR': 'Real Estate',
+  // Utilities
+  'NEE': 'Utilities', 'DUK': 'Utilities', 'SO': 'Utilities', 'D': 'Utilities',
+  'AEP': 'Utilities', 'EXC': 'Utilities', 'SRE': 'Utilities', 'XEL': 'Utilities',
+};
+
 // Helper to get sector colors
 const getSectorColors = (sector, isCrypto = false) => {
   if (isCrypto) return SECTOR_COLORS['Cryptocurrency'];
   return SECTOR_COLORS[sector] || SECTOR_COLORS['default'];
+};
+
+// Helper to get stock sector from database
+const getStockSector = (symbol) => {
+  if (!symbol) return null;
+  const upperSymbol = symbol.toUpperCase();
+  return STOCK_SECTORS[upperSymbol] || null;
 };
 
 // ============================================
@@ -1100,7 +1171,7 @@ const StockMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors 
                   </span>
                 </div>
                 <span style={{ color: '#8b949e', fontSize: '12px' }}>
-                  Sector: {asset.sector || 'N/A'}
+                  Sector: {asset.sector || getStockSector(asset.symbol) || 'Equity'}
                 </span>
               </div>
 
@@ -3357,7 +3428,7 @@ const GamePlan = ({
                     textTransform: 'uppercase',
                     letterSpacing: '0.5px',
                   }}>
-                    Crypto Holdings
+                    {gamePlan.isSnakeDraft ? 'Crypto Draft Targets' : 'Crypto Holdings'}
                   </span>
                 </div>
                 <div style={{
@@ -3397,20 +3468,38 @@ const GamePlan = ({
                           <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
                             {position.symbol}
                           </div>
-                          {position.rationale && (
+                          {gamePlan.isSnakeDraft ? (
+                            <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
+                              {position.roundRationale || 'Draft when available'}
+                            </div>
+                          ) : position.rationale && (
                             <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
                               {position.rationale}
                             </div>
                           )}
                         </div>
                       </div>
-                      <div style={{
-                        color: '#f59e0b',
-                        fontWeight: '700',
-                        fontSize: '17px',
-                      }}>
-                        {safeToFixed(position.allocation, 1)}%
-                      </div>
+                      {gamePlan.isSnakeDraft ? (
+                        <div style={{
+                          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                          borderRadius: '8px',
+                          padding: '6px 12px',
+                          color: '#fff',
+                          fontWeight: '700',
+                          fontSize: '12px',
+                          textTransform: 'uppercase',
+                        }}>
+                          {position.roundLabel || `R${position.draftRound}`}
+                        </div>
+                      ) : (
+                        <div style={{
+                          color: '#f59e0b',
+                          fontWeight: '700',
+                          fontSize: '17px',
+                        }}>
+                          {safeToFixed(position.allocation, 1)}%
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -3446,7 +3535,7 @@ const GamePlan = ({
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                 }}>
-                  Stock Holdings
+                  {gamePlan.isSnakeDraft ? 'Stock Draft Board' : 'Stock Holdings'}
                 </span>
               </div>
               <div style={{
@@ -3486,20 +3575,38 @@ const GamePlan = ({
                         <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
                           {position.symbol}
                         </div>
-                        {position.rationale && (
+                        {gamePlan.isSnakeDraft ? (
+                          <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
+                            {position.roundRationale || 'Draft when available'}
+                          </div>
+                        ) : position.rationale && (
                           <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
                             {position.rationale}
                           </div>
                         )}
                       </div>
                     </div>
-                    <div style={{
-                      color: '#22c55e',
-                      fontWeight: '700',
-                      fontSize: '17px',
-                    }}>
-                      {safeToFixed(position.allocation, 1)}%
-                    </div>
+                    {gamePlan.isSnakeDraft ? (
+                      <div style={{
+                        background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                        borderRadius: '8px',
+                        padding: '6px 12px',
+                        color: '#fff',
+                        fontWeight: '700',
+                        fontSize: '12px',
+                        textTransform: 'uppercase',
+                      }}>
+                        {position.roundLabel || `R${position.draftRound}`}
+                      </div>
+                    ) : (
+                      <div style={{
+                        color: '#22c55e',
+                        fontWeight: '700',
+                        fontSize: '17px',
+                      }}>
+                        {safeToFixed(position.allocation, 1)}%
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -4390,7 +4497,6 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
       options: [
         { id: 'head-to-head', label: '⚔️ Head-to-Head', description: '24-hour battle', color: c.cyan },
         { id: 'snake-draft', label: '🐍 Snake Draft', description: 'Week-long competition', color: c.green },
-        { id: 'training', label: '🎯 Training', description: 'Practice mode', color: '#f59e0b' },
       ],
       field: 'battleType',
     },
@@ -5349,6 +5455,8 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
       ...(selectedStocks.wildcard || []),
     ];
 
+    const isSnakeDraft = thesis.battleType === 'snake-draft';
+
     // 1. Determine target portfolio size (random 7-13)
     const minAssets = 7;
     const maxAssets = 13;
@@ -5466,7 +5574,60 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
 
     const stockCount = portfolio.filter(p => p.type === 'stock').length;
 
-    // Build strategy description
+    // SNAKE DRAFT: Assign round-by-round strategy instead of allocation %
+    if (isSnakeDraft) {
+      // Round strategy rationales
+      const roundStrategies = {
+        1: { label: 'Round 1', rationale: 'Secure your highest-conviction pick first' },
+        2: { label: 'Round 2', rationale: 'Lock in your second core position' },
+        3: { label: 'Round 3', rationale: 'Add sector diversity early' },
+        4: { label: 'Round 4', rationale: 'Grab before opponents notice' },
+        5: { label: 'Round 5', rationale: 'Mid-draft value pick' },
+        6: { label: 'Round 6', rationale: 'Balance your portfolio risk' },
+        7: { label: 'Round 7', rationale: 'Late-round upside play' },
+        8: { label: 'Round 8', rationale: 'Fill gaps in sector exposure' },
+        9: { label: 'Round 9', rationale: 'Speculative swing position' },
+        10: { label: 'Round 10', rationale: 'Final sleeper pick' },
+      };
+
+      // Sort by priority: user_selected first (by conviction), then diversification
+      const sortedPortfolio = [
+        ...portfolio.filter(p => p.source === 'user_selected'),
+        ...portfolio.filter(p => p.source === 'diversification'),
+      ];
+
+      sortedPortfolio.forEach((asset, index) => {
+        const round = Math.min(index + 1, 10);
+        asset.draftRound = round;
+        asset.roundLabel = roundStrategies[round]?.label || `Round ${round}`;
+        asset.roundRationale = asset.source === 'user_selected'
+          ? roundStrategies[round]?.rationale || 'Strategic pick'
+          : 'Diversification pick - grab if available';
+      });
+
+      const strategyText = `Snake Draft strategy for ${thesis.risk || 'balanced'} ${thesis.stance || 'bullish'} approach. ${userPicks.length} priority picks for early rounds, ${divPicks.length} targets for later rounds.`;
+
+      return {
+        strategySummary: strategyText,
+        portfolio: sortedPortfolio,
+        isSnakeDraft: true,
+        risks: [
+          'High-priority picks may be taken by opponents before your turn',
+          'Draft position affects which assets you can secure',
+          'Week-long format means more exposure to volatility'
+        ],
+        insightConnections: 'Draft order prioritizes your high-conviction picks, with backup targets for each round.',
+        generatedLocally: true,
+        metadata: {
+          userPicks: userPicks.length,
+          diversificationAdded: divPicks.length,
+          totalAssets: sortedPortfolio.length,
+          diversificationStrategy
+        }
+      };
+    }
+
+    // Build strategy description for Head-to-Head
     let strategyText = `A ${thesis.risk || 'balanced'} ${thesis.stance || 'bullish'} portfolio with ${stockCount} stocks`;
     if (cryptoCount > 0) strategyText += ` and ${cryptoCount} crypto`;
     strategyText += `. Built around your ${userPicks.length} core picks`;
@@ -5484,6 +5645,7 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
     return {
       strategySummary: strategyText,
       portfolio,
+      isSnakeDraft: false,
       risks: [
         thesis.stance === 'bullish' ? 'Market downturn would work against this thesis' : 'Market rally would work against this thesis',
         thesis.risk === 'aggressive' ? 'High volatility may cause significant swings' : 'Conservative positioning may limit upside',
@@ -11613,6 +11775,8 @@ export default function PortfolioDuel() {
           ...(selectedStocks.wildcard || []),
         ];
 
+        const isSnakeDraft = researchThesis?.battleType === 'snake-draft';
+
         // 1. Determine target portfolio size (random 7-13)
         const minAssets = 7;
         const maxAssets = 13;
@@ -11725,7 +11889,58 @@ export default function PortfolioDuel() {
 
         const stockCount = portfolio.filter(p => p.type === 'stock').length;
 
-        // Build strategy description
+        // SNAKE DRAFT: Assign round-by-round strategy instead of allocation %
+        if (isSnakeDraft) {
+          const roundStrategies = {
+            1: { label: 'Round 1', rationale: 'Secure your highest-conviction pick first' },
+            2: { label: 'Round 2', rationale: 'Lock in your second core position' },
+            3: { label: 'Round 3', rationale: 'Add sector diversity early' },
+            4: { label: 'Round 4', rationale: 'Grab before opponents notice' },
+            5: { label: 'Round 5', rationale: 'Mid-draft value pick' },
+            6: { label: 'Round 6', rationale: 'Balance your portfolio risk' },
+            7: { label: 'Round 7', rationale: 'Late-round upside play' },
+            8: { label: 'Round 8', rationale: 'Fill gaps in sector exposure' },
+            9: { label: 'Round 9', rationale: 'Speculative swing position' },
+            10: { label: 'Round 10', rationale: 'Final sleeper pick' },
+          };
+
+          const sortedPortfolio = [
+            ...portfolio.filter(p => p.source === 'user_selected'),
+            ...portfolio.filter(p => p.source === 'diversification'),
+          ];
+
+          sortedPortfolio.forEach((asset, index) => {
+            const round = Math.min(index + 1, 10);
+            asset.draftRound = round;
+            asset.roundLabel = roundStrategies[round]?.label || `Round ${round}`;
+            asset.roundRationale = asset.source === 'user_selected'
+              ? roundStrategies[round]?.rationale || 'Strategic pick'
+              : 'Diversification pick - grab if available';
+          });
+
+          const strategyText = `Snake Draft strategy for ${researchThesis?.risk || 'balanced'} ${researchThesis?.stance || 'bullish'} approach. ${userPicks.length} priority picks for early rounds, ${divPicks.length} targets for later rounds.`;
+
+          return {
+            strategySummary: strategyText,
+            portfolio: sortedPortfolio,
+            isSnakeDraft: true,
+            risks: [
+              'High-priority picks may be taken by opponents before your turn',
+              'Draft position affects which assets you can secure',
+              'Week-long format means more exposure to volatility'
+            ],
+            insightConnections: 'Draft order prioritizes your high-conviction picks, with backup targets for each round.',
+            generatedLocally: true,
+            metadata: {
+              userPicks: userPicks.length,
+              diversificationAdded: divPicks.length,
+              totalAssets: sortedPortfolio.length,
+              diversificationStrategy
+            }
+          };
+        }
+
+        // Build strategy description for Head-to-Head
         let strategyText = `A ${researchThesis?.risk || 'balanced'} ${researchThesis?.stance || 'bullish'} portfolio with ${stockCount} stocks`;
         if (cryptoCount > 0) strategyText += ` and ${cryptoCount} crypto`;
         strategyText += `. Built around your ${userPicks.length} core picks`;
@@ -11743,6 +11958,7 @@ export default function PortfolioDuel() {
         return {
           strategySummary: strategyText,
           portfolio,
+          isSnakeDraft: false,
           risks: [
             'Market conditions may work against this thesis',
             researchThesis?.risk === 'aggressive' ? 'High volatility may cause significant swings' : 'Position concentration adds volatility',
@@ -11922,7 +12138,7 @@ export default function PortfolioDuel() {
       const fundamentals = isStock ? stockFundamentals[selectedAssetDetail.symbol] : null;
       const metrics = !isStock ? cryptoMetrics[selectedAssetDetail.symbol] : null;
       const isLoading = isStock ? fundamentalsLoading[selectedAssetDetail.symbol] : cryptoMetricsLoading[selectedAssetDetail.symbol];
-      const color = isStock ? getSectorColor(selectedAssetDetail.sector || 'Unknown') : cryptoColor;
+      const color = isStock ? getSectorColor(selectedAssetDetail.sector || getStockSector(selectedAssetDetail.symbol) || 'Unknown') : cryptoColor;
 
       // Metric card component
       const MetricCard = ({ title, value, subValue, metricKey, explanationFn, moreDepth, valueColor }) => (
@@ -12053,8 +12269,9 @@ export default function PortfolioDuel() {
             {(() => {
               const isPositive = safeNumber(selectedAssetDetail.percentChange) >= 0;
               const isCrypto = !isStock;
-              // Use sector-based colors instead of just positive/negative
-              const sectorColor = getSectorColors(selectedAssetDetail.sector, isCrypto);
+              // Use sector-based colors - fall back to database lookup for stocks without sector
+              const effectiveSector = selectedAssetDetail.sector || getStockSector(selectedAssetDetail.symbol);
+              const sectorColor = getSectorColors(effectiveSector, isCrypto);
               const accentColor = sectorColor.primary;
               const accentGlow = sectorColor.glow;
 
@@ -12289,7 +12506,7 @@ export default function PortfolioDuel() {
                         fontSize: '12px',
                         fontWeight: '600'
                       }}>
-                        {selectedAssetDetail.sector || (isCrypto ? 'Cryptocurrency' : 'Stock')}
+                        {effectiveSector || (isCrypto ? 'Cryptocurrency' : 'Stock')}
                       </span>
                     </div>
 
@@ -13371,7 +13588,7 @@ export default function PortfolioDuel() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {sortedAssets.map((asset, index) => {
                       const isStock = researchActiveTab === 'stocks';
-                      const color = isStock ? getSectorColor(asset.sector || 'Unknown') : cryptoColor;
+                      const color = isStock ? getSectorColor(asset.sector || getStockSector(asset.symbol) || 'Unknown') : cryptoColor;
 
                       return (
                         <motion.div
