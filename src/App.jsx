@@ -67,6 +67,142 @@ const getSectorColors = (sector, isCrypto = false) => {
   return SECTOR_COLORS[sector] || SECTOR_COLORS['default'];
 };
 
+// ============================================
+// DIVERSIFICATION POOLS FOR SMART PORTFOLIO
+// ============================================
+const DIVERSIFICATION_POOLS = {
+  defensive: [
+    { symbol: 'JNJ', name: 'Johnson & Johnson', sector: 'Healthcare', risk: 'low' },
+    { symbol: 'PG', name: 'Procter & Gamble', sector: 'Consumer Staples', risk: 'low' },
+    { symbol: 'KO', name: 'Coca-Cola', sector: 'Consumer Staples', risk: 'low' },
+    { symbol: 'VZ', name: 'Verizon', sector: 'Communication', risk: 'low' },
+    { symbol: 'PEP', name: 'PepsiCo', sector: 'Consumer Staples', risk: 'low' },
+    { symbol: 'MRK', name: 'Merck', sector: 'Healthcare', risk: 'low' },
+    { symbol: 'WMT', name: 'Walmart', sector: 'Consumer Staples', risk: 'low' },
+    { symbol: 'UNH', name: 'UnitedHealth', sector: 'Healthcare', risk: 'low' }
+  ],
+  growth: [
+    { symbol: 'CRM', name: 'Salesforce', sector: 'Technology', risk: 'medium' },
+    { symbol: 'ADBE', name: 'Adobe', sector: 'Technology', risk: 'medium' },
+    { symbol: 'NOW', name: 'ServiceNow', sector: 'Technology', risk: 'medium' },
+    { symbol: 'SHOP', name: 'Shopify', sector: 'Technology', risk: 'high' },
+    { symbol: 'SQ', name: 'Block', sector: 'Financials', risk: 'high' },
+    { symbol: 'UBER', name: 'Uber', sector: 'Technology', risk: 'medium' },
+    { symbol: 'ABNB', name: 'Airbnb', sector: 'Consumer Discretionary', risk: 'medium' }
+  ],
+  value: [
+    { symbol: 'JPM', name: 'JPMorgan', sector: 'Financials', risk: 'low' },
+    { symbol: 'BAC', name: 'Bank of America', sector: 'Financials', risk: 'low' },
+    { symbol: 'GS', name: 'Goldman Sachs', sector: 'Financials', risk: 'medium' },
+    { symbol: 'V', name: 'Visa', sector: 'Financials', risk: 'low' },
+    { symbol: 'MA', name: 'Mastercard', sector: 'Financials', risk: 'low' },
+    { symbol: 'HD', name: 'Home Depot', sector: 'Consumer Discretionary', risk: 'low' },
+    { symbol: 'MCD', name: "McDonald's", sector: 'Consumer Discretionary', risk: 'low' }
+  ],
+  energy: [
+    { symbol: 'XOM', name: 'Exxon Mobil', sector: 'Energy', risk: 'medium' },
+    { symbol: 'CVX', name: 'Chevron', sector: 'Energy', risk: 'medium' },
+    { symbol: 'COP', name: 'ConocoPhillips', sector: 'Energy', risk: 'medium' }
+  ]
+};
+
+// Company name lookup for symbols
+const COMPANY_NAMES = {
+  'AAPL': 'Apple', 'MSFT': 'Microsoft', 'GOOGL': 'Alphabet', 'AMZN': 'Amazon',
+  'NVDA': 'NVIDIA', 'META': 'Meta', 'TSLA': 'Tesla', 'AMD': 'AMD',
+  'AVGO': 'Broadcom', 'CRM': 'Salesforce', 'ADBE': 'Adobe', 'NFLX': 'Netflix',
+  'PLTR': 'Palantir', 'COIN': 'Coinbase', 'HOOD': 'Robinhood', 'MSTR': 'MicroStrategy',
+  'JPM': 'JPMorgan', 'BAC': 'Bank of America', 'GS': 'Goldman Sachs',
+  'V': 'Visa', 'MA': 'Mastercard', 'AXP': 'American Express',
+  'JNJ': 'Johnson & Johnson', 'UNH': 'UnitedHealth', 'PFE': 'Pfizer', 'MRK': 'Merck',
+  'XOM': 'Exxon Mobil', 'CVX': 'Chevron', 'COP': 'ConocoPhillips',
+  'WMT': 'Walmart', 'PG': 'Procter & Gamble', 'KO': 'Coca-Cola', 'PEP': 'PepsiCo',
+  'HD': 'Home Depot', 'MCD': "McDonald's", 'DIS': 'Disney', 'VZ': 'Verizon',
+  'NOW': 'ServiceNow', 'SHOP': 'Shopify', 'SQ': 'Block', 'UBER': 'Uber', 'ABNB': 'Airbnb',
+  'BTC': 'Bitcoin', 'ETH': 'Ethereum', 'SOL': 'Solana', 'XRP': 'Ripple'
+};
+
+// Shuffle array helper
+const shuffleArray = (array) => {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+};
+
+// Calculate user risk score based on stock selections
+const calculateUserRiskScore = (stocks) => {
+  const highRiskStocks = ['TSLA', 'AMD', 'PLTR', 'COIN', 'HOOD', 'MSTR', 'RIVN', 'SMCI', 'SOFI', 'SHOP', 'SQ'];
+  const mediumRiskStocks = ['NVDA', 'META', 'GOOGL', 'AMZN', 'NFLX', 'AVGO', 'CRM', 'UBER', 'ABNB'];
+
+  let score = 0;
+  stocks.forEach(symbol => {
+    if (highRiskStocks.includes(symbol)) score += 2;
+    else if (mediumRiskStocks.includes(symbol)) score += 1;
+  });
+
+  return score;
+};
+
+// Select diversification stocks based on strategy
+const selectDiversificationStocks = (count, existingPicks, strategy) => {
+  const selected = [];
+  const alreadySelected = new Set(existingPicks);
+
+  let primaryPool, secondaryPool;
+
+  switch (strategy) {
+    case 'balance_with_defensive':
+      primaryPool = [...DIVERSIFICATION_POOLS.defensive, ...DIVERSIFICATION_POOLS.value];
+      secondaryPool = DIVERSIFICATION_POOLS.growth;
+      break;
+    case 'add_growth':
+      primaryPool = [...DIVERSIFICATION_POOLS.growth];
+      secondaryPool = [...DIVERSIFICATION_POOLS.value];
+      break;
+    case 'balanced_mix':
+    default:
+      primaryPool = [
+        ...DIVERSIFICATION_POOLS.defensive.slice(0, 3),
+        ...DIVERSIFICATION_POOLS.growth.slice(0, 3),
+        ...DIVERSIFICATION_POOLS.value.slice(0, 3)
+      ];
+      secondaryPool = DIVERSIFICATION_POOLS.energy;
+      break;
+  }
+
+  const shuffledPrimary = shuffleArray([...primaryPool]);
+  const shuffledSecondary = shuffleArray([...secondaryPool]);
+
+  // Add from primary pool
+  for (const stock of shuffledPrimary) {
+    if (selected.length >= count) break;
+    if (!alreadySelected.has(stock.symbol)) {
+      selected.push({
+        ...stock,
+        reason: strategy === 'balance_with_defensive' ? 'Portfolio balance' : 'Growth potential'
+      });
+      alreadySelected.add(stock.symbol);
+    }
+  }
+
+  // Add from secondary pool if needed
+  for (const stock of shuffledSecondary) {
+    if (selected.length >= count) break;
+    if (!alreadySelected.has(stock.symbol)) {
+      selected.push({
+        ...stock,
+        reason: 'Diversification'
+      });
+      alreadySelected.add(stock.symbol);
+    }
+  }
+
+  return selected.slice(0, count);
+};
+
 // MarketClash Bull & Bear Logo Component
 const MarketClashLogo = ({ size = 'large' }) => {
   const dimensions = {
@@ -2430,17 +2566,18 @@ const ConvictionCheck = ({
                         </span>
                       </div>
 
-                      {/* Symbol */}
+                      {/* Company Name */}
                       <div style={{
-                        fontSize: '16px',
-                        fontWeight: '800',
+                        fontSize: '13px',
+                        fontWeight: '700',
                         color: isSelected ? '#ffffff' : '#e6edf3',
-                        marginBottom: '4px',
+                        marginBottom: '6px',
+                        lineHeight: '1.2',
                         textShadow: isSelected ? `0 0 20px ${group.color}30` : 'none',
                         position: 'relative',
                         zIndex: 1,
                       }}>
-                        {stock.symbol}
+                        {stock.name || stock.symbol}
                       </div>
 
                       {/* Change */}
@@ -5202,7 +5339,7 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
     }
   };
 
-  // Local fallback plan generator - works without API
+  // Local fallback plan generator with SMART DIVERSIFICATION
   const createLocalFallbackPlan = () => {
     const selectedStocks = convictionData.selectedStocks || {};
     const cryptoPicks = selectedStocks.crypto || [];
@@ -5212,79 +5349,154 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
       ...(selectedStocks.wildcard || []),
     ];
 
+    // 1. Determine target portfolio size (random 7-13)
+    const minAssets = 7;
+    const maxAssets = 13;
+    const targetSize = Math.floor(Math.random() * (maxAssets - minAssets + 1)) + minAssets;
+
+    // 2. Calculate user's risk score
+    const userRiskScore = calculateUserRiskScore(stockPicks);
+
+    // 3. Determine diversification strategy
+    let diversificationStrategy;
+    if (userRiskScore > 6 || thesis.risk === 'aggressive') {
+      diversificationStrategy = 'balance_with_defensive';
+    } else if (userRiskScore < 3 || thesis.risk === 'conservative') {
+      diversificationStrategy = 'add_growth';
+    } else {
+      diversificationStrategy = 'balanced_mix';
+    }
+
     // Build portfolio from selections
     const portfolio = [];
 
     // Add crypto (max 1 for classic mode)
-    cryptoPicks.slice(0, 1).forEach(symbol => {
-      const cryptoNames = { BTC: 'Bitcoin', ETH: 'Ethereum', SOL: 'Solana', XRP: 'Ripple' };
+    const userCrypto = cryptoPicks.slice(0, 1);
+    userCrypto.forEach(symbol => {
       portfolio.push({
         symbol,
         type: 'crypto',
-        name: cryptoNames[symbol] || symbol,
+        name: COMPANY_NAMES[symbol] || symbol,
         allocation: 0,
+        source: 'user_selected',
         rationale: 'Selected crypto asset for portfolio diversification'
       });
     });
 
-    // Add stocks
+    // Add user's stock picks (core holdings)
     stockPicks.forEach(symbol => {
       const asset = recommendations.find(r => r.symbol === symbol);
       portfolio.push({
         symbol,
         type: 'stock',
-        name: asset?.name || symbol,
+        name: COMPANY_NAMES[symbol] || asset?.name || symbol,
         allocation: 0,
-        rationale: asset?.thesisScore?.alignment
-          ? `High thesis alignment (${asset.thesisScore.alignment})`
-          : 'Included per your selection'
+        source: 'user_selected',
+        rationale: 'Core holding per your selection'
       });
     });
 
-    // Fill remaining slots with top recommendations if needed (min 7 assets)
-    const usedSymbols = new Set(portfolio.map(p => p.symbol));
-    const remaining = Math.max(0, 7 - portfolio.length);
-    const topRecs = recommendations
-      .filter(r => !usedSymbols.has(r.symbol) && !['BTC', 'ETH', 'SOL', 'XRP'].includes(r.symbol))
-      .slice(0, remaining);
+    // 4. Calculate how many stocks to add for diversification
+    const targetStocks = targetSize - userCrypto.length;
+    const stocksToAdd = Math.max(0, targetStocks - stockPicks.length);
 
-    topRecs.forEach(asset => {
-      portfolio.push({
-        symbol: asset.symbol,
-        type: 'stock',
-        name: asset.name || asset.symbol,
-        allocation: 0,
-        rationale: `High thesis alignment (${asset.thesisScore?.alignment || 'moderate'})`
-      });
-    });
+    console.log(`[SmartPortfolio] User picks: ${stockPicks.length}, Target: ${targetSize}, Adding: ${stocksToAdd}, Strategy: ${diversificationStrategy}`);
 
-    // Calculate equal-weight allocations
-    if (portfolio.length > 0) {
-      const baseAllocation = Math.floor((100 / portfolio.length) * 10) / 10;
-      let remaining = 100;
-      portfolio.forEach((asset, idx) => {
-        if (idx === portfolio.length - 1) {
-          asset.allocation = Math.round(remaining * 10) / 10;
-        } else {
-          asset.allocation = baseAllocation;
-          remaining -= baseAllocation;
-        }
+    // 5. Select diversification stocks
+    if (stocksToAdd > 0) {
+      const additionalStocks = selectDiversificationStocks(stocksToAdd, stockPicks, diversificationStrategy);
+      additionalStocks.forEach(stock => {
+        portfolio.push({
+          symbol: stock.symbol,
+          type: 'stock',
+          name: stock.name || COMPANY_NAMES[stock.symbol] || stock.symbol,
+          allocation: 0,
+          source: 'diversification',
+          rationale: stock.reason || 'Added for portfolio diversification'
+        });
       });
     }
 
+    // 6. Calculate SMART allocations (user picks get more weight)
+    const userPicks = portfolio.filter(p => p.source === 'user_selected');
+    const divPicks = portfolio.filter(p => p.source === 'diversification');
     const cryptoCount = portfolio.filter(p => p.type === 'crypto').length;
+
+    // Crypto gets 10-15%
+    const cryptoAllocation = cryptoCount > 0 ? 12.5 : 0;
+    const remainingForStocks = 100 - (cryptoAllocation * cryptoCount);
+
+    // User stock picks get 65% of remaining, div picks get 35%
+    const userStockCount = userPicks.filter(p => p.type === 'stock').length;
+    const divStockCount = divPicks.length;
+
+    const userPoolPercent = divStockCount > 0 ? 0.65 : 1.0;
+    const divPoolPercent = 1 - userPoolPercent;
+
+    const userStockAllocation = userStockCount > 0
+      ? (remainingForStocks * userPoolPercent) / userStockCount
+      : 0;
+    const divStockAllocation = divStockCount > 0
+      ? (remainingForStocks * divPoolPercent) / divStockCount
+      : 0;
+
+    // Apply allocations with clamping
+    portfolio.forEach(asset => {
+      if (asset.type === 'crypto') {
+        asset.allocation = Math.min(20, Math.max(7.5, cryptoAllocation));
+      } else if (asset.source === 'user_selected') {
+        asset.allocation = Math.min(20, Math.max(7.5, userStockAllocation));
+      } else {
+        asset.allocation = Math.min(20, Math.max(7.5, divStockAllocation));
+      }
+    });
+
+    // Normalize to exactly 100%
+    const total = portfolio.reduce((sum, p) => sum + p.allocation, 0);
+    const factor = 100 / total;
+    portfolio.forEach(p => {
+      p.allocation = parseFloat((p.allocation * factor).toFixed(1));
+    });
+
+    // Fix rounding
+    const newTotal = portfolio.reduce((sum, p) => sum + p.allocation, 0);
+    if (newTotal !== 100 && portfolio.length > 0) {
+      portfolio[0].allocation += parseFloat((100 - newTotal).toFixed(1));
+    }
+
     const stockCount = portfolio.filter(p => p.type === 'stock').length;
 
+    // Build strategy description
+    let strategyText = `A ${thesis.risk || 'balanced'} ${thesis.stance || 'bullish'} portfolio with ${stockCount} stocks`;
+    if (cryptoCount > 0) strategyText += ` and ${cryptoCount} crypto`;
+    strategyText += `. Built around your ${userPicks.length} core picks`;
+    if (divPicks.length > 0) {
+      if (diversificationStrategy === 'balance_with_defensive') {
+        strategyText += `, with ${divPicks.length} defensive positions for balance`;
+      } else if (diversificationStrategy === 'add_growth') {
+        strategyText += `, plus ${divPicks.length} growth stocks for upside`;
+      } else {
+        strategyText += `, enhanced with ${divPicks.length} diversifying positions`;
+      }
+    }
+    strategyText += '.';
+
     return {
-      strategySummary: `A ${thesis.risk || 'balanced'} ${thesis.stance || 'bullish'} portfolio with ${stockCount} stocks${cryptoCount > 0 ? ` and ${cryptoCount} crypto` : ''}. Built for a ${thesis.battleType === 'head-to-head' ? '24-hour' : 'week-long'} battle.`,
+      strategySummary: strategyText,
       portfolio,
       risks: [
         thesis.stance === 'bullish' ? 'Market downturn would work against this thesis' : 'Market rally would work against this thesis',
         thesis.risk === 'aggressive' ? 'High volatility may cause significant swings' : 'Conservative positioning may limit upside',
-        cryptoCount > 0 ? 'Crypto assets add volatility and 24/7 market exposure' : 'Correlated positions may reduce diversification'
+        cryptoCount > 0 ? 'Crypto assets add volatility and 24/7 market exposure' : 'Sector correlation may reduce diversification benefit'
       ],
-      insightConnections: 'Portfolio constructed based on your thesis alignment scoring and stated preferences.',
-      generatedLocally: true
+      insightConnections: 'Portfolio constructed with smart diversification based on your risk profile.',
+      generatedLocally: true,
+      metadata: {
+        userPicks: userPicks.length,
+        diversificationAdded: divPicks.length,
+        totalAssets: portfolio.length,
+        diversificationStrategy
+      }
     };
   };
 
@@ -11391,7 +11603,7 @@ export default function PortfolioDuel() {
       setResearchGamePlanLoading(true);
       setResearchGamePlan(null);
 
-      // Local fallback generator for Research Mode
+      // Local fallback generator for Research Mode with SMART DIVERSIFICATION
       const createResearchFallbackPlan = () => {
         const selectedStocks = convictionData.selectedStocks || {};
         const cryptoPicks = selectedStocks.crypto || [];
@@ -11401,77 +11613,149 @@ export default function PortfolioDuel() {
           ...(selectedStocks.wildcard || []),
         ];
 
+        // 1. Determine target portfolio size (random 7-13)
+        const minAssets = 7;
+        const maxAssets = 13;
+        const targetSize = Math.floor(Math.random() * (maxAssets - minAssets + 1)) + minAssets;
+
+        // 2. Calculate user's risk score
+        const userRiskScore = calculateUserRiskScore(stockPicks);
+
+        // 3. Determine diversification strategy
+        let diversificationStrategy;
+        if (userRiskScore > 6 || researchThesis?.risk === 'aggressive') {
+          diversificationStrategy = 'balance_with_defensive';
+        } else if (userRiskScore < 3 || researchThesis?.risk === 'conservative') {
+          diversificationStrategy = 'add_growth';
+        } else {
+          diversificationStrategy = 'balanced_mix';
+        }
+
         const portfolio = [];
 
         // Add crypto (max 1)
-        cryptoPicks.slice(0, 1).forEach(symbol => {
-          const cryptoNames = { BTC: 'Bitcoin', ETH: 'Ethereum', SOL: 'Solana', XRP: 'Ripple' };
-          const cryptoAsset = cryptoData.find(c => c.symbol === symbol);
+        const userCrypto = cryptoPicks.slice(0, 1);
+        userCrypto.forEach(symbol => {
           portfolio.push({
             symbol,
             type: 'crypto',
-            name: cryptoNames[symbol] || cryptoAsset?.name || symbol,
+            name: COMPANY_NAMES[symbol] || symbol,
             allocation: 0,
+            source: 'user_selected',
             rationale: 'Selected crypto asset for portfolio diversification'
           });
         });
 
-        // Add stocks
+        // Add user's stock picks (core holdings)
         stockPicks.forEach(symbol => {
           const asset = stocksData.find(s => s.symbol === symbol);
           portfolio.push({
             symbol,
             type: 'stock',
-            name: asset?.name || symbol,
+            name: COMPANY_NAMES[symbol] || asset?.name || symbol,
             allocation: 0,
-            rationale: 'Included per your selection'
+            source: 'user_selected',
+            rationale: 'Core holding per your selection'
           });
         });
 
-        // Fill remaining slots if needed (min 7)
-        const usedSymbols = new Set(portfolio.map(p => p.symbol));
-        const remaining = Math.max(0, 7 - portfolio.length);
-        const topRecs = stocksData
-          .filter(s => !usedSymbols.has(s.symbol))
-          .slice(0, remaining);
+        // 4. Calculate how many stocks to add for diversification
+        const targetStocks = targetSize - userCrypto.length;
+        const stocksToAdd = Math.max(0, targetStocks - stockPicks.length);
 
-        topRecs.forEach(asset => {
-          portfolio.push({
-            symbol: asset.symbol,
-            type: 'stock',
-            name: asset.name || asset.symbol,
-            allocation: 0,
-            rationale: 'Top-scoring asset for thesis alignment'
-          });
-        });
+        console.log(`[ResearchSmartPortfolio] User picks: ${stockPicks.length}, Target: ${targetSize}, Adding: ${stocksToAdd}, Strategy: ${diversificationStrategy}`);
 
-        // Equal-weight allocations
-        if (portfolio.length > 0) {
-          const baseAllocation = Math.floor((100 / portfolio.length) * 10) / 10;
-          let remainingPct = 100;
-          portfolio.forEach((asset, idx) => {
-            if (idx === portfolio.length - 1) {
-              asset.allocation = Math.round(remainingPct * 10) / 10;
-            } else {
-              asset.allocation = baseAllocation;
-              remainingPct -= baseAllocation;
-            }
+        // 5. Select diversification stocks
+        if (stocksToAdd > 0) {
+          const additionalStocks = selectDiversificationStocks(stocksToAdd, stockPicks, diversificationStrategy);
+          additionalStocks.forEach(stock => {
+            portfolio.push({
+              symbol: stock.symbol,
+              type: 'stock',
+              name: stock.name || COMPANY_NAMES[stock.symbol] || stock.symbol,
+              allocation: 0,
+              source: 'diversification',
+              rationale: stock.reason || 'Added for portfolio diversification'
+            });
           });
         }
 
+        // 6. Calculate SMART allocations (user picks get more weight)
+        const userPicks = portfolio.filter(p => p.source === 'user_selected');
+        const divPicks = portfolio.filter(p => p.source === 'diversification');
         const cryptoCount = portfolio.filter(p => p.type === 'crypto').length;
+
+        const cryptoAllocation = cryptoCount > 0 ? 12.5 : 0;
+        const remainingForStocks = 100 - (cryptoAllocation * cryptoCount);
+
+        const userStockCount = userPicks.filter(p => p.type === 'stock').length;
+        const divStockCount = divPicks.length;
+
+        const userPoolPercent = divStockCount > 0 ? 0.65 : 1.0;
+        const divPoolPercent = 1 - userPoolPercent;
+
+        const userStockAllocation = userStockCount > 0
+          ? (remainingForStocks * userPoolPercent) / userStockCount
+          : 0;
+        const divStockAllocation = divStockCount > 0
+          ? (remainingForStocks * divPoolPercent) / divStockCount
+          : 0;
+
+        portfolio.forEach(asset => {
+          if (asset.type === 'crypto') {
+            asset.allocation = Math.min(20, Math.max(7.5, cryptoAllocation));
+          } else if (asset.source === 'user_selected') {
+            asset.allocation = Math.min(20, Math.max(7.5, userStockAllocation));
+          } else {
+            asset.allocation = Math.min(20, Math.max(7.5, divStockAllocation));
+          }
+        });
+
+        // Normalize to exactly 100%
+        const total = portfolio.reduce((sum, p) => sum + p.allocation, 0);
+        const factor = 100 / total;
+        portfolio.forEach(p => {
+          p.allocation = parseFloat((p.allocation * factor).toFixed(1));
+        });
+
+        const newTotal = portfolio.reduce((sum, p) => sum + p.allocation, 0);
+        if (newTotal !== 100 && portfolio.length > 0) {
+          portfolio[0].allocation += parseFloat((100 - newTotal).toFixed(1));
+        }
+
         const stockCount = portfolio.filter(p => p.type === 'stock').length;
 
+        // Build strategy description
+        let strategyText = `A ${researchThesis?.risk || 'balanced'} ${researchThesis?.stance || 'bullish'} portfolio with ${stockCount} stocks`;
+        if (cryptoCount > 0) strategyText += ` and ${cryptoCount} crypto`;
+        strategyText += `. Built around your ${userPicks.length} core picks`;
+        if (divPicks.length > 0) {
+          if (diversificationStrategy === 'balance_with_defensive') {
+            strategyText += `, with ${divPicks.length} defensive positions for balance`;
+          } else if (diversificationStrategy === 'add_growth') {
+            strategyText += `, plus ${divPicks.length} growth stocks for upside`;
+          } else {
+            strategyText += `, enhanced with ${divPicks.length} diversifying positions`;
+          }
+        }
+        strategyText += '.';
+
         return {
-          strategySummary: `A ${researchThesis?.risk || 'balanced'} ${researchThesis?.stance || 'bullish'} portfolio with ${stockCount} stocks${cryptoCount > 0 ? ` and ${cryptoCount} crypto` : ''}.`,
+          strategySummary: strategyText,
           portfolio,
           risks: [
             'Market conditions may work against this thesis',
-            'Position concentration adds volatility',
+            researchThesis?.risk === 'aggressive' ? 'High volatility may cause significant swings' : 'Position concentration adds volatility',
             cryptoCount > 0 ? 'Crypto assets add 24/7 exposure' : 'Sector correlation may reduce diversification'
           ],
-          insightConnections: 'Portfolio constructed based on your selections and thesis.',
-          generatedLocally: true
+          insightConnections: 'Portfolio constructed with smart diversification based on your risk profile.',
+          generatedLocally: true,
+          metadata: {
+            userPicks: userPicks.length,
+            diversificationAdded: divPicks.length,
+            totalAssets: portfolio.length,
+            diversificationStrategy
+          }
         };
       };
 
