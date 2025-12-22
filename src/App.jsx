@@ -3979,35 +3979,6 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
         </p>
       </div>
 
-      {/* Market Pulse */}
-      <div style={{
-        background: '#1a1f2e',
-        borderRadius: '12px',
-        padding: '16px',
-        marginBottom: '16px',
-        border: '1px solid #2d3548',
-      }}>
-        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px' }}>
-          Market Pulse
-        </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-          <div>
-            <div style={{ color: '#e6edf3', fontSize: '14px', marginBottom: '4px' }}>Stocks</div>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <span style={{ color: c.green }}>↑ {marketData.stocksUp}</span>
-              <span style={{ color: c.red }}>↓ {marketData.stocksDown}</span>
-            </div>
-          </div>
-          <div>
-            <div style={{ color: '#e6edf3', fontSize: '14px', marginBottom: '4px' }}>Crypto</div>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <span style={{ color: c.green }}>↑ {marketData.cryptoUp}</span>
-              <span style={{ color: c.red }}>↓ {marketData.cryptoDown}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* AI Market Summary */}
       <AIMarketSummary
         marketData={marketData}
@@ -4016,39 +3987,208 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
         colors={c}
       />
 
-      {/* Build My Thesis Button - Moved here after AI Summary */}
-      <div style={{ marginBottom: '20px' }}>
-        <button
-          onClick={onContinue}
-          style={{
-            width: '100%',
-            padding: '18px 24px',
-            background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-            border: 'none',
-            borderRadius: '12px',
-            color: '#ffffff',
-            fontSize: '16px',
-            fontWeight: '700',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '10px',
-            boxShadow: '0 4px 16px rgba(34, 197, 94, 0.35)',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2L9.19 8.63L2 9.24L7.46 13.97L5.82 21L12 17.27L18.18 21L16.54 13.97L22 9.24L14.81 8.63L12 2Z" />
-          </svg>
-          BUILD MY THESIS
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path d="M5 12h14M12 5l7 7-7 7" />
-          </svg>
-        </button>
-        <p style={{ color: '#8b949e', fontSize: '12px', textAlign: 'center', marginTop: '8px' }}>
-          Get AI-powered portfolio recommendations
-        </p>
+      {/* Build My Thesis - Hero Button with Animations */}
+      <div style={{
+        position: 'relative',
+        padding: '20px 0',
+        marginBottom: '20px'
+      }}>
+        {/* Outer Glow Container */}
+        <div style={{
+          position: 'relative',
+          borderRadius: '20px',
+          padding: '3px',
+          background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 50%, #15803d 100%)',
+          boxShadow: '0 0 30px rgba(34, 197, 94, 0.4), 0 0 60px rgba(34, 197, 94, 0.2), 0 10px 40px rgba(0, 0, 0, 0.3)',
+          animation: 'pulseGlow 2s ease-in-out infinite'
+        }}>
+          {/* Animated Border Ring */}
+          <div style={{
+            position: 'absolute',
+            inset: '-2px',
+            borderRadius: '22px',
+            background: 'conic-gradient(from 0deg, #22c55e, #00d9ff, #8b5cf6, #22c55e)',
+            animation: 'spinBorder 4s linear infinite',
+            opacity: 0.5,
+            zIndex: 0
+          }} />
+
+          {/* Inner Button */}
+          <button
+            onClick={onContinue}
+            style={{
+              position: 'relative',
+              zIndex: 1,
+              width: '100%',
+              padding: '24px 32px',
+              background: 'linear-gradient(145deg, #1a2a1a 0%, #0d1117 50%, #1a2a1a 100%)',
+              border: 'none',
+              borderRadius: '17px',
+              cursor: 'pointer',
+              overflow: 'hidden',
+              transition: 'transform 0.3s ease'
+            }}
+          >
+            {/* Shimmer Effect */}
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: '-100%',
+              width: '100%',
+              height: '100%',
+              background: 'linear-gradient(90deg, transparent, rgba(34, 197, 94, 0.2), transparent)',
+              animation: 'shimmerEffect 2.5s infinite'
+            }} />
+
+            {/* Floating Particles */}
+            <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+              {[0, 1, 2, 3, 4, 5].map(i => (
+                <div
+                  key={i}
+                  style={{
+                    position: 'absolute',
+                    width: '5px',
+                    height: '5px',
+                    background: '#22c55e',
+                    borderRadius: '50%',
+                    opacity: 0.4,
+                    left: `${15 + i * 14}%`,
+                    top: `${25 + (i % 3) * 20}%`,
+                    animation: `floatParticle ${3 + i * 0.4}s ease-in-out infinite`,
+                    animationDelay: `${i * 0.25}s`
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Content */}
+            <div style={{
+              position: 'relative',
+              zIndex: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              {/* Icon */}
+              <div style={{
+                width: '56px',
+                height: '56px',
+                background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                borderRadius: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 8px 24px rgba(34, 197, 94, 0.4)',
+                animation: 'pulseIcon 2s ease-in-out infinite'
+              }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
+                  <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" />
+                </svg>
+              </div>
+
+              {/* Title Row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{
+                  color: '#ffffff',
+                  fontSize: '22px',
+                  fontWeight: '800',
+                  letterSpacing: '0.5px',
+                  textShadow: '0 0 20px rgba(34, 197, 94, 0.5)'
+                }}>
+                  BUILD MY THESIS
+                </span>
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#22c55e"
+                  strokeWidth="3"
+                  style={{ animation: 'bounceArrow 1.5s ease-in-out infinite' }}
+                >
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+              </div>
+
+              {/* Subtitle */}
+              <span style={{
+                color: '#22c55e',
+                fontSize: '13px',
+                fontWeight: '500',
+                opacity: 0.9
+              }}>
+                Get AI-powered portfolio recommendations
+              </span>
+
+              {/* Feature Pills */}
+              <div style={{
+                display: 'flex',
+                gap: '8px',
+                marginTop: '6px',
+                flexWrap: 'wrap',
+                justifyContent: 'center'
+              }}>
+                {['Guided Flow', 'Smart Picks', 'Risk Analysis'].map((feature) => (
+                  <span
+                    key={feature}
+                    style={{
+                      background: 'rgba(34, 197, 94, 0.15)',
+                      border: '1px solid rgba(34, 197, 94, 0.3)',
+                      borderRadius: '16px',
+                      padding: '5px 12px',
+                      color: '#4ade80',
+                      fontSize: '11px',
+                      fontWeight: '600'
+                    }}
+                  >
+                    {feature}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </button>
+        </div>
+
+        {/* Bottom Reflection Glow */}
+        <div style={{
+          position: 'absolute',
+          bottom: '5px',
+          left: '10%',
+          right: '10%',
+          height: '20px',
+          background: 'radial-gradient(ellipse, rgba(34, 197, 94, 0.3) 0%, transparent 70%)',
+          filter: 'blur(8px)',
+          pointerEvents: 'none'
+        }} />
+
+        {/* CSS Animations */}
+        <style>{`
+          @keyframes pulseGlow {
+            0%, 100% { box-shadow: 0 0 30px rgba(34, 197, 94, 0.4), 0 0 60px rgba(34, 197, 94, 0.2), 0 10px 40px rgba(0, 0, 0, 0.3); }
+            50% { box-shadow: 0 0 40px rgba(34, 197, 94, 0.6), 0 0 80px rgba(34, 197, 94, 0.3), 0 10px 40px rgba(0, 0, 0, 0.3); }
+          }
+          @keyframes spinBorder {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+          @keyframes shimmerEffect {
+            0% { left: -100%; }
+            100% { left: 100%; }
+          }
+          @keyframes floatParticle {
+            0%, 100% { transform: translateY(0) scale(1); opacity: 0.3; }
+            50% { transform: translateY(-12px) scale(1.2); opacity: 0.6; }
+          }
+          @keyframes pulseIcon {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+          }
+          @keyframes bounceArrow {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(6px); }
+          }
+        `}</style>
       </div>
 
       {/* Top News Stories (replaces Sector Snapshot) */}
