@@ -1909,62 +1909,103 @@ const CryptoMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors
 // CONVICTION CHECK COMPONENT (Research Phase 4)
 // ============================================
 
-// Curated stock groups for Conviction Check
+// Category icon configurations for polished gradient icons
+const CATEGORY_ICONS = {
+  momentum: {
+    gradient: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+    shadow: 'rgba(239, 68, 68, 0.4)',
+    svg: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+      </svg>
+    )
+  },
+  steady: {
+    gradient: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+    shadow: 'rgba(59, 130, 246, 0.4)',
+    svg: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+    )
+  },
+  wildcard: {
+    gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+    shadow: 'rgba(245, 158, 11, 0.4)',
+    svg: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
+        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+      </svg>
+    )
+  },
+  crypto: {
+    gradient: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+    shadow: 'rgba(139, 92, 246, 0.4)',
+    svg: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M9.5 9.5c.5-1 1.5-1.5 2.5-1.5 1.5 0 2.5 1 2.5 2.5 0 1.5-1.5 2-2.5 2.5V15M12 18h.01"/>
+      </svg>
+    )
+  }
+};
+
+// Curated stock groups for Conviction Check with change percentages
 const CURATED_GROUPS = [
   {
     id: 'momentum',
     title: 'High Momentum',
-    icon: '🚀',
-    color: '#00ff88',
+    iconType: 'momentum',
+    color: '#ef4444',
     description: 'Trending stocks with strong upward momentum',
     maxPicks: 2,
     stocks: [
-      { symbol: 'NVDA', name: 'NVIDIA', tag: 'AI Leader' },
-      { symbol: 'META', name: 'Meta Platforms', tag: 'Social Giant' },
-      { symbol: 'AVGO', name: 'Broadcom', tag: 'Chip Maker' },
-      { symbol: 'PLTR', name: 'Palantir', tag: 'AI/Data' },
+      { symbol: 'NVDA', name: 'NVIDIA', tag: 'AI Leader', change: 6.2 },
+      { symbol: 'META', name: 'Meta Platforms', tag: 'Social Giant', change: 3.8 },
+      { symbol: 'AVGO', name: 'Broadcom', tag: 'Chip Maker', change: 4.1 },
+      { symbol: 'PLTR', name: 'Palantir', tag: 'AI/Data', change: 5.4 },
     ],
   },
   {
     id: 'steady',
     title: 'Steady Performers',
-    icon: '🛡️',
-    color: '#00d9ff',
+    iconType: 'steady',
+    color: '#3b82f6',
     description: 'Reliable blue chips with consistent returns',
     maxPicks: 2,
     stocks: [
-      { symbol: 'AAPL', name: 'Apple', tag: 'Tech Giant' },
-      { symbol: 'MSFT', name: 'Microsoft', tag: 'Cloud King' },
-      { symbol: 'GOOGL', name: 'Alphabet', tag: 'Search/AI' },
-      { symbol: 'AMZN', name: 'Amazon', tag: 'E-commerce' },
+      { symbol: 'AAPL', name: 'Apple', tag: 'Tech Giant', change: 1.1 },
+      { symbol: 'MSFT', name: 'Microsoft', tag: 'Cloud King', change: 0.8 },
+      { symbol: 'GOOGL', name: 'Alphabet', tag: 'Search/AI', change: 1.5 },
+      { symbol: 'AMZN', name: 'Amazon', tag: 'E-commerce', change: 2.1 },
     ],
   },
   {
     id: 'wildcard',
     title: 'Wild Cards',
-    icon: '🎲',
+    iconType: 'wildcard',
     color: '#f59e0b',
     description: 'High risk, high reward plays',
     maxPicks: 1,
     stocks: [
-      { symbol: 'TSLA', name: 'Tesla', tag: 'EV/Energy' },
-      { symbol: 'AMD', name: 'AMD', tag: 'Chipmaker' },
-      { symbol: 'COIN', name: 'Coinbase', tag: 'Crypto' },
-      { symbol: 'MSTR', name: 'MicroStrategy', tag: 'BTC Proxy' },
+      { symbol: 'TSLA', name: 'Tesla', tag: 'EV/Energy', change: 5.3 },
+      { symbol: 'AMD', name: 'AMD', tag: 'Chipmaker', change: 4.8 },
+      { symbol: 'COIN', name: 'Coinbase', tag: 'Crypto', change: 7.2 },
+      { symbol: 'MSTR', name: 'MicroStrategy', tag: 'BTC Proxy', change: 8.5 },
     ],
   },
   {
     id: 'crypto',
     title: 'Crypto Picks',
-    icon: '₿',
-    color: '#f7931a',
+    iconType: 'crypto',
+    color: '#8b5cf6',
     description: 'Top cryptocurrency assets',
     maxPicks: 2,
     stocks: [
-      { symbol: 'BTC', name: 'Bitcoin', tag: 'Store of Value' },
-      { symbol: 'ETH', name: 'Ethereum', tag: 'Smart Contracts' },
-      { symbol: 'SOL', name: 'Solana', tag: 'Fast L1' },
-      { symbol: 'XRP', name: 'Ripple', tag: 'Payments' },
+      { symbol: 'BTC', name: 'Bitcoin', tag: 'Store of Value', change: 2.1 },
+      { symbol: 'ETH', name: 'Ethereum', tag: 'Smart Contracts', change: 3.4 },
+      { symbol: 'SOL', name: 'Solana', tag: 'Fast L1', change: 5.8 },
+      { symbol: 'XRP', name: 'Ripple', tag: 'Payments', change: 1.2 },
     ],
   },
 ];
@@ -2024,6 +2065,7 @@ const ConvictionCheck = ({
   };
 
   const totalSelections = getTotalSelections();
+  const allSelectedSymbols = Object.values(selectedStocks).flat();
   const canProceed = totalSelections >= 1;
 
   return (
@@ -2033,179 +2075,383 @@ const ConvictionCheck = ({
       height: '100%',
       position: 'relative',
     }}>
-      {/* Back Button at Top */}
-      <button
-        onClick={onBack}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          background: 'transparent',
-          border: 'none',
-          color: c.cyan,
-          fontSize: '14px',
-          fontWeight: '600',
-          cursor: 'pointer',
-          padding: '0 0 12px 0',
-          marginBottom: '4px',
-        }}
-      >
-        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-        </svg>
-        Back
-      </button>
+      {/* CSS Animations */}
+      <style>
+        {`
+          @keyframes convictionPulseRing {
+            0% { transform: scale(1); opacity: 0.4; }
+            100% { transform: scale(1.15); opacity: 0; }
+          }
+          @keyframes convictionShimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+          }
+          @keyframes convictionGlow {
+            0%, 100% { box-shadow: 0 0 5px var(--glow-color), 0 0 10px var(--glow-color); }
+            50% { box-shadow: 0 0 15px var(--glow-color), 0 0 25px var(--glow-color); }
+          }
+        `}
+      </style>
+
+      {/* Back Button + Step Indicator */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '16px',
+      }}>
+        <button
+          onClick={onBack}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: 'transparent',
+            border: 'none',
+            color: c.cyan,
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            padding: 0,
+          }}
+        >
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+          Back
+        </button>
+        <span style={{
+          color: '#8b949e',
+          fontSize: '13px',
+          background: '#21262d',
+          padding: '6px 12px',
+          borderRadius: '8px',
+        }}>
+          Step 4 of 5
+        </span>
+      </div>
 
       {/* Scrollable Content */}
       <div style={{
         flex: 1,
         overflowY: 'auto',
-        paddingBottom: '100px',
+        paddingBottom: '160px',
       }}>
-        {/* Header */}
+        {/* Header with Icon */}
         <div style={{
-          background: '#1a1f2e',
-          borderRadius: '16px',
-          padding: '20px',
-          marginBottom: '16px',
-          border: '1px solid #2d3548',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px',
+          marginBottom: '8px'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-            <div style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #9333ea, #6366f1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '16px',
-              color: '#fff',
-            }}>
-              4
-            </div>
-            <h3 style={{ color: '#e6edf3', margin: 0, fontSize: '18px' }}>
-              Build Your Lineup
-            </h3>
+          <div style={{
+            width: '48px',
+            height: '48px',
+            background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+            borderRadius: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 16px rgba(139, 92, 246, 0.4)',
+            fontSize: '20px',
+            fontWeight: '800',
+            color: '#ffffff'
+          }}>
+            4
           </div>
-          <p style={{ color: '#8b949e', fontSize: '14px', margin: 0 }}>
-            Select assets from each category to create your battle portfolio
-          </p>
+          <h1 style={{
+            color: '#ffffff',
+            fontSize: '24px',
+            fontWeight: '800',
+            margin: 0
+          }}>
+            Build Your Lineup
+          </h1>
         </div>
+        <p style={{
+          color: '#8b949e',
+          fontSize: '14px',
+          margin: '0 0 24px 62px'
+        }}>
+          Select assets from each category to create your battle portfolio
+        </p>
 
         {/* Curated Groups */}
         {CURATED_GROUPS.map(group => {
           const groupPicks = selectedStocks[group.id] || [];
           const isMaxed = groupPicks.length >= group.maxPicks;
+          const iconConfig = CATEGORY_ICONS[group.iconType];
 
           return (
             <div
               key={group.id}
               style={{
-                background: '#1a1f2e',
-                borderRadius: '16px',
-                padding: '16px',
-                marginBottom: '12px',
-                border: '1px solid #2d3548',
+                background: '#161b22',
+                border: '1px solid #21262d',
+                borderRadius: '20px',
+                padding: '20px',
+                marginBottom: '16px',
               }}
             >
-              {/* Group Header */}
+              {/* Category Header */}
               <div style={{
                 display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '12px',
+                alignItems: 'flex-start',
+                gap: '12px',
+                marginBottom: '16px'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '20px' }}>{group.icon}</span>
-                  <div>
-                    <div style={{ color: '#e6edf3', fontSize: '15px', fontWeight: '600' }}>
-                      {group.title}
-                    </div>
-                    <div style={{ color: '#6e7681', fontSize: '12px' }}>
-                      {group.description}
-                    </div>
-                  </div>
-                </div>
+                {/* Gradient Icon */}
                 <div style={{
-                  background: isMaxed ? 'rgba(0, 255, 136, 0.15)' : 'rgba(139, 148, 158, 0.1)',
-                  border: `1px solid ${isMaxed ? 'rgba(0, 255, 136, 0.3)' : 'rgba(139, 148, 158, 0.2)'}`,
-                  borderRadius: '20px',
-                  padding: '4px 10px',
-                  fontSize: '12px',
-                  color: isMaxed ? c.green : '#8b949e',
-                  fontWeight: '500',
+                  width: '40px',
+                  height: '40px',
+                  background: iconConfig.gradient,
+                  borderRadius: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: `0 4px 14px ${iconConfig.shadow}`,
+                  flexShrink: 0
                 }}>
-                  {groupPicks.length}/{group.maxPicks}
+                  {iconConfig.svg}
+                </div>
+                {/* Text */}
+                <div style={{ flex: 1 }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
+                    <h3 style={{
+                      color: '#ffffff',
+                      fontSize: '16px',
+                      fontWeight: '700',
+                      margin: 0
+                    }}>
+                      {group.title}
+                    </h3>
+                    <span style={{
+                      color: group.color,
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      background: `${group.color}15`,
+                      padding: '4px 10px',
+                      borderRadius: '8px'
+                    }}>
+                      {groupPicks.length}/{group.maxPicks}
+                    </span>
+                  </div>
+                  <p style={{
+                    color: '#8b949e',
+                    fontSize: '12px',
+                    margin: '4px 0 0 0'
+                  }}>
+                    {group.description}
+                  </p>
                 </div>
               </div>
 
-              {/* Stock Pills */}
+              {/* Stock Cards Grid */}
               <div style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '8px',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                gap: '10px',
               }}>
                 {group.stocks.map(stock => {
                   const isSelected = groupPicks.includes(stock.symbol);
                   const isDisabled = !isSelected && isMaxed;
+                  const isPositive = stock.change >= 0;
 
                   return (
                     <button
                       key={stock.symbol}
                       onClick={() => !isDisabled && handleToggleStock(group.id, stock.symbol)}
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '10px 14px',
-                        borderRadius: '12px',
+                        position: 'relative',
+                        width: '100%',
+                        background: isSelected
+                          ? `linear-gradient(145deg, ${group.color}20 0%, ${group.color}05 100%)`
+                          : '#0d1117',
                         border: isSelected
                           ? `2px solid ${group.color}`
-                          : '1px solid #2d3548',
-                        background: isSelected
-                          ? `${group.color}15`
-                          : isDisabled
-                          ? '#161b22'
-                          : '#0d1117',
+                          : '1px solid #21262d',
+                        borderRadius: '16px',
+                        padding: '20px 12px 16px',
                         cursor: isDisabled ? 'not-allowed' : 'pointer',
-                        opacity: isDisabled ? 0.5 : 1,
+                        opacity: isDisabled ? 0.4 : 1,
+                        overflow: 'hidden',
                         transition: 'all 0.2s ease',
+                        transform: isSelected ? 'scale(1.02)' : 'scale(1)',
                       }}
                     >
-                      {/* Selection indicator */}
+                      {/* Pulsing Ring (when selected) */}
+                      {isSelected && (
+                        <>
+                          <div style={{
+                            position: 'absolute',
+                            inset: '-4px',
+                            borderRadius: '20px',
+                            border: `2px solid ${group.color}`,
+                            opacity: 0.3,
+                            animation: 'convictionPulseRing 2s ease-out infinite'
+                          }} />
+                          <div style={{
+                            position: 'absolute',
+                            inset: '-8px',
+                            borderRadius: '24px',
+                            border: `1px solid ${group.color}`,
+                            opacity: 0.15,
+                            animation: 'convictionPulseRing 2s ease-out infinite 0.5s'
+                          }} />
+                        </>
+                      )}
+
+                      {/* Top Glow */}
+                      {isSelected && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '-20px',
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          width: '60%',
+                          height: '40px',
+                          background: `radial-gradient(ellipse, ${group.color}40 0%, transparent 70%)`,
+                          pointerEvents: 'none'
+                        }} />
+                      )}
+
+                      {/* Shimmer Effect */}
+                      {isSelected && (
+                        <div style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: '-100%',
+                          width: '100%',
+                          height: '100%',
+                          background: `linear-gradient(90deg, transparent, ${group.color}15, transparent)`,
+                          animation: 'convictionShimmer 2s infinite',
+                        }} />
+                      )}
+
+                      {/* Selection Checkmark */}
                       <div style={{
-                        width: '18px',
-                        height: '18px',
+                        position: 'absolute',
+                        top: '8px',
+                        right: '8px',
+                        width: '22px',
+                        height: '22px',
                         borderRadius: '50%',
-                        border: isSelected ? 'none' : '2px solid #3d4556',
-                        background: isSelected ? group.color : 'transparent',
+                        background: isSelected
+                          ? `linear-gradient(135deg, ${group.color} 0%, ${group.color}cc 100%)`
+                          : '#0d1117',
+                        border: isSelected ? 'none' : '2px solid #30363d',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        flexShrink: 0,
+                        boxShadow: isSelected ? `0 4px 12px ${group.color}40` : 'none',
+                        transition: 'all 0.2s ease',
+                        zIndex: 2,
                       }}>
                         {isSelected && (
-                          <span style={{ color: '#0d1117', fontSize: '12px', fontWeight: 'bold' }}>✓</span>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3">
+                            <path d="M20 6L9 17l-5-5"/>
+                          </svg>
                         )}
                       </div>
 
-                      {/* Stock info */}
-                      <div style={{ textAlign: 'left' }}>
-                        <div style={{
-                          color: isSelected ? group.color : '#e6edf3',
+                      {/* Stock Icon Circle */}
+                      <div style={{
+                        width: '44px',
+                        height: '44px',
+                        borderRadius: '12px',
+                        background: isSelected
+                          ? `linear-gradient(135deg, ${group.color} 0%, ${group.color}bb 100%)`
+                          : 'linear-gradient(135deg, #21262d 0%, #161b22 100%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        margin: '0 auto 12px',
+                        boxShadow: isSelected
+                          ? `0 4px 16px ${group.color}40`
+                          : '0 2px 8px rgba(0,0,0,0.3)',
+                        transition: 'all 0.2s ease',
+                        position: 'relative',
+                        zIndex: 1,
+                      }}>
+                        <span style={{
                           fontSize: '14px',
-                          fontWeight: '600',
+                          fontWeight: '800',
+                          color: isSelected ? '#ffffff' : '#8b949e'
                         }}>
-                          {stock.symbol}
-                        </div>
-                        <div style={{
-                          color: '#6e7681',
-                          fontSize: '11px',
-                        }}>
-                          {stock.tag}
-                        </div>
+                          {stock.symbol.slice(0, 2)}
+                        </span>
                       </div>
+
+                      {/* Symbol */}
+                      <div style={{
+                        fontSize: '16px',
+                        fontWeight: '800',
+                        color: isSelected ? '#ffffff' : '#e6edf3',
+                        marginBottom: '4px',
+                        textShadow: isSelected ? `0 0 20px ${group.color}30` : 'none',
+                        position: 'relative',
+                        zIndex: 1,
+                      }}>
+                        {stock.symbol}
+                      </div>
+
+                      {/* Change */}
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        background: isPositive ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        marginBottom: '8px',
+                        position: 'relative',
+                        zIndex: 1,
+                      }}>
+                        <span style={{
+                          fontSize: '9px',
+                          color: isPositive ? '#22c55e' : '#ef4444'
+                        }}>
+                          {isPositive ? '▲' : '▼'}
+                        </span>
+                        <span style={{
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          color: isPositive ? '#22c55e' : '#ef4444'
+                        }}>
+                          {isPositive ? '+' : ''}{stock.change?.toFixed(1)}%
+                        </span>
+                      </div>
+
+                      {/* Subtitle */}
+                      <div style={{
+                        fontSize: '10px',
+                        color: isSelected ? group.color : '#6b7280',
+                        fontWeight: '600',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        position: 'relative',
+                        zIndex: 1,
+                      }}>
+                        {stock.tag}
+                      </div>
+
+                      {/* Bottom Accent Line */}
+                      {isSelected && (
+                        <div style={{
+                          position: 'absolute',
+                          bottom: 0,
+                          left: '20%',
+                          right: '20%',
+                          height: '2px',
+                          background: `linear-gradient(90deg, transparent, ${group.color}, transparent)`,
+                          borderRadius: '1px',
+                          zIndex: 3
+                        }} />
+                      )}
                     </button>
                   );
                 })}
@@ -2221,39 +2467,68 @@ const ConvictionCheck = ({
         bottom: 0,
         left: 0,
         right: 0,
-        background: 'linear-gradient(to top, #0d1117 80%, transparent)',
-        padding: '20px 0 0 0',
+        background: 'linear-gradient(to top, #0d1117 90%, transparent)',
+        padding: '24px 0 0 0',
       }}>
         <div style={{
-          background: '#1a1f2e',
-          borderRadius: '16px',
-          padding: '16px',
+          background: 'linear-gradient(145deg, #1a1f2e 0%, #161b22 100%)',
+          borderRadius: '20px 20px 0 0',
+          padding: '20px',
           border: '1px solid #2d3548',
+          borderBottom: 'none',
+          boxShadow: '0 -4px 24px rgba(0, 0, 0, 0.4)',
         }}>
-          {/* Selection Summary */}
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '12px',
-          }}>
-            <div style={{ color: '#8b949e', fontSize: '13px' }}>
-              Selected Assets
-            </div>
+          {/* Selected Chips */}
+          {allSelectedSymbols.length > 0 && (
             <div style={{
-              color: totalSelections > 0 ? c.cyan : '#6e7681',
-              fontSize: '14px',
-              fontWeight: '600',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '8px',
+              marginBottom: '16px',
+              paddingBottom: '16px',
+              borderBottom: '1px solid #21262d',
             }}>
-              {totalSelections} {totalSelections === 1 ? 'pick' : 'picks'}
+              {allSelectedSymbols.map(symbol => {
+                // Find which group this symbol belongs to for color
+                const group = CURATED_GROUPS.find(g =>
+                  g.stocks.some(s => s.symbol === symbol)
+                );
+                const groupColor = group?.color || '#8b5cf6';
+
+                return (
+                  <span
+                    key={symbol}
+                    style={{
+                      background: `linear-gradient(135deg, ${groupColor}30 0%, ${groupColor}10 100%)`,
+                      border: `1px solid ${groupColor}50`,
+                      padding: '6px 12px',
+                      borderRadius: '20px',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      color: groupColor,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <span style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: groupColor,
+                      boxShadow: `0 0 6px ${groupColor}`,
+                    }} />
+                    {symbol}
+                  </span>
+                );
+              })}
             </div>
-          </div>
+          )}
 
           {/* Generate Button */}
           <button
             onClick={() => {
               // Convert selected stocks to mustHave format for compatibility
-              const allSelectedSymbols = Object.values(selectedStocks).flat();
               onComplete({
                 ...convictionData,
                 mustHave: allSelectedSymbols,
@@ -2265,23 +2540,38 @@ const ConvictionCheck = ({
             style={{
               width: '100%',
               background: canProceed
-                ? 'linear-gradient(135deg, #9333ea, #6366f1)'
+                ? 'linear-gradient(135deg, #9333ea 0%, #6366f1 50%, #8b5cf6 100%)'
                 : '#2d3548',
               border: 'none',
-              borderRadius: '12px',
-              padding: '16px',
+              borderRadius: '14px',
+              padding: '18px 24px',
               color: canProceed ? '#ffffff' : '#6e7681',
               fontSize: '16px',
-              fontWeight: '600',
+              fontWeight: '700',
               cursor: canProceed ? 'pointer' : 'not-allowed',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '8px',
+              gap: '10px',
+              boxShadow: canProceed
+                ? '0 4px 20px rgba(147, 51, 234, 0.4), 0 0 40px rgba(99, 102, 241, 0.2)'
+                : 'none',
+              transition: 'all 0.3s ease',
             }}
           >
             <span>Generate Game Plan</span>
-            <span style={{ fontSize: '18px' }}>→</span>
+            <span style={{
+              background: 'rgba(255, 255, 255, 0.2)',
+              padding: '4px 10px',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: '800',
+            }}>
+              {totalSelections} {totalSelections === 1 ? 'pick' : 'picks'}
+            </span>
+            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
           </button>
         </div>
       </div>
