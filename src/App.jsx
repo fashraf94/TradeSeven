@@ -2790,6 +2790,161 @@ const AssetPickerModal = ({
 };
 
 // ============================================
+// CRYPTO SELECTION EXPLANATION COMPONENT
+// ============================================
+
+/**
+ * CryptoSelectionExplanation - Shows explanation when crypto was auto-selected
+ */
+const CryptoSelectionExplanation = ({ cryptoSelection, portfolioRisk }) => {
+  if (!cryptoSelection || cryptoSelection.excluded?.length === 0) return null;
+
+  return (
+    <div style={{
+      background: 'linear-gradient(135deg, #f59e0b15 0%, #f59e0b05 100%)',
+      border: '1px solid #f59e0b40',
+      borderRadius: '12px',
+      padding: '16px',
+      marginBottom: '16px'
+    }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        marginBottom: '10px'
+      }}>
+        <div style={{
+          width: '28px',
+          height: '28px',
+          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+          borderRadius: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 16v-4M12 8h.01"/>
+          </svg>
+        </div>
+        <span style={{
+          color: '#f59e0b',
+          fontSize: '13px',
+          fontWeight: '700',
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px'
+        }}>
+          Crypto Selection
+        </span>
+      </div>
+
+      {/* Explanation */}
+      <p style={{
+        color: '#e6edf3',
+        fontSize: '13px',
+        lineHeight: '1.6',
+        margin: '0 0 12px 0'
+      }}>
+        You selected <strong style={{ color: '#f59e0b' }}>{cryptoSelection.userSelected?.join(' & ')}</strong>,
+        but this game mode only allows 1 crypto.
+      </p>
+
+      <p style={{
+        color: '#8b949e',
+        fontSize: '12px',
+        lineHeight: '1.5',
+        margin: '0 0 12px 0'
+      }}>
+        <span style={{ color: '#22c55e', fontWeight: '600' }}>✓ {cryptoSelection.included?.[0]}</span> was chosen: {cryptoSelection.reason}
+      </p>
+
+      {/* Visual: Risk Balance */}
+      {portfolioRisk && (
+        <div style={{
+          padding: '12px',
+          background: '#0d1117',
+          borderRadius: '8px',
+          border: '1px solid #21262d'
+        }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '8px'
+          }}>
+            <span style={{ color: '#8b949e', fontSize: '11px' }}>Portfolio Risk</span>
+            <span style={{
+              color: portfolioRisk.category === 'aggressive' ? '#ef4444' :
+                     portfolioRisk.category === 'moderate' ? '#f59e0b' : '#22c55e',
+              fontSize: '11px',
+              fontWeight: '600',
+              textTransform: 'uppercase'
+            }}>
+              {portfolioRisk.category}
+            </span>
+          </div>
+
+          {/* Risk Bar */}
+          <div style={{
+            height: '6px',
+            background: '#21262d',
+            borderRadius: '3px',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              height: '100%',
+              width: `${Math.min(100, (portfolioRisk.score / Math.max(portfolioRisk.maxPossible, 1)) * 100)}%`,
+              background: portfolioRisk.category === 'aggressive'
+                ? 'linear-gradient(90deg, #f59e0b, #ef4444)'
+                : portfolioRisk.category === 'moderate'
+                ? 'linear-gradient(90deg, #22c55e, #f59e0b)'
+                : 'linear-gradient(90deg, #22c55e, #22c55e)',
+              borderRadius: '3px',
+              transition: 'width 0.5s ease'
+            }} />
+          </div>
+
+          {/* Labels */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            marginTop: '4px'
+          }}>
+            <span style={{ color: '#22c55e', fontSize: '9px' }}>Conservative</span>
+            <span style={{ color: '#f59e0b', fontSize: '9px' }}>Moderate</span>
+            <span style={{ color: '#ef4444', fontSize: '9px' }}>Aggressive</span>
+          </div>
+
+          {/* Risk breakdown */}
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            marginTop: '10px',
+            paddingTop: '10px',
+            borderTop: '1px solid #21262d'
+          }}>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <div style={{ color: '#ef4444', fontSize: '14px', fontWeight: '700' }}>{portfolioRisk.breakdown?.high || 0}</div>
+              <div style={{ color: '#6b7280', fontSize: '9px' }}>High Risk</div>
+            </div>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <div style={{ color: '#f59e0b', fontSize: '14px', fontWeight: '700' }}>{portfolioRisk.breakdown?.medium || 0}</div>
+              <div style={{ color: '#6b7280', fontSize: '9px' }}>Medium</div>
+            </div>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <div style={{ color: '#22c55e', fontSize: '14px', fontWeight: '700' }}>{portfolioRisk.breakdown?.low || 0}</div>
+              <div style={{ color: '#6b7280', fontSize: '9px' }}>Low Risk</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
 // GAME PLAN COMPONENT (Research Phase 5)
 // ============================================
 
@@ -2936,6 +3091,14 @@ const GamePlan = ({
           {gamePlan.strategySummary}
         </p>
       </div>
+
+      {/* Crypto Selection Explanation (if applicable) */}
+      {gamePlan.cryptoSelection && (
+        <CryptoSelectionExplanation
+          cryptoSelection={gamePlan.cryptoSelection}
+          portfolioRisk={gamePlan.portfolioRisk}
+        />
+      )}
 
       {/* Portfolio Stats Summary */}
       {(() => {

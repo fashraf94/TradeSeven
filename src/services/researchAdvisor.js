@@ -9,6 +9,154 @@ const safeToFixed = (val, decimals = 2) => {
   return isNaN(num) ? '0' : num.toFixed(decimals);
 };
 
+// ============================================
+// STOCK RISK CLASSIFICATIONS
+// ============================================
+
+const stockRiskProfile = {
+  // High Risk (+2) - Volatile, speculative, or momentum plays
+  high: [
+    'TSLA', 'AMD', 'PLTR', 'COIN', 'HOOD', 'MSTR', 'RIVN', 'LCID',
+    'SOFI', 'AFRM', 'UPST', 'SNOW', 'NET', 'CRWD', 'DDOG', 'MDB',
+    'SMCI', 'ARM', 'IONQ', 'RGTI', 'QUBT', 'SOUN'
+  ],
+
+  // Medium Risk (+1) - Growth stocks with some volatility
+  medium: [
+    'NVDA', 'META', 'GOOGL', 'AMZN', 'NFLX', 'AVGO', 'CRM', 'ADBE',
+    'NOW', 'PANW', 'ZS', 'FTNT', 'SHOP', 'SQ', 'PYPL', 'UBER',
+    'ABNB', 'DASH', 'RBLX', 'SNAP', 'PINS', 'TTD', 'ROKU'
+  ],
+
+  // Low Risk (0) - Blue chips, stable, dividend payers
+  low: [
+    'AAPL', 'MSFT', 'JPM', 'V', 'MA', 'JNJ', 'PG', 'KO', 'PEP',
+    'WMT', 'HD', 'MCD', 'DIS', 'VZ', 'T', 'BAC', 'WFC', 'C',
+    'GS', 'MS', 'AXP', 'BLK', 'SCHW', 'USB', 'PNC', 'TFC',
+    'UNH', 'CVS', 'CI', 'HUM', 'ABBV', 'MRK', 'PFE', 'LLY',
+    'XOM', 'CVX', 'COP', 'SLB', 'NEE', 'DUK', 'SO', 'D'
+  ]
+};
+
+// CRYPTO VOLATILITY RANKINGS (1 = most stable, 4 = most volatile)
+const cryptoVolatility = {
+  'BTC': { rank: 1, label: 'Most Stable', description: 'Store of value, least volatile' },
+  'ETH': { rank: 2, label: 'Moderate', description: 'Established, smart contract leader' },
+  'XRP': { rank: 3, label: 'High', description: 'Payment focused, regulatory sensitive' },
+  'SOL': { rank: 4, label: 'Very High', description: 'Fast L1, highest beta' }
+};
+
+// ============================================
+// PORTFOLIO RISK CALCULATION
+// ============================================
+
+/**
+ * Calculate portfolio risk score from selected stocks
+ * @param {Array<string>} selectedStocks - Array of stock symbols
+ * @returns {Object} Risk score and breakdown
+ */
+export function calculatePortfolioRiskScore(selectedStocks) {
+  let riskScore = 0;
+  let breakdown = { high: 0, medium: 0, low: 0 };
+
+  selectedStocks.forEach(symbol => {
+    if (stockRiskProfile.high.includes(symbol)) {
+      riskScore += 2;
+      breakdown.high++;
+    } else if (stockRiskProfile.medium.includes(symbol)) {
+      riskScore += 1;
+      breakdown.medium++;
+    } else {
+      // Default to low risk if not found
+      breakdown.low++;
+    }
+  });
+
+  // Determine risk category
+  let riskCategory;
+  if (riskScore >= 6) {
+    riskCategory = 'aggressive';
+  } else if (riskScore >= 3) {
+    riskCategory = 'moderate';
+  } else {
+    riskCategory = 'conservative';
+  }
+
+  return {
+    score: riskScore,
+    category: riskCategory,
+    breakdown,
+    maxPossible: selectedStocks.length * 2
+  };
+}
+
+// ============================================
+// INTELLIGENT CRYPTO SELECTION
+// ============================================
+
+/**
+ * Select optimal crypto based on portfolio risk
+ * @param {Array<string>} selectedCryptos - User's selected cryptos
+ * @param {Object} portfolioRisk - Risk assessment from calculatePortfolioRiskScore
+ * @param {number} maxAllowed - Max crypto allowed by game mode
+ * @returns {Object} Selection result with reason
+ */
+export function selectOptimalCrypto(selectedCryptos, portfolioRisk, maxAllowed = 1) {
+  // If selection fits within limits, return all
+  if (selectedCryptos.length <= maxAllowed) {
+    return {
+      selected: selectedCryptos,
+      excluded: [],
+      reason: 'All selected cryptos included',
+      portfolioRisk
+    };
+  }
+
+  // Sort cryptos by volatility (lower rank = more stable)
+  const sortedByVolatility = [...selectedCryptos].sort((a, b) => {
+    const volA = cryptoVolatility[a]?.rank || 2;
+    const volB = cryptoVolatility[b]?.rank || 2;
+    return volA - volB;
+  });
+
+  const mostStable = sortedByVolatility[0];
+  const mostVolatile = sortedByVolatility[sortedByVolatility.length - 1];
+
+  let selected, reason;
+
+  switch (portfolioRisk.category) {
+    case 'aggressive':
+      // High risk portfolio → Choose more stable crypto to balance
+      selected = mostStable;
+      reason = `Your portfolio is aggressive (${portfolioRisk.breakdown.high} high-risk stocks). ` +
+               `${selected} was chosen for stability and balance.`;
+      break;
+
+    case 'conservative':
+      // Low risk portfolio → Choose more volatile crypto for excitement
+      selected = mostVolatile;
+      reason = `Your portfolio is conservative (${portfolioRisk.breakdown.low} stable stocks). ` +
+               `${selected} was chosen to add growth potential.`;
+      break;
+
+    case 'moderate':
+    default:
+      // Balanced portfolio → Choose middle ground or slight stability
+      const middleIndex = Math.floor(sortedByVolatility.length / 2);
+      selected = sortedByVolatility[middleIndex] || mostStable;
+      reason = `Your portfolio is balanced. ${selected} was chosen to complement your mix.`;
+      break;
+  }
+
+  return {
+    selected: [selected],
+    excluded: selectedCryptos.filter(c => c !== selected),
+    reason,
+    portfolioRisk,
+    volatilityInfo: cryptoVolatility[selected]
+  };
+}
+
 /**
  * Enhance recommendations with Claude-generated explanations
  * Called in background after instant recommendations are shown
@@ -440,6 +588,9 @@ function generateFallbackGamePlan(thesis, convictionData, recommendations) {
     ...(selectedStocks.wildcard || []),
   ];
 
+  // Determine max crypto allowed (default 1 for classic mode)
+  const maxCryptoAllowed = 1;
+
   // Filter out must-avoid assets
   let availableAssets = recommendations.filter(
     r => !convictionData.mustAvoid?.includes(r.symbol)
@@ -448,14 +599,38 @@ function generateFallbackGamePlan(thesis, convictionData, recommendations) {
   const portfolio = [];
   const usedSymbols = new Set();
 
-  // 1. Add crypto picks FIRST (these are critical to include)
-  cryptoPicks.forEach(symbol => {
+  // Calculate portfolio risk from stock selections
+  const portfolioRisk = calculatePortfolioRiskScore(stockPicks);
+
+  // Apply intelligent crypto selection if more than allowed
+  let finalCryptoPicks = cryptoPicks;
+  let cryptoSelectionInfo = null;
+
+  if (cryptoPicks.length > maxCryptoAllowed) {
+    const cryptoSelection = selectOptimalCrypto(cryptoPicks, portfolioRisk, maxCryptoAllowed);
+    finalCryptoPicks = cryptoSelection.selected;
+    cryptoSelectionInfo = {
+      userSelected: cryptoPicks,
+      included: cryptoSelection.selected,
+      excluded: cryptoSelection.excluded,
+      reason: cryptoSelection.reason,
+      portfolioRisk: cryptoSelection.portfolioRisk
+    };
+    console.log('[ResearchAdvisor] Intelligent crypto selection:', cryptoSelectionInfo);
+  }
+
+  // 1. Add selected crypto (after intelligent selection)
+  finalCryptoPicks.forEach(symbol => {
     if (!usedSymbols.has(symbol)) {
+      const volatilityInfo = cryptoVolatility[symbol];
       portfolio.push({
         symbol,
         type: 'crypto',
         allocation: 12,
-        rationale: 'Selected crypto asset for portfolio diversification',
+        rationale: cryptoSelectionInfo
+          ? cryptoSelectionInfo.reason
+          : 'Selected crypto asset for portfolio diversification',
+        volatility: volatilityInfo?.label || 'Unknown',
       });
       usedSymbols.add(symbol);
     }
@@ -465,6 +640,8 @@ function generateFallbackGamePlan(thesis, convictionData, recommendations) {
   stockPicks.forEach(symbol => {
     if (!usedSymbols.has(symbol)) {
       const asset = recommendations.find(r => r.symbol === symbol);
+      const riskLevel = stockRiskProfile.high.includes(symbol) ? 'High' :
+                        stockRiskProfile.medium.includes(symbol) ? 'Medium' : 'Low';
       portfolio.push({
         symbol,
         type: 'stock',
@@ -472,6 +649,7 @@ function generateFallbackGamePlan(thesis, convictionData, recommendations) {
         rationale: asset?.thesisScore?.alignment
           ? `High thesis alignment (${asset.thesisScore.alignment})`
           : 'Included per your selection',
+        riskLevel,
       });
       usedSymbols.add(symbol);
     }
@@ -484,11 +662,14 @@ function generateFallbackGamePlan(thesis, convictionData, recommendations) {
     .slice(0, remainingSlots);
 
   topAssets.forEach(asset => {
+    const riskLevel = stockRiskProfile.high.includes(asset.symbol) ? 'High' :
+                      stockRiskProfile.medium.includes(asset.symbol) ? 'Medium' : 'Low';
     portfolio.push({
       symbol: asset.symbol,
       type: 'stock',
       allocation: 12.5,
       rationale: `High thesis alignment (${asset.thesisScore?.alignment || 'moderate'})`,
+      riskLevel,
     });
     usedSymbols.add(asset.symbol);
   });
@@ -522,11 +703,16 @@ function generateFallbackGamePlan(thesis, convictionData, recommendations) {
       cryptoCount > 0 ? 'Crypto assets add volatility and 24/7 market exposure' : 'Correlated positions may move together, reducing diversification benefit',
     ],
     insightConnections: 'Portfolio constructed based on your thesis alignment scoring and stated preferences.',
+    // Include crypto selection metadata if applicable
+    cryptoSelection: cryptoSelectionInfo,
+    portfolioRisk,
   };
 }
 
 export default {
   enhanceRecommendations,
   getAssetDeepDive,
+  calculatePortfolioRiskScore,
+  selectOptimalCrypto,
   generateGamePlan,
 };
