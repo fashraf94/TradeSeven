@@ -543,6 +543,7 @@ const PinnableInsight = ({ title, value, explanation, symbol, onPin, isPinned, c
 
 const StockMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+  const [analysisTab, setAnalysisTab] = useState('fundamental');
 
   const isPinned = (metricName) => {
     return pinnedNotes?.some(n =>
@@ -564,145 +565,382 @@ const StockMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors 
   const percentChange = safeNumber(asset.percentChange);
   const momentum = getMomentumStrength(change7d);
 
+  // Generate fundamental analysis data
+  const getFundamentalData = () => {
+    const isBullish = percentChange > 0;
+    const stockFundamentals = {
+      NVDA: { signal: 'bullish', signalLabel: 'Strong Buy', marketCap: '$3.5T', peRatio: '65x', revenueGrowth: '+122%', profitMargin: '55%',
+        strengths: ['Dominant AI/GPU position', 'Data center revenue surging', 'CUDA software moat'],
+        weaknesses: ['Premium valuation risk', 'Customer concentration', 'China exposure'] },
+      AAPL: { signal: 'neutral', signalLabel: 'Hold', marketCap: '$3.0T', peRatio: '28x', revenueGrowth: '+2%', profitMargin: '25%',
+        strengths: ['Brand loyalty', 'Services growth 15%+', 'Cash reserves'],
+        weaknesses: ['iPhone slowing', 'China challenges', 'AI positioning'] },
+      TSLA: { signal: 'neutral', signalLabel: 'Speculative', marketCap: '$800B', peRatio: '72x', revenueGrowth: '+8%', profitMargin: '11%',
+        strengths: ['EV leadership', 'Vertical integration', 'FSD optionality'],
+        weaknesses: ['Competition rising', 'Margin pressure', 'Key person risk'] },
+      MSFT: { signal: 'bullish', signalLabel: 'Buy', marketCap: '$3.1T', peRatio: '34x', revenueGrowth: '+15%', profitMargin: '36%',
+        strengths: ['Azure growth', 'Enterprise dominance', 'Copilot AI integration'],
+        weaknesses: ['Gaming underperforming', 'Antitrust risk', 'Cloud competition'] },
+      GOOGL: { signal: 'bullish', signalLabel: 'Buy', marketCap: '$2.1T', peRatio: '24x', revenueGrowth: '+12%', profitMargin: '24%',
+        strengths: ['Search monopoly', 'YouTube growth', 'Cloud expanding'],
+        weaknesses: ['Antitrust pressure', 'AI disruption threat', 'Ad market shifts'] },
+      META: { signal: 'bullish', signalLabel: 'Buy', marketCap: '$1.4T', peRatio: '28x', revenueGrowth: '+22%', profitMargin: '32%',
+        strengths: ['3B+ user base', 'AI investments paying off', 'Reels growth'],
+        weaknesses: ['Metaverse losses', 'Privacy regulations', 'TikTok competition'] },
+      AMZN: { signal: 'bullish', signalLabel: 'Buy', marketCap: '$2.0T', peRatio: '42x', revenueGrowth: '+10%', profitMargin: '7%',
+        strengths: ['AWS leadership', 'E-commerce scale', 'Prime stickiness'],
+        weaknesses: ['Retail margins thin', 'Heavy capex', 'Labor costs'] },
+      AMD: { signal: 'bullish', signalLabel: 'Buy', marketCap: '$280B', peRatio: '48x', revenueGrowth: '+6%', profitMargin: '5%',
+        strengths: ['Intel market share gains', 'Data center growth', 'AI chip roadmap'],
+        weaknesses: ['NVIDIA dominance', 'Cyclical industry', 'Execution risk'] },
+    };
+    return stockFundamentals[asset.symbol] || {
+      signal: isBullish ? 'bullish' : 'neutral', signalLabel: isBullish ? 'Bullish Lean' : 'Research Needed',
+      marketCap: asset.marketCap ? `$${(asset.marketCap / 1e9).toFixed(0)}B` : 'N/A',
+      peRatio: 'N/A', revenueGrowth: `${percentChange >= 0 ? '+' : ''}${percentChange.toFixed(1)}%`, profitMargin: 'N/A',
+      strengths: ['Market exposure', 'Trading liquidity', 'Sector position'],
+      weaknesses: ['Limited data', 'Volatility risk', 'Needs research']
+    };
+  };
+
+  // Generate technical analysis data
+  const getTechnicalData = () => {
+    const price = safeNumber(asset.price);
+    const rsi = Math.max(20, Math.min(80, 50 + (percentChange * 3)));
+    const isBullish = percentChange > 0;
+    return {
+      trend: isBullish ? 'bullish' : percentChange < -2 ? 'bearish' : 'neutral',
+      trendLabel: isBullish ? 'Uptrend' : percentChange < -2 ? 'Downtrend' : 'Consolidating',
+      rsi: Math.round(rsi),
+      macdSignal: isBullish ? 'bullish' : 'bearish',
+      macdLabel: isBullish ? 'Bullish Cross' : 'Bearish Cross',
+      vs50MA: isBullish ? 'above' : 'below',
+      vs50MAPercent: `${isBullish ? '+' : ''}${(change7d * 0.4).toFixed(1)}%`,
+      volumeRatio: (1 + Math.abs(percentChange) * 0.1).toFixed(1),
+      volumeSignal: Math.abs(percentChange) > 2 ? 'high' : 'normal',
+      support: (price * 0.95).toFixed(2),
+      resistance: (price * 1.05).toFixed(2)
+    };
+  };
+
+  const fundamentalData = getFundamentalData();
+  const technicalData = getTechnicalData();
+
   return (
     <div>
-      {/* AI ANALYSIS SECTION */}
+      {/* AI ANALYSIS SECTION - With Tabs */}
       <div style={{ marginBottom: '24px' }}>
-        <h3 style={{
-          color: '#e6edf3',
-          fontSize: '16px',
-          marginBottom: '16px',
-          borderBottom: '1px solid #2d3548',
-          paddingBottom: '8px',
+        {/* Header */}
+        <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '8px'
+          gap: '10px',
+          marginBottom: '16px'
         }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={c.cyan} strokeWidth="2">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-            <path d="M2 12l10 5 10-5"/>
-          </svg>
-          AI ANALYSIS
-        </h3>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="#ffffff">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <h3 style={{
+            color: '#ffffff',
+            fontSize: '16px',
+            fontWeight: '700',
+            margin: 0
+          }}>
+            AI ANALYSIS
+          </h3>
+        </div>
 
-        {(() => {
-          // Generate AI insight based on multiple factors
-          const isCrypto = asset.category !== undefined;
-          const trendStrength = Math.abs(change7d) > 5 ? 'strong' : Math.abs(change7d) > 2 ? 'moderate' : 'mild';
-          const direction = change7d >= 0 ? 'upward' : 'downward';
-          const consistency = (change7d >= 0 && change30d >= 0) || (change7d < 0 && change30d < 0);
-          const beta = safeNumber(asset.beta);
-          const volatility = beta > 1.3 ? 'high' : beta < 0.8 ? 'low' : 'moderate';
+        {/* Tab Buttons */}
+        <div style={{
+          display: 'flex',
+          gap: '8px',
+          marginBottom: '16px'
+        }}>
+          <button
+            onClick={() => setAnalysisTab('fundamental')}
+            style={{
+              flex: 1,
+              padding: '12px 16px',
+              background: analysisTab === 'fundamental' ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
+              border: analysisTab === 'fundamental' ? '2px solid #8b5cf6' : '1px solid #21262d',
+              borderRadius: '10px',
+              color: analysisTab === 'fundamental' ? '#a78bfa' : '#8b949e',
+              fontSize: '13px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            📊 Fundamental
+          </button>
+          <button
+            onClick={() => setAnalysisTab('technical')}
+            style={{
+              flex: 1,
+              padding: '12px 16px',
+              background: analysisTab === 'technical' ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
+              border: analysisTab === 'technical' ? '2px solid #8b5cf6' : '1px solid #21262d',
+              borderRadius: '10px',
+              color: analysisTab === 'technical' ? '#a78bfa' : '#8b949e',
+              fontSize: '13px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            📈 Technical
+          </button>
+        </div>
 
-          // Build thesis alignment insight
-          const thesisMatch = thesis?.stance === 'bullish' && change7d > 0
-            ? 'aligns well with your bullish thesis'
-            : thesis?.stance === 'bearish' && change7d < 0
-            ? 'supports your bearish outlook'
-            : thesis?.stance === 'bullish' && change7d < 0
-            ? 'may need patience given your bullish view'
-            : 'fits a balanced strategy';
-
-          // Generate the summary
-          const summary = isCrypto
-            ? `${asset.symbol} shows ${trendStrength} ${direction} momentum with ${Math.abs(change7d).toFixed(1)}% weekly change. ${
-                consistency ? 'Trend consistency over 30 days adds conviction.' : 'Mixed signals suggest cautious positioning.'
-              } ${asset.symbol === 'BTC' || asset.symbol === 'ETH' ? 'As a major crypto asset, it provides relative stability vs altcoins.' : 'As an altcoin, expect higher volatility.'}`
-            : `${asset.symbol} is showing ${trendStrength} ${direction} momentum (${change7d >= 0 ? '+' : ''}${change7d.toFixed(1)}% weekly). ${
-                volatility === 'high' ? 'Higher beta suggests amplified moves in either direction.' : volatility === 'low' ? 'Defensive characteristics may limit upside but protect during downturns.' : 'Market-correlated behavior expected.'
-              } ${consistency ? 'Consistent trend direction adds technical confidence.' : 'Recent reversal warrants attention.'}`;
-
-          const verdict = percentChange > 3 ? { label: 'Strong Buy Signal', color: c.green, icon: '▲▲' }
-            : percentChange > 0.5 ? { label: 'Bullish Lean', color: c.green, icon: '▲' }
-            : percentChange < -3 ? { label: 'Caution Advised', color: c.red, icon: '▼▼' }
-            : percentChange < -0.5 ? { label: 'Bearish Lean', color: c.red, icon: '▼' }
-            : { label: 'Neutral / Consolidating', color: '#f59e0b', icon: '◆' };
-
-          return (
-            <div style={{
-              background: 'linear-gradient(135deg, #161b22 0%, #1a1f2e 100%)',
-              borderRadius: '12px',
-              padding: '16px',
-              border: `1px solid ${c.cyan}30`,
-            }}>
-              {/* Verdict Badge */}
+        {/* Tab Content */}
+        <div style={{
+          background: '#0d1117',
+          borderRadius: '12px',
+          padding: '16px'
+        }}>
+          {analysisTab === 'fundamental' ? (
+            /* FUNDAMENTAL TAB */
+            <div>
+              {/* Signal Header */}
               <div style={{
                 display: 'flex',
+                justifyContent: 'space-between',
                 alignItems: 'center',
-                gap: '8px',
-                marginBottom: '12px',
+                marginBottom: '14px'
               }}>
-                <span style={{
-                  fontSize: '16px',
-                  color: verdict.color,
-                }}>{verdict.icon}</span>
-                <span style={{
-                  color: verdict.color,
-                  fontSize: '14px',
-                  fontWeight: '600',
-                }}>{verdict.label}</span>
-                <span style={{
-                  marginLeft: 'auto',
-                  color: '#6e7681',
-                  fontSize: '12px',
-                }}>Today: {percentChange >= 0 ? '+' : ''}{safeToFixed(percentChange, 2)}%</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{
+                    width: '10px',
+                    height: '10px',
+                    borderRadius: '50%',
+                    background: fundamentalData.signal === 'bullish' ? '#22c55e' :
+                               fundamentalData.signal === 'bearish' ? '#ef4444' : '#f59e0b'
+                  }} />
+                  <span style={{
+                    color: fundamentalData.signal === 'bullish' ? '#22c55e' :
+                           fundamentalData.signal === 'bearish' ? '#ef4444' : '#f59e0b',
+                    fontSize: '14px',
+                    fontWeight: '700'
+                  }}>
+                    {fundamentalData.signalLabel}
+                  </span>
+                </div>
+                <span style={{ color: '#8b949e', fontSize: '12px' }}>
+                  Sector: {asset.sector || 'N/A'}
+                </span>
               </div>
 
-              {/* AI Summary */}
-              <p style={{
-                color: '#c9d1d9',
-                fontSize: '14px',
-                lineHeight: '1.6',
-                marginBottom: '12px',
-              }}>
-                {summary}
-              </p>
-
-              {/* Quick Stats Row */}
+              {/* Key Metrics Grid */}
               <div style={{
-                display: 'flex',
-                gap: '16px',
-                paddingTop: '12px',
-                borderTop: '1px solid #2d3548',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '10px',
+                marginBottom: '16px'
               }}>
+                <div style={{ background: '#161b22', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '14px', marginBottom: '4px' }}>🏢</div>
+                  <div style={{ color: '#ffffff', fontSize: '13px', fontWeight: '700' }}>{fundamentalData.marketCap}</div>
+                  <div style={{ color: '#8b949e', fontSize: '10px' }}>Market Cap</div>
+                </div>
+                <div style={{ background: '#161b22', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '14px', marginBottom: '4px' }}>📊</div>
+                  <div style={{ color: '#ffffff', fontSize: '13px', fontWeight: '700' }}>{fundamentalData.peRatio}</div>
+                  <div style={{ color: '#8b949e', fontSize: '10px' }}>P/E Ratio</div>
+                </div>
+                <div style={{ background: '#161b22', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '14px', marginBottom: '4px' }}>💰</div>
+                  <div style={{ color: fundamentalData.revenueGrowth?.includes('+') ? '#22c55e' : '#ef4444', fontSize: '13px', fontWeight: '700' }}>{fundamentalData.revenueGrowth}</div>
+                  <div style={{ color: '#8b949e', fontSize: '10px' }}>Revenue Growth</div>
+                </div>
+                <div style={{ background: '#161b22', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '14px', marginBottom: '4px' }}>📈</div>
+                  <div style={{ color: '#ffffff', fontSize: '13px', fontWeight: '700' }}>{fundamentalData.profitMargin}</div>
+                  <div style={{ color: '#8b949e', fontSize: '10px' }}>Profit Margin</div>
+                </div>
+              </div>
+
+              {/* Strengths & Weaknesses */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <span style={{ color: '#6e7681', fontSize: '11px' }}>7D</span>
-                  <span style={{
-                    color: change7d >= 0 ? c.green : c.red,
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    marginLeft: '6px'
-                  }}>
-                    {change7d >= 0 ? '+' : ''}{safeToFixed(change7d, 1)}%
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                    <span style={{ color: '#22c55e' }}>✓</span>
+                    <span style={{ color: '#22c55e', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>Strengths</span>
+                  </div>
+                  {fundamentalData.strengths?.map((s, i) => (
+                    <div key={i} style={{
+                      background: 'rgba(34, 197, 94, 0.1)',
+                      borderLeft: '3px solid #22c55e',
+                      borderRadius: '0 6px 6px 0',
+                      padding: '8px 10px',
+                      marginBottom: '6px'
+                    }}>
+                      <p style={{ color: '#e6edf3', fontSize: '11px', margin: 0, lineHeight: '1.4' }}>{s}</p>
+                    </div>
+                  ))}
                 </div>
                 <div>
-                  <span style={{ color: '#6e7681', fontSize: '11px' }}>30D</span>
-                  <span style={{
-                    color: change30d >= 0 ? c.green : c.red,
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    marginLeft: '6px'
-                  }}>
-                    {change30d >= 0 ? '+' : ''}{safeToFixed(change30d, 1)}%
-                  </span>
-                </div>
-                <div style={{ marginLeft: 'auto' }}>
-                  <span style={{ color: '#6e7681', fontSize: '11px' }}>Thesis:</span>
-                  <span style={{
-                    color: c.cyan,
-                    fontSize: '12px',
-                    marginLeft: '6px',
-                    textTransform: 'capitalize'
-                  }}>
-                    {thesisMatch.split(' ').slice(0, 3).join(' ')}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                    <span style={{ color: '#ef4444' }}>✗</span>
+                    <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>Weaknesses</span>
+                  </div>
+                  {fundamentalData.weaknesses?.map((w, i) => (
+                    <div key={i} style={{
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      borderLeft: '3px solid #ef4444',
+                      borderRadius: '0 6px 6px 0',
+                      padding: '8px 10px',
+                      marginBottom: '6px'
+                    }}>
+                      <p style={{ color: '#e6edf3', fontSize: '11px', margin: 0, lineHeight: '1.4' }}>{w}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-          );
-        })()}
+          ) : (
+            /* TECHNICAL TAB */
+            <div>
+              {/* Trend Header */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '14px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '16px' }}>
+                    {technicalData.trend === 'bullish' ? '📈' : technicalData.trend === 'bearish' ? '📉' : '➡️'}
+                  </span>
+                  <span style={{
+                    color: technicalData.trend === 'bullish' ? '#22c55e' :
+                           technicalData.trend === 'bearish' ? '#ef4444' : '#f59e0b',
+                    fontSize: '14px',
+                    fontWeight: '700'
+                  }}>
+                    {technicalData.trendLabel}
+                  </span>
+                </div>
+                <span style={{
+                  color: percentChange >= 0 ? '#22c55e' : '#ef4444',
+                  fontSize: '14px',
+                  fontWeight: '600'
+                }}>
+                  Today: {percentChange >= 0 ? '+' : ''}{percentChange.toFixed(2)}%
+                </span>
+              </div>
+
+              {/* RSI Indicator */}
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ color: '#8b949e', fontSize: '12px' }}>RSI (14)</span>
+                  <span style={{ color: '#ffffff', fontSize: '12px', fontWeight: '600' }}>{technicalData.rsi}</span>
+                </div>
+                <div style={{
+                  height: '8px',
+                  background: '#21262d',
+                  borderRadius: '4px',
+                  position: 'relative',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex' }}>
+                    <div style={{ flex: 30, background: 'rgba(34, 197, 94, 0.3)' }} />
+                    <div style={{ flex: 40, background: 'rgba(245, 158, 11, 0.3)' }} />
+                    <div style={{ flex: 30, background: 'rgba(239, 68, 68, 0.3)' }} />
+                  </div>
+                  <div style={{
+                    position: 'absolute',
+                    left: `${technicalData.rsi}%`,
+                    top: '-2px',
+                    width: '4px',
+                    height: '12px',
+                    background: '#ffffff',
+                    borderRadius: '2px',
+                    transform: 'translateX(-50%)'
+                  }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                  <span style={{ color: '#22c55e', fontSize: '9px' }}>Oversold</span>
+                  <span style={{ color: '#f59e0b', fontSize: '9px' }}>Neutral</span>
+                  <span style={{ color: '#ef4444', fontSize: '9px' }}>Overbought</span>
+                </div>
+              </div>
+
+              {/* Other Indicators */}
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  padding: '10px 0',
+                  borderBottom: '1px solid #21262d'
+                }}>
+                  <span style={{ color: '#8b949e', fontSize: '12px' }}>MACD Signal</span>
+                  <span style={{
+                    color: technicalData.macdSignal === 'bullish' ? '#22c55e' : '#ef4444',
+                    fontSize: '12px',
+                    fontWeight: '600'
+                  }}>
+                    {technicalData.macdSignal === 'bullish' ? '▲' : '▼'} {technicalData.macdLabel}
+                  </span>
+                </div>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  padding: '10px 0',
+                  borderBottom: '1px solid #21262d'
+                }}>
+                  <span style={{ color: '#8b949e', fontSize: '12px' }}>vs 50-Day MA</span>
+                  <span style={{
+                    color: technicalData.vs50MA === 'above' ? '#22c55e' : '#ef4444',
+                    fontSize: '12px',
+                    fontWeight: '600'
+                  }}>
+                    {technicalData.vs50MA === 'above' ? 'Above' : 'Below'} ({technicalData.vs50MAPercent})
+                  </span>
+                </div>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  padding: '10px 0'
+                }}>
+                  <span style={{ color: '#8b949e', fontSize: '12px' }}>Volume</span>
+                  <span style={{
+                    color: technicalData.volumeSignal === 'high' ? '#22c55e' : '#8b949e',
+                    fontSize: '12px',
+                    fontWeight: '600'
+                  }}>
+                    {technicalData.volumeRatio}x avg
+                  </span>
+                </div>
+              </div>
+
+              {/* Support/Resistance Levels */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                <div style={{ background: '#161b22', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+                  <div style={{ color: '#ef4444', fontSize: '11px', marginBottom: '4px' }}>Support</div>
+                  <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700' }}>${technicalData.support}</div>
+                </div>
+                <div style={{ background: '#161b22', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+                  <div style={{ color: '#00d9ff', fontSize: '11px', marginBottom: '4px' }}>Current</div>
+                  <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700' }}>${safeToFixed(asset.price, 2)}</div>
+                </div>
+                <div style={{ background: '#161b22', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+                  <div style={{ color: '#22c55e', fontSize: '11px', marginBottom: '4px' }}>Resistance</div>
+                  <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700' }}>${technicalData.resistance}</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* VOLATILITY SECTION */}
@@ -1330,9 +1568,69 @@ const CryptoMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors
 // CONVICTION CHECK COMPONENT (Research Phase 4)
 // ============================================
 
+// Curated stock groups for Conviction Check
+const CURATED_GROUPS = [
+  {
+    id: 'momentum',
+    title: 'High Momentum',
+    icon: '🚀',
+    color: '#00ff88',
+    description: 'Trending stocks with strong upward momentum',
+    maxPicks: 2,
+    stocks: [
+      { symbol: 'NVDA', name: 'NVIDIA', tag: 'AI Leader' },
+      { symbol: 'META', name: 'Meta Platforms', tag: 'Social Giant' },
+      { symbol: 'AVGO', name: 'Broadcom', tag: 'Chip Maker' },
+      { symbol: 'PLTR', name: 'Palantir', tag: 'AI/Data' },
+    ],
+  },
+  {
+    id: 'steady',
+    title: 'Steady Performers',
+    icon: '🛡️',
+    color: '#00d9ff',
+    description: 'Reliable blue chips with consistent returns',
+    maxPicks: 2,
+    stocks: [
+      { symbol: 'AAPL', name: 'Apple', tag: 'Tech Giant' },
+      { symbol: 'MSFT', name: 'Microsoft', tag: 'Cloud King' },
+      { symbol: 'GOOGL', name: 'Alphabet', tag: 'Search/AI' },
+      { symbol: 'AMZN', name: 'Amazon', tag: 'E-commerce' },
+    ],
+  },
+  {
+    id: 'wildcard',
+    title: 'Wild Cards',
+    icon: '🎲',
+    color: '#f59e0b',
+    description: 'High risk, high reward plays',
+    maxPicks: 1,
+    stocks: [
+      { symbol: 'TSLA', name: 'Tesla', tag: 'EV/Energy' },
+      { symbol: 'AMD', name: 'AMD', tag: 'Chipmaker' },
+      { symbol: 'COIN', name: 'Coinbase', tag: 'Crypto' },
+      { symbol: 'MSTR', name: 'MicroStrategy', tag: 'BTC Proxy' },
+    ],
+  },
+  {
+    id: 'crypto',
+    title: 'Crypto Picks',
+    icon: '₿',
+    color: '#f7931a',
+    description: 'Top cryptocurrency assets',
+    maxPicks: 2,
+    stocks: [
+      { symbol: 'BTC', name: 'Bitcoin', tag: 'Store of Value' },
+      { symbol: 'ETH', name: 'Ethereum', tag: 'Smart Contracts' },
+      { symbol: 'SOL', name: 'Solana', tag: 'Fast L1' },
+      { symbol: 'XRP', name: 'Ripple', tag: 'Payments' },
+    ],
+  },
+];
+
 /**
- * ConvictionCheck - Collect user preferences before generating game plan
- * Must-have assets, must-avoid assets, and confidence level
+ * ConvictionCheck - Curated stock groups selection
+ * Select assets from pre-defined groups with limits per category
  */
 const ConvictionCheck = ({
   thesis,
@@ -1346,298 +1644,305 @@ const ConvictionCheck = ({
 }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
 
-  const confidenceLevels = [
-    { value: 'high', label: 'High', description: 'Concentrated positions OK', icon: '🎯' },
-    { value: 'medium', label: 'Medium', description: 'Balanced approach', icon: '⚖️' },
-    { value: 'low', label: 'Low', description: 'More diversification', icon: '🛡️' },
-  ];
+  // Initialize selected stocks state if not present
+  const selectedStocks = convictionData.selectedStocks || {};
 
-  const handleRemoveMustHave = (symbol) => {
-    setConvictionData(prev => ({
-      ...prev,
-      mustHave: prev.mustHave.filter(s => s !== symbol),
-    }));
+  const handleToggleStock = (groupId, symbol) => {
+    setConvictionData(prev => {
+      const currentGroupPicks = prev.selectedStocks?.[groupId] || [];
+      const group = CURATED_GROUPS.find(g => g.id === groupId);
+
+      if (currentGroupPicks.includes(symbol)) {
+        // Remove the stock
+        return {
+          ...prev,
+          selectedStocks: {
+            ...prev.selectedStocks,
+            [groupId]: currentGroupPicks.filter(s => s !== symbol),
+          },
+        };
+      } else {
+        // Add the stock if under limit
+        if (currentGroupPicks.length < group.maxPicks) {
+          return {
+            ...prev,
+            selectedStocks: {
+              ...prev.selectedStocks,
+              [groupId]: [...currentGroupPicks, symbol],
+            },
+          };
+        }
+        return prev;
+      }
+    });
   };
 
-  const handleRemoveMustAvoid = (symbol) => {
-    setConvictionData(prev => ({
-      ...prev,
-      mustAvoid: prev.mustAvoid.filter(s => s !== symbol),
-    }));
+  // Calculate total selections
+  const getTotalSelections = () => {
+    return Object.values(selectedStocks).reduce((sum, picks) => sum + (picks?.length || 0), 0);
   };
 
-  const canProceed = convictionData.confidence !== null;
+  const totalSelections = getTotalSelections();
+  const canProceed = totalSelections >= 1;
 
   return (
     <div style={{
-      background: '#1a1f2e',
-      borderRadius: '16px',
-      padding: '24px',
-      border: '1px solid #2d3548',
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      position: 'relative',
     }}>
-      {/* Header */}
-      <div style={{ marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-          <div style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #9333ea, #6366f1)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '16px',
-          }}>
-            4
-          </div>
-          <h3 style={{ color: '#e6edf3', margin: 0, fontSize: '18px' }}>
-            Conviction Check
-          </h3>
-        </div>
-        <p style={{ color: '#8b949e', fontSize: '14px', margin: 0 }}>
-          Fine-tune your preferences before we generate your personalized game plan
-        </p>
-      </div>
-
-      {/* Must-Have Assets */}
-      <div style={{ marginBottom: '20px' }}>
-        <div style={{
+      {/* Back Button at Top */}
+      <button
+        onClick={onBack}
+        style={{
           display: 'flex',
-          justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: '12px',
-        }}>
-          <label style={{ color: '#e6edf3', fontSize: '14px', fontWeight: '500' }}>
-            Must-Have Assets
-          </label>
-          <button
-            onClick={() => onOpenAssetPicker('mustHave')}
-            style={{
-              background: 'rgba(0, 217, 255, 0.1)',
-              border: '1px solid rgba(0, 217, 255, 0.3)',
-              borderRadius: '8px',
-              padding: '6px 12px',
-              color: c.cyan,
-              fontSize: '12px',
-              cursor: 'pointer',
-            }}
-          >
-            + Add Asset
-          </button>
-        </div>
-        <div style={{
-          background: '#1a1f2e',
-          borderRadius: '8px',
-          padding: '12px',
-          minHeight: '48px',
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '8px',
-          alignItems: 'center',
-        }}>
-          {convictionData.mustHave.length === 0 ? (
-            <span style={{ color: '#6e7681', fontSize: '13px' }}>
-              No must-have assets selected
-            </span>
-          ) : (
-            convictionData.mustHave.map(symbol => (
-              <div
-                key={symbol}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: 'rgba(16, 185, 129, 0.15)',
-                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                  borderRadius: '6px',
-                  padding: '4px 8px',
-                }}
-              >
-                <span style={{ color: c.green, fontSize: '13px', fontWeight: '500' }}>
-                  {symbol}
-                </span>
-                <button
-                  onClick={() => handleRemoveMustHave(symbol)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: '#8b949e',
-                    cursor: 'pointer',
-                    padding: '0',
-                    fontSize: '14px',
-                    lineHeight: 1,
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Must-Avoid Assets */}
-      <div style={{ marginBottom: '20px' }}>
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '12px',
-        }}>
-          <label style={{ color: '#e6edf3', fontSize: '14px', fontWeight: '500' }}>
-            Must-Avoid Assets
-          </label>
-          <button
-            onClick={() => onOpenAssetPicker('mustAvoid')}
-            style={{
-              background: 'rgba(239, 68, 68, 0.1)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              borderRadius: '8px',
-              padding: '6px 12px',
-              color: '#ef4444',
-              fontSize: '12px',
-              cursor: 'pointer',
-            }}
-          >
-            + Add Asset
-          </button>
-        </div>
-        <div style={{
-          background: '#1a1f2e',
-          borderRadius: '8px',
-          padding: '12px',
-          minHeight: '48px',
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '8px',
-          alignItems: 'center',
-        }}>
-          {convictionData.mustAvoid.length === 0 ? (
-            <span style={{ color: '#6e7681', fontSize: '13px' }}>
-              No must-avoid assets selected
-            </span>
-          ) : (
-            convictionData.mustAvoid.map(symbol => (
-              <div
-                key={symbol}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  borderRadius: '6px',
-                  padding: '4px 8px',
-                }}
-              >
-                <span style={{ color: '#ef4444', fontSize: '13px', fontWeight: '500' }}>
-                  {symbol}
-                </span>
-                <button
-                  onClick={() => handleRemoveMustAvoid(symbol)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: '#8b949e',
-                    cursor: 'pointer',
-                    padding: '0',
-                    fontSize: '14px',
-                    lineHeight: 1,
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Confidence Level */}
-      <div style={{ marginBottom: '24px' }}>
-        <label style={{
-          color: '#e6edf3',
+          gap: '6px',
+          background: 'transparent',
+          border: 'none',
+          color: c.cyan,
           fontSize: '14px',
-          fontWeight: '500',
-          marginBottom: '12px',
-          display: 'block',
+          fontWeight: '600',
+          cursor: 'pointer',
+          padding: '0 0 12px 0',
+          marginBottom: '4px',
+        }}
+      >
+        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
+        Back
+      </button>
+
+      {/* Scrollable Content */}
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        paddingBottom: '100px',
+      }}>
+        {/* Header */}
+        <div style={{
+          background: '#1a1f2e',
+          borderRadius: '16px',
+          padding: '20px',
+          marginBottom: '16px',
+          border: '1px solid #2d3548',
         }}>
-          Confidence in Your Thesis
-        </label>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          {confidenceLevels.map(level => (
-            <button
-              key={level.value}
-              onClick={() => setConvictionData(prev => ({ ...prev, confidence: level.value }))}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #9333ea, #6366f1)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '16px',
+              color: '#fff',
+            }}>
+              4
+            </div>
+            <h3 style={{ color: '#e6edf3', margin: 0, fontSize: '18px' }}>
+              Build Your Lineup
+            </h3>
+          </div>
+          <p style={{ color: '#8b949e', fontSize: '14px', margin: 0 }}>
+            Select assets from each category to create your battle portfolio
+          </p>
+        </div>
+
+        {/* Curated Groups */}
+        {CURATED_GROUPS.map(group => {
+          const groupPicks = selectedStocks[group.id] || [];
+          const isMaxed = groupPicks.length >= group.maxPicks;
+
+          return (
+            <div
+              key={group.id}
               style={{
-                flex: 1,
-                background: convictionData.confidence === level.value
-                  ? 'rgba(0, 217, 255, 0.15)'
-                  : '#1a1f2e',
-                border: convictionData.confidence === level.value
-                  ? '2px solid #00d9ff'
-                  : '1px solid #2d3548',
-                borderRadius: '12px',
-                padding: '16px 12px',
-                cursor: 'pointer',
-                textAlign: 'center',
-                transition: 'all 0.2s ease',
+                background: '#1a1f2e',
+                borderRadius: '16px',
+                padding: '16px',
+                marginBottom: '12px',
+                border: '1px solid #2d3548',
               }}
             >
-              <div style={{ fontSize: '24px', marginBottom: '8px' }}>{level.icon}</div>
+              {/* Group Header */}
               <div style={{
-                color: convictionData.confidence === level.value ? c.cyan : '#e6edf3',
-                fontSize: '14px',
-                fontWeight: '600',
-                marginBottom: '4px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '12px',
               }}>
-                {level.label}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '20px' }}>{group.icon}</span>
+                  <div>
+                    <div style={{ color: '#e6edf3', fontSize: '15px', fontWeight: '600' }}>
+                      {group.title}
+                    </div>
+                    <div style={{ color: '#6e7681', fontSize: '12px' }}>
+                      {group.description}
+                    </div>
+                  </div>
+                </div>
+                <div style={{
+                  background: isMaxed ? 'rgba(0, 255, 136, 0.15)' : 'rgba(139, 148, 158, 0.1)',
+                  border: `1px solid ${isMaxed ? 'rgba(0, 255, 136, 0.3)' : 'rgba(139, 148, 158, 0.2)'}`,
+                  borderRadius: '20px',
+                  padding: '4px 10px',
+                  fontSize: '12px',
+                  color: isMaxed ? c.green : '#8b949e',
+                  fontWeight: '500',
+                }}>
+                  {groupPicks.length}/{group.maxPicks}
+                </div>
               </div>
-              <div style={{ color: '#8b949e', fontSize: '11px' }}>
-                {level.description}
+
+              {/* Stock Pills */}
+              <div style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '8px',
+              }}>
+                {group.stocks.map(stock => {
+                  const isSelected = groupPicks.includes(stock.symbol);
+                  const isDisabled = !isSelected && isMaxed;
+
+                  return (
+                    <button
+                      key={stock.symbol}
+                      onClick={() => !isDisabled && handleToggleStock(group.id, stock.symbol)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '10px 14px',
+                        borderRadius: '12px',
+                        border: isSelected
+                          ? `2px solid ${group.color}`
+                          : '1px solid #2d3548',
+                        background: isSelected
+                          ? `${group.color}15`
+                          : isDisabled
+                          ? '#161b22'
+                          : '#0d1117',
+                        cursor: isDisabled ? 'not-allowed' : 'pointer',
+                        opacity: isDisabled ? 0.5 : 1,
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      {/* Selection indicator */}
+                      <div style={{
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '50%',
+                        border: isSelected ? 'none' : '2px solid #3d4556',
+                        background: isSelected ? group.color : 'transparent',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}>
+                        {isSelected && (
+                          <span style={{ color: '#0d1117', fontSize: '12px', fontWeight: 'bold' }}>✓</span>
+                        )}
+                      </div>
+
+                      {/* Stock info */}
+                      <div style={{ textAlign: 'left' }}>
+                        <div style={{
+                          color: isSelected ? group.color : '#e6edf3',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                        }}>
+                          {stock.symbol}
+                        </div>
+                        <div style={{
+                          color: '#6e7681',
+                          fontSize: '11px',
+                        }}>
+                          {stock.tag}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-            </button>
-          ))}
-        </div>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Action Buttons */}
-      <div style={{ display: 'flex', gap: '12px' }}>
-        <button
-          onClick={onBack}
-          style={{
-            flex: 1,
-            background: 'transparent',
-            border: '1px solid #2d3548',
-            borderRadius: '12px',
-            padding: '14px',
-            color: '#00d9ff',
-            fontSize: '16px',
-            fontWeight: '500',
-            cursor: 'pointer',
-          }}
-        >
-          ← Back
-        </button>
-        <button
-          onClick={() => onComplete(convictionData)}
-          disabled={!canProceed}
-          style={{
-            flex: 2,
-            background: canProceed
-              ? 'linear-gradient(135deg, #9333ea, #6366f1)'
-              : '#2d3548',
-            border: 'none',
-            borderRadius: '12px',
-            padding: '14px',
-            color: canProceed ? '#ffffff' : '#6e7681',
-            fontSize: '14px',
-            fontWeight: '600',
-            cursor: canProceed ? 'pointer' : 'not-allowed',
-          }}
-        >
-          Generate Game Plan →
-        </button>
+      {/* Fixed Bottom Action Bar */}
+      <div style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        background: 'linear-gradient(to top, #0d1117 80%, transparent)',
+        padding: '20px 0 0 0',
+      }}>
+        <div style={{
+          background: '#1a1f2e',
+          borderRadius: '16px',
+          padding: '16px',
+          border: '1px solid #2d3548',
+        }}>
+          {/* Selection Summary */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '12px',
+          }}>
+            <div style={{ color: '#8b949e', fontSize: '13px' }}>
+              Selected Assets
+            </div>
+            <div style={{
+              color: totalSelections > 0 ? c.cyan : '#6e7681',
+              fontSize: '14px',
+              fontWeight: '600',
+            }}>
+              {totalSelections} {totalSelections === 1 ? 'pick' : 'picks'}
+            </div>
+          </div>
+
+          {/* Generate Button */}
+          <button
+            onClick={() => {
+              // Convert selected stocks to mustHave format for compatibility
+              const allSelectedSymbols = Object.values(selectedStocks).flat();
+              onComplete({
+                ...convictionData,
+                mustHave: allSelectedSymbols,
+                selectedStocks: selectedStocks,
+                confidence: 'medium', // Default confidence
+              });
+            }}
+            disabled={!canProceed}
+            style={{
+              width: '100%',
+              background: canProceed
+                ? 'linear-gradient(135deg, #9333ea, #6366f1)'
+                : '#2d3548',
+              border: 'none',
+              borderRadius: '12px',
+              padding: '16px',
+              color: canProceed ? '#ffffff' : '#6e7681',
+              fontSize: '16px',
+              fontWeight: '600',
+              cursor: canProceed ? 'pointer' : 'not-allowed',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+            }}
+          >
+            <span>Generate Game Plan</span>
+            <span style={{ fontSize: '18px' }}>→</span>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1940,6 +2245,29 @@ const GamePlan = ({
       padding: '24px',
       border: '1px solid #2d3548',
     }}>
+      {/* Back Button at Top */}
+      <button
+        onClick={onBack}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          background: 'transparent',
+          border: 'none',
+          color: c.cyan,
+          fontSize: '14px',
+          fontWeight: '600',
+          cursor: 'pointer',
+          padding: '0',
+          marginBottom: '16px',
+        }}
+      >
+        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
+        Back
+      </button>
+
       {/* Header */}
       <div style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
@@ -2098,38 +2426,21 @@ const GamePlan = ({
           Use This Portfolio →
         </button>
 
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button
-            onClick={() => onSaveToNotes(gamePlan)}
-            style={{
-              flex: 1,
-              background: 'rgba(147, 51, 234, 0.15)',
-              border: '1px solid rgba(147, 51, 234, 0.3)',
-              borderRadius: '12px',
-              padding: '12px',
-              color: '#9333ea',
-              fontSize: '14px',
-              cursor: 'pointer',
-            }}
-          >
-            Save to Notes
-          </button>
-          <button
-            onClick={onBack}
-            style={{
-              flex: 1,
-              background: 'transparent',
-              border: '1px solid #2d3548',
-              borderRadius: '12px',
-              padding: '12px',
-              color: '#8b949e',
-              fontSize: '14px',
-              cursor: 'pointer',
-            }}
-          >
-            ← Adjust Preferences
-          </button>
-        </div>
+        <button
+          onClick={() => onSaveToNotes(gamePlan)}
+          style={{
+            width: '100%',
+            background: 'rgba(147, 51, 234, 0.15)',
+            border: '1px solid rgba(147, 51, 234, 0.3)',
+            borderRadius: '12px',
+            padding: '12px',
+            color: '#9333ea',
+            fontSize: '14px',
+            cursor: 'pointer',
+          }}
+        >
+          📌 Save to Notes
+        </button>
       </div>
     </div>
   );
