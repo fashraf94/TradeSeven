@@ -14453,7 +14453,7 @@ export default function PortfolioDuel() {
               </div>
             </div>
 
-            {/* Enhanced Ticker Card with Sector-Based Glow */}
+            {/* Clean Ticker Card with Sector-Colored Pulsing Glow Border */}
             {(() => {
               const isPositive = safeNumber(selectedAssetDetail.percentChange) >= 0;
               const isCrypto = !isStock;
@@ -14469,33 +14469,17 @@ export default function PortfolioDuel() {
                   padding: '16px',
                   marginBottom: '0'
                 }}>
-                  {/* CSS Animations */}
+                  {/* CSS Animation for Pulsing Glow */}
                   <style>
                     {`
-                      @keyframes tickerFloat {
-                        0%, 100% { transform: translateY(0) scale(1); }
-                        50% { transform: translateY(-20px) scale(1.05); }
-                      }
-                      @keyframes tickerFloatParticle {
-                        0%, 100% { transform: translateY(0) translateX(0); opacity: 0.3; }
-                        25% { transform: translateY(-15px) translateX(10px); opacity: 0.6; }
-                        50% { transform: translateY(-5px) translateX(-5px); opacity: 0.4; }
-                        75% { transform: translateY(-20px) translateX(5px); opacity: 0.7; }
-                      }
-                      @keyframes tickerShimmer {
-                        0%, 100% { opacity: 0.3; transform: scaleX(0.5); }
-                        50% { opacity: 1; transform: scaleX(1); }
-                      }
-                      @keyframes tickerPulse {
-                        0%, 100% { opacity: 0.3; }
-                        50% { opacity: 0.7; }
-                      }
                       @keyframes tickerGlowPulse {
                         0%, 100% {
-                          box-shadow: 0 0 20px ${accentGlow}, 0 0 40px ${accentGlow.replace('0.4', '0.2')}, 0 8px 32px rgba(0, 0, 0, 0.3);
+                          box-shadow: 0 0 20px ${accentGlow}, 0 0 40px ${accentGlow.replace('0.4', '0.2')};
+                          transform: scale(1);
                         }
                         50% {
-                          box-shadow: 0 0 30px ${accentGlow.replace('0.4', '0.5')}, 0 0 60px ${accentGlow.replace('0.4', '0.3')}, 0 8px 32px rgba(0, 0, 0, 0.3);
+                          box-shadow: 0 0 30px ${accentGlow.replace('0.4', '0.6')}, 0 0 60px ${accentGlow.replace('0.4', '0.3')};
+                          transform: scale(1.005);
                         }
                       }
                     `}
@@ -14504,261 +14488,88 @@ export default function PortfolioDuel() {
                   {/* Outer Glow Container with Pulsing Animation */}
                   <div style={{
                     position: 'relative',
-                    borderRadius: '24px',
+                    borderRadius: '20px',
                     padding: '3px',
-                    background: sectorColor.gradient,
-                    boxShadow: `0 0 20px ${accentGlow}, 0 0 40px ${accentGlow.replace('0.4', '0.2')}, 0 8px 32px rgba(0, 0, 0, 0.3)`,
+                    background: `linear-gradient(135deg, ${accentColor}, ${accentColor}80)`,
+                    boxShadow: `0 0 20px ${accentGlow}, 0 0 40px ${accentGlow.replace('0.4', '0.2')}`,
                     animation: 'tickerGlowPulse 3s ease-in-out infinite'
                   }}>
                     {/* Inner Card */}
                     <div style={{
-                      position: 'relative',
-                      background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 50%, #131a24 100%)',
-                      borderRadius: '21px',
-                      padding: '40px 24px',
-                      overflow: 'hidden'
+                      background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 100%)',
+                      borderRadius: '17px',
+                      padding: '32px 24px',
+                      textAlign: 'center'
                     }}>
+                      {/* Symbol */}
+                      <h1 style={{
+                        color: '#ffffff',
+                        fontSize: '42px',
+                        fontWeight: '800',
+                        margin: '0 0 4px 0',
+                        letterSpacing: '3px',
+                        textShadow: `0 0 30px ${accentGlow}`
+                      }}>
+                        {selectedAssetDetail.symbol}
+                      </h1>
 
-                  {/* Animated Gradient Orbs */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '-60px',
-                    right: '-60px',
-                    width: '200px',
-                    height: '200px',
-                    background: `radial-gradient(circle, ${accentColor}25 0%, transparent 70%)`,
-                    borderRadius: '50%',
-                    animation: 'tickerFloat 8s ease-in-out infinite',
-                    pointerEvents: 'none'
-                  }} />
-                  <div style={{
-                    position: 'absolute',
-                    bottom: '-40px',
-                    left: '-40px',
-                    width: '160px',
-                    height: '160px',
-                    background: `radial-gradient(circle, ${accentColor}15 0%, transparent 70%)`,
-                    borderRadius: '50%',
-                    animation: 'tickerFloat 10s ease-in-out infinite reverse',
-                    pointerEvents: 'none'
-                  }} />
-                  <div style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '20%',
-                    width: '100px',
-                    height: '100px',
-                    background: 'radial-gradient(circle, rgba(139, 92, 246, 0.2) 0%, transparent 70%)',
-                    borderRadius: '50%',
-                    animation: 'tickerPulse 4s ease-in-out infinite',
-                    pointerEvents: 'none'
-                  }} />
+                      {/* Company Name */}
+                      <p style={{
+                        color: '#8b949e',
+                        fontSize: '14px',
+                        margin: '0 0 20px 0',
+                        fontWeight: '500'
+                      }}>
+                        {selectedAssetDetail.name}
+                      </p>
 
-                  {/* Floating Particles */}
-                  {[...Array(8)].map((_, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        position: 'absolute',
-                        width: `${6 + (i % 3) * 4}px`,
-                        height: `${6 + (i % 3) * 4}px`,
-                        background: i % 2 === 0 ? accentColor : '#8b5cf6',
-                        borderRadius: '50%',
-                        opacity: 0.4 + (i % 3) * 0.2,
-                        top: `${15 + (i * 10)}%`,
-                        left: `${5 + (i * 12)}%`,
-                        animation: `tickerFloatParticle ${5 + i}s ease-in-out infinite`,
-                        animationDelay: `${i * 0.5}s`,
-                        pointerEvents: 'none'
-                      }}
-                    />
-                  ))}
-
-                  {/* Grid Pattern Overlay */}
-                  <div style={{
-                    position: 'absolute',
-                    inset: 0,
-                    backgroundImage: `
-                      linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
-                      linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)
-                    `,
-                    backgroundSize: '30px 30px',
-                    pointerEvents: 'none'
-                  }} />
-
-                  {/* Animated Top Border Glow */}
-                  <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: '10%',
-                    right: '10%',
-                    height: '2px',
-                    background: `linear-gradient(90deg, transparent, ${accentColor}, transparent)`,
-                    animation: 'tickerShimmer 3s ease-in-out infinite',
-                    opacity: 0.8
-                  }} />
-
-                  {/* Corner Decorations */}
-                  <svg style={{ position: 'absolute', top: '16px', left: '16px', opacity: 0.4 }} width="32" height="32" viewBox="0 0 32 32" fill="none">
-                    <path d="M0 8V0h8" stroke={accentColor} strokeWidth="2"/>
-                    <circle cx="0" cy="0" r="3" fill={accentColor} opacity="0.5"/>
-                  </svg>
-                  <svg style={{ position: 'absolute', top: '16px', right: '16px', opacity: 0.4 }} width="32" height="32" viewBox="0 0 32 32" fill="none">
-                    <path d="M32 8V0h-8" stroke={accentColor} strokeWidth="2"/>
-                    <circle cx="32" cy="0" r="3" fill={accentColor} opacity="0.5"/>
-                  </svg>
-                  <svg style={{ position: 'absolute', bottom: '16px', left: '16px', opacity: 0.4 }} width="32" height="32" viewBox="0 0 32 32" fill="none">
-                    <path d="M0 24v8h8" stroke={accentColor} strokeWidth="2"/>
-                    <circle cx="0" cy="32" r="3" fill={accentColor} opacity="0.5"/>
-                  </svg>
-                  <svg style={{ position: 'absolute', bottom: '16px', right: '16px', opacity: 0.4 }} width="32" height="32" viewBox="0 0 32 32" fill="none">
-                    <path d="M32 24v8h-8" stroke={accentColor} strokeWidth="2"/>
-                    <circle cx="32" cy="32" r="3" fill={accentColor} opacity="0.5"/>
-                  </svg>
-
-                  {/* Animated Horizontal Lines */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '30%',
-                    left: 0,
-                    right: 0,
-                    height: '1px',
-                    background: `linear-gradient(90deg, transparent, ${accentColor}30, transparent)`,
-                    animation: 'tickerPulse 2s ease-in-out infinite'
-                  }} />
-                  <div style={{
-                    position: 'absolute',
-                    bottom: '30%',
-                    left: 0,
-                    right: 0,
-                    height: '1px',
-                    background: `linear-gradient(90deg, transparent, ${accentColor}20, transparent)`,
-                    animation: 'tickerPulse 2s ease-in-out infinite',
-                    animationDelay: '1s'
-                  }} />
-
-                  {/* Content */}
-                  <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', maxWidth: '900px', margin: '0 auto' }}>
-                    {/* Symbol */}
-                    <h1 style={{
-                      color: '#ffffff',
-                      fontSize: '42px',
-                      fontWeight: '800',
-                      margin: '0 0 4px 0',
-                      letterSpacing: '3px',
-                      textShadow: `0 0 40px ${accentGlow}, 0 0 80px ${accentGlow}`
-                    }}>
-                      {selectedAssetDetail.symbol}
-                    </h1>
-
-                    {/* Company Name */}
-                    <p style={{
-                      color: '#8b949e',
-                      fontSize: '14px',
-                      margin: '0 0 16px 0',
-                      fontWeight: '500'
-                    }}>
-                      {selectedAssetDetail.name}
-                    </p>
-
-                    {/* Sector Badge */}
-                    <div style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      background: `${accentColor}15`,
-                      border: `1px solid ${accentColor}40`,
-                      borderRadius: '24px',
-                      padding: '8px 16px',
-                      marginBottom: '20px'
-                    }}>
+                      {/* Price */}
                       <div style={{
-                        width: '20px',
-                        height: '20px',
-                        background: `linear-gradient(135deg, ${accentColor} 0%, ${accentColor}cc 100%)`,
-                        borderRadius: '6px',
-                        display: 'flex',
+                        fontSize: '48px',
+                        fontWeight: '700',
+                        color: '#ffffff',
+                        margin: '0 0 16px 0',
+                        fontFamily: 'system-ui, -apple-system, sans-serif'
+                      }}>
+                        ${selectedAssetDetail.price?.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: selectedAssetDetail.price < 1 ? 4 : 2
+                        })}
+                      </div>
+
+                      {/* Change Badge */}
+                      <div style={{
+                        display: 'inline-flex',
                         alignItems: 'center',
-                        justifyContent: 'center'
+                        gap: '6px',
+                        background: isPositive ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                        border: `1px solid ${isPositive ? '#22c55e' : '#ef4444'}50`,
+                        borderRadius: '12px',
+                        padding: '10px 20px'
                       }}>
-                        {isCrypto ? (
-                          <span style={{ color: '#fff', fontSize: '12px', fontWeight: '700' }}>₿</span>
-                        ) : (
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
-                            <path d="M3 17l6-6 4 4 8-8M17 7h4v4"/>
-                          </svg>
-                        )}
+                        <span style={{
+                          color: isPositive ? '#22c55e' : '#ef4444',
+                          fontSize: '16px'
+                        }}>
+                          {isPositive ? '▲' : '▼'}
+                        </span>
+                        <span style={{
+                          color: isPositive ? '#22c55e' : '#ef4444',
+                          fontSize: '18px',
+                          fontWeight: '700'
+                        }}>
+                          {Math.abs(safeNumber(selectedAssetDetail.percentChange)).toFixed(2)}% today
+                        </span>
                       </div>
-                      <span style={{
-                        color: accentColor,
-                        fontSize: '12px',
-                        fontWeight: '600'
-                      }}>
-                        {effectiveSector || (isCrypto ? 'Cryptocurrency' : 'Stock')}
-                      </span>
-                    </div>
 
-                    {/* Price */}
-                    <div style={{
-                      fontSize: '48px',
-                      fontWeight: '700',
-                      color: '#ffffff',
-                      margin: '0 0 12px 0',
-                      fontFamily: 'system-ui, -apple-system, sans-serif',
-                      textShadow: '0 2px 20px rgba(0,0,0,0.3)'
-                    }}>
-                      ${selectedAssetDetail.price?.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: selectedAssetDetail.price < 1 ? 4 : 2
-                      })}
-                    </div>
-
-                    {/* Change Badge */}
-                    <div style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      background: isPositive ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                      border: `1px solid ${isPositive ? '#22c55e' : '#ef4444'}50`,
-                      borderRadius: '12px',
-                      padding: '10px 20px'
-                    }}>
-                      <span style={{
-                        color: isPositive ? '#22c55e' : '#ef4444',
-                        fontSize: '16px'
-                      }}>
-                        {isPositive ? '▲' : '▼'}
-                      </span>
-                      <span style={{
-                        color: isPositive ? '#22c55e' : '#ef4444',
-                        fontSize: '18px',
-                        fontWeight: '700'
-                      }}>
-                        {Math.abs(safeNumber(selectedAssetDetail.percentChange)).toFixed(2)}% today
-                      </span>
-                    </div>
-
-                    {/* Crypto Rank */}
-                    {!isStock && metrics?.marketCapRank && (
-                      <div style={{ marginTop: '12px' }}>
-                        <span style={{ color: '#8b949e', fontSize: '13px' }}>Rank #{metrics.marketCapRank} by Market Cap</span>
-                      </div>
-                    )}
-                  </div>
+                      {/* Crypto Rank */}
+                      {!isStock && metrics?.marketCapRank && (
+                        <div style={{ marginTop: '12px' }}>
+                          <span style={{ color: '#8b949e', fontSize: '13px' }}>Rank #{metrics.marketCapRank} by Market Cap</span>
+                        </div>
+                      )}
                     </div>
                   </div>
-
-                  {/* Bottom Reflection Glow - Sector colored */}
-                  <div style={{
-                    position: 'absolute',
-                    bottom: '8px',
-                    left: '15%',
-                    right: '15%',
-                    height: '16px',
-                    background: `radial-gradient(ellipse, ${accentGlow} 0%, transparent 70%)`,
-                    filter: 'blur(8px)',
-                    pointerEvents: 'none'
-                  }} />
                 </div>
               );
             })()}
