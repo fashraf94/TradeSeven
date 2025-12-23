@@ -106,6 +106,15 @@ export default async function handler(req, res) {
       epsEstimate: latest.epsEstimate
     }));
 
+    // Debug: Log raw data structures for revenue debugging
+    console.log(`[API] Revenue sources for ${upperSymbol}:`, JSON.stringify({
+      earningsRevenueActual: latest.revenueActual,
+      earningsRevenue: latest.revenue,
+      highlightsRevenue: data?.Highlights?.Revenue,
+      hasIncomeStatement: !!data?.Financials?.Income_Statement,
+      hasQuarterly: !!data?.Financials?.Income_Statement?.quarterly
+    }));
+
     // Get previous year's same quarter for YoY comparison
     const previousYear = completedEarnings.find(e => {
       if (!e.reportDate || !latest.reportDate) return false;
@@ -124,10 +133,12 @@ export default async function handler(req, res) {
     // Format currency values
     const formatCurrency = (value) => {
       if (value == null) return null;
-      if (value >= 1e12) return `$${(value / 1e12).toFixed(1)}T`;
-      if (value >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
-      if (value >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
-      return `$${value.toFixed(2)}`;
+      const num = typeof value === 'string' ? parseFloat(value) : value;
+      if (isNaN(num) || num === 0) return null;
+      if (num >= 1e12) return `$${(num / 1e12).toFixed(1)}T`;
+      if (num >= 1e9) return `$${(num / 1e9).toFixed(1)}B`;
+      if (num >= 1e6) return `$${(num / 1e6).toFixed(1)}M`;
+      return `$${num.toFixed(2)}`;
     };
 
     // Format date nicely
@@ -156,9 +167,31 @@ export default async function handler(req, res) {
       return 'Latest Quarter';
     };
 
-    // Get revenue data - might be in different places
-    const revenueActual = latest.revenue || data?.Highlights?.Revenue || null;
+    // Get revenue data - check multiple possible locations in EODHD response
+    // Try to get the latest quarter key for income statement lookup
+    const quarterlyIncome = data?.Financials?.Income_Statement?.quarterly;
+    const yearlyIncome = data?.Financials?.Income_Statement?.yearly;
+    const latestQuarterKey = quarterlyIncome ? Object.keys(quarterlyIncome).sort().reverse()[0] : null;
+    const latestYearKey = yearlyIncome ? Object.keys(yearlyIncome).sort().reverse()[0] : null;
+
+    const revenueActual =
+      latest.revenueActual ||
+      latest.revenue ||
+      data?.Highlights?.Revenue ||
+      (latestQuarterKey && quarterlyIncome[latestQuarterKey]?.totalRevenue) ||
+      (latestYearKey && yearlyIncome[latestYearKey]?.totalRevenue) ||
+      null;
+
     const revenueEstimate = latest.revenueEstimate || null;
+
+    console.log(`[API] Revenue resolution for ${upperSymbol}:`, JSON.stringify({
+      resolved: revenueActual,
+      fromRevenueActual: latest.revenueActual,
+      fromRevenue: latest.revenue,
+      fromHighlights: data?.Highlights?.Revenue,
+      fromQuarterly: latestQuarterKey ? quarterlyIncome[latestQuarterKey]?.totalRevenue : null,
+      fromYearly: latestYearKey ? yearlyIncome[latestYearKey]?.totalRevenue : null
+    }));
 
     const result = {
       symbol: upperSymbol,

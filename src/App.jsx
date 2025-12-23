@@ -5324,25 +5324,25 @@ ${newsContext}
 
 Respond with 4-5 bullet points. Each point should be 1-2 sentences. Focus on qualitative insights, not just numbers. Start each point with an emoji that matches the sentiment (✅ for positive, ⚠️ for concern/negative, 📊 for neutral/data, 🎯 for guidance, 💡 for strategic).`;
 
-        // Call AI endpoint
+        // Call AI endpoint - use 'research' advisor type which already works
         const response = await fetch('/api/ai-advisor', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            type: 'earnings-insights',
-            context: { symbol, prompt }
+            advisorType: 'research',
+            message: prompt
           })
         });
 
         if (response.ok) {
           const data = await response.json();
-          if (data.success && data.advice) {
-            setInsights(data.advice);
+          if (data.message) {
+            setInsights(data.message);
 
             // Cache the insights
             try {
               localStorage.setItem(INSIGHTS_CACHE_KEY, JSON.stringify({
-                data: data.advice,
+                data: data.message,
                 timestamp: Date.now()
               }));
             } catch (e) {
