@@ -5180,11 +5180,33 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
       title: "What's your market stance?",
       subtitle: "How do you feel about the market direction?",
       options: [
-        { id: 'bullish', label: '📈 Bullish', description: 'Expecting markets to rise', color: c.green },
-        { id: 'bearish', label: '📉 Bearish', description: 'Expecting markets to fall', color: c.red },
-        { id: 'neutral', label: '➡️ Neutral', description: 'No strong direction', color: '#f59e0b' },
+        {
+          id: 'bullish',
+          label: 'Bullish',
+          description: 'Expecting markets to rise',
+          color: '#22c55e',
+          gradient: 'linear-gradient(135deg, #22c55e, #16a34a)',
+          icon: 'bullish'
+        },
+        {
+          id: 'bearish',
+          label: 'Bearish',
+          description: 'Expecting markets to fall',
+          color: '#ef4444',
+          gradient: 'linear-gradient(135deg, #ef4444, #dc2626)',
+          icon: 'bearish'
+        },
+        {
+          id: 'neutral',
+          label: 'Neutral',
+          description: 'No strong direction',
+          color: '#3b82f6',
+          gradient: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+          icon: 'neutral'
+        },
       ],
       field: 'stance',
+      useGradientIcons: true,
     },
     {
       id: 3,
@@ -5309,55 +5331,183 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
         gap: '12px',
         marginBottom: '24px',
       }}>
-        {currentQ.options.map(option => (
-          <button
-            key={option.id}
-            onClick={() => handleSelect(option.id)}
-            style={{
+        {currentQ.options.map(option => {
+          const selected = isSelected(option.id);
+
+          // Gradient icon SVGs for market stance
+          const renderGradientIcon = () => {
+            if (!option.icon) return null;
+
+            const iconStyle = {
+              width: '52px',
+              height: '52px',
+              borderRadius: '14px',
+              background: option.gradient,
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '16px 20px',
-              background: isSelected(option.id) ? `${option.color}15` : '#1a1f2e',
-              border: `2px solid ${isSelected(option.id) ? option.color : '#2d3548'}`,
-              borderRadius: '12px',
-              cursor: 'pointer',
+              justifyContent: 'center',
+              flexShrink: 0,
+              boxShadow: selected ? `0 4px 12px ${option.color}40` : 'none',
               transition: 'all 0.2s',
-            }}
-          >
-            <div style={{ textAlign: 'left' }}>
-              <div style={{
-                color: isSelected(option.id) ? option.color : '#e6edf3',
-                fontSize: '18px',
-                fontWeight: '600',
-                marginBottom: option.description ? '4px' : '0',
-              }}>
-                {option.label}
-              </div>
-              {option.description && (
-                <div style={{ color: '#8b949e', fontSize: '13px' }}>
-                  {option.description}
+            };
+
+            const svgProps = {
+              width: 24,
+              height: 24,
+              fill: 'none',
+              stroke: 'white',
+              strokeWidth: 2.5,
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            };
+
+            if (option.icon === 'bullish') {
+              return (
+                <div style={iconStyle}>
+                  <svg {...svgProps} viewBox="0 0 24 24">
+                    <path d="M12 19V5" />
+                    <path d="M5 12l7-7 7 7" />
+                    <path d="M8 8l4-4 4 4" />
+                  </svg>
                 </div>
-              )}
-            </div>
-            {isSelected(option.id) && (
-              <div style={{
-                width: '24px',
-                height: '24px',
-                borderRadius: '50%',
-                background: option.color,
+              );
+            }
+            if (option.icon === 'bearish') {
+              return (
+                <div style={iconStyle}>
+                  <svg {...svgProps} viewBox="0 0 24 24">
+                    <path d="M12 5v14" />
+                    <path d="M19 12l-7 7-7-7" />
+                    <path d="M16 16l-4 4-4-4" />
+                  </svg>
+                </div>
+              );
+            }
+            if (option.icon === 'neutral') {
+              return (
+                <div style={iconStyle}>
+                  <svg {...svgProps} viewBox="0 0 24 24">
+                    <path d="M5 12h14" />
+                    <path d="M12 5l7 7-7 7" />
+                  </svg>
+                </div>
+              );
+            }
+            return null;
+          };
+
+          // Use gradient icon layout for stance question
+          if (currentQ.useGradientIcons) {
+            return (
+              <button
+                key={option.id}
+                onClick={() => handleSelect(option.id)}
+                style={{
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '16px',
+                  padding: '16px 20px',
+                  background: selected ? `${option.color}10` : '#1a1f2e',
+                  border: `2px solid ${selected ? option.color : '#2d3548'}`,
+                  borderRadius: '16px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+              >
+                {/* Checkmark in top right when selected */}
+                {selected && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '-8px',
+                    right: '-8px',
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '50%',
+                    background: option.gradient,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </div>
+                )}
+
+                {/* Gradient Icon */}
+                {renderGradientIcon()}
+
+                {/* Text Content */}
+                <div style={{ textAlign: 'left', flex: 1 }}>
+                  <div style={{
+                    color: selected ? option.color : '#e6edf3',
+                    fontSize: '18px',
+                    fontWeight: '600',
+                    marginBottom: '4px',
+                  }}>
+                    {option.label}
+                  </div>
+                  <div style={{ color: '#8b949e', fontSize: '13px' }}>
+                    {option.description}
+                  </div>
+                </div>
+              </button>
+            );
+          }
+
+          // Default option rendering (for other questions)
+          return (
+            <button
+              key={option.id}
+              onClick={() => handleSelect(option.id)}
+              style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                color: '#000',
-                fontSize: '14px',
-                fontWeight: '700',
-              }}>
-                ✓
+                justifyContent: 'space-between',
+                padding: '16px 20px',
+                background: selected ? `${option.color}15` : '#1a1f2e',
+                border: `2px solid ${selected ? option.color : '#2d3548'}`,
+                borderRadius: '12px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              <div style={{ textAlign: 'left' }}>
+                <div style={{
+                  color: selected ? option.color : '#e6edf3',
+                  fontSize: '18px',
+                  fontWeight: '600',
+                  marginBottom: option.description ? '4px' : '0',
+                }}>
+                  {option.label}
+                </div>
+                {option.description && (
+                  <div style={{ color: '#8b949e', fontSize: '13px' }}>
+                    {option.description}
+                  </div>
+                )}
               </div>
-            )}
-          </button>
-        ))}
+              {selected && (
+                <div style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '50%',
+                  background: option.color,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#000',
+                  fontSize: '14px',
+                  fontWeight: '700',
+                }}>
+                  ✓
+                </div>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Multi-select continue button */}
