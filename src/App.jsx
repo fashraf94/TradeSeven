@@ -4426,77 +4426,142 @@ const GamePlan = ({
 const TopNewsStories = ({ news, isLoading, colors }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
 
-  // Whitelist of trusted financial news sources (case-insensitive matching)
+  // Whitelist of trusted financial news sources and their URL domains
   const TRUSTED_SOURCES = [
-    'bloomberg',
-    'reuters',
-    'cnbc',
-    'wall street journal',
-    'wsj',
-    'financial times',
-    'ft',
-    'marketwatch',
-    'market watch',
-    'yahoo finance',
-    'barrons',
-    "barron's",
-    'seeking alpha',
-    'seekingalpha',
-    'motley fool',
-    'the motley fool',
-    "investor's business daily",
-    'investors business daily',
-    'ibd',
-    'associated press',
-    'ap news',
-    'ap',
-    'cnn business',
-    'cnn',
-    'fox business',
-    'new york times',
-    'nyt',
-    'washington post',
-    'benzinga',
-    'zacks',
-    'thestreet',
-    'the street',
-    'investing.com',
-    'morningstar',
+    // Major financial news
+    { name: 'Bloomberg', patterns: ['bloomberg'] },
+    { name: 'Reuters', patterns: ['reuters'] },
+    { name: 'CNBC', patterns: ['cnbc'] },
+    { name: 'Wall Street Journal', patterns: ['wsj', 'wall street journal', 'wallstreetjournal'] },
+    { name: 'Financial Times', patterns: ['ft.com', 'financial times', 'financialtimes'] },
+    { name: 'MarketWatch', patterns: ['marketwatch'] },
+    { name: 'Yahoo Finance', patterns: ['yahoo', 'finance.yahoo'] },
+    { name: "Barron's", patterns: ['barrons', "barron's"] },
+    { name: 'Seeking Alpha', patterns: ['seekingalpha', 'seeking alpha'] },
+    { name: 'Motley Fool', patterns: ['motleyfool', 'motley fool', 'fool.com'] },
+    { name: "Investor's Business Daily", patterns: ['ibd', 'investors.com', "investor's business daily"] },
+    // Wire services
+    { name: 'Associated Press', patterns: ['ap ', 'apnews', 'associated press'] },
+    { name: 'AFP', patterns: ['afp', 'agence france'] },
+    // Business news
+    { name: 'CNN Business', patterns: ['cnn'] },
+    { name: 'Fox Business', patterns: ['foxbusiness', 'fox business'] },
+    { name: 'New York Times', patterns: ['nytimes', 'new york times', 'nyt'] },
+    { name: 'Washington Post', patterns: ['washingtonpost', 'washington post'] },
+    // Trading/investing sites
+    { name: 'Benzinga', patterns: ['benzinga'] },
+    { name: 'Zacks', patterns: ['zacks'] },
+    { name: 'TheStreet', patterns: ['thestreet'] },
+    { name: 'Investing.com', patterns: ['investing.com'] },
+    { name: 'Morningstar', patterns: ['morningstar'] },
+    // Additional sources
+    { name: 'Business Insider', patterns: ['businessinsider', 'business insider'] },
+    { name: 'Forbes', patterns: ['forbes'] },
+    { name: 'Finviz', patterns: ['finviz'] },
+    { name: 'TipRanks', patterns: ['tipranks'] },
+    { name: 'Nasdaq', patterns: ['nasdaq.com'] },
+    { name: 'PRNewswire', patterns: ['prnewswire', 'pr newswire'] },
+    { name: 'GlobeNewswire', patterns: ['globenewswire'] },
+    { name: 'Accesswire', patterns: ['accesswire'] },
+    { name: 'BusinessWire', patterns: ['businesswire', 'business wire'] },
   ];
 
-  // Check if source matches any trusted source (case-insensitive)
-  const isTrustedSource = (source) => {
-    if (!source || source === 'Unknown' || source.toLowerCase() === 'unknown') {
-      return false;
+  // Extract domain from URL
+  const extractDomain = (url) => {
+    if (!url) return '';
+    try {
+      const hostname = new URL(url).hostname.toLowerCase();
+      return hostname.replace('www.', '');
+    } catch {
+      return '';
     }
-    const sourceLower = source.toLowerCase().trim();
-    return TRUSTED_SOURCES.some(trusted =>
-      sourceLower.includes(trusted) || trusted.includes(sourceLower)
-    );
   };
 
-  // Filter news to only trusted sources
+  // Try to get a display source name from URL if source is missing
+  const getSourceFromUrl = (url) => {
+    const domain = extractDomain(url);
+    if (!domain) return null;
+
+    for (const source of TRUSTED_SOURCES) {
+      if (source.patterns.some(p => domain.includes(p))) {
+        return source.name;
+      }
+    }
+    // Return cleaned domain as fallback (e.g., "benzinga.com" -> "Benzinga")
+    const parts = domain.split('.');
+    if (parts.length >= 2) {
+      const name = parts[parts.length - 2];
+      return name.charAt(0).toUpperCase() + name.slice(1);
+    }
+    return null;
+  };
+
+  // Check if source or URL matches any trusted source
+  const isTrustedSource = (item) => {
+    const source = (item.source || '').toLowerCase().trim();
+    const url = (item.url || '').toLowerCase();
+    const domain = extractDomain(item.url);
+
+    // Check each trusted source
+    for (const trusted of TRUSTED_SOURCES) {
+      for (const pattern of trusted.patterns) {
+        if (source.includes(pattern) || domain.includes(pattern) || url.includes(pattern)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  // Check if an item has usable source info
+  const hasUsableSource = (item) => {
+    const source = item.source;
+    // Filter out empty, null, or "Unknown" sources
+    if (!source || source === 'Unknown' || source.toLowerCase() === 'unknown') {
+      // But if we can extract source from URL, it's usable
+      return !!getSourceFromUrl(item.url);
+    }
+    return true;
+  };
+
+  // Get display source for an item (with URL fallback)
+  const getDisplaySource = (item) => {
+    const source = item.source;
+    if (!source || source === 'Unknown' || source.toLowerCase() === 'unknown') {
+      return getSourceFromUrl(item.url) || 'News';
+    }
+    return source;
+  };
+
+  // Filter news with lenient matching
   const getFilteredNews = () => {
     if (!news || news.length === 0) return [];
 
-    const trustedNews = news.filter(item => isTrustedSource(item.source));
+    // Debug logging
+    console.log('[News] Raw sources:', news.map(n => ({ source: n.source, url: n.url?.substring(0, 50) })));
+
+    // First pass: get trusted sources
+    const trustedNews = news.filter(item => isTrustedSource(item));
+    console.log('[News] Trusted sources found:', trustedNews.length);
 
     // If we have at least 2 trusted news items, use them
     if (trustedNews.length >= 2) {
+      console.log('[News] Using trusted sources. Before:', news.length, 'After:', Math.min(trustedNews.length, 4));
       return trustedNews.slice(0, 4);
     }
 
-    // Fallback: show top 4 items but filter out "Unknown" sources
-    const nonUnknownNews = news.filter(item =>
-      item.source && item.source !== 'Unknown' && item.source.toLowerCase() !== 'unknown'
-    );
+    // Fallback: use any news with a usable source
+    const usableNews = news.filter(item => hasUsableSource(item));
+    console.log('[News] Usable sources found:', usableNews.length);
 
-    if (nonUnknownNews.length >= 2) {
-      return nonUnknownNews.slice(0, 4);
+    if (usableNews.length >= 1) {
+      console.log('[News] Using usable sources. Before:', news.length, 'After:', Math.min(usableNews.length, 4));
+      return usableNews.slice(0, 4);
     }
 
-    // Last resort: return whatever we have (excluding Unknown)
-    return nonUnknownNews.length > 0 ? nonUnknownNews.slice(0, 4) : [];
+    // Last resort: show first 4 items regardless (news is news!)
+    console.log('[News] Fallback to all news. Count:', Math.min(news.length, 4));
+    return news.slice(0, 4);
   };
 
   const filteredNews = getFilteredNews();
@@ -4606,7 +4671,7 @@ const TopNewsStories = ({ news, isLoading, colors }) => {
               {item.title}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ color: '#6e7681', fontSize: '11px' }}>{item.source}</span>
+              <span style={{ color: '#6e7681', fontSize: '11px' }}>{getDisplaySource(item)}</span>
               <span style={{ color: '#6e7681', fontSize: '11px' }}>•</span>
               <span style={{ color: '#6e7681', fontSize: '11px' }}>{getTimeAgo(item.publishedAt)}</span>
               {item.symbols && item.symbols.length > 0 && (
