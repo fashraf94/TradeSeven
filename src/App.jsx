@@ -3,7 +3,7 @@ import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } f
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
-import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews } from './services/eodhdAPI';
+import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews } from './services/eodhdAPI';
 import './firebase/config';
 import { motion } from 'framer-motion';
 // Event watchlist configuration for Week Ahead calendar
@@ -4420,152 +4420,174 @@ const GamePlan = ({
 // ============================================
 
 /**
- * TopNewsStories - Displays dynamic news headlines
- * Replaces the static Sector Snapshot
+ * WatchlistNews - Displays personalized news for user's watchlist stocks
+ * Shows news about stocks the user has shown interest in
  */
-const TopNewsStories = ({ news, isLoading, colors }) => {
+const WatchlistNews = ({ colors }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
 
-  // Whitelist of trusted financial news sources and their URL domains
-  const TRUSTED_SOURCES = [
-    // Major financial news
-    { name: 'Bloomberg', patterns: ['bloomberg'] },
-    { name: 'Reuters', patterns: ['reuters'] },
-    { name: 'CNBC', patterns: ['cnbc'] },
-    { name: 'Wall Street Journal', patterns: ['wsj', 'wall street journal', 'wallstreetjournal'] },
-    { name: 'Financial Times', patterns: ['ft.com', 'financial times', 'financialtimes'] },
-    { name: 'MarketWatch', patterns: ['marketwatch'] },
-    { name: 'Yahoo Finance', patterns: ['yahoo', 'finance.yahoo'] },
-    { name: "Barron's", patterns: ['barrons', "barron's"] },
-    { name: 'Seeking Alpha', patterns: ['seekingalpha', 'seeking alpha'] },
-    { name: 'Motley Fool', patterns: ['motleyfool', 'motley fool', 'fool.com'] },
-    { name: "Investor's Business Daily", patterns: ['ibd', 'investors.com', "investor's business daily"] },
-    // Wire services
-    { name: 'Associated Press', patterns: ['ap ', 'apnews', 'associated press'] },
-    { name: 'AFP', patterns: ['afp', 'agence france'] },
-    // Business news
-    { name: 'CNN Business', patterns: ['cnn'] },
-    { name: 'Fox Business', patterns: ['foxbusiness', 'fox business'] },
-    { name: 'New York Times', patterns: ['nytimes', 'new york times', 'nyt'] },
-    { name: 'Washington Post', patterns: ['washingtonpost', 'washington post'] },
-    // Trading/investing sites
-    { name: 'Benzinga', patterns: ['benzinga'] },
-    { name: 'Zacks', patterns: ['zacks'] },
-    { name: 'TheStreet', patterns: ['thestreet'] },
-    { name: 'Investing.com', patterns: ['investing.com'] },
-    { name: 'Morningstar', patterns: ['morningstar'] },
-    // Additional sources
-    { name: 'Business Insider', patterns: ['businessinsider', 'business insider'] },
-    { name: 'Forbes', patterns: ['forbes'] },
-    { name: 'Finviz', patterns: ['finviz'] },
-    { name: 'TipRanks', patterns: ['tipranks'] },
-    { name: 'Nasdaq', patterns: ['nasdaq.com'] },
-    { name: 'PRNewswire', patterns: ['prnewswire', 'pr newswire'] },
-    { name: 'GlobeNewswire', patterns: ['globenewswire'] },
-    { name: 'Accesswire', patterns: ['accesswire'] },
-    { name: 'BusinessWire', patterns: ['businesswire', 'business wire'] },
-  ];
+  const [watchlistNews, setWatchlistNews] = useState([]);
+  const [watchlistSymbols, setWatchlistSymbols] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasWatchlist, setHasWatchlist] = useState(true);
 
-  // Extract domain from URL
-  const extractDomain = (url) => {
-    if (!url) return '';
+  // Default popular stocks as fallback
+  const DEFAULT_WATCHLIST = ['AAPL', 'NVDA', 'TSLA', 'GOOGL', 'MSFT', 'AMZN'];
+
+  // Get watchlist symbols from various sources
+  const getWatchlistSymbols = () => {
+    const symbols = new Set();
+
+    // 1. Check portfolio templates (user's saved portfolios)
     try {
-      const hostname = new URL(url).hostname.toLowerCase();
-      return hostname.replace('www.', '');
-    } catch {
-      return '';
-    }
-  };
-
-  // Try to get a display source name from URL if source is missing
-  const getSourceFromUrl = (url) => {
-    const domain = extractDomain(url);
-    if (!domain) return null;
-
-    for (const source of TRUSTED_SOURCES) {
-      if (source.patterns.some(p => domain.includes(p))) {
-        return source.name;
-      }
-    }
-    // Return cleaned domain as fallback (e.g., "benzinga.com" -> "Benzinga")
-    const parts = domain.split('.');
-    if (parts.length >= 2) {
-      const name = parts[parts.length - 2];
-      return name.charAt(0).toUpperCase() + name.slice(1);
-    }
-    return null;
-  };
-
-  // Check if source or URL matches any trusted source
-  const isTrustedSource = (item) => {
-    const source = (item.source || '').toLowerCase().trim();
-    const url = (item.url || '').toLowerCase();
-    const domain = extractDomain(item.url);
-
-    // Check each trusted source
-    for (const trusted of TRUSTED_SOURCES) {
-      for (const pattern of trusted.patterns) {
-        if (source.includes(pattern) || domain.includes(pattern) || url.includes(pattern)) {
-          return true;
+      const templates = JSON.parse(localStorage.getItem('portfolio_templates') || '[]');
+      templates.forEach(template => {
+        if (template.assets) {
+          template.assets.forEach(asset => {
+            if (asset.symbol && asset.type !== 'crypto') {
+              symbols.add(asset.symbol.toUpperCase());
+            }
+          });
         }
+      });
+    } catch (e) {
+      console.warn('[Watchlist] Error reading portfolio templates:', e);
+    }
+
+    // 2. Check for user-specific portfolio templates
+    try {
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key.startsWith('portfolioTemplates_')) {
+          const userTemplates = JSON.parse(localStorage.getItem(key) || '[]');
+          userTemplates.forEach(template => {
+            if (template.assets) {
+              template.assets.forEach(asset => {
+                if (asset.symbol && asset.type !== 'crypto') {
+                  symbols.add(asset.symbol.toUpperCase());
+                }
+              });
+            }
+          });
+        }
+      });
+    } catch (e) {
+      console.warn('[Watchlist] Error reading user portfolio templates:', e);
+    }
+
+    // 3. Check recent battle data for stocks user has picked
+    try {
+      const battles = JSON.parse(localStorage.getItem('portfolioDuelBattles') || '[]');
+      battles.slice(0, 5).forEach(battle => {
+        if (battle.player1?.portfolio) {
+          battle.player1.portfolio.forEach(asset => {
+            if (asset.symbol && asset.type !== 'crypto') {
+              symbols.add(asset.symbol.toUpperCase());
+            }
+          });
+        }
+      });
+    } catch (e) {
+      console.warn('[Watchlist] Error reading battle data:', e);
+    }
+
+    const symbolArray = Array.from(symbols);
+    console.log('[Watchlist] Found user symbols:', symbolArray);
+
+    // If no user symbols found, use defaults
+    if (symbolArray.length === 0) {
+      setHasWatchlist(false);
+      return DEFAULT_WATCHLIST;
+    }
+
+    setHasWatchlist(true);
+    // Return up to 6 symbols (prioritize most recent)
+    return symbolArray.slice(0, 6);
+  };
+
+  // Fetch news for watchlist symbols
+  useEffect(() => {
+    const fetchWatchlistNews = async () => {
+      setIsLoading(true);
+
+      try {
+        const symbols = getWatchlistSymbols();
+        setWatchlistSymbols(symbols);
+        console.log('[Watchlist] Fetching news for:', symbols);
+
+        // Fetch news for all symbols
+        const newsMap = await getMultipleStockNews(symbols, 2);
+        console.log('[Watchlist] News received:', Object.keys(newsMap));
+
+        // Flatten and dedupe news items, attach symbol info
+        const allNews = [];
+        const seenTitles = new Set();
+
+        symbols.forEach(symbol => {
+          const symbolNews = newsMap[symbol] || [];
+          symbolNews.forEach(item => {
+            // Dedupe by title
+            if (!seenTitles.has(item.title)) {
+              seenTitles.add(item.title);
+              allNews.push({
+                ...item,
+                watchlistSymbol: symbol, // Track which watchlist symbol this is for
+              });
+            }
+          });
+        });
+
+        // Sort by date (most recent first) and take top 5
+        allNews.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+        setWatchlistNews(allNews.slice(0, 5));
+
+      } catch (err) {
+        console.warn('[Watchlist] Failed to fetch news:', err);
+        setWatchlistNews([]);
+      } finally {
+        setIsLoading(false);
       }
-    }
-    return false;
+    };
+
+    fetchWatchlistNews();
+  }, []);
+
+  // Format time ago
+  const getTimeAgo = (dateStr) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${Math.floor(diffHours / 24)}d ago`;
   };
 
-  // Check if an item has usable source info
-  const hasUsableSource = (item) => {
-    const source = item.source;
-    // Filter out empty, null, or "Unknown" sources
-    if (!source || source === 'Unknown' || source.toLowerCase() === 'unknown') {
-      // But if we can extract source from URL, it's usable
-      return !!getSourceFromUrl(item.url);
-    }
-    return true;
-  };
-
-  // Get display source for an item (with URL fallback)
+  // Get display source (clean up source name)
   const getDisplaySource = (item) => {
     const source = item.source;
     if (!source || source === 'Unknown' || source.toLowerCase() === 'unknown') {
-      return getSourceFromUrl(item.url) || 'News';
+      // Try to extract from URL
+      if (item.url) {
+        try {
+          const hostname = new URL(item.url).hostname.replace('www.', '');
+          const parts = hostname.split('.');
+          if (parts.length >= 2) {
+            const name = parts[parts.length - 2];
+            return name.charAt(0).toUpperCase() + name.slice(1);
+          }
+        } catch {
+          return 'News';
+        }
+      }
+      return 'News';
     }
     return source;
   };
 
-  // Filter news with lenient matching
-  const getFilteredNews = () => {
-    if (!news || news.length === 0) return [];
-
-    // Debug logging
-    console.log('[News] Raw sources:', news.map(n => ({ source: n.source, url: n.url?.substring(0, 50) })));
-
-    // First pass: get trusted sources
-    const trustedNews = news.filter(item => isTrustedSource(item));
-    console.log('[News] Trusted sources found:', trustedNews.length);
-
-    // If we have at least 2 trusted news items, use them
-    if (trustedNews.length >= 2) {
-      console.log('[News] Using trusted sources. Before:', news.length, 'After:', Math.min(trustedNews.length, 4));
-      return trustedNews.slice(0, 4);
-    }
-
-    // Fallback: use any news with a usable source
-    const usableNews = news.filter(item => hasUsableSource(item));
-    console.log('[News] Usable sources found:', usableNews.length);
-
-    if (usableNews.length >= 1) {
-      console.log('[News] Using usable sources. Before:', news.length, 'After:', Math.min(usableNews.length, 4));
-      return usableNews.slice(0, 4);
-    }
-
-    // Last resort: show first 4 items regardless (news is news!)
-    console.log('[News] Fallback to all news. Count:', Math.min(news.length, 4));
-    return news.slice(0, 4);
-  };
-
-  const filteredNews = getFilteredNews();
-
+  // Loading state
   if (isLoading) {
     return (
       <div style={{
@@ -4575,8 +4597,8 @@ const TopNewsStories = ({ news, isLoading, colors }) => {
         marginBottom: '16px',
         border: '1px solid #2d3548',
       }}>
-        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px' }}>
-          Top News Stories
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '14px' }}>⭐</span> Your Watchlist
         </h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {[1, 2, 3].map(i => (
@@ -4595,21 +4617,8 @@ const TopNewsStories = ({ news, isLoading, colors }) => {
     );
   }
 
-  // Format time ago
-  const getTimeAgo = (dateStr) => {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    return `${Math.floor(diffHours / 24)}d ago`;
-  };
-
-  // Show message if no quality news available
-  if (filteredNews.length === 0) {
+  // Empty watchlist state
+  if (!hasWatchlist && watchlistNews.length === 0) {
     return (
       <div style={{
         background: '#1a1f2e',
@@ -4619,7 +4628,41 @@ const TopNewsStories = ({ news, isLoading, colors }) => {
         border: '1px solid #2d3548',
       }}>
         <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontSize: '14px' }}>📰</span> Top News Stories
+          <span style={{ fontSize: '14px' }}>⭐</span> Your Watchlist
+        </h3>
+        <div style={{
+          background: '#161b22',
+          borderRadius: '8px',
+          padding: '20px',
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '24px', marginBottom: '8px' }}>📋</div>
+          <p style={{ color: '#8b949e', fontSize: '13px', margin: 0 }}>
+            Add stocks to your watchlist by creating portfolios or battles
+          </p>
+          <p style={{ color: '#6e7681', fontSize: '11px', marginTop: '8px' }}>
+            We'll show personalized news for your picks
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // No news available
+  if (watchlistNews.length === 0) {
+    return (
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '16px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '14px' }}>⭐</span> Your Watchlist
+          <span style={{ color: '#6e7681', fontSize: '10px', fontWeight: '400', marginLeft: 'auto' }}>
+            {watchlistSymbols.slice(0, 4).join(', ')}{watchlistSymbols.length > 4 ? '...' : ''}
+          </span>
         </h3>
         <div style={{
           background: '#161b22',
@@ -4628,7 +4671,7 @@ const TopNewsStories = ({ news, isLoading, colors }) => {
           textAlign: 'center',
         }}>
           <span style={{ color: '#8b949e', fontSize: '13px' }}>
-            No major financial news at this time
+            No recent news for your watchlist stocks
           </span>
         </div>
       </div>
@@ -4644,23 +4687,49 @@ const TopNewsStories = ({ news, isLoading, colors }) => {
       border: '1px solid #2d3548',
     }}>
       <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <span style={{ fontSize: '14px' }}>📰</span> Top News Stories
+        <span style={{ fontSize: '14px' }}>⭐</span> Your Watchlist
+        <span style={{ color: '#6e7681', fontSize: '10px', fontWeight: '400', marginLeft: 'auto' }}>
+          {watchlistSymbols.slice(0, 4).join(', ')}{watchlistSymbols.length > 4 ? '...' : ''}
+        </span>
       </h3>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {filteredNews.map((item, idx) => (
+        {watchlistNews.map((item, idx) => (
           <div
             key={item.id || idx}
             style={{
               background: '#161b22',
               borderRadius: '8px',
               padding: '12px',
-              cursor: item.url !== '#' ? 'pointer' : 'default',
+              cursor: item.url && item.url !== '#' ? 'pointer' : 'default',
               transition: 'all 0.2s',
               borderLeft: `3px solid ${idx === 0 ? c.cyan : '#2d3548'}`,
             }}
-            onClick={() => item.url !== '#' && window.open(item.url, '_blank')}
+            onClick={() => item.url && item.url !== '#' && window.open(item.url, '_blank')}
           >
+            {/* Ticker badge */}
+            <div style={{ marginBottom: '6px' }}>
+              <span
+                style={{
+                  display: 'inline-block',
+                  background: `${c.cyan}20`,
+                  color: c.cyan,
+                  fontSize: '10px',
+                  fontWeight: '600',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // Could navigate to stock detail here
+                }}
+              >
+                ${item.watchlistSymbol || (item.symbols && item.symbols[0]) || 'NEWS'}
+              </span>
+            </div>
+
+            {/* Headline */}
             <div style={{
               color: '#e6edf3',
               fontSize: '13px',
@@ -4670,16 +4739,12 @@ const TopNewsStories = ({ news, isLoading, colors }) => {
             }}>
               {item.title}
             </div>
+
+            {/* Source and time */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ color: '#6e7681', fontSize: '11px' }}>{getDisplaySource(item)}</span>
               <span style={{ color: '#6e7681', fontSize: '11px' }}>•</span>
               <span style={{ color: '#6e7681', fontSize: '11px' }}>{getTimeAgo(item.publishedAt)}</span>
-              {item.symbols && item.symbols.length > 0 && (
-                <>
-                  <span style={{ color: '#6e7681', fontSize: '11px' }}>•</span>
-                  <span style={{ color: c.cyan, fontSize: '11px' }}>${item.symbols[0]}</span>
-                </>
-              )}
             </div>
           </div>
         ))}
@@ -5302,12 +5367,8 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
         `}</style>
       </div>
 
-      {/* Top News Stories (replaces Sector Snapshot) */}
-      <TopNewsStories
-        news={marketNews}
-        isLoading={isLoadingNews}
-        colors={c}
-      />
+      {/* Your Watchlist - Personalized news for user's stock picks */}
+      <WatchlistNews colors={c} />
 
       {/* Stocks in the News (replaces basic Top Movers) */}
       <StocksInTheNews
