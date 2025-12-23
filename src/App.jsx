@@ -5265,19 +5265,40 @@ const LatestEarningsReport = ({ symbol, colors }) => {
       setInsightsLoading(true);
 
       try {
-        // Fetch earnings-related news
+        // Fetch earnings-related news (increased from 10 to 15 for better coverage)
         console.log(`[EarningsInsights] Fetching news for ${symbol}...`);
-        const news = await getStockNews(symbol, 10);
+        const news = await getStockNews(symbol, 15);
 
-        // Filter for earnings-related articles
-        const earningsKeywords = ['earnings', 'quarterly', 'results', 'guidance', 'outlook', 'ceo', 'cfo', 'beat', 'miss', 'revenue', 'profit', 'forecast', 'call', 'quarter'];
+        // Tiered priority keywords - transcript/call content is highest priority
+        const highPriorityKeywords = ['transcript', 'earnings call', 'conference call', 'quarterly results'];
+        const mediumPriorityKeywords = ['earnings', 'quarterly', 'guidance', 'outlook', 'ceo said', 'cfo said', 'management', 'beat', 'miss', 'revenue', 'profit', 'forecast', 'quarter'];
 
-        const earningsNews = news.filter(article => {
+        // Score and filter articles by keyword priority
+        const scoredNews = news.map(article => {
           const text = ((article.title || '') + ' ' + (article.summary || '')).toLowerCase();
-          return earningsKeywords.some(keyword => text.includes(keyword));
-        }).slice(0, 5);
+          let score = 0;
 
-        console.log(`[EarningsInsights] Found ${earningsNews.length} earnings-related articles`);
+          // High priority keywords score 10 points each
+          highPriorityKeywords.forEach(keyword => {
+            if (text.includes(keyword)) score += 10;
+          });
+
+          // Medium priority keywords score 1 point each
+          mediumPriorityKeywords.forEach(keyword => {
+            if (text.includes(keyword)) score += 1;
+          });
+
+          return { article, score };
+        });
+
+        // Filter articles with any score and sort by priority
+        const earningsNews = scoredNews
+          .filter(item => item.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 5)
+          .map(item => item.article);
+
+        console.log(`[EarningsInsights] Found ${earningsNews.length} earnings-related articles (prioritized by transcript/call content)`);
 
         if (earningsNews.length === 0) {
           setInsightsLoading(false);
@@ -5966,20 +5987,6 @@ const FundamentalNews = ({ symbol, colors }) => {
         })}
       </div>
 
-      {/* Note if fewer than 4 articles */}
-      {news.length > 0 && news.length < 4 && (
-        <div style={{
-          marginTop: '12px',
-          padding: '8px 12px',
-          background: 'rgba(139, 92, 246, 0.1)',
-          borderRadius: '8px',
-          textAlign: 'center'
-        }}>
-          <span style={{ color: '#8b949e', fontSize: '11px' }}>
-            Showing {news.length} of 4 available articles for {symbol}
-          </span>
-        </div>
-      )}
     </div>
   );
 };
