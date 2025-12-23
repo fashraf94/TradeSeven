@@ -5266,152 +5266,66 @@ const LatestEarningsReport = ({ symbol, colors }) => {
     loadEarnings();
   }, [symbol]);
 
-  // Manual generate insights function (called by button click)
+  // Manual generate insights function (called by button click) - Uses web search only
   const handleGenerateInsights = async () => {
     if (!earnings || !symbol) return;
 
     setInsightsLoading(true);
     setInsightsError(null);
     setInsightsStaleWarning(null);
-    console.log(`[EarningsInsights] Starting insight generation for ${symbol}...`);
+    console.log(`[EarningsInsights] Searching web for ${symbol} earnings...`);
 
     try {
-      // Step 1: Try EODHD news first
-      console.log(`[EarningsInsights] Fetching news for ${symbol}...`);
-      const news = await getStockNews(symbol, 20);
-
-      // Tiered priority keywords - transcript/call content is highest priority
-      const highPriorityKeywords = ['transcript', 'earnings call', 'conference call', 'quarterly results'];
-      const mediumPriorityKeywords = ['earnings', 'quarterly', 'guidance', 'outlook', 'ceo said', 'cfo said', 'management', 'beat', 'miss', 'revenue', 'profit', 'forecast', 'quarter', 'Q1', 'Q2', 'Q3', 'Q4', '2024', '2025'];
-
-      // Score and filter articles by keyword priority
-      const scoredNews = news.map(article => {
-        const text = ((article.title || '') + ' ' + (article.summary || '')).toLowerCase();
-        let score = 0;
-
-        // High priority keywords score 10 points each
-        highPriorityKeywords.forEach(keyword => {
-          if (text.includes(keyword.toLowerCase())) score += 10;
-        });
-
-        // Medium priority keywords score 1 point each
-        mediumPriorityKeywords.forEach(keyword => {
-          if (text.includes(keyword.toLowerCase())) score += 1;
-        });
-
-        return { article, score };
+      // Direct web search for earnings insights
+      const webSearchResponse = await fetch('/api/ai-advisor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'earnings-web-search',
+          symbol: symbol,
+          companyName: earnings?.companyName || symbol
+        })
       });
 
-      // Filter articles with any score and sort by priority
-      const earningsNews = scoredNews
-        .filter(item => item.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 5)
-        .map(item => item.article);
-
-      console.log(`[EarningsInsights] Found ${earningsNews.length} earnings-related articles from EODHD`);
-
-      let generatedInsights = null;
-      let source = 'eodhd';
-
-      // Step 2: If EODHD has earnings articles, use them
-      if (earningsNews.length > 0) {
-        console.log('[EarningsInsights] Analyzing EODHD articles with AI...');
-
-        const newsContext = earningsNews.map(a =>
-          `Title: ${a.title}\nContent: ${a.summary || ''}`
-        ).join('\n---\n');
-
-        const prompt = `Based on the following recent news about ${symbol}'s earnings, extract 4-5 key insights from their most recent earnings report.
-
-Focus on:
-- What management said about the quarter
-- Strategic updates or new initiatives
-- Forward guidance and outlook
-- Key challenges or headwinds mentioned
-- Growth drivers or positive catalysts
-
-News:
-${newsContext}
-
-Respond with 4-5 bullet points. Each point should be 1-2 sentences. Focus on qualitative insights, not just numbers. Start each point with an emoji that matches the sentiment (✅ for positive, ⚠️ for concern/negative, 📊 for neutral/data, 🎯 for guidance, 💡 for strategic).`;
-
-        const response = await fetch('/api/ai-advisor', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            advisorType: 'research',
-            message: prompt
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.message) {
-            generatedInsights = data.message;
-            source = 'eodhd';
-          }
-        }
+      if (!webSearchResponse.ok) {
+        throw new Error('API request failed');
       }
 
-      // Step 3: If EODHD didn't have useful content, try web search fallback
-      let staleWarning = null;
-      if (!generatedInsights) {
-        console.log('[EarningsInsights] No EODHD insights, trying web search fallback...');
+      const webData = await webSearchResponse.json();
 
-        const webSearchResponse = await fetch('/api/ai-advisor', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'earnings-web-search',
-            symbol: symbol,
-            companyName: earnings?.companyName || symbol
-          })
+      if (webData.success && webData.message && !webData.message.includes('NO_RECENT_DATA')) {
+        const generatedInsights = webData.message;
+
+        console.log('[EarningsInsights] Got insights from web search', {
+          webSearchUsed: webData.webSearchUsed,
+          mayBeStale: webData.mayBeStale
         });
 
-        if (webSearchResponse.ok) {
-          const webData = await webSearchResponse.json();
-          if (webData.success && webData.message && !webData.message.includes('NO_RECENT_DATA')) {
-            generatedInsights = webData.message;
-            source = 'web-search';
-            console.log('[EarningsInsights] Got insights from web search', {
-              webSearchUsed: webData.webSearchUsed,
-              mayBeStale: webData.mayBeStale
-            });
-
-            // Check if the data may be stale
-            if (webData.mayBeStale || webData.warning) {
-              staleWarning = webData.warning || 'Data may not be from the most recent quarter';
-            }
-          } else if (webData.error) {
-            console.log('[EarningsInsights] Web search error:', webData.error);
-          }
-        }
-      }
-
-      // Step 4: Set results
-      if (generatedInsights) {
         setInsights(generatedInsights);
-        setInsightsSource(source);
-        setInsightsStaleWarning(staleWarning);
+        setInsightsSource('web-search');
 
-        // Cache successful insights only (don't cache if stale)
-        if (!staleWarning) {
+        // Check if the data may be stale
+        if (webData.mayBeStale || webData.warning) {
+          setInsightsStaleWarning(webData.warning || 'Data may not be from the most recent quarter');
+          console.log(`[EarningsInsights] Not caching due to stale warning`);
+        } else {
+          // Cache successful, non-stale insights
           try {
             localStorage.setItem(INSIGHTS_CACHE_KEY, JSON.stringify({
               data: generatedInsights,
-              source: source,
+              source: 'web-search',
               timestamp: Date.now()
             }));
-            console.log(`[EarningsInsights] Cached insights from ${source} for ${symbol}`);
+            console.log(`[EarningsInsights] Cached insights for ${symbol}`);
           } catch (e) {
             console.warn('[EarningsInsights] Cache write error:', e);
           }
-        } else {
-          console.log(`[EarningsInsights] Not caching due to stale warning: ${staleWarning}`);
         }
       } else {
-        setInsightsError('No recent earnings coverage found for this stock');
+        // No insights found or error
+        const errorMsg = webData.error || 'No recent earnings coverage found for this stock';
+        console.log('[EarningsInsights] Web search result:', errorMsg);
+        setInsightsError(errorMsg);
       }
 
     } catch (err) {
@@ -5851,7 +5765,7 @@ Respond with 4-5 bullet points. Each point should be 1-2 sentences. Focus on qua
               color: '#6b7280',
               textAlign: 'right'
             }}>
-              Source: {insightsSource === 'web-search' ? '🌐 Web Search' : '📰 Financial News'}
+              🌐 Powered by AI Web Search
             </div>
           </div>
         ) : (
