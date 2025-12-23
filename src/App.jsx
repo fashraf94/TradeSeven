@@ -5204,6 +5204,12 @@ const LatestEarningsReport = ({ symbol, colors }) => {
   const [earnings, setEarnings] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [insights, setInsights] = useState(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+
+  // Cache key for insights
+  const INSIGHTS_CACHE_KEY = `earnings_insights_${symbol}`;
+  const INSIGHTS_CACHE_DURATION = 12 * 60 * 60 * 1000; // 12 hours
 
   useEffect(() => {
     const loadEarnings = async () => {
@@ -5235,6 +5241,103 @@ const LatestEarningsReport = ({ symbol, colors }) => {
 
     loadEarnings();
   }, [symbol]);
+
+  // Generate AI insights when earnings load
+  useEffect(() => {
+    const generateInsights = async () => {
+      if (!earnings || !symbol) return;
+
+      // Check cache first
+      try {
+        const cached = localStorage.getItem(INSIGHTS_CACHE_KEY);
+        if (cached) {
+          const { data, timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < INSIGHTS_CACHE_DURATION) {
+            console.log(`[EarningsInsights] Using cached insights for ${symbol}`);
+            setInsights(data);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('[EarningsInsights] Cache read error:', e);
+      }
+
+      setInsightsLoading(true);
+
+      try {
+        // Fetch earnings-related news
+        console.log(`[EarningsInsights] Fetching news for ${symbol}...`);
+        const news = await getStockNews(symbol, 10);
+
+        // Filter for earnings-related articles
+        const earningsKeywords = ['earnings', 'quarterly', 'results', 'guidance', 'outlook', 'ceo', 'cfo', 'beat', 'miss', 'revenue', 'profit', 'forecast', 'call', 'quarter'];
+
+        const earningsNews = news.filter(article => {
+          const text = ((article.title || '') + ' ' + (article.summary || '')).toLowerCase();
+          return earningsKeywords.some(keyword => text.includes(keyword));
+        }).slice(0, 5);
+
+        console.log(`[EarningsInsights] Found ${earningsNews.length} earnings-related articles`);
+
+        if (earningsNews.length === 0) {
+          setInsightsLoading(false);
+          return;
+        }
+
+        // Create prompt for AI
+        const newsContext = earningsNews.map(a =>
+          `Title: ${a.title}\nContent: ${a.summary || ''}`
+        ).join('\n---\n');
+
+        const prompt = `Based on the following recent news about ${symbol}'s earnings, extract 4-5 key insights from their most recent earnings report.
+
+Focus on:
+- What management said about the quarter
+- Strategic updates or new initiatives
+- Forward guidance and outlook
+- Key challenges or headwinds mentioned
+- Growth drivers or positive catalysts
+
+News:
+${newsContext}
+
+Respond with 4-5 bullet points. Each point should be 1-2 sentences. Focus on qualitative insights, not just numbers. Start each point with an emoji that matches the sentiment (✅ for positive, ⚠️ for concern/negative, 📊 for neutral/data, 🎯 for guidance, 💡 for strategic).`;
+
+        // Call AI endpoint
+        const response = await fetch('/api/ai-advisor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'earnings-insights',
+            context: { symbol, prompt }
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.advice) {
+            setInsights(data.advice);
+
+            // Cache the insights
+            try {
+              localStorage.setItem(INSIGHTS_CACHE_KEY, JSON.stringify({
+                data: data.advice,
+                timestamp: Date.now()
+              }));
+            } catch (e) {
+              console.warn('[EarningsInsights] Cache write error:', e);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[EarningsInsights] Error generating insights:', err);
+      } finally {
+        setInsightsLoading(false);
+      }
+    };
+
+    generateInsights();
+  }, [earnings, symbol]);
 
   // Loading state
   if (isLoading) {
@@ -5528,6 +5631,100 @@ const LatestEarningsReport = ({ symbol, colors }) => {
         </div>
       )}
 
+      {/* AI Earnings Call Insights */}
+      <div style={{
+        marginTop: '16px',
+        background: '#1a2332',
+        borderRadius: '12px',
+        borderLeft: '3px solid #8b5cf6',
+        padding: '16px'
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          marginBottom: '12px'
+        }}>
+          <span style={{ fontSize: '16px' }}>🎯</span>
+          <h4 style={{
+            color: '#ffffff',
+            fontSize: '13px',
+            fontWeight: '700',
+            margin: 0,
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+          }}>
+            EARNINGS CALL INSIGHTS
+          </h4>
+          <span style={{
+            background: 'rgba(139, 92, 246, 0.2)',
+            color: '#a78bfa',
+            fontSize: '9px',
+            fontWeight: '600',
+            padding: '2px 8px',
+            borderRadius: '6px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+          }}>
+            AI-Powered
+          </span>
+        </div>
+
+        {/* Content */}
+        {insightsLoading ? (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '12px',
+            background: 'rgba(139, 92, 246, 0.1)',
+            borderRadius: '8px'
+          }}>
+            <div style={{
+              width: '16px',
+              height: '16px',
+              border: '2px solid #8b5cf6',
+              borderTopColor: 'transparent',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite'
+            }} />
+            <span style={{ color: '#a78bfa', fontSize: '12px' }}>
+              Analyzing earnings report...
+            </span>
+          </div>
+        ) : insights ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {insights.split('\n').filter(line => line.trim()).map((point, i) => (
+              <div
+                key={i}
+                style={{
+                  padding: '10px 12px',
+                  background: '#0d1117',
+                  borderRadius: '8px',
+                  color: '#e6edf3',
+                  fontSize: '12px',
+                  lineHeight: '1.5'
+                }}
+              >
+                {point.trim()}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{
+            padding: '12px',
+            background: 'rgba(139, 92, 246, 0.05)',
+            borderRadius: '8px',
+            textAlign: 'center'
+          }}>
+            <span style={{ color: '#6b7280', fontSize: '12px' }}>
+              Earnings insights unavailable for this stock
+            </span>
+          </div>
+        )}
+      </div>
+
       {/* Data source */}
       <div style={{
         marginTop: '12px',
@@ -5593,7 +5790,7 @@ const FundamentalNews = ({ symbol, colors }) => {
 
       setIsLoading(true);
       try {
-        const newsData = await getStockNews(symbol, 6);
+        const newsData = await getStockNews(symbol, 8); // Fetch extra to ensure we have 4
         setNews(newsData || []);
       } catch (err) {
         console.error('[FundamentalNews] Error:', err);
@@ -5685,7 +5882,7 @@ const FundamentalNews = ({ symbol, colors }) => {
         </span>
       </div>
 
-      {/* News Items */}
+      {/* News Items - Always show 4 articles */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {news.slice(0, 4).map((item, index) => {
           const sentiment = getSentiment(item.title, item.sentiment);
@@ -5768,6 +5965,21 @@ const FundamentalNews = ({ symbol, colors }) => {
           );
         })}
       </div>
+
+      {/* Note if fewer than 4 articles */}
+      {news.length > 0 && news.length < 4 && (
+        <div style={{
+          marginTop: '12px',
+          padding: '8px 12px',
+          background: 'rgba(139, 92, 246, 0.1)',
+          borderRadius: '8px',
+          textAlign: 'center'
+        }}>
+          <span style={{ color: '#8b949e', fontSize: '11px' }}>
+            Showing {news.length} of 4 available articles for {symbol}
+          </span>
+        </div>
+      )}
     </div>
   );
 };
