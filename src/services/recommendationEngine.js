@@ -1,202 +1,446 @@
 // /src/services/recommendationEngine.js
-// Thesis-based asset scoring and recommendation engine
+// Thesis-based asset scoring and recommendation engine - v2.0
+
+// ============================================
+// STOCK SECTOR MAPPINGS
+// ============================================
+const STOCK_SECTORS = {
+  Technology: ['AAPL', 'MSFT', 'GOOGL', 'GOOG', 'META', 'NVDA', 'AMD', 'INTC', 'CRM', 'ADBE', 'ORCL', 'IBM', 'NOW', 'SNOW', 'PLTR', 'UBER', 'LYFT', 'SHOP', 'SQ', 'TWLO', 'NET', 'DDOG', 'ZS', 'CRWD', 'MDB', 'TEAM', 'DOCU', 'OKTA', 'ZM', 'WDAY'],
+  Financials: ['JPM', 'BAC', 'WFC', 'GS', 'MS', 'C', 'BLK', 'SCHW', 'AXP', 'V', 'MA', 'PYPL', 'COIN', 'USB', 'PNC', 'TFC', 'COF', 'DFS', 'AIG', 'MET', 'PRU', 'ALL', 'TRV', 'CB', 'MMC', 'AON', 'ICE', 'CME', 'SPGI', 'MCO'],
+  Healthcare: ['JNJ', 'UNH', 'PFE', 'ABBV', 'MRK', 'LLY', 'TMO', 'ABT', 'BMY', 'AMGN', 'GILD', 'CVS', 'CI', 'HUM', 'ISRG', 'MDT', 'DHR', 'SYK', 'BDX', 'ZBH', 'EW', 'BSX', 'REGN', 'VRTX', 'BIIB', 'MRNA', 'ILMN', 'DXCM', 'ALGN', 'IDXX'],
+  Consumer: ['AMZN', 'TSLA', 'HD', 'NKE', 'MCD', 'SBUX', 'TGT', 'COST', 'WMT', 'LOW', 'TJX', 'ROST', 'DG', 'DLTR', 'LULU', 'GPS', 'ANF', 'BBWI', 'ULTA', 'EL', 'PG', 'KO', 'PEP', 'CL', 'KMB', 'GIS', 'K', 'CPB', 'SJM', 'HRL'],
+  Energy: ['XOM', 'CVX', 'COP', 'SLB', 'EOG', 'MPC', 'VLO', 'PSX', 'OXY', 'HAL', 'BKR', 'DVN', 'FANG', 'HES', 'PXD', 'WMB', 'KMI', 'OKE', 'ET', 'EPD', 'LNG', 'TRGP', 'MRO', 'APA', 'EQT'],
+  Industrials: ['CAT', 'DE', 'BA', 'HON', 'UPS', 'FDX', 'LMT', 'RTX', 'GE', 'MMM', 'EMR', 'ITW', 'PH', 'ROK', 'CMI', 'PCAR', 'NSC', 'UNP', 'CSX', 'ODFL', 'JBHT', 'XPO', 'DAL', 'UAL', 'LUV', 'AAL', 'WM', 'RSG', 'GD', 'NOC'],
+  Communications: ['NFLX', 'DIS', 'CMCSA', 'VZ', 'T', 'TMUS', 'CHTR', 'WBD', 'PARA', 'FOX', 'SNAP', 'PINS', 'MTCH', 'RBLX', 'EA', 'TTWO', 'ATVI', 'SPOT', 'LYV', 'ROKU', 'FUBO', 'WMG', 'SIRI', 'IMAX', 'AMC'],
+  Utilities: ['NEE', 'DUK', 'SO', 'D', 'AEP', 'EXC', 'SRE', 'XEL', 'WEC', 'ES', 'ED', 'PEG', 'AWK', 'ATO', 'NI', 'CMS', 'DTE', 'FE', 'PPL', 'EVRG'],
+  'Real Estate': ['AMT', 'PLD', 'CCI', 'EQIX', 'SPG', 'PSA', 'O', 'WELL', 'DLR', 'AVB', 'EQR', 'VTR', 'ARE', 'MAA', 'UDR', 'ESS', 'INVH', 'SUI', 'CPT', 'PEAK'],
+  Materials: ['LIN', 'APD', 'SHW', 'ECL', 'DD', 'DOW', 'LYB', 'PPG', 'NEM', 'FCX', 'NUE', 'STLD', 'CLF', 'VMC', 'MLM', 'MOS', 'CF', 'ALB', 'FMC', 'CE'],
+};
+
+// Volatility classification
+const HIGH_VOLATILITY = ['TSLA', 'NVDA', 'AMD', 'COIN', 'GME', 'AMC', 'RIVN', 'LCID', 'PLTR', 'SNAP', 'HOOD', 'MARA', 'RIOT', 'MSTR', 'BTC', 'ETH', 'SOL', 'DOGE', 'SHIB', 'XRP', 'ADA', 'AVAX', 'DOT', 'MATIC', 'LINK', 'UNI', 'AAVE', 'CRV', 'APE', 'PEPE', 'WIF', 'BONK', 'NEAR', 'INJ', 'TIA', 'SUI', 'SEI'];
+const LOW_VOLATILITY = ['JNJ', 'PG', 'KO', 'PEP', 'WMT', 'MCD', 'VZ', 'T', 'SO', 'DUK', 'SPY', 'QQQ', 'DIA', 'IWM', 'VTI', 'VOO', 'BRK.B', 'UNH', 'HD', 'COST', 'USDT', 'USDC', 'DAI', 'BUSD'];
 
 /**
- * Calculate thesis alignment score for a single asset
- * @param {Object} asset - Asset with price data and metadata
- * @param {Object} thesis - User's thesis from Phase 2
- * @returns {Object} - { score, breakdown, alignment }
+ * Get sector for a stock symbol
  */
-export function calculateThesisAlignment(asset, thesis) {
-  const scores = {
-    sectorMatch: scoreSectorMatch(asset, thesis),
-    momentumAlignment: scoreMomentumAlignment(asset, thesis),
-    riskMatch: scoreRiskMatch(asset, thesis),
-    timeframeFit: scoreTimeframeFit(asset, thesis),
-    recencyBonus: scoreRecencyBonus(asset),
-  };
-
-  const totalScore = Object.values(scores).reduce((a, b) => a + b, 0);
-
-  return {
-    score: totalScore,
-    breakdown: scores,
-    alignment: totalScore >= 75 ? 'strong'
-             : totalScore >= 50 ? 'moderate'
-             : 'weak'
-  };
+function getStockSector(symbol) {
+  for (const [sector, stocks] of Object.entries(STOCK_SECTORS)) {
+    if (stocks.includes(symbol)) {
+      return sector;
+    }
+  }
+  return null;
 }
 
 /**
- * Component 1: Sector/Category Match (30 points max)
+ * Get volatility classification for an asset
  */
-function scoreSectorMatch(asset, thesis) {
-  const assetSector = asset.sector || asset.category || 'Unknown';
+function getAssetVolatility(asset) {
+  const symbol = asset.symbol?.toUpperCase();
 
-  // User selected specific sectors
+  if (HIGH_VOLATILITY.includes(symbol)) return 'high';
+  if (LOW_VOLATILITY.includes(symbol)) return 'low';
+
+  // For crypto, default to high volatility
+  if (asset.category !== undefined) return 'high';
+
+  // Default based on recent price change
+  const change = Math.abs(parseFloat(asset.percentChange || asset.change24h) || 0);
+  if (change > 5) return 'high';
+  if (change < 1.5) return 'low';
+  return 'medium';
+}
+
+/**
+ * Calculate thesis alignment score for a single asset - v2.0
+ * Improved weighting: User's explicit choices = 60%, Market data = 30%, Bonus = 10%
+ */
+export function calculateThesisAlignment(asset, thesis) {
+  let score = 0;
+  let maxPossible = 0;
+  const matchReasons = [];
+  const isCrypto = asset.category !== undefined;
+
+  // Determine asset's sector (for stocks)
+  const assetSector = isCrypto
+    ? (asset.category || 'Crypto')
+    : (getStockSector(asset.symbol) || asset.sector || 'Unknown');
+
+  // ============================================
+  // TIER 1: USER'S EXPLICIT CHOICES (60 points)
+  // ============================================
+
+  // 1. Sector Match (25 points max) - CRITICAL
+  maxPossible += 25;
   if (thesis.sectors && thesis.sectors.length > 0) {
-    // Check if asset's sector matches any selected sector
-    const matches = thesis.sectors.some(s =>
+    const matchedSector = thesis.sectors.find(s =>
+      s.toLowerCase() === assetSector.toLowerCase() ||
       assetSector.toLowerCase().includes(s.toLowerCase()) ||
       s.toLowerCase().includes(assetSector.toLowerCase())
     );
-    return matches ? 30 : 0;
+
+    if (matchedSector) {
+      score += 25;
+      matchReasons.push(`Matches your ${assetSector} sector focus`);
+    }
+  } else {
+    // No sectors selected = give partial credit
+    score += 12;
   }
 
-  // User skipped sector selection (open to anything)
-  return 15;
-}
-
-/**
- * Component 2: Momentum Alignment (25 points max)
- */
-function scoreMomentumAlignment(asset, thesis) {
-  const change7d = parseFloat(asset.priceChange7d) || 0;
+  // 2. Market Direction / Stance Match (20 points max)
+  maxPossible += 20;
+  const change = parseFloat(asset.percentChange || asset.change24h) || 0;
 
   if (thesis.stance === 'bullish') {
-    if (change7d > 10) return 25;
-    if (change7d > 5) return 20;
-    if (change7d > 0) return 15;
-    if (change7d > -5) return 8;
-    return 0;
-
+    if (change > 3) {
+      score += 20;
+      matchReasons.push(`Strong positive momentum (+${change.toFixed(1)}%) aligns with bullish outlook`);
+    } else if (change > 0) {
+      score += 15;
+      matchReasons.push(`Positive movement (+${change.toFixed(1)}%) fits bullish thesis`);
+    } else if (change > -2) {
+      score += 8;
+    }
   } else if (thesis.stance === 'bearish') {
-    // Bearish = defensive (can't short in MarketClash)
-    // Reward stability
-    if (Math.abs(change7d) < 2) return 25;
-    if (Math.abs(change7d) < 5) return 18;
-    return 10;
-
+    // Bearish = look for stability (can't short in MarketClash)
+    if (Math.abs(change) < 1.5) {
+      score += 20;
+      matchReasons.push('Stable price action for defensive positioning');
+    } else if (Math.abs(change) < 3) {
+      score += 15;
+    } else {
+      score += 5;
+    }
   } else {
-    // Neutral - reward moderate movement
-    if (Math.abs(change7d) >= 2 && Math.abs(change7d) <= 8) return 20;
-    return 12;
+    // Neutral
+    if (Math.abs(change) >= 1 && Math.abs(change) <= 5) {
+      score += 15;
+    } else {
+      score += 10;
+    }
   }
-}
 
-/**
- * Component 3: Risk Profile Match (25 points max)
- */
-function scoreRiskMatch(asset, thesis) {
-  const beta = parseFloat(asset.beta) || 1.0;
-  const isCrypto = asset.category !== undefined;
-  const category = asset.category || '';
-  const isMeme = category === 'Meme';
-  const isStablecoin = category === 'Stablecoin';
+  // 3. Risk Tolerance Match (15 points max)
+  maxPossible += 15;
+  const volatility = getAssetVolatility(asset);
 
   if (thesis.risk === 'aggressive') {
-    if (isMeme) return 25;
-    if (isStablecoin) return 0;
-    if (isCrypto) return 22;
-    if (beta > 1.5) return 25;
-    if (beta > 1.2) return 20;
-    if (beta > 1.0) return 12;
-    return 5;
-
+    if (volatility === 'high') {
+      score += 15;
+      matchReasons.push('High volatility suits aggressive strategy');
+    } else if (volatility === 'medium') {
+      score += 10;
+    } else {
+      score += 4;
+    }
   } else if (thesis.risk === 'conservative') {
-    if (isStablecoin) return 25;
-    if (isMeme) return 0;
-    if (isCrypto && !isStablecoin) return 8;
-    if (beta < 0.8) return 25;
-    if (beta < 1.0) return 20;
-    if (beta <= 1.2) return 12;
-    return 5;
-
+    if (volatility === 'low') {
+      score += 15;
+      matchReasons.push('Low volatility fits conservative approach');
+    } else if (volatility === 'medium') {
+      score += 10;
+    } else {
+      score += 3;
+    }
   } else {
-    // Balanced
-    if (isStablecoin) return 10;
-    if (isMeme) return 10;
-    if (isCrypto) return 18;
-    if (beta >= 0.9 && beta <= 1.3) return 25;
-    return 15;
+    // Balanced/moderate
+    if (volatility === 'medium') {
+      score += 15;
+      matchReasons.push('Moderate volatility matches balanced approach');
+    } else {
+      score += 10;
+    }
   }
-}
 
-/**
- * Component 4: Battle Timeframe Fit (10 points max)
- */
-function scoreTimeframeFit(asset, thesis) {
-  const volatility = asset.volatility || 'medium';
+  // ============================================
+  // TIER 2: MARKET DATA FACTORS (30 points)
+  // ============================================
 
+  // 4. Performance Strength (10 points)
+  maxPossible += 10;
+  const absChange = Math.abs(change);
+  if (thesis.stance === 'bullish' && change > 0) {
+    if (change >= 5) {
+      score += 10;
+      matchReasons.push(`Strong gains (+${change.toFixed(1)}%)`);
+    } else if (change >= 2) {
+      score += 7;
+    } else {
+      score += 4;
+    }
+  } else if (thesis.stance !== 'bullish') {
+    // For bearish/neutral, reward stability
+    if (absChange < 2) {
+      score += 10;
+    } else if (absChange < 5) {
+      score += 6;
+    } else {
+      score += 3;
+    }
+  } else {
+    score += 3;
+  }
+
+  // 5. Market Cap / Stability (10 points)
+  maxPossible += 10;
+  const marketCap = asset.marketCap || asset.market_cap || 0;
+  if (marketCap > 100000000000) { // >$100B
+    score += 10;
+    if (thesis.risk === 'conservative') {
+      matchReasons.push('Large-cap stability');
+    }
+  } else if (marketCap > 10000000000) { // >$10B
+    score += 8;
+  } else if (marketCap > 1000000000) { // >$1B
+    score += 6;
+  } else if (marketCap > 0) {
+    score += 4;
+  } else {
+    score += 5; // Unknown market cap
+  }
+
+  // 6. Volume / Liquidity (5 points)
+  maxPossible += 5;
+  const volume = asset.volume || 0;
+  const avgVolume = asset.avgVolume || asset.average_volume || 0;
+
+  if (avgVolume > 0 && volume > 0) {
+    const volumeRatio = volume / avgVolume;
+    if (volumeRatio > 1.5) {
+      score += 5;
+      matchReasons.push('Above-average trading volume');
+    } else if (volumeRatio > 1) {
+      score += 4;
+    } else {
+      score += 2;
+    }
+  } else {
+    score += 3;
+  }
+
+  // 7. 7-Day Trend (5 points)
+  maxPossible += 5;
+  const change7d = parseFloat(asset.priceChange7d || asset.change7d) || 0;
+  if (thesis.stance === 'bullish' && change7d > 5) {
+    score += 5;
+  } else if (thesis.stance === 'bullish' && change7d > 0) {
+    score += 3;
+  } else if (thesis.stance !== 'bullish' && Math.abs(change7d) < 5) {
+    score += 4;
+  } else {
+    score += 2;
+  }
+
+  // ============================================
+  // TIER 3: BONUS FACTORS (10 points)
+  // ============================================
+
+  // 8. Timeframe Fit (5 points)
+  maxPossible += 5;
   if (thesis.battleType === 'head-to-head') {
-    // 24-hour - high movement is good
-    if (volatility === 'high') return 10;
-    if (volatility === 'medium') return 7;
-    return 4;
-
+    // 24hr - high movement is good
+    if (volatility === 'high') {
+      score += 5;
+      matchReasons.push('Active price movement for short-term trading');
+    } else if (volatility === 'medium') {
+      score += 3;
+    } else {
+      score += 1;
+    }
   } else if (thesis.battleType === 'snake-draft') {
-    // Week-long - stability slightly better
-    if (volatility === 'low') return 10;
-    if (volatility === 'medium') return 8;
-    return 5;
-
+    // Week-long
+    if (volatility === 'medium' || volatility === 'low') {
+      score += 5;
+    } else {
+      score += 3;
+    }
   } else {
-    return 7;
+    score += 3;
   }
+
+  // 9. Asset Type Preference (5 points)
+  maxPossible += 5;
+  if (isCrypto && thesis.risk === 'aggressive') {
+    score += 5;
+  } else if (!isCrypto && thesis.risk === 'conservative') {
+    score += 5;
+  } else {
+    score += 3;
+  }
+
+  // ============================================
+  // CALCULATE FINAL SCORE
+  // ============================================
+
+  const percentageScore = Math.round((score / maxPossible) * 100);
+
+  // Determine alignment
+  let alignment;
+  if (percentageScore >= 75) {
+    alignment = 'strong';
+  } else if (percentageScore >= 55) {
+    alignment = 'good';
+  } else if (percentageScore >= 40) {
+    alignment = 'moderate';
+  } else {
+    alignment = 'weak';
+  }
+
+  return {
+    score: percentageScore,
+    rawScore: score,
+    maxScore: maxPossible,
+    alignment,
+    matchReasons: matchReasons.slice(0, 3),
+    sector: assetSector,
+    volatility,
+    isCrypto,
+  };
 }
 
 /**
- * Component 5: Recency Bonus (10 points max)
+ * Get top recommendations based on thesis - v3.0
+ * GUARANTEES: Exactly 8 stocks + exactly 2 crypto (defaults to BTC/ETH)
  */
-function scoreRecencyBonus(asset) {
-  const change24h = Math.abs(parseFloat(asset.percentChange || asset.change24h) || 0);
-
-  if (change24h > 5) return 10;
-  if (change24h > 3) return 7;
-  if (change24h > 1) return 4;
-  return 1;
-}
-
-/**
- * Get top recommendations based on thesis
- * @param {Array} allAssets - All available assets with price data
- * @param {Object} thesis - User's thesis from Phase 2
- * @param {number} count - Number of recommendations to return
- * @returns {Array} - Top scored assets with thesis alignment data
- */
-export function getRecommendations(allAssets, thesis, count = 6) {
+export function getRecommendations(allAssets, thesis, count = 10) {
+  // Score all assets
   const scored = allAssets.map(asset => ({
     ...asset,
     thesisScore: calculateThesisAlignment(asset, thesis)
   }));
 
-  // Sort by score descending
-  scored.sort((a, b) => b.thesisScore.score - a.thesisScore.score);
+  // Separate stocks and crypto
+  const stocks = scored.filter(a => !a.thesisScore.isCrypto);
+  const crypto = scored.filter(a => a.thesisScore.isCrypto);
 
-  // Return top N
-  return scored.slice(0, count);
+  // Sort each by score (descending)
+  stocks.sort((a, b) => b.thesisScore.score - a.thesisScore.score);
+  crypto.sort((a, b) => b.thesisScore.score - a.thesisScore.score);
+
+  // ============================================
+  // GUARANTEE 8 STOCKS
+  // ============================================
+
+  const TARGET_STOCKS = 8;
+  let selectedStocks = [];
+
+  // Prioritize sector matches if user selected sectors
+  if (thesis.sectors && thesis.sectors.length > 0) {
+    // First: High-scoring sector matches
+    const sectorMatches = stocks.filter(s =>
+      s.thesisScore.score >= 50 &&
+      thesis.sectors.some(sector =>
+        s.thesisScore.sector?.toLowerCase().includes(sector.toLowerCase()) ||
+        sector.toLowerCase().includes(s.thesisScore.sector?.toLowerCase() || '')
+      )
+    );
+    selectedStocks.push(...sectorMatches.slice(0, TARGET_STOCKS));
+
+    // If not enough, add other high-scoring stocks
+    if (selectedStocks.length < TARGET_STOCKS) {
+      const otherHighScoring = stocks.filter(s =>
+        !selectedStocks.includes(s) && s.thesisScore.score >= 40
+      );
+      selectedStocks.push(...otherHighScoring.slice(0, TARGET_STOCKS - selectedStocks.length));
+    }
+  } else {
+    // No sector preference - take top scoring stocks
+    const highScoring = stocks.filter(s => s.thesisScore.score >= 40);
+    selectedStocks.push(...highScoring.slice(0, TARGET_STOCKS));
+  }
+
+  // FALLBACK: If still not 8 stocks, just take top performers regardless of score
+  if (selectedStocks.length < TARGET_STOCKS) {
+    const remaining = stocks.filter(s => !selectedStocks.includes(s));
+    selectedStocks.push(...remaining.slice(0, TARGET_STOCKS - selectedStocks.length));
+  }
+
+  // Ensure exactly 8 stocks
+  selectedStocks = selectedStocks.slice(0, TARGET_STOCKS);
+
+  // ============================================
+  // GUARANTEE 2 CRYPTO (Default to BTC/ETH)
+  // ============================================
+
+  const TARGET_CRYPTO = 2;
+  let selectedCrypto = [];
+
+  // Try to find matching crypto with decent scores
+  const qualifiedCrypto = crypto.filter(c => c.thesisScore.score >= 40);
+
+  if (qualifiedCrypto.length >= TARGET_CRYPTO) {
+    // Use top 2 matching crypto
+    selectedCrypto = qualifiedCrypto.slice(0, TARGET_CRYPTO);
+  } else if (qualifiedCrypto.length === 1) {
+    // Use 1 matching + find BTC or ETH as backup
+    selectedCrypto.push(qualifiedCrypto[0]);
+
+    // Add BTC or ETH as second (whichever isn't already selected)
+    const defaultCrypto = crypto.find(c =>
+      (c.symbol === 'BTC' || c.symbol === 'ETH' || c.symbol === 'BTC-USD' || c.symbol === 'ETH-USD') &&
+      !selectedCrypto.some(sc => sc.symbol === c.symbol)
+    );
+    if (defaultCrypto) {
+      selectedCrypto.push(defaultCrypto);
+    } else {
+      // Just take next best crypto
+      const nextBest = crypto.find(c => !selectedCrypto.includes(c));
+      if (nextBest) selectedCrypto.push(nextBest);
+    }
+  } else {
+    // NO matching crypto - default to BTC and ETH
+    const btc = crypto.find(c => c.symbol === 'BTC' || c.symbol === 'BTC-USD');
+    const eth = crypto.find(c => c.symbol === 'ETH' || c.symbol === 'ETH-USD');
+
+    if (btc) selectedCrypto.push(btc);
+    if (eth && selectedCrypto.length < TARGET_CRYPTO) selectedCrypto.push(eth);
+
+    // If BTC/ETH not in list, take top 2 crypto anyway
+    if (selectedCrypto.length < TARGET_CRYPTO) {
+      const remaining = crypto.filter(c => !selectedCrypto.includes(c));
+      selectedCrypto.push(...remaining.slice(0, TARGET_CRYPTO - selectedCrypto.length));
+    }
+  }
+
+  // Ensure exactly 2 crypto
+  selectedCrypto = selectedCrypto.slice(0, TARGET_CRYPTO);
+
+  // ============================================
+  // COMBINE AND RETURN
+  // ============================================
+
+  // Sort combined list by score
+  const recommendations = [...selectedStocks, ...selectedCrypto]
+    .sort((a, b) => b.thesisScore.score - a.thesisScore.score);
+
+  return recommendations;
 }
 
 /**
- * Generate generic explanation based on score breakdown
- * Used for instant display before Claude enhancement arrives
+ * Generate specific explanation based on score data - v2.0
+ * Now includes specific numbers and reasoning
  */
 export function generateGenericExplanation(asset, thesis) {
   const score = asset.thesisScore;
-  const parts = [];
 
-  // Sector match
-  if (score.breakdown.sectorMatch >= 25) {
-    parts.push(`Matches your ${thesis.sectors?.[0] || 'selected'} sector focus`);
+  if (!score || !score.matchReasons || score.matchReasons.length === 0) {
+    // Fallback explanation with specific data
+    const change = parseFloat(asset.percentChange || asset.change24h) || 0;
+    const direction = change >= 0 ? 'up' : 'down';
+    return `Currently ${direction} ${Math.abs(change).toFixed(1)}%. Moderate fit for your ${thesis.stance || 'market'} strategy.`;
   }
 
-  // Momentum
-  if (score.breakdown.momentumAlignment >= 20) {
-    const direction = thesis.stance === 'bullish' ? 'upward' : 'stable';
-    parts.push(`${direction} momentum aligns with your ${thesis.stance} thesis`);
+  // Use the top match reason
+  let explanation = score.matchReasons[0];
+
+  // Add secondary reason for strong matches
+  if (score.score >= 70 && score.matchReasons.length > 1) {
+    explanation += `. ${score.matchReasons[1]}`;
   }
 
-  // Risk
-  if (score.breakdown.riskMatch >= 20) {
-    parts.push(`volatility profile fits your ${thesis.risk} risk tolerance`);
-  }
-
-  // Combine into sentence
-  if (parts.length === 0) {
-    return `Moderate fit for your strategy.`;
-  }
-
-  return parts.join(', ').replace(/^./, s => s.toUpperCase()) + '.';
+  return explanation;
 }
 
 /**
@@ -206,9 +450,14 @@ export function filterBySector(assets, sectors) {
   if (!sectors || sectors.length === 0) return assets;
 
   return assets.filter(asset => {
-    const assetSector = asset.sector || asset.category || '';
+    const isCrypto = asset.category !== undefined;
+    const assetSector = isCrypto
+      ? (asset.category || 'Crypto')
+      : (getStockSector(asset.symbol) || asset.sector || '');
+
     return sectors.some(s =>
-      assetSector.toLowerCase().includes(s.toLowerCase())
+      assetSector.toLowerCase().includes(s.toLowerCase()) ||
+      s.toLowerCase().includes(assetSector.toLowerCase())
     );
   });
 }
@@ -219,8 +468,14 @@ export function filterBySector(assets, sectors) {
 export function getAvailableSectors(assets) {
   const sectors = new Set();
   assets.forEach(asset => {
-    if (asset.sector) sectors.add(asset.sector);
-    if (asset.category) sectors.add(asset.category);
+    if (asset.category !== undefined) {
+      // It's crypto
+      sectors.add(asset.category || 'Crypto');
+    } else {
+      // It's a stock
+      const sector = getStockSector(asset.symbol) || asset.sector;
+      if (sector) sectors.add(sector);
+    }
   });
   return Array.from(sectors);
 }
@@ -231,4 +486,7 @@ export default {
   generateGenericExplanation,
   filterBySector,
   getAvailableSectors,
+  getStockSector,
+  getAssetVolatility,
+  STOCK_SECTORS,
 };

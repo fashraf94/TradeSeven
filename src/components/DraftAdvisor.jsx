@@ -6,9 +6,143 @@ import React, { useState } from 'react';
 const DRAFT_ACTIONS = [
   { id: 'analyze', label: 'Analyze Draft', icon: '🔍', description: 'Review draft state' },
   { id: 'compare', label: 'Compare Picks', icon: '⚖️', description: 'Compare 2-3 stocks' },
-  { id: 'gaps', label: "What's Missing", icon: '🎯', description: 'Find portfolio gaps' },
+  { id: 'stock', label: 'Analyze Stock', icon: '📊', description: 'Pros & cons of a stock' },
   { id: 'notes', label: 'My Notes', icon: '📝', description: 'View saved notes' },
 ];
+
+// Stock analysis data for common tickers
+const STOCK_ANALYSIS_DATA = {
+  AAPL: {
+    name: 'Apple Inc.',
+    pros: [
+      'Strong brand loyalty and ecosystem lock-in',
+      'Consistent dividend growth and buybacks',
+      'Services revenue growing rapidly'
+    ],
+    cons: [
+      'iPhone sales growth slowing in mature markets',
+      'Heavy dependence on China for manufacturing',
+      'Premium valuation limits upside potential'
+    ]
+  },
+  NVDA: {
+    name: 'NVIDIA Corporation',
+    pros: [
+      'Dominant position in AI/GPU market',
+      'Strong data center revenue growth',
+      'Leading technology in machine learning chips'
+    ],
+    cons: [
+      'Extremely high valuation multiples',
+      'Competition from AMD and custom chips',
+      'Cyclical semiconductor industry risk'
+    ]
+  },
+  TSLA: {
+    name: 'Tesla Inc.',
+    pros: [
+      'Market leader in EV adoption',
+      'Strong brand and loyal customer base',
+      'Energy storage business growing'
+    ],
+    cons: [
+      'Increasing competition from legacy automakers',
+      'Valuation assumes perfect execution',
+      'Regulatory and leadership risks'
+    ]
+  },
+  GOOGL: {
+    name: 'Alphabet Inc.',
+    pros: [
+      'Dominant search engine market share',
+      'YouTube and Cloud growing strongly',
+      'Massive cash reserves for innovation'
+    ],
+    cons: [
+      'Antitrust regulatory pressures',
+      'AI disruption threat to search business',
+      'Heavy R&D spend with uncertain returns'
+    ]
+  },
+  MSFT: {
+    name: 'Microsoft Corporation',
+    pros: [
+      'Azure cloud platform growing rapidly',
+      'Dominant enterprise software position',
+      'Strong recurring revenue from subscriptions'
+    ],
+    cons: [
+      'Antitrust scrutiny on acquisitions',
+      'Competition from AWS and Google Cloud',
+      'PC market maturity limits Office growth'
+    ]
+  },
+  AMZN: {
+    name: 'Amazon.com Inc.',
+    pros: [
+      'AWS market leadership in cloud',
+      'E-commerce scale advantages',
+      'Prime membership creates sticky customers'
+    ],
+    cons: [
+      'Retail margins remain thin',
+      'Heavy capex requirements',
+      'Labor and regulatory headwinds'
+    ]
+  },
+  META: {
+    name: 'Meta Platforms Inc.',
+    pros: [
+      'Massive user base across platforms',
+      'Strong advertising revenue engine',
+      'AI investments showing results'
+    ],
+    cons: [
+      'Metaverse investments burning cash',
+      'Privacy regulations threaten targeting',
+      'Competition from TikTok for attention'
+    ]
+  },
+  AMD: {
+    name: 'Advanced Micro Devices',
+    pros: [
+      'Gaining market share from Intel',
+      'Strong data center growth',
+      'Competitive AI chip roadmap'
+    ],
+    cons: [
+      'NVIDIA dominance in AI training',
+      'Cyclical chip industry exposure',
+      'Execution risk on new products'
+    ]
+  },
+  BTC: {
+    name: 'Bitcoin',
+    pros: [
+      'First-mover advantage and brand recognition',
+      'Fixed supply creates scarcity',
+      'Growing institutional adoption'
+    ],
+    cons: [
+      'Extreme volatility and drawdowns',
+      'Regulatory uncertainty globally',
+      'Energy consumption concerns'
+    ]
+  },
+  ETH: {
+    name: 'Ethereum',
+    pros: [
+      'Leading smart contract platform',
+      'Large developer ecosystem',
+      'Proof-of-stake reduces energy use'
+    ],
+    cons: [
+      'High gas fees during congestion',
+      'Competition from faster L1 chains',
+      'Regulatory classification uncertain'
+    ]
+  }
+};
 
 // Notes Modal Component
 const NotesModal = ({ isOpen, onClose, notes }) => {
@@ -128,6 +262,48 @@ export default function DraftAdvisor({
   const [compareAsset2, setCompareAsset2] = useState('');
   const [showNotesModal, setShowNotesModal] = useState(false);
 
+  // Stock analysis state
+  const [showStockInput, setShowStockInput] = useState(false);
+  const [stockToAnalyze, setStockToAnalyze] = useState('');
+  const [stockAnalysis, setStockAnalysis] = useState(null);
+  const [isAnalyzingStock, setIsAnalyzingStock] = useState(false);
+
+  // Handle stock analysis
+  const handleAnalyzeStock = (ticker) => {
+    if (!ticker) return;
+    setIsAnalyzingStock(true);
+
+    // Simulate a brief delay for UX
+    setTimeout(() => {
+      const tickerUpper = ticker.toUpperCase();
+
+      if (STOCK_ANALYSIS_DATA[tickerUpper]) {
+        setStockAnalysis({
+          symbol: tickerUpper,
+          ...STOCK_ANALYSIS_DATA[tickerUpper]
+        });
+      } else {
+        // Generic fallback for unknown tickers
+        setStockAnalysis({
+          symbol: tickerUpper,
+          name: tickerUpper,
+          pros: [
+            'Currently showing market interest',
+            'May benefit from sector tailwinds',
+            'Active trading volume'
+          ],
+          cons: [
+            'Limited analyst coverage available',
+            'Market conditions may affect performance',
+            'Consider position sizing carefully'
+          ]
+        });
+      }
+      setIsAnalyzingStock(false);
+      setStockToAnalyze('');
+    }, 500);
+  };
+
   const handleAction = async (actionId) => {
     // For notes action, open modal
     if (actionId === 'notes') {
@@ -138,7 +314,17 @@ export default function DraftAdvisor({
     // For compare action, toggle input section
     if (actionId === 'compare') {
       setShowCompareInput(!showCompareInput);
+      setShowStockInput(false);
       setActiveAction(showCompareInput ? null : 'compare');
+      return;
+    }
+
+    // For stock analysis action, toggle input section
+    if (actionId === 'stock') {
+      setShowStockInput(!showStockInput);
+      setShowCompareInput(false);
+      setActiveAction(showStockInput ? null : 'stock');
+      setStockAnalysis(null);
       return;
     }
 
@@ -346,29 +532,28 @@ export default function DraftAdvisor({
         ))}
       </div>
 
-      {/* Compare Input - Two separate inputs */}
+      {/* Compare Input - Two separate inputs with fixed overflow */}
       {showCompareInput && (
         <div style={{
           padding: '12px 16px',
-          borderTop: '1px solid #21262d',
-          display: 'flex',
-          gap: '10px',
-          alignItems: 'center'
+          borderTop: '1px solid #21262d'
         }}>
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            flex: 1
+            width: '100%',
+            marginBottom: '10px'
           }}>
             <input
               type="text"
               value={compareAsset1}
               onChange={(e) => setCompareAsset1(e.target.value.toUpperCase())}
-              placeholder="e.g., AAPL"
+              placeholder="E.G., AAPL"
               maxLength={5}
               style={{
                 flex: 1,
+                minWidth: 0,  // KEY: Allows flex item to shrink below content size
                 background: '#0d1117',
                 border: '1px solid #30363d',
                 borderRadius: '8px',
@@ -382,15 +567,16 @@ export default function DraftAdvisor({
               onFocus={(e) => e.target.style.borderColor = '#00d9ff'}
               onBlur={(e) => e.target.style.borderColor = '#30363d'}
             />
-            <span style={{ color: '#8b949e', fontSize: '12px', fontWeight: '600' }}>vs</span>
+            <span style={{ color: '#8b949e', fontSize: '12px', fontWeight: '600', flexShrink: 0 }}>vs</span>
             <input
               type="text"
               value={compareAsset2}
               onChange={(e) => setCompareAsset2(e.target.value.toUpperCase())}
-              placeholder="e.g., MSFT"
+              placeholder="E.G., MSFT"
               maxLength={5}
               style={{
                 flex: 1,
+                minWidth: 0,  // KEY: Allows flex item to shrink below content size
                 background: '#0d1117',
                 border: '1px solid #30363d',
                 borderRadius: '8px',
@@ -409,19 +595,212 @@ export default function DraftAdvisor({
             onClick={() => handleCompare(compareAsset1, compareAsset2)}
             disabled={!compareAsset1 || !compareAsset2}
             style={{
-              background: colors?.cyan || '#00d9ff',
+              width: '100%',
+              background: (compareAsset1 && compareAsset2) ? (colors?.cyan || '#00d9ff') : '#21262d',
               border: 'none',
-              color: '#000',
+              color: (compareAsset1 && compareAsset2) ? '#000' : '#8b949e',
               fontWeight: '600',
               padding: '10px 20px',
               borderRadius: '8px',
-              cursor: (!compareAsset1 || !compareAsset2) ? 'not-allowed' : 'pointer',
-              whiteSpace: 'nowrap',
-              opacity: (!compareAsset1 || !compareAsset2) ? 0.5 : 1
+              cursor: (!compareAsset1 || !compareAsset2) ? 'not-allowed' : 'pointer'
             }}
           >
             Compare
           </button>
+        </div>
+      )}
+
+      {/* Stock Analysis Input and Results */}
+      {showStockInput && (
+        <div style={{
+          padding: '12px 16px',
+          borderTop: '1px solid #21262d'
+        }}>
+          {/* Input Row */}
+          <div style={{
+            display: 'flex',
+            gap: '10px',
+            marginBottom: '12px'
+          }}>
+            <input
+              type="text"
+              value={stockToAnalyze}
+              onChange={(e) => setStockToAnalyze(e.target.value.toUpperCase())}
+              placeholder="Enter ticker (e.g., AAPL)"
+              style={{
+                flex: 1,
+                padding: '10px 12px',
+                background: '#0d1117',
+                border: '1px solid #30363d',
+                borderRadius: '8px',
+                color: '#fff',
+                fontSize: '14px',
+                textTransform: 'uppercase',
+                outline: 'none'
+              }}
+              onFocus={(e) => e.target.style.borderColor = '#00d9ff'}
+              onBlur={(e) => e.target.style.borderColor = '#30363d'}
+              onKeyPress={(e) => e.key === 'Enter' && handleAnalyzeStock(stockToAnalyze)}
+            />
+            <button
+              onClick={() => handleAnalyzeStock(stockToAnalyze)}
+              disabled={!stockToAnalyze || isAnalyzingStock}
+              style={{
+                padding: '10px 16px',
+                background: (stockToAnalyze && !isAnalyzingStock) ? (colors?.cyan || '#00d9ff') : '#21262d',
+                border: 'none',
+                borderRadius: '8px',
+                color: (stockToAnalyze && !isAnalyzingStock) ? '#000' : '#8b949e',
+                fontWeight: '600',
+                cursor: (!stockToAnalyze || isAnalyzingStock) ? 'not-allowed' : 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {isAnalyzingStock ? 'Analyzing...' : 'Analyze'}
+            </button>
+          </div>
+
+          {/* Loading State */}
+          {isAnalyzingStock && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '16px',
+              gap: '8px'
+            }}>
+              <div style={{
+                width: '16px',
+                height: '16px',
+                border: '2px solid #00d9ff',
+                borderTopColor: 'transparent',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite'
+              }} />
+              <span style={{ color: '#8b949e', fontSize: '13px' }}>
+                Analyzing...
+              </span>
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+            </div>
+          )}
+
+          {/* Analysis Results */}
+          {stockAnalysis && !isAnalyzingStock && (
+            <div>
+              {/* Stock Header */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                marginBottom: '12px',
+                paddingBottom: '10px',
+                borderBottom: '1px solid #21262d'
+              }}>
+                <span style={{
+                  color: '#ffffff',
+                  fontSize: '16px',
+                  fontWeight: '700'
+                }}>
+                  {stockAnalysis.symbol}
+                </span>
+                <span style={{
+                  color: '#8b949e',
+                  fontSize: '12px'
+                }}>
+                  {stockAnalysis.name}
+                </span>
+              </div>
+
+              {/* Pros and Cons Grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '10px'
+              }}>
+                {/* Pros */}
+                <div>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    marginBottom: '8px'
+                  }}>
+                    <span style={{ color: '#22c55e', fontSize: '12px' }}>✓</span>
+                    <span style={{
+                      color: '#22c55e',
+                      fontSize: '11px',
+                      fontWeight: '700',
+                      textTransform: 'uppercase'
+                    }}>
+                      Pros
+                    </span>
+                  </div>
+                  {stockAnalysis.pros.map((pro, index) => (
+                    <div
+                      key={index}
+                      style={{
+                        background: 'rgba(34, 197, 94, 0.1)',
+                        borderLeft: '2px solid #22c55e',
+                        borderRadius: '0 6px 6px 0',
+                        padding: '8px 10px',
+                        marginBottom: '6px'
+                      }}
+                    >
+                      <p style={{
+                        color: '#e6edf3',
+                        fontSize: '11px',
+                        margin: 0,
+                        lineHeight: '1.4'
+                      }}>
+                        {pro}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Cons */}
+                <div>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    marginBottom: '8px'
+                  }}>
+                    <span style={{ color: '#ef4444', fontSize: '12px' }}>✗</span>
+                    <span style={{
+                      color: '#ef4444',
+                      fontSize: '11px',
+                      fontWeight: '700',
+                      textTransform: 'uppercase'
+                    }}>
+                      Cons
+                    </span>
+                  </div>
+                  {stockAnalysis.cons.map((con, index) => (
+                    <div
+                      key={index}
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.1)',
+                        borderLeft: '2px solid #ef4444',
+                        borderRadius: '0 6px 6px 0',
+                        padding: '8px 10px',
+                        marginBottom: '6px'
+                      }}
+                    >
+                      <p style={{
+                        color: '#e6edf3',
+                        fontSize: '11px',
+                        margin: 0,
+                        lineHeight: '1.4'
+                      }}>
+                        {con}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
