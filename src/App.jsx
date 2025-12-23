@@ -67,12 +67,12 @@ const STOCK_SECTORS = {
   'AAPL': 'Technology', 'MSFT': 'Technology', 'GOOGL': 'Technology', 'GOOG': 'Technology',
   'META': 'Technology', 'NVDA': 'Technology', 'AMD': 'Technology', 'INTC': 'Technology',
   'CRM': 'Technology', 'ADBE': 'Technology', 'NOW': 'Technology', 'SHOP': 'Technology',
-  'UBER': 'Technology', 'TSLA': 'Technology', 'AVGO': 'Technology', 'ORCL': 'Technology',
+  'UBER': 'Technology', 'AVGO': 'Technology', 'ORCL': 'Technology',
   'CSCO': 'Technology', 'IBM': 'Technology', 'QCOM': 'Technology', 'TXN': 'Technology',
   'MU': 'Technology', 'AMAT': 'Technology', 'LRCX': 'Technology', 'KLAC': 'Technology',
   'SNPS': 'Technology', 'CDNS': 'Technology', 'PANW': 'Technology', 'CRWD': 'Technology',
   'ZS': 'Technology', 'NET': 'Technology', 'DDOG': 'Technology', 'SNOW': 'Technology',
-  'PLTR': 'Technology', 'U': 'Technology', 'RBLX': 'Technology', 'COIN': 'Technology',
+  'PLTR': 'Technology', 'U': 'Technology', 'RBLX': 'Technology',
   'MSTR': 'Technology', 'DELL': 'Technology', 'HPE': 'Technology', 'HPQ': 'Technology',
   // Financials
   'JPM': 'Financials', 'BAC': 'Financials', 'GS': 'Financials', 'MS': 'Financials',
@@ -80,6 +80,7 @@ const STOCK_SECTORS = {
   'C': 'Financials', 'SCHW': 'Financials', 'BLK': 'Financials', 'SPGI': 'Financials',
   'SQ': 'Financials', 'PYPL': 'Financials', 'COF': 'Financials', 'USB': 'Financials',
   'PNC': 'Financials', 'TFC': 'Financials', 'BK': 'Financials', 'STT': 'Financials',
+  'COIN': 'Financials', 'HOOD': 'Financials', 'SOFI': 'Financials',
   // Healthcare
   'JNJ': 'Healthcare', 'UNH': 'Healthcare', 'PFE': 'Healthcare', 'ABBV': 'Healthcare',
   'MRK': 'Healthcare', 'LLY': 'Healthcare', 'TMO': 'Healthcare', 'ABT': 'Healthcare',
@@ -87,7 +88,7 @@ const STOCK_SECTORS = {
   'CVS': 'Healthcare', 'MDT': 'Healthcare', 'ISRG': 'Healthcare', 'VRTX': 'Healthcare',
   'REGN': 'Healthcare', 'ZTS': 'Healthcare', 'BIIB': 'Healthcare', 'MRNA': 'Healthcare',
   // Consumer Discretionary
-  'AMZN': 'Consumer Discretionary', 'HD': 'Consumer Discretionary', 'MCD': 'Consumer Discretionary',
+  'TSLA': 'Consumer Discretionary', 'AMZN': 'Consumer Discretionary', 'HD': 'Consumer Discretionary', 'MCD': 'Consumer Discretionary',
   'NKE': 'Consumer Discretionary', 'SBUX': 'Consumer Discretionary', 'LOW': 'Consumer Discretionary',
   'TGT': 'Consumer Discretionary', 'TJX': 'Consumer Discretionary', 'BKNG': 'Consumer Discretionary',
   'MAR': 'Consumer Discretionary', 'CMG': 'Consumer Discretionary', 'ABNB': 'Consumer Discretionary',
