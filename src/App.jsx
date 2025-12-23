@@ -3,7 +3,7 @@ import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } f
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
-import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews } from './services/eodhdAPI';
+import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
 import './firebase/config';
 import { motion } from 'framer-motion';
 // Event watchlist configuration for Week Ahead calendar
@@ -136,241 +136,6 @@ const getStockSector = (symbol) => {
   if (!symbol) return null;
   const upperSymbol = symbol.toUpperCase();
   return STOCK_SECTORS[upperSymbol] || null;
-};
-
-// ============================================
-// EARNINGS DATA - Latest quarterly reports
-// ============================================
-const EARNINGS_DATA = {
-  'NVDA': {
-    reportDate: 'November 20, 2024',
-    quarter: 'Q3 FY2025',
-    epsBeat: true,
-    epsActual: '$0.81',
-    epsEstimate: '$0.75',
-    revenueBeat: true,
-    revenueActual: '$35.1B',
-    revenueEstimate: '$33.2B',
-    yoyGrowth: '+94%',
-    highlights: [
-      { type: 'positive', text: 'Data center revenue hit $30.8B, up 112% YoY' },
-      { type: 'positive', text: 'Blackwell architecture ramping faster than expected' },
-      { type: 'positive', text: 'Gross margin expanded to 75%' },
-      { type: 'negative', text: 'Gaming revenue flat at $3.3B' },
-      { type: 'negative', text: 'China revenue declined due to export restrictions' }
-    ],
-    guidance: 'Q4 revenue guidance of $37.5B exceeded expectations',
-    nextEarnings: 'February 26, 2025'
-  },
-  'AAPL': {
-    reportDate: 'October 31, 2024',
-    quarter: 'Q4 FY2024',
-    epsBeat: true,
-    epsActual: '$1.64',
-    epsEstimate: '$1.60',
-    revenueBeat: true,
-    revenueActual: '$94.9B',
-    revenueEstimate: '$94.5B',
-    yoyGrowth: '+6%',
-    highlights: [
-      { type: 'positive', text: 'iPhone revenue grew 6% to $46.2B' },
-      { type: 'positive', text: 'Services hit all-time high of $25B' },
-      { type: 'positive', text: 'Mac revenue surged 21% on M3 demand' },
-      { type: 'negative', text: 'China revenue declined 1% amid competition' },
-      { type: 'negative', text: 'Wearables segment down 3%' }
-    ],
-    guidance: 'Expects low-to-mid single digit growth in Q1',
-    nextEarnings: 'January 30, 2025'
-  },
-  'MSFT': {
-    reportDate: 'October 30, 2024',
-    quarter: 'Q1 FY2025',
-    epsBeat: true,
-    epsActual: '$3.30',
-    epsEstimate: '$3.10',
-    revenueBeat: true,
-    revenueActual: '$65.6B',
-    revenueEstimate: '$64.5B',
-    yoyGrowth: '+16%',
-    highlights: [
-      { type: 'positive', text: 'Azure revenue grew 34%, beating estimates' },
-      { type: 'positive', text: 'AI services contributed 12 points to Azure growth' },
-      { type: 'positive', text: 'Microsoft 365 Commercial grew 15%' },
-      { type: 'negative', text: 'Gaming revenue declined 1% post-Activision' },
-      { type: 'negative', text: 'Devices revenue down 17%' }
-    ],
-    guidance: 'Q2 revenue expected between $68.1-69.1B',
-    nextEarnings: 'January 29, 2025'
-  },
-  'GOOGL': {
-    reportDate: 'October 29, 2024',
-    quarter: 'Q3 2024',
-    epsBeat: true,
-    epsActual: '$2.12',
-    epsEstimate: '$1.84',
-    revenueBeat: true,
-    revenueActual: '$88.3B',
-    revenueEstimate: '$86.3B',
-    yoyGrowth: '+15%',
-    highlights: [
-      { type: 'positive', text: 'Search revenue up 12% to $49.4B' },
-      { type: 'positive', text: 'YouTube ads grew 12% to $8.9B' },
-      { type: 'positive', text: 'Google Cloud hit $11.4B, up 35%' },
-      { type: 'negative', text: 'Network advertising revenue flat' },
-      { type: 'negative', text: 'DOJ antitrust ruling creates uncertainty' }
-    ],
-    guidance: 'Continued investment in AI infrastructure',
-    nextEarnings: 'February 4, 2025'
-  },
-  'META': {
-    reportDate: 'October 30, 2024',
-    quarter: 'Q3 2024',
-    epsBeat: true,
-    epsActual: '$6.03',
-    epsEstimate: '$5.25',
-    revenueBeat: true,
-    revenueActual: '$40.6B',
-    revenueEstimate: '$40.3B',
-    yoyGrowth: '+19%',
-    highlights: [
-      { type: 'positive', text: 'Ad impressions grew 7%, price per ad up 11%' },
-      { type: 'positive', text: 'Family daily active users hit 3.29B' },
-      { type: 'positive', text: 'Operating margin expanded to 43%' },
-      { type: 'negative', text: 'Reality Labs lost $4.4B in Q3' },
-      { type: 'negative', text: '2025 capex guidance raised to $38-40B' }
-    ],
-    guidance: 'Q4 revenue expected $45-48B',
-    nextEarnings: 'January 29, 2025'
-  },
-  'TSLA': {
-    reportDate: 'October 23, 2024',
-    quarter: 'Q3 2024',
-    epsBeat: true,
-    epsActual: '$0.72',
-    epsEstimate: '$0.60',
-    revenueBeat: false,
-    revenueActual: '$25.2B',
-    revenueEstimate: '$25.4B',
-    yoyGrowth: '+8%',
-    highlights: [
-      { type: 'positive', text: 'Automotive gross margin improved to 17.1%' },
-      { type: 'positive', text: 'Energy storage deployed 6.9 GWh, up 75%' },
-      { type: 'positive', text: 'Cybertruck reached profitability' },
-      { type: 'negative', text: 'Auto revenue declined 2% YoY' },
-      { type: 'negative', text: 'Average selling price continues to decline' }
-    ],
-    guidance: 'Expects slight growth in deliveries for 2024',
-    nextEarnings: 'January 29, 2025'
-  },
-  'AMD': {
-    reportDate: 'October 29, 2024',
-    quarter: 'Q3 2024',
-    epsBeat: true,
-    epsActual: '$0.92',
-    epsEstimate: '$0.91',
-    revenueBeat: true,
-    revenueActual: '$6.8B',
-    revenueEstimate: '$6.7B',
-    yoyGrowth: '+18%',
-    highlights: [
-      { type: 'positive', text: 'Data center revenue doubled to $3.5B' },
-      { type: 'positive', text: 'MI300 AI chip demand exceeding supply' },
-      { type: 'positive', text: 'Raised full-year AI revenue to $5B+' },
-      { type: 'negative', text: 'Gaming revenue dropped 69% to $462M' },
-      { type: 'negative', text: 'Embedded revenue down 25%' }
-    ],
-    guidance: 'Q4 revenue expected around $7.5B',
-    nextEarnings: 'February 4, 2025'
-  },
-  'AVGO': {
-    reportDate: 'December 12, 2024',
-    quarter: 'Q4 FY2024',
-    epsBeat: true,
-    epsActual: '$1.42',
-    epsEstimate: '$1.39',
-    revenueBeat: true,
-    revenueActual: '$14.1B',
-    revenueEstimate: '$14.0B',
-    yoyGrowth: '+51%',
-    highlights: [
-      { type: 'positive', text: 'AI revenue exceeded $12B for FY2024' },
-      { type: 'positive', text: 'VMware integration ahead of schedule' },
-      { type: 'positive', text: 'Infrastructure software up 196% YoY' },
-      { type: 'negative', text: 'Non-AI semiconductor demand soft' },
-      { type: 'negative', text: 'Wireless revenue declining' }
-    ],
-    guidance: 'FY2025 AI revenue expected to reach $15B',
-    nextEarnings: 'March 6, 2025'
-  },
-  'AMZN': {
-    reportDate: 'October 31, 2024',
-    quarter: 'Q3 2024',
-    epsBeat: true,
-    epsActual: '$1.43',
-    epsEstimate: '$1.14',
-    revenueBeat: true,
-    revenueActual: '$158.9B',
-    revenueEstimate: '$157.2B',
-    yoyGrowth: '+11%',
-    highlights: [
-      { type: 'positive', text: 'AWS revenue grew 19% to $27.5B' },
-      { type: 'positive', text: 'North America operating margin hit 5.9%' },
-      { type: 'positive', text: 'Advertising revenue up 19% to $14.3B' },
-      { type: 'negative', text: 'International segment still unprofitable' },
-      { type: 'negative', text: 'Prime Day timing affected comparisons' }
-    ],
-    guidance: 'Q4 revenue expected $181.5-188.5B',
-    nextEarnings: 'February 6, 2025'
-  },
-  'JPM': {
-    reportDate: 'October 11, 2024',
-    quarter: 'Q3 2024',
-    epsBeat: true,
-    epsActual: '$4.37',
-    epsEstimate: '$4.01',
-    revenueBeat: true,
-    revenueActual: '$43.3B',
-    revenueEstimate: '$41.9B',
-    yoyGrowth: '+6%',
-    highlights: [
-      { type: 'positive', text: 'Investment banking fees surged 31%' },
-      { type: 'positive', text: 'Credit card spending up 8%' },
-      { type: 'positive', text: 'Net interest income beat expectations' },
-      { type: 'negative', text: 'Credit provisions increased to $3.1B' },
-      { type: 'negative', text: 'Net interest income expected to decline in 2025' }
-    ],
-    guidance: 'NII guidance raised to ~$92.5B for 2024',
-    nextEarnings: 'January 15, 2025'
-  }
-};
-
-// Helper to get earnings data with fallback
-const getEarningsData = (symbol) => {
-  if (EARNINGS_DATA[symbol]) {
-    return EARNINGS_DATA[symbol];
-  }
-  // Generate generic earnings for stocks without specific data
-  const isBeat = Math.random() > 0.4;
-  const revBeat = Math.random() > 0.4;
-  const growth = Math.random() > 0.5;
-  return {
-    reportDate: 'Most Recent Quarter',
-    quarter: 'Latest',
-    epsBeat: isBeat,
-    epsActual: '$' + (Math.random() * 3 + 0.5).toFixed(2),
-    epsEstimate: '$' + (Math.random() * 3 + 0.4).toFixed(2),
-    revenueBeat: revBeat,
-    revenueActual: '$' + (Math.random() * 20 + 5).toFixed(1) + 'B',
-    revenueEstimate: '$' + (Math.random() * 20 + 4).toFixed(1) + 'B',
-    yoyGrowth: (growth ? '+' : '-') + Math.floor(Math.random() * 25 + 3) + '%',
-    highlights: [
-      { type: 'positive', text: 'Core business metrics showing improvement' },
-      { type: 'positive', text: 'Cost efficiency measures taking effect' },
-      { type: 'negative', text: 'Macro headwinds impacting near-term outlook' }
-    ],
-    guidance: 'Management maintaining cautious optimism',
-    nextEarnings: 'Next quarter'
-  };
 };
 
 // ============================================
@@ -1779,300 +1544,8 @@ const StockMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors 
                 );
               })()}
 
-              {/* EARNINGS REPORT SECTION - Only for stocks */}
-              {(() => {
-                const earnings = getEarningsData(asset.symbol);
-                return (
-                  <div style={{
-                    background: '#161b22',
-                    border: '1px solid #21262d',
-                    borderRadius: '16px',
-                    padding: '20px',
-                    marginTop: '20px'
-                  }}>
-                    {/* Header */}
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      marginBottom: '16px'
-                    }}>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '10px'
-                      }}>
-                        <div style={{
-                          width: '32px',
-                          height: '32px',
-                          background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                          borderRadius: '8px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
-                        }}>
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                            <polyline points="14,2 14,8 20,8"/>
-                            <line x1="16" y1="13" x2="8" y2="13"/>
-                            <line x1="16" y1="17" x2="8" y2="17"/>
-                            <line x1="10" y1="9" x2="8" y2="9"/>
-                          </svg>
-                        </div>
-                        <h3 style={{
-                          color: '#ffffff',
-                          fontSize: '15px',
-                          fontWeight: '700',
-                          margin: 0
-                        }}>
-                          LATEST EARNINGS
-                        </h3>
-                      </div>
-
-                      {/* Report Date Badge */}
-                      <div style={{
-                        background: '#8b5cf620',
-                        border: '1px solid #8b5cf640',
-                        borderRadius: '8px',
-                        padding: '6px 12px'
-                      }}>
-                        <span style={{
-                          color: '#a78bfa',
-                          fontSize: '11px',
-                          fontWeight: '600'
-                        }}>
-                          {earnings.reportDate}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Quarter & Beat/Miss Summary */}
-                    <div style={{
-                      display: 'flex',
-                      gap: '12px',
-                      marginBottom: '16px'
-                    }}>
-                      {/* EPS Card */}
-                      <div style={{
-                        flex: 1,
-                        background: '#0d1117',
-                        borderRadius: '10px',
-                        padding: '12px',
-                        borderLeft: `3px solid ${earnings.epsBeat ? '#22c55e' : '#ef4444'}`
-                      }}>
-                        <div style={{
-                          color: '#8b949e',
-                          fontSize: '10px',
-                          fontWeight: '600',
-                          textTransform: 'uppercase',
-                          marginBottom: '4px'
-                        }}>
-                          EPS
-                        </div>
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'baseline',
-                          gap: '6px'
-                        }}>
-                          <span style={{
-                            color: '#ffffff',
-                            fontSize: '18px',
-                            fontWeight: '700'
-                          }}>
-                            {earnings.epsActual}
-                          </span>
-                          <span style={{
-                            color: earnings.epsBeat ? '#22c55e' : '#ef4444',
-                            fontSize: '11px',
-                            fontWeight: '600'
-                          }}>
-                            {earnings.epsBeat ? '✓ BEAT' : '✗ MISS'}
-                          </span>
-                        </div>
-                        <div style={{
-                          color: '#6b7280',
-                          fontSize: '11px',
-                          marginTop: '2px'
-                        }}>
-                          Est: {earnings.epsEstimate}
-                        </div>
-                      </div>
-
-                      {/* Revenue Card */}
-                      <div style={{
-                        flex: 1,
-                        background: '#0d1117',
-                        borderRadius: '10px',
-                        padding: '12px',
-                        borderLeft: `3px solid ${earnings.revenueBeat ? '#22c55e' : '#ef4444'}`
-                      }}>
-                        <div style={{
-                          color: '#8b949e',
-                          fontSize: '10px',
-                          fontWeight: '600',
-                          textTransform: 'uppercase',
-                          marginBottom: '4px'
-                        }}>
-                          Revenue
-                        </div>
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'baseline',
-                          gap: '6px'
-                        }}>
-                          <span style={{
-                            color: '#ffffff',
-                            fontSize: '18px',
-                            fontWeight: '700'
-                          }}>
-                            {earnings.revenueActual}
-                          </span>
-                          <span style={{
-                            color: earnings.revenueBeat ? '#22c55e' : '#ef4444',
-                            fontSize: '11px',
-                            fontWeight: '600'
-                          }}>
-                            {earnings.revenueBeat ? '✓ BEAT' : '✗ MISS'}
-                          </span>
-                        </div>
-                        <div style={{
-                          color: '#6b7280',
-                          fontSize: '11px',
-                          marginTop: '2px'
-                        }}>
-                          Est: {earnings.revenueEstimate}
-                        </div>
-                      </div>
-
-                      {/* YoY Growth Card */}
-                      <div style={{
-                        flex: 1,
-                        background: '#0d1117',
-                        borderRadius: '10px',
-                        padding: '12px',
-                        borderLeft: `3px solid ${earnings.yoyGrowth.startsWith('+') ? '#22c55e' : '#ef4444'}`
-                      }}>
-                        <div style={{
-                          color: '#8b949e',
-                          fontSize: '10px',
-                          fontWeight: '600',
-                          textTransform: 'uppercase',
-                          marginBottom: '4px'
-                        }}>
-                          YoY Growth
-                        </div>
-                        <div style={{
-                          color: earnings.yoyGrowth.startsWith('+') ? '#22c55e' : '#ef4444',
-                          fontSize: '18px',
-                          fontWeight: '700'
-                        }}>
-                          {earnings.yoyGrowth}
-                        </div>
-                        <div style={{
-                          color: '#6b7280',
-                          fontSize: '11px',
-                          marginTop: '2px'
-                        }}>
-                          vs prior year
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Key Highlights */}
-                    <div style={{ marginBottom: '16px' }}>
-                      <div style={{
-                        color: '#8b949e',
-                        fontSize: '11px',
-                        fontWeight: '700',
-                        textTransform: 'uppercase',
-                        marginBottom: '10px'
-                      }}>
-                        Key Highlights
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {earnings.highlights.map((highlight, index) => (
-                          <div
-                            key={index}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'flex-start',
-                              gap: '10px',
-                              padding: '10px 12px',
-                              background: highlight.type === 'positive'
-                                ? 'rgba(34, 197, 94, 0.08)'
-                                : 'rgba(239, 68, 68, 0.08)',
-                              borderRadius: '8px',
-                              borderLeft: `3px solid ${highlight.type === 'positive' ? '#22c55e' : '#ef4444'}`
-                            }}
-                          >
-                            <span style={{
-                              color: highlight.type === 'positive' ? '#22c55e' : '#ef4444',
-                              fontSize: '14px',
-                              lineHeight: 1
-                            }}>
-                              {highlight.type === 'positive' ? '▲' : '▼'}
-                            </span>
-                            <span style={{
-                              color: '#e6edf3',
-                              fontSize: '13px',
-                              lineHeight: '1.4'
-                            }}>
-                              {highlight.text}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Guidance */}
-                    <div style={{
-                      background: '#0d1117',
-                      borderRadius: '10px',
-                      padding: '14px',
-                      borderLeft: '3px solid #f59e0b'
-                    }}>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        marginBottom: '6px'
-                      }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="#f59e0b">
-                          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                        </svg>
-                        <span style={{
-                          color: '#f59e0b',
-                          fontSize: '11px',
-                          fontWeight: '700',
-                          textTransform: 'uppercase'
-                        }}>
-                          Forward Guidance
-                        </span>
-                      </div>
-                      <p style={{
-                        color: '#e6edf3',
-                        fontSize: '13px',
-                        margin: 0,
-                        lineHeight: '1.5'
-                      }}>
-                        {earnings.guidance}
-                      </p>
-                    </div>
-
-                    {/* Next Earnings Date */}
-                    <div style={{
-                      marginTop: '12px',
-                      textAlign: 'center',
-                      color: '#6b7280',
-                      fontSize: '11px'
-                    }}>
-                      📅 Next earnings report: <span style={{ color: '#8b949e' }}>{earnings.nextEarnings}</span>
-                    </div>
-                  </div>
-                );
-              })()}
+              {/* EARNINGS REPORT SECTION - Fetches real data from EODHD API */}
+              <LatestEarningsReport symbol={asset.symbol} />
             </div>
           ) : (
             /* TECHNICAL TAB */
@@ -5884,6 +5357,351 @@ const EarningsInsights = ({ symbol, colors }) => {
           </div>
         </div>
       ) : null}
+    </div>
+  );
+};
+
+/**
+ * LatestEarningsReport - Fetches real earnings data from EODHD API
+ * Replaces hardcoded earnings data with live data
+ */
+const LatestEarningsReport = ({ symbol, colors }) => {
+  const [earnings, setEarnings] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const loadEarnings = async () => {
+      if (!symbol) {
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        console.log(`[LatestEarnings] Fetching earnings for ${symbol}...`);
+        const data = await fetchLatestEarnings(symbol);
+
+        if (data) {
+          console.log(`[LatestEarnings] Got data for ${symbol}:`, data);
+          setEarnings(data);
+        } else {
+          setError('No earnings data available');
+        }
+      } catch (err) {
+        console.error(`[LatestEarnings] Error for ${symbol}:`, err);
+        setError('Failed to load earnings');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadEarnings();
+  }, [symbol]);
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div style={{
+        background: '#161b22',
+        border: '1px solid #21262d',
+        borderRadius: '16px',
+        padding: '20px',
+        marginTop: '20px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14,2 14,8 20,8"/>
+            </svg>
+          </div>
+          <h3 style={{ color: '#ffffff', fontSize: '15px', fontWeight: '700', margin: 0 }}>
+            LATEST EARNINGS
+          </h3>
+        </div>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '20px',
+          background: '#0d1117',
+          borderRadius: '12px'
+        }}>
+          <div style={{
+            width: '20px',
+            height: '20px',
+            border: '2px solid #8b5cf6',
+            borderTopColor: 'transparent',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }} />
+          <span style={{ color: '#8b949e', fontSize: '14px' }}>
+            Loading earnings data for {symbol}...
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state - show generic fallback
+  if (error || !earnings) {
+    return (
+      <div style={{
+        background: '#161b22',
+        border: '1px solid #21262d',
+        borderRadius: '16px',
+        padding: '20px',
+        marginTop: '20px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14,2 14,8 20,8"/>
+            </svg>
+          </div>
+          <h3 style={{ color: '#ffffff', fontSize: '15px', fontWeight: '700', margin: 0 }}>
+            LATEST EARNINGS
+          </h3>
+        </div>
+        <div style={{
+          padding: '20px',
+          background: '#0d1117',
+          borderRadius: '12px',
+          textAlign: 'center'
+        }}>
+          <span style={{ color: '#8b949e', fontSize: '14px' }}>
+            Earnings data not available for {symbol}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // Success - render earnings data
+  const epsBeat = earnings.epsBeat;
+  const revenueBeat = earnings.revenueBeat;
+  const yoyPositive = earnings.yoyGrowth && earnings.yoyGrowth.startsWith('+');
+
+  return (
+    <div style={{
+      background: '#161b22',
+      border: '1px solid #21262d',
+      borderRadius: '16px',
+      padding: '20px',
+      marginTop: '20px'
+    }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: '16px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14,2 14,8 20,8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <line x1="10" y1="9" x2="8" y2="9"/>
+            </svg>
+          </div>
+          <h3 style={{ color: '#ffffff', fontSize: '15px', fontWeight: '700', margin: 0 }}>
+            LATEST EARNINGS
+          </h3>
+        </div>
+
+        {/* Report Date Badge */}
+        <div style={{
+          background: '#8b5cf620',
+          border: '1px solid #8b5cf640',
+          borderRadius: '8px',
+          padding: '6px 12px'
+        }}>
+          <span style={{ color: '#a78bfa', fontSize: '11px', fontWeight: '600' }}>
+            {earnings.reportDate}
+          </span>
+        </div>
+      </div>
+
+      {/* Quarter Badge */}
+      <div style={{
+        display: 'inline-block',
+        background: '#21262d',
+        borderRadius: '6px',
+        padding: '4px 10px',
+        marginBottom: '16px'
+      }}>
+        <span style={{ color: '#8b949e', fontSize: '12px', fontWeight: '600' }}>
+          {earnings.quarter}
+        </span>
+      </div>
+
+      {/* Metrics Grid */}
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+        {/* EPS Card */}
+        <div style={{
+          flex: 1,
+          background: '#0d1117',
+          borderRadius: '10px',
+          padding: '12px',
+          borderLeft: `3px solid ${epsBeat === true ? '#22c55e' : epsBeat === false ? '#ef4444' : '#8b949e'}`
+        }}>
+          <div style={{
+            color: '#8b949e',
+            fontSize: '10px',
+            fontWeight: '600',
+            textTransform: 'uppercase',
+            marginBottom: '4px'
+          }}>
+            EPS
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+            <span style={{ color: '#ffffff', fontSize: '18px', fontWeight: '700' }}>
+              {earnings.epsActual}
+            </span>
+            {epsBeat !== null && (
+              <span style={{
+                color: epsBeat ? '#22c55e' : '#ef4444',
+                fontSize: '11px',
+                fontWeight: '600'
+              }}>
+                {epsBeat ? '✓ BEAT' : '✗ MISS'}
+              </span>
+            )}
+          </div>
+          <div style={{ color: '#6b7280', fontSize: '11px', marginTop: '2px' }}>
+            Est: {earnings.epsEstimate}
+          </div>
+        </div>
+
+        {/* Revenue Card */}
+        <div style={{
+          flex: 1,
+          background: '#0d1117',
+          borderRadius: '10px',
+          padding: '12px',
+          borderLeft: `3px solid ${revenueBeat === true ? '#22c55e' : revenueBeat === false ? '#ef4444' : '#8b949e'}`
+        }}>
+          <div style={{
+            color: '#8b949e',
+            fontSize: '10px',
+            fontWeight: '600',
+            textTransform: 'uppercase',
+            marginBottom: '4px'
+          }}>
+            Revenue
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+            <span style={{ color: '#ffffff', fontSize: '18px', fontWeight: '700' }}>
+              {earnings.revenueActual || 'N/A'}
+            </span>
+            {revenueBeat !== null && (
+              <span style={{
+                color: revenueBeat ? '#22c55e' : '#ef4444',
+                fontSize: '11px',
+                fontWeight: '600'
+              }}>
+                {revenueBeat ? '✓ BEAT' : '✗ MISS'}
+              </span>
+            )}
+          </div>
+          {earnings.revenueEstimate && (
+            <div style={{ color: '#6b7280', fontSize: '11px', marginTop: '2px' }}>
+              Est: {earnings.revenueEstimate}
+            </div>
+          )}
+        </div>
+
+        {/* YoY Growth Card */}
+        <div style={{
+          flex: 1,
+          background: '#0d1117',
+          borderRadius: '10px',
+          padding: '12px',
+          borderLeft: `3px solid ${yoyPositive ? '#22c55e' : earnings.yoyGrowth !== 'N/A' ? '#ef4444' : '#8b949e'}`
+        }}>
+          <div style={{
+            color: '#8b949e',
+            fontSize: '10px',
+            fontWeight: '600',
+            textTransform: 'uppercase',
+            marginBottom: '4px'
+          }}>
+            YoY Growth
+          </div>
+          <div style={{
+            color: yoyPositive ? '#22c55e' : earnings.yoyGrowth !== 'N/A' ? '#ef4444' : '#8b949e',
+            fontSize: '18px',
+            fontWeight: '700'
+          }}>
+            {earnings.yoyGrowth}
+          </div>
+          {earnings.previousYearEps && (
+            <div style={{ color: '#6b7280', fontSize: '11px', marginTop: '2px' }}>
+              vs {earnings.previousYearEps} prior
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Next Earnings Date */}
+      {earnings.nextEarningsDate && earnings.nextEarningsDate !== 'TBD' && (
+        <div style={{
+          background: 'rgba(251, 191, 36, 0.1)',
+          border: '1px solid rgba(251, 191, 36, 0.3)',
+          borderRadius: '10px',
+          padding: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <span style={{ fontSize: '14px' }}>📅</span>
+          <span style={{ color: '#fbbf24', fontSize: '12px', fontWeight: '600' }}>
+            Next Earnings: {earnings.nextEarningsDate}
+          </span>
+        </div>
+      )}
+
+      {/* Data source */}
+      <div style={{
+        marginTop: '12px',
+        color: '#6e7681',
+        fontSize: '10px',
+        textAlign: 'right'
+      }}>
+        Data from EODHD • Updated {new Date(earnings.fetchedAt).toLocaleDateString()}
+      </div>
     </div>
   );
 };
