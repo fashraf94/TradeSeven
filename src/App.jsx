@@ -14463,6 +14463,13 @@ export default function PortfolioDuel() {
               const accentColor = sectorColor.primary;
               const accentGlow = sectorColor.glow;
 
+              // Debug logging
+              console.log('[TickerCard] Rendering with sector glow for:', selectedAssetDetail.symbol, {
+                sector: effectiveSector,
+                accentColor,
+                accentGlow
+              });
+
               return (
                 <div style={{
                   position: 'relative',
