@@ -61,26 +61,53 @@ export default async function handler(req, res) {
       });
     }
 
-    // Convert to array and sort by report date (most recent first)
-    const earningsArray = Object.entries(earningsHistory)
+    const today = new Date();
+
+    // First, get ALL earnings entries for finding next earnings date
+    const allEarnings = Object.entries(earningsHistory)
       .map(([key, value]) => ({ ...value, key }))
-      .filter(e => e.reportDate) // Only entries with report dates
+      .filter(e => e.reportDate)
       .sort((a, b) => new Date(b.reportDate) - new Date(a.reportDate));
 
-    if (earningsArray.length === 0) {
-      console.log(`[API] No valid earnings entries for ${upperSymbol}`);
+    // Then filter for COMPLETED earnings only (past dates with actual data)
+    const completedEarnings = Object.entries(earningsHistory)
+      .map(([key, value]) => ({ ...value, key }))
+      .filter(e => {
+        // Must have a report date
+        if (!e.reportDate) return false;
+
+        // Report date must be IN THE PAST (not future earnings)
+        const reportDate = new Date(e.reportDate);
+        if (reportDate > today) return false;
+
+        // Must have actual EPS data (not just estimates - means it was reported)
+        if (e.epsActual === null || e.epsActual === undefined) return false;
+
+        return true;
+      })
+      .sort((a, b) => new Date(b.reportDate) - new Date(a.reportDate)); // Most recent first
+
+    console.log(`[API] Completed earnings found for ${upperSymbol}:`, completedEarnings.length);
+
+    if (completedEarnings.length === 0) {
+      console.log(`[API] No completed earnings entries for ${upperSymbol}`);
       return res.status(200).json({
         success: false,
-        error: 'No valid earnings data',
+        error: 'No completed earnings data',
         symbol: upperSymbol
       });
     }
 
-    const latest = earningsArray[0];
-    console.log(`[API] Latest earnings for ${upperSymbol}:`, JSON.stringify(latest));
+    const latest = completedEarnings[0];
+    console.log(`[API] Most recent completed earnings for ${upperSymbol}:`, JSON.stringify({
+      reportDate: latest.reportDate,
+      quarter: `Q${latest.fiscalQuarter} ${latest.fiscalYear}`,
+      epsActual: latest.epsActual,
+      epsEstimate: latest.epsEstimate
+    }));
 
     // Get previous year's same quarter for YoY comparison
-    const previousYear = earningsArray.find(e => {
+    const previousYear = completedEarnings.find(e => {
       if (!e.reportDate || !latest.reportDate) return false;
       const latestDate = new Date(latest.reportDate);
       const eDate = new Date(e.reportDate);
@@ -169,8 +196,8 @@ export default async function handler(req, res) {
         ? `$${previousYear.epsActual.toFixed(2)}`
         : null,
 
-      // Next earnings
-      nextEarningsDate: data?.General?.NextEarningsDate || findNextEarnings(earningsArray) || 'TBD',
+      // Next earnings (use allEarnings to find future dates)
+      nextEarningsDate: data?.General?.NextEarningsDate || findNextEarnings(allEarnings) || 'TBD',
 
       // Metadata
       dataSource: 'EODHD',
