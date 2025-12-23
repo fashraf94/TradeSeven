@@ -374,6 +374,151 @@ const getEarningsData = (symbol) => {
 };
 
 // ============================================
+// TRAINING BATTLE HELPERS - 100% Client-Side
+// ============================================
+
+// AI Opponent Stock Pool for Training Battles
+const AI_STOCK_POOL = {
+  tech: [
+    { symbol: 'AAPL', name: 'Apple', type: 'stock' },
+    { symbol: 'MSFT', name: 'Microsoft', type: 'stock' },
+    { symbol: 'GOOGL', name: 'Alphabet', type: 'stock' },
+    { symbol: 'AMZN', name: 'Amazon', type: 'stock' },
+    { symbol: 'NVDA', name: 'NVIDIA', type: 'stock' },
+    { symbol: 'META', name: 'Meta', type: 'stock' },
+    { symbol: 'TSLA', name: 'Tesla', type: 'stock' },
+    { symbol: 'AMD', name: 'AMD', type: 'stock' },
+    { symbol: 'NFLX', name: 'Netflix', type: 'stock' },
+    { symbol: 'CRM', name: 'Salesforce', type: 'stock' }
+  ],
+  value: [
+    { symbol: 'JPM', name: 'JPMorgan', type: 'stock' },
+    { symbol: 'V', name: 'Visa', type: 'stock' },
+    { symbol: 'JNJ', name: 'Johnson & Johnson', type: 'stock' },
+    { symbol: 'PG', name: 'Procter & Gamble', type: 'stock' },
+    { symbol: 'HD', name: 'Home Depot', type: 'stock' },
+    { symbol: 'UNH', name: 'UnitedHealth', type: 'stock' },
+    { symbol: 'BAC', name: 'Bank of America', type: 'stock' },
+    { symbol: 'XOM', name: 'Exxon Mobil', type: 'stock' },
+    { symbol: 'KO', name: 'Coca-Cola', type: 'stock' },
+    { symbol: 'DIS', name: 'Disney', type: 'stock' }
+  ],
+  crypto: [
+    { symbol: 'BTC', name: 'Bitcoin', type: 'crypto' },
+    { symbol: 'ETH', name: 'Ethereum', type: 'crypto' },
+    { symbol: 'SOL', name: 'Solana', type: 'crypto' }
+  ]
+};
+
+// Generate AI Opponent Portfolio for Training
+const generateAIOpponentPortfolio = (userPortfolio) => {
+  const userSymbols = new Set(userPortfolio.map(a => a.symbol));
+  const allStocks = [...AI_STOCK_POOL.tech, ...AI_STOCK_POOL.value];
+
+  // Filter and shuffle stocks
+  const availableStocks = allStocks.filter(s => !userSymbols.has(s.symbol));
+  const partialOverlap = allStocks.filter(s => userSymbols.has(s.symbol)).slice(0, 2);
+  const shuffled = [...availableStocks].sort(() => Math.random() - 0.5);
+
+  // Match user's portfolio structure
+  const userStockCount = userPortfolio.filter(a => a.type !== 'crypto').length;
+  const userCryptoCount = userPortfolio.filter(a => a.type === 'crypto').length;
+  const aiStockCount = Math.max(6, Math.min(12, userStockCount + Math.floor(Math.random() * 3) - 1));
+
+  // Build AI portfolio
+  const aiPortfolio = [];
+  const stocksToAdd = [...partialOverlap, ...shuffled.slice(0, aiStockCount - partialOverlap.length)];
+  stocksToAdd.forEach(stock => aiPortfolio.push({ ...stock }));
+
+  // Add crypto if user has crypto
+  if (userCryptoCount > 0) {
+    const userCrypto = userPortfolio.find(a => a.type === 'crypto')?.symbol;
+    const aiCrypto = AI_STOCK_POOL.crypto.find(c => c.symbol !== userCrypto) || AI_STOCK_POOL.crypto[0];
+    aiPortfolio.push({ ...aiCrypto });
+  }
+
+  // Calculate allocations
+  const totalAssets = aiPortfolio.length;
+  const baseAllocation = 100 / totalAssets;
+  let remaining = 100;
+
+  aiPortfolio.forEach((asset, index) => {
+    if (index === aiPortfolio.length - 1) {
+      asset.allocation = parseFloat(remaining.toFixed(1));
+    } else {
+      const variance = (Math.random() - 0.5) * 4;
+      let allocation = Math.max(7.5, Math.min(20, baseAllocation + variance));
+      allocation = parseFloat(allocation.toFixed(1));
+      asset.allocation = allocation;
+      remaining -= allocation;
+    }
+  });
+
+  // Normalize to exactly 100%
+  const total = aiPortfolio.reduce((sum, a) => sum + a.allocation, 0);
+  if (Math.abs(total - 100) > 0.1) {
+    aiPortfolio[0].allocation += parseFloat((100 - total).toFixed(1));
+  }
+
+  console.log('[Training] AI Portfolio generated:', aiPortfolio.length, 'assets');
+  return aiPortfolio;
+};
+
+// Create Training Battle - 100% Client-Side (No API)
+const createTrainingBattle = (userPortfolio, battleType = 'head-to-head') => {
+  const battleId = `training_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const now = new Date();
+  const BATTLE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+  // Generate AI opponent portfolio
+  const aiPortfolio = generateAIOpponentPortfolio(userPortfolio);
+
+  // Create battle object matching existing battle structure
+  const battle = {
+    id: battleId,
+    challengeCode: `TRAIN-${battleId.slice(-6).toUpperCase()}`,
+    creator: 'training_user',
+    opponent: 'MarketBot',
+    creatorPortfolio: userPortfolio.map(asset => ({
+      symbol: asset.symbol,
+      name: asset.name || COMPANY_NAMES[asset.symbol] || asset.symbol,
+      type: asset.type || 'stock',
+      allocation: asset.allocation,
+      price: 0, // Will be filled with live prices
+      amount: (asset.allocation / 100) * 1000000,
+      position: 'long'
+    })),
+    opponentPortfolio: aiPortfolio.map(asset => ({
+      symbol: asset.symbol,
+      name: asset.name || COMPANY_NAMES[asset.symbol] || asset.symbol,
+      type: asset.type || 'stock',
+      allocation: asset.allocation,
+      price: 0,
+      amount: (asset.allocation / 100) * 1000000,
+      position: 'long'
+    })),
+    portfolioName: 'Research Training Battle',
+    portfolioType: userPortfolio.some(a => a.type === 'crypto') ? 'mixed' : 'stocks',
+    status: 'active',
+    startDate: now.toISOString(),
+    endDate: new Date(now.getTime() + BATTLE_DURATION).toISOString(),
+    createdAt: now.toISOString(),
+    // Training-specific fields
+    isTraining: true,
+    isTrainingBattle: true,
+    source: 'research_mode',
+    aiOpponent: {
+      name: 'MarketBot',
+      avatar: '🤖',
+      strategy: 'Balanced growth portfolio'
+    }
+  };
+
+  console.log('[Training] Battle created:', battleId);
+  return battle;
+};
+
+// ============================================
 // DIVERSIFICATION POOLS FOR SMART PORTFOLIO
 // ============================================
 const DIVERSIFICATION_POOLS = {
@@ -12561,7 +12706,7 @@ export default function PortfolioDuel() {
     };
 
     // Handler to start training battle with portfolio
-    const handleStartTrainingBattle = (portfolioAllocations) => {
+    const handleStartTrainingBattle = (portfolioAllocations, battleType = 'head-to-head') => {
       // Convert allocations to training portfolio format
       const allAssets = [...stocksData, ...cryptoData];
       const trainingPortfolio = portfolioAllocations.map(allocation => {
@@ -12577,21 +12722,27 @@ export default function PortfolioDuel() {
         };
       }).filter(Boolean);
 
-      // Store portfolio for training mode
-      sessionStorage.setItem('training_portfolio', JSON.stringify({
-        assets: trainingPortfolio,
-        totalValue: 1000000,
-        source: 'research_mode',
-        createdAt: new Date().toISOString()
-      }));
+      // Create the training battle with AI opponent (100% client-side)
+      const newBattle = createTrainingBattle(trainingPortfolio, battleType);
 
-      // Set up for training mode and navigate
+      // Save to localStorage
+      const existingBattles = loadBattlesSafe();
+      const updatedBattles = [newBattle, ...existingBattles];
+      saveBattlesSafe(updatedBattles);
+
+      // Update component state
+      setBattles(updatedBattles);
+
+      // Store reference to the new battle for navigation
+      sessionStorage.setItem('lastTrainingBattleId', newBattle.id);
+
+      // Set up state and navigate to dashboard
       setPortfolio(trainingPortfolio);
       setPortfolioType(trainingPortfolio.some(p => p.type === 'crypto') ? 'crypto' : 'stocks');
       setShowResearchMode(false);
       setResearchPhase('explore');
-      setScreen('training'); // Navigate to training screen
-      showToast('Portfolio loaded! Starting training battle...');
+      setScreen('dashboard'); // Navigate to dashboard to see the battle
+      showToast(`Training battle started vs ${newBattle.opponent}! 🤖`);
     };
 
     // Handler to save game plan as template
