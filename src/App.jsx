@@ -5209,6 +5209,7 @@ const LatestEarningsReport = ({ symbol, colors }) => {
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsSource, setInsightsSource] = useState(null); // 'eodhd' or 'web-search'
   const [insightsError, setInsightsError] = useState(null);
+  const [insightsStaleWarning, setInsightsStaleWarning] = useState(null); // Warning if data may be stale
 
   // Cache key for insights
   const INSIGHTS_CACHE_KEY = `earnings_insights_${symbol}`;
@@ -5227,6 +5228,7 @@ const LatestEarningsReport = ({ symbol, colors }) => {
       setInsights(null);
       setInsightsSource(null);
       setInsightsError(null);
+      setInsightsStaleWarning(null);
 
       try {
         console.log(`[LatestEarnings] Fetching earnings for ${symbol}...`);
@@ -5270,6 +5272,7 @@ const LatestEarningsReport = ({ symbol, colors }) => {
 
     setInsightsLoading(true);
     setInsightsError(null);
+    setInsightsStaleWarning(null);
     console.log(`[EarningsInsights] Starting insight generation for ${symbol}...`);
 
     try {
@@ -5352,6 +5355,7 @@ Respond with 4-5 bullet points. Each point should be 1-2 sentences. Focus on qua
       }
 
       // Step 3: If EODHD didn't have useful content, try web search fallback
+      let staleWarning = null;
       if (!generatedInsights) {
         console.log('[EarningsInsights] No EODHD insights, trying web search fallback...');
 
@@ -5367,10 +5371,20 @@ Respond with 4-5 bullet points. Each point should be 1-2 sentences. Focus on qua
 
         if (webSearchResponse.ok) {
           const webData = await webSearchResponse.json();
-          if (webData.message && !webData.message.includes('No recent earnings')) {
+          if (webData.success && webData.message && !webData.message.includes('NO_RECENT_DATA')) {
             generatedInsights = webData.message;
             source = 'web-search';
-            console.log('[EarningsInsights] Got insights from web search');
+            console.log('[EarningsInsights] Got insights from web search', {
+              webSearchUsed: webData.webSearchUsed,
+              mayBeStale: webData.mayBeStale
+            });
+
+            // Check if the data may be stale
+            if (webData.mayBeStale || webData.warning) {
+              staleWarning = webData.warning || 'Data may not be from the most recent quarter';
+            }
+          } else if (webData.error) {
+            console.log('[EarningsInsights] Web search error:', webData.error);
           }
         }
       }
@@ -5379,17 +5393,22 @@ Respond with 4-5 bullet points. Each point should be 1-2 sentences. Focus on qua
       if (generatedInsights) {
         setInsights(generatedInsights);
         setInsightsSource(source);
+        setInsightsStaleWarning(staleWarning);
 
-        // Cache successful insights only
-        try {
-          localStorage.setItem(INSIGHTS_CACHE_KEY, JSON.stringify({
-            data: generatedInsights,
-            source: source,
-            timestamp: Date.now()
-          }));
-          console.log(`[EarningsInsights] Cached insights from ${source} for ${symbol}`);
-        } catch (e) {
-          console.warn('[EarningsInsights] Cache write error:', e);
+        // Cache successful insights only (don't cache if stale)
+        if (!staleWarning) {
+          try {
+            localStorage.setItem(INSIGHTS_CACHE_KEY, JSON.stringify({
+              data: generatedInsights,
+              source: source,
+              timestamp: Date.now()
+            }));
+            console.log(`[EarningsInsights] Cached insights from ${source} for ${symbol}`);
+          } catch (e) {
+            console.warn('[EarningsInsights] Cache write error:', e);
+          }
+        } else {
+          console.log(`[EarningsInsights] Not caching due to stale warning: ${staleWarning}`);
         }
       } else {
         setInsightsError('No recent earnings coverage found for this stock');
@@ -5790,6 +5809,24 @@ Respond with 4-5 bullet points. Each point should be 1-2 sentences. Focus on qua
         ) : insights ? (
           // Show insights
           <div>
+            {/* Stale data warning */}
+            {insightsStaleWarning && (
+              <div style={{
+                padding: '8px 12px',
+                marginBottom: '10px',
+                background: 'rgba(251, 191, 36, 0.1)',
+                border: '1px solid rgba(251, 191, 36, 0.3)',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span style={{ fontSize: '14px' }}>⚠️</span>
+                <span style={{ color: '#fbbf24', fontSize: '11px' }}>
+                  Data may be from an older quarter. Click "Generate Insights" to refresh.
+                </span>
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {insights.split('\n').filter(line => line.trim()).map((point, i) => (
                 <div

@@ -519,30 +519,141 @@ Be concise, engaging, and actionable. No bullet points - flowing prose only.`;
   }
 }
 
+// Validate that insights contain recent data (2024 Q4 or 2025)
+function validateInsightsAreRecent(insights) {
+  if (!insights) return { isRecent: false, reason: 'No insights provided' };
+
+  const text = insights.toLowerCase();
+
+  // Check for recent date references (late 2024 or 2025)
+  const recentPatterns = [
+    /q[34]\s*2024/, /q[1234]\s*2025/, /q[34]\s*fy2024/, /q[1234]\s*fy2025/,
+    /2025/, /fourth quarter 2024/, /third quarter 2024/,
+    /fy25/, /fy2025/, /fiscal 2025/,
+    /october 2024/, /november 2024/, /december 2024/,
+    /january 2025/, /february 2025/, /march 2025/, /april 2025/,
+    /may 2025/, /june 2025/, /july 2025/, /august 2025/,
+    /september 2025/, /october 2025/, /november 2025/, /december 2025/
+  ];
+
+  const hasRecentDate = recentPatterns.some(pattern => pattern.test(text));
+
+  // Check for old date references that suggest stale training data
+  const oldPatterns = [
+    /q[12]\s*2024(?!\s*q[34])/, /q[1234]\s*2023/, /fy2023/, /fy23/,
+    /2023(?!\s*and\s*2024)/, /first quarter 2024/, /second quarter 2024/
+  ];
+
+  const hasOldDate = oldPatterns.some(pattern => pattern.test(text));
+
+  // Check for apology/fallback language that suggests training data was used
+  const fallbackPhrases = [
+    'i apologize', 'i don\'t have', 'my training data', 'my knowledge cutoff',
+    'i cannot access', 'i\'m unable to', 'as of my last update',
+    'based on my training', 'i don\'t have access to real-time'
+  ];
+
+  const hasFallbackLanguage = fallbackPhrases.some(phrase => text.includes(phrase));
+
+  if (hasFallbackLanguage) {
+    return { isRecent: false, reason: 'Response contains fallback/apology language' };
+  }
+
+  if (hasOldDate && !hasRecentDate) {
+    return { isRecent: false, reason: 'Data appears to be from early 2024 or older' };
+  }
+
+  return { isRecent: true, reason: null };
+}
+
+// Extract and clean insights from response, removing preamble
+function extractCleanInsights(responseText) {
+  if (!responseText) return '';
+
+  const lines = responseText.split('\n');
+  const cleanedLines = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Skip empty lines at the start
+    if (cleanedLines.length === 0 && !trimmed) continue;
+
+    // Skip lines that are clearly preamble/apology
+    if (trimmed.toLowerCase().includes('i apologize') ||
+        trimmed.toLowerCase().includes('i don\'t have') ||
+        trimmed.toLowerCase().includes('based on my training') ||
+        trimmed.toLowerCase().includes('as an ai')) {
+      continue;
+    }
+
+    // Keep lines that look like bullet points or contain actual insights
+    if (trimmed.match(/^[✅⚠️📊🎯💡🔹•\-\*]/) ||  // Starts with emoji/bullet
+        trimmed.match(/^\d+\./) ||                    // Numbered list
+        trimmed.match(/^\*\*/) ||                     // Bold markdown
+        (cleanedLines.length > 0 && trimmed.length > 0)) {  // Part of content
+      cleanedLines.push(trimmed);
+    }
+  }
+
+  return cleanedLines.join('\n');
+}
+
 // Handle earnings web search for insights fallback
 async function handleEarningsWebSearch(req, res, API_KEY) {
   const { symbol, companyName } = req.body;
 
   console.log('[AI Advisor] Earnings web search for:', symbol);
 
-  const prompt = `Search the web for ${symbol} (${companyName || symbol}) most recent earnings call transcript or earnings report summary from 2024 or 2025.
+  // Get current date for context
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
 
-Find and analyze the key points from their latest quarterly earnings. Focus on:
+  // Determine likely recent quarters
+  let recentQuarters = '';
+  if (currentMonth >= 1 && currentMonth <= 3) {
+    recentQuarters = `Q4 ${currentYear - 1} or Q3 ${currentYear - 1}`;
+  } else if (currentMonth >= 4 && currentMonth <= 6) {
+    recentQuarters = `Q1 ${currentYear} or Q4 ${currentYear - 1}`;
+  } else if (currentMonth >= 7 && currentMonth <= 9) {
+    recentQuarters = `Q2 ${currentYear} or Q1 ${currentYear}`;
+  } else {
+    recentQuarters = `Q3 ${currentYear} or Q2 ${currentYear}`;
+  }
 
-1. **Management Commentary** - What did the CEO/CFO say about performance?
-2. **Key Metrics** - Revenue, EPS, and how they compared to estimates
-3. **Strategic Updates** - New products, markets, or initiatives mentioned
-4. **Forward Guidance** - What is management expecting for next quarter/year?
-5. **Risks & Challenges** - Any headwinds or concerns mentioned
+  const prompt = `You MUST search the web for ${symbol} (${companyName || symbol}) most recent earnings call from ${currentYear}.
 
-Provide 4-5 bullet points summarizing the most important insights from the earnings call. Start each bullet with an appropriate emoji:
+CRITICAL INSTRUCTIONS:
+- You MUST use web search to find current ${currentYear} earnings data
+- Do NOT use your training data or knowledge cutoff information
+- Do NOT apologize or say you don't have information - SEARCH THE WEB
+- The most recent earnings should be from ${recentQuarters}
+
+Search for: "${symbol} earnings call ${currentYear}" OR "${symbol} quarterly results ${currentYear}" OR "${symbol} earnings transcript"
+
+After searching, provide the following:
+
+FIRST LINE: State the specific quarter and year (e.g., "**Q3 FY2025 Earnings (reported October 2025)**")
+
+Then provide 4-5 bullet points summarizing the most important insights. Start each bullet with an emoji:
 ✅ = positive development
 ⚠️ = concern or risk
-📊 = key metric/data
+📊 = key metric/data point
 🎯 = forward guidance
 💡 = strategic initiative
 
-If you cannot find recent earnings information, respond with exactly: "No recent earnings data found for ${symbol}."`;
+Focus on:
+1. Management Commentary - What did the CEO/CFO say about performance?
+2. Key Metrics - Revenue, EPS, and comparison to estimates
+3. Strategic Updates - New products, markets, or initiatives
+4. Forward Guidance - Expectations for next quarter/year
+5. Risks & Challenges - Any headwinds mentioned
+
+DO NOT include any preamble like "I apologize" or "based on my training data".
+Just provide the quarter heading and bullet points directly.
+
+If web search returns no results, respond with exactly: "NO_RECENT_DATA"`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -557,8 +668,10 @@ If you cannot find recent earnings information, respond with exactly: "No recent
         max_tokens: 1024,
         tools: [{
           type: "web_search_20250305",
-          name: "web_search"
+          name: "web_search",
+          max_uses: 3
         }],
+        tool_choice: { type: "auto" },
         messages: [
           { role: 'user', content: prompt }
         ],
@@ -574,20 +687,53 @@ If you cannot find recent earnings information, respond with exactly: "No recent
 
     // Extract text content from response (may include web search results)
     let resultText = '';
+    let webSearchUsed = false;
+
     if (data.content && Array.isArray(data.content)) {
       for (const block of data.content) {
         if (block.type === 'text') {
           resultText += block.text;
         }
+        if (block.type === 'web_search_tool_result') {
+          webSearchUsed = true;
+        }
       }
     }
 
-    console.log('[AI Advisor] Earnings web search completed for:', symbol);
+    console.log('[AI Advisor] Earnings web search completed for:', symbol, { webSearchUsed });
+
+    // Check for explicit no data response
+    if (resultText.includes('NO_RECENT_DATA')) {
+      return res.status(200).json({
+        success: false,
+        error: `No recent earnings data found for ${symbol}`,
+        source: 'web-search'
+      });
+    }
+
+    // Clean up the response
+    const cleanedInsights = extractCleanInsights(resultText);
+
+    // Validate the insights are recent
+    const validation = validateInsightsAreRecent(cleanedInsights);
+
+    if (!validation.isRecent) {
+      console.warn('[AI Advisor] Insights validation failed:', validation.reason);
+      // Return the data anyway but flag it
+      return res.status(200).json({
+        success: true,
+        message: cleanedInsights || resultText,
+        source: 'web-search',
+        warning: validation.reason,
+        mayBeStale: true
+      });
+    }
 
     return res.status(200).json({
       success: true,
-      message: resultText || 'No insights generated',
-      source: 'web-search'
+      message: cleanedInsights || resultText,
+      source: 'web-search',
+      webSearchUsed
     });
 
   } catch (error) {
