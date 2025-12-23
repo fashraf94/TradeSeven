@@ -4426,6 +4426,81 @@ const GamePlan = ({
 const TopNewsStories = ({ news, isLoading, colors }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
 
+  // Whitelist of trusted financial news sources (case-insensitive matching)
+  const TRUSTED_SOURCES = [
+    'bloomberg',
+    'reuters',
+    'cnbc',
+    'wall street journal',
+    'wsj',
+    'financial times',
+    'ft',
+    'marketwatch',
+    'market watch',
+    'yahoo finance',
+    'barrons',
+    "barron's",
+    'seeking alpha',
+    'seekingalpha',
+    'motley fool',
+    'the motley fool',
+    "investor's business daily",
+    'investors business daily',
+    'ibd',
+    'associated press',
+    'ap news',
+    'ap',
+    'cnn business',
+    'cnn',
+    'fox business',
+    'new york times',
+    'nyt',
+    'washington post',
+    'benzinga',
+    'zacks',
+    'thestreet',
+    'the street',
+    'investing.com',
+    'morningstar',
+  ];
+
+  // Check if source matches any trusted source (case-insensitive)
+  const isTrustedSource = (source) => {
+    if (!source || source === 'Unknown' || source.toLowerCase() === 'unknown') {
+      return false;
+    }
+    const sourceLower = source.toLowerCase().trim();
+    return TRUSTED_SOURCES.some(trusted =>
+      sourceLower.includes(trusted) || trusted.includes(sourceLower)
+    );
+  };
+
+  // Filter news to only trusted sources
+  const getFilteredNews = () => {
+    if (!news || news.length === 0) return [];
+
+    const trustedNews = news.filter(item => isTrustedSource(item.source));
+
+    // If we have at least 2 trusted news items, use them
+    if (trustedNews.length >= 2) {
+      return trustedNews.slice(0, 4);
+    }
+
+    // Fallback: show top 4 items but filter out "Unknown" sources
+    const nonUnknownNews = news.filter(item =>
+      item.source && item.source !== 'Unknown' && item.source.toLowerCase() !== 'unknown'
+    );
+
+    if (nonUnknownNews.length >= 2) {
+      return nonUnknownNews.slice(0, 4);
+    }
+
+    // Last resort: return whatever we have (excluding Unknown)
+    return nonUnknownNews.length > 0 ? nonUnknownNews.slice(0, 4) : [];
+  };
+
+  const filteredNews = getFilteredNews();
+
   if (isLoading) {
     return (
       <div style={{
@@ -4455,10 +4530,6 @@ const TopNewsStories = ({ news, isLoading, colors }) => {
     );
   }
 
-  if (!news || news.length === 0) {
-    return null;
-  }
-
   // Format time ago
   const getTimeAgo = (dateStr) => {
     const date = new Date(dateStr);
@@ -4471,6 +4542,33 @@ const TopNewsStories = ({ news, isLoading, colors }) => {
     if (diffHours < 24) return `${diffHours}h ago`;
     return `${Math.floor(diffHours / 24)}d ago`;
   };
+
+  // Show message if no quality news available
+  if (filteredNews.length === 0) {
+    return (
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '16px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '14px' }}>📰</span> Top News Stories
+        </h3>
+        <div style={{
+          background: '#161b22',
+          borderRadius: '8px',
+          padding: '16px',
+          textAlign: 'center',
+        }}>
+          <span style={{ color: '#8b949e', fontSize: '13px' }}>
+            No major financial news at this time
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{
@@ -4485,7 +4583,7 @@ const TopNewsStories = ({ news, isLoading, colors }) => {
       </h3>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {news.slice(0, 4).map((item, idx) => (
+        {filteredNews.map((item, idx) => (
           <div
             key={item.id || idx}
             style={{
