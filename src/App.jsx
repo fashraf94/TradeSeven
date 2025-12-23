@@ -3,7 +3,7 @@ import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } f
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
-import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews } from './services/eodhdAPI';
+import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews } from './services/eodhdAPI';
 import './firebase/config';
 import { motion } from 'framer-motion';
 // Event watchlist configuration for Week Ahead calendar
@@ -5611,6 +5611,279 @@ const EconomicNews = ({ news, isLoading, colors }) => {
           );
         })}
       </div>
+    </div>
+  );
+};
+
+/**
+ * EarningsInsights - AI-powered earnings call insights
+ * Fetches earnings news and generates AI insights from recent earnings calls
+ */
+const EarningsInsights = ({ symbol, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+  const violet = '#8b5cf6';
+  const violetLight = '#a78bfa';
+
+  const [insights, setInsights] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Cache key for this symbol
+  const CACHE_KEY = `earnings_insights_${symbol}`;
+  const CACHE_DURATION = 12 * 60 * 60 * 1000; // 12 hours
+
+  // Earnings-related keywords for filtering news
+  const EARNINGS_KEYWORDS = [
+    /earnings/i, /quarterly results/i, /q[1-4] results/i, /revenue/i,
+    /profit/i, /eps/i, /guidance/i, /outlook/i, /beat expectations/i,
+    /miss expectations/i, /exceeded/i, /fell short/i, /raised guidance/i,
+    /lowered guidance/i, /earnings call/i, /conference call/i,
+    /fiscal year/i, /quarter/i, /net income/i, /operating margin/i
+  ];
+
+  useEffect(() => {
+    const fetchInsights = async () => {
+      if (!symbol) {
+        setIsLoading(false);
+        return;
+      }
+
+      // Check localStorage cache first
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const { data, timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < CACHE_DURATION) {
+            console.log(`[EarningsInsights] Using cached insights for ${symbol}`);
+            setInsights(data);
+            setIsLoading(false);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('[EarningsInsights] Cache read error:', e);
+      }
+
+      try {
+        // Fetch news for this stock
+        console.log(`[EarningsInsights] Fetching news for ${symbol}...`);
+        const news = await getStockNews(symbol, 20);
+
+        // Filter for earnings-related news
+        const earningsNews = news.filter(article => {
+          const title = (article.title || '').toLowerCase();
+          const content = (article.content || article.description || '').toLowerCase();
+          const combined = title + ' ' + content;
+          return EARNINGS_KEYWORDS.some(pattern => pattern.test(combined));
+        });
+
+        console.log(`[EarningsInsights] Found ${earningsNews.length} earnings-related articles`);
+
+        if (earningsNews.length === 0) {
+          setInsights(null);
+          setIsLoading(false);
+          return;
+        }
+
+        // Create prompt for AI
+        const newsContext = earningsNews.slice(0, 5).map((article, i) =>
+          `${i + 1}. ${article.title}${article.content ? ` - ${article.content.slice(0, 200)}...` : ''}`
+        ).join('\n');
+
+        // Call AI advisor for insights
+        const response = await fetch('/api/ai-advisor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'earnings_insights',
+            context: {
+              symbol,
+              newsArticles: newsContext,
+              prompt: `Based on these recent earnings-related news articles about ${symbol}, provide 3-4 concise key insights for investors. Focus on: revenue/profit trends, guidance changes, management outlook, and competitive positioning. Keep each insight to 1-2 sentences. Format as a bullet list.`
+            }
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('AI insights unavailable');
+        }
+
+        const data = await response.json();
+
+        if (data.success && data.advice) {
+          const insightData = {
+            text: data.advice,
+            newsCount: earningsNews.length,
+            lastUpdated: new Date().toISOString()
+          };
+
+          setInsights(insightData);
+
+          // Cache to localStorage
+          try {
+            localStorage.setItem(CACHE_KEY, JSON.stringify({
+              data: insightData,
+              timestamp: Date.now()
+            }));
+          } catch (e) {
+            console.warn('[EarningsInsights] Cache write error:', e);
+          }
+        } else {
+          setError('Could not generate insights');
+        }
+      } catch (err) {
+        console.error('[EarningsInsights] Error:', err);
+        setError(err.message || 'Failed to load insights');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchInsights();
+  }, [symbol]);
+
+  // Don't render if no insights and not loading
+  if (!isLoading && !insights && !error) {
+    return null;
+  }
+
+  return (
+    <div style={{
+      background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%)',
+      border: `1px solid rgba(139, 92, 246, 0.3)`,
+      borderRadius: '16px',
+      padding: '20px',
+      marginBottom: '20px'
+    }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        marginBottom: '16px'
+      }}>
+        {/* AI Icon with gradient */}
+        <div style={{
+          width: '36px',
+          height: '36px',
+          borderRadius: '10px',
+          background: 'linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 4px 12px rgba(139, 92, 246, 0.4)'
+        }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+
+        <div style={{ flex: 1 }}>
+          <h3 style={{
+            color: '#ffffff',
+            fontSize: '15px',
+            fontWeight: '700',
+            margin: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            AI EARNINGS INSIGHTS
+            <span style={{
+              background: 'rgba(139, 92, 246, 0.2)',
+              color: violetLight,
+              fontSize: '10px',
+              fontWeight: '600',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}>
+              POWERED BY AI
+            </span>
+          </h3>
+          <span style={{ color: '#8b949e', fontSize: '12px' }}>
+            Key insights from recent earnings activity
+          </span>
+        </div>
+      </div>
+
+      {/* Content */}
+      {isLoading ? (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '16px',
+          background: 'rgba(139, 92, 246, 0.1)',
+          borderRadius: '12px'
+        }}>
+          <div style={{
+            width: '20px',
+            height: '20px',
+            border: `2px solid ${violet}`,
+            borderTopColor: 'transparent',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }} />
+          <span style={{ color: violetLight, fontSize: '14px' }}>
+            Analyzing earnings reports for {symbol}...
+          </span>
+          <style>{`
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
+      ) : error ? (
+        <div style={{
+          padding: '16px',
+          background: 'rgba(239, 68, 68, 0.1)',
+          borderRadius: '12px',
+          color: '#f87171',
+          fontSize: '13px'
+        }}>
+          {error}
+        </div>
+      ) : insights ? (
+        <div>
+          {/* Insights text */}
+          <div style={{
+            background: '#0d1117',
+            borderRadius: '12px',
+            padding: '16px',
+            borderLeft: `3px solid ${violet}`
+          }}>
+            <div style={{
+              color: '#e6edf3',
+              fontSize: '14px',
+              lineHeight: '1.6',
+              whiteSpace: 'pre-wrap'
+            }}>
+              {insights.text}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginTop: '12px',
+            color: '#6e7681',
+            fontSize: '11px'
+          }}>
+            <span>
+              Based on {insights.newsCount} recent earnings article{insights.newsCount !== 1 ? 's' : ''}
+            </span>
+            <span>
+              Last updated: {new Date(insights.lastUpdated).toLocaleString()}
+            </span>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -14396,6 +14669,9 @@ export default function PortfolioDuel() {
               ) : isStock ? (
                 // STOCK METRICS
                 <>
+                  {/* AI Earnings Insights - shown at top of Fundamental tab */}
+                  <EarningsInsights symbol={selectedAssetDetail?.symbol} colors={colors} />
+
                   <h3 style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     Fundamentals
                   </h3>
