@@ -5207,10 +5207,12 @@ const LatestEarningsReport = ({ symbol, colors }) => {
   const [error, setError] = useState(null);
   const [insights, setInsights] = useState(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsSource, setInsightsSource] = useState(null); // 'eodhd' or 'web-search'
+  const [insightsError, setInsightsError] = useState(null);
 
   // Cache key for insights
   const INSIGHTS_CACHE_KEY = `earnings_insights_${symbol}`;
-  const INSIGHTS_CACHE_DURATION = 12 * 60 * 60 * 1000; // 12 hours
+  const INSIGHTS_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
   useEffect(() => {
     const loadEarnings = async () => {
@@ -5221,6 +5223,10 @@ const LatestEarningsReport = ({ symbol, colors }) => {
 
       setIsLoading(true);
       setError(null);
+      // Reset insights when symbol changes
+      setInsights(null);
+      setInsightsSource(null);
+      setInsightsError(null);
 
       try {
         console.log(`[LatestEarnings] Fetching earnings for ${symbol}...`);
@@ -5229,6 +5235,21 @@ const LatestEarningsReport = ({ symbol, colors }) => {
         if (data) {
           console.log(`[LatestEarnings] Got data for ${symbol}:`, data);
           setEarnings(data);
+
+          // Check cache for insights
+          try {
+            const cached = localStorage.getItem(INSIGHTS_CACHE_KEY);
+            if (cached) {
+              const { data: cachedInsights, source, timestamp } = JSON.parse(cached);
+              if (Date.now() - timestamp < INSIGHTS_CACHE_DURATION && cachedInsights) {
+                console.log(`[EarningsInsights] Using cached insights for ${symbol}`);
+                setInsights(cachedInsights);
+                setInsightsSource(source || 'eodhd');
+              }
+            }
+          } catch (e) {
+            console.warn('[EarningsInsights] Cache read error:', e);
+          }
         } else {
           setError('No earnings data available');
         }
@@ -5243,70 +5264,57 @@ const LatestEarningsReport = ({ symbol, colors }) => {
     loadEarnings();
   }, [symbol]);
 
-  // Generate AI insights when earnings load
-  useEffect(() => {
-    const generateInsights = async () => {
-      if (!earnings || !symbol) return;
+  // Manual generate insights function (called by button click)
+  const handleGenerateInsights = async () => {
+    if (!earnings || !symbol) return;
 
-      // Check cache first
-      try {
-        const cached = localStorage.getItem(INSIGHTS_CACHE_KEY);
-        if (cached) {
-          const { data, timestamp } = JSON.parse(cached);
-          if (Date.now() - timestamp < INSIGHTS_CACHE_DURATION) {
-            console.log(`[EarningsInsights] Using cached insights for ${symbol}`);
-            setInsights(data);
-            return;
-          }
-        }
-      } catch (e) {
-        console.warn('[EarningsInsights] Cache read error:', e);
-      }
+    setInsightsLoading(true);
+    setInsightsError(null);
+    console.log(`[EarningsInsights] Starting insight generation for ${symbol}...`);
 
-      setInsightsLoading(true);
+    try {
+      // Step 1: Try EODHD news first
+      console.log(`[EarningsInsights] Fetching news for ${symbol}...`);
+      const news = await getStockNews(symbol, 20);
 
-      try {
-        // Fetch earnings-related news (increased from 10 to 15 for better coverage)
-        console.log(`[EarningsInsights] Fetching news for ${symbol}...`);
-        const news = await getStockNews(symbol, 15);
+      // Tiered priority keywords - transcript/call content is highest priority
+      const highPriorityKeywords = ['transcript', 'earnings call', 'conference call', 'quarterly results'];
+      const mediumPriorityKeywords = ['earnings', 'quarterly', 'guidance', 'outlook', 'ceo said', 'cfo said', 'management', 'beat', 'miss', 'revenue', 'profit', 'forecast', 'quarter', 'Q1', 'Q2', 'Q3', 'Q4', '2024', '2025'];
 
-        // Tiered priority keywords - transcript/call content is highest priority
-        const highPriorityKeywords = ['transcript', 'earnings call', 'conference call', 'quarterly results'];
-        const mediumPriorityKeywords = ['earnings', 'quarterly', 'guidance', 'outlook', 'ceo said', 'cfo said', 'management', 'beat', 'miss', 'revenue', 'profit', 'forecast', 'quarter'];
+      // Score and filter articles by keyword priority
+      const scoredNews = news.map(article => {
+        const text = ((article.title || '') + ' ' + (article.summary || '')).toLowerCase();
+        let score = 0;
 
-        // Score and filter articles by keyword priority
-        const scoredNews = news.map(article => {
-          const text = ((article.title || '') + ' ' + (article.summary || '')).toLowerCase();
-          let score = 0;
-
-          // High priority keywords score 10 points each
-          highPriorityKeywords.forEach(keyword => {
-            if (text.includes(keyword)) score += 10;
-          });
-
-          // Medium priority keywords score 1 point each
-          mediumPriorityKeywords.forEach(keyword => {
-            if (text.includes(keyword)) score += 1;
-          });
-
-          return { article, score };
+        // High priority keywords score 10 points each
+        highPriorityKeywords.forEach(keyword => {
+          if (text.includes(keyword.toLowerCase())) score += 10;
         });
 
-        // Filter articles with any score and sort by priority
-        const earningsNews = scoredNews
-          .filter(item => item.score > 0)
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 5)
-          .map(item => item.article);
+        // Medium priority keywords score 1 point each
+        mediumPriorityKeywords.forEach(keyword => {
+          if (text.includes(keyword.toLowerCase())) score += 1;
+        });
 
-        console.log(`[EarningsInsights] Found ${earningsNews.length} earnings-related articles (prioritized by transcript/call content)`);
+        return { article, score };
+      });
 
-        if (earningsNews.length === 0) {
-          setInsightsLoading(false);
-          return;
-        }
+      // Filter articles with any score and sort by priority
+      const earningsNews = scoredNews
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5)
+        .map(item => item.article);
 
-        // Create prompt for AI
+      console.log(`[EarningsInsights] Found ${earningsNews.length} earnings-related articles from EODHD`);
+
+      let generatedInsights = null;
+      let source = 'eodhd';
+
+      // Step 2: If EODHD has earnings articles, use them
+      if (earningsNews.length > 0) {
+        console.log('[EarningsInsights] Analyzing EODHD articles with AI...');
+
         const newsContext = earningsNews.map(a =>
           `Title: ${a.title}\nContent: ${a.summary || ''}`
         ).join('\n---\n');
@@ -5325,7 +5333,6 @@ ${newsContext}
 
 Respond with 4-5 bullet points. Each point should be 1-2 sentences. Focus on qualitative insights, not just numbers. Start each point with an emoji that matches the sentiment (✅ for positive, ⚠️ for concern/negative, 📊 for neutral/data, 🎯 for guidance, 💡 for strategic).`;
 
-        // Call AI endpoint - use 'research' advisor type which already works
         const response = await fetch('/api/ai-advisor', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5338,28 +5345,63 @@ Respond with 4-5 bullet points. Each point should be 1-2 sentences. Focus on qua
         if (response.ok) {
           const data = await response.json();
           if (data.message) {
-            setInsights(data.message);
-
-            // Cache the insights
-            try {
-              localStorage.setItem(INSIGHTS_CACHE_KEY, JSON.stringify({
-                data: data.message,
-                timestamp: Date.now()
-              }));
-            } catch (e) {
-              console.warn('[EarningsInsights] Cache write error:', e);
-            }
+            generatedInsights = data.message;
+            source = 'eodhd';
           }
         }
-      } catch (err) {
-        console.error('[EarningsInsights] Error generating insights:', err);
-      } finally {
-        setInsightsLoading(false);
       }
-    };
 
-    generateInsights();
-  }, [earnings, symbol]);
+      // Step 3: If EODHD didn't have useful content, try web search fallback
+      if (!generatedInsights) {
+        console.log('[EarningsInsights] No EODHD insights, trying web search fallback...');
+
+        const webSearchResponse = await fetch('/api/ai-advisor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'earnings-web-search',
+            symbol: symbol,
+            companyName: earnings?.companyName || symbol
+          })
+        });
+
+        if (webSearchResponse.ok) {
+          const webData = await webSearchResponse.json();
+          if (webData.message && !webData.message.includes('No recent earnings')) {
+            generatedInsights = webData.message;
+            source = 'web-search';
+            console.log('[EarningsInsights] Got insights from web search');
+          }
+        }
+      }
+
+      // Step 4: Set results
+      if (generatedInsights) {
+        setInsights(generatedInsights);
+        setInsightsSource(source);
+
+        // Cache successful insights only
+        try {
+          localStorage.setItem(INSIGHTS_CACHE_KEY, JSON.stringify({
+            data: generatedInsights,
+            source: source,
+            timestamp: Date.now()
+          }));
+          console.log(`[EarningsInsights] Cached insights from ${source} for ${symbol}`);
+        } catch (e) {
+          console.warn('[EarningsInsights] Cache write error:', e);
+        }
+      } else {
+        setInsightsError('No recent earnings coverage found for this stock');
+      }
+
+    } catch (err) {
+      console.error('[EarningsInsights] Error generating insights:', err);
+      setInsightsError('Failed to generate insights. Please try again.');
+    } finally {
+      setInsightsLoading(false);
+    }
+  };
 
   // Loading state
   if (isLoading) {
@@ -5693,56 +5735,122 @@ Respond with 4-5 bullet points. Each point should be 1-2 sentences. Focus on qua
           </span>
         </div>
 
-        {/* Content */}
+        {/* Content - Show button if no insights loaded yet */}
         {insightsLoading ? (
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: '10px',
-            padding: '12px',
+            padding: '16px',
             background: 'rgba(139, 92, 246, 0.1)',
             borderRadius: '8px'
           }}>
             <div style={{
-              width: '16px',
-              height: '16px',
+              width: '18px',
+              height: '18px',
               border: '2px solid #8b5cf6',
               borderTopColor: 'transparent',
               borderRadius: '50%',
               animation: 'spin 1s linear infinite'
             }} />
-            <span style={{ color: '#a78bfa', fontSize: '12px' }}>
-              Analyzing earnings report...
+            <span style={{ color: '#a78bfa', fontSize: '13px' }}>
+              Analyzing earnings call... This may take a moment
             </span>
+          </div>
+        ) : insightsError ? (
+          // Error state with retry button
+          <div style={{ textAlign: 'center' }}>
+            <div style={{
+              padding: '16px',
+              background: 'rgba(239, 68, 68, 0.1)',
+              borderRadius: '8px',
+              marginBottom: '12px'
+            }}>
+              <span style={{ color: '#f87171', fontSize: '13px' }}>
+                {insightsError}
+              </span>
+            </div>
+            <button
+              onClick={handleGenerateInsights}
+              style={{
+                padding: '10px 20px',
+                background: '#374151',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#ffffff',
+                fontSize: '13px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'background 0.2s'
+              }}
+            >
+              🔄 Try Again
+            </button>
           </div>
         ) : insights ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {insights.split('\n').filter(line => line.trim()).map((point, i) => (
-              <div
-                key={i}
-                style={{
-                  padding: '10px 12px',
-                  background: '#0d1117',
-                  borderRadius: '8px',
-                  color: '#e6edf3',
-                  fontSize: '12px',
-                  lineHeight: '1.5'
-                }}
-              >
-                {point.trim()}
-              </div>
-            ))}
+          // Show insights
+          <div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {insights.split('\n').filter(line => line.trim()).map((point, i) => (
+                <div
+                  key={i}
+                  style={{
+                    padding: '10px 12px',
+                    background: '#0d1117',
+                    borderRadius: '8px',
+                    color: '#e6edf3',
+                    fontSize: '12px',
+                    lineHeight: '1.5'
+                  }}
+                >
+                  {point.trim()}
+                </div>
+              ))}
+            </div>
+            {/* Source indicator */}
+            <div style={{
+              marginTop: '10px',
+              fontSize: '10px',
+              color: '#6b7280',
+              textAlign: 'right'
+            }}>
+              Source: {insightsSource === 'web-search' ? '🌐 Web Search' : '📰 Financial News'}
+            </div>
           </div>
         ) : (
-          <div style={{
-            padding: '12px',
-            background: 'rgba(139, 92, 246, 0.05)',
-            borderRadius: '8px',
-            textAlign: 'center'
-          }}>
-            <span style={{ color: '#6b7280', fontSize: '12px' }}>
-              Earnings insights unavailable for this stock
-            </span>
+          // Generate button - initial state
+          <div style={{ textAlign: 'center' }}>
+            <button
+              onClick={handleGenerateInsights}
+              style={{
+                width: '100%',
+                padding: '16px',
+                background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+                border: 'none',
+                borderRadius: '10px',
+                color: 'white',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'all 0.2s ease',
+                boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
+              }}
+            >
+              <span>✨</span>
+              Generate Earnings Insights
+            </button>
+            <p style={{
+              fontSize: '11px',
+              color: '#6b7280',
+              marginTop: '10px',
+              marginBottom: 0
+            }}>
+              AI analyzes recent earnings calls and news to extract key points
+            </p>
           </div>
         )}
       </div>

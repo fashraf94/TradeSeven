@@ -519,6 +519,83 @@ Be concise, engaging, and actionable. No bullet points - flowing prose only.`;
   }
 }
 
+// Handle earnings web search for insights fallback
+async function handleEarningsWebSearch(req, res, API_KEY) {
+  const { symbol, companyName } = req.body;
+
+  console.log('[AI Advisor] Earnings web search for:', symbol);
+
+  const prompt = `Search the web for ${symbol} (${companyName || symbol}) most recent earnings call transcript or earnings report summary from 2024 or 2025.
+
+Find and analyze the key points from their latest quarterly earnings. Focus on:
+
+1. **Management Commentary** - What did the CEO/CFO say about performance?
+2. **Key Metrics** - Revenue, EPS, and how they compared to estimates
+3. **Strategic Updates** - New products, markets, or initiatives mentioned
+4. **Forward Guidance** - What is management expecting for next quarter/year?
+5. **Risks & Challenges** - Any headwinds or concerns mentioned
+
+Provide 4-5 bullet points summarizing the most important insights from the earnings call. Start each bullet with an appropriate emoji:
+✅ = positive development
+⚠️ = concern or risk
+📊 = key metric/data
+🎯 = forward guidance
+💡 = strategic initiative
+
+If you cannot find recent earnings information, respond with exactly: "No recent earnings data found for ${symbol}."`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        tools: [{
+          type: "web_search_20250305",
+          name: "web_search"
+        }],
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.error || !response.ok) {
+      console.error('[AI Advisor] Earnings web search error:', data.error);
+      return res.status(200).json({ success: false, error: 'Web search unavailable' });
+    }
+
+    // Extract text content from response (may include web search results)
+    let resultText = '';
+    if (data.content && Array.isArray(data.content)) {
+      for (const block of data.content) {
+        if (block.type === 'text') {
+          resultText += block.text;
+        }
+      }
+    }
+
+    console.log('[AI Advisor] Earnings web search completed for:', symbol);
+
+    return res.status(200).json({
+      success: true,
+      message: resultText || 'No insights generated',
+      source: 'web-search'
+    });
+
+  } catch (error) {
+    console.error('[AI Advisor] Earnings web search error:', error.message);
+    return res.status(200).json({ success: false, error: error.message });
+  }
+}
+
 export default async function handler(req, res) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -549,6 +626,11 @@ export default async function handler(req, res) {
     // Handle market_summary type for AI Market Summary component
     if (type === 'market_summary') {
       return await handleMarketSummary(req, res, API_KEY, context);
+    }
+
+    // Handle earnings-web-search type for earnings insights with web search fallback
+    if (type === 'earnings-web-search') {
+      return await handleEarningsWebSearch(req, res, API_KEY);
     }
 
     if (!advisorType || (!message && !action)) {
