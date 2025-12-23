@@ -7280,6 +7280,19 @@ const AssetDetailView = ({ asset, thesis, pinnedInsights, onPin, onBack, colors 
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
   const isCrypto = asset.category !== undefined;
 
+  // Get sector-based colors for pulsing glow
+  const effectiveSector = asset.sector || getStockSector(asset.symbol) || (isCrypto ? 'Cryptocurrency' : 'Technology');
+  const sectorColor = getSectorColors(effectiveSector, isCrypto);
+  const accentColor = sectorColor.primary;
+  const accentGlow = sectorColor.glow;
+
+  // Debug logging
+  console.log('[AssetDetailView] Rendering with sector glow for:', asset.symbol, {
+    sector: effectiveSector,
+    accentColor,
+    accentGlow
+  });
+
   const isPinned = (metricName) => {
     return pinnedInsights?.some(n =>
       n.symbol === asset.symbol && n.metricName === metricName
@@ -7309,174 +7322,93 @@ const AssetDetailView = ({ asset, thesis, pinnedInsights, onPin, onBack, colors 
         </button>
       </div>
 
-      {/* Animated Background Keyframes */}
+      {/* CSS Animation for Pulsing Glow */}
       <style>{`
-        @keyframes ticker-gradient-shift {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-        @keyframes ticker-glow-pulse {
-          0%, 100% { opacity: 0.3; transform: scale(1); }
-          50% { opacity: 0.5; transform: scale(1.05); }
-        }
-        @keyframes ticker-particle-float {
-          0% { transform: translateY(0px) rotate(0deg); opacity: 0.4; }
-          50% { transform: translateY(-10px) rotate(180deg); opacity: 0.7; }
-          100% { transform: translateY(0px) rotate(360deg); opacity: 0.4; }
+        @keyframes sectorGlowPulse {
+          0%, 100% {
+            box-shadow: 0 0 20px ${accentGlow}, 0 0 40px ${accentGlow.replace('0.4', '0.2')};
+            transform: scale(1);
+          }
+          50% {
+            box-shadow: 0 0 30px ${accentGlow.replace('0.4', '0.6')}, 0 0 60px ${accentGlow.replace('0.4', '0.3')};
+            transform: scale(1.005);
+          }
         }
       `}</style>
 
-      {/* Asset Header with Animated Background */}
+      {/* Ticker Card with Sector-Colored Pulsing Glow Border */}
       <div style={{
         position: 'relative',
-        textAlign: 'center',
+        borderRadius: '20px',
+        padding: '3px',
+        background: `linear-gradient(135deg, ${accentColor}, ${accentColor}80)`,
+        boxShadow: `0 0 20px ${accentGlow}, 0 0 40px ${accentGlow.replace('0.4', '0.2')}`,
+        animation: 'sectorGlowPulse 3s ease-in-out infinite',
         marginBottom: '24px',
-        padding: '24px 20px',
-        borderRadius: '16px',
-        border: `1px solid ${c.cyan}30`,
-        overflow: 'hidden',
       }}>
-        {/* Animated gradient background */}
+        {/* Inner Card */}
         <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: `linear-gradient(135deg,
-            ${safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red}15 0%,
-            #1a1f2e 25%,
-            #161b22 50%,
-            #1a1f2e 75%,
-            ${c.cyan}15 100%)`,
-          backgroundSize: '200% 200%',
-          animation: 'ticker-gradient-shift 8s ease infinite',
-        }} />
-
-        {/* Floating particles effect */}
-        <div style={{
-          position: 'absolute',
-          top: '10%',
-          left: '10%',
-          width: '8px',
-          height: '8px',
-          borderRadius: '50%',
-          background: c.cyan,
-          opacity: 0.4,
-          animation: 'ticker-particle-float 4s ease-in-out infinite',
-        }} />
-        <div style={{
-          position: 'absolute',
-          top: '20%',
-          right: '15%',
-          width: '6px',
-          height: '6px',
-          borderRadius: '50%',
-          background: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red,
-          opacity: 0.5,
-          animation: 'ticker-particle-float 5s ease-in-out infinite 1s',
-        }} />
-        <div style={{
-          position: 'absolute',
-          bottom: '25%',
-          left: '20%',
-          width: '5px',
-          height: '5px',
-          borderRadius: '50%',
-          background: c.cyan,
-          opacity: 0.3,
-          animation: 'ticker-particle-float 6s ease-in-out infinite 2s',
-        }} />
-        <div style={{
-          position: 'absolute',
-          bottom: '15%',
-          right: '25%',
-          width: '7px',
-          height: '7px',
-          borderRadius: '50%',
-          background: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red,
-          opacity: 0.4,
-          animation: 'ticker-particle-float 4.5s ease-in-out infinite 0.5s',
-        }} />
-
-        {/* Corner glow effect */}
-        <div style={{
-          position: 'absolute',
-          top: '-20%',
-          right: '-10%',
-          width: '150px',
-          height: '150px',
-          borderRadius: '50%',
-          background: `radial-gradient(circle, ${safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red}30 0%, transparent 70%)`,
-          animation: 'ticker-glow-pulse 4s ease-in-out infinite',
-        }} />
-
-        {/* Content (z-indexed above background) */}
-        <div style={{ position: 'relative', zIndex: 1 }}>
+          background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 100%)',
+          borderRadius: '17px',
+          padding: '32px 24px',
+          textAlign: 'center',
+        }}>
+          {/* Symbol */}
           <h1 style={{
-            color: '#e6edf3',
-            fontSize: '32px',
-            marginBottom: '4px',
-            textShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            color: '#ffffff',
+            fontSize: '36px',
+            fontWeight: '800',
+            margin: '0 0 4px 0',
+            letterSpacing: '2px',
+            textShadow: `0 0 30px ${accentGlow}`
           }}>
             {asset.symbol}
           </h1>
-          <p style={{ color: '#8b949e', fontSize: '14px', marginBottom: '12px' }}>
+
+          {/* Company Name */}
+          <p style={{
+            color: '#8b949e',
+            fontSize: '14px',
+            margin: '0 0 16px 0',
+            fontWeight: '500'
+          }}>
             {asset.name}
           </p>
+
+          {/* Price */}
           <div style={{
-            display: 'inline-block',
-            padding: '4px 12px',
-            background: 'rgba(22, 27, 34, 0.8)',
-            backdropFilter: 'blur(4px)',
-            borderRadius: '16px',
-            color: c.cyan,
-            fontSize: '12px',
-            border: `1px solid ${c.cyan}30`,
+            fontSize: '40px',
+            fontWeight: '700',
+            color: '#ffffff',
+            margin: '0 0 12px 0',
+            fontFamily: 'system-ui, -apple-system, sans-serif'
           }}>
-            {isCrypto ? (
-              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill={c.cyan}>
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                </svg>
-                {asset.category}
-              </span>
-            ) : (
-              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={c.cyan} strokeWidth="2">
-                  <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
-                  <path d="M16 3v4M8 3v4"/>
-                </svg>
-                {asset.sector}
-              </span>
-            )}
+            ${safeToFixed(asset.price, 2)}
           </div>
 
-          <div style={{ marginTop: '16px' }}>
-            <div style={{
-              color: '#e6edf3',
-              fontSize: '32px',
-              fontWeight: '700',
-              textShadow: `0 0 20px ${safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red}40`
-            }}>
-              ${safeToFixed(asset.price, 2)}
-            </div>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              marginTop: '8px',
-              padding: '6px 14px',
-              background: `${safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red}20`,
-              borderRadius: '20px',
-              color: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red,
-              fontSize: '16px',
-              fontWeight: '600',
+          {/* Change Badge */}
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+            border: `1px solid ${safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? '#22c55e' : '#ef4444'}50`,
+            borderRadius: '12px',
+            padding: '8px 16px'
+          }}>
+            <span style={{
+              color: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? '#22c55e' : '#ef4444',
+              fontSize: '14px'
             }}>
               {safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? '▲' : '▼'}
+            </span>
+            <span style={{
+              color: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? '#22c55e' : '#ef4444',
+              fontSize: '16px',
+              fontWeight: '700'
+            }}>
               {Math.abs(safeNumber(asset.percentChange || asset.change24h, 0)).toFixed(2)}% today
-            </div>
+            </span>
           </div>
         </div>
       </div>
