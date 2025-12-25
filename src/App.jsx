@@ -3,7 +3,7 @@ import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } f
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
-import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews } from './services/eodhdAPI';
+import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
 import './firebase/config';
 import { motion } from 'framer-motion';
 // Event watchlist configuration for Week Ahead calendar
@@ -67,12 +67,12 @@ const STOCK_SECTORS = {
   'AAPL': 'Technology', 'MSFT': 'Technology', 'GOOGL': 'Technology', 'GOOG': 'Technology',
   'META': 'Technology', 'NVDA': 'Technology', 'AMD': 'Technology', 'INTC': 'Technology',
   'CRM': 'Technology', 'ADBE': 'Technology', 'NOW': 'Technology', 'SHOP': 'Technology',
-  'UBER': 'Technology', 'TSLA': 'Technology', 'AVGO': 'Technology', 'ORCL': 'Technology',
+  'UBER': 'Technology', 'AVGO': 'Technology', 'ORCL': 'Technology',
   'CSCO': 'Technology', 'IBM': 'Technology', 'QCOM': 'Technology', 'TXN': 'Technology',
   'MU': 'Technology', 'AMAT': 'Technology', 'LRCX': 'Technology', 'KLAC': 'Technology',
   'SNPS': 'Technology', 'CDNS': 'Technology', 'PANW': 'Technology', 'CRWD': 'Technology',
   'ZS': 'Technology', 'NET': 'Technology', 'DDOG': 'Technology', 'SNOW': 'Technology',
-  'PLTR': 'Technology', 'U': 'Technology', 'RBLX': 'Technology', 'COIN': 'Technology',
+  'PLTR': 'Technology', 'U': 'Technology', 'RBLX': 'Technology',
   'MSTR': 'Technology', 'DELL': 'Technology', 'HPE': 'Technology', 'HPQ': 'Technology',
   // Financials
   'JPM': 'Financials', 'BAC': 'Financials', 'GS': 'Financials', 'MS': 'Financials',
@@ -80,6 +80,7 @@ const STOCK_SECTORS = {
   'C': 'Financials', 'SCHW': 'Financials', 'BLK': 'Financials', 'SPGI': 'Financials',
   'SQ': 'Financials', 'PYPL': 'Financials', 'COF': 'Financials', 'USB': 'Financials',
   'PNC': 'Financials', 'TFC': 'Financials', 'BK': 'Financials', 'STT': 'Financials',
+  'COIN': 'Financials', 'HOOD': 'Financials', 'SOFI': 'Financials',
   // Healthcare
   'JNJ': 'Healthcare', 'UNH': 'Healthcare', 'PFE': 'Healthcare', 'ABBV': 'Healthcare',
   'MRK': 'Healthcare', 'LLY': 'Healthcare', 'TMO': 'Healthcare', 'ABT': 'Healthcare',
@@ -87,7 +88,7 @@ const STOCK_SECTORS = {
   'CVS': 'Healthcare', 'MDT': 'Healthcare', 'ISRG': 'Healthcare', 'VRTX': 'Healthcare',
   'REGN': 'Healthcare', 'ZTS': 'Healthcare', 'BIIB': 'Healthcare', 'MRNA': 'Healthcare',
   // Consumer Discretionary
-  'AMZN': 'Consumer Discretionary', 'HD': 'Consumer Discretionary', 'MCD': 'Consumer Discretionary',
+  'TSLA': 'Consumer Discretionary', 'AMZN': 'Consumer Discretionary', 'HD': 'Consumer Discretionary', 'MCD': 'Consumer Discretionary',
   'NKE': 'Consumer Discretionary', 'SBUX': 'Consumer Discretionary', 'LOW': 'Consumer Discretionary',
   'TGT': 'Consumer Discretionary', 'TJX': 'Consumer Discretionary', 'BKNG': 'Consumer Discretionary',
   'MAR': 'Consumer Discretionary', 'CMG': 'Consumer Discretionary', 'ABNB': 'Consumer Discretionary',
@@ -136,241 +137,6 @@ const getStockSector = (symbol) => {
   if (!symbol) return null;
   const upperSymbol = symbol.toUpperCase();
   return STOCK_SECTORS[upperSymbol] || null;
-};
-
-// ============================================
-// EARNINGS DATA - Latest quarterly reports
-// ============================================
-const EARNINGS_DATA = {
-  'NVDA': {
-    reportDate: 'November 20, 2024',
-    quarter: 'Q3 FY2025',
-    epsBeat: true,
-    epsActual: '$0.81',
-    epsEstimate: '$0.75',
-    revenueBeat: true,
-    revenueActual: '$35.1B',
-    revenueEstimate: '$33.2B',
-    yoyGrowth: '+94%',
-    highlights: [
-      { type: 'positive', text: 'Data center revenue hit $30.8B, up 112% YoY' },
-      { type: 'positive', text: 'Blackwell architecture ramping faster than expected' },
-      { type: 'positive', text: 'Gross margin expanded to 75%' },
-      { type: 'negative', text: 'Gaming revenue flat at $3.3B' },
-      { type: 'negative', text: 'China revenue declined due to export restrictions' }
-    ],
-    guidance: 'Q4 revenue guidance of $37.5B exceeded expectations',
-    nextEarnings: 'February 26, 2025'
-  },
-  'AAPL': {
-    reportDate: 'October 31, 2024',
-    quarter: 'Q4 FY2024',
-    epsBeat: true,
-    epsActual: '$1.64',
-    epsEstimate: '$1.60',
-    revenueBeat: true,
-    revenueActual: '$94.9B',
-    revenueEstimate: '$94.5B',
-    yoyGrowth: '+6%',
-    highlights: [
-      { type: 'positive', text: 'iPhone revenue grew 6% to $46.2B' },
-      { type: 'positive', text: 'Services hit all-time high of $25B' },
-      { type: 'positive', text: 'Mac revenue surged 21% on M3 demand' },
-      { type: 'negative', text: 'China revenue declined 1% amid competition' },
-      { type: 'negative', text: 'Wearables segment down 3%' }
-    ],
-    guidance: 'Expects low-to-mid single digit growth in Q1',
-    nextEarnings: 'January 30, 2025'
-  },
-  'MSFT': {
-    reportDate: 'October 30, 2024',
-    quarter: 'Q1 FY2025',
-    epsBeat: true,
-    epsActual: '$3.30',
-    epsEstimate: '$3.10',
-    revenueBeat: true,
-    revenueActual: '$65.6B',
-    revenueEstimate: '$64.5B',
-    yoyGrowth: '+16%',
-    highlights: [
-      { type: 'positive', text: 'Azure revenue grew 34%, beating estimates' },
-      { type: 'positive', text: 'AI services contributed 12 points to Azure growth' },
-      { type: 'positive', text: 'Microsoft 365 Commercial grew 15%' },
-      { type: 'negative', text: 'Gaming revenue declined 1% post-Activision' },
-      { type: 'negative', text: 'Devices revenue down 17%' }
-    ],
-    guidance: 'Q2 revenue expected between $68.1-69.1B',
-    nextEarnings: 'January 29, 2025'
-  },
-  'GOOGL': {
-    reportDate: 'October 29, 2024',
-    quarter: 'Q3 2024',
-    epsBeat: true,
-    epsActual: '$2.12',
-    epsEstimate: '$1.84',
-    revenueBeat: true,
-    revenueActual: '$88.3B',
-    revenueEstimate: '$86.3B',
-    yoyGrowth: '+15%',
-    highlights: [
-      { type: 'positive', text: 'Search revenue up 12% to $49.4B' },
-      { type: 'positive', text: 'YouTube ads grew 12% to $8.9B' },
-      { type: 'positive', text: 'Google Cloud hit $11.4B, up 35%' },
-      { type: 'negative', text: 'Network advertising revenue flat' },
-      { type: 'negative', text: 'DOJ antitrust ruling creates uncertainty' }
-    ],
-    guidance: 'Continued investment in AI infrastructure',
-    nextEarnings: 'February 4, 2025'
-  },
-  'META': {
-    reportDate: 'October 30, 2024',
-    quarter: 'Q3 2024',
-    epsBeat: true,
-    epsActual: '$6.03',
-    epsEstimate: '$5.25',
-    revenueBeat: true,
-    revenueActual: '$40.6B',
-    revenueEstimate: '$40.3B',
-    yoyGrowth: '+19%',
-    highlights: [
-      { type: 'positive', text: 'Ad impressions grew 7%, price per ad up 11%' },
-      { type: 'positive', text: 'Family daily active users hit 3.29B' },
-      { type: 'positive', text: 'Operating margin expanded to 43%' },
-      { type: 'negative', text: 'Reality Labs lost $4.4B in Q3' },
-      { type: 'negative', text: '2025 capex guidance raised to $38-40B' }
-    ],
-    guidance: 'Q4 revenue expected $45-48B',
-    nextEarnings: 'January 29, 2025'
-  },
-  'TSLA': {
-    reportDate: 'October 23, 2024',
-    quarter: 'Q3 2024',
-    epsBeat: true,
-    epsActual: '$0.72',
-    epsEstimate: '$0.60',
-    revenueBeat: false,
-    revenueActual: '$25.2B',
-    revenueEstimate: '$25.4B',
-    yoyGrowth: '+8%',
-    highlights: [
-      { type: 'positive', text: 'Automotive gross margin improved to 17.1%' },
-      { type: 'positive', text: 'Energy storage deployed 6.9 GWh, up 75%' },
-      { type: 'positive', text: 'Cybertruck reached profitability' },
-      { type: 'negative', text: 'Auto revenue declined 2% YoY' },
-      { type: 'negative', text: 'Average selling price continues to decline' }
-    ],
-    guidance: 'Expects slight growth in deliveries for 2024',
-    nextEarnings: 'January 29, 2025'
-  },
-  'AMD': {
-    reportDate: 'October 29, 2024',
-    quarter: 'Q3 2024',
-    epsBeat: true,
-    epsActual: '$0.92',
-    epsEstimate: '$0.91',
-    revenueBeat: true,
-    revenueActual: '$6.8B',
-    revenueEstimate: '$6.7B',
-    yoyGrowth: '+18%',
-    highlights: [
-      { type: 'positive', text: 'Data center revenue doubled to $3.5B' },
-      { type: 'positive', text: 'MI300 AI chip demand exceeding supply' },
-      { type: 'positive', text: 'Raised full-year AI revenue to $5B+' },
-      { type: 'negative', text: 'Gaming revenue dropped 69% to $462M' },
-      { type: 'negative', text: 'Embedded revenue down 25%' }
-    ],
-    guidance: 'Q4 revenue expected around $7.5B',
-    nextEarnings: 'February 4, 2025'
-  },
-  'AVGO': {
-    reportDate: 'December 12, 2024',
-    quarter: 'Q4 FY2024',
-    epsBeat: true,
-    epsActual: '$1.42',
-    epsEstimate: '$1.39',
-    revenueBeat: true,
-    revenueActual: '$14.1B',
-    revenueEstimate: '$14.0B',
-    yoyGrowth: '+51%',
-    highlights: [
-      { type: 'positive', text: 'AI revenue exceeded $12B for FY2024' },
-      { type: 'positive', text: 'VMware integration ahead of schedule' },
-      { type: 'positive', text: 'Infrastructure software up 196% YoY' },
-      { type: 'negative', text: 'Non-AI semiconductor demand soft' },
-      { type: 'negative', text: 'Wireless revenue declining' }
-    ],
-    guidance: 'FY2025 AI revenue expected to reach $15B',
-    nextEarnings: 'March 6, 2025'
-  },
-  'AMZN': {
-    reportDate: 'October 31, 2024',
-    quarter: 'Q3 2024',
-    epsBeat: true,
-    epsActual: '$1.43',
-    epsEstimate: '$1.14',
-    revenueBeat: true,
-    revenueActual: '$158.9B',
-    revenueEstimate: '$157.2B',
-    yoyGrowth: '+11%',
-    highlights: [
-      { type: 'positive', text: 'AWS revenue grew 19% to $27.5B' },
-      { type: 'positive', text: 'North America operating margin hit 5.9%' },
-      { type: 'positive', text: 'Advertising revenue up 19% to $14.3B' },
-      { type: 'negative', text: 'International segment still unprofitable' },
-      { type: 'negative', text: 'Prime Day timing affected comparisons' }
-    ],
-    guidance: 'Q4 revenue expected $181.5-188.5B',
-    nextEarnings: 'February 6, 2025'
-  },
-  'JPM': {
-    reportDate: 'October 11, 2024',
-    quarter: 'Q3 2024',
-    epsBeat: true,
-    epsActual: '$4.37',
-    epsEstimate: '$4.01',
-    revenueBeat: true,
-    revenueActual: '$43.3B',
-    revenueEstimate: '$41.9B',
-    yoyGrowth: '+6%',
-    highlights: [
-      { type: 'positive', text: 'Investment banking fees surged 31%' },
-      { type: 'positive', text: 'Credit card spending up 8%' },
-      { type: 'positive', text: 'Net interest income beat expectations' },
-      { type: 'negative', text: 'Credit provisions increased to $3.1B' },
-      { type: 'negative', text: 'Net interest income expected to decline in 2025' }
-    ],
-    guidance: 'NII guidance raised to ~$92.5B for 2024',
-    nextEarnings: 'January 15, 2025'
-  }
-};
-
-// Helper to get earnings data with fallback
-const getEarningsData = (symbol) => {
-  if (EARNINGS_DATA[symbol]) {
-    return EARNINGS_DATA[symbol];
-  }
-  // Generate generic earnings for stocks without specific data
-  const isBeat = Math.random() > 0.4;
-  const revBeat = Math.random() > 0.4;
-  const growth = Math.random() > 0.5;
-  return {
-    reportDate: 'Most Recent Quarter',
-    quarter: 'Latest',
-    epsBeat: isBeat,
-    epsActual: '$' + (Math.random() * 3 + 0.5).toFixed(2),
-    epsEstimate: '$' + (Math.random() * 3 + 0.4).toFixed(2),
-    revenueBeat: revBeat,
-    revenueActual: '$' + (Math.random() * 20 + 5).toFixed(1) + 'B',
-    revenueEstimate: '$' + (Math.random() * 20 + 4).toFixed(1) + 'B',
-    yoyGrowth: (growth ? '+' : '-') + Math.floor(Math.random() * 25 + 3) + '%',
-    highlights: [
-      { type: 'positive', text: 'Core business metrics showing improvement' },
-      { type: 'positive', text: 'Cost efficiency measures taking effect' },
-      { type: 'negative', text: 'Macro headwinds impacting near-term outlook' }
-    ],
-    guidance: 'Management maintaining cautious optimism',
-    nextEarnings: 'Next quarter'
-  };
 };
 
 // ============================================
@@ -1268,75 +1034,6 @@ const StyledIcon = ({ type, size = 'medium' }) => {
 };
 
 // ============================================
-// NEWS DATA GENERATOR - For Fundamental Tab
-// ============================================
-
-const generateStockNews = (symbol) => {
-  const newsData = {
-    NVDA: [
-      { headline: "NVIDIA announces next-gen Blackwell chips with 4x performance gains", source: "Reuters", timeAgo: "2h ago", sentiment: "positive" },
-      { headline: "Data center revenue exceeds expectations in Q3 earnings", source: "CNBC", timeAgo: "5h ago", sentiment: "positive" },
-      { headline: "China export restrictions may impact Q4 guidance", source: "Bloomberg", timeAgo: "8h ago", sentiment: "negative" },
-      { headline: "Analysts raise price targets after AI demand surge", source: "MarketWatch", timeAgo: "1d ago", sentiment: "positive" }
-    ],
-    AAPL: [
-      { headline: "iPhone 16 sales tracking ahead of expectations in China", source: "Reuters", timeAgo: "3h ago", sentiment: "positive" },
-      { headline: "Apple Intelligence features rolling out globally", source: "TechCrunch", timeAgo: "6h ago", sentiment: "positive" },
-      { headline: "Services revenue hits new all-time high", source: "CNBC", timeAgo: "1d ago", sentiment: "positive" },
-      { headline: "EU antitrust fine may impact European operations", source: "Financial Times", timeAgo: "2d ago", sentiment: "negative" }
-    ],
-    TSLA: [
-      { headline: "Cybertruck deliveries accelerate in Q4", source: "Electrek", timeAgo: "4h ago", sentiment: "positive" },
-      { headline: "FSD v13 shows major improvements in safety metrics", source: "TechCrunch", timeAgo: "8h ago", sentiment: "positive" },
-      { headline: "Price cuts in China intensify competition concerns", source: "Bloomberg", timeAgo: "1d ago", sentiment: "negative" },
-      { headline: "Energy storage business grows 50% year-over-year", source: "Reuters", timeAgo: "2d ago", sentiment: "positive" }
-    ],
-    GOOGL: [
-      { headline: "Gemini 2.0 launch positions Google in AI race", source: "The Verge", timeAgo: "2h ago", sentiment: "positive" },
-      { headline: "YouTube ad revenue beats estimates by 8%", source: "CNBC", timeAgo: "6h ago", sentiment: "positive" },
-      { headline: "DOJ antitrust ruling may require Chrome divestiture", source: "WSJ", timeAgo: "1d ago", sentiment: "negative" },
-      { headline: "Cloud division narrows gap with AWS and Azure", source: "Bloomberg", timeAgo: "2d ago", sentiment: "positive" }
-    ],
-    MSFT: [
-      { headline: "Copilot adoption surges across enterprise customers", source: "CNBC", timeAgo: "3h ago", sentiment: "positive" },
-      { headline: "Azure cloud revenue grows 29% year-over-year", source: "Reuters", timeAgo: "6h ago", sentiment: "positive" },
-      { headline: "Gaming division faces continued headwinds", source: "Bloomberg", timeAgo: "1d ago", sentiment: "negative" },
-      { headline: "Microsoft announces new AI partnerships", source: "TechCrunch", timeAgo: "2d ago", sentiment: "positive" }
-    ],
-    META: [
-      { headline: "Reels engagement surpasses TikTok in key markets", source: "WSJ", timeAgo: "2h ago", sentiment: "positive" },
-      { headline: "AI recommendation engine driving record engagement", source: "Reuters", timeAgo: "5h ago", sentiment: "positive" },
-      { headline: "Reality Labs losses continue to mount", source: "Bloomberg", timeAgo: "1d ago", sentiment: "negative" },
-      { headline: "Threads reaches 200 million monthly active users", source: "TechCrunch", timeAgo: "2d ago", sentiment: "positive" }
-    ],
-    AMZN: [
-      { headline: "AWS announces new AI infrastructure investments", source: "Reuters", timeAgo: "3h ago", sentiment: "positive" },
-      { headline: "Prime membership growth accelerates in Q4", source: "CNBC", timeAgo: "7h ago", sentiment: "positive" },
-      { headline: "Labor costs pressure retail margins", source: "Bloomberg", timeAgo: "1d ago", sentiment: "negative" },
-      { headline: "Pharmacy expansion shows promising results", source: "WSJ", timeAgo: "2d ago", sentiment: "positive" }
-    ],
-    AMD: [
-      { headline: "MI300 AI chips gaining traction in data centers", source: "Reuters", timeAgo: "4h ago", sentiment: "positive" },
-      { headline: "Server market share reaches new high vs Intel", source: "CNBC", timeAgo: "8h ago", sentiment: "positive" },
-      { headline: "Cyclical headwinds expected in PC market", source: "Bloomberg", timeAgo: "1d ago", sentiment: "negative" },
-      { headline: "New laptop processors outperform competition", source: "The Verge", timeAgo: "2d ago", sentiment: "positive" }
-    ]
-  };
-
-  if (newsData[symbol]) {
-    return newsData[symbol];
-  }
-
-  // Generic fallback news
-  return [
-    { headline: `${symbol} trading volume spikes amid market volatility`, source: "MarketWatch", timeAgo: "2h ago", sentiment: "neutral" },
-    { headline: `Analysts maintain neutral rating on ${symbol}`, source: "Seeking Alpha", timeAgo: "6h ago", sentiment: "neutral" },
-    { headline: `${symbol} sector shows mixed signals in Q4`, source: "Reuters", timeAgo: "1d ago", sentiment: "neutral" },
-    { headline: `Institutional investors adjust ${symbol} positions`, source: "Bloomberg", timeAgo: "2d ago", sentiment: "neutral" }
-  ];
-};
-
-// ============================================
 // STOCK METRICS COMPONENT (for Asset Detail)
 // ============================================
 
@@ -1680,399 +1377,11 @@ const StockMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors 
                 </div>
               </div>
 
-              {/* NEWS SECTION */}
-              {(() => {
-                const news = generateStockNews(asset.symbol);
-                const sentimentColors = {
-                  positive: { bg: 'rgba(34, 197, 94, 0.1)', border: '#22c55e', dot: '#22c55e' },
-                  negative: { bg: 'rgba(239, 68, 68, 0.1)', border: '#ef4444', dot: '#ef4444' },
-                  neutral: { bg: 'rgba(139, 92, 246, 0.1)', border: '#8b5cf6', dot: '#8b5cf6' }
-                };
-                return (
-                  <div style={{
-                    background: '#161b22',
-                    border: '1px solid #21262d',
-                    borderRadius: '16px',
-                    padding: '20px'
-                  }}>
-                    {/* Header */}
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      marginBottom: '16px'
-                    }}>
-                      <StyledIcon type="news" size="small" />
-                      <h3 style={{
-                        color: '#ffffff',
-                        fontSize: '15px',
-                        fontWeight: '700',
-                        margin: 0
-                      }}>
-                        LATEST NEWS
-                      </h3>
-                      <span style={{
-                        marginLeft: 'auto',
-                        color: '#8b949e',
-                        fontSize: '11px'
-                      }}>
-                        {asset.symbol} related
-                      </span>
-                    </div>
+              {/* NEWS SECTION - Fetches real news with clickable articles */}
+              <FundamentalNews symbol={asset.symbol} />
 
-                    {/* News Items */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {news.slice(0, 4).map((item, index) => {
-                        const colors = sentimentColors[item.sentiment] || sentimentColors.neutral;
-                        return (
-                          <div key={index} style={{
-                            background: colors.bg,
-                            borderLeft: `3px solid ${colors.border}`,
-                            borderRadius: '0 10px 10px 0',
-                            padding: '14px 16px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease'
-                          }}>
-                            {/* Source & Time */}
-                            <div style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              marginBottom: '6px'
-                            }}>
-                              <span style={{
-                                width: '6px',
-                                height: '6px',
-                                borderRadius: '50%',
-                                background: colors.dot
-                              }} />
-                              <span style={{
-                                color: colors.dot,
-                                fontSize: '10px',
-                                fontWeight: '600',
-                                textTransform: 'uppercase'
-                              }}>
-                                {item.source}
-                              </span>
-                              <span style={{
-                                color: '#6b7280',
-                                fontSize: '10px'
-                              }}>
-                                • {item.timeAgo}
-                              </span>
-                            </div>
-                            {/* Headline */}
-                            <h4 style={{
-                              color: '#e6edf3',
-                              fontSize: '13px',
-                              fontWeight: '600',
-                              margin: 0,
-                              lineHeight: '1.4'
-                            }}>
-                              {item.headline}
-                            </h4>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* EARNINGS REPORT SECTION - Only for stocks */}
-              {(() => {
-                const earnings = getEarningsData(asset.symbol);
-                return (
-                  <div style={{
-                    background: '#161b22',
-                    border: '1px solid #21262d',
-                    borderRadius: '16px',
-                    padding: '20px',
-                    marginTop: '20px'
-                  }}>
-                    {/* Header */}
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      marginBottom: '16px'
-                    }}>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '10px'
-                      }}>
-                        <div style={{
-                          width: '32px',
-                          height: '32px',
-                          background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                          borderRadius: '8px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
-                        }}>
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                            <polyline points="14,2 14,8 20,8"/>
-                            <line x1="16" y1="13" x2="8" y2="13"/>
-                            <line x1="16" y1="17" x2="8" y2="17"/>
-                            <line x1="10" y1="9" x2="8" y2="9"/>
-                          </svg>
-                        </div>
-                        <h3 style={{
-                          color: '#ffffff',
-                          fontSize: '15px',
-                          fontWeight: '700',
-                          margin: 0
-                        }}>
-                          LATEST EARNINGS
-                        </h3>
-                      </div>
-
-                      {/* Report Date Badge */}
-                      <div style={{
-                        background: '#8b5cf620',
-                        border: '1px solid #8b5cf640',
-                        borderRadius: '8px',
-                        padding: '6px 12px'
-                      }}>
-                        <span style={{
-                          color: '#a78bfa',
-                          fontSize: '11px',
-                          fontWeight: '600'
-                        }}>
-                          {earnings.reportDate}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Quarter & Beat/Miss Summary */}
-                    <div style={{
-                      display: 'flex',
-                      gap: '12px',
-                      marginBottom: '16px'
-                    }}>
-                      {/* EPS Card */}
-                      <div style={{
-                        flex: 1,
-                        background: '#0d1117',
-                        borderRadius: '10px',
-                        padding: '12px',
-                        borderLeft: `3px solid ${earnings.epsBeat ? '#22c55e' : '#ef4444'}`
-                      }}>
-                        <div style={{
-                          color: '#8b949e',
-                          fontSize: '10px',
-                          fontWeight: '600',
-                          textTransform: 'uppercase',
-                          marginBottom: '4px'
-                        }}>
-                          EPS
-                        </div>
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'baseline',
-                          gap: '6px'
-                        }}>
-                          <span style={{
-                            color: '#ffffff',
-                            fontSize: '18px',
-                            fontWeight: '700'
-                          }}>
-                            {earnings.epsActual}
-                          </span>
-                          <span style={{
-                            color: earnings.epsBeat ? '#22c55e' : '#ef4444',
-                            fontSize: '11px',
-                            fontWeight: '600'
-                          }}>
-                            {earnings.epsBeat ? '✓ BEAT' : '✗ MISS'}
-                          </span>
-                        </div>
-                        <div style={{
-                          color: '#6b7280',
-                          fontSize: '11px',
-                          marginTop: '2px'
-                        }}>
-                          Est: {earnings.epsEstimate}
-                        </div>
-                      </div>
-
-                      {/* Revenue Card */}
-                      <div style={{
-                        flex: 1,
-                        background: '#0d1117',
-                        borderRadius: '10px',
-                        padding: '12px',
-                        borderLeft: `3px solid ${earnings.revenueBeat ? '#22c55e' : '#ef4444'}`
-                      }}>
-                        <div style={{
-                          color: '#8b949e',
-                          fontSize: '10px',
-                          fontWeight: '600',
-                          textTransform: 'uppercase',
-                          marginBottom: '4px'
-                        }}>
-                          Revenue
-                        </div>
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'baseline',
-                          gap: '6px'
-                        }}>
-                          <span style={{
-                            color: '#ffffff',
-                            fontSize: '18px',
-                            fontWeight: '700'
-                          }}>
-                            {earnings.revenueActual}
-                          </span>
-                          <span style={{
-                            color: earnings.revenueBeat ? '#22c55e' : '#ef4444',
-                            fontSize: '11px',
-                            fontWeight: '600'
-                          }}>
-                            {earnings.revenueBeat ? '✓ BEAT' : '✗ MISS'}
-                          </span>
-                        </div>
-                        <div style={{
-                          color: '#6b7280',
-                          fontSize: '11px',
-                          marginTop: '2px'
-                        }}>
-                          Est: {earnings.revenueEstimate}
-                        </div>
-                      </div>
-
-                      {/* YoY Growth Card */}
-                      <div style={{
-                        flex: 1,
-                        background: '#0d1117',
-                        borderRadius: '10px',
-                        padding: '12px',
-                        borderLeft: `3px solid ${earnings.yoyGrowth.startsWith('+') ? '#22c55e' : '#ef4444'}`
-                      }}>
-                        <div style={{
-                          color: '#8b949e',
-                          fontSize: '10px',
-                          fontWeight: '600',
-                          textTransform: 'uppercase',
-                          marginBottom: '4px'
-                        }}>
-                          YoY Growth
-                        </div>
-                        <div style={{
-                          color: earnings.yoyGrowth.startsWith('+') ? '#22c55e' : '#ef4444',
-                          fontSize: '18px',
-                          fontWeight: '700'
-                        }}>
-                          {earnings.yoyGrowth}
-                        </div>
-                        <div style={{
-                          color: '#6b7280',
-                          fontSize: '11px',
-                          marginTop: '2px'
-                        }}>
-                          vs prior year
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Key Highlights */}
-                    <div style={{ marginBottom: '16px' }}>
-                      <div style={{
-                        color: '#8b949e',
-                        fontSize: '11px',
-                        fontWeight: '700',
-                        textTransform: 'uppercase',
-                        marginBottom: '10px'
-                      }}>
-                        Key Highlights
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {earnings.highlights.map((highlight, index) => (
-                          <div
-                            key={index}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'flex-start',
-                              gap: '10px',
-                              padding: '10px 12px',
-                              background: highlight.type === 'positive'
-                                ? 'rgba(34, 197, 94, 0.08)'
-                                : 'rgba(239, 68, 68, 0.08)',
-                              borderRadius: '8px',
-                              borderLeft: `3px solid ${highlight.type === 'positive' ? '#22c55e' : '#ef4444'}`
-                            }}
-                          >
-                            <span style={{
-                              color: highlight.type === 'positive' ? '#22c55e' : '#ef4444',
-                              fontSize: '14px',
-                              lineHeight: 1
-                            }}>
-                              {highlight.type === 'positive' ? '▲' : '▼'}
-                            </span>
-                            <span style={{
-                              color: '#e6edf3',
-                              fontSize: '13px',
-                              lineHeight: '1.4'
-                            }}>
-                              {highlight.text}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Guidance */}
-                    <div style={{
-                      background: '#0d1117',
-                      borderRadius: '10px',
-                      padding: '14px',
-                      borderLeft: '3px solid #f59e0b'
-                    }}>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        marginBottom: '6px'
-                      }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="#f59e0b">
-                          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                        </svg>
-                        <span style={{
-                          color: '#f59e0b',
-                          fontSize: '11px',
-                          fontWeight: '700',
-                          textTransform: 'uppercase'
-                        }}>
-                          Forward Guidance
-                        </span>
-                      </div>
-                      <p style={{
-                        color: '#e6edf3',
-                        fontSize: '13px',
-                        margin: 0,
-                        lineHeight: '1.5'
-                      }}>
-                        {earnings.guidance}
-                      </p>
-                    </div>
-
-                    {/* Next Earnings Date */}
-                    <div style={{
-                      marginTop: '12px',
-                      textAlign: 'center',
-                      color: '#6b7280',
-                      fontSize: '11px'
-                    }}>
-                      📅 Next earnings report: <span style={{ color: '#8b949e' }}>{earnings.nextEarnings}</span>
-                    </div>
-                  </div>
-                );
-              })()}
+              {/* EARNINGS REPORT SECTION - Fetches real data from EODHD API */}
+              <LatestEarningsReport symbol={asset.symbol} />
             </div>
           ) : (
             /* TECHNICAL TAB */
@@ -3885,11 +3194,39 @@ const GamePlan = ({
   onUsePortfolio,
   onStartTraining,
   onSaveTemplate,
+  onReturnToDashboard,
   onBack,
   isLoading,
   colors,
 }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+  const [noteSaved, setNoteSaved] = useState(false);
+
+  // Handle Save to Notes for Snake Draft
+  const handleSaveToNotes = () => {
+    if (!gamePlan) return;
+
+    const noteEntry = {
+      id: `gameplan_${Date.now()}`,
+      content: gamePlan.strategySummary,
+      source: '🎯 Draft Game Plan',
+      timestamp: new Date().toISOString(),
+      type: 'game_plan'
+    };
+
+    // Get existing draft notes
+    const existingNotes = JSON.parse(localStorage.getItem('draftNotes') || '[]');
+
+    // Remove any previous game plan and add new one at top
+    const updatedNotes = [noteEntry, ...existingNotes.filter(n => n.type !== 'game_plan')];
+
+    // Save to localStorage
+    localStorage.setItem('draftNotes', JSON.stringify(updatedNotes));
+
+    // Show confirmation
+    setNoteSaved(true);
+    setTimeout(() => setNoteSaved(false), 3000);
+  };
 
   if (isLoading) {
     return (
@@ -4019,279 +3356,366 @@ const GamePlan = ({
         </p>
       </div>
 
-      {/* Crypto Selection Explanation (if applicable) */}
-      {gamePlan.cryptoSelection && (
+      {/* Crypto Selection Explanation (if applicable) - Classic only */}
+      {!gamePlan.isSnakeDraft && gamePlan.cryptoSelection && (
         <CryptoSelectionExplanation
           cryptoSelection={gamePlan.cryptoSelection}
           portfolioRisk={gamePlan.portfolioRisk}
         />
       )}
 
-      {/* Portfolio Stats Summary */}
-      {(() => {
-        const cryptoAssets = gamePlan.portfolio?.filter(p => p.type === 'crypto') || [];
-        const stockAssets = gamePlan.portfolio?.filter(p => p.type !== 'crypto') || [];
+      {/* SNAKE DRAFT: Show tiered strategy format */}
+      {gamePlan.isSnakeDraft ? (
+        <div style={{ marginBottom: '20px' }}>
+          {/* Tier-based display for Snake Draft */}
+          {[1, 2, 3].map(tier => {
+            const tierAssets = gamePlan.portfolio?.filter(p => p.tier === tier) || [];
+            if (tierAssets.length === 0) return null;
 
-        return (
-          <>
-            {/* Stats Row */}
-            <div style={{
-              display: 'flex',
-              gap: '12px',
-              marginBottom: '20px',
-            }}>
-              <div style={{
-                background: '#0d1117',
-                borderRadius: '12px',
-                padding: '14px 16px',
-                flex: 1,
-                textAlign: 'center',
-                border: '1px solid #21262d',
-              }}>
-                <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase' }}>Stocks</div>
-                <div style={{ color: '#22c55e', fontSize: '22px', fontWeight: '700' }}>{stockAssets.length}</div>
-              </div>
-              <div style={{
-                background: '#0d1117',
-                borderRadius: '12px',
-                padding: '14px 16px',
-                flex: 1,
-                textAlign: 'center',
-                border: '1px solid #21262d',
-              }}>
-                <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase' }}>Crypto</div>
-                <div style={{ color: '#f59e0b', fontSize: '22px', fontWeight: '700' }}>{cryptoAssets.length}</div>
-              </div>
-              <div style={{
-                background: '#0d1117',
-                borderRadius: '12px',
-                padding: '14px 16px',
-                flex: 1,
-                textAlign: 'center',
-                border: '1px solid #21262d',
-              }}>
-                <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase' }}>Total</div>
-                <div style={{ color: c.cyan, fontSize: '22px', fontWeight: '700' }}>{gamePlan.portfolio?.length || 0}</div>
-              </div>
-            </div>
+            const tierConfig = {
+              1: { label: '🔥 TIER 1 - Draft ASAP (Rounds 1-3)', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' },
+              2: { label: '⚡ TIER 2 - Strong Alternatives (Rounds 4-6)', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' },
+              3: { label: '📋 TIER 3 - Category Fillers (Rounds 7-9)', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)' }
+            };
 
-            {/* Crypto Section */}
-            {cryptoAssets.length > 0 && (
-              <div style={{ marginBottom: '20px' }}>
+            const config = tierConfig[tier];
+
+            return (
+              <div key={tier} style={{ marginBottom: '16px' }}>
                 <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  marginBottom: '12px',
+                  background: config.bg,
+                  border: `1px solid ${config.color}40`,
+                  borderRadius: '12px',
+                  padding: '14px 16px',
+                  marginBottom: '8px'
                 }}>
-                  <div style={{
-                    width: '28px',
-                    height: '28px',
-                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                    borderRadius: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
-                  }}>
-                    <span style={{ color: '#fff', fontSize: '14px', fontWeight: '700' }}>₿</span>
+                  <div style={{ color: config.color, fontSize: '13px', fontWeight: '700' }}>
+                    {config.label}
                   </div>
-                  <span style={{
-                    color: '#f59e0b',
-                    fontSize: '12px',
-                    fontWeight: '700',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                  }}>
-                    {gamePlan.isSnakeDraft ? 'Crypto Draft Targets' : 'Crypto Holdings'}
-                  </span>
                 </div>
                 <div style={{
                   background: '#0d1117',
                   borderRadius: '12px',
-                  overflow: 'hidden',
-                  border: '1px solid rgba(245, 158, 11, 0.2)',
+                  border: '1px solid #21262d',
+                  overflow: 'hidden'
                 }}>
-                  {cryptoAssets.map((position, index) => (
-                    <div
-                      key={position.symbol}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '14px 16px',
-                        borderBottom: index < cryptoAssets.length - 1 ? '1px solid #21262d' : 'none',
-                        borderLeft: '3px solid #f59e0b',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{
-                          width: '36px',
-                          height: '36px',
-                          background: 'linear-gradient(135deg, #f59e0b20 0%, #d9770620 100%)',
-                          borderRadius: '10px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          border: '1px solid rgba(245, 158, 11, 0.3)',
-                        }}>
-                          <span style={{ color: '#f59e0b', fontSize: '12px', fontWeight: '800' }}>
-                            {position.symbol.slice(0, 2)}
-                          </span>
+                  {tierAssets.map((asset, idx) => (
+                    <div key={asset.symbol} style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '12px 16px',
+                      borderBottom: idx < tierAssets.length - 1 ? '1px solid #21262d' : 'none',
+                      borderLeft: `3px solid ${config.color}`
+                    }}>
+                      <div>
+                        <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
+                          {asset.symbol}
                         </div>
-                        <div>
-                          <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
-                            {position.symbol}
-                          </div>
-                          {gamePlan.isSnakeDraft ? (
-                            <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
-                              {position.roundRationale || 'Draft when available'}
-                            </div>
-                          ) : position.rationale && (
-                            <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
-                              {position.rationale}
-                            </div>
-                          )}
+                        <div style={{ color: '#8b949e', fontSize: '11px' }}>
+                          {asset.tierRationale || asset.rationale || 'Strategic pick'}
                         </div>
                       </div>
-                      {gamePlan.isSnakeDraft ? (
-                        <div style={{
-                          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                          borderRadius: '8px',
-                          padding: '6px 12px',
-                          color: '#fff',
-                          fontWeight: '700',
-                          fontSize: '12px',
-                          textTransform: 'uppercase',
-                        }}>
-                          {position.roundLabel || `R${position.draftRound}`}
+                      <div style={{
+                        background: `${config.color}20`,
+                        border: `1px solid ${config.color}40`,
+                        borderRadius: '6px',
+                        padding: '4px 10px',
+                        color: config.color,
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        textTransform: 'uppercase'
+                      }}>
+                        {asset.type === 'crypto' ? 'Crypto' : 'Stock'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Draft Tips Box */}
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.1), rgba(99, 102, 241, 0.1))',
+            borderRadius: '12px',
+            padding: '16px',
+            border: '1px solid rgba(0, 217, 255, 0.2)',
+            marginTop: '16px'
+          }}>
+            <div style={{ color: c.cyan, fontSize: '12px', fontWeight: '700', marginBottom: '10px' }}>
+              💡 DRAFT TIPS
+            </div>
+            <ul style={{ color: '#c9d1d9', fontSize: '12px', margin: 0, paddingLeft: '20px', lineHeight: '1.8' }}>
+              <li>Track your category counts - you MUST have 3 Steady, 3 Risky, 3 Defensive</li>
+              <li>If picking late in a round, pivot to best available</li>
+              <li>Watch what opponents pick - adjust on the fly</li>
+            </ul>
+          </div>
+
+          {/* Category Tracker */}
+          <div style={{
+            display: 'flex',
+            gap: '10px',
+            marginTop: '12px',
+            justifyContent: 'center'
+          }}>
+            {[
+              { label: 'Steady', count: '0/3', color: '#22c55e' },
+              { label: 'Risky', count: '0/3', color: '#f59e0b' },
+              { label: 'Defensive', count: '0/3', color: '#3b82f6' }
+            ].map(cat => (
+              <div key={cat.label} style={{
+                background: '#0d1117',
+                border: `1px solid ${cat.color}40`,
+                borderRadius: '8px',
+                padding: '8px 14px',
+                textAlign: 'center'
+              }}>
+                <div style={{ color: cat.color, fontSize: '10px', fontWeight: '600', textTransform: 'uppercase' }}>
+                  {cat.label}
+                </div>
+                <div style={{ color: '#e6edf3', fontSize: '14px', fontWeight: '700' }}>
+                  {cat.count}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        /* CLASSIC MODE: Show allocation-based portfolio */
+        <>
+          {/* Portfolio Stats Summary */}
+          {(() => {
+            const cryptoAssets = gamePlan.portfolio?.filter(p => p.type === 'crypto') || [];
+            const stockAssets = gamePlan.portfolio?.filter(p => p.type !== 'crypto') || [];
+
+            return (
+              <>
+                {/* Stats Row */}
+                <div style={{
+                  display: 'flex',
+                  gap: '12px',
+                  marginBottom: '20px',
+                }}>
+                  <div style={{
+                    background: '#0d1117',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    flex: 1,
+                    textAlign: 'center',
+                    border: '1px solid #21262d',
+                  }}>
+                    <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase' }}>Stocks</div>
+                    <div style={{ color: '#22c55e', fontSize: '22px', fontWeight: '700' }}>{stockAssets.length}</div>
+                  </div>
+                  <div style={{
+                    background: '#0d1117',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    flex: 1,
+                    textAlign: 'center',
+                    border: '1px solid #21262d',
+                  }}>
+                    <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase' }}>Crypto</div>
+                    <div style={{ color: '#f59e0b', fontSize: '22px', fontWeight: '700' }}>{cryptoAssets.length}</div>
+                  </div>
+                  <div style={{
+                    background: '#0d1117',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    flex: 1,
+                    textAlign: 'center',
+                    border: '1px solid #21262d',
+                  }}>
+                    <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase' }}>Total</div>
+                    <div style={{ color: c.cyan, fontSize: '22px', fontWeight: '700' }}>{gamePlan.portfolio?.length || 0}</div>
+                  </div>
+                </div>
+
+                {/* Crypto Section */}
+                {cryptoAssets.length > 0 && (
+                  <div style={{ marginBottom: '20px' }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      marginBottom: '12px',
+                    }}>
+                      <div style={{
+                        width: '28px',
+                        height: '28px',
+                        background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
+                      }}>
+                        <span style={{ color: '#fff', fontSize: '14px', fontWeight: '700' }}>₿</span>
+                      </div>
+                      <span style={{
+                        color: '#f59e0b',
+                        fontSize: '12px',
+                        fontWeight: '700',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}>
+                        Crypto Holdings
+                      </span>
+                    </div>
+                    <div style={{
+                      background: '#0d1117',
+                      borderRadius: '12px',
+                      overflow: 'hidden',
+                      border: '1px solid rgba(245, 158, 11, 0.2)',
+                    }}>
+                      {cryptoAssets.map((position, index) => (
+                        <div
+                          key={position.symbol}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '14px 16px',
+                            borderBottom: index < cryptoAssets.length - 1 ? '1px solid #21262d' : 'none',
+                            borderLeft: '3px solid #f59e0b',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{
+                              width: '36px',
+                              height: '36px',
+                              background: 'linear-gradient(135deg, #f59e0b20 0%, #d9770620 100%)',
+                              borderRadius: '10px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              border: '1px solid rgba(245, 158, 11, 0.3)',
+                            }}>
+                              <span style={{ color: '#f59e0b', fontSize: '12px', fontWeight: '800' }}>
+                                {position.symbol.slice(0, 2)}
+                              </span>
+                            </div>
+                            <div>
+                              <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
+                                {position.symbol}
+                              </div>
+                              {position.rationale && (
+                                <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
+                                  {position.rationale}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{
+                            color: '#f59e0b',
+                            fontWeight: '700',
+                            fontSize: '17px',
+                          }}>
+                            {safeToFixed(position.allocation, 1)}%
+                          </div>
                         </div>
-                      ) : (
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Stock Section */}
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    marginBottom: '12px',
+                  }}>
+                    <div style={{
+                      width: '28px',
+                      height: '28px',
+                      background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 2px 8px rgba(34, 197, 94, 0.3)',
+                    }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
+                        <path d="M3 17l6-6 4 4 8-8M17 7h4v4"/>
+                      </svg>
+                    </div>
+                    <span style={{
+                      color: '#22c55e',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                    }}>
+                      Stock Holdings
+                    </span>
+                  </div>
+                  <div style={{
+                    background: '#0d1117',
+                    borderRadius: '12px',
+                    overflow: 'hidden',
+                    border: '1px solid rgba(34, 197, 94, 0.2)',
+                  }}>
+                    {stockAssets.map((position, index) => (
+                      <div
+                        key={position.symbol}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '14px 16px',
+                          borderBottom: index < stockAssets.length - 1 ? '1px solid #21262d' : 'none',
+                          borderLeft: '3px solid #22c55e',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{
+                            width: '36px',
+                            height: '36px',
+                            background: 'linear-gradient(135deg, #22c55e20 0%, #16a34a20 100%)',
+                            borderRadius: '10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            border: '1px solid rgba(34, 197, 94, 0.3)',
+                          }}>
+                            <span style={{ color: '#22c55e', fontSize: '12px', fontWeight: '800' }}>
+                              {position.symbol.slice(0, 2)}
+                            </span>
+                          </div>
+                          <div>
+                            <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
+                              {position.symbol}
+                            </div>
+                            {position.rationale && (
+                              <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
+                                {position.rationale}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                         <div style={{
-                          color: '#f59e0b',
+                          color: '#22c55e',
                           fontWeight: '700',
                           fontSize: '17px',
                         }}>
                           {safeToFixed(position.allocation, 1)}%
                         </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Stock Section */}
-            <div style={{ marginBottom: '20px' }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                marginBottom: '12px',
-              }}>
-                <div style={{
-                  width: '28px',
-                  height: '28px',
-                  background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                  borderRadius: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 2px 8px rgba(34, 197, 94, 0.3)',
-                }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
-                    <path d="M3 17l6-6 4 4 8-8M17 7h4v4"/>
-                  </svg>
-                </div>
-                <span style={{
-                  color: '#22c55e',
-                  fontSize: '12px',
-                  fontWeight: '700',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                }}>
-                  {gamePlan.isSnakeDraft ? 'Stock Draft Board' : 'Stock Holdings'}
-                </span>
-              </div>
-              <div style={{
-                background: '#0d1117',
-                borderRadius: '12px',
-                overflow: 'hidden',
-                border: '1px solid rgba(34, 197, 94, 0.2)',
-              }}>
-                {stockAssets.map((position, index) => (
-                  <div
-                    key={position.symbol}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '14px 16px',
-                      borderBottom: index < stockAssets.length - 1 ? '1px solid #21262d' : 'none',
-                      borderLeft: '3px solid #22c55e',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{
-                        width: '36px',
-                        height: '36px',
-                        background: 'linear-gradient(135deg, #22c55e20 0%, #16a34a20 100%)',
-                        borderRadius: '10px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        border: '1px solid rgba(34, 197, 94, 0.3)',
-                      }}>
-                        <span style={{ color: '#22c55e', fontSize: '12px', fontWeight: '800' }}>
-                          {position.symbol.slice(0, 2)}
-                        </span>
                       </div>
-                      <div>
-                        <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
-                          {position.symbol}
-                        </div>
-                        {gamePlan.isSnakeDraft ? (
-                          <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
-                            {position.roundRationale || 'Draft when available'}
-                          </div>
-                        ) : position.rationale && (
-                          <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
-                            {position.rationale}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    {gamePlan.isSnakeDraft ? (
-                      <div style={{
-                        background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                        borderRadius: '8px',
-                        padding: '6px 12px',
-                        color: '#fff',
-                        fontWeight: '700',
-                        fontSize: '12px',
-                        textTransform: 'uppercase',
-                      }}>
-                        {position.roundLabel || `R${position.draftRound}`}
-                      </div>
-                    ) : (
-                      <div style={{
-                        color: '#22c55e',
-                        fontWeight: '700',
-                        fontSize: '17px',
-                      }}>
-                        {safeToFixed(position.allocation, 1)}%
-                      </div>
-                    )}
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
-          </>
-        );
-      })()}
+                </div>
+              </>
+            );
+          })()}
+        </>
+      )}
 
-      {/* Insight Connections */}
-      {gamePlan.insightConnections && (
+      {/* Insight Connections - Classic only */}
+      {!gamePlan.isSnakeDraft && gamePlan.insightConnections && (
         <div style={{
           background: '#1a1f2e',
           borderRadius: '12px',
@@ -4339,9 +3763,9 @@ const GamePlan = ({
 
       {/* Action Buttons */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {/* Primary: Start Training Battle */}
+        {/* Primary: Return to Dashboard */}
         <button
-          onClick={() => onStartTraining ? onStartTraining(gamePlan.portfolio) : onUsePortfolio(gamePlan.portfolio)}
+          onClick={() => onReturnToDashboard ? onReturnToDashboard() : (onStartTraining ? onStartTraining(gamePlan.portfolio) : onUsePortfolio(gamePlan.portfolio))}
           style={{
             width: '100%',
             background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
@@ -4362,14 +3786,15 @@ const GamePlan = ({
             gap: '8px',
           }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
-              <polygon points="5,3 19,12 5,21" fill="#ffffff"/>
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9,22 9,12 15,12 15,22"/>
             </svg>
             <span style={{
               color: '#ffffff',
               fontSize: '16px',
               fontWeight: '700',
             }}>
-              Start Training Battle
+              Return to Dashboard
             </span>
           </div>
           <span style={{
@@ -4377,39 +3802,68 @@ const GamePlan = ({
             fontSize: '12px',
             fontWeight: '500',
           }}>
-            Test this portfolio in a practice game
+            Ready to start drafting!
           </span>
         </button>
 
-        {/* Secondary: Save as Template */}
-        <button
-          onClick={() => onSaveTemplate ? onSaveTemplate(gamePlan) : null}
-          style={{
-            width: '100%',
-            background: 'transparent',
-            border: '2px solid #8b5cf6',
-            borderRadius: '12px',
-            padding: '14px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-          }}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2">
-            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
-            <polyline points="17,21 17,13 7,13 7,21"/>
-            <polyline points="7,3 7,8 15,8"/>
-          </svg>
-          <span style={{
-            color: '#8b5cf6',
-            fontSize: '14px',
-            fontWeight: '600',
-          }}>
-            Save as Template
-          </span>
-        </button>
+        {/* Secondary: Save to Notes (Snake Draft) or Save as Template (Classic) */}
+        {gamePlan.isSnakeDraft ? (
+          <button
+            onClick={handleSaveToNotes}
+            disabled={noteSaved}
+            style={{
+              width: '100%',
+              background: noteSaved ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'transparent',
+              border: noteSaved ? 'none' : '2px solid #10b981',
+              borderRadius: '12px',
+              padding: '14px',
+              cursor: noteSaved ? 'default' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              transition: 'all 0.3s ease',
+            }}
+          >
+            <span style={{ fontSize: '18px' }}>{noteSaved ? '✅' : '📝'}</span>
+            <span style={{
+              color: noteSaved ? '#ffffff' : '#10b981',
+              fontSize: '14px',
+              fontWeight: '600',
+            }}>
+              {noteSaved ? 'Saved to Notes!' : 'Save to Notes'}
+            </span>
+          </button>
+        ) : (
+          <button
+            onClick={() => onSaveTemplate ? onSaveTemplate(gamePlan) : null}
+            style={{
+              width: '100%',
+              background: 'transparent',
+              border: '2px solid #8b5cf6',
+              borderRadius: '12px',
+              padding: '14px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2">
+              <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+              <polyline points="17,21 17,13 7,13 7,21"/>
+              <polyline points="7,3 7,8 15,8"/>
+            </svg>
+            <span style={{
+              color: '#8b5cf6',
+              fontSize: '14px',
+              fontWeight: '600',
+            }}>
+              Save as Template
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -4419,45 +3873,256 @@ const GamePlan = ({
 // NEWS COMPONENTS FOR MARKET BRIEFING
 // ============================================
 
+// Predefined stock list for watchlist search
+const SEARCHABLE_STOCKS = [
+  // Tech
+  { symbol: 'AAPL', name: 'Apple Inc.', sector: 'Tech' },
+  { symbol: 'MSFT', name: 'Microsoft Corporation', sector: 'Tech' },
+  { symbol: 'GOOGL', name: 'Alphabet Inc.', sector: 'Tech' },
+  { symbol: 'AMZN', name: 'Amazon.com Inc.', sector: 'Tech' },
+  { symbol: 'NVDA', name: 'NVIDIA Corporation', sector: 'Tech' },
+  { symbol: 'META', name: 'Meta Platforms Inc.', sector: 'Tech' },
+  { symbol: 'TSLA', name: 'Tesla Inc.', sector: 'Tech' },
+  { symbol: 'AMD', name: 'Advanced Micro Devices', sector: 'Tech' },
+  { symbol: 'NFLX', name: 'Netflix Inc.', sector: 'Tech' },
+  { symbol: 'CRM', name: 'Salesforce Inc.', sector: 'Tech' },
+  { symbol: 'ADBE', name: 'Adobe Inc.', sector: 'Tech' },
+  { symbol: 'INTC', name: 'Intel Corporation', sector: 'Tech' },
+  { symbol: 'ORCL', name: 'Oracle Corporation', sector: 'Tech' },
+  { symbol: 'CSCO', name: 'Cisco Systems', sector: 'Tech' },
+  { symbol: 'AVGO', name: 'Broadcom Inc.', sector: 'Tech' },
+  { symbol: 'QCOM', name: 'Qualcomm Inc.', sector: 'Tech' },
+  { symbol: 'IBM', name: 'IBM Corporation', sector: 'Tech' },
+  { symbol: 'NOW', name: 'ServiceNow Inc.', sector: 'Tech' },
+  { symbol: 'UBER', name: 'Uber Technologies', sector: 'Tech' },
+  { symbol: 'SNAP', name: 'Snap Inc.', sector: 'Tech' },
+  { symbol: 'SQ', name: 'Block Inc.', sector: 'Tech' },
+  { symbol: 'SHOP', name: 'Shopify Inc.', sector: 'Tech' },
+  { symbol: 'PLTR', name: 'Palantir Technologies', sector: 'Tech' },
+  // Finance
+  { symbol: 'JPM', name: 'JPMorgan Chase', sector: 'Finance' },
+  { symbol: 'BAC', name: 'Bank of America', sector: 'Finance' },
+  { symbol: 'GS', name: 'Goldman Sachs', sector: 'Finance' },
+  { symbol: 'V', name: 'Visa Inc.', sector: 'Finance' },
+  { symbol: 'MA', name: 'Mastercard Inc.', sector: 'Finance' },
+  { symbol: 'WFC', name: 'Wells Fargo', sector: 'Finance' },
+  { symbol: 'C', name: 'Citigroup Inc.', sector: 'Finance' },
+  { symbol: 'AXP', name: 'American Express', sector: 'Finance' },
+  { symbol: 'MS', name: 'Morgan Stanley', sector: 'Finance' },
+  { symbol: 'BLK', name: 'BlackRock Inc.', sector: 'Finance' },
+  { symbol: 'PYPL', name: 'PayPal Holdings', sector: 'Finance' },
+  // Healthcare
+  { symbol: 'JNJ', name: 'Johnson & Johnson', sector: 'Healthcare' },
+  { symbol: 'UNH', name: 'UnitedHealth Group', sector: 'Healthcare' },
+  { symbol: 'PFE', name: 'Pfizer Inc.', sector: 'Healthcare' },
+  { symbol: 'MRK', name: 'Merck & Co.', sector: 'Healthcare' },
+  { symbol: 'ABBV', name: 'AbbVie Inc.', sector: 'Healthcare' },
+  { symbol: 'LLY', name: 'Eli Lilly', sector: 'Healthcare' },
+  { symbol: 'TMO', name: 'Thermo Fisher', sector: 'Healthcare' },
+  { symbol: 'BMY', name: 'Bristol-Myers Squibb', sector: 'Healthcare' },
+  { symbol: 'MRNA', name: 'Moderna Inc.', sector: 'Healthcare' },
+  // Consumer
+  { symbol: 'WMT', name: 'Walmart Inc.', sector: 'Consumer' },
+  { symbol: 'HD', name: 'Home Depot', sector: 'Consumer' },
+  { symbol: 'MCD', name: "McDonald's Corp.", sector: 'Consumer' },
+  { symbol: 'NKE', name: 'Nike Inc.', sector: 'Consumer' },
+  { symbol: 'SBUX', name: 'Starbucks Corp.', sector: 'Consumer' },
+  { symbol: 'TGT', name: 'Target Corporation', sector: 'Consumer' },
+  { symbol: 'COST', name: 'Costco Wholesale', sector: 'Consumer' },
+  { symbol: 'LOW', name: "Lowe's Companies", sector: 'Consumer' },
+  { symbol: 'DIS', name: 'Walt Disney Co.', sector: 'Consumer' },
+  { symbol: 'KO', name: 'Coca-Cola Co.', sector: 'Consumer' },
+  { symbol: 'PEP', name: 'PepsiCo Inc.', sector: 'Consumer' },
+  // Energy
+  { symbol: 'XOM', name: 'Exxon Mobil', sector: 'Energy' },
+  { symbol: 'CVX', name: 'Chevron Corp.', sector: 'Energy' },
+  { symbol: 'COP', name: 'ConocoPhillips', sector: 'Energy' },
+  { symbol: 'OXY', name: 'Occidental Petroleum', sector: 'Energy' },
+  // Industrial
+  { symbol: 'BA', name: 'Boeing Co.', sector: 'Industrial' },
+  { symbol: 'CAT', name: 'Caterpillar Inc.', sector: 'Industrial' },
+  { symbol: 'UPS', name: 'United Parcel Service', sector: 'Industrial' },
+  { symbol: 'HON', name: 'Honeywell International', sector: 'Industrial' },
+  { symbol: 'GE', name: 'General Electric', sector: 'Industrial' },
+  // Crypto (note: these are crypto but we'll include them)
+  { symbol: 'BTC', name: 'Bitcoin', sector: 'Crypto' },
+  { symbol: 'ETH', name: 'Ethereum', sector: 'Crypto' },
+  { symbol: 'SOL', name: 'Solana', sector: 'Crypto' },
+];
+
+const POPULAR_SUGGESTIONS = ['AAPL', 'NVDA', 'TSLA', 'GOOGL', 'MSFT', 'AMZN', 'META'];
+
 /**
- * TopNewsStories - Displays dynamic news headlines
- * Replaces the static Sector Snapshot
+ * WatchlistNews - Displays personalized news for user's watchlist stocks
+ * Shows news about stocks the user has shown interest in
  */
-const TopNewsStories = ({ news, isLoading, colors }) => {
+const WatchlistNews = ({ colors }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
 
-  if (isLoading) {
-    return (
-      <div style={{
-        background: '#1a1f2e',
-        borderRadius: '12px',
-        padding: '16px',
-        marginBottom: '16px',
-        border: '1px solid #2d3548',
-      }}>
-        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px' }}>
-          Top News Stories
-        </h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {[1, 2, 3].map(i => (
-            <div key={i} style={{
-              background: '#161b22',
-              borderRadius: '8px',
-              padding: '12px',
-              animation: 'pulse 1.5s ease-in-out infinite',
-            }}>
-              <div style={{ height: '14px', background: '#2d3548', borderRadius: '4px', width: '80%', marginBottom: '8px' }} />
-              <div style={{ height: '12px', background: '#2d3548', borderRadius: '4px', width: '40%' }} />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
+  const [watchlistNews, setWatchlistNews] = useState([]);
+  const [watchlistSymbols, setWatchlistSymbols] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasWatchlist, setHasWatchlist] = useState(true);
 
-  if (!news || news.length === 0) {
+  // Modal state
+  const [showManageModal, setShowManageModal] = useState(false);
+  const [editableWatchlist, setEditableWatchlist] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Default popular stocks as fallback
+  const DEFAULT_WATCHLIST = ['AAPL', 'NVDA', 'TSLA', 'GOOGL', 'MSFT', 'AMZN'];
+
+  // LocalStorage key for custom watchlist
+  const WATCHLIST_STORAGE_KEY = 'user_watchlist';
+
+  // Get custom watchlist from localStorage
+  const getCustomWatchlist = () => {
+    try {
+      const saved = localStorage.getItem(WATCHLIST_STORAGE_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.warn('[Watchlist] Error reading custom watchlist:', e);
+    }
     return null;
-  }
+  };
+
+  // Save custom watchlist to localStorage
+  const saveCustomWatchlist = (symbols) => {
+    try {
+      localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(symbols));
+      console.log('[Watchlist] Saved custom watchlist:', symbols);
+    } catch (e) {
+      console.warn('[Watchlist] Error saving custom watchlist:', e);
+    }
+  };
+
+  // Get watchlist symbols from various sources
+  const getWatchlistSymbols = () => {
+    // First check for custom watchlist
+    const customWatchlist = getCustomWatchlist();
+    if (customWatchlist && customWatchlist.length > 0) {
+      console.log('[Watchlist] Using custom watchlist:', customWatchlist);
+      setHasWatchlist(true);
+      return customWatchlist.slice(0, 8);
+    }
+
+    const symbols = new Set();
+
+    // 1. Check portfolio templates (user's saved portfolios)
+    try {
+      const templates = JSON.parse(localStorage.getItem('portfolio_templates') || '[]');
+      templates.forEach(template => {
+        if (template.assets) {
+          template.assets.forEach(asset => {
+            if (asset.symbol && asset.type !== 'crypto') {
+              symbols.add(asset.symbol.toUpperCase());
+            }
+          });
+        }
+      });
+    } catch (e) {
+      console.warn('[Watchlist] Error reading portfolio templates:', e);
+    }
+
+    // 2. Check for user-specific portfolio templates
+    try {
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key.startsWith('portfolioTemplates_')) {
+          const userTemplates = JSON.parse(localStorage.getItem(key) || '[]');
+          userTemplates.forEach(template => {
+            if (template.assets) {
+              template.assets.forEach(asset => {
+                if (asset.symbol && asset.type !== 'crypto') {
+                  symbols.add(asset.symbol.toUpperCase());
+                }
+              });
+            }
+          });
+        }
+      });
+    } catch (e) {
+      console.warn('[Watchlist] Error reading user portfolio templates:', e);
+    }
+
+    // 3. Check recent battle data for stocks user has picked
+    try {
+      const battles = JSON.parse(localStorage.getItem('portfolioDuelBattles') || '[]');
+      battles.slice(0, 5).forEach(battle => {
+        if (battle.player1?.portfolio) {
+          battle.player1.portfolio.forEach(asset => {
+            if (asset.symbol && asset.type !== 'crypto') {
+              symbols.add(asset.symbol.toUpperCase());
+            }
+          });
+        }
+      });
+    } catch (e) {
+      console.warn('[Watchlist] Error reading battle data:', e);
+    }
+
+    const symbolArray = Array.from(symbols);
+    console.log('[Watchlist] Found user symbols:', symbolArray);
+
+    // If no user symbols found, use defaults
+    if (symbolArray.length === 0) {
+      setHasWatchlist(false);
+      return DEFAULT_WATCHLIST;
+    }
+
+    setHasWatchlist(true);
+    return symbolArray.slice(0, 8);
+  };
+
+  // Fetch news for watchlist symbols
+  useEffect(() => {
+    const fetchWatchlistNews = async () => {
+      setIsLoading(true);
+
+      try {
+        const symbols = getWatchlistSymbols();
+        setWatchlistSymbols(symbols);
+        console.log('[Watchlist] Fetching news for:', symbols);
+
+        // Fetch news for all symbols
+        const newsMap = await getMultipleStockNews(symbols, 2);
+        console.log('[Watchlist] News received:', Object.keys(newsMap));
+
+        // Flatten and dedupe news items, attach symbol info
+        const allNews = [];
+        const seenTitles = new Set();
+
+        symbols.forEach(symbol => {
+          const symbolNews = newsMap[symbol] || [];
+          symbolNews.forEach(item => {
+            // Dedupe by title
+            if (!seenTitles.has(item.title)) {
+              seenTitles.add(item.title);
+              allNews.push({
+                ...item,
+                watchlistSymbol: symbol, // Track which watchlist symbol this is for
+              });
+            }
+          });
+        });
+
+        // Sort by date (most recent first) and take top 5
+        allNews.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+        setWatchlistNews(allNews.slice(0, 5));
+
+      } catch (err) {
+        console.warn('[Watchlist] Failed to fetch news:', err);
+        setWatchlistNews([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchWatchlistNews();
+  }, [refreshKey]);
 
   // Format time ago
   const getTimeAgo = (dateStr) => {
@@ -4472,6 +4137,444 @@ const TopNewsStories = ({ news, isLoading, colors }) => {
     return `${Math.floor(diffHours / 24)}d ago`;
   };
 
+  // Get display source (clean up source name)
+  const getDisplaySource = (item) => {
+    const source = item.source;
+    if (!source || source === 'Unknown' || source.toLowerCase() === 'unknown') {
+      if (item.url) {
+        try {
+          const hostname = new URL(item.url).hostname.replace('www.', '');
+          const parts = hostname.split('.');
+          if (parts.length >= 2) {
+            const name = parts[parts.length - 2];
+            return name.charAt(0).toUpperCase() + name.slice(1);
+          }
+        } catch {
+          return 'News';
+        }
+      }
+      return 'News';
+    }
+    return source;
+  };
+
+  // Open manage modal
+  const openManageModal = () => {
+    // Initialize editable list with current watchlist
+    const customWatchlist = getCustomWatchlist();
+    if (customWatchlist && customWatchlist.length > 0) {
+      setEditableWatchlist([...customWatchlist]);
+    } else {
+      setEditableWatchlist([...watchlistSymbols]);
+    }
+    setSearchQuery('');
+    setShowManageModal(true);
+  };
+
+  // Close manage modal and refresh
+  const closeManageModal = (shouldSave = true) => {
+    if (shouldSave && editableWatchlist.length > 0) {
+      saveCustomWatchlist(editableWatchlist);
+      setRefreshKey(prev => prev + 1); // Trigger news refresh
+    }
+    setShowManageModal(false);
+    setSearchQuery('');
+  };
+
+  // Remove stock from editable watchlist
+  const removeFromWatchlist = (symbol) => {
+    setEditableWatchlist(prev => prev.filter(s => s !== symbol));
+  };
+
+  // Add stock to editable watchlist
+  const addToWatchlist = (symbol) => {
+    if (!editableWatchlist.includes(symbol) && editableWatchlist.length < 12) {
+      setEditableWatchlist(prev => [...prev, symbol]);
+      setSearchQuery('');
+    }
+  };
+
+  // Filter stocks based on search
+  const getFilteredStocks = () => {
+    if (!searchQuery.trim()) return [];
+    const query = searchQuery.toLowerCase();
+    return SEARCHABLE_STOCKS
+      .filter(stock =>
+        !editableWatchlist.includes(stock.symbol) &&
+        (stock.symbol.toLowerCase().includes(query) ||
+         stock.name.toLowerCase().includes(query))
+      )
+      .slice(0, 6);
+  };
+
+  // Render edit button
+  const renderEditButton = () => (
+    <button
+      onClick={openManageModal}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        cursor: 'pointer',
+        padding: '4px',
+        display: 'flex',
+        alignItems: 'center',
+        marginLeft: 'auto',
+      }}
+      title="Manage Watchlist"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6e7681" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </svg>
+    </button>
+  );
+
+  // Render manage modal
+  const renderManageModal = () => {
+    if (!showManageModal) return null;
+
+    const filteredStocks = getFilteredStocks();
+
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000,
+          padding: '20px',
+          animation: 'fadeIn 0.2s ease-out',
+        }}
+        onClick={() => closeManageModal(true)}
+      >
+        <style>{`
+          @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+          @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+          }
+        `}</style>
+        <div
+          style={{
+            background: '#1a1f2e',
+            borderRadius: '16px',
+            padding: '24px',
+            width: '100%',
+            maxWidth: '400px',
+            maxHeight: '80vh',
+            overflow: 'auto',
+            border: '1px solid #2d3548',
+            animation: 'slideUp 0.3s ease-out',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <h2 style={{ color: '#e6edf3', fontSize: '18px', fontWeight: '600', margin: 0 }}>
+              Manage Your Watchlist
+            </h2>
+            <button
+              onClick={() => closeManageModal(true)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#6e7681',
+                fontSize: '20px',
+                cursor: 'pointer',
+                padding: '4px',
+              }}
+            >
+              ×
+            </button>
+          </div>
+
+          {/* Current Watchlist */}
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '8px', display: 'block' }}>
+              Current Stocks ({editableWatchlist.length}/12)
+            </label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', minHeight: '40px' }}>
+              {editableWatchlist.length === 0 ? (
+                <span style={{ color: '#6e7681', fontSize: '13px', fontStyle: 'italic' }}>
+                  No stocks in watchlist
+                </span>
+              ) : (
+                editableWatchlist.map(symbol => (
+                  <div
+                    key={symbol}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: `${c.cyan}20`,
+                      border: `1px solid ${c.cyan}40`,
+                      borderRadius: '6px',
+                      padding: '6px 10px',
+                    }}
+                  >
+                    <span style={{ color: c.cyan, fontSize: '13px', fontWeight: '600' }}>
+                      {symbol}
+                    </span>
+                    <button
+                      onClick={() => removeFromWatchlist(symbol)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#6e7681',
+                        fontSize: '14px',
+                        cursor: 'pointer',
+                        padding: '0',
+                        lineHeight: 1,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Search Input */}
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '8px', display: 'block' }}>
+              Add Stocks
+            </label>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search stocks to add..."
+              style={{
+                width: '100%',
+                padding: '12px',
+                background: '#161b22',
+                border: '1px solid #2d3548',
+                borderRadius: '8px',
+                color: '#e6edf3',
+                fontSize: '14px',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+
+            {/* Search Results */}
+            {filteredStocks.length > 0 && (
+              <div style={{
+                marginTop: '8px',
+                background: '#161b22',
+                border: '1px solid #2d3548',
+                borderRadius: '8px',
+                overflow: 'hidden',
+              }}>
+                {filteredStocks.map(stock => (
+                  <div
+                    key={stock.symbol}
+                    onClick={() => addToWatchlist(stock.symbol)}
+                    style={{
+                      padding: '10px 12px',
+                      cursor: 'pointer',
+                      borderBottom: '1px solid #2d3548',
+                      transition: 'background 0.15s',
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#2d3548'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <span style={{ color: c.cyan, fontSize: '13px', fontWeight: '600' }}>{stock.symbol}</span>
+                        <span style={{ color: '#8b949e', fontSize: '12px', marginLeft: '8px' }}>{stock.name}</span>
+                      </div>
+                      <span style={{ color: '#6e7681', fontSize: '11px' }}>{stock.sector}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Popular Suggestions */}
+          <div style={{ marginBottom: '24px' }}>
+            <label style={{ color: '#6e7681', fontSize: '11px', marginBottom: '8px', display: 'block' }}>
+              Popular:
+            </label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {POPULAR_SUGGESTIONS.filter(s => !editableWatchlist.includes(s)).map(symbol => (
+                <button
+                  key={symbol}
+                  onClick={() => addToWatchlist(symbol)}
+                  style={{
+                    background: '#161b22',
+                    border: '1px solid #2d3548',
+                    borderRadius: '4px',
+                    padding: '4px 8px',
+                    color: '#8b949e',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = c.cyan;
+                    e.currentTarget.style.color = c.cyan;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#2d3548';
+                    e.currentTarget.style.color = '#8b949e';
+                  }}
+                >
+                  + {symbol}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Done Button */}
+          <button
+            onClick={() => closeManageModal(true)}
+            style={{
+              width: '100%',
+              padding: '14px',
+              background: `linear-gradient(135deg, ${c.cyan}, ${c.green})`,
+              border: 'none',
+              borderRadius: '10px',
+              color: '#000',
+              fontSize: '15px',
+              fontWeight: '700',
+              cursor: 'pointer',
+              transition: 'transform 0.15s, box-shadow 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'scale(1.02)';
+              e.currentTarget.style.boxShadow = `0 4px 16px ${c.cyan}40`;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = 'none';
+            }}
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '16px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '14px' }}>⭐</span> Your Watchlist
+          {renderEditButton()}
+        </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {[1, 2, 3].map(i => (
+            <div key={i} style={{
+              background: '#161b22',
+              borderRadius: '8px',
+              padding: '12px',
+              animation: 'pulse 1.5s ease-in-out infinite',
+            }}>
+              <div style={{ height: '14px', background: '#2d3548', borderRadius: '4px', width: '80%', marginBottom: '8px' }} />
+              <div style={{ height: '12px', background: '#2d3548', borderRadius: '4px', width: '40%' }} />
+            </div>
+          ))}
+        </div>
+        {renderManageModal()}
+      </div>
+    );
+  }
+
+  // Empty watchlist state
+  if (!hasWatchlist && watchlistNews.length === 0) {
+    return (
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '16px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '14px' }}>⭐</span> Your Watchlist
+          {renderEditButton()}
+        </h3>
+        <div style={{
+          background: '#161b22',
+          borderRadius: '8px',
+          padding: '20px',
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '24px', marginBottom: '8px' }}>📋</div>
+          <p style={{ color: '#8b949e', fontSize: '13px', margin: 0 }}>
+            Add stocks to your watchlist to see personalized news
+          </p>
+          <button
+            onClick={openManageModal}
+            style={{
+              marginTop: '12px',
+              padding: '8px 16px',
+              background: `${c.cyan}20`,
+              border: `1px solid ${c.cyan}`,
+              borderRadius: '6px',
+              color: c.cyan,
+              fontSize: '13px',
+              fontWeight: '600',
+              cursor: 'pointer',
+            }}
+          >
+            + Add Stocks
+          </button>
+        </div>
+        {renderManageModal()}
+      </div>
+    );
+  }
+
+  // No news available
+  if (watchlistNews.length === 0) {
+    return (
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '16px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '14px' }}>⭐</span> Your Watchlist
+          {renderEditButton()}
+        </h3>
+        <div style={{
+          background: '#161b22',
+          borderRadius: '8px',
+          padding: '16px',
+          textAlign: 'center',
+        }}>
+          <span style={{ color: '#8b949e', fontSize: '13px' }}>
+            No recent news for your watchlist stocks
+          </span>
+        </div>
+        {renderManageModal()}
+      </div>
+    );
+  }
+
   return (
     <div style={{
       background: '#1a1f2e',
@@ -4481,23 +4584,46 @@ const TopNewsStories = ({ news, isLoading, colors }) => {
       border: '1px solid #2d3548',
     }}>
       <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <span style={{ fontSize: '14px' }}>📰</span> Top News Stories
+        <span style={{ fontSize: '14px' }}>⭐</span> Your Watchlist
+        {renderEditButton()}
       </h3>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {news.slice(0, 4).map((item, idx) => (
+        {watchlistNews.map((item, idx) => (
           <div
             key={item.id || idx}
             style={{
               background: '#161b22',
               borderRadius: '8px',
               padding: '12px',
-              cursor: item.url !== '#' ? 'pointer' : 'default',
+              cursor: item.url && item.url !== '#' ? 'pointer' : 'default',
               transition: 'all 0.2s',
               borderLeft: `3px solid ${idx === 0 ? c.cyan : '#2d3548'}`,
             }}
-            onClick={() => item.url !== '#' && window.open(item.url, '_blank')}
+            onClick={() => item.url && item.url !== '#' && window.open(item.url, '_blank')}
           >
+            {/* Ticker badge */}
+            <div style={{ marginBottom: '6px' }}>
+              <span
+                style={{
+                  display: 'inline-block',
+                  background: `${c.cyan}20`,
+                  color: c.cyan,
+                  fontSize: '10px',
+                  fontWeight: '600',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
+              >
+                ${item.watchlistSymbol || (item.symbols && item.symbols[0]) || 'NEWS'}
+              </span>
+            </div>
+
+            {/* Headline */}
             <div style={{
               color: '#e6edf3',
               fontSize: '13px',
@@ -4507,20 +4633,17 @@ const TopNewsStories = ({ news, isLoading, colors }) => {
             }}>
               {item.title}
             </div>
+
+            {/* Source and time */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ color: '#6e7681', fontSize: '11px' }}>{item.source}</span>
+              <span style={{ color: '#6e7681', fontSize: '11px' }}>{getDisplaySource(item)}</span>
               <span style={{ color: '#6e7681', fontSize: '11px' }}>•</span>
               <span style={{ color: '#6e7681', fontSize: '11px' }}>{getTimeAgo(item.publishedAt)}</span>
-              {item.symbols && item.symbols.length > 0 && (
-                <>
-                  <span style={{ color: '#6e7681', fontSize: '11px' }}>•</span>
-                  <span style={{ color: c.cyan, fontSize: '11px' }}>${item.symbols[0]}</span>
-                </>
-              )}
             </div>
           </div>
         ))}
       </div>
+      {renderManageModal()}
     </div>
   );
 };
@@ -4531,6 +4654,7 @@ const TopNewsStories = ({ news, isLoading, colors }) => {
  */
 const StocksInTheNews = ({ moversData, isLoading, colors }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+  const [hoveredCard, setHoveredCard] = useState(null);
 
   if (isLoading) {
     return (
@@ -4564,40 +4688,88 @@ const StocksInTheNews = ({ moversData, isLoading, colors }) => {
     return null;
   }
 
-  const renderMover = (stock, isGainer) => (
-    <div
-      key={stock.symbol}
-      style={{
-        background: '#161b22',
-        borderRadius: '8px',
-        padding: '12px',
-        borderLeft: `3px solid ${isGainer ? c.green : c.red}`,
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-        <div>
-          <span style={{ color: '#e6edf3', fontWeight: '600', fontSize: '14px' }}>{stock.symbol}</span>
-          <span style={{ color: '#6e7681', fontSize: '12px', marginLeft: '8px' }}>{stock.name}</span>
+  // Get the news URL for a stock
+  const getNewsUrl = (stock) => {
+    if (stock.news && stock.news.length > 0 && stock.news[0].url) {
+      return stock.news[0].url;
+    }
+    return null;
+  };
+
+  // Get full headline (no truncation)
+  const getFullHeadline = (stock) => {
+    if (stock.news && stock.news.length > 0 && stock.news[0].title) {
+      return stock.news[0].title;
+    }
+    return stock.reason || null;
+  };
+
+  const renderMover = (stock, isGainer, index) => {
+    const newsUrl = getNewsUrl(stock);
+    const fullHeadline = getFullHeadline(stock);
+    const cardKey = `${stock.symbol}-${isGainer ? 'gain' : 'lose'}`;
+    const isHovered = hoveredCard === cardKey;
+
+    return (
+      <div
+        key={stock.symbol}
+        onClick={() => newsUrl && window.open(newsUrl, '_blank')}
+        onMouseEnter={() => setHoveredCard(cardKey)}
+        onMouseLeave={() => setHoveredCard(null)}
+        style={{
+          position: 'relative',
+          background: isHovered ? '#1e242f' : '#161b22',
+          borderRadius: '8px',
+          padding: '12px',
+          borderLeft: `3px solid ${isGainer ? c.green : c.red}`,
+          cursor: newsUrl ? 'pointer' : 'default',
+          transition: 'all 0.2s ease',
+          transform: isHovered && newsUrl ? 'translateX(2px)' : 'none',
+        }}
+      >
+        {/* External link icon */}
+        {newsUrl && (
+          <div style={{
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
+            opacity: isHovered ? 1 : 0.4,
+            transition: 'opacity 0.2s',
+          }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6e7681" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+              <polyline points="15 3 21 3 21 9" />
+              <line x1="10" y1="14" x2="21" y2="3" />
+            </svg>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px', paddingRight: newsUrl ? '20px' : '0' }}>
+          <div>
+            <span style={{ color: '#e6edf3', fontWeight: '600', fontSize: '14px' }}>{stock.symbol}</span>
+            <span style={{ color: '#6e7681', fontSize: '12px', marginLeft: '8px' }}>{stock.name}</span>
+          </div>
+          <span style={{
+            color: isGainer ? c.green : c.red,
+            fontWeight: '600',
+            fontSize: '14px',
+          }}>
+            {isGainer ? '+' : ''}{stock.percentChange?.toFixed(2)}%
+          </span>
         </div>
-        <span style={{
-          color: isGainer ? c.green : c.red,
-          fontWeight: '600',
-          fontSize: '14px',
-        }}>
-          {isGainer ? '+' : ''}{stock.percentChange?.toFixed(2)}%
-        </span>
+        {fullHeadline && (
+          <div style={{
+            color: isHovered ? '#e6edf3' : '#8b949e',
+            fontSize: '12px',
+            lineHeight: '1.5',
+            transition: 'color 0.2s',
+          }}>
+            {fullHeadline}
+          </div>
+        )}
       </div>
-      {stock.reason && (
-        <div style={{
-          color: '#8b949e',
-          fontSize: '12px',
-          lineHeight: '1.4',
-        }}>
-          {stock.reason}
-        </div>
-      )}
-    </div>
-  );
+    );
+  };
 
   return (
     <div style={{
@@ -4618,7 +4790,7 @@ const StocksInTheNews = ({ moversData, isLoading, colors }) => {
             Top Gainers
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {moversData.gainers.slice(0, 3).map(stock => renderMover(stock, true))}
+            {moversData.gainers.slice(0, 3).map((stock, idx) => renderMover(stock, true, idx))}
           </div>
         </div>
       )}
@@ -4630,10 +4802,1396 @@ const StocksInTheNews = ({ moversData, isLoading, colors }) => {
             Biggest Decliners
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {moversData.losers.slice(0, 3).map(stock => renderMover(stock, false))}
+            {moversData.losers.slice(0, 3).map((stock, idx) => renderMover(stock, false, idx))}
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+/**
+ * EconomicNews - Displays economic/macro news filtered by keywords
+ * Shows news about GDP, Fed, inflation, jobs, etc.
+ */
+const EconomicNews = ({ news, isLoading, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+  const amber = '#f59e0b';
+  const [hoveredCard, setHoveredCard] = useState(null);
+
+  // Economic keywords with weights for scoring
+  const ECONOMIC_KEYWORDS = [
+    // Federal Reserve / Monetary Policy (high priority)
+    { pattern: /\bfed\b/i, weight: 3 },
+    { pattern: /federal reserve/i, weight: 3 },
+    { pattern: /fomc/i, weight: 3 },
+    { pattern: /interest rate/i, weight: 3 },
+    { pattern: /rate cut/i, weight: 3 },
+    { pattern: /rate hike/i, weight: 3 },
+    { pattern: /powell/i, weight: 2 },
+    // Inflation
+    { pattern: /\binflation\b/i, weight: 3 },
+    { pattern: /\bcpi\b/i, weight: 3 },
+    { pattern: /consumer price/i, weight: 3 },
+    { pattern: /\bppi\b/i, weight: 2 },
+    { pattern: /producer price/i, weight: 2 },
+    // Employment
+    { pattern: /jobs report/i, weight: 3 },
+    { pattern: /unemployment/i, weight: 3 },
+    { pattern: /\bpayroll/i, weight: 2 },
+    { pattern: /labor market/i, weight: 2 },
+    { pattern: /jobless claims/i, weight: 3 },
+    { pattern: /nonfarm/i, weight: 2 },
+    // GDP / Economy
+    { pattern: /\bgdp\b/i, weight: 3 },
+    { pattern: /gross domestic product/i, weight: 3 },
+    { pattern: /recession/i, weight: 3 },
+    { pattern: /economic growth/i, weight: 2 },
+    { pattern: /\beconomy\b/i, weight: 1 },
+    // Treasury / Bonds
+    { pattern: /treasury/i, weight: 2 },
+    { pattern: /bond yield/i, weight: 2 },
+    { pattern: /10-year/i, weight: 2 },
+    { pattern: /yield curve/i, weight: 2 },
+    // Trade
+    { pattern: /trade deficit/i, weight: 2 },
+    { pattern: /\btariff/i, weight: 2 },
+    // Other economic indicators
+    { pattern: /housing starts/i, weight: 2 },
+    { pattern: /retail sales/i, weight: 2 },
+    { pattern: /consumer spending/i, weight: 2 },
+    { pattern: /\bpmi\b/i, weight: 2 },
+    { pattern: /manufacturing/i, weight: 1 },
+    { pattern: /consumer confidence/i, weight: 2 },
+  ];
+
+  // Score an article based on economic keyword matches
+  const scoreArticle = (article) => {
+    const title = (article.title || '').toLowerCase();
+    let score = 0;
+    let matchedKeywords = [];
+
+    for (const keyword of ECONOMIC_KEYWORDS) {
+      if (keyword.pattern.test(title)) {
+        score += keyword.weight;
+        matchedKeywords.push(keyword.pattern.source);
+      }
+    }
+
+    return { ...article, economicScore: score, matchedKeywords };
+  };
+
+  // Get filtered and scored economic news
+  const getEconomicNews = () => {
+    if (!news || news.length === 0) return [];
+
+    // Score all articles
+    const scoredNews = news.map(scoreArticle);
+
+    // Filter to only articles with economic relevance (score > 0)
+    const economicNews = scoredNews
+      .filter(article => article.economicScore > 0)
+      .sort((a, b) => b.economicScore - a.economicScore)
+      .slice(0, 5);
+
+    console.log('[EconomicNews] Found', economicNews.length, 'economic articles');
+    return economicNews;
+  };
+
+  // Format time ago
+  const getTimeAgo = (dateStr) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${Math.floor(diffHours / 24)}d ago`;
+  };
+
+  // Get display source
+  const getDisplaySource = (item) => {
+    const source = item.source;
+    if (!source || source === 'Unknown' || source.toLowerCase() === 'unknown') {
+      if (item.url) {
+        try {
+          const hostname = new URL(item.url).hostname.replace('www.', '');
+          const parts = hostname.split('.');
+          if (parts.length >= 2) {
+            const name = parts[parts.length - 2];
+            return name.charAt(0).toUpperCase() + name.slice(1);
+          }
+        } catch {
+          return 'News';
+        }
+      }
+      return 'News';
+    }
+    return source;
+  };
+
+  const economicNews = getEconomicNews();
+
+  if (isLoading) {
+    return (
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '16px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '14px' }}>🏛️</span> Economic News
+        </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {[1, 2, 3].map(i => (
+            <div key={i} style={{
+              background: '#161b22',
+              borderRadius: '8px',
+              padding: '12px',
+              animation: 'pulse 1.5s ease-in-out infinite',
+            }}>
+              <div style={{ height: '14px', background: '#2d3548', borderRadius: '4px', width: '85%', marginBottom: '8px' }} />
+              <div style={{ height: '12px', background: '#2d3548', borderRadius: '4px', width: '40%' }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // No economic news found
+  if (economicNews.length === 0) {
+    return (
+      <div style={{
+        background: '#1a1f2e',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '16px',
+        border: '1px solid #2d3548',
+      }}>
+        <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '14px' }}>🏛️</span> Economic News
+        </h3>
+        <div style={{
+          background: '#161b22',
+          borderRadius: '8px',
+          padding: '16px',
+          textAlign: 'center',
+        }}>
+          <span style={{ color: '#8b949e', fontSize: '13px' }}>
+            No major economic news at this time
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      background: '#1a1f2e',
+      borderRadius: '12px',
+      padding: '16px',
+      marginBottom: '16px',
+      border: '1px solid #2d3548',
+    }}>
+      <h3 style={{ color: '#8b949e', fontSize: '12px', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <span style={{ fontSize: '14px' }}>🏛️</span> Economic News
+      </h3>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {economicNews.map((item, idx) => {
+          const isHovered = hoveredCard === idx;
+          const hasUrl = item.url && item.url !== '#';
+
+          return (
+            <div
+              key={item.id || idx}
+              onClick={() => hasUrl && window.open(item.url, '_blank')}
+              onMouseEnter={() => setHoveredCard(idx)}
+              onMouseLeave={() => setHoveredCard(null)}
+              style={{
+                position: 'relative',
+                background: isHovered ? '#1e242f' : '#161b22',
+                borderRadius: '8px',
+                padding: '12px',
+                cursor: hasUrl ? 'pointer' : 'default',
+                transition: 'all 0.2s ease',
+                borderLeft: `3px solid ${idx === 0 ? amber : '#2d3548'}`,
+                transform: isHovered && hasUrl ? 'translateX(2px)' : 'none',
+              }}
+            >
+              {/* External link icon */}
+              {hasUrl && (
+                <div style={{
+                  position: 'absolute',
+                  top: '8px',
+                  right: '8px',
+                  opacity: isHovered ? 1 : 0.4,
+                  transition: 'opacity 0.2s',
+                }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6e7681" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </div>
+              )}
+
+              {/* Economic indicator icon and headline */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', paddingRight: hasUrl ? '20px' : '0' }}>
+                <span style={{ fontSize: '12px', marginTop: '2px' }}>📊</span>
+                <div style={{
+                  color: isHovered ? '#e6edf3' : '#e6edf3',
+                  fontSize: '13px',
+                  lineHeight: '1.5',
+                  fontWeight: idx === 0 ? '500' : '400',
+                  flex: 1,
+                }}>
+                  {item.title}
+                </div>
+              </div>
+
+              {/* Source and time */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', marginLeft: '20px' }}>
+                <span style={{ color: amber, fontSize: '11px', fontWeight: '500' }}>{getDisplaySource(item)}</span>
+                <span style={{ color: '#6e7681', fontSize: '11px' }}>•</span>
+                <span style={{ color: '#6e7681', fontSize: '11px' }}>{getTimeAgo(item.publishedAt)}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * EarningsInsights - AI-powered earnings call insights
+ * Fetches earnings news and generates AI insights from recent earnings calls
+ */
+const EarningsInsights = ({ symbol, colors }) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+  const violet = '#8b5cf6';
+  const violetLight = '#a78bfa';
+
+  const [insights, setInsights] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Cache key for this symbol
+  const CACHE_KEY = `earnings_insights_${symbol}`;
+  const CACHE_DURATION = 12 * 60 * 60 * 1000; // 12 hours
+
+  // Earnings-related keywords for filtering news
+  const EARNINGS_KEYWORDS = [
+    /earnings/i, /quarterly results/i, /q[1-4] results/i, /revenue/i,
+    /profit/i, /eps/i, /guidance/i, /outlook/i, /beat expectations/i,
+    /miss expectations/i, /exceeded/i, /fell short/i, /raised guidance/i,
+    /lowered guidance/i, /earnings call/i, /conference call/i,
+    /fiscal year/i, /quarter/i, /net income/i, /operating margin/i
+  ];
+
+  useEffect(() => {
+    const fetchInsights = async () => {
+      if (!symbol) {
+        setIsLoading(false);
+        return;
+      }
+
+      // Check localStorage cache first
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const { data, timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < CACHE_DURATION) {
+            console.log(`[EarningsInsights] Using cached insights for ${symbol}`);
+            setInsights(data);
+            setIsLoading(false);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('[EarningsInsights] Cache read error:', e);
+      }
+
+      try {
+        // Fetch news for this stock
+        console.log(`[EarningsInsights] Fetching news for ${symbol}...`);
+        const news = await getStockNews(symbol, 20);
+
+        // Filter for earnings-related news
+        const earningsNews = news.filter(article => {
+          const title = (article.title || '').toLowerCase();
+          const content = (article.content || article.description || '').toLowerCase();
+          const combined = title + ' ' + content;
+          return EARNINGS_KEYWORDS.some(pattern => pattern.test(combined));
+        });
+
+        console.log(`[EarningsInsights] Found ${earningsNews.length} earnings-related articles`);
+
+        if (earningsNews.length === 0) {
+          setInsights(null);
+          setIsLoading(false);
+          return;
+        }
+
+        // Create prompt for AI
+        const newsContext = earningsNews.slice(0, 5).map((article, i) =>
+          `${i + 1}. ${article.title}${article.content ? ` - ${article.content.slice(0, 200)}...` : ''}`
+        ).join('\n');
+
+        // Call AI advisor for insights
+        const response = await fetch('/api/ai-advisor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'earnings_insights',
+            context: {
+              symbol,
+              newsArticles: newsContext,
+              prompt: `Based on these recent earnings-related news articles about ${symbol}, provide 3-4 concise key insights for investors. Focus on: revenue/profit trends, guidance changes, management outlook, and competitive positioning. Keep each insight to 1-2 sentences. Format as a bullet list.`
+            }
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('AI insights unavailable');
+        }
+
+        const data = await response.json();
+
+        if (data.success && data.advice) {
+          const insightData = {
+            text: data.advice,
+            newsCount: earningsNews.length,
+            lastUpdated: new Date().toISOString()
+          };
+
+          setInsights(insightData);
+
+          // Cache to localStorage
+          try {
+            localStorage.setItem(CACHE_KEY, JSON.stringify({
+              data: insightData,
+              timestamp: Date.now()
+            }));
+          } catch (e) {
+            console.warn('[EarningsInsights] Cache write error:', e);
+          }
+        } else {
+          setError('Could not generate insights');
+        }
+      } catch (err) {
+        console.error('[EarningsInsights] Error:', err);
+        setError(err.message || 'Failed to load insights');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchInsights();
+  }, [symbol]);
+
+  // Don't render if no insights and not loading
+  if (!isLoading && !insights && !error) {
+    return null;
+  }
+
+  return (
+    <div style={{
+      background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%)',
+      border: `1px solid rgba(139, 92, 246, 0.3)`,
+      borderRadius: '16px',
+      padding: '20px',
+      marginBottom: '20px'
+    }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        marginBottom: '16px'
+      }}>
+        {/* AI Icon with gradient */}
+        <div style={{
+          width: '36px',
+          height: '36px',
+          borderRadius: '10px',
+          background: 'linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 4px 12px rgba(139, 92, 246, 0.4)'
+        }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+
+        <div style={{ flex: 1 }}>
+          <h3 style={{
+            color: '#ffffff',
+            fontSize: '15px',
+            fontWeight: '700',
+            margin: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            AI EARNINGS INSIGHTS
+            <span style={{
+              background: 'rgba(139, 92, 246, 0.2)',
+              color: violetLight,
+              fontSize: '10px',
+              fontWeight: '600',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}>
+              POWERED BY AI
+            </span>
+          </h3>
+          <span style={{ color: '#8b949e', fontSize: '12px' }}>
+            Key insights from recent earnings activity
+          </span>
+        </div>
+      </div>
+
+      {/* Content */}
+      {isLoading ? (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '16px',
+          background: 'rgba(139, 92, 246, 0.1)',
+          borderRadius: '12px'
+        }}>
+          <div style={{
+            width: '20px',
+            height: '20px',
+            border: `2px solid ${violet}`,
+            borderTopColor: 'transparent',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }} />
+          <span style={{ color: violetLight, fontSize: '14px' }}>
+            Analyzing earnings reports for {symbol}...
+          </span>
+          <style>{`
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
+      ) : error ? (
+        <div style={{
+          padding: '16px',
+          background: 'rgba(239, 68, 68, 0.1)',
+          borderRadius: '12px',
+          color: '#f87171',
+          fontSize: '13px'
+        }}>
+          {error}
+        </div>
+      ) : insights ? (
+        <div>
+          {/* Insights text */}
+          <div style={{
+            background: '#0d1117',
+            borderRadius: '12px',
+            padding: '16px',
+            borderLeft: `3px solid ${violet}`
+          }}>
+            <div style={{
+              color: '#e6edf3',
+              fontSize: '14px',
+              lineHeight: '1.6',
+              whiteSpace: 'pre-wrap'
+            }}>
+              {insights.text}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginTop: '12px',
+            color: '#6e7681',
+            fontSize: '11px'
+          }}>
+            <span>
+              Based on {insights.newsCount} recent earnings article{insights.newsCount !== 1 ? 's' : ''}
+            </span>
+            <span>
+              Last updated: {new Date(insights.lastUpdated).toLocaleString()}
+            </span>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+/**
+ * LatestEarningsReport - Fetches real earnings data from EODHD API
+ * Replaces hardcoded earnings data with live data
+ */
+const LatestEarningsReport = ({ symbol, colors }) => {
+  const [earnings, setEarnings] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [insights, setInsights] = useState(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsSource, setInsightsSource] = useState(null); // 'eodhd' or 'web-search'
+  const [insightsError, setInsightsError] = useState(null);
+  const [insightsStaleWarning, setInsightsStaleWarning] = useState(null); // Warning if data may be stale
+
+  // Cache key for insights
+  const INSIGHTS_CACHE_KEY = `earnings_insights_${symbol}`;
+  const INSIGHTS_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+  useEffect(() => {
+    const loadEarnings = async () => {
+      if (!symbol) {
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+      // Reset insights when symbol changes
+      setInsights(null);
+      setInsightsSource(null);
+      setInsightsError(null);
+      setInsightsStaleWarning(null);
+
+      try {
+        console.log(`[LatestEarnings] Fetching earnings for ${symbol}...`);
+        const data = await fetchLatestEarnings(symbol);
+
+        if (data) {
+          console.log(`[LatestEarnings] Got data for ${symbol}:`, data);
+          setEarnings(data);
+
+          // Check cache for insights
+          try {
+            const cached = localStorage.getItem(INSIGHTS_CACHE_KEY);
+            if (cached) {
+              const { data: cachedInsights, source, timestamp } = JSON.parse(cached);
+              if (Date.now() - timestamp < INSIGHTS_CACHE_DURATION && cachedInsights) {
+                console.log(`[EarningsInsights] Using cached insights for ${symbol}`);
+                setInsights(cachedInsights);
+                setInsightsSource(source || 'eodhd');
+              }
+            }
+          } catch (e) {
+            console.warn('[EarningsInsights] Cache read error:', e);
+          }
+        } else {
+          setError('No earnings data available');
+        }
+      } catch (err) {
+        console.error(`[LatestEarnings] Error for ${symbol}:`, err);
+        setError('Failed to load earnings');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadEarnings();
+  }, [symbol]);
+
+  // Manual generate insights function (called by button click) - Uses web search only
+  const handleGenerateInsights = async () => {
+    if (!earnings || !symbol) return;
+
+    setInsightsLoading(true);
+    setInsightsError(null);
+    setInsightsStaleWarning(null);
+    console.log(`[EarningsInsights] Searching web for ${symbol} earnings...`);
+
+    try {
+      // Direct web search for earnings insights
+      const webSearchResponse = await fetch('/api/ai-advisor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'earnings-web-search',
+          symbol: symbol,
+          companyName: earnings?.companyName || symbol
+        })
+      });
+
+      if (!webSearchResponse.ok) {
+        throw new Error('API request failed');
+      }
+
+      const webData = await webSearchResponse.json();
+
+      if (webData.success && webData.message && !webData.message.includes('NO_RECENT_DATA')) {
+        const generatedInsights = webData.message;
+
+        console.log('[EarningsInsights] Got insights from web search', {
+          webSearchUsed: webData.webSearchUsed,
+          mayBeStale: webData.mayBeStale
+        });
+
+        setInsights(generatedInsights);
+        setInsightsSource('web-search');
+
+        // Check if the data may be stale
+        if (webData.mayBeStale || webData.warning) {
+          setInsightsStaleWarning(webData.warning || 'Data may not be from the most recent quarter');
+          console.log(`[EarningsInsights] Not caching due to stale warning`);
+        } else {
+          // Cache successful, non-stale insights
+          try {
+            localStorage.setItem(INSIGHTS_CACHE_KEY, JSON.stringify({
+              data: generatedInsights,
+              source: 'web-search',
+              timestamp: Date.now()
+            }));
+            console.log(`[EarningsInsights] Cached insights for ${symbol}`);
+          } catch (e) {
+            console.warn('[EarningsInsights] Cache write error:', e);
+          }
+        }
+      } else {
+        // No insights found or error
+        const errorMsg = webData.error || 'No recent earnings coverage found for this stock';
+        console.log('[EarningsInsights] Web search result:', errorMsg);
+        setInsightsError(errorMsg);
+      }
+
+    } catch (err) {
+      console.error('[EarningsInsights] Error generating insights:', err);
+      setInsightsError('Failed to generate insights. Please try again.');
+    } finally {
+      setInsightsLoading(false);
+    }
+  };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div style={{
+        background: '#161b22',
+        border: '1px solid #21262d',
+        borderRadius: '16px',
+        padding: '20px',
+        marginTop: '20px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14,2 14,8 20,8"/>
+            </svg>
+          </div>
+          <h3 style={{ color: '#ffffff', fontSize: '15px', fontWeight: '700', margin: 0 }}>
+            LATEST EARNINGS
+          </h3>
+        </div>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '20px',
+          background: '#0d1117',
+          borderRadius: '12px'
+        }}>
+          <div style={{
+            width: '20px',
+            height: '20px',
+            border: '2px solid #8b5cf6',
+            borderTopColor: 'transparent',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }} />
+          <span style={{ color: '#8b949e', fontSize: '14px' }}>
+            Loading earnings data for {symbol}...
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state - show generic fallback
+  if (error || !earnings) {
+    return (
+      <div style={{
+        background: '#161b22',
+        border: '1px solid #21262d',
+        borderRadius: '16px',
+        padding: '20px',
+        marginTop: '20px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14,2 14,8 20,8"/>
+            </svg>
+          </div>
+          <h3 style={{ color: '#ffffff', fontSize: '15px', fontWeight: '700', margin: 0 }}>
+            LATEST EARNINGS
+          </h3>
+        </div>
+        <div style={{
+          padding: '20px',
+          background: '#0d1117',
+          borderRadius: '12px',
+          textAlign: 'center'
+        }}>
+          <span style={{ color: '#8b949e', fontSize: '14px' }}>
+            Earnings data not available for {symbol}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // Success - render earnings data
+  const epsBeat = earnings.epsBeat;
+  const revenueBeat = earnings.revenueBeat;
+  const yoyPositive = earnings.yoyGrowth && earnings.yoyGrowth.startsWith('+');
+
+  return (
+    <div style={{
+      background: '#161b22',
+      border: '1px solid #21262d',
+      borderRadius: '16px',
+      padding: '20px',
+      marginTop: '20px'
+    }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: '16px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14,2 14,8 20,8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <line x1="10" y1="9" x2="8" y2="9"/>
+            </svg>
+          </div>
+          <h3 style={{ color: '#ffffff', fontSize: '15px', fontWeight: '700', margin: 0 }}>
+            LATEST EARNINGS
+          </h3>
+        </div>
+
+        {/* Report Date Badge */}
+        <div style={{
+          background: '#8b5cf620',
+          border: '1px solid #8b5cf640',
+          borderRadius: '8px',
+          padding: '6px 12px'
+        }}>
+          <span style={{ color: '#a78bfa', fontSize: '11px', fontWeight: '600' }}>
+            {earnings.reportDate}
+          </span>
+        </div>
+      </div>
+
+      {/* Quarter Badge */}
+      <div style={{
+        display: 'inline-block',
+        background: '#21262d',
+        borderRadius: '6px',
+        padding: '4px 10px',
+        marginBottom: '16px'
+      }}>
+        <span style={{ color: '#8b949e', fontSize: '12px', fontWeight: '600' }}>
+          {earnings.quarter}
+        </span>
+      </div>
+
+      {/* Metrics Grid */}
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+        {/* EPS Card */}
+        <div style={{
+          flex: 1,
+          background: '#0d1117',
+          borderRadius: '10px',
+          padding: '12px',
+          borderLeft: `3px solid ${epsBeat === true ? '#22c55e' : epsBeat === false ? '#ef4444' : '#8b949e'}`
+        }}>
+          <div style={{
+            color: '#8b949e',
+            fontSize: '10px',
+            fontWeight: '600',
+            textTransform: 'uppercase',
+            marginBottom: '4px'
+          }}>
+            EPS
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+            <span style={{ color: '#ffffff', fontSize: '18px', fontWeight: '700' }}>
+              {earnings.epsActual}
+            </span>
+            {epsBeat !== null && (
+              <span style={{
+                color: epsBeat ? '#22c55e' : '#ef4444',
+                fontSize: '11px',
+                fontWeight: '600'
+              }}>
+                {epsBeat ? '✓ BEAT' : '✗ MISS'}
+              </span>
+            )}
+          </div>
+          <div style={{ color: '#6b7280', fontSize: '11px', marginTop: '2px' }}>
+            Est: {earnings.epsEstimate}
+          </div>
+        </div>
+
+        {/* Revenue Card */}
+        <div style={{
+          flex: 1,
+          background: '#0d1117',
+          borderRadius: '10px',
+          padding: '12px',
+          borderLeft: `3px solid ${revenueBeat === true ? '#22c55e' : revenueBeat === false ? '#ef4444' : '#8b949e'}`
+        }}>
+          <div style={{
+            color: '#8b949e',
+            fontSize: '10px',
+            fontWeight: '600',
+            textTransform: 'uppercase',
+            marginBottom: '4px'
+          }}>
+            Revenue
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+            <span style={{ color: '#ffffff', fontSize: '18px', fontWeight: '700' }}>
+              {earnings.revenueActual || 'N/A'}
+            </span>
+            {revenueBeat !== null && (
+              <span style={{
+                color: revenueBeat ? '#22c55e' : '#ef4444',
+                fontSize: '11px',
+                fontWeight: '600'
+              }}>
+                {revenueBeat ? '✓ BEAT' : '✗ MISS'}
+              </span>
+            )}
+          </div>
+          {earnings.revenueEstimate && (
+            <div style={{ color: '#6b7280', fontSize: '11px', marginTop: '2px' }}>
+              Est: {earnings.revenueEstimate}
+            </div>
+          )}
+        </div>
+
+        {/* YoY Growth Card */}
+        <div style={{
+          flex: 1,
+          background: '#0d1117',
+          borderRadius: '10px',
+          padding: '12px',
+          borderLeft: `3px solid ${yoyPositive ? '#22c55e' : earnings.yoyGrowth !== 'N/A' ? '#ef4444' : '#8b949e'}`
+        }}>
+          <div style={{
+            color: '#8b949e',
+            fontSize: '10px',
+            fontWeight: '600',
+            textTransform: 'uppercase',
+            marginBottom: '4px'
+          }}>
+            YoY Growth
+          </div>
+          <div style={{
+            color: yoyPositive ? '#22c55e' : earnings.yoyGrowth !== 'N/A' ? '#ef4444' : '#8b949e',
+            fontSize: '18px',
+            fontWeight: '700'
+          }}>
+            {earnings.yoyGrowth}
+          </div>
+          {earnings.previousYearEps && (
+            <div style={{ color: '#6b7280', fontSize: '11px', marginTop: '2px' }}>
+              vs {earnings.previousYearEps} prior
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Next Earnings Date */}
+      {earnings.nextEarningsDate && earnings.nextEarningsDate !== 'TBD' && (
+        <div style={{
+          background: 'rgba(251, 191, 36, 0.1)',
+          border: '1px solid rgba(251, 191, 36, 0.3)',
+          borderRadius: '10px',
+          padding: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <span style={{ fontSize: '14px' }}>📅</span>
+          <span style={{ color: '#fbbf24', fontSize: '12px', fontWeight: '600' }}>
+            Next Earnings: {earnings.nextEarningsDate}
+          </span>
+        </div>
+      )}
+
+      {/* AI Earnings Call Insights */}
+      <div style={{
+        marginTop: '16px',
+        background: '#1a2332',
+        borderRadius: '12px',
+        borderLeft: '3px solid #8b5cf6',
+        padding: '16px'
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          marginBottom: '12px'
+        }}>
+          <span style={{ fontSize: '16px' }}>🎯</span>
+          <h4 style={{
+            color: '#ffffff',
+            fontSize: '13px',
+            fontWeight: '700',
+            margin: 0,
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+          }}>
+            EARNINGS CALL INSIGHTS
+          </h4>
+          <span style={{
+            background: 'rgba(139, 92, 246, 0.2)',
+            color: '#a78bfa',
+            fontSize: '9px',
+            fontWeight: '600',
+            padding: '2px 8px',
+            borderRadius: '6px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+          }}>
+            AI-Powered
+          </span>
+        </div>
+
+        {/* Content - Show button if no insights loaded yet */}
+        {insightsLoading ? (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '16px',
+            background: 'rgba(139, 92, 246, 0.1)',
+            borderRadius: '8px'
+          }}>
+            <div style={{
+              width: '18px',
+              height: '18px',
+              border: '2px solid #8b5cf6',
+              borderTopColor: 'transparent',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite'
+            }} />
+            <span style={{ color: '#a78bfa', fontSize: '13px' }}>
+              Analyzing earnings call... This may take a moment
+            </span>
+          </div>
+        ) : insightsError ? (
+          // Error state with retry button
+          <div style={{ textAlign: 'center' }}>
+            <div style={{
+              padding: '16px',
+              background: 'rgba(239, 68, 68, 0.1)',
+              borderRadius: '8px',
+              marginBottom: '12px'
+            }}>
+              <span style={{ color: '#f87171', fontSize: '13px' }}>
+                {insightsError}
+              </span>
+            </div>
+            <button
+              onClick={handleGenerateInsights}
+              style={{
+                padding: '10px 20px',
+                background: '#374151',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#ffffff',
+                fontSize: '13px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'background 0.2s'
+              }}
+            >
+              🔄 Try Again
+            </button>
+          </div>
+        ) : insights ? (
+          // Show insights
+          <div>
+            {/* Stale data warning */}
+            {insightsStaleWarning && (
+              <div style={{
+                padding: '8px 12px',
+                marginBottom: '10px',
+                background: 'rgba(251, 191, 36, 0.1)',
+                border: '1px solid rgba(251, 191, 36, 0.3)',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span style={{ fontSize: '14px' }}>⚠️</span>
+                <span style={{ color: '#fbbf24', fontSize: '11px' }}>
+                  Data may be from an older quarter. Click "Generate Insights" to refresh.
+                </span>
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {insights.split('\n').filter(line => line.trim()).map((point, i) => (
+                <div
+                  key={i}
+                  style={{
+                    padding: '10px 12px',
+                    background: '#0d1117',
+                    borderRadius: '8px',
+                    color: '#e6edf3',
+                    fontSize: '12px',
+                    lineHeight: '1.5'
+                  }}
+                >
+                  {point.trim()}
+                </div>
+              ))}
+            </div>
+            {/* Source indicator */}
+            <div style={{
+              marginTop: '10px',
+              fontSize: '10px',
+              color: '#6b7280',
+              textAlign: 'right'
+            }}>
+              🌐 Powered by AI Web Search
+            </div>
+          </div>
+        ) : (
+          // Generate button - initial state
+          <div style={{ textAlign: 'center' }}>
+            <button
+              onClick={handleGenerateInsights}
+              style={{
+                width: '100%',
+                padding: '16px',
+                background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+                border: 'none',
+                borderRadius: '10px',
+                color: 'white',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'all 0.2s ease',
+                boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
+              }}
+            >
+              <span>✨</span>
+              Generate Earnings Insights
+            </button>
+            <p style={{
+              fontSize: '11px',
+              color: '#6b7280',
+              marginTop: '10px',
+              marginBottom: 0
+            }}>
+              AI analyzes recent earnings calls and news to extract key points
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Data source */}
+      <div style={{
+        marginTop: '12px',
+        color: '#6e7681',
+        fontSize: '10px',
+        textAlign: 'right'
+      }}>
+        Data from EODHD • Updated {new Date(earnings.fetchedAt).toLocaleDateString()}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * FundamentalNews - Fetches real stock news and makes articles clickable
+ * Opens full articles in new tab with hover effects
+ */
+const FundamentalNews = ({ symbol, colors }) => {
+  const [news, setNews] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hoveredCard, setHoveredCard] = useState(null);
+
+  const sentimentColors = {
+    positive: { bg: 'rgba(34, 197, 94, 0.1)', border: '#22c55e', dot: '#22c55e' },
+    negative: { bg: 'rgba(239, 68, 68, 0.1)', border: '#ef4444', dot: '#ef4444' },
+    neutral: { bg: 'rgba(139, 92, 246, 0.1)', border: '#8b5cf6', dot: '#8b5cf6' }
+  };
+
+  // Helper to calculate time ago
+  const getTimeAgo = (dateString) => {
+    if (!dateString) return 'Recently';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffHours < 1) return 'Just now';
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays === 1) return '1d ago';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  };
+
+  // Determine sentiment from title keywords
+  const getSentiment = (title, apiSentiment) => {
+    if (apiSentiment) return apiSentiment;
+    const lowerTitle = (title || '').toLowerCase();
+    const positiveWords = ['surge', 'rise', 'gain', 'beat', 'record', 'growth', 'rally', 'soar', 'jump', 'high'];
+    const negativeWords = ['fall', 'drop', 'decline', 'miss', 'cut', 'loss', 'plunge', 'crash', 'low', 'concern'];
+
+    if (positiveWords.some(w => lowerTitle.includes(w))) return 'positive';
+    if (negativeWords.some(w => lowerTitle.includes(w))) return 'negative';
+    return 'neutral';
+  };
+
+  useEffect(() => {
+    const fetchNews = async () => {
+      if (!symbol) {
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const newsData = await getStockNews(symbol, 8); // Fetch extra to ensure we have 4
+        setNews(newsData || []);
+      } catch (err) {
+        console.error('[FundamentalNews] Error:', err);
+        setNews([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchNews();
+  }, [symbol]);
+
+  const handleCardClick = (url) => {
+    if (url && url !== '#') {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div style={{
+        background: '#161b22',
+        border: '1px solid #21262d',
+        borderRadius: '16px',
+        padding: '20px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+          <StyledIcon type="news" size="small" />
+          <h3 style={{ color: '#ffffff', fontSize: '15px', fontWeight: '700', margin: 0 }}>
+            LATEST NEWS
+          </h3>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '20px', background: '#0d1117', borderRadius: '12px' }}>
+          <div style={{
+            width: '20px',
+            height: '20px',
+            border: '2px solid #8b5cf6',
+            borderTopColor: 'transparent',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }} />
+          <span style={{ color: '#8b949e', fontSize: '14px' }}>Loading news for {symbol}...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (news.length === 0) {
+    return (
+      <div style={{
+        background: '#161b22',
+        border: '1px solid #21262d',
+        borderRadius: '16px',
+        padding: '20px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+          <StyledIcon type="news" size="small" />
+          <h3 style={{ color: '#ffffff', fontSize: '15px', fontWeight: '700', margin: 0 }}>
+            LATEST NEWS
+          </h3>
+        </div>
+        <div style={{ padding: '20px', background: '#0d1117', borderRadius: '12px', textAlign: 'center' }}>
+          <span style={{ color: '#8b949e', fontSize: '14px' }}>No recent news for {symbol}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      background: '#161b22',
+      border: '1px solid #21262d',
+      borderRadius: '16px',
+      padding: '20px'
+    }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        marginBottom: '16px'
+      }}>
+        <StyledIcon type="news" size="small" />
+        <h3 style={{ color: '#ffffff', fontSize: '15px', fontWeight: '700', margin: 0 }}>
+          LATEST NEWS
+        </h3>
+        <span style={{ marginLeft: 'auto', color: '#8b949e', fontSize: '11px' }}>
+          {symbol} related
+        </span>
+      </div>
+
+      {/* News Items - Always show 4 articles */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {news.slice(0, 4).map((item, index) => {
+          const sentiment = getSentiment(item.title, item.sentiment);
+          const colors = sentimentColors[sentiment] || sentimentColors.neutral;
+          const isHovered = hoveredCard === index;
+          const hasUrl = item.url && item.url !== '#';
+
+          return (
+            <div
+              key={item.id || index}
+              onClick={() => handleCardClick(item.url)}
+              onMouseEnter={() => setHoveredCard(index)}
+              onMouseLeave={() => setHoveredCard(null)}
+              style={{
+                background: isHovered ? 'rgba(255, 255, 255, 0.05)' : colors.bg,
+                borderLeft: `3px solid ${colors.border}`,
+                borderRadius: '0 10px 10px 0',
+                padding: '14px 16px',
+                cursor: hasUrl ? 'pointer' : 'default',
+                transition: 'all 0.2s ease',
+                transform: isHovered ? 'scale(1.01)' : 'scale(1)',
+                position: 'relative'
+              }}
+            >
+              {/* External Link Icon */}
+              {hasUrl && (
+                <div style={{
+                  position: 'absolute',
+                  top: '12px',
+                  right: '12px',
+                  opacity: isHovered ? 1 : 0.5,
+                  transition: 'opacity 0.2s ease'
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={colors.dot} strokeWidth="2">
+                    <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+                    <polyline points="15,3 21,3 21,9"/>
+                    <line x1="10" y1="14" x2="21" y2="3"/>
+                  </svg>
+                </div>
+              )}
+
+              {/* Source & Time */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginBottom: '6px'
+              }}>
+                <span style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  background: colors.dot
+                }} />
+                <span style={{
+                  color: colors.dot,
+                  fontSize: '10px',
+                  fontWeight: '600',
+                  textTransform: 'uppercase'
+                }}>
+                  {item.source || 'News'}
+                </span>
+                <span style={{ color: '#6b7280', fontSize: '10px' }}>
+                  • {getTimeAgo(item.publishedAt)}
+                </span>
+              </div>
+
+              {/* Headline */}
+              <h4 style={{
+                color: '#e6edf3',
+                fontSize: '13px',
+                fontWeight: '600',
+                margin: 0,
+                lineHeight: '1.4',
+                paddingRight: hasUrl ? '24px' : '0'
+              }}>
+                {item.title}
+              </h4>
+            </div>
+          );
+        })}
+      </div>
+
     </div>
   );
 };
@@ -5139,17 +6697,20 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
         `}</style>
       </div>
 
-      {/* Top News Stories (replaces Sector Snapshot) */}
-      <TopNewsStories
-        news={marketNews}
-        isLoading={isLoadingNews}
-        colors={c}
-      />
+      {/* Your Watchlist - Personalized news for user's stock picks */}
+      <WatchlistNews colors={c} />
 
       {/* Stocks in the News (replaces basic Top Movers) */}
       <StocksInTheNews
         moversData={moversData}
         isLoading={isLoadingMovers}
+        colors={c}
+      />
+
+      {/* Economic News - Macro news filtered by economic keywords */}
+      <EconomicNews
+        news={marketNews}
+        isLoading={isLoadingNews}
         colors={c}
       />
     </div>
@@ -5180,11 +6741,33 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
       title: "What's your market stance?",
       subtitle: "How do you feel about the market direction?",
       options: [
-        { id: 'bullish', label: '📈 Bullish', description: 'Expecting markets to rise', color: c.green },
-        { id: 'bearish', label: '📉 Bearish', description: 'Expecting markets to fall', color: c.red },
-        { id: 'neutral', label: '➡️ Neutral', description: 'No strong direction', color: '#f59e0b' },
+        {
+          id: 'bullish',
+          label: 'Bullish',
+          description: 'Expecting markets to rise',
+          color: '#22c55e',
+          gradient: 'linear-gradient(135deg, #22c55e, #16a34a)',
+          icon: 'bullish'
+        },
+        {
+          id: 'bearish',
+          label: 'Bearish',
+          description: 'Expecting markets to fall',
+          color: '#ef4444',
+          gradient: 'linear-gradient(135deg, #ef4444, #dc2626)',
+          icon: 'bearish'
+        },
+        {
+          id: 'neutral',
+          label: 'Neutral',
+          description: 'No strong direction',
+          color: '#3b82f6',
+          gradient: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+          icon: 'neutral'
+        },
       ],
       field: 'stance',
+      useGradientIcons: true,
     },
     {
       id: 3,
@@ -5309,55 +6892,183 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
         gap: '12px',
         marginBottom: '24px',
       }}>
-        {currentQ.options.map(option => (
-          <button
-            key={option.id}
-            onClick={() => handleSelect(option.id)}
-            style={{
+        {currentQ.options.map(option => {
+          const selected = isSelected(option.id);
+
+          // Gradient icon SVGs for market stance
+          const renderGradientIcon = () => {
+            if (!option.icon) return null;
+
+            const iconStyle = {
+              width: '52px',
+              height: '52px',
+              borderRadius: '14px',
+              background: option.gradient,
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '16px 20px',
-              background: isSelected(option.id) ? `${option.color}15` : '#1a1f2e',
-              border: `2px solid ${isSelected(option.id) ? option.color : '#2d3548'}`,
-              borderRadius: '12px',
-              cursor: 'pointer',
+              justifyContent: 'center',
+              flexShrink: 0,
+              boxShadow: selected ? `0 4px 12px ${option.color}40` : 'none',
               transition: 'all 0.2s',
-            }}
-          >
-            <div style={{ textAlign: 'left' }}>
-              <div style={{
-                color: isSelected(option.id) ? option.color : '#e6edf3',
-                fontSize: '18px',
-                fontWeight: '600',
-                marginBottom: option.description ? '4px' : '0',
-              }}>
-                {option.label}
-              </div>
-              {option.description && (
-                <div style={{ color: '#8b949e', fontSize: '13px' }}>
-                  {option.description}
+            };
+
+            const svgProps = {
+              width: 24,
+              height: 24,
+              fill: 'none',
+              stroke: 'white',
+              strokeWidth: 2.5,
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            };
+
+            if (option.icon === 'bullish') {
+              return (
+                <div style={iconStyle}>
+                  <svg {...svgProps} viewBox="0 0 24 24">
+                    <path d="M12 19V5" />
+                    <path d="M5 12l7-7 7 7" />
+                    <path d="M8 8l4-4 4 4" />
+                  </svg>
                 </div>
-              )}
-            </div>
-            {isSelected(option.id) && (
-              <div style={{
-                width: '24px',
-                height: '24px',
-                borderRadius: '50%',
-                background: option.color,
+              );
+            }
+            if (option.icon === 'bearish') {
+              return (
+                <div style={iconStyle}>
+                  <svg {...svgProps} viewBox="0 0 24 24">
+                    <path d="M12 5v14" />
+                    <path d="M19 12l-7 7-7-7" />
+                    <path d="M16 16l-4 4-4-4" />
+                  </svg>
+                </div>
+              );
+            }
+            if (option.icon === 'neutral') {
+              return (
+                <div style={iconStyle}>
+                  <svg {...svgProps} viewBox="0 0 24 24">
+                    <path d="M5 12h14" />
+                    <path d="M12 5l7 7-7 7" />
+                  </svg>
+                </div>
+              );
+            }
+            return null;
+          };
+
+          // Use gradient icon layout for stance question
+          if (currentQ.useGradientIcons) {
+            return (
+              <button
+                key={option.id}
+                onClick={() => handleSelect(option.id)}
+                style={{
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '16px',
+                  padding: '16px 20px',
+                  background: selected ? `${option.color}10` : '#1a1f2e',
+                  border: `2px solid ${selected ? option.color : '#2d3548'}`,
+                  borderRadius: '16px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+              >
+                {/* Checkmark in top right when selected */}
+                {selected && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '-8px',
+                    right: '-8px',
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '50%',
+                    background: option.gradient,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </div>
+                )}
+
+                {/* Gradient Icon */}
+                {renderGradientIcon()}
+
+                {/* Text Content */}
+                <div style={{ textAlign: 'left', flex: 1 }}>
+                  <div style={{
+                    color: selected ? option.color : '#e6edf3',
+                    fontSize: '18px',
+                    fontWeight: '600',
+                    marginBottom: '4px',
+                  }}>
+                    {option.label}
+                  </div>
+                  <div style={{ color: '#8b949e', fontSize: '13px' }}>
+                    {option.description}
+                  </div>
+                </div>
+              </button>
+            );
+          }
+
+          // Default option rendering (for other questions)
+          return (
+            <button
+              key={option.id}
+              onClick={() => handleSelect(option.id)}
+              style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                color: '#000',
-                fontSize: '14px',
-                fontWeight: '700',
-              }}>
-                ✓
+                justifyContent: 'space-between',
+                padding: '16px 20px',
+                background: selected ? `${option.color}15` : '#1a1f2e',
+                border: `2px solid ${selected ? option.color : '#2d3548'}`,
+                borderRadius: '12px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              <div style={{ textAlign: 'left' }}>
+                <div style={{
+                  color: selected ? option.color : '#e6edf3',
+                  fontSize: '18px',
+                  fontWeight: '600',
+                  marginBottom: option.description ? '4px' : '0',
+                }}>
+                  {option.label}
+                </div>
+                {option.description && (
+                  <div style={{ color: '#8b949e', fontSize: '13px' }}>
+                    {option.description}
+                  </div>
+                )}
               </div>
-            )}
-          </button>
-        ))}
+              {selected && (
+                <div style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '50%',
+                  background: option.color,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#000',
+                  fontSize: '14px',
+                  fontWeight: '700',
+                }}>
+                  ✓
+                </div>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Multi-select continue button */}
@@ -5773,6 +7484,19 @@ const AssetDetailView = ({ asset, thesis, pinnedInsights, onPin, onBack, colors 
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
   const isCrypto = asset.category !== undefined;
 
+  // Get sector-based colors for pulsing glow
+  const effectiveSector = asset.sector || getStockSector(asset.symbol) || (isCrypto ? 'Cryptocurrency' : 'Technology');
+  const sectorColor = getSectorColors(effectiveSector, isCrypto);
+  const accentColor = sectorColor.primary;
+  const accentGlow = sectorColor.glow;
+
+  // Debug logging
+  console.log('[AssetDetailView] Rendering with sector glow for:', asset.symbol, {
+    sector: effectiveSector,
+    accentColor,
+    accentGlow
+  });
+
   const isPinned = (metricName) => {
     return pinnedInsights?.some(n =>
       n.symbol === asset.symbol && n.metricName === metricName
@@ -5802,174 +7526,93 @@ const AssetDetailView = ({ asset, thesis, pinnedInsights, onPin, onBack, colors 
         </button>
       </div>
 
-      {/* Animated Background Keyframes */}
+      {/* CSS Animation for Pulsing Glow */}
       <style>{`
-        @keyframes ticker-gradient-shift {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-        @keyframes ticker-glow-pulse {
-          0%, 100% { opacity: 0.3; transform: scale(1); }
-          50% { opacity: 0.5; transform: scale(1.05); }
-        }
-        @keyframes ticker-particle-float {
-          0% { transform: translateY(0px) rotate(0deg); opacity: 0.4; }
-          50% { transform: translateY(-10px) rotate(180deg); opacity: 0.7; }
-          100% { transform: translateY(0px) rotate(360deg); opacity: 0.4; }
+        @keyframes sectorGlowPulse {
+          0%, 100% {
+            box-shadow: 0 0 20px ${accentGlow}, 0 0 40px ${accentGlow.replace('0.4', '0.2')};
+            transform: scale(1);
+          }
+          50% {
+            box-shadow: 0 0 30px ${accentGlow.replace('0.4', '0.6')}, 0 0 60px ${accentGlow.replace('0.4', '0.3')};
+            transform: scale(1.005);
+          }
         }
       `}</style>
 
-      {/* Asset Header with Animated Background */}
+      {/* Ticker Card with Sector-Colored Pulsing Glow Border */}
       <div style={{
         position: 'relative',
-        textAlign: 'center',
+        borderRadius: '20px',
+        padding: '3px',
+        background: `linear-gradient(135deg, ${accentColor}, ${accentColor}80)`,
+        boxShadow: `0 0 20px ${accentGlow}, 0 0 40px ${accentGlow.replace('0.4', '0.2')}`,
+        animation: 'sectorGlowPulse 3s ease-in-out infinite',
         marginBottom: '24px',
-        padding: '24px 20px',
-        borderRadius: '16px',
-        border: `1px solid ${c.cyan}30`,
-        overflow: 'hidden',
       }}>
-        {/* Animated gradient background */}
+        {/* Inner Card */}
         <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: `linear-gradient(135deg,
-            ${safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red}15 0%,
-            #1a1f2e 25%,
-            #161b22 50%,
-            #1a1f2e 75%,
-            ${c.cyan}15 100%)`,
-          backgroundSize: '200% 200%',
-          animation: 'ticker-gradient-shift 8s ease infinite',
-        }} />
-
-        {/* Floating particles effect */}
-        <div style={{
-          position: 'absolute',
-          top: '10%',
-          left: '10%',
-          width: '8px',
-          height: '8px',
-          borderRadius: '50%',
-          background: c.cyan,
-          opacity: 0.4,
-          animation: 'ticker-particle-float 4s ease-in-out infinite',
-        }} />
-        <div style={{
-          position: 'absolute',
-          top: '20%',
-          right: '15%',
-          width: '6px',
-          height: '6px',
-          borderRadius: '50%',
-          background: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red,
-          opacity: 0.5,
-          animation: 'ticker-particle-float 5s ease-in-out infinite 1s',
-        }} />
-        <div style={{
-          position: 'absolute',
-          bottom: '25%',
-          left: '20%',
-          width: '5px',
-          height: '5px',
-          borderRadius: '50%',
-          background: c.cyan,
-          opacity: 0.3,
-          animation: 'ticker-particle-float 6s ease-in-out infinite 2s',
-        }} />
-        <div style={{
-          position: 'absolute',
-          bottom: '15%',
-          right: '25%',
-          width: '7px',
-          height: '7px',
-          borderRadius: '50%',
-          background: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red,
-          opacity: 0.4,
-          animation: 'ticker-particle-float 4.5s ease-in-out infinite 0.5s',
-        }} />
-
-        {/* Corner glow effect */}
-        <div style={{
-          position: 'absolute',
-          top: '-20%',
-          right: '-10%',
-          width: '150px',
-          height: '150px',
-          borderRadius: '50%',
-          background: `radial-gradient(circle, ${safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red}30 0%, transparent 70%)`,
-          animation: 'ticker-glow-pulse 4s ease-in-out infinite',
-        }} />
-
-        {/* Content (z-indexed above background) */}
-        <div style={{ position: 'relative', zIndex: 1 }}>
+          background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 100%)',
+          borderRadius: '17px',
+          padding: '32px 24px',
+          textAlign: 'center',
+        }}>
+          {/* Symbol */}
           <h1 style={{
-            color: '#e6edf3',
-            fontSize: '32px',
-            marginBottom: '4px',
-            textShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            color: '#ffffff',
+            fontSize: '36px',
+            fontWeight: '800',
+            margin: '0 0 4px 0',
+            letterSpacing: '2px',
+            textShadow: `0 0 30px ${accentGlow}`
           }}>
             {asset.symbol}
           </h1>
-          <p style={{ color: '#8b949e', fontSize: '14px', marginBottom: '12px' }}>
+
+          {/* Company Name */}
+          <p style={{
+            color: '#8b949e',
+            fontSize: '14px',
+            margin: '0 0 16px 0',
+            fontWeight: '500'
+          }}>
             {asset.name}
           </p>
+
+          {/* Price */}
           <div style={{
-            display: 'inline-block',
-            padding: '4px 12px',
-            background: 'rgba(22, 27, 34, 0.8)',
-            backdropFilter: 'blur(4px)',
-            borderRadius: '16px',
-            color: c.cyan,
-            fontSize: '12px',
-            border: `1px solid ${c.cyan}30`,
+            fontSize: '40px',
+            fontWeight: '700',
+            color: '#ffffff',
+            margin: '0 0 12px 0',
+            fontFamily: 'system-ui, -apple-system, sans-serif'
           }}>
-            {isCrypto ? (
-              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill={c.cyan}>
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                </svg>
-                {asset.category}
-              </span>
-            ) : (
-              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={c.cyan} strokeWidth="2">
-                  <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
-                  <path d="M16 3v4M8 3v4"/>
-                </svg>
-                {asset.sector}
-              </span>
-            )}
+            ${safeToFixed(asset.price, 2)}
           </div>
 
-          <div style={{ marginTop: '16px' }}>
-            <div style={{
-              color: '#e6edf3',
-              fontSize: '32px',
-              fontWeight: '700',
-              textShadow: `0 0 20px ${safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red}40`
-            }}>
-              ${safeToFixed(asset.price, 2)}
-            </div>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              marginTop: '8px',
-              padding: '6px 14px',
-              background: `${safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red}20`,
-              borderRadius: '20px',
-              color: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? c.green : c.red,
-              fontSize: '16px',
-              fontWeight: '600',
+          {/* Change Badge */}
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+            border: `1px solid ${safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? '#22c55e' : '#ef4444'}50`,
+            borderRadius: '12px',
+            padding: '8px 16px'
+          }}>
+            <span style={{
+              color: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? '#22c55e' : '#ef4444',
+              fontSize: '14px'
             }}>
               {safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? '▲' : '▼'}
+            </span>
+            <span style={{
+              color: safeNumber(asset.percentChange || asset.change24h, 0) >= 0 ? '#22c55e' : '#ef4444',
+              fontSize: '16px',
+              fontWeight: '700'
+            }}>
               {Math.abs(safeNumber(asset.percentChange || asset.change24h, 0)).toFixed(2)}% today
-            </div>
+            </span>
           </div>
         </div>
       </div>
@@ -6000,7 +7643,7 @@ const AssetDetailView = ({ asset, thesis, pinnedInsights, onPin, onBack, colors 
 // RESEARCH FLOW - MAIN CONTAINER
 // ============================================
 
-const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
+const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
 
   // Flow state
@@ -6249,38 +7892,68 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
 
     const stockCount = portfolio.filter(p => p.type === 'stock').length;
 
-    // SNAKE DRAFT: Assign round-by-round strategy instead of allocation %
+    // SNAKE DRAFT: Assign tiered strategy instead of allocation %
     if (isSnakeDraft) {
-      // Round strategy rationales
-      const roundStrategies = {
-        1: { label: 'Round 1', rationale: 'Secure your highest-conviction pick first' },
-        2: { label: 'Round 2', rationale: 'Lock in your second core position' },
-        3: { label: 'Round 3', rationale: 'Add sector diversity early' },
-        4: { label: 'Round 4', rationale: 'Grab before opponents notice' },
-        5: { label: 'Round 5', rationale: 'Mid-draft value pick' },
-        6: { label: 'Round 6', rationale: 'Balance your portfolio risk' },
-        7: { label: 'Round 7', rationale: 'Late-round upside play' },
-        8: { label: 'Round 8', rationale: 'Fill gaps in sector exposure' },
-        9: { label: 'Round 9', rationale: 'Speculative swing position' },
-        10: { label: 'Round 10', rationale: 'Final sleeper pick' },
-      };
-
       // Sort by priority: user_selected first (by conviction), then diversification
       const sortedPortfolio = [
         ...portfolio.filter(p => p.source === 'user_selected'),
         ...portfolio.filter(p => p.source === 'diversification'),
       ];
 
+      // Assign tiers: Tier 1 (1-3), Tier 2 (4-6), Tier 3 (7+)
       sortedPortfolio.forEach((asset, index) => {
-        const round = Math.min(index + 1, 10);
-        asset.draftRound = round;
-        asset.roundLabel = roundStrategies[round]?.label || `Round ${round}`;
-        asset.roundRationale = asset.source === 'user_selected'
-          ? roundStrategies[round]?.rationale || 'Strategic pick'
-          : 'Diversification pick - grab if available';
+        if (index < 3) {
+          asset.tier = 1;
+          asset.tierLabel = '🔥 TIER 1';
+          asset.tierRationale = 'Draft ASAP - High priority pick';
+        } else if (index < 6) {
+          asset.tier = 2;
+          asset.tierLabel = '⚡ TIER 2';
+          asset.tierRationale = 'Strong alternative if Tier 1 taken';
+        } else {
+          asset.tier = 3;
+          asset.tierLabel = '📋 TIER 3';
+          asset.tierRationale = 'Category filler for late rounds';
+        }
+        asset.draftRound = index + 1;
       });
 
-      const strategyText = `Snake Draft strategy for ${thesis.risk || 'balanced'} ${thesis.stance || 'bullish'} approach. ${userPicks.length} priority picks for early rounds, ${divPicks.length} targets for later rounds.`;
+      // Build tiered strategy summary text
+      const tier1Picks = sortedPortfolio.filter(p => p.tier === 1).map(p => p.symbol).join(', ');
+      const tier2Picks = sortedPortfolio.filter(p => p.tier === 2).map(p => p.symbol).join(', ');
+      const tier3Picks = sortedPortfolio.filter(p => p.tier === 3).map(p => p.symbol).join(', ');
+
+      const strategyText = `🐍 SNAKE DRAFT STRATEGY
+
+Based on your thesis: ${thesis.stance || 'Bullish'} on ${thesis.sectors?.join(', ') || 'Growth sectors'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔥 PRIORITY TIER 1 - Draft ASAP (Rounds 1-3)
+These assets match your thesis and will be highly contested.
+${tier1Picks || 'None selected'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚡ PRIORITY TIER 2 - Strong Alternatives (Rounds 4-6)
+Excellent picks if Tier 1 targets are taken.
+${tier2Picks || 'None selected'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 TIER 3 - Category Fillers (Rounds 7-9)
+Use these to complete your category requirements.
+${tier3Picks || 'None selected'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 DRAFT TIPS:
+• Track your category counts - you MUST have 3 Steady, 3 Risky, 3 Defensive
+• If picking late in a round, pivot to best available
+• Watch what opponents pick - adjust on the fly
+
+📊 CATEGORY TRACKER:
+□ Steady: 0/3  □ Risky: 0/3  □ Defensive: 0/3`;
 
       return {
         strategySummary: strategyText,
@@ -6501,6 +8174,7 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
             onUsePortfolio={handleUsePortfolio}
             onStartTraining={handleStartTrainingBattle}
             onSaveTemplate={handleSaveAsTemplate}
+            onReturnToDashboard={onClose}
             onBack={() => setFlowPhase(4)}
             colors={c}
           />
@@ -12168,6 +13842,7 @@ export default function PortfolioDuel() {
             stocksData={stocksData}
             cryptoData={cryptoData}
             onUsePortfolio={handleUseResearchFlowPortfolio}
+            onClose={() => setResearchViewMode('classic')}
             colors={colors}
           />
         </div>
@@ -12564,36 +14239,67 @@ export default function PortfolioDuel() {
 
         const stockCount = portfolio.filter(p => p.type === 'stock').length;
 
-        // SNAKE DRAFT: Assign round-by-round strategy instead of allocation %
+        // SNAKE DRAFT: Assign tiered strategy instead of allocation %
         if (isSnakeDraft) {
-          const roundStrategies = {
-            1: { label: 'Round 1', rationale: 'Secure your highest-conviction pick first' },
-            2: { label: 'Round 2', rationale: 'Lock in your second core position' },
-            3: { label: 'Round 3', rationale: 'Add sector diversity early' },
-            4: { label: 'Round 4', rationale: 'Grab before opponents notice' },
-            5: { label: 'Round 5', rationale: 'Mid-draft value pick' },
-            6: { label: 'Round 6', rationale: 'Balance your portfolio risk' },
-            7: { label: 'Round 7', rationale: 'Late-round upside play' },
-            8: { label: 'Round 8', rationale: 'Fill gaps in sector exposure' },
-            9: { label: 'Round 9', rationale: 'Speculative swing position' },
-            10: { label: 'Round 10', rationale: 'Final sleeper pick' },
-          };
-
           const sortedPortfolio = [
             ...portfolio.filter(p => p.source === 'user_selected'),
             ...portfolio.filter(p => p.source === 'diversification'),
           ];
 
+          // Assign tiers: Tier 1 (1-3), Tier 2 (4-6), Tier 3 (7+)
           sortedPortfolio.forEach((asset, index) => {
-            const round = Math.min(index + 1, 10);
-            asset.draftRound = round;
-            asset.roundLabel = roundStrategies[round]?.label || `Round ${round}`;
-            asset.roundRationale = asset.source === 'user_selected'
-              ? roundStrategies[round]?.rationale || 'Strategic pick'
-              : 'Diversification pick - grab if available';
+            if (index < 3) {
+              asset.tier = 1;
+              asset.tierLabel = '🔥 TIER 1';
+              asset.tierRationale = 'Draft ASAP - High priority pick';
+            } else if (index < 6) {
+              asset.tier = 2;
+              asset.tierLabel = '⚡ TIER 2';
+              asset.tierRationale = 'Strong alternative if Tier 1 taken';
+            } else {
+              asset.tier = 3;
+              asset.tierLabel = '📋 TIER 3';
+              asset.tierRationale = 'Category filler for late rounds';
+            }
+            asset.draftRound = index + 1;
           });
 
-          const strategyText = `Snake Draft strategy for ${researchThesis?.risk || 'balanced'} ${researchThesis?.stance || 'bullish'} approach. ${userPicks.length} priority picks for early rounds, ${divPicks.length} targets for later rounds.`;
+          // Build tiered strategy summary text
+          const tier1Picks = sortedPortfolio.filter(p => p.tier === 1).map(p => p.symbol).join(', ');
+          const tier2Picks = sortedPortfolio.filter(p => p.tier === 2).map(p => p.symbol).join(', ');
+          const tier3Picks = sortedPortfolio.filter(p => p.tier === 3).map(p => p.symbol).join(', ');
+
+          const strategyText = `🐍 SNAKE DRAFT STRATEGY
+
+Based on your thesis: ${researchThesis?.stance || 'Bullish'} on ${researchThesis?.sectors?.join(', ') || 'Growth sectors'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔥 PRIORITY TIER 1 - Draft ASAP (Rounds 1-3)
+These assets match your thesis and will be highly contested.
+${tier1Picks || 'None selected'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚡ PRIORITY TIER 2 - Strong Alternatives (Rounds 4-6)
+Excellent picks if Tier 1 targets are taken.
+${tier2Picks || 'None selected'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 TIER 3 - Category Fillers (Rounds 7-9)
+Use these to complete your category requirements.
+${tier3Picks || 'None selected'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 DRAFT TIPS:
+• Track your category counts - you MUST have 3 Steady, 3 Risky, 3 Defensive
+• If picking late in a round, pivot to best available
+• Watch what opponents pick - adjust on the fly
+
+📊 CATEGORY TRACKER:
+□ Steady: 0/3  □ Risky: 0/3  □ Defensive: 0/3`;
 
           return {
             strategySummary: strategyText,
@@ -12946,7 +14652,7 @@ export default function PortfolioDuel() {
               </div>
             </div>
 
-            {/* Enhanced Ticker Card with Sector-Based Glow */}
+            {/* Clean Ticker Card with Sector-Colored Pulsing Glow Border */}
             {(() => {
               const isPositive = safeNumber(selectedAssetDetail.percentChange) >= 0;
               const isCrypto = !isStock;
@@ -12956,39 +14662,30 @@ export default function PortfolioDuel() {
               const accentColor = sectorColor.primary;
               const accentGlow = sectorColor.glow;
 
+              // Debug logging
+              console.log('[TickerCard] Rendering with sector glow for:', selectedAssetDetail.symbol, {
+                sector: effectiveSector,
+                accentColor,
+                accentGlow
+              });
+
               return (
                 <div style={{
                   position: 'relative',
                   padding: '16px',
                   marginBottom: '0'
                 }}>
-                  {/* CSS Animations */}
+                  {/* CSS Animation for Pulsing Glow */}
                   <style>
                     {`
-                      @keyframes tickerFloat {
-                        0%, 100% { transform: translateY(0) scale(1); }
-                        50% { transform: translateY(-20px) scale(1.05); }
-                      }
-                      @keyframes tickerFloatParticle {
-                        0%, 100% { transform: translateY(0) translateX(0); opacity: 0.3; }
-                        25% { transform: translateY(-15px) translateX(10px); opacity: 0.6; }
-                        50% { transform: translateY(-5px) translateX(-5px); opacity: 0.4; }
-                        75% { transform: translateY(-20px) translateX(5px); opacity: 0.7; }
-                      }
-                      @keyframes tickerShimmer {
-                        0%, 100% { opacity: 0.3; transform: scaleX(0.5); }
-                        50% { opacity: 1; transform: scaleX(1); }
-                      }
-                      @keyframes tickerPulse {
-                        0%, 100% { opacity: 0.3; }
-                        50% { opacity: 0.7; }
-                      }
                       @keyframes tickerGlowPulse {
                         0%, 100% {
-                          box-shadow: 0 0 20px ${accentGlow}, 0 0 40px ${accentGlow.replace('0.4', '0.2')}, 0 8px 32px rgba(0, 0, 0, 0.3);
+                          box-shadow: 0 0 20px ${accentGlow}, 0 0 40px ${accentGlow.replace('0.4', '0.2')};
+                          transform: scale(1);
                         }
                         50% {
-                          box-shadow: 0 0 30px ${accentGlow.replace('0.4', '0.5')}, 0 0 60px ${accentGlow.replace('0.4', '0.3')}, 0 8px 32px rgba(0, 0, 0, 0.3);
+                          box-shadow: 0 0 30px ${accentGlow.replace('0.4', '0.6')}, 0 0 60px ${accentGlow.replace('0.4', '0.3')};
+                          transform: scale(1.005);
                         }
                       }
                     `}
@@ -12997,261 +14694,88 @@ export default function PortfolioDuel() {
                   {/* Outer Glow Container with Pulsing Animation */}
                   <div style={{
                     position: 'relative',
-                    borderRadius: '24px',
+                    borderRadius: '20px',
                     padding: '3px',
-                    background: sectorColor.gradient,
-                    boxShadow: `0 0 20px ${accentGlow}, 0 0 40px ${accentGlow.replace('0.4', '0.2')}, 0 8px 32px rgba(0, 0, 0, 0.3)`,
+                    background: `linear-gradient(135deg, ${accentColor}, ${accentColor}80)`,
+                    boxShadow: `0 0 20px ${accentGlow}, 0 0 40px ${accentGlow.replace('0.4', '0.2')}`,
                     animation: 'tickerGlowPulse 3s ease-in-out infinite'
                   }}>
                     {/* Inner Card */}
                     <div style={{
-                      position: 'relative',
-                      background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 50%, #131a24 100%)',
-                      borderRadius: '21px',
-                      padding: '40px 24px',
-                      overflow: 'hidden'
+                      background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 100%)',
+                      borderRadius: '17px',
+                      padding: '32px 24px',
+                      textAlign: 'center'
                     }}>
+                      {/* Symbol */}
+                      <h1 style={{
+                        color: '#ffffff',
+                        fontSize: '42px',
+                        fontWeight: '800',
+                        margin: '0 0 4px 0',
+                        letterSpacing: '3px',
+                        textShadow: `0 0 30px ${accentGlow}`
+                      }}>
+                        {selectedAssetDetail.symbol}
+                      </h1>
 
-                  {/* Animated Gradient Orbs */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '-60px',
-                    right: '-60px',
-                    width: '200px',
-                    height: '200px',
-                    background: `radial-gradient(circle, ${accentColor}25 0%, transparent 70%)`,
-                    borderRadius: '50%',
-                    animation: 'tickerFloat 8s ease-in-out infinite',
-                    pointerEvents: 'none'
-                  }} />
-                  <div style={{
-                    position: 'absolute',
-                    bottom: '-40px',
-                    left: '-40px',
-                    width: '160px',
-                    height: '160px',
-                    background: `radial-gradient(circle, ${accentColor}15 0%, transparent 70%)`,
-                    borderRadius: '50%',
-                    animation: 'tickerFloat 10s ease-in-out infinite reverse',
-                    pointerEvents: 'none'
-                  }} />
-                  <div style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '20%',
-                    width: '100px',
-                    height: '100px',
-                    background: 'radial-gradient(circle, rgba(139, 92, 246, 0.2) 0%, transparent 70%)',
-                    borderRadius: '50%',
-                    animation: 'tickerPulse 4s ease-in-out infinite',
-                    pointerEvents: 'none'
-                  }} />
+                      {/* Company Name */}
+                      <p style={{
+                        color: '#8b949e',
+                        fontSize: '14px',
+                        margin: '0 0 20px 0',
+                        fontWeight: '500'
+                      }}>
+                        {selectedAssetDetail.name}
+                      </p>
 
-                  {/* Floating Particles */}
-                  {[...Array(8)].map((_, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        position: 'absolute',
-                        width: `${6 + (i % 3) * 4}px`,
-                        height: `${6 + (i % 3) * 4}px`,
-                        background: i % 2 === 0 ? accentColor : '#8b5cf6',
-                        borderRadius: '50%',
-                        opacity: 0.4 + (i % 3) * 0.2,
-                        top: `${15 + (i * 10)}%`,
-                        left: `${5 + (i * 12)}%`,
-                        animation: `tickerFloatParticle ${5 + i}s ease-in-out infinite`,
-                        animationDelay: `${i * 0.5}s`,
-                        pointerEvents: 'none'
-                      }}
-                    />
-                  ))}
-
-                  {/* Grid Pattern Overlay */}
-                  <div style={{
-                    position: 'absolute',
-                    inset: 0,
-                    backgroundImage: `
-                      linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
-                      linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)
-                    `,
-                    backgroundSize: '30px 30px',
-                    pointerEvents: 'none'
-                  }} />
-
-                  {/* Animated Top Border Glow */}
-                  <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: '10%',
-                    right: '10%',
-                    height: '2px',
-                    background: `linear-gradient(90deg, transparent, ${accentColor}, transparent)`,
-                    animation: 'tickerShimmer 3s ease-in-out infinite',
-                    opacity: 0.8
-                  }} />
-
-                  {/* Corner Decorations */}
-                  <svg style={{ position: 'absolute', top: '16px', left: '16px', opacity: 0.4 }} width="32" height="32" viewBox="0 0 32 32" fill="none">
-                    <path d="M0 8V0h8" stroke={accentColor} strokeWidth="2"/>
-                    <circle cx="0" cy="0" r="3" fill={accentColor} opacity="0.5"/>
-                  </svg>
-                  <svg style={{ position: 'absolute', top: '16px', right: '16px', opacity: 0.4 }} width="32" height="32" viewBox="0 0 32 32" fill="none">
-                    <path d="M32 8V0h-8" stroke={accentColor} strokeWidth="2"/>
-                    <circle cx="32" cy="0" r="3" fill={accentColor} opacity="0.5"/>
-                  </svg>
-                  <svg style={{ position: 'absolute', bottom: '16px', left: '16px', opacity: 0.4 }} width="32" height="32" viewBox="0 0 32 32" fill="none">
-                    <path d="M0 24v8h8" stroke={accentColor} strokeWidth="2"/>
-                    <circle cx="0" cy="32" r="3" fill={accentColor} opacity="0.5"/>
-                  </svg>
-                  <svg style={{ position: 'absolute', bottom: '16px', right: '16px', opacity: 0.4 }} width="32" height="32" viewBox="0 0 32 32" fill="none">
-                    <path d="M32 24v8h-8" stroke={accentColor} strokeWidth="2"/>
-                    <circle cx="32" cy="32" r="3" fill={accentColor} opacity="0.5"/>
-                  </svg>
-
-                  {/* Animated Horizontal Lines */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '30%',
-                    left: 0,
-                    right: 0,
-                    height: '1px',
-                    background: `linear-gradient(90deg, transparent, ${accentColor}30, transparent)`,
-                    animation: 'tickerPulse 2s ease-in-out infinite'
-                  }} />
-                  <div style={{
-                    position: 'absolute',
-                    bottom: '30%',
-                    left: 0,
-                    right: 0,
-                    height: '1px',
-                    background: `linear-gradient(90deg, transparent, ${accentColor}20, transparent)`,
-                    animation: 'tickerPulse 2s ease-in-out infinite',
-                    animationDelay: '1s'
-                  }} />
-
-                  {/* Content */}
-                  <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', maxWidth: '900px', margin: '0 auto' }}>
-                    {/* Symbol */}
-                    <h1 style={{
-                      color: '#ffffff',
-                      fontSize: '42px',
-                      fontWeight: '800',
-                      margin: '0 0 4px 0',
-                      letterSpacing: '3px',
-                      textShadow: `0 0 40px ${accentGlow}, 0 0 80px ${accentGlow}`
-                    }}>
-                      {selectedAssetDetail.symbol}
-                    </h1>
-
-                    {/* Company Name */}
-                    <p style={{
-                      color: '#8b949e',
-                      fontSize: '14px',
-                      margin: '0 0 16px 0',
-                      fontWeight: '500'
-                    }}>
-                      {selectedAssetDetail.name}
-                    </p>
-
-                    {/* Sector Badge */}
-                    <div style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      background: `${accentColor}15`,
-                      border: `1px solid ${accentColor}40`,
-                      borderRadius: '24px',
-                      padding: '8px 16px',
-                      marginBottom: '20px'
-                    }}>
+                      {/* Price */}
                       <div style={{
-                        width: '20px',
-                        height: '20px',
-                        background: `linear-gradient(135deg, ${accentColor} 0%, ${accentColor}cc 100%)`,
-                        borderRadius: '6px',
-                        display: 'flex',
+                        fontSize: '48px',
+                        fontWeight: '700',
+                        color: '#ffffff',
+                        margin: '0 0 16px 0',
+                        fontFamily: 'system-ui, -apple-system, sans-serif'
+                      }}>
+                        ${selectedAssetDetail.price?.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: selectedAssetDetail.price < 1 ? 4 : 2
+                        })}
+                      </div>
+
+                      {/* Change Badge */}
+                      <div style={{
+                        display: 'inline-flex',
                         alignItems: 'center',
-                        justifyContent: 'center'
+                        gap: '6px',
+                        background: isPositive ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                        border: `1px solid ${isPositive ? '#22c55e' : '#ef4444'}50`,
+                        borderRadius: '12px',
+                        padding: '10px 20px'
                       }}>
-                        {isCrypto ? (
-                          <span style={{ color: '#fff', fontSize: '12px', fontWeight: '700' }}>₿</span>
-                        ) : (
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
-                            <path d="M3 17l6-6 4 4 8-8M17 7h4v4"/>
-                          </svg>
-                        )}
+                        <span style={{
+                          color: isPositive ? '#22c55e' : '#ef4444',
+                          fontSize: '16px'
+                        }}>
+                          {isPositive ? '▲' : '▼'}
+                        </span>
+                        <span style={{
+                          color: isPositive ? '#22c55e' : '#ef4444',
+                          fontSize: '18px',
+                          fontWeight: '700'
+                        }}>
+                          {Math.abs(safeNumber(selectedAssetDetail.percentChange)).toFixed(2)}% today
+                        </span>
                       </div>
-                      <span style={{
-                        color: accentColor,
-                        fontSize: '12px',
-                        fontWeight: '600'
-                      }}>
-                        {effectiveSector || (isCrypto ? 'Cryptocurrency' : 'Stock')}
-                      </span>
-                    </div>
 
-                    {/* Price */}
-                    <div style={{
-                      fontSize: '48px',
-                      fontWeight: '700',
-                      color: '#ffffff',
-                      margin: '0 0 12px 0',
-                      fontFamily: 'system-ui, -apple-system, sans-serif',
-                      textShadow: '0 2px 20px rgba(0,0,0,0.3)'
-                    }}>
-                      ${selectedAssetDetail.price?.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: selectedAssetDetail.price < 1 ? 4 : 2
-                      })}
-                    </div>
-
-                    {/* Change Badge */}
-                    <div style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      background: isPositive ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                      border: `1px solid ${isPositive ? '#22c55e' : '#ef4444'}50`,
-                      borderRadius: '12px',
-                      padding: '10px 20px'
-                    }}>
-                      <span style={{
-                        color: isPositive ? '#22c55e' : '#ef4444',
-                        fontSize: '16px'
-                      }}>
-                        {isPositive ? '▲' : '▼'}
-                      </span>
-                      <span style={{
-                        color: isPositive ? '#22c55e' : '#ef4444',
-                        fontSize: '18px',
-                        fontWeight: '700'
-                      }}>
-                        {Math.abs(safeNumber(selectedAssetDetail.percentChange)).toFixed(2)}% today
-                      </span>
-                    </div>
-
-                    {/* Crypto Rank */}
-                    {!isStock && metrics?.marketCapRank && (
-                      <div style={{ marginTop: '12px' }}>
-                        <span style={{ color: '#8b949e', fontSize: '13px' }}>Rank #{metrics.marketCapRank} by Market Cap</span>
-                      </div>
-                    )}
-                  </div>
+                      {/* Crypto Rank */}
+                      {!isStock && metrics?.marketCapRank && (
+                        <div style={{ marginTop: '12px' }}>
+                          <span style={{ color: '#8b949e', fontSize: '13px' }}>Rank #{metrics.marketCapRank} by Market Cap</span>
+                        </div>
+                      )}
                     </div>
                   </div>
-
-                  {/* Bottom Reflection Glow - Sector colored */}
-                  <div style={{
-                    position: 'absolute',
-                    bottom: '8px',
-                    left: '15%',
-                    right: '15%',
-                    height: '16px',
-                    background: `radial-gradient(ellipse, ${accentGlow} 0%, transparent 70%)`,
-                    filter: 'blur(8px)',
-                    pointerEvents: 'none'
-                  }} />
                 </div>
               );
             })()}
@@ -13266,6 +14790,9 @@ export default function PortfolioDuel() {
               ) : isStock ? (
                 // STOCK METRICS
                 <>
+                  {/* AI Earnings Insights - shown at top of Fundamental tab */}
+                  <EarningsInsights symbol={selectedAssetDetail?.symbol} colors={colors} />
+
                   <h3 style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700', marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     Fundamentals
                   </h3>
@@ -14238,6 +15765,7 @@ export default function PortfolioDuel() {
                     onUsePortfolio={handleUseResearchPortfolio}
                     onStartTraining={handleStartTrainingBattle}
                     onSaveTemplate={handleSaveAsTemplate}
+                    onReturnToDashboard={() => setShowResearchMode(false)}
                     onBack={handleBackFromGamePlan}
                     colors={colors}
                   />
@@ -21359,28 +22887,35 @@ export default function PortfolioDuel() {
               ))}
             </div>
 
-            {/* Draft Advisor Panel */}
-            <div style={{ marginTop: '16px', maxWidth: '400px' }}>
-              <DraftAdvisor
-                myPicks={myPlayer?.picks || []}
-                availableStocks={availableAssets}
-                availableSteady={roomDraft?.availableAssets?.steady || []}
-                availableRisky={roomDraft?.availableAssets?.risky || []}
-                availableDefensive={roomDraft?.availableAssets?.defensive || []}
-                categoryRequirements={{
-                  steadyPicked: myPlayer?.categories?.steady || 0,
-                  steadyRequired: 3,
-                  riskyPicked: myPlayer?.categories?.risky || 0,
-                  riskyRequired: 3,
-                  defensivePicked: myPlayer?.categories?.defensive || 0,
-                  defensiveRequired: 3
-                }}
-                draftPosition={roomDraft?.players?.findIndex(p => p.odUserId === currentUserId) + 1}
-                round={currentRound}
-                compareStocks={[]}
-                colors={colors}
-                notes={userNotes.map(n => ({ header: n.header || n.symbol, content: n.content || n.note }))}
-              />
+            {/* Draft Advisor Panel - Centered on Desktop */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              width: '100%',
+              marginTop: '16px'
+            }}>
+              <div style={{ width: '100%', maxWidth: '450px' }}>
+                <DraftAdvisor
+                  myPicks={myPlayer?.picks || []}
+                  availableStocks={availableAssets}
+                  availableSteady={roomDraft?.availableAssets?.steady || []}
+                  availableRisky={roomDraft?.availableAssets?.risky || []}
+                  availableDefensive={roomDraft?.availableAssets?.defensive || []}
+                  categoryRequirements={{
+                    steadyPicked: myPlayer?.categories?.steady || 0,
+                    steadyRequired: 3,
+                    riskyPicked: myPlayer?.categories?.risky || 0,
+                    riskyRequired: 3,
+                    defensivePicked: myPlayer?.categories?.defensive || 0,
+                    defensiveRequired: 3
+                  }}
+                  draftPosition={roomDraft?.players?.findIndex(p => p.odUserId === currentUserId) + 1}
+                  round={currentRound}
+                  compareStocks={[]}
+                  colors={colors}
+                  notes={userNotes.map(n => ({ header: n.header || n.symbol, content: n.content || n.note }))}
+                />
+              </div>
             </div>
           </div>
 

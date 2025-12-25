@@ -627,6 +627,73 @@ export function clearNewsCache() {
 }
 
 // ============================================
+// EARNINGS DATA
+// ============================================
+
+// Cache for earnings data (24 hours)
+const earningsCache = {
+  data: {}, // keyed by symbol
+  CACHE_DURATION: 24 * 60 * 60 * 1000 // 24 hours
+};
+
+/**
+ * Fetch latest earnings data for a stock
+ * @param {string} symbol - Stock symbol (e.g., 'AAPL')
+ * @returns {Promise<Object|null>} - Earnings data or null
+ */
+export async function fetchLatestEarnings(symbol) {
+  const upperSymbol = symbol.toUpperCase();
+  const now = Date.now();
+
+  // Check cache first
+  const cached = earningsCache.data[upperSymbol];
+  if (cached && now - cached.timestamp < earningsCache.CACHE_DURATION) {
+    console.log(`[EODHD] Using cached earnings for ${upperSymbol}`);
+    return cached.data;
+  }
+
+  console.log(`[EODHD] Fetching earnings for ${upperSymbol}...`);
+
+  try {
+    const response = await fetchWithTimeout(
+      `${API_BASE}/stocks/earnings?symbol=${upperSymbol}`
+    );
+
+    if (!response.ok) {
+      throw new Error(`Proxy error: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (result.success && result.data) {
+      // Update cache
+      earningsCache.data[upperSymbol] = {
+        data: result.data,
+        timestamp: now
+      };
+
+      console.log(`[EODHD] Got earnings for ${upperSymbol}:`, result.data.quarter);
+      return result.data;
+    }
+
+    console.warn(`[EODHD] No earnings data for ${upperSymbol}:`, result.error);
+    return null;
+
+  } catch (error) {
+    console.warn(`[EODHD] Earnings fetch failed for ${upperSymbol}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Clear earnings cache
+ */
+export function clearEarningsCache() {
+  earningsCache.data = {};
+  logDebug('Earnings cache cleared');
+}
+
+// ============================================
 // UTILITY FUNCTIONS
 // ============================================
 
@@ -769,6 +836,9 @@ export const stockAPI = {
   getMultipleStockNews,
   getTopMoversWithNews,
   clearNewsCache,
+  // Earnings functions
+  fetchLatestEarnings,
+  clearEarningsCache,
   // Constants
   POPULAR_STOCKS,
   POPULAR_CRYPTO,
