@@ -3401,37 +3401,47 @@ const GamePlan = ({
                   border: '1px solid #21262d',
                   overflow: 'hidden'
                 }}>
-                  {tierAssets.map((asset, idx) => (
-                    <div key={asset.symbol} style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '12px 16px',
-                      borderBottom: idx < tierAssets.length - 1 ? '1px solid #21262d' : 'none',
-                      borderLeft: `3px solid ${config.color}`
-                    }}>
-                      <div>
-                        <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
-                          {asset.symbol}
-                        </div>
-                        <div style={{ color: '#8b949e', fontSize: '11px' }}>
-                          {asset.tierRationale || asset.rationale || 'Strategic pick'}
-                        </div>
-                      </div>
-                      <div style={{
-                        background: `${config.color}20`,
-                        border: `1px solid ${config.color}40`,
-                        borderRadius: '6px',
-                        padding: '4px 10px',
-                        color: config.color,
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        textTransform: 'uppercase'
+                  {tierAssets.map((asset, idx) => {
+                    // Category styling for Snake Draft
+                    const categoryConfig = {
+                      steady: { label: 'Steady', color: '#22c55e', bg: 'rgba(34, 197, 94, 0.2)' },
+                      risky: { label: 'Risky', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.2)' },
+                      defensive: { label: 'Defensive', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.2)' }
+                    };
+                    const catConfig = categoryConfig[asset.draftCategory] || categoryConfig.risky;
+
+                    return (
+                      <div key={asset.symbol} style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '12px 16px',
+                        borderBottom: idx < tierAssets.length - 1 ? '1px solid #21262d' : 'none',
+                        borderLeft: `3px solid ${config.color}`
                       }}>
-                        {asset.type === 'crypto' ? 'Crypto' : 'Stock'}
+                        <div>
+                          <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
+                            {asset.symbol}
+                          </div>
+                          <div style={{ color: '#8b949e', fontSize: '11px' }}>
+                            {asset.tierRationale || asset.rationale || 'Strategic pick'}
+                          </div>
+                        </div>
+                        <div style={{
+                          background: catConfig.bg,
+                          border: `1px solid ${catConfig.color}40`,
+                          borderRadius: '6px',
+                          padding: '4px 10px',
+                          color: catConfig.color,
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          textTransform: 'uppercase'
+                        }}>
+                          {catConfig.label}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -3463,25 +3473,28 @@ const GamePlan = ({
             justifyContent: 'center'
           }}>
             {[
-              { label: 'Steady', count: '0/3', color: '#22c55e' },
-              { label: 'Risky', count: '0/3', color: '#f59e0b' },
-              { label: 'Defensive', count: '0/3', color: '#3b82f6' }
-            ].map(cat => (
-              <div key={cat.label} style={{
-                background: '#0d1117',
-                border: `1px solid ${cat.color}40`,
-                borderRadius: '8px',
-                padding: '8px 14px',
-                textAlign: 'center'
-              }}>
-                <div style={{ color: cat.color, fontSize: '10px', fontWeight: '600', textTransform: 'uppercase' }}>
-                  {cat.label}
+              { label: 'Steady', key: 'steady', color: '#22c55e' },
+              { label: 'Risky', key: 'risky', color: '#f59e0b' },
+              { label: 'Defensive', key: 'defensive', color: '#3b82f6' }
+            ].map(cat => {
+              const count = gamePlan.categoryCounts?.[cat.key] || 0;
+              return (
+                <div key={cat.label} style={{
+                  background: '#0d1117',
+                  border: `1px solid ${cat.color}40`,
+                  borderRadius: '8px',
+                  padding: '8px 14px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ color: cat.color, fontSize: '10px', fontWeight: '600', textTransform: 'uppercase' }}>
+                    {cat.label}
+                  </div>
+                  <div style={{ color: '#e6edf3', fontSize: '14px', fontWeight: '700' }}>
+                    {count}/3
+                  </div>
                 </div>
-                <div style={{ color: '#e6edf3', fontSize: '14px', fontWeight: '700' }}>
-                  {cat.count}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ) : (
@@ -3804,7 +3817,7 @@ const GamePlan = ({
             fontSize: '12px',
             fontWeight: '500',
           }}>
-            Ready to start drafting!
+            {gamePlan.isSnakeDraft ? 'Ready to start drafting!' : 'Ready to battle!'}
           </span>
         </button>
 
@@ -13770,7 +13783,10 @@ export default function PortfolioDuel() {
             stocksData={stocksData}
             cryptoData={cryptoData}
             onUsePortfolio={handleUseResearchFlowPortfolio}
-            onClose={() => setResearchViewMode('classic')}
+            onClose={() => {
+              // Exit research mode and return to dashboard
+              setShowResearchMode(false);
+            }}
             colors={colors}
           />
         </div>
@@ -15620,7 +15636,12 @@ export default function PortfolioDuel() {
                     onUsePortfolio={handleUseResearchPortfolio}
                     onStartTraining={handleStartTrainingBattle}
                     onSaveTemplate={handleSaveAsTemplate}
-                    onReturnToDashboard={() => setShowResearchMode(false)}
+                    onReturnToDashboard={() => {
+                      // Reset research state and exit research mode
+                      setResearchPhase('explore');
+                      setResearchGamePlan(null);
+                      setShowResearchMode(false);
+                    }}
                     onBack={handleBackFromGamePlan}
                     colors={colors}
                   />
