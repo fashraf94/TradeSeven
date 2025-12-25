@@ -3356,279 +3356,366 @@ const GamePlan = ({
         </p>
       </div>
 
-      {/* Crypto Selection Explanation (if applicable) */}
-      {gamePlan.cryptoSelection && (
+      {/* Crypto Selection Explanation (if applicable) - Classic only */}
+      {!gamePlan.isSnakeDraft && gamePlan.cryptoSelection && (
         <CryptoSelectionExplanation
           cryptoSelection={gamePlan.cryptoSelection}
           portfolioRisk={gamePlan.portfolioRisk}
         />
       )}
 
-      {/* Portfolio Stats Summary */}
-      {(() => {
-        const cryptoAssets = gamePlan.portfolio?.filter(p => p.type === 'crypto') || [];
-        const stockAssets = gamePlan.portfolio?.filter(p => p.type !== 'crypto') || [];
+      {/* SNAKE DRAFT: Show tiered strategy format */}
+      {gamePlan.isSnakeDraft ? (
+        <div style={{ marginBottom: '20px' }}>
+          {/* Tier-based display for Snake Draft */}
+          {[1, 2, 3].map(tier => {
+            const tierAssets = gamePlan.portfolio?.filter(p => p.tier === tier) || [];
+            if (tierAssets.length === 0) return null;
 
-        return (
-          <>
-            {/* Stats Row */}
-            <div style={{
-              display: 'flex',
-              gap: '12px',
-              marginBottom: '20px',
-            }}>
-              <div style={{
-                background: '#0d1117',
-                borderRadius: '12px',
-                padding: '14px 16px',
-                flex: 1,
-                textAlign: 'center',
-                border: '1px solid #21262d',
-              }}>
-                <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase' }}>Stocks</div>
-                <div style={{ color: '#22c55e', fontSize: '22px', fontWeight: '700' }}>{stockAssets.length}</div>
-              </div>
-              <div style={{
-                background: '#0d1117',
-                borderRadius: '12px',
-                padding: '14px 16px',
-                flex: 1,
-                textAlign: 'center',
-                border: '1px solid #21262d',
-              }}>
-                <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase' }}>Crypto</div>
-                <div style={{ color: '#f59e0b', fontSize: '22px', fontWeight: '700' }}>{cryptoAssets.length}</div>
-              </div>
-              <div style={{
-                background: '#0d1117',
-                borderRadius: '12px',
-                padding: '14px 16px',
-                flex: 1,
-                textAlign: 'center',
-                border: '1px solid #21262d',
-              }}>
-                <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase' }}>Total</div>
-                <div style={{ color: c.cyan, fontSize: '22px', fontWeight: '700' }}>{gamePlan.portfolio?.length || 0}</div>
-              </div>
-            </div>
+            const tierConfig = {
+              1: { label: '🔥 TIER 1 - Draft ASAP (Rounds 1-3)', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' },
+              2: { label: '⚡ TIER 2 - Strong Alternatives (Rounds 4-6)', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' },
+              3: { label: '📋 TIER 3 - Category Fillers (Rounds 7-9)', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)' }
+            };
 
-            {/* Crypto Section */}
-            {cryptoAssets.length > 0 && (
-              <div style={{ marginBottom: '20px' }}>
+            const config = tierConfig[tier];
+
+            return (
+              <div key={tier} style={{ marginBottom: '16px' }}>
                 <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  marginBottom: '12px',
+                  background: config.bg,
+                  border: `1px solid ${config.color}40`,
+                  borderRadius: '12px',
+                  padding: '14px 16px',
+                  marginBottom: '8px'
                 }}>
-                  <div style={{
-                    width: '28px',
-                    height: '28px',
-                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                    borderRadius: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
-                  }}>
-                    <span style={{ color: '#fff', fontSize: '14px', fontWeight: '700' }}>₿</span>
+                  <div style={{ color: config.color, fontSize: '13px', fontWeight: '700' }}>
+                    {config.label}
                   </div>
-                  <span style={{
-                    color: '#f59e0b',
-                    fontSize: '12px',
-                    fontWeight: '700',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                  }}>
-                    {gamePlan.isSnakeDraft ? 'Crypto Draft Targets' : 'Crypto Holdings'}
-                  </span>
                 </div>
                 <div style={{
                   background: '#0d1117',
                   borderRadius: '12px',
-                  overflow: 'hidden',
-                  border: '1px solid rgba(245, 158, 11, 0.2)',
+                  border: '1px solid #21262d',
+                  overflow: 'hidden'
                 }}>
-                  {cryptoAssets.map((position, index) => (
-                    <div
-                      key={position.symbol}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '14px 16px',
-                        borderBottom: index < cryptoAssets.length - 1 ? '1px solid #21262d' : 'none',
-                        borderLeft: '3px solid #f59e0b',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{
-                          width: '36px',
-                          height: '36px',
-                          background: 'linear-gradient(135deg, #f59e0b20 0%, #d9770620 100%)',
-                          borderRadius: '10px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          border: '1px solid rgba(245, 158, 11, 0.3)',
-                        }}>
-                          <span style={{ color: '#f59e0b', fontSize: '12px', fontWeight: '800' }}>
-                            {position.symbol.slice(0, 2)}
-                          </span>
+                  {tierAssets.map((asset, idx) => (
+                    <div key={asset.symbol} style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '12px 16px',
+                      borderBottom: idx < tierAssets.length - 1 ? '1px solid #21262d' : 'none',
+                      borderLeft: `3px solid ${config.color}`
+                    }}>
+                      <div>
+                        <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
+                          {asset.symbol}
                         </div>
-                        <div>
-                          <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
-                            {position.symbol}
-                          </div>
-                          {gamePlan.isSnakeDraft ? (
-                            <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
-                              {position.roundRationale || 'Draft when available'}
-                            </div>
-                          ) : position.rationale && (
-                            <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
-                              {position.rationale}
-                            </div>
-                          )}
+                        <div style={{ color: '#8b949e', fontSize: '11px' }}>
+                          {asset.tierRationale || asset.rationale || 'Strategic pick'}
                         </div>
                       </div>
-                      {gamePlan.isSnakeDraft ? (
-                        <div style={{
-                          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                          borderRadius: '8px',
-                          padding: '6px 12px',
-                          color: '#fff',
-                          fontWeight: '700',
-                          fontSize: '12px',
-                          textTransform: 'uppercase',
-                        }}>
-                          {position.roundLabel || `R${position.draftRound}`}
+                      <div style={{
+                        background: `${config.color}20`,
+                        border: `1px solid ${config.color}40`,
+                        borderRadius: '6px',
+                        padding: '4px 10px',
+                        color: config.color,
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        textTransform: 'uppercase'
+                      }}>
+                        {asset.type === 'crypto' ? 'Crypto' : 'Stock'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Draft Tips Box */}
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.1), rgba(99, 102, 241, 0.1))',
+            borderRadius: '12px',
+            padding: '16px',
+            border: '1px solid rgba(0, 217, 255, 0.2)',
+            marginTop: '16px'
+          }}>
+            <div style={{ color: c.cyan, fontSize: '12px', fontWeight: '700', marginBottom: '10px' }}>
+              💡 DRAFT TIPS
+            </div>
+            <ul style={{ color: '#c9d1d9', fontSize: '12px', margin: 0, paddingLeft: '20px', lineHeight: '1.8' }}>
+              <li>Track your category counts - you MUST have 3 Steady, 3 Risky, 3 Defensive</li>
+              <li>If picking late in a round, pivot to best available</li>
+              <li>Watch what opponents pick - adjust on the fly</li>
+            </ul>
+          </div>
+
+          {/* Category Tracker */}
+          <div style={{
+            display: 'flex',
+            gap: '10px',
+            marginTop: '12px',
+            justifyContent: 'center'
+          }}>
+            {[
+              { label: 'Steady', count: '0/3', color: '#22c55e' },
+              { label: 'Risky', count: '0/3', color: '#f59e0b' },
+              { label: 'Defensive', count: '0/3', color: '#3b82f6' }
+            ].map(cat => (
+              <div key={cat.label} style={{
+                background: '#0d1117',
+                border: `1px solid ${cat.color}40`,
+                borderRadius: '8px',
+                padding: '8px 14px',
+                textAlign: 'center'
+              }}>
+                <div style={{ color: cat.color, fontSize: '10px', fontWeight: '600', textTransform: 'uppercase' }}>
+                  {cat.label}
+                </div>
+                <div style={{ color: '#e6edf3', fontSize: '14px', fontWeight: '700' }}>
+                  {cat.count}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        /* CLASSIC MODE: Show allocation-based portfolio */
+        <>
+          {/* Portfolio Stats Summary */}
+          {(() => {
+            const cryptoAssets = gamePlan.portfolio?.filter(p => p.type === 'crypto') || [];
+            const stockAssets = gamePlan.portfolio?.filter(p => p.type !== 'crypto') || [];
+
+            return (
+              <>
+                {/* Stats Row */}
+                <div style={{
+                  display: 'flex',
+                  gap: '12px',
+                  marginBottom: '20px',
+                }}>
+                  <div style={{
+                    background: '#0d1117',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    flex: 1,
+                    textAlign: 'center',
+                    border: '1px solid #21262d',
+                  }}>
+                    <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase' }}>Stocks</div>
+                    <div style={{ color: '#22c55e', fontSize: '22px', fontWeight: '700' }}>{stockAssets.length}</div>
+                  </div>
+                  <div style={{
+                    background: '#0d1117',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    flex: 1,
+                    textAlign: 'center',
+                    border: '1px solid #21262d',
+                  }}>
+                    <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase' }}>Crypto</div>
+                    <div style={{ color: '#f59e0b', fontSize: '22px', fontWeight: '700' }}>{cryptoAssets.length}</div>
+                  </div>
+                  <div style={{
+                    background: '#0d1117',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    flex: 1,
+                    textAlign: 'center',
+                    border: '1px solid #21262d',
+                  }}>
+                    <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase' }}>Total</div>
+                    <div style={{ color: c.cyan, fontSize: '22px', fontWeight: '700' }}>{gamePlan.portfolio?.length || 0}</div>
+                  </div>
+                </div>
+
+                {/* Crypto Section */}
+                {cryptoAssets.length > 0 && (
+                  <div style={{ marginBottom: '20px' }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      marginBottom: '12px',
+                    }}>
+                      <div style={{
+                        width: '28px',
+                        height: '28px',
+                        background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
+                      }}>
+                        <span style={{ color: '#fff', fontSize: '14px', fontWeight: '700' }}>₿</span>
+                      </div>
+                      <span style={{
+                        color: '#f59e0b',
+                        fontSize: '12px',
+                        fontWeight: '700',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}>
+                        Crypto Holdings
+                      </span>
+                    </div>
+                    <div style={{
+                      background: '#0d1117',
+                      borderRadius: '12px',
+                      overflow: 'hidden',
+                      border: '1px solid rgba(245, 158, 11, 0.2)',
+                    }}>
+                      {cryptoAssets.map((position, index) => (
+                        <div
+                          key={position.symbol}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '14px 16px',
+                            borderBottom: index < cryptoAssets.length - 1 ? '1px solid #21262d' : 'none',
+                            borderLeft: '3px solid #f59e0b',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{
+                              width: '36px',
+                              height: '36px',
+                              background: 'linear-gradient(135deg, #f59e0b20 0%, #d9770620 100%)',
+                              borderRadius: '10px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              border: '1px solid rgba(245, 158, 11, 0.3)',
+                            }}>
+                              <span style={{ color: '#f59e0b', fontSize: '12px', fontWeight: '800' }}>
+                                {position.symbol.slice(0, 2)}
+                              </span>
+                            </div>
+                            <div>
+                              <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
+                                {position.symbol}
+                              </div>
+                              {position.rationale && (
+                                <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
+                                  {position.rationale}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{
+                            color: '#f59e0b',
+                            fontWeight: '700',
+                            fontSize: '17px',
+                          }}>
+                            {safeToFixed(position.allocation, 1)}%
+                          </div>
                         </div>
-                      ) : (
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Stock Section */}
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    marginBottom: '12px',
+                  }}>
+                    <div style={{
+                      width: '28px',
+                      height: '28px',
+                      background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 2px 8px rgba(34, 197, 94, 0.3)',
+                    }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
+                        <path d="M3 17l6-6 4 4 8-8M17 7h4v4"/>
+                      </svg>
+                    </div>
+                    <span style={{
+                      color: '#22c55e',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                    }}>
+                      Stock Holdings
+                    </span>
+                  </div>
+                  <div style={{
+                    background: '#0d1117',
+                    borderRadius: '12px',
+                    overflow: 'hidden',
+                    border: '1px solid rgba(34, 197, 94, 0.2)',
+                  }}>
+                    {stockAssets.map((position, index) => (
+                      <div
+                        key={position.symbol}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '14px 16px',
+                          borderBottom: index < stockAssets.length - 1 ? '1px solid #21262d' : 'none',
+                          borderLeft: '3px solid #22c55e',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{
+                            width: '36px',
+                            height: '36px',
+                            background: 'linear-gradient(135deg, #22c55e20 0%, #16a34a20 100%)',
+                            borderRadius: '10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            border: '1px solid rgba(34, 197, 94, 0.3)',
+                          }}>
+                            <span style={{ color: '#22c55e', fontSize: '12px', fontWeight: '800' }}>
+                              {position.symbol.slice(0, 2)}
+                            </span>
+                          </div>
+                          <div>
+                            <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
+                              {position.symbol}
+                            </div>
+                            {position.rationale && (
+                              <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
+                                {position.rationale}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                         <div style={{
-                          color: '#f59e0b',
+                          color: '#22c55e',
                           fontWeight: '700',
                           fontSize: '17px',
                         }}>
                           {safeToFixed(position.allocation, 1)}%
                         </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Stock Section */}
-            <div style={{ marginBottom: '20px' }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                marginBottom: '12px',
-              }}>
-                <div style={{
-                  width: '28px',
-                  height: '28px',
-                  background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                  borderRadius: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 2px 8px rgba(34, 197, 94, 0.3)',
-                }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
-                    <path d="M3 17l6-6 4 4 8-8M17 7h4v4"/>
-                  </svg>
-                </div>
-                <span style={{
-                  color: '#22c55e',
-                  fontSize: '12px',
-                  fontWeight: '700',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                }}>
-                  {gamePlan.isSnakeDraft ? 'Stock Draft Board' : 'Stock Holdings'}
-                </span>
-              </div>
-              <div style={{
-                background: '#0d1117',
-                borderRadius: '12px',
-                overflow: 'hidden',
-                border: '1px solid rgba(34, 197, 94, 0.2)',
-              }}>
-                {stockAssets.map((position, index) => (
-                  <div
-                    key={position.symbol}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '14px 16px',
-                      borderBottom: index < stockAssets.length - 1 ? '1px solid #21262d' : 'none',
-                      borderLeft: '3px solid #22c55e',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{
-                        width: '36px',
-                        height: '36px',
-                        background: 'linear-gradient(135deg, #22c55e20 0%, #16a34a20 100%)',
-                        borderRadius: '10px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        border: '1px solid rgba(34, 197, 94, 0.3)',
-                      }}>
-                        <span style={{ color: '#22c55e', fontSize: '12px', fontWeight: '800' }}>
-                          {position.symbol.slice(0, 2)}
-                        </span>
                       </div>
-                      <div>
-                        <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
-                          {position.symbol}
-                        </div>
-                        {gamePlan.isSnakeDraft ? (
-                          <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
-                            {position.roundRationale || 'Draft when available'}
-                          </div>
-                        ) : position.rationale && (
-                          <div style={{ color: '#8b949e', fontSize: '11px', maxWidth: '180px' }}>
-                            {position.rationale}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    {gamePlan.isSnakeDraft ? (
-                      <div style={{
-                        background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                        borderRadius: '8px',
-                        padding: '6px 12px',
-                        color: '#fff',
-                        fontWeight: '700',
-                        fontSize: '12px',
-                        textTransform: 'uppercase',
-                      }}>
-                        {position.roundLabel || `R${position.draftRound}`}
-                      </div>
-                    ) : (
-                      <div style={{
-                        color: '#22c55e',
-                        fontWeight: '700',
-                        fontSize: '17px',
-                      }}>
-                        {safeToFixed(position.allocation, 1)}%
-                      </div>
-                    )}
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
-          </>
-        );
-      })()}
+                </div>
+              </>
+            );
+          })()}
+        </>
+      )}
 
-      {/* Insight Connections */}
-      {gamePlan.insightConnections && (
+      {/* Insight Connections - Classic only */}
+      {!gamePlan.isSnakeDraft && gamePlan.insightConnections && (
         <div style={{
           background: '#1a1f2e',
           borderRadius: '12px',
@@ -15678,7 +15765,7 @@ ${tier3Picks || 'None selected'}
                     onUsePortfolio={handleUseResearchPortfolio}
                     onStartTraining={handleStartTrainingBattle}
                     onSaveTemplate={handleSaveAsTemplate}
-                    onReturnToDashboard={() => setResearchPhase('explore')}
+                    onReturnToDashboard={() => setShowResearchMode(false)}
                     onBack={handleBackFromGamePlan}
                     colors={colors}
                   />
