@@ -3194,11 +3194,39 @@ const GamePlan = ({
   onUsePortfolio,
   onStartTraining,
   onSaveTemplate,
+  onReturnToDashboard,
   onBack,
   isLoading,
   colors,
 }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+  const [noteSaved, setNoteSaved] = useState(false);
+
+  // Handle Save to Notes for Snake Draft
+  const handleSaveToNotes = () => {
+    if (!gamePlan) return;
+
+    const noteEntry = {
+      id: `gameplan_${Date.now()}`,
+      content: gamePlan.strategySummary,
+      source: '🎯 Draft Game Plan',
+      timestamp: new Date().toISOString(),
+      type: 'game_plan'
+    };
+
+    // Get existing draft notes
+    const existingNotes = JSON.parse(localStorage.getItem('draftNotes') || '[]');
+
+    // Remove any previous game plan and add new one at top
+    const updatedNotes = [noteEntry, ...existingNotes.filter(n => n.type !== 'game_plan')];
+
+    // Save to localStorage
+    localStorage.setItem('draftNotes', JSON.stringify(updatedNotes));
+
+    // Show confirmation
+    setNoteSaved(true);
+    setTimeout(() => setNoteSaved(false), 3000);
+  };
 
   if (isLoading) {
     return (
@@ -3648,9 +3676,9 @@ const GamePlan = ({
 
       {/* Action Buttons */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {/* Primary: Start Training Battle */}
+        {/* Primary: Return to Dashboard */}
         <button
-          onClick={() => onStartTraining ? onStartTraining(gamePlan.portfolio) : onUsePortfolio(gamePlan.portfolio)}
+          onClick={() => onReturnToDashboard ? onReturnToDashboard() : (onStartTraining ? onStartTraining(gamePlan.portfolio) : onUsePortfolio(gamePlan.portfolio))}
           style={{
             width: '100%',
             background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
@@ -3671,14 +3699,15 @@ const GamePlan = ({
             gap: '8px',
           }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
-              <polygon points="5,3 19,12 5,21" fill="#ffffff"/>
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9,22 9,12 15,12 15,22"/>
             </svg>
             <span style={{
               color: '#ffffff',
               fontSize: '16px',
               fontWeight: '700',
             }}>
-              Start Training Battle
+              Return to Dashboard
             </span>
           </div>
           <span style={{
@@ -3686,39 +3715,68 @@ const GamePlan = ({
             fontSize: '12px',
             fontWeight: '500',
           }}>
-            Test this portfolio in a practice game
+            Ready to start drafting!
           </span>
         </button>
 
-        {/* Secondary: Save as Template */}
-        <button
-          onClick={() => onSaveTemplate ? onSaveTemplate(gamePlan) : null}
-          style={{
-            width: '100%',
-            background: 'transparent',
-            border: '2px solid #8b5cf6',
-            borderRadius: '12px',
-            padding: '14px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-          }}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2">
-            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
-            <polyline points="17,21 17,13 7,13 7,21"/>
-            <polyline points="7,3 7,8 15,8"/>
-          </svg>
-          <span style={{
-            color: '#8b5cf6',
-            fontSize: '14px',
-            fontWeight: '600',
-          }}>
-            Save as Template
-          </span>
-        </button>
+        {/* Secondary: Save to Notes (Snake Draft) or Save as Template (Classic) */}
+        {gamePlan.isSnakeDraft ? (
+          <button
+            onClick={handleSaveToNotes}
+            disabled={noteSaved}
+            style={{
+              width: '100%',
+              background: noteSaved ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'transparent',
+              border: noteSaved ? 'none' : '2px solid #10b981',
+              borderRadius: '12px',
+              padding: '14px',
+              cursor: noteSaved ? 'default' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              transition: 'all 0.3s ease',
+            }}
+          >
+            <span style={{ fontSize: '18px' }}>{noteSaved ? '✅' : '📝'}</span>
+            <span style={{
+              color: noteSaved ? '#ffffff' : '#10b981',
+              fontSize: '14px',
+              fontWeight: '600',
+            }}>
+              {noteSaved ? 'Saved to Notes!' : 'Save to Notes'}
+            </span>
+          </button>
+        ) : (
+          <button
+            onClick={() => onSaveTemplate ? onSaveTemplate(gamePlan) : null}
+            style={{
+              width: '100%',
+              background: 'transparent',
+              border: '2px solid #8b5cf6',
+              borderRadius: '12px',
+              padding: '14px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2">
+              <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+              <polyline points="17,21 17,13 7,13 7,21"/>
+              <polyline points="7,3 7,8 15,8"/>
+            </svg>
+            <span style={{
+              color: '#8b5cf6',
+              fontSize: '14px',
+              fontWeight: '600',
+            }}>
+              Save as Template
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -7498,7 +7556,7 @@ const AssetDetailView = ({ asset, thesis, pinnedInsights, onPin, onBack, colors 
 // RESEARCH FLOW - MAIN CONTAINER
 // ============================================
 
-const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
+const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
 
   // Flow state
@@ -7747,38 +7805,68 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
 
     const stockCount = portfolio.filter(p => p.type === 'stock').length;
 
-    // SNAKE DRAFT: Assign round-by-round strategy instead of allocation %
+    // SNAKE DRAFT: Assign tiered strategy instead of allocation %
     if (isSnakeDraft) {
-      // Round strategy rationales
-      const roundStrategies = {
-        1: { label: 'Round 1', rationale: 'Secure your highest-conviction pick first' },
-        2: { label: 'Round 2', rationale: 'Lock in your second core position' },
-        3: { label: 'Round 3', rationale: 'Add sector diversity early' },
-        4: { label: 'Round 4', rationale: 'Grab before opponents notice' },
-        5: { label: 'Round 5', rationale: 'Mid-draft value pick' },
-        6: { label: 'Round 6', rationale: 'Balance your portfolio risk' },
-        7: { label: 'Round 7', rationale: 'Late-round upside play' },
-        8: { label: 'Round 8', rationale: 'Fill gaps in sector exposure' },
-        9: { label: 'Round 9', rationale: 'Speculative swing position' },
-        10: { label: 'Round 10', rationale: 'Final sleeper pick' },
-      };
-
       // Sort by priority: user_selected first (by conviction), then diversification
       const sortedPortfolio = [
         ...portfolio.filter(p => p.source === 'user_selected'),
         ...portfolio.filter(p => p.source === 'diversification'),
       ];
 
+      // Assign tiers: Tier 1 (1-3), Tier 2 (4-6), Tier 3 (7+)
       sortedPortfolio.forEach((asset, index) => {
-        const round = Math.min(index + 1, 10);
-        asset.draftRound = round;
-        asset.roundLabel = roundStrategies[round]?.label || `Round ${round}`;
-        asset.roundRationale = asset.source === 'user_selected'
-          ? roundStrategies[round]?.rationale || 'Strategic pick'
-          : 'Diversification pick - grab if available';
+        if (index < 3) {
+          asset.tier = 1;
+          asset.tierLabel = '🔥 TIER 1';
+          asset.tierRationale = 'Draft ASAP - High priority pick';
+        } else if (index < 6) {
+          asset.tier = 2;
+          asset.tierLabel = '⚡ TIER 2';
+          asset.tierRationale = 'Strong alternative if Tier 1 taken';
+        } else {
+          asset.tier = 3;
+          asset.tierLabel = '📋 TIER 3';
+          asset.tierRationale = 'Category filler for late rounds';
+        }
+        asset.draftRound = index + 1;
       });
 
-      const strategyText = `Snake Draft strategy for ${thesis.risk || 'balanced'} ${thesis.stance || 'bullish'} approach. ${userPicks.length} priority picks for early rounds, ${divPicks.length} targets for later rounds.`;
+      // Build tiered strategy summary text
+      const tier1Picks = sortedPortfolio.filter(p => p.tier === 1).map(p => p.symbol).join(', ');
+      const tier2Picks = sortedPortfolio.filter(p => p.tier === 2).map(p => p.symbol).join(', ');
+      const tier3Picks = sortedPortfolio.filter(p => p.tier === 3).map(p => p.symbol).join(', ');
+
+      const strategyText = `🐍 SNAKE DRAFT STRATEGY
+
+Based on your thesis: ${thesis.stance || 'Bullish'} on ${thesis.sectors?.join(', ') || 'Growth sectors'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔥 PRIORITY TIER 1 - Draft ASAP (Rounds 1-3)
+These assets match your thesis and will be highly contested.
+${tier1Picks || 'None selected'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚡ PRIORITY TIER 2 - Strong Alternatives (Rounds 4-6)
+Excellent picks if Tier 1 targets are taken.
+${tier2Picks || 'None selected'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 TIER 3 - Category Fillers (Rounds 7-9)
+Use these to complete your category requirements.
+${tier3Picks || 'None selected'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 DRAFT TIPS:
+• Track your category counts - you MUST have 3 Steady, 3 Risky, 3 Defensive
+• If picking late in a round, pivot to best available
+• Watch what opponents pick - adjust on the fly
+
+📊 CATEGORY TRACKER:
+□ Steady: 0/3  □ Risky: 0/3  □ Defensive: 0/3`;
 
       return {
         strategySummary: strategyText,
@@ -7999,6 +8087,7 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, colors }) => {
             onUsePortfolio={handleUsePortfolio}
             onStartTraining={handleStartTrainingBattle}
             onSaveTemplate={handleSaveAsTemplate}
+            onReturnToDashboard={onClose}
             onBack={() => setFlowPhase(4)}
             colors={c}
           />
@@ -13666,6 +13755,7 @@ export default function PortfolioDuel() {
             stocksData={stocksData}
             cryptoData={cryptoData}
             onUsePortfolio={handleUseResearchFlowPortfolio}
+            onClose={() => setResearchViewMode('classic')}
             colors={colors}
           />
         </div>
@@ -14062,36 +14152,67 @@ export default function PortfolioDuel() {
 
         const stockCount = portfolio.filter(p => p.type === 'stock').length;
 
-        // SNAKE DRAFT: Assign round-by-round strategy instead of allocation %
+        // SNAKE DRAFT: Assign tiered strategy instead of allocation %
         if (isSnakeDraft) {
-          const roundStrategies = {
-            1: { label: 'Round 1', rationale: 'Secure your highest-conviction pick first' },
-            2: { label: 'Round 2', rationale: 'Lock in your second core position' },
-            3: { label: 'Round 3', rationale: 'Add sector diversity early' },
-            4: { label: 'Round 4', rationale: 'Grab before opponents notice' },
-            5: { label: 'Round 5', rationale: 'Mid-draft value pick' },
-            6: { label: 'Round 6', rationale: 'Balance your portfolio risk' },
-            7: { label: 'Round 7', rationale: 'Late-round upside play' },
-            8: { label: 'Round 8', rationale: 'Fill gaps in sector exposure' },
-            9: { label: 'Round 9', rationale: 'Speculative swing position' },
-            10: { label: 'Round 10', rationale: 'Final sleeper pick' },
-          };
-
           const sortedPortfolio = [
             ...portfolio.filter(p => p.source === 'user_selected'),
             ...portfolio.filter(p => p.source === 'diversification'),
           ];
 
+          // Assign tiers: Tier 1 (1-3), Tier 2 (4-6), Tier 3 (7+)
           sortedPortfolio.forEach((asset, index) => {
-            const round = Math.min(index + 1, 10);
-            asset.draftRound = round;
-            asset.roundLabel = roundStrategies[round]?.label || `Round ${round}`;
-            asset.roundRationale = asset.source === 'user_selected'
-              ? roundStrategies[round]?.rationale || 'Strategic pick'
-              : 'Diversification pick - grab if available';
+            if (index < 3) {
+              asset.tier = 1;
+              asset.tierLabel = '🔥 TIER 1';
+              asset.tierRationale = 'Draft ASAP - High priority pick';
+            } else if (index < 6) {
+              asset.tier = 2;
+              asset.tierLabel = '⚡ TIER 2';
+              asset.tierRationale = 'Strong alternative if Tier 1 taken';
+            } else {
+              asset.tier = 3;
+              asset.tierLabel = '📋 TIER 3';
+              asset.tierRationale = 'Category filler for late rounds';
+            }
+            asset.draftRound = index + 1;
           });
 
-          const strategyText = `Snake Draft strategy for ${researchThesis?.risk || 'balanced'} ${researchThesis?.stance || 'bullish'} approach. ${userPicks.length} priority picks for early rounds, ${divPicks.length} targets for later rounds.`;
+          // Build tiered strategy summary text
+          const tier1Picks = sortedPortfolio.filter(p => p.tier === 1).map(p => p.symbol).join(', ');
+          const tier2Picks = sortedPortfolio.filter(p => p.tier === 2).map(p => p.symbol).join(', ');
+          const tier3Picks = sortedPortfolio.filter(p => p.tier === 3).map(p => p.symbol).join(', ');
+
+          const strategyText = `🐍 SNAKE DRAFT STRATEGY
+
+Based on your thesis: ${researchThesis?.stance || 'Bullish'} on ${researchThesis?.sectors?.join(', ') || 'Growth sectors'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔥 PRIORITY TIER 1 - Draft ASAP (Rounds 1-3)
+These assets match your thesis and will be highly contested.
+${tier1Picks || 'None selected'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚡ PRIORITY TIER 2 - Strong Alternatives (Rounds 4-6)
+Excellent picks if Tier 1 targets are taken.
+${tier2Picks || 'None selected'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 TIER 3 - Category Fillers (Rounds 7-9)
+Use these to complete your category requirements.
+${tier3Picks || 'None selected'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 DRAFT TIPS:
+• Track your category counts - you MUST have 3 Steady, 3 Risky, 3 Defensive
+• If picking late in a round, pivot to best available
+• Watch what opponents pick - adjust on the fly
+
+📊 CATEGORY TRACKER:
+□ Steady: 0/3  □ Risky: 0/3  □ Defensive: 0/3`;
 
           return {
             strategySummary: strategyText,
@@ -15557,6 +15678,7 @@ export default function PortfolioDuel() {
                     onUsePortfolio={handleUseResearchPortfolio}
                     onStartTraining={handleStartTrainingBattle}
                     onSaveTemplate={handleSaveAsTemplate}
+                    onReturnToDashboard={() => setResearchPhase('explore')}
                     onBack={handleBackFromGamePlan}
                     colors={colors}
                   />
@@ -22678,28 +22800,35 @@ export default function PortfolioDuel() {
               ))}
             </div>
 
-            {/* Draft Advisor Panel */}
-            <div style={{ marginTop: '16px', maxWidth: '400px' }}>
-              <DraftAdvisor
-                myPicks={myPlayer?.picks || []}
-                availableStocks={availableAssets}
-                availableSteady={roomDraft?.availableAssets?.steady || []}
-                availableRisky={roomDraft?.availableAssets?.risky || []}
-                availableDefensive={roomDraft?.availableAssets?.defensive || []}
-                categoryRequirements={{
-                  steadyPicked: myPlayer?.categories?.steady || 0,
-                  steadyRequired: 3,
-                  riskyPicked: myPlayer?.categories?.risky || 0,
-                  riskyRequired: 3,
-                  defensivePicked: myPlayer?.categories?.defensive || 0,
-                  defensiveRequired: 3
-                }}
-                draftPosition={roomDraft?.players?.findIndex(p => p.odUserId === currentUserId) + 1}
-                round={currentRound}
-                compareStocks={[]}
-                colors={colors}
-                notes={userNotes.map(n => ({ header: n.header || n.symbol, content: n.content || n.note }))}
-              />
+            {/* Draft Advisor Panel - Centered on Desktop */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              width: '100%',
+              marginTop: '16px'
+            }}>
+              <div style={{ width: '100%', maxWidth: '450px' }}>
+                <DraftAdvisor
+                  myPicks={myPlayer?.picks || []}
+                  availableStocks={availableAssets}
+                  availableSteady={roomDraft?.availableAssets?.steady || []}
+                  availableRisky={roomDraft?.availableAssets?.risky || []}
+                  availableDefensive={roomDraft?.availableAssets?.defensive || []}
+                  categoryRequirements={{
+                    steadyPicked: myPlayer?.categories?.steady || 0,
+                    steadyRequired: 3,
+                    riskyPicked: myPlayer?.categories?.risky || 0,
+                    riskyRequired: 3,
+                    defensivePicked: myPlayer?.categories?.defensive || 0,
+                    defensiveRequired: 3
+                  }}
+                  draftPosition={roomDraft?.players?.findIndex(p => p.odUserId === currentUserId) + 1}
+                  round={currentRound}
+                  compareStocks={[]}
+                  colors={colors}
+                  notes={userNotes.map(n => ({ header: n.header || n.symbol, content: n.content || n.note }))}
+                />
+              </div>
             </div>
           </div>
 
