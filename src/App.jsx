@@ -15,6 +15,8 @@ import ResearchAdvisor from './components/ResearchAdvisor';
 import DraftAdvisor from './components/DraftAdvisor';
 // Research Mode services
 import { generateGamePlan, enhanceRecommendations, getAssetDeepDive } from './services/researchAdvisor';
+// Snake Draft strategy utilities (consolidated from duplicate code paths)
+import { createSnakeDraftGamePlan } from './utils/draftStrategy';
 // Recommendation Engine
 import {
   getRecommendations,
@@ -7892,87 +7894,13 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors 
 
     const stockCount = portfolio.filter(p => p.type === 'stock').length;
 
-    // SNAKE DRAFT: Assign tiered strategy instead of allocation %
+    // SNAKE DRAFT: Use consolidated utility for tiered strategy
     if (isSnakeDraft) {
-      // Sort by priority: user_selected first (by conviction), then diversification
-      const sortedPortfolio = [
-        ...portfolio.filter(p => p.source === 'user_selected'),
-        ...portfolio.filter(p => p.source === 'diversification'),
-      ];
-
-      // Assign tiers: Tier 1 (1-3), Tier 2 (4-6), Tier 3 (7+)
-      sortedPortfolio.forEach((asset, index) => {
-        if (index < 3) {
-          asset.tier = 1;
-          asset.tierLabel = '🔥 TIER 1';
-          asset.tierRationale = 'Draft ASAP - High priority pick';
-        } else if (index < 6) {
-          asset.tier = 2;
-          asset.tierLabel = '⚡ TIER 2';
-          asset.tierRationale = 'Strong alternative if Tier 1 taken';
-        } else {
-          asset.tier = 3;
-          asset.tierLabel = '📋 TIER 3';
-          asset.tierRationale = 'Category filler for late rounds';
-        }
-        asset.draftRound = index + 1;
+      return createSnakeDraftGamePlan(portfolio, thesis, {
+        userPicksCount: userPicks.length,
+        divPicksCount: divPicks.length,
+        diversificationStrategy
       });
-
-      // Build tiered strategy summary text
-      const tier1Picks = sortedPortfolio.filter(p => p.tier === 1).map(p => p.symbol).join(', ');
-      const tier2Picks = sortedPortfolio.filter(p => p.tier === 2).map(p => p.symbol).join(', ');
-      const tier3Picks = sortedPortfolio.filter(p => p.tier === 3).map(p => p.symbol).join(', ');
-
-      const strategyText = `🐍 SNAKE DRAFT STRATEGY
-
-Based on your thesis: ${thesis.stance || 'Bullish'} on ${thesis.sectors?.join(', ') || 'Growth sectors'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔥 PRIORITY TIER 1 - Draft ASAP (Rounds 1-3)
-These assets match your thesis and will be highly contested.
-${tier1Picks || 'None selected'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-⚡ PRIORITY TIER 2 - Strong Alternatives (Rounds 4-6)
-Excellent picks if Tier 1 targets are taken.
-${tier2Picks || 'None selected'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📋 TIER 3 - Category Fillers (Rounds 7-9)
-Use these to complete your category requirements.
-${tier3Picks || 'None selected'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💡 DRAFT TIPS:
-• Track your category counts - you MUST have 3 Steady, 3 Risky, 3 Defensive
-• If picking late in a round, pivot to best available
-• Watch what opponents pick - adjust on the fly
-
-📊 CATEGORY TRACKER:
-□ Steady: 0/3  □ Risky: 0/3  □ Defensive: 0/3`;
-
-      return {
-        strategySummary: strategyText,
-        portfolio: sortedPortfolio,
-        isSnakeDraft: true,
-        risks: [
-          'High-priority picks may be taken by opponents before your turn',
-          'Draft position affects which assets you can secure',
-          'Week-long format means more exposure to volatility'
-        ],
-        insightConnections: 'Draft order prioritizes your high-conviction picks, with backup targets for each round.',
-        generatedLocally: true,
-        metadata: {
-          userPicks: userPicks.length,
-          diversificationAdded: divPicks.length,
-          totalAssets: sortedPortfolio.length,
-          diversificationStrategy
-        }
-      };
     }
 
     // Build strategy description for Head-to-Head
@@ -14239,86 +14167,13 @@ export default function PortfolioDuel() {
 
         const stockCount = portfolio.filter(p => p.type === 'stock').length;
 
-        // SNAKE DRAFT: Assign tiered strategy instead of allocation %
+        // SNAKE DRAFT: Use consolidated utility for tiered strategy
         if (isSnakeDraft) {
-          const sortedPortfolio = [
-            ...portfolio.filter(p => p.source === 'user_selected'),
-            ...portfolio.filter(p => p.source === 'diversification'),
-          ];
-
-          // Assign tiers: Tier 1 (1-3), Tier 2 (4-6), Tier 3 (7+)
-          sortedPortfolio.forEach((asset, index) => {
-            if (index < 3) {
-              asset.tier = 1;
-              asset.tierLabel = '🔥 TIER 1';
-              asset.tierRationale = 'Draft ASAP - High priority pick';
-            } else if (index < 6) {
-              asset.tier = 2;
-              asset.tierLabel = '⚡ TIER 2';
-              asset.tierRationale = 'Strong alternative if Tier 1 taken';
-            } else {
-              asset.tier = 3;
-              asset.tierLabel = '📋 TIER 3';
-              asset.tierRationale = 'Category filler for late rounds';
-            }
-            asset.draftRound = index + 1;
+          return createSnakeDraftGamePlan(portfolio, researchThesis, {
+            userPicksCount: userPicks.length,
+            divPicksCount: divPicks.length,
+            diversificationStrategy
           });
-
-          // Build tiered strategy summary text
-          const tier1Picks = sortedPortfolio.filter(p => p.tier === 1).map(p => p.symbol).join(', ');
-          const tier2Picks = sortedPortfolio.filter(p => p.tier === 2).map(p => p.symbol).join(', ');
-          const tier3Picks = sortedPortfolio.filter(p => p.tier === 3).map(p => p.symbol).join(', ');
-
-          const strategyText = `🐍 SNAKE DRAFT STRATEGY
-
-Based on your thesis: ${researchThesis?.stance || 'Bullish'} on ${researchThesis?.sectors?.join(', ') || 'Growth sectors'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔥 PRIORITY TIER 1 - Draft ASAP (Rounds 1-3)
-These assets match your thesis and will be highly contested.
-${tier1Picks || 'None selected'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-⚡ PRIORITY TIER 2 - Strong Alternatives (Rounds 4-6)
-Excellent picks if Tier 1 targets are taken.
-${tier2Picks || 'None selected'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📋 TIER 3 - Category Fillers (Rounds 7-9)
-Use these to complete your category requirements.
-${tier3Picks || 'None selected'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💡 DRAFT TIPS:
-• Track your category counts - you MUST have 3 Steady, 3 Risky, 3 Defensive
-• If picking late in a round, pivot to best available
-• Watch what opponents pick - adjust on the fly
-
-📊 CATEGORY TRACKER:
-□ Steady: 0/3  □ Risky: 0/3  □ Defensive: 0/3`;
-
-          return {
-            strategySummary: strategyText,
-            portfolio: sortedPortfolio,
-            isSnakeDraft: true,
-            risks: [
-              'High-priority picks may be taken by opponents before your turn',
-              'Draft position affects which assets you can secure',
-              'Week-long format means more exposure to volatility'
-            ],
-            insightConnections: 'Draft order prioritizes your high-conviction picks, with backup targets for each round.',
-            generatedLocally: true,
-            metadata: {
-              userPicks: userPicks.length,
-              diversificationAdded: divPicks.length,
-              totalAssets: sortedPortfolio.length,
-              diversificationStrategy
-            }
-          };
         }
 
         // Build strategy description for Head-to-Head
