@@ -130,10 +130,16 @@ const STOCK_SECTORS = {
   'AEP': 'Utilities', 'EXC': 'Utilities', 'SRE': 'Utilities', 'XEL': 'Utilities',
 };
 
-// Helper to get sector colors
+// Helper to get sector colors (returns full color object)
 const getSectorColors = (sector, isCrypto = false) => {
   if (isCrypto) return SECTOR_COLORS['Cryptocurrency'];
   return SECTOR_COLORS[sector] || SECTOR_COLORS['default'];
+};
+
+// Helper to get sector color (returns just primary color string)
+const getSectorColor = (sector) => {
+  const colorObj = SECTOR_COLORS[sector] || SECTOR_COLORS['default'];
+  return colorObj.primary;
 };
 
 // Helper to get stock sector from database
