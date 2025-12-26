@@ -21781,6 +21781,126 @@ export default function PortfolioDuel() {
             </div>
           </>
         )}
+
+        {/* ========== CONFIRMATION POPUPS ========== */}
+        <ConfirmationPopup
+          show={showCreateBattleConfirm}
+          onClose={() => setShowCreateBattleConfirm(false)}
+          onConfirm={() => {
+            setShowCreateBattleConfirm(false);
+            setBuilderMode('create');
+            setScreen('builder');
+          }}
+          icon={<TrendingUp size={32} style={{ color: '#ffffff' }} />}
+          iconBgColor="#00d9ff"
+          title="Create Battle?"
+          subtitle="Challenge opponents with your portfolio picks"
+          details={[
+            { label: 'Assets Required', value: '7-13 picks' },
+            { label: 'Duration', value: '24 hours' },
+            { label: 'Rewards', value: '+100 XP (win) / +25 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
+          ]}
+          confirmText="Create Battle"
+          confirmColor="#00d9ff"
+          tutorialModeType="classic"
+        />
+
+        <ConfirmationPopup
+          show={showJoinBattleConfirm}
+          onClose={() => setShowJoinBattleConfirm(false)}
+          onConfirm={() => {
+            setShowJoinBattleConfirm(false);
+            setBuilderMode('join');
+            setScreen('join');
+          }}
+          icon={<Users size={32} style={{ color: '#ffffff' }} />}
+          iconBgColor="#00d9ff"
+          title="Join Battle?"
+          subtitle="Enter a challenge code to compete"
+          details={[
+            { label: 'Assets Required', value: '7-13 picks' },
+            { label: 'Duration', value: '24 hours' },
+            { label: 'Rewards', value: '+100 XP (win) / +25 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
+          ]}
+          confirmText="Join Battle"
+          confirmColor="#00d9ff"
+          tutorialModeType="classic"
+        />
+
+        <ConfirmationPopup
+          show={showClassicTrainingConfirm}
+          onClose={() => setShowClassicTrainingConfirm(false)}
+          onConfirm={() => {
+            setShowClassicTrainingConfirm(false);
+            setPortfolio([]);
+            setPortfolioType(null);
+            setPortfolioName('');
+            setAssetType('stocks');
+            setSearchTerm('');
+            setSelectedCrypto(null);
+            setBuilderMode('training');
+            setScreen('builder');
+          }}
+          icon={<GraduationCap size={32} style={{ color: '#ffffff' }} />}
+          iconBgColor="#9333ea"
+          title="Start Training Battle?"
+          subtitle="Practice against a CPU opponent"
+          details={[
+            { label: 'Assets Required', value: '7-13 picks' },
+            { label: 'Duration', value: '1 hour' },
+            { label: 'Rewards', value: '+10 XP (win) / +5 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
+          ]}
+          confirmText="Start Training"
+          confirmColor="#9333ea"
+          tutorialModeType="training"
+        />
+
+        <ConfirmationPopup
+          show={showCreateDraftConfirm}
+          onClose={() => setShowCreateDraftConfirm(false)}
+          onConfirm={() => {
+            setShowCreateDraftConfirm(false);
+            setScreen('draftSetup');
+          }}
+          icon={<TrendingUp size={32} style={{ color: '#ffffff' }} />}
+          iconBgColor="#10b981"
+          title="Create Snake Draft?"
+          subtitle="Start a 4-player snake draft lobby"
+          details={[
+            { label: 'Players', value: '4 players' },
+            { label: 'Picks', value: '9 per player' },
+            { label: 'Time per pick', value: '2 minutes' },
+            { label: 'Rewards', value: '+150 XP (1st) / +100 XP (2nd)', highlight: true, highlightColor: '#f59e0b' }
+          ]}
+          confirmText="Create Draft"
+          confirmColor="#10b981"
+          tutorialModeType="draft"
+        />
+
+        <ConfirmationPopup
+          show={showJoinDraftConfirm}
+          onClose={() => setShowJoinDraftConfirm(false)}
+          onConfirm={() => {
+            setShowJoinDraftConfirm(false);
+            setScreen('draftJoin');
+          }}
+          icon={<Users size={32} style={{ color: '#ffffff' }} />}
+          iconBgColor="#10b981"
+          title="Join Snake Draft?"
+          subtitle="Enter a draft code to join a lobby"
+          details={[
+            { label: 'Players', value: '4 players' },
+            { label: 'Picks', value: '9 per player' },
+            { label: 'Time per pick', value: '2 minutes' },
+            { label: 'Rewards', value: '+150 XP (1st) / +100 XP (2nd)', highlight: true, highlightColor: '#f59e0b' }
+          ]}
+          confirmText="Join Draft"
+          confirmColor="#10b981"
+          tutorialModeType="draft"
+        />
+
+        {/* Tutorial Modal */}
+        <TutorialModal />
       </div>
     );
   }
@@ -29724,119 +29844,6 @@ export default function PortfolioDuel() {
         </div>
       )}
 
-      {/* Confirmation Popups */}
-      <ConfirmationPopup
-        show={showCreateBattleConfirm}
-        onClose={() => setShowCreateBattleConfirm(false)}
-        onConfirm={() => {
-          setShowCreateBattleConfirm(false);
-          setBuilderMode('create');
-          setScreen('builder'); // Go to builder screen
-        }}
-        icon={<TrendingUp size={32} style={{ color: '#ffffff' }} />}
-        iconBgColor="#00d9ff"
-        title={`Create ${assetType === 'stocks' ? 'Stocks' : 'Crypto'} Battle?`}
-        subtitle="Challenge opponents with your portfolio picks"
-        details={[
-          { label: 'Assets Required', value: '7-13 picks' },
-          { label: 'Duration', value: '24 hours' },
-          { label: 'Rewards', value: '+100 XP (win) / +25 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
-        ]}
-        confirmText="Create Battle"
-        confirmColor="#00d9ff"
-        tutorialModeType="classic"
-      />
-
-      <ConfirmationPopup
-        show={showJoinBattleConfirm}
-        onClose={() => setShowJoinBattleConfirm(false)}
-        onConfirm={() => {
-          setShowJoinBattleConfirm(false);
-          setBuilderMode('join');
-          setScreen('join'); // Go to code entry screen first
-        }}
-        icon={<Users size={32} style={{ color: '#ffffff' }} />}
-        iconBgColor="#00d9ff"
-        title="Join Battle?"
-        subtitle="Enter a challenge code to compete"
-        details={[
-          { label: 'Assets Required', value: '7-13 picks' },
-          { label: 'Duration', value: '24 hours' },
-          { label: 'Rewards', value: '+100 XP (win) / +25 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
-        ]}
-        confirmText="Join Battle"
-        confirmColor="#00d9ff"
-        tutorialModeType="classic"
-      />
-
-      <ConfirmationPopup
-        show={showClassicTrainingConfirm}
-        onClose={() => setShowClassicTrainingConfirm(false)}
-        onConfirm={() => {
-          setShowClassicTrainingConfirm(false);
-          setBuilderMode('training');
-          setScreen('builder'); // Go to builder screen for training
-        }}
-        icon={<GraduationCap size={32} style={{ color: '#ffffff' }} />}
-        iconBgColor="#9333ea"
-        title={`Start ${assetType === 'stocks' ? 'Stocks' : 'Crypto'} Training?`}
-        subtitle="You'll battle against a CPU opponent"
-        details={[
-          { label: 'Assets Required', value: '7-13 picks' },
-          { label: 'Duration', value: '1 hour' },
-          { label: 'Rewards', value: '+10 XP (win) / +5 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
-        ]}
-        confirmText="Start Training"
-        confirmColor="#9333ea"
-        tutorialModeType="training"
-      />
-
-      <ConfirmationPopup
-        show={showCreateDraftConfirm}
-        onClose={() => setShowCreateDraftConfirm(false)}
-        onConfirm={() => {
-          setShowCreateDraftConfirm(false);
-          setScreen('draftSetup');
-        }}
-        icon={<TrendingUp size={32} style={{ color: '#ffffff' }} />}
-        iconBgColor="#10b981"
-        title={`Create ${assetType === 'stocks' ? 'Stocks' : 'Crypto'} Draft?`}
-        subtitle="Start a 4-player snake draft lobby"
-        details={[
-          { label: 'Players', value: '4 players' },
-          { label: 'Picks', value: '9 per player' },
-          { label: 'Time per pick', value: '2 minutes' },
-          { label: 'Rewards', value: '+150 XP (1st) / +100 XP (2nd)', highlight: true, highlightColor: '#f59e0b' }
-        ]}
-        confirmText="Create Draft"
-        confirmColor="#10b981"
-        tutorialModeType="draft"
-      />
-
-      <ConfirmationPopup
-        show={showJoinDraftConfirm}
-        onClose={() => setShowJoinDraftConfirm(false)}
-        onConfirm={() => {
-          setShowJoinDraftConfirm(false);
-          setScreen('draftJoin');
-        }}
-        icon={<Users size={32} style={{ color: '#ffffff' }} />}
-        iconBgColor="#10b981"
-        title="Join Snake Draft?"
-        subtitle="Enter a draft code to join a lobby"
-        details={[
-          { label: 'Players', value: '4 players' },
-          { label: 'Picks', value: '9 per player' },
-          { label: 'Time per pick', value: '2 minutes' },
-          { label: 'Rewards', value: '+150 XP (1st) / +100 XP (2nd)', highlight: true, highlightColor: '#f59e0b' }
-        ]}
-        confirmText="Join Draft"
-        confirmColor="#10b981"
-        tutorialModeType="draft"
-      />
-
-      {/* Tutorial Modal */}
-      <TutorialModal />
     </>
   );
 }
