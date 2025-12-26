@@ -24033,18 +24033,6 @@ export default function PortfolioDuel() {
                     e.currentTarget.style.borderColor = '#21262d';
                   }}
                 >
-                  {/* Info hint icon */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '6px',
-                    right: '6px',
-                    fontSize: '10px',
-                    color: '#8b949e',
-                    opacity: 0.5,
-                  }}>
-                    ℹ️
-                  </div>
-
                   <div style={{
                     fontSize: '15px',
                     fontWeight: 'bold',
@@ -24064,7 +24052,7 @@ export default function PortfolioDuel() {
                     {asset.name}
                   </div>
 
-                  {/* Glossy PICK Button */}
+                  {/* Subtle PICK Button */}
                   {isMyTurn && canPickFromCategory(selectedDraftCategory) && (
                     <button
                       className="pick-button"
@@ -24073,70 +24061,42 @@ export default function PortfolioDuel() {
                         handlePick(asset);
                       }}
                       style={{
-                        position: 'relative',
-                        overflow: 'hidden',
                         padding: '8px 16px',
                         minWidth: '70px',
-                        background: 'linear-gradient(180deg, rgba(0, 230, 255, 0.95) 0%, rgba(0, 190, 220, 1) 50%, rgba(0, 160, 195, 1) 100%)',
-                        border: '1px solid rgba(255, 255, 255, 0.25)',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 12px rgba(0, 217, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.15)',
-                        color: '#0d1117',
-                        fontWeight: '700',
-                        fontSize: '11px',
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        borderRadius: '6px',
+                        color: 'rgba(255, 255, 255, 0.9)',
+                        fontWeight: '600',
+                        fontSize: '12px',
                         letterSpacing: '0.5px',
-                        textTransform: 'uppercase',
-                        textShadow: '0 1px 0 rgba(255, 255, 255, 0.3)',
                         cursor: 'pointer',
-                        transition: 'all 0.15s ease',
+                        transition: 'all 0.2s ease',
                         userSelect: 'none',
                         WebkitTapHighlightColor: 'transparent',
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = 'translateY(-1px)';
-                        e.currentTarget.style.boxShadow = '0 6px 16px rgba(0, 217, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 0 rgba(0, 0, 0, 0.15)';
-                        e.currentTarget.style.background = 'linear-gradient(180deg, rgba(0, 240, 255, 1) 0%, rgba(0, 210, 235, 1) 50%, rgba(0, 180, 210, 1) 100%)';
+                        e.currentTarget.style.background = 'rgba(0, 217, 255, 0.15)';
+                        e.currentTarget.style.borderColor = 'rgba(0, 217, 255, 0.4)';
+                        e.currentTarget.style.color = '#00d9ff';
+                        e.currentTarget.style.boxShadow = '0 0 12px rgba(0, 217, 255, 0.2)';
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 217, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.15)';
-                        e.currentTarget.style.background = 'linear-gradient(180deg, rgba(0, 230, 255, 0.95) 0%, rgba(0, 190, 220, 1) 50%, rgba(0, 160, 195, 1) 100%)';
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+                        e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)';
+                        e.currentTarget.style.boxShadow = 'none';
                       }}
                       onMouseDown={(e) => {
-                        e.currentTarget.style.transform = 'translateY(1px) scale(0.98)';
-                        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 217, 255, 0.3), inset 0 2px 4px rgba(0, 0, 0, 0.2)';
-                        // Create ripple
-                        const ripple = document.createElement('span');
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        ripple.style.position = 'absolute';
-                        ripple.style.left = `${e.clientX - rect.left}px`;
-                        ripple.style.top = `${e.clientY - rect.top}px`;
-                        ripple.style.width = '10px';
-                        ripple.style.height = '10px';
-                        ripple.style.background = 'rgba(255, 255, 255, 0.6)';
-                        ripple.style.borderRadius = '50%';
-                        ripple.style.animation = 'pickRipple 0.5s ease-out forwards';
-                        ripple.style.pointerEvents = 'none';
-                        e.currentTarget.appendChild(ripple);
-                        setTimeout(() => ripple.remove(), 500);
+                        e.currentTarget.style.transform = 'scale(0.97)';
+                        e.currentTarget.style.background = 'rgba(0, 217, 255, 0.25)';
                       }}
                       onMouseUp={(e) => {
-                        e.currentTarget.style.transform = 'translateY(-1px)';
-                        e.currentTarget.style.boxShadow = '0 6px 16px rgba(0, 217, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 0 rgba(0, 0, 0, 0.15)';
+                        e.currentTarget.style.transform = 'scale(1)';
+                        e.currentTarget.style.background = 'rgba(0, 217, 255, 0.15)';
                       }}
                     >
-                      {/* Glass shine overlay */}
-                      <div style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: '50%',
-                        background: 'linear-gradient(180deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 100%)',
-                        borderRadius: '7px 7px 0 0',
-                        pointerEvents: 'none',
-                      }} />
-                      <span style={{ position: 'relative', zIndex: 1 }}>PICK</span>
+                      PICK
                     </button>
                   )}
                 </div>
@@ -24175,8 +24135,23 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* Stock Info Modal - Shows when clicking asset card */}
-          {draftAssetInfoModal && (
+          {/* Full Stock Details Modal - Shows when clicking asset card */}
+          {draftAssetInfoModal && (() => {
+            // Get additional stock data from stocksData
+            const stockData = stocksData?.find(s => s.symbol === draftAssetInfoModal.symbol) || draftAssetInfoModal;
+            const sector = stockData.sector || getStockSector(draftAssetInfoModal.symbol) || 'Technology';
+            const sectorColor = getSectorColor(sector);
+
+            // Calculate analyst sentiment
+            const analystRating = stockData.analystRating || {};
+            const totalAnalysts = (analystRating.buy || 0) + (analystRating.hold || 0) + (analystRating.sell || 0);
+            const buyPercent = totalAnalysts > 0 ? ((analystRating.buy || 0) / totalAnalysts * 100) : null;
+            const sentiment = buyPercent !== null
+              ? buyPercent >= 60 ? 'Buy' : buyPercent >= 40 ? 'Hold' : 'Sell'
+              : null;
+            const sentimentColor = sentiment === 'Buy' ? '#10b981' : sentiment === 'Sell' ? '#ef4444' : '#f59e0b';
+
+            return (
             <div
               onClick={() => setDraftAssetInfoModal(null)}
               style={{
@@ -24185,88 +24160,248 @@ export default function PortfolioDuel() {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                background: 'rgba(0, 0, 0, 0.85)',
+                background: 'rgba(0, 0, 0, 0.9)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 zIndex: 1000,
-                padding: '20px'
+                padding: '16px'
               }}
             >
               <div
                 onClick={(e) => e.stopPropagation()}
                 style={{
                   background: '#0d1117',
-                  border: '1px solid #00d9ff',
+                  border: `1px solid ${sectorColor}`,
                   borderRadius: '16px',
                   width: '100%',
-                  maxWidth: '380px',
-                  maxHeight: '80vh',
+                  maxWidth: '420px',
+                  maxHeight: '85vh',
                   overflow: 'auto',
-                  position: 'relative'
+                  position: 'relative',
+                  boxShadow: `0 0 40px ${sectorColor}40`
                 }}
               >
-                {/* Header */}
+                {/* Header with Sector Color Accent */}
                 <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '16px 20px',
+                  padding: '20px',
+                  background: `linear-gradient(180deg, ${sectorColor}15 0%, #0d1117 100%)`,
                   borderBottom: '1px solid #21262d',
-                  background: 'linear-gradient(180deg, #161b22 0%, #0d1117 100%)'
                 }}>
-                  <div>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#ffffff' }}>
-                      {draftAssetInfoModal.symbol}
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#8b949e' }}>
-                      {draftAssetInfoModal.name}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setDraftAssetInfoModal(null)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#8b949e',
-                      fontSize: '24px',
-                      cursor: 'pointer',
-                      padding: '4px'
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                {/* Price info */}
-                {draftAssetInfoModal.price && (
-                  <div style={{
-                    padding: '16px 20px',
-                    borderBottom: '1px solid #21262d'
-                  }}>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#ffffff' }}>
-                      ${draftAssetInfoModal.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                    {draftAssetInfoModal.percentChange !== undefined && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
                       <div style={{
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        color: draftAssetInfoModal.percentChange >= 0 ? '#10b981' : '#ef4444',
-                        marginTop: '4px'
+                        fontSize: '28px',
+                        fontWeight: '800',
+                        color: '#ffffff',
+                        letterSpacing: '1px',
+                        textShadow: `0 0 20px ${sectorColor}60`
                       }}>
-                        {draftAssetInfoModal.percentChange >= 0 ? '▲' : '▼'} {Math.abs(draftAssetInfoModal.percentChange).toFixed(2)}%
+                        {draftAssetInfoModal.symbol}
+                      </div>
+                      <div style={{ fontSize: '14px', color: '#8b949e', marginTop: '2px' }}>
+                        {draftAssetInfoModal.name}
+                      </div>
+                      <div style={{
+                        display: 'inline-block',
+                        marginTop: '8px',
+                        padding: '4px 10px',
+                        background: `${sectorColor}20`,
+                        border: `1px solid ${sectorColor}40`,
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        color: sectorColor,
+                        fontWeight: '600'
+                      }}>
+                        {sector}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setDraftAssetInfoModal(null)}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: 'none',
+                        color: '#8b949e',
+                        fontSize: '18px',
+                        cursor: 'pointer',
+                        padding: '8px',
+                        borderRadius: '8px',
+                        lineHeight: 1
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Large Price Display */}
+                  <div style={{ marginTop: '16px' }}>
+                    <div style={{ fontSize: '36px', fontWeight: '700', color: '#ffffff' }}>
+                      ${(stockData.price || draftAssetInfoModal.price)?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    {(stockData.percentChange !== undefined || draftAssetInfoModal.percentChange !== undefined) && (
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        marginTop: '4px',
+                        padding: '4px 10px',
+                        background: (stockData.percentChange || draftAssetInfoModal.percentChange) >= 0
+                          ? 'rgba(16, 185, 129, 0.15)'
+                          : 'rgba(239, 68, 68, 0.15)',
+                        borderRadius: '6px',
+                        fontSize: '15px',
+                        fontWeight: '600',
+                        color: (stockData.percentChange || draftAssetInfoModal.percentChange) >= 0 ? '#10b981' : '#ef4444',
+                      }}>
+                        {(stockData.percentChange || draftAssetInfoModal.percentChange) >= 0 ? '▲' : '▼'}
+                        {Math.abs(stockData.percentChange || draftAssetInfoModal.percentChange).toFixed(2)}% today
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Analyst Sentiment */}
+                {sentiment && (
+                  <div style={{
+                    padding: '16px 20px',
+                    borderBottom: '1px solid #21262d',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '11px', color: '#8b949e', textTransform: 'uppercase', marginBottom: '4px' }}>
+                        Analyst Rating
+                      </div>
+                      <div style={{
+                        fontSize: '20px',
+                        fontWeight: '700',
+                        color: sentimentColor
+                      }}>
+                        {sentiment}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '4px' }}>
+                        {totalAnalysts} Analysts
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', fontSize: '12px' }}>
+                        <span style={{ color: '#10b981' }}>{analystRating.buy || 0} Buy</span>
+                        <span style={{ color: '#f59e0b' }}>{analystRating.hold || 0} Hold</span>
+                        <span style={{ color: '#ef4444' }}>{analystRating.sell || 0} Sell</span>
+                      </div>
+                    </div>
+                  </div>
                 )}
 
+                {/* Key Metrics Grid */}
+                <div style={{
+                  padding: '16px 20px',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: '12px',
+                  borderBottom: '1px solid #21262d'
+                }}>
+                  <div style={{
+                    background: '#161b22',
+                    borderRadius: '10px',
+                    padding: '14px'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase' }}>Market Cap</div>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#e6edf3' }}>
+                      {stockData.marketCap
+                        ? stockData.marketCap >= 1e12
+                          ? `$${(stockData.marketCap / 1e12).toFixed(2)}T`
+                          : `$${(stockData.marketCap / 1e9).toFixed(1)}B`
+                        : 'N/A'}
+                    </div>
+                  </div>
+                  <div style={{
+                    background: '#161b22',
+                    borderRadius: '10px',
+                    padding: '14px'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase' }}>P/E Ratio</div>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#e6edf3' }}>
+                      {stockData.pe ? stockData.pe.toFixed(1) : stockData.peRatio ? stockData.peRatio.toFixed(1) : 'N/A'}
+                    </div>
+                  </div>
+                  <div style={{
+                    background: '#161b22',
+                    borderRadius: '10px',
+                    padding: '14px'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase' }}>Revenue Growth</div>
+                    <div style={{
+                      fontSize: '16px',
+                      fontWeight: '700',
+                      color: (stockData.revenueGrowth || 0) >= 0 ? '#10b981' : '#ef4444'
+                    }}>
+                      {stockData.revenueGrowth
+                        ? `${stockData.revenueGrowth >= 0 ? '+' : ''}${stockData.revenueGrowth.toFixed(1)}%`
+                        : 'N/A'}
+                    </div>
+                  </div>
+                  <div style={{
+                    background: '#161b22',
+                    borderRadius: '10px',
+                    padding: '14px'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase' }}>Profit Margin</div>
+                    <div style={{
+                      fontSize: '16px',
+                      fontWeight: '700',
+                      color: (stockData.profitMargin || 0) >= 0 ? '#10b981' : '#ef4444'
+                    }}>
+                      {stockData.profitMargin
+                        ? `${stockData.profitMargin.toFixed(1)}%`
+                        : 'N/A'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Additional Stats Row */}
+                <div style={{
+                  padding: '12px 20px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  borderBottom: '1px solid #21262d',
+                  fontSize: '12px'
+                }}>
+                  <div>
+                    <span style={{ color: '#8b949e' }}>52W High: </span>
+                    <span style={{ color: '#e6edf3', fontWeight: '600' }}>
+                      ${stockData.high52 ? stockData.high52.toFixed(2) : 'N/A'}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#8b949e' }}>52W Low: </span>
+                    <span style={{ color: '#e6edf3', fontWeight: '600' }}>
+                      ${stockData.low52 ? stockData.low52.toFixed(2) : 'N/A'}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#8b949e' }}>Vol: </span>
+                    <span style={{ color: '#e6edf3', fontWeight: '600' }}>
+                      {stockData.volume
+                        ? stockData.volume >= 1e6
+                          ? `${(stockData.volume / 1e6).toFixed(1)}M`
+                          : `${(stockData.volume / 1e3).toFixed(0)}K`
+                        : 'N/A'}
+                    </span>
+                  </div>
+                </div>
+
                 {/* Category Badge */}
-                <div style={{ padding: '12px 20px' }}>
+                <div style={{ padding: '16px 20px', borderBottom: '1px solid #21262d' }}>
+                  <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '8px', textTransform: 'uppercase' }}>
+                    Draft Category
+                  </div>
                   <span style={{
                     display: 'inline-block',
-                    padding: '6px 12px',
+                    padding: '8px 14px',
                     borderRadius: '20px',
-                    fontSize: '12px',
+                    fontSize: '13px',
                     fontWeight: '600',
                     background: selectedDraftCategory === 'steady' ? 'rgba(16, 185, 129, 0.2)' :
                                 selectedDraftCategory === 'risky' ? 'rgba(245, 158, 11, 0.2)' :
@@ -24275,66 +24410,20 @@ export default function PortfolioDuel() {
                            selectedDraftCategory === 'risky' ? '#f59e0b' : '#3b82f6',
                     textTransform: 'uppercase'
                   }}>
-                    {selectedDraftCategory === 'steady' ? '🛡️' : selectedDraftCategory === 'risky' ? '⚡' : '🏛️'} {selectedDraftCategory}
+                    {selectedDraftCategory === 'steady' ? '🛡️ Steady' : selectedDraftCategory === 'risky' ? '⚡ Risky' : '🏛️ Defensive'}
                   </span>
-                </div>
-
-                {/* Quick Metrics */}
-                <div style={{
-                  padding: '0 20px 16px',
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(2, 1fr)',
-                  gap: '12px'
-                }}>
-                  {draftAssetInfoModal.marketCap && (
-                    <div style={{
-                      background: '#161b22',
-                      borderRadius: '10px',
-                      padding: '12px'
-                    }}>
-                      <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '4px' }}>Market Cap</div>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#e6edf3' }}>
-                        ${(draftAssetInfoModal.marketCap / 1e9).toFixed(1)}B
-                      </div>
-                    </div>
-                  )}
-                  {draftAssetInfoModal.volume && (
-                    <div style={{
-                      background: '#161b22',
-                      borderRadius: '10px',
-                      padding: '12px'
-                    }}>
-                      <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '4px' }}>Volume</div>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#e6edf3' }}>
-                        {(draftAssetInfoModal.volume / 1e6).toFixed(1)}M
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Draft Tip */}
-                <div style={{
-                  margin: '0 20px 16px',
-                  padding: '12px',
-                  background: 'rgba(0, 217, 255, 0.1)',
-                  border: '1px solid rgba(0, 217, 255, 0.3)',
-                  borderRadius: '10px'
-                }}>
-                  <div style={{ fontSize: '12px', color: '#00d9ff', fontWeight: '600', marginBottom: '4px' }}>
-                    💡 Draft Tip
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#e6edf3', lineHeight: '1.4' }}>
+                  <div style={{ marginTop: '10px', fontSize: '12px', color: '#8b949e', lineHeight: '1.5' }}>
                     {selectedDraftCategory === 'steady'
-                      ? 'Steady picks provide reliable performance. Great for early rounds.'
+                      ? 'Steady picks provide reliable, consistent performance with lower volatility. Great foundation for your portfolio.'
                       : selectedDraftCategory === 'risky'
-                      ? 'Risky picks have high volatility. Can swing big in either direction.'
-                      : 'Defensive picks protect against downturns. Balance your portfolio.'}
+                      ? 'Risky picks have higher volatility and potential for big swings. High risk, high reward plays.'
+                      : 'Defensive picks offer protection during market downturns. Helps balance aggressive positions.'}
                   </div>
                 </div>
 
-                {/* PICK Button */}
+                {/* PICK Button - Subtle Style */}
                 {isMyTurn && canPickFromCategory(selectedDraftCategory) && (
-                  <div style={{ padding: '0 20px 20px' }}>
+                  <div style={{ padding: '20px' }}>
                     <button
                       onClick={() => {
                         handlePick(draftAssetInfoModal);
@@ -24342,33 +24431,27 @@ export default function PortfolioDuel() {
                       }}
                       style={{
                         width: '100%',
-                        position: 'relative',
-                        overflow: 'hidden',
-                        padding: '14px 24px',
-                        background: 'linear-gradient(180deg, rgba(0, 230, 255, 0.95) 0%, rgba(0, 190, 220, 1) 50%, rgba(0, 160, 195, 1) 100%)',
-                        border: '1px solid rgba(255, 255, 255, 0.25)',
+                        padding: '16px 24px',
+                        background: 'rgba(0, 217, 255, 0.15)',
+                        border: '1px solid rgba(0, 217, 255, 0.4)',
                         borderRadius: '12px',
-                        boxShadow: '0 4px 16px rgba(0, 217, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.35)',
-                        color: '#0d1117',
+                        color: '#00d9ff',
                         fontWeight: '700',
-                        fontSize: '16px',
+                        fontSize: '15px',
                         letterSpacing: '0.5px',
-                        textTransform: 'uppercase',
                         cursor: 'pointer',
-                        transition: 'all 0.15s ease',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(0, 217, 255, 0.25)';
+                        e.currentTarget.style.boxShadow = '0 0 20px rgba(0, 217, 255, 0.3)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(0, 217, 255, 0.15)';
+                        e.currentTarget.style.boxShadow = 'none';
                       }}
                     >
-                      <div style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: '50%',
-                        background: 'linear-gradient(180deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 100%)',
-                        borderRadius: '11px 11px 0 0',
-                        pointerEvents: 'none',
-                      }} />
-                      <span style={{ position: 'relative', zIndex: 1 }}>PICK {draftAssetInfoModal.symbol}</span>
+                      PICK {draftAssetInfoModal.symbol}
                     </button>
                   </div>
                 )}
@@ -24376,7 +24459,7 @@ export default function PortfolioDuel() {
                 {/* Disabled state message */}
                 {(!isMyTurn || !canPickFromCategory(selectedDraftCategory)) && (
                   <div style={{
-                    padding: '16px 20px',
+                    padding: '20px',
                     textAlign: 'center',
                     color: '#8b949e',
                     fontSize: '13px'
@@ -24386,7 +24469,8 @@ export default function PortfolioDuel() {
                 )}
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* Swipeable Portfolio Drawer - Draft Fixes */}
           <div
