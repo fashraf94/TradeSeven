@@ -13479,8 +13479,9 @@ export default function PortfolioDuel() {
       return;
     }
 
-    if (portfolio.length < 6 || !selectedCrypto) {
-      alert('Please complete your portfolio (6-12 stocks + 1 crypto) before creating a battle');
+    const totalAssets = portfolio.length + (selectedCrypto ? 1 : 0);
+    if (totalAssets < 7) {
+      alert(`Please complete your portfolio (7-13 total assets). You have ${totalAssets}.`);
       return;
     }
 
@@ -13553,8 +13554,9 @@ export default function PortfolioDuel() {
       return;
     }
 
-    if (portfolio.length < 6 || !selectedCrypto) {
-      alert('Please complete your portfolio (6-12 stocks + 1 crypto) before joining');
+    const totalAssetsJoin = portfolio.length + (selectedCrypto ? 1 : 0);
+    if (totalAssetsJoin < 7) {
+      alert(`Please complete your portfolio (7-13 total assets). You have ${totalAssetsJoin}.`);
       return;
     }
 
@@ -13699,8 +13701,9 @@ export default function PortfolioDuel() {
       return;
     }
 
-    if (portfolio.length < 6 || !selectedCrypto) {
-      alert('Please complete your portfolio (6-12 stocks + 1 crypto) before starting training');
+    const totalAssetsTraining = portfolio.length + (selectedCrypto ? 1 : 0);
+    if (totalAssetsTraining < 7) {
+      alert(`Please complete your portfolio (7-13 total assets). You have ${totalAssetsTraining}.`);
       return;
     }
 
@@ -22389,59 +22392,56 @@ export default function PortfolioDuel() {
                   }
                   setShowPortfolioManager(false);
                 }}
-                disabled={
-                  !portfolioName ||
-                  portfolio.length < 6 ||
-                  portfolio.length > 12 ||
-                  !selectedCrypto ||
-                  Math.abs(totalPercentage - 100) >= 0.01 ||
-                  cryptoPercentage < 7.5 || cryptoPercentage > 20 ||
-                  (builderMode === 'join' && (!joinCode || joinCode.length !== 6))
-                }
-                style={{
-                  width: '100%',
-                  backgroundColor: portfolioName && portfolio.length >= 6 && portfolio.length <= 12 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01 && cryptoPercentage >= 7.5 && cryptoPercentage <= 20
-                    ? builderMode === 'training' ? '#a855f7' : builderMode === 'join' ? '#06b6d4' : '#8b5cf6'
-                    : '#21262d',
-                  color: portfolioName && portfolio.length >= 6 && portfolio.length <= 12 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01 && cryptoPercentage >= 7.5 && cryptoPercentage <= 20
-                    ? '#ffffff'
-                    : '#6e7681',
-                  border: 'none',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                  cursor: portfolioName && portfolio.length >= 6 && portfolio.length <= 12 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01 && cryptoPercentage >= 7.5 && cryptoPercentage <= 20
-                    ? 'pointer'
-                    : 'not-allowed',
-                  marginTop: '20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  transition: 'all 0.2s'
-                }}
+                disabled={(() => {
+                  const totalAssets = portfolio.length + (selectedCrypto ? 1 : 0);
+                  return !portfolioName ||
+                    totalAssets < 7 ||
+                    totalAssets > 13 ||
+                    Math.abs(totalPercentage - 100) >= 0.01 ||
+                    cryptoPercentage < 7.5 || cryptoPercentage > 20 ||
+                    (builderMode === 'join' && (!joinCode || joinCode.length !== 6));
+                })()}
+                style={(() => {
+                  const totalAssets = portfolio.length + (selectedCrypto ? 1 : 0);
+                  const canProceed = portfolioName && totalAssets >= 7 && totalAssets <= 13 && Math.abs(totalPercentage - 100) < 0.01 && cryptoPercentage >= 7.5 && cryptoPercentage <= 20;
+                  return {
+                    width: '100%',
+                    backgroundColor: canProceed
+                      ? builderMode === 'training' ? '#a855f7' : builderMode === 'join' ? '#06b6d4' : '#8b5cf6'
+                      : '#21262d',
+                    color: canProceed ? '#ffffff' : '#6e7681',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    fontSize: '16px',
+                    fontWeight: 'bold',
+                    cursor: canProceed ? 'pointer' : 'not-allowed',
+                    marginTop: '20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    transition: 'all 0.2s'
+                  };
+                })()}
               >
                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
-                {!portfolioName
-                  ? 'Enter Portfolio Name'
-                  : portfolio.length === 0
-                  ? 'Add Assets'
-                  : portfolio.length < 7
-                  ? `Need ${7 - portfolio.length} More Assets`
-                  : portfolio.length > 13
-                  ? `Remove ${portfolio.length - 13} Assets`
-                  : !selectedCrypto
-                  ? 'Select 1 Crypto'
-                  : Math.abs(totalPercentage - 100) >= 0.01
-                  ? `Adjust to 100% (${totalPercentage.toFixed(1)}%)`
-                  : builderMode === 'training'
-                  ? '🤖 Start Training Battle'
-                  : builderMode === 'join'
-                  ? '🎯 Join Battle'
-                  : '⚔️ Create Battle'}
+                {(() => {
+                  const totalAssets = portfolio.length + (selectedCrypto ? 1 : 0);
+                  const assetsNeeded = 7 - totalAssets;
+                  const assetsOver = totalAssets - 13;
+
+                  if (!portfolioName) return 'Enter Portfolio Name';
+                  if (totalAssets === 0) return 'Add Assets';
+                  if (totalAssets < 7) return `Need ${assetsNeeded} More Asset${assetsNeeded !== 1 ? 's' : ''}`;
+                  if (totalAssets > 13) return `Remove ${assetsOver} Asset${assetsOver !== 1 ? 's' : ''}`;
+                  if (Math.abs(totalPercentage - 100) >= 0.01) return `Adjust to 100% (${totalPercentage.toFixed(1)}%)`;
+                  if (builderMode === 'training') return '🤖 Start Training Battle';
+                  if (builderMode === 'join') return '🎯 Join Battle';
+                  return '⚔️ Create Battle';
+                })()}
               </button>
             </div>
           </div>
