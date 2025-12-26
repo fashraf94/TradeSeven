@@ -17,6 +17,8 @@ import DraftAdvisor from './components/DraftAdvisor';
 import { generateGamePlan, enhanceRecommendations, getAssetDeepDive } from './services/researchAdvisor';
 // Snake Draft strategy utilities (consolidated from duplicate code paths)
 import { createSnakeDraftGamePlan } from './utils/draftStrategy';
+// Snake Draft asset pools
+import { STEADY_STOCKS, RISKY_STOCKS, DEFENSIVE_STOCKS, STEADY_CRYPTO, RISKY_CRYPTO, DEFENSIVE_CRYPTO } from './services/draftAssets';
 // Recommendation Engine
 import {
   getRecommendations,
@@ -2810,6 +2812,1046 @@ const ConvictionCheck = ({
             <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
             </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// DRAFT PRIORITY RANKER (Snake Draft Mode)
+// ============================================
+
+/**
+ * DraftPriorityRanker - 4-step flow for Snake Draft mode
+ * Replaces ConvictionCheck when thesis.battleType === 'snake-draft'
+ * Steps: Strategy Setup -> Priority Picks (Tier 1) -> Backup Picks (Tier 2) -> Review & Generate
+ */
+const DraftPriorityRanker = ({
+  thesis,
+  onComplete,
+  onBack,
+  draftStrategy,
+  setDraftStrategy,
+  tier1Picks,
+  setTier1Picks,
+  tier2Picks,
+  setTier2Picks,
+  draftRankerPhase,
+  setDraftRankerPhase,
+  stocksData,
+  cryptoData,
+  colors,
+}) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  // Category colors from spec
+  const categoryColors = {
+    steady: '#3b82f6',    // Blue
+    risky: '#ef4444',     // Red
+    defensive: '#8b5cf6', // Purple
+  };
+
+  // Primary green theme
+  const primaryGreen = '#10b981';
+
+  // Get assets for selection - use thesis to determine if crypto or stocks
+  const isCryptoMode = thesis?.portfolioType === 'crypto';
+  const steadyAssets = isCryptoMode ? STEADY_CRYPTO : STEADY_STOCKS;
+  const riskyAssets = isCryptoMode ? RISKY_CRYPTO : RISKY_STOCKS;
+  const defensiveAssets = isCryptoMode ? DEFENSIVE_CRYPTO : DEFENSIVE_STOCKS;
+
+  // Current phase (initialize to 'strategy' if null)
+  const phase = draftRankerPhase || 'strategy';
+
+  // Initialize phase on mount if needed
+  React.useEffect(() => {
+    if (!draftRankerPhase) {
+      setDraftRankerPhase('strategy');
+    }
+  }, [draftRankerPhase, setDraftRankerPhase]);
+
+  // Phase navigation
+  const goToPhase = (newPhase) => {
+    setDraftRankerPhase(newPhase);
+  };
+
+  // Count picks
+  const getTier1Count = () => {
+    return tier1Picks.steady.length + tier1Picks.risky.length + tier1Picks.defensive.length;
+  };
+
+  const getTier2Count = () => {
+    return tier2Picks.steady.length + tier2Picks.risky.length + tier2Picks.defensive.length;
+  };
+
+  // Toggle pick in tier
+  const togglePick = (tier, category, symbol) => {
+    const setFn = tier === 1 ? setTier1Picks : setTier2Picks;
+    const picks = tier === 1 ? tier1Picks : tier2Picks;
+    const currentPicks = picks[category] || [];
+    const maxPicks = tier === 1 ? 3 : 2; // Tier 1: 3 per category, Tier 2: 2 per category
+
+    if (currentPicks.includes(symbol)) {
+      // Remove
+      setFn(prev => ({
+        ...prev,
+        [category]: prev[category].filter(s => s !== symbol)
+      }));
+    } else if (currentPicks.length < maxPicks) {
+      // Add
+      setFn(prev => ({
+        ...prev,
+        [category]: [...prev[category], symbol]
+      }));
+    }
+  };
+
+  // Check if asset is already picked in tier 1 (for tier 2 exclusion)
+  const isPickedInTier1 = (symbol) => {
+    return tier1Picks.steady.includes(symbol) ||
+           tier1Picks.risky.includes(symbol) ||
+           tier1Picks.defensive.includes(symbol);
+  };
+
+  // Get step number based on phase
+  const getStepNumber = () => {
+    switch (phase) {
+      case 'strategy': return 4;
+      case 'tier1': return 5;
+      case 'tier2': return 6;
+      case 'review': return 7;
+      default: return 4;
+    }
+  };
+
+  const getStepTitle = () => {
+    switch (phase) {
+      case 'strategy': return 'Draft Strategy Setup';
+      case 'tier1': return 'Priority Picks (Tier 1)';
+      case 'tier2': return 'Backup Picks (Tier 2)';
+      case 'review': return 'Review & Generate';
+      default: return 'Draft Strategy';
+    }
+  };
+
+  // Handle complete - generate game plan with picked assets
+  const handleGenerateGamePlan = () => {
+    // Combine tier 1 and tier 2 picks into portfolio format
+    const allPicks = [];
+
+    // Add Tier 1 picks (priority)
+    ['steady', 'risky', 'defensive'].forEach(category => {
+      tier1Picks[category].forEach((symbol, index) => {
+        const asset = [...steadyAssets, ...riskyAssets, ...defensiveAssets].find(a => a.symbol === symbol);
+        allPicks.push({
+          symbol,
+          name: asset?.name || symbol,
+          type: isCryptoMode ? 'crypto' : 'stock',
+          tier: 1,
+          draftCategory: category,
+          source: 'user_selected',
+          priority: index + 1,
+        });
+      });
+    });
+
+    // Add Tier 2 picks (backup)
+    ['steady', 'risky', 'defensive'].forEach(category => {
+      tier2Picks[category].forEach((symbol, index) => {
+        const asset = [...steadyAssets, ...riskyAssets, ...defensiveAssets].find(a => a.symbol === symbol);
+        allPicks.push({
+          symbol,
+          name: asset?.name || symbol,
+          type: isCryptoMode ? 'crypto' : 'stock',
+          tier: 2,
+          draftCategory: category,
+          source: 'user_selected',
+          priority: index + 1,
+        });
+      });
+    });
+
+    // Call onComplete with the structured data
+    onComplete({
+      draftStrategy,
+      tier1Picks,
+      tier2Picks,
+      portfolio: allPicks,
+      isSnakeDraft: true,
+    });
+  };
+
+  // Render asset card for selection
+  const renderAssetCard = (asset, category, tier) => {
+    const picks = tier === 1 ? tier1Picks : tier2Picks;
+    const isSelected = picks[category].includes(asset.symbol);
+    const isDisabledByTier1 = tier === 2 && isPickedInTier1(asset.symbol);
+    const maxPicks = tier === 1 ? 3 : 2;
+    const isMaxed = picks[category].length >= maxPicks && !isSelected;
+    const isDisabled = isDisabledByTier1 || isMaxed;
+    const categoryColor = categoryColors[category];
+
+    return (
+      <button
+        key={asset.symbol}
+        onClick={() => !isDisabled && togglePick(tier, category, asset.symbol)}
+        disabled={isDisabled}
+        style={{
+          position: 'relative',
+          width: '100%',
+          background: isSelected
+            ? `linear-gradient(145deg, ${categoryColor}20 0%, ${categoryColor}05 100%)`
+            : '#0d1117',
+          border: isSelected
+            ? `2px solid ${categoryColor}`
+            : '1px solid #21262d',
+          borderRadius: '14px',
+          padding: '14px 12px',
+          cursor: isDisabled ? 'not-allowed' : 'pointer',
+          opacity: isDisabled ? 0.4 : 1,
+          overflow: 'hidden',
+          transition: 'all 0.2s ease',
+          transform: isSelected ? 'scale(1.02)' : 'scale(1)',
+          textAlign: 'left',
+        }}
+      >
+        {/* Glow effect when selected */}
+        {isSelected && (
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '14px',
+            boxShadow: `inset 0 0 20px ${categoryColor}30, 0 0 15px ${categoryColor}20`,
+            pointerEvents: 'none',
+          }} />
+        )}
+
+        {/* Checkmark */}
+        <div style={{
+          position: 'absolute',
+          top: '8px',
+          right: '8px',
+          width: '20px',
+          height: '20px',
+          borderRadius: '50%',
+          background: isSelected
+            ? `linear-gradient(135deg, ${categoryColor} 0%, ${categoryColor}cc 100%)`
+            : '#21262d',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          border: isSelected ? 'none' : '1px solid #30363d',
+          transition: 'all 0.2s ease',
+        }}>
+          {isSelected && (
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3">
+              <path d="M20 6L9 17l-5-5"/>
+            </svg>
+          )}
+        </div>
+
+        {/* Content */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+        }}>
+          <div style={{
+            width: '36px',
+            height: '36px',
+            borderRadius: '10px',
+            background: isSelected
+              ? `linear-gradient(135deg, ${categoryColor} 0%, ${categoryColor}bb 100%)`
+              : 'linear-gradient(135deg, #21262d 0%, #161b22 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <span style={{
+              fontSize: '12px',
+              fontWeight: '800',
+              color: isSelected ? '#ffffff' : '#8b949e',
+            }}>
+              {asset.symbol.slice(0, 3)}
+            </span>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: '13px',
+              fontWeight: '700',
+              color: isSelected ? '#ffffff' : '#e6edf3',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}>
+              {asset.symbol}
+            </div>
+            <div style={{
+              fontSize: '11px',
+              color: '#8b949e',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}>
+              {asset.name}
+            </div>
+          </div>
+        </div>
+
+        {/* Tier 1 indicator for Tier 2 view */}
+        {isDisabledByTier1 && (
+          <div style={{
+            position: 'absolute',
+            bottom: '6px',
+            right: '8px',
+            fontSize: '9px',
+            color: primaryGreen,
+            fontWeight: '600',
+          }}>
+            IN TIER 1
+          </div>
+        )}
+      </button>
+    );
+  };
+
+  // Render category section for pick phases
+  const renderCategorySection = (category, label, assets, tier) => {
+    const picks = tier === 1 ? tier1Picks : tier2Picks;
+    const maxPicks = tier === 1 ? 3 : 2;
+    const categoryColor = categoryColors[category];
+    const currentCount = picks[category].length;
+
+    return (
+      <div style={{
+        background: '#161b22',
+        border: '1px solid #21262d',
+        borderRadius: '16px',
+        padding: '16px',
+        marginBottom: '16px',
+      }}>
+        {/* Category Header */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '12px',
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+          }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '10px',
+              background: `linear-gradient(135deg, ${categoryColor} 0%, ${categoryColor}bb 100%)`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: `0 4px 12px ${categoryColor}40`,
+            }}>
+              {category === 'steady' && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                </svg>
+              )}
+              {category === 'risky' && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                </svg>
+              )}
+              {category === 'defensive' && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+              )}
+            </div>
+            <div>
+              <h3 style={{
+                color: '#ffffff',
+                fontSize: '15px',
+                fontWeight: '700',
+                margin: 0,
+              }}>
+                {label}
+              </h3>
+              <p style={{
+                color: '#8b949e',
+                fontSize: '11px',
+                margin: '2px 0 0 0',
+              }}>
+                {category === 'steady' && 'Stable blue-chip assets'}
+                {category === 'risky' && 'High volatility plays'}
+                {category === 'defensive' && 'Safe haven positions'}
+              </p>
+            </div>
+          </div>
+          <span style={{
+            color: currentCount >= maxPicks ? primaryGreen : categoryColor,
+            fontSize: '12px',
+            fontWeight: '700',
+            background: currentCount >= maxPicks ? `${primaryGreen}20` : `${categoryColor}15`,
+            padding: '4px 10px',
+            borderRadius: '8px',
+          }}>
+            {currentCount}/{maxPicks}
+          </span>
+        </div>
+
+        {/* Asset Grid */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: '8px',
+        }}>
+          {assets.slice(0, 8).map(asset => renderAssetCard(asset, category, tier))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      position: 'relative',
+    }}>
+      {/* CSS Animations */}
+      <style>
+        {`
+          @keyframes draftGlow {
+            0%, 100% { box-shadow: 0 0 10px var(--glow-color), 0 0 20px var(--glow-color); }
+            50% { box-shadow: 0 0 20px var(--glow-color), 0 0 35px var(--glow-color); }
+          }
+          @keyframes draftPulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+          }
+        `}
+      </style>
+
+      {/* Back Button + Step Indicator */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '16px',
+      }}>
+        <button
+          onClick={() => {
+            if (phase === 'strategy') {
+              onBack();
+            } else if (phase === 'tier1') {
+              goToPhase('strategy');
+            } else if (phase === 'tier2') {
+              goToPhase('tier1');
+            } else if (phase === 'review') {
+              goToPhase('tier2');
+            }
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: 'transparent',
+            border: 'none',
+            color: primaryGreen,
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            padding: 0,
+          }}
+        >
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+          Back
+        </button>
+        <span style={{
+          color: '#8b949e',
+          fontSize: '13px',
+          background: '#21262d',
+          padding: '6px 12px',
+          borderRadius: '8px',
+        }}>
+          Step {getStepNumber()} of 7
+        </span>
+      </div>
+
+      {/* Scrollable Content */}
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        paddingBottom: '160px',
+      }}>
+        {/* Header with Icon */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px',
+          marginBottom: '8px'
+        }}>
+          <div style={{
+            width: '48px',
+            height: '48px',
+            background: `linear-gradient(135deg, ${primaryGreen} 0%, #059669 100%)`,
+            borderRadius: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: `0 4px 16px ${primaryGreen}40`,
+            fontSize: '20px',
+            fontWeight: '800',
+            color: '#ffffff'
+          }}>
+            {getStepNumber()}
+          </div>
+          <div>
+            <h1 style={{
+              color: '#ffffff',
+              fontSize: '22px',
+              fontWeight: '800',
+              margin: 0
+            }}>
+              {getStepTitle()}
+            </h1>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              marginTop: '4px',
+            }}>
+              <span style={{
+                background: `${primaryGreen}20`,
+                color: primaryGreen,
+                fontSize: '11px',
+                fontWeight: '600',
+                padding: '3px 8px',
+                borderRadius: '6px',
+              }}>
+                🐍 SNAKE DRAFT
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* PHASE 1: Strategy Selection */}
+        {phase === 'strategy' && (
+          <div style={{ marginTop: '20px' }}>
+            <p style={{
+              color: '#8b949e',
+              fontSize: '14px',
+              margin: '0 0 20px 0',
+            }}>
+              Choose your draft approach to optimize your picks across rounds.
+            </p>
+
+            {/* Strategy Cards */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {[
+                {
+                  id: 'steady-first',
+                  title: 'Steady First',
+                  emoji: '🛡️',
+                  description: 'Lock in blue-chip assets early, add risky plays later',
+                  color: categoryColors.steady,
+                },
+                {
+                  id: 'risky-first',
+                  title: 'Risk Early',
+                  emoji: '⚡',
+                  description: 'Grab high-volatility assets before opponents',
+                  color: categoryColors.risky,
+                },
+                {
+                  id: 'balanced',
+                  title: 'Balanced',
+                  emoji: '⚖️',
+                  description: 'Mix categories each round for flexibility',
+                  color: primaryGreen,
+                },
+              ].map(strategy => {
+                const isSelected = draftStrategy === strategy.id;
+                return (
+                  <button
+                    key={strategy.id}
+                    onClick={() => setDraftStrategy(strategy.id)}
+                    style={{
+                      position: 'relative',
+                      background: isSelected
+                        ? `linear-gradient(145deg, ${strategy.color}20 0%, ${strategy.color}05 100%)`
+                        : '#161b22',
+                      border: isSelected
+                        ? `2px solid ${strategy.color}`
+                        : '1px solid #21262d',
+                      borderRadius: '16px',
+                      padding: '20px',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.2s ease',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {/* Glow when selected */}
+                    {isSelected && (
+                      <div style={{
+                        position: 'absolute',
+                        inset: 0,
+                        borderRadius: '16px',
+                        boxShadow: `inset 0 0 30px ${strategy.color}25, 0 0 20px ${strategy.color}15`,
+                        pointerEvents: 'none',
+                      }} />
+                    )}
+
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px',
+                    }}>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '14px',
+                        background: isSelected
+                          ? `linear-gradient(135deg, ${strategy.color} 0%, ${strategy.color}bb 100%)`
+                          : 'linear-gradient(135deg, #21262d 0%, #161b22 100%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '24px',
+                        boxShadow: isSelected ? `0 4px 16px ${strategy.color}40` : 'none',
+                        transition: 'all 0.2s ease',
+                      }}>
+                        {strategy.emoji}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{
+                          fontSize: '16px',
+                          fontWeight: '700',
+                          color: isSelected ? '#ffffff' : '#e6edf3',
+                          marginBottom: '4px',
+                        }}>
+                          {strategy.title}
+                        </div>
+                        <div style={{
+                          fontSize: '13px',
+                          color: '#8b949e',
+                          lineHeight: '1.4',
+                        }}>
+                          {strategy.description}
+                        </div>
+                      </div>
+                      {/* Radio indicator */}
+                      <div style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '50%',
+                        border: isSelected ? `2px solid ${strategy.color}` : '2px solid #30363d',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.2s ease',
+                      }}>
+                        {isSelected && (
+                          <div style={{
+                            width: '12px',
+                            height: '12px',
+                            borderRadius: '50%',
+                            background: strategy.color,
+                          }} />
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* PHASE 2: Tier 1 Picks */}
+        {phase === 'tier1' && (
+          <div style={{ marginTop: '20px' }}>
+            <p style={{
+              color: '#8b949e',
+              fontSize: '14px',
+              margin: '0 0 20px 0',
+            }}>
+              Select <strong style={{ color: '#fff' }}>3 assets per category</strong> as your priority picks.
+              These are your must-drafts.
+            </p>
+
+            {renderCategorySection('steady', 'Steady Assets', steadyAssets, 1)}
+            {renderCategorySection('risky', 'Risky Assets', riskyAssets, 1)}
+            {renderCategorySection('defensive', 'Defensive Assets', defensiveAssets, 1)}
+          </div>
+        )}
+
+        {/* PHASE 3: Tier 2 Picks */}
+        {phase === 'tier2' && (
+          <div style={{ marginTop: '20px' }}>
+            <p style={{
+              color: '#8b949e',
+              fontSize: '14px',
+              margin: '0 0 20px 0',
+            }}>
+              Select <strong style={{ color: '#fff' }}>2 backup assets per category</strong>.
+              These are alternatives if Tier 1 picks are taken.
+            </p>
+
+            {renderCategorySection('steady', 'Steady Assets', steadyAssets, 2)}
+            {renderCategorySection('risky', 'Risky Assets', riskyAssets, 2)}
+            {renderCategorySection('defensive', 'Defensive Assets', defensiveAssets, 2)}
+          </div>
+        )}
+
+        {/* PHASE 4: Review & Generate */}
+        {phase === 'review' && (
+          <div style={{ marginTop: '20px' }}>
+            <p style={{
+              color: '#8b949e',
+              fontSize: '14px',
+              margin: '0 0 20px 0',
+            }}>
+              Review your selections before generating your draft strategy.
+            </p>
+
+            {/* Strategy Summary */}
+            <div style={{
+              background: '#161b22',
+              border: '1px solid #21262d',
+              borderRadius: '16px',
+              padding: '16px',
+              marginBottom: '16px',
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                marginBottom: '12px',
+              }}>
+                <div style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '10px',
+                  background: `linear-gradient(135deg, ${primaryGreen} 0%, #059669 100%)`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <span style={{ fontSize: '16px' }}>
+                    {draftStrategy === 'steady-first' ? '🛡️' : draftStrategy === 'risky-first' ? '⚡' : '⚖️'}
+                  </span>
+                </div>
+                <div>
+                  <div style={{ color: '#ffffff', fontWeight: '700', fontSize: '14px' }}>
+                    Strategy: {draftStrategy === 'steady-first' ? 'Steady First' : draftStrategy === 'risky-first' ? 'Risk Early' : 'Balanced'}
+                  </div>
+                  <div style={{ color: '#8b949e', fontSize: '12px' }}>
+                    Your chosen draft approach
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Tier 1 Summary */}
+            <div style={{
+              background: '#161b22',
+              border: `1px solid ${primaryGreen}40`,
+              borderRadius: '16px',
+              padding: '16px',
+              marginBottom: '12px',
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '12px',
+              }}>
+                <div style={{
+                  color: primaryGreen,
+                  fontWeight: '700',
+                  fontSize: '14px',
+                }}>
+                  🔥 TIER 1 — Priority Picks
+                </div>
+                <span style={{
+                  background: `${primaryGreen}20`,
+                  color: primaryGreen,
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                }}>
+                  {getTier1Count()} picks
+                </span>
+              </div>
+
+              {['steady', 'risky', 'defensive'].map(category => (
+                <div key={category} style={{ marginBottom: '8px' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '4px',
+                  }}>
+                    <span style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      background: categoryColors[category],
+                    }} />
+                    <span style={{
+                      color: categoryColors[category],
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      textTransform: 'uppercase',
+                    }}>
+                      {category}
+                    </span>
+                  </div>
+                  <div style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '6px',
+                    marginLeft: '16px',
+                  }}>
+                    {tier1Picks[category].length > 0 ? (
+                      tier1Picks[category].map(symbol => (
+                        <span key={symbol} style={{
+                          background: `${categoryColors[category]}20`,
+                          border: `1px solid ${categoryColors[category]}40`,
+                          color: categoryColors[category],
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          padding: '4px 10px',
+                          borderRadius: '8px',
+                        }}>
+                          {symbol}
+                        </span>
+                      ))
+                    ) : (
+                      <span style={{ color: '#6e7681', fontSize: '12px', fontStyle: 'italic' }}>
+                        No picks yet
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Tier 2 Summary */}
+            <div style={{
+              background: '#161b22',
+              border: '1px solid #21262d',
+              borderRadius: '16px',
+              padding: '16px',
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '12px',
+              }}>
+                <div style={{
+                  color: '#8b949e',
+                  fontWeight: '700',
+                  fontSize: '14px',
+                }}>
+                  ⚡ TIER 2 — Backup Picks
+                </div>
+                <span style={{
+                  background: '#21262d',
+                  color: '#8b949e',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                }}>
+                  {getTier2Count()} picks
+                </span>
+              </div>
+
+              {['steady', 'risky', 'defensive'].map(category => (
+                <div key={category} style={{ marginBottom: '8px' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '4px',
+                  }}>
+                    <span style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      background: categoryColors[category],
+                      opacity: 0.6,
+                    }} />
+                    <span style={{
+                      color: categoryColors[category],
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      textTransform: 'uppercase',
+                      opacity: 0.8,
+                    }}>
+                      {category}
+                    </span>
+                  </div>
+                  <div style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '6px',
+                    marginLeft: '16px',
+                  }}>
+                    {tier2Picks[category].length > 0 ? (
+                      tier2Picks[category].map(symbol => (
+                        <span key={symbol} style={{
+                          background: '#21262d',
+                          border: `1px solid ${categoryColors[category]}30`,
+                          color: '#8b949e',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          padding: '4px 10px',
+                          borderRadius: '8px',
+                        }}>
+                          {symbol}
+                        </span>
+                      ))
+                    ) : (
+                      <span style={{ color: '#6e7681', fontSize: '12px', fontStyle: 'italic' }}>
+                        No picks yet
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Fixed Bottom Action Bar */}
+      <div style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        background: 'linear-gradient(to top, #0d1117 90%, transparent)',
+        padding: '24px 0 0 0',
+      }}>
+        <div style={{
+          background: 'linear-gradient(145deg, #1a1f2e 0%, #161b22 100%)',
+          borderRadius: '20px 20px 0 0',
+          padding: '20px',
+          border: '1px solid #2d3548',
+          borderBottom: 'none',
+          boxShadow: '0 -4px 24px rgba(0, 0, 0, 0.4)',
+        }}>
+          {/* Progress indicator */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '8px',
+            marginBottom: '16px',
+          }}>
+            {['strategy', 'tier1', 'tier2', 'review'].map((p, i) => (
+              <div
+                key={p}
+                style={{
+                  width: phase === p ? '24px' : '8px',
+                  height: '8px',
+                  borderRadius: '4px',
+                  background: phase === p ? primaryGreen :
+                    ['strategy', 'tier1', 'tier2', 'review'].indexOf(phase) > i ? primaryGreen : '#30363d',
+                  transition: 'all 0.3s ease',
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Continue/Generate Button */}
+          <button
+            onClick={() => {
+              if (phase === 'strategy' && draftStrategy) {
+                goToPhase('tier1');
+              } else if (phase === 'tier1' && getTier1Count() >= 3) {
+                goToPhase('tier2');
+              } else if (phase === 'tier2') {
+                goToPhase('review');
+              } else if (phase === 'review') {
+                handleGenerateGamePlan();
+              }
+            }}
+            disabled={
+              (phase === 'strategy' && !draftStrategy) ||
+              (phase === 'tier1' && getTier1Count() < 3)
+            }
+            style={{
+              width: '100%',
+              background: (
+                (phase === 'strategy' && !draftStrategy) ||
+                (phase === 'tier1' && getTier1Count() < 3)
+              )
+                ? '#2d3548'
+                : `linear-gradient(135deg, ${primaryGreen} 0%, #059669 50%, ${primaryGreen} 100%)`,
+              border: 'none',
+              borderRadius: '14px',
+              padding: '18px 24px',
+              color: (
+                (phase === 'strategy' && !draftStrategy) ||
+                (phase === 'tier1' && getTier1Count() < 3)
+              ) ? '#6e7681' : '#ffffff',
+              fontSize: '16px',
+              fontWeight: '700',
+              cursor: (
+                (phase === 'strategy' && !draftStrategy) ||
+                (phase === 'tier1' && getTier1Count() < 3)
+              ) ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '10px',
+              boxShadow: !(
+                (phase === 'strategy' && !draftStrategy) ||
+                (phase === 'tier1' && getTier1Count() < 3)
+              )
+                ? `0 4px 20px ${primaryGreen}40, 0 0 40px ${primaryGreen}20`
+                : 'none',
+              transition: 'all 0.3s ease',
+            }}
+          >
+            {phase === 'review' ? (
+              <>
+                <span>Generate Draft Strategy</span>
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </>
+            ) : (
+              <>
+                <span>Continue</span>
+                <span style={{
+                  background: 'rgba(255, 255, 255, 0.2)',
+                  padding: '4px 10px',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: '800',
+                }}>
+                  {phase === 'strategy' && (draftStrategy ? '✓' : 'Select strategy')}
+                  {phase === 'tier1' && `${getTier1Count()}/9 picks`}
+                  {phase === 'tier2' && `${getTier2Count()} backups`}
+                </span>
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -9797,6 +10839,12 @@ export default function PortfolioDuel() {
   const [researchThesis, setResearchThesis] = useState(null); // Store thesis from advisor
   const [researchViewMode, setResearchViewMode] = useState('guided'); // 'guided' | 'classic'
 
+  // Snake Draft Priority Ranker state (replaces conviction check for snake-draft battles)
+  const [draftStrategy, setDraftStrategy] = useState(null); // 'steady-first' | 'risky-first' | 'balanced'
+  const [tier1Picks, setTier1Picks] = useState({ steady: [], risky: [], defensive: [] });
+  const [tier2Picks, setTier2Picks] = useState({ steady: [], risky: [], defensive: [] });
+  const [draftRankerPhase, setDraftRankerPhase] = useState(null); // 'strategy' | 'tier1' | 'tier2' | 'review'
+
   // Desktop background state
   const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' && window.innerWidth > 768);
 
@@ -14259,6 +15307,52 @@ export default function PortfolioDuel() {
       }
     };
 
+    // Handler when Draft Priority Ranker is complete - generate Snake Draft game plan
+    const handleDraftRankerComplete = (rankerData) => {
+      setResearchPhase('gameplan');
+      setResearchGamePlanLoading(true);
+      setResearchGamePlan(null);
+
+      try {
+        console.log('[DraftRanker] Generating Snake Draft game plan with:', rankerData);
+
+        // Use the portfolio from ranker data directly (already structured with tiers)
+        const portfolio = rankerData.portfolio || [];
+
+        // Generate game plan using the consolidated Snake Draft utility
+        const gamePlan = createSnakeDraftGamePlan(portfolio, researchThesis, {
+          userPicksCount: portfolio.filter(p => p.tier === 1).length,
+          divPicksCount: portfolio.filter(p => p.tier === 2).length,
+          diversificationStrategy: rankerData.draftStrategy,
+        });
+
+        // Add the draft strategy info to the game plan
+        gamePlan.draftStrategy = rankerData.draftStrategy;
+        gamePlan.tier1Picks = rankerData.tier1Picks;
+        gamePlan.tier2Picks = rankerData.tier2Picks;
+
+        console.log('[DraftRanker] Generated game plan:', gamePlan);
+        setResearchGamePlan(gamePlan);
+      } catch (error) {
+        console.error('[DraftRanker] Game plan generation failed:', error);
+        // Create a minimal fallback plan
+        setResearchGamePlan({
+          strategySummary: '🐍 SNAKE DRAFT STRATEGY\n\nYour draft picks have been organized by priority tier.',
+          portfolio: rankerData.portfolio || [],
+          isSnakeDraft: true,
+          categoryCounts: {
+            steady: rankerData.tier1Picks?.steady?.length || 0,
+            risky: rankerData.tier1Picks?.risky?.length || 0,
+            defensive: rankerData.tier1Picks?.defensive?.length || 0,
+          },
+          risks: ['High-priority picks may be taken by opponents'],
+          generatedLocally: true,
+        });
+      } finally {
+        setResearchGamePlanLoading(false);
+      }
+    };
+
     // Handler to use the generated portfolio
     const handleUseResearchPortfolio = (portfolioAllocations) => {
       // Convert allocations to portfolio format
@@ -14280,6 +15374,11 @@ export default function PortfolioDuel() {
       setShowResearchMode(false);
       setResearchPhase('explore');
       setScreen('portfolio');
+      // Reset Draft Ranker state
+      setDraftRankerPhase(null);
+      setDraftStrategy(null);
+      setTier1Picks({ steady: [], risky: [], defensive: [] });
+      setTier2Picks({ steady: [], risky: [], defensive: [] });
     };
 
     // Handler to start training battle with portfolio
@@ -14320,6 +15419,11 @@ export default function PortfolioDuel() {
       setResearchPhase('explore');
       setScreen('dashboard'); // Navigate to dashboard to see the battle
       showToast(`Training battle started vs ${newBattle.opponent}! 🤖`);
+      // Reset Draft Ranker state
+      setDraftRankerPhase(null);
+      setDraftStrategy(null);
+      setTier1Picks({ steady: [], risky: [], defensive: [] });
+      setTier2Picks({ steady: [], risky: [], defensive: [] });
     };
 
     // Handler to save game plan as template
@@ -14371,6 +15475,11 @@ export default function PortfolioDuel() {
     // Handler to go back from conviction check to explore
     const handleBackFromConviction = () => {
       setResearchPhase('explore');
+      // Reset Draft Ranker state when going back
+      setDraftRankerPhase(null);
+      setDraftStrategy(null);
+      setTier1Picks({ steady: [], risky: [], defensive: [] });
+      setTier2Picks({ steady: [], risky: [], defensive: [] });
     };
 
     // Get sector color for stock
@@ -15612,18 +16721,37 @@ export default function PortfolioDuel() {
                   />
                 )}
 
-                {/* Phase 4: Conviction Check */}
+                {/* Phase 4: Conviction Check / Draft Priority Ranker */}
                 {researchPhase === 'conviction' && (
-                  <ConvictionCheck
-                    thesis={researchThesis}
-                    recommendations={[...stocksData, ...cryptoData].slice(0, 20)}
-                    convictionData={convictionData}
-                    setConvictionData={setConvictionData}
-                    onComplete={handleConvictionComplete}
-                    onBack={handleBackFromConviction}
-                    onOpenAssetPicker={handleOpenAssetPicker}
-                    colors={colors}
-                  />
+                  researchThesis?.battleType === 'snake-draft' ? (
+                    <DraftPriorityRanker
+                      thesis={researchThesis}
+                      onComplete={handleDraftRankerComplete}
+                      onBack={handleBackFromConviction}
+                      draftStrategy={draftStrategy}
+                      setDraftStrategy={setDraftStrategy}
+                      tier1Picks={tier1Picks}
+                      setTier1Picks={setTier1Picks}
+                      tier2Picks={tier2Picks}
+                      setTier2Picks={setTier2Picks}
+                      draftRankerPhase={draftRankerPhase}
+                      setDraftRankerPhase={setDraftRankerPhase}
+                      stocksData={stocksData}
+                      cryptoData={cryptoData}
+                      colors={colors}
+                    />
+                  ) : (
+                    <ConvictionCheck
+                      thesis={researchThesis}
+                      recommendations={[...stocksData, ...cryptoData].slice(0, 20)}
+                      convictionData={convictionData}
+                      setConvictionData={setConvictionData}
+                      onComplete={handleConvictionComplete}
+                      onBack={handleBackFromConviction}
+                      onOpenAssetPicker={handleOpenAssetPicker}
+                      colors={colors}
+                    />
+                  )
                 )}
 
                 {/* Phase 5: Game Plan */}
@@ -15641,6 +16769,11 @@ export default function PortfolioDuel() {
                       setResearchPhase('explore');
                       setResearchGamePlan(null);
                       setShowResearchMode(false);
+                      // Reset Draft Ranker state
+                      setDraftRankerPhase(null);
+                      setDraftStrategy(null);
+                      setTier1Picks({ steady: [], risky: [], defensive: [] });
+                      setTier2Picks({ steady: [], risky: [], defensive: [] });
                     }}
                     onBack={handleBackFromGamePlan}
                     colors={colors}
