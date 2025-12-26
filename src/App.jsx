@@ -2844,7 +2844,6 @@ const DraftPriorityRanker = ({
   cryptoData,
   colors,
 }) => {
-  console.log('>>> DRAFT PRIORITY RANKER RENDERING <<<');
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
 
   // Category colors from spec
@@ -8726,6 +8725,12 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors 
   const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [assetPickerType, setAssetPickerType] = useState(null);
 
+  // Snake Draft Priority Ranker state
+  const [draftStrategy, setDraftStrategy] = useState(null);
+  const [tier1Picks, setTier1Picks] = useState({ steady: [], risky: [], defensive: [] });
+  const [tier2Picks, setTier2Picks] = useState({ steady: [], risky: [], defensive: [] });
+  const [draftRankerPhase, setDraftRankerPhase] = useState(null);
+
   // Reset flow
   const resetFlow = () => {
     setFlowPhase(1);
@@ -8735,6 +8740,11 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors 
     setConvictionData({ mustHave: [], mustAvoid: [], confidence: null });
     setGamePlan(null);
     setSelectedAsset(null);
+    // Reset draft ranker state
+    setDraftStrategy(null);
+    setTier1Picks({ steady: [], risky: [], defensive: [] });
+    setTier2Picks({ steady: [], risky: [], defensive: [] });
+    setDraftRankerPhase(null);
   };
 
   // Handle thesis completion (Phase 2 → 3)
@@ -8994,6 +9004,51 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors 
     };
   };
 
+  // Handle Draft Priority Ranker complete (Snake Draft mode)
+  const handleDraftRankerComplete = (rankerData) => {
+    setFlowPhase(5);
+    setIsGeneratingPlan(true);
+
+    try {
+      console.log('[DraftRanker] Generating Snake Draft game plan with:', rankerData);
+
+      // Use the portfolio from ranker data (already structured with tiers)
+      const portfolio = rankerData.portfolio || [];
+
+      // Generate game plan using the consolidated Snake Draft utility
+      const plan = createSnakeDraftGamePlan(portfolio, thesis, {
+        userPicksCount: portfolio.filter(p => p.tier === 1).length,
+        divPicksCount: portfolio.filter(p => p.tier === 2).length,
+        diversificationStrategy: rankerData.draftStrategy,
+      });
+
+      // Add the draft strategy info to the game plan
+      plan.draftStrategy = rankerData.draftStrategy;
+      plan.tier1Picks = rankerData.tier1Picks;
+      plan.tier2Picks = rankerData.tier2Picks;
+
+      console.log('[DraftRanker] Generated game plan:', plan);
+      setGamePlan(plan);
+    } catch (error) {
+      console.error('[DraftRanker] Game plan generation failed:', error);
+      // Create a minimal fallback plan
+      setGamePlan({
+        strategySummary: '🐍 SNAKE DRAFT STRATEGY\n\nYour draft picks have been organized by priority tier.',
+        portfolio: rankerData.portfolio || [],
+        isSnakeDraft: true,
+        categoryCounts: {
+          steady: rankerData.tier1Picks?.steady?.length || 0,
+          risky: rankerData.tier1Picks?.risky?.length || 0,
+          defensive: rankerData.tier1Picks?.defensive?.length || 0,
+        },
+        risks: ['High-priority picks may be taken by opponents'],
+        generatedLocally: true,
+      });
+    } finally {
+      setIsGeneratingPlan(false);
+    }
+  };
+
   // Handle use portfolio
   const handleUsePortfolio = (portfolio) => {
     if (portfolio && onUsePortfolio) {
@@ -9123,8 +9178,29 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors 
         );
 
       case 4:
-        console.log('>>> RESEARCH FLOW - CASE 4 (Build Your Lineup) RENDERING <<<');
-        console.log('>>> thesis.battleType:', thesis.battleType);
+        // Snake Draft mode: Show Draft Priority Ranker
+        if (thesis.battleType === 'snake-draft') {
+          return (
+            <DraftPriorityRanker
+              thesis={thesis}
+              onComplete={handleDraftRankerComplete}
+              onBack={() => setFlowPhase(3)}
+              draftStrategy={draftStrategy}
+              setDraftStrategy={setDraftStrategy}
+              tier1Picks={tier1Picks}
+              setTier1Picks={setTier1Picks}
+              tier2Picks={tier2Picks}
+              setTier2Picks={setTier2Picks}
+              draftRankerPhase={draftRankerPhase}
+              setDraftRankerPhase={setDraftRankerPhase}
+              stocksData={stocksData}
+              cryptoData={cryptoData}
+              colors={c}
+            />
+          );
+        }
+
+        // Classic mode: Show Build Your Lineup (ConvictionCheck)
         return (
           <>
             <ConvictionCheck
@@ -16726,8 +16802,6 @@ export default function PortfolioDuel() {
 
                 {/* Phase 4: Conviction Check / Draft Priority Ranker */}
                 {researchPhase === 'conviction' && (
-                  console.log('>>> INLINE RESEARCH - CONVICTION PHASE RENDERING <<<'),
-                  console.log('>>> researchThesis?.battleType:', researchThesis?.battleType),
                   researchThesis?.battleType === 'snake-draft' ? (
                     <DraftPriorityRanker
                       thesis={researchThesis}
