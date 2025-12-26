@@ -2844,6 +2844,7 @@ const DraftPriorityRanker = ({
   cryptoData,
   colors,
 }) => {
+  console.log('>>> DRAFT PRIORITY RANKER RENDERING <<<');
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
 
   // Category colors from spec
@@ -9122,6 +9123,8 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors 
         );
 
       case 4:
+        console.log('>>> RESEARCH FLOW - CASE 4 (Build Your Lineup) RENDERING <<<');
+        console.log('>>> thesis.battleType:', thesis.battleType);
         return (
           <>
             <ConvictionCheck
@@ -16723,6 +16726,8 @@ export default function PortfolioDuel() {
 
                 {/* Phase 4: Conviction Check / Draft Priority Ranker */}
                 {researchPhase === 'conviction' && (
+                  console.log('>>> INLINE RESEARCH - CONVICTION PHASE RENDERING <<<'),
+                  console.log('>>> researchThesis?.battleType:', researchThesis?.battleType),
                   researchThesis?.battleType === 'snake-draft' ? (
                     <DraftPriorityRanker
                       thesis={researchThesis}
