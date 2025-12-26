@@ -5391,6 +5391,10 @@ const WatchlistNews = ({ colors }) => {
             from { transform: translateY(20px); opacity: 0; }
             to { transform: translateY(0); opacity: 1; }
           }
+          @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+          }
         `}</style>
         <div
           style={{
@@ -9670,7 +9674,8 @@ import {
   Flame,
   Brain,
   Briefcase,
-  Settings
+  Settings,
+  BookOpen
 } from 'lucide-react';
 
 const PERCENTAGE_OPTIONS = [7.5, 10, 12.5, 15, 17.5, 20];
@@ -9701,6 +9706,138 @@ const colors = {
   border: 'rgba(0, 217, 255, 0.2)',
   borderSubtle: 'rgba(255, 255, 255, 0.1)',
   borderFocus: '#00d9ff'
+};
+
+// ============================================
+// TUTORIAL CONTENT FOR EACH GAME MODE
+// ============================================
+const TUTORIALS = {
+  classic: {
+    title: 'How to Play Classic 1v1',
+    color: '#00d9ff',
+    steps: [
+      {
+        icon: '💼',
+        title: 'Build Your Portfolio',
+        description: 'Select 7-13 assets (stocks or crypto) and allocate your virtual $1M. Each asset requires 7.5% minimum and 20% maximum allocation.',
+        tip: 'Diversify across different sectors to reduce risk!'
+      },
+      {
+        icon: '⚔️',
+        title: 'Create or Join Battle',
+        description: 'Create a battle to get a unique 6-character code, or enter a friend\'s code to join their battle.',
+        tip: 'Share your code with friends to challenge them!'
+      },
+      {
+        icon: '⏱️',
+        title: 'Battle Duration',
+        description: 'Battles last 24 hours using real market prices. Watch your portfolio\'s live performance throughout the day.',
+        tip: 'Crypto markets are open 24/7, stocks during market hours!'
+      },
+      {
+        icon: '📈',
+        title: 'Track Performance',
+        description: 'Monitor your gains and losses as prices change in real-time. Green means winning, red means trailing.',
+        tip: 'Check back often to see live updates!'
+      },
+      {
+        icon: '🏆',
+        title: 'Victory Conditions',
+        description: 'The player with the highest percentage return wins! Earn XP to climb ranks and prove your market skills.',
+        tip: 'Every battle earns XP - win or lose!'
+      }
+    ]
+  },
+  draft: {
+    title: 'How to Play Snake Draft',
+    color: '#10b981',
+    steps: [
+      {
+        icon: '🐍',
+        title: 'The Snake Draft',
+        description: '4 players take turns picking assets in snake order. Round 1: P1→P2→P3→P4, Round 2: P4→P3→P2→P1, then repeat.',
+        tip: 'Later draft positions get back-to-back picks!'
+      },
+      {
+        icon: '🎯',
+        title: 'Build Your Team',
+        description: 'Pick 9 assets total from 75 available. Categories: Steady (safe), Risky (volatile), and Defensive (stable).',
+        tip: 'Balance your categories for optimal results!'
+      },
+      {
+        icon: '⚡',
+        title: 'Time Pressure',
+        description: '30 seconds per pick in training, 2 minutes in real drafts. If time expires, auto-pick selects for you!',
+        tip: 'Research assets beforehand using Research Mode!'
+      },
+      {
+        icon: '🎮',
+        title: 'Battle Phase',
+        description: 'After drafting completes, all 4 players compete simultaneously. Stocks: Until Friday 3PM CT. Crypto: 7 days.',
+        tip: 'Draft ends → Battle begins immediately!'
+      },
+      {
+        icon: '🔄',
+        title: 'Free Agency',
+        description: 'During the battle phase, swap up to 2 assets per day. Strategic trades can turn the tide!',
+        tip: 'Watch the market for buy-low opportunities!'
+      },
+      {
+        icon: '🥇',
+        title: 'Final Standings',
+        description: 'Finish in the top 2 to earn bonus XP rewards. Your draft skills are tracked over time on your profile!',
+        tip: '1st place earns maximum rewards!'
+      }
+    ]
+  },
+  training: {
+    title: 'How Training Mode Works',
+    color: '#9333ea',
+    steps: [
+      {
+        icon: '🎓',
+        title: 'Risk-Free Practice',
+        description: 'Battle against a CPU opponent using the same rules as real battles. Learn the mechanics with zero pressure!',
+        tip: 'Great for testing new strategies!'
+      },
+      {
+        icon: '⏰',
+        title: 'Shorter Duration',
+        description: 'Training battles last only 1 hour instead of 24 hours. Get quick feedback to learn and improve faster.',
+        tip: 'Perfect for testing portfolio ideas!'
+      },
+      {
+        icon: '✨',
+        title: 'Reduced Rewards',
+        description: 'Earn 10 XP for wins and 5 XP for losses. Training battles don\'t affect your official W/L record.',
+        tip: 'Focus on learning, not winning!'
+      }
+    ]
+  },
+  draftTraining: {
+    title: 'How Draft Training Works',
+    color: '#9333ea',
+    steps: [
+      {
+        icon: '🎓',
+        title: 'Practice Drafting',
+        description: 'Draft against 3 CPU opponents. Experience the same rules and time pressure without any stakes!',
+        tip: 'Test different draft strategies safely!'
+      },
+      {
+        icon: '🤖',
+        title: 'CPU Opponents',
+        description: 'CPUs draft automatically using varied strategies. Watch their picks to learn new approaches!',
+        tip: 'CPUs sometimes make surprising picks!'
+      },
+      {
+        icon: '✨',
+        title: 'Training Rewards',
+        description: 'Earn reduced XP but gain valuable drafting experience. Perfect preparation before real competitive drafts!',
+        tip: 'No ranking impact - experiment freely!'
+      }
+    ]
+  }
 };
 
 // ============================================
@@ -10943,6 +11080,18 @@ export default function PortfolioDuel() {
   const [isRosterExpanded, setIsRosterExpanded] = useState(false);
   const [rosterTouchStart, setRosterTouchStart] = useState(null);
   const [rosterTouchEnd, setRosterTouchEnd] = useState(null);
+
+  // Confirmation popup states
+  const [showCreateBattleConfirm, setShowCreateBattleConfirm] = useState(false);
+  const [showJoinBattleConfirm, setShowJoinBattleConfirm] = useState(false);
+  const [showClassicTrainingConfirm, setShowClassicTrainingConfirm] = useState(false);
+  const [showCreateDraftConfirm, setShowCreateDraftConfirm] = useState(false);
+  const [showJoinDraftConfirm, setShowJoinDraftConfirm] = useState(false);
+
+  // Tutorial modal states
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [tutorialMode, setTutorialMode] = useState('classic'); // 'classic' | 'draft' | 'training' | 'draftTraining'
+  const [tutorialStep, setTutorialStep] = useState(0);
 
   // Research Mode state
   const [showResearchMode, setShowResearchMode] = useState(false);
@@ -14803,6 +14952,477 @@ export default function PortfolioDuel() {
     )
   );
 
+  // ============================================
+  // CONFIRMATION POPUP COMPONENT
+  // ============================================
+  const ConfirmationPopup = ({
+    show,
+    onClose,
+    onConfirm,
+    icon,
+    iconBgColor,
+    title,
+    subtitle,
+    details,
+    confirmText,
+    confirmColor,
+    tutorialModeType
+  }) => {
+    if (!show) return null;
+
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          animation: 'fadeIn 0.2s ease'
+        }}
+        onClick={onClose}
+      >
+        <div
+          style={{
+            background: 'linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%)',
+            borderRadius: '24px',
+            border: '1px solid #21262d',
+            maxWidth: '380px',
+            width: '100%',
+            padding: '32px 24px 24px',
+            boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)',
+            animation: 'slideUp 0.3s ease'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Icon */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            marginBottom: '20px'
+          }}>
+            <div style={{
+              width: '72px',
+              height: '72px',
+              borderRadius: '50%',
+              background: iconBgColor,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: `0 8px 24px ${iconBgColor}44`
+            }}>
+              {icon}
+            </div>
+          </div>
+
+          {/* Title */}
+          <h2 style={{
+            margin: '0 0 8px',
+            fontSize: '22px',
+            fontWeight: '700',
+            color: '#ffffff',
+            textAlign: 'center'
+          }}>
+            {title}
+          </h2>
+
+          {/* Subtitle */}
+          <p style={{
+            margin: '0 0 20px',
+            fontSize: '15px',
+            color: '#8b949e',
+            textAlign: 'center'
+          }}>
+            {subtitle}
+          </p>
+
+          {/* Details Box */}
+          <div style={{
+            background: '#0d1117',
+            borderRadius: '12px',
+            padding: '16px',
+            marginBottom: '20px'
+          }}>
+            {details.map((detail, index) => (
+              <div
+                key={index}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '8px 0',
+                  borderBottom: index < details.length - 1 ? '1px solid #21262d' : 'none'
+                }}
+              >
+                <span style={{ color: '#8b949e', fontSize: '14px' }}>{detail.label}</span>
+                <span style={{
+                  color: detail.highlight ? detail.highlightColor || '#f59e0b' : '#ffffff',
+                  fontSize: '14px',
+                  fontWeight: '600'
+                }}>
+                  {detail.value}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Action Buttons */}
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            marginBottom: '16px'
+          }}>
+            <button
+              onClick={onClose}
+              style={{
+                flex: 1,
+                padding: '14px',
+                borderRadius: '12px',
+                border: '2px solid #21262d',
+                background: 'transparent',
+                color: '#ffffff',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              style={{
+                flex: 1,
+                padding: '14px',
+                borderRadius: '12px',
+                border: 'none',
+                background: confirmColor,
+                color: '#ffffff',
+                fontSize: '16px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                boxShadow: `0 4px 12px ${confirmColor}44`
+              }}
+            >
+              {confirmText}
+            </button>
+          </div>
+
+          {/* Tutorial Button */}
+          <button
+            onClick={() => {
+              setTutorialMode(tutorialModeType);
+              setTutorialStep(0);
+              setShowTutorial(true);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              width: '100%',
+              padding: '12px 16px',
+              background: 'transparent',
+              border: '1px solid #21262d',
+              borderRadius: '10px',
+              color: '#6e7681',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+              e.currentTarget.style.borderColor = '#30363d';
+              e.currentTarget.style.color = '#8b949e';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.borderColor = '#21262d';
+              e.currentTarget.style.color = '#6e7681';
+            }}
+          >
+            <BookOpen size={16} />
+            <span>How to Play</span>
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================
+  // TUTORIAL MODAL COMPONENT
+  // ============================================
+  const TutorialModal = () => {
+    if (!showTutorial) return null;
+
+    const tutorial = TUTORIALS[tutorialMode];
+    const currentStep = tutorial.steps[tutorialStep];
+
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.9)',
+          backdropFilter: 'blur(12px)',
+          zIndex: 1100,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          animation: 'fadeIn 0.2s ease'
+        }}
+        onClick={() => setShowTutorial(false)}
+      >
+        <div
+          style={{
+            background: 'linear-gradient(135deg, #161b22 0%, #0d1117 100%)',
+            borderRadius: '24px',
+            border: `2px solid ${tutorial.color}`,
+            maxWidth: '420px',
+            width: '100%',
+            maxHeight: '85vh',
+            overflow: 'hidden',
+            boxShadow: `0 0 60px ${tutorial.color}33`,
+            animation: 'slideUp 0.3s ease'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div style={{
+            background: `linear-gradient(135deg, ${tutorial.color}22 0%, transparent 100%)`,
+            padding: '20px 24px',
+            borderBottom: '1px solid #21262d',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '10px',
+                background: `${tutorial.color}22`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <BookOpen size={20} style={{ color: tutorial.color }} />
+              </div>
+              <h2 style={{
+                margin: 0,
+                fontSize: '18px',
+                fontWeight: '700',
+                color: '#ffffff'
+              }}>
+                {tutorial.title}
+              </h2>
+            </div>
+            <button
+              onClick={() => setShowTutorial(false)}
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#6e7681',
+                fontSize: '18px',
+                cursor: 'pointer',
+                padding: '6px 10px',
+                lineHeight: 1,
+                transition: 'all 0.2s'
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Content */}
+          <div style={{ padding: '24px' }}>
+            {/* Step Badge */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              marginBottom: '20px'
+            }}>
+              <span style={{
+                background: tutorial.color,
+                color: '#0d1117',
+                padding: '6px 16px',
+                borderRadius: '20px',
+                fontSize: '12px',
+                fontWeight: '700',
+                letterSpacing: '0.5px'
+              }}>
+                STEP {tutorialStep + 1} OF {tutorial.steps.length}
+              </span>
+            </div>
+
+            {/* Icon */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              marginBottom: '20px'
+            }}>
+              <div style={{
+                fontSize: '56px',
+                lineHeight: 1,
+                animation: 'bounce 2s ease-in-out infinite'
+              }}>
+                {currentStep.icon}
+              </div>
+            </div>
+
+            {/* Title */}
+            <h3 style={{
+              margin: '0 0 12px',
+              fontSize: '22px',
+              fontWeight: '700',
+              color: tutorial.color,
+              textAlign: 'center'
+            }}>
+              {currentStep.title}
+            </h3>
+
+            {/* Description */}
+            <p style={{
+              margin: '0 0 20px',
+              fontSize: '15px',
+              color: '#c9d1d9',
+              textAlign: 'center',
+              lineHeight: 1.7
+            }}>
+              {currentStep.description}
+            </p>
+
+            {/* Tip Box */}
+            <div style={{
+              background: `${tutorial.color}12`,
+              border: `1px solid ${tutorial.color}33`,
+              borderRadius: '12px',
+              padding: '14px 16px',
+              marginBottom: '24px'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '10px'
+              }}>
+                <span style={{ fontSize: '16px' }}>💡</span>
+                <span style={{
+                  fontSize: '14px',
+                  color: tutorial.color,
+                  fontWeight: '500',
+                  lineHeight: 1.5
+                }}>
+                  {currentStep.tip}
+                </span>
+              </div>
+            </div>
+
+            {/* Progress Dots */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              gap: '8px',
+              marginBottom: '24px'
+            }}>
+              {tutorial.steps.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => setTutorialStep(index)}
+                  style={{
+                    width: index === tutorialStep ? '28px' : '10px',
+                    height: '10px',
+                    borderRadius: '5px',
+                    border: 'none',
+                    background: index === tutorialStep ? tutorial.color : '#21262d',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s ease',
+                    opacity: index <= tutorialStep ? 1 : 0.5
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Navigation Buttons */}
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setTutorialStep(prev => Math.max(0, prev - 1))}
+                disabled={tutorialStep === 0}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  borderRadius: '12px',
+                  border: '2px solid #21262d',
+                  background: 'transparent',
+                  color: tutorialStep === 0 ? '#6e7681' : '#ffffff',
+                  fontSize: '15px',
+                  fontWeight: '600',
+                  cursor: tutorialStep === 0 ? 'not-allowed' : 'pointer',
+                  opacity: tutorialStep === 0 ? 0.5 : 1,
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                ← Previous
+              </button>
+              {tutorialStep < tutorial.steps.length - 1 ? (
+                <button
+                  onClick={() => setTutorialStep(prev => prev + 1)}
+                  style={{
+                    flex: 1,
+                    padding: '14px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: `linear-gradient(135deg, ${tutorial.color} 0%, ${tutorial.color}cc 100%)`,
+                    color: '#ffffff',
+                    fontSize: '15px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: `0 4px 20px ${tutorial.color}44`
+                  }}
+                >
+                  Next →
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowTutorial(false)}
+                  style={{
+                    flex: 1,
+                    padding: '14px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: `linear-gradient(135deg, ${tutorial.color} 0%, ${tutorial.color}cc 100%)`,
+                    color: '#ffffff',
+                    fontSize: '15px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: `0 4px 20px ${tutorial.color}44`
+                  }}
+                >
+                  Got It! ✓
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // LOGIN SCREEN - Mobile-first responsive with Logo
   if (screen === 'home') {
     return (
@@ -18148,29 +18768,19 @@ export default function PortfolioDuel() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.2 }}
-                    onClick={async () => {
+                    onClick={() => {
+                      // Reset portfolio state
                       setPortfolio([]); setPortfolioType(null);
                       setPortfolioName('');
                       setAssetType('stocks');
                       setSearchTerm('');
                       setSelectedCrypto(null);
-                      setBuilderMode('create');
 
-                      // Check for upcoming high-impact events and show alert (only once per session)
-                      const alreadyShown = sessionStorage.getItem('volatilityAlertShown');
-                      if (!alreadyShown) {
-                        const highImpact = await checkUpcomingHighImpactEvents();
-                        if (highImpact && highImpact.length > 0) {
-                          setShowVolatilityAlert(true);
-                          sessionStorage.setItem('volatilityAlertShown', 'true');
-                        }
-                      }
-
-                      // Route based on game mode
+                      // Show confirmation popup based on game mode
                       if (gameMode === 'draft') {
-                        setScreen('draftSetup');  // New screen for draft
+                        setShowCreateDraftConfirm(true);
                       } else {
-                        setScreen('builder');     // Existing classic mode
+                        setShowCreateBattleConfirm(true);
                       }
                     }}
                     style={{
@@ -18283,17 +18893,18 @@ export default function PortfolioDuel() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.3 }}
                     onClick={() => {
+                      // Reset portfolio state
                       setPortfolio([]); setPortfolioType(null);
                       setPortfolioName('');
                       setAssetType('stocks');
                       setSearchTerm('');
                       setJoinCode('');
-                      setBuilderMode('join');
-                      // Route based on game mode
+
+                      // Show confirmation popup based on game mode
                       if (gameMode === 'draft') {
-                        setScreen('draftJoin');   // New screen for draft join
+                        setShowJoinDraftConfirm(true);
                       } else {
-                        setScreen('join');        // Code entry screen first
+                        setShowJoinBattleConfirm(true);
                       }
                     }}
                     style={{
@@ -18730,20 +19341,14 @@ export default function PortfolioDuel() {
                 </p>
               </motion.div>
             ) : (
-              /* Classic Mode Training Banner - Unchanged */
+              /* Classic Mode Training Banner - Shows confirmation popup */
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, delay: 0.4 }}
                 className="flex"
                 onClick={() => {
-                  setPortfolio([]); setPortfolioType(null);
-                  setPortfolioName('');
-                  setAssetType('stocks');
-                  setSearchTerm('');
-                  setSelectedCrypto(null);
-                  setBuilderMode('training');
-                  setScreen('builder');
+                  setShowClassicTrainingConfirm(true);
                 }}
                 style={{
                   background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
@@ -21035,6 +21640,43 @@ export default function PortfolioDuel() {
                     Start Draft
                   </button>
                 </div>
+
+                {/* Tutorial Button */}
+                <button
+                  onClick={() => {
+                    setTutorialMode('draftTraining');
+                    setTutorialStep(0);
+                    setShowTutorial(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    marginTop: '16px',
+                    padding: '12px',
+                    background: 'transparent',
+                    border: '1px dashed rgba(139, 92, 246, 0.4)',
+                    borderRadius: '10px',
+                    color: '#a78bfa',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(139, 92, 246, 0.1)';
+                    e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.6)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.4)';
+                  }}
+                >
+                  <BookOpen size={16} />
+                  <span>How to Play</span>
+                </button>
               </div>
             </div>
           </>
@@ -29081,6 +29723,120 @@ export default function PortfolioDuel() {
           {toast.message}
         </div>
       )}
+
+      {/* Confirmation Popups */}
+      <ConfirmationPopup
+        show={showCreateBattleConfirm}
+        onClose={() => setShowCreateBattleConfirm(false)}
+        onConfirm={() => {
+          setShowCreateBattleConfirm(false);
+          setBuilderMode('create');
+          setScreen('builder'); // Go to builder screen
+        }}
+        icon={<TrendingUp size={32} style={{ color: '#ffffff' }} />}
+        iconBgColor="#00d9ff"
+        title={`Create ${assetType === 'stocks' ? 'Stocks' : 'Crypto'} Battle?`}
+        subtitle="Challenge opponents with your portfolio picks"
+        details={[
+          { label: 'Assets Required', value: '7-13 picks' },
+          { label: 'Duration', value: '24 hours' },
+          { label: 'Rewards', value: '+100 XP (win) / +25 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
+        ]}
+        confirmText="Create Battle"
+        confirmColor="#00d9ff"
+        tutorialModeType="classic"
+      />
+
+      <ConfirmationPopup
+        show={showJoinBattleConfirm}
+        onClose={() => setShowJoinBattleConfirm(false)}
+        onConfirm={() => {
+          setShowJoinBattleConfirm(false);
+          setBuilderMode('join');
+          setScreen('join'); // Go to code entry screen first
+        }}
+        icon={<Users size={32} style={{ color: '#ffffff' }} />}
+        iconBgColor="#00d9ff"
+        title="Join Battle?"
+        subtitle="Enter a challenge code to compete"
+        details={[
+          { label: 'Assets Required', value: '7-13 picks' },
+          { label: 'Duration', value: '24 hours' },
+          { label: 'Rewards', value: '+100 XP (win) / +25 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
+        ]}
+        confirmText="Join Battle"
+        confirmColor="#00d9ff"
+        tutorialModeType="classic"
+      />
+
+      <ConfirmationPopup
+        show={showClassicTrainingConfirm}
+        onClose={() => setShowClassicTrainingConfirm(false)}
+        onConfirm={() => {
+          setShowClassicTrainingConfirm(false);
+          setBuilderMode('training');
+          setScreen('builder'); // Go to builder screen for training
+        }}
+        icon={<GraduationCap size={32} style={{ color: '#ffffff' }} />}
+        iconBgColor="#9333ea"
+        title={`Start ${assetType === 'stocks' ? 'Stocks' : 'Crypto'} Training?`}
+        subtitle="You'll battle against a CPU opponent"
+        details={[
+          { label: 'Assets Required', value: '7-13 picks' },
+          { label: 'Duration', value: '1 hour' },
+          { label: 'Rewards', value: '+10 XP (win) / +5 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
+        ]}
+        confirmText="Start Training"
+        confirmColor="#9333ea"
+        tutorialModeType="training"
+      />
+
+      <ConfirmationPopup
+        show={showCreateDraftConfirm}
+        onClose={() => setShowCreateDraftConfirm(false)}
+        onConfirm={() => {
+          setShowCreateDraftConfirm(false);
+          setScreen('draftSetup');
+        }}
+        icon={<TrendingUp size={32} style={{ color: '#ffffff' }} />}
+        iconBgColor="#10b981"
+        title={`Create ${assetType === 'stocks' ? 'Stocks' : 'Crypto'} Draft?`}
+        subtitle="Start a 4-player snake draft lobby"
+        details={[
+          { label: 'Players', value: '4 players' },
+          { label: 'Picks', value: '9 per player' },
+          { label: 'Time per pick', value: '2 minutes' },
+          { label: 'Rewards', value: '+150 XP (1st) / +100 XP (2nd)', highlight: true, highlightColor: '#f59e0b' }
+        ]}
+        confirmText="Create Draft"
+        confirmColor="#10b981"
+        tutorialModeType="draft"
+      />
+
+      <ConfirmationPopup
+        show={showJoinDraftConfirm}
+        onClose={() => setShowJoinDraftConfirm(false)}
+        onConfirm={() => {
+          setShowJoinDraftConfirm(false);
+          setScreen('draftJoin');
+        }}
+        icon={<Users size={32} style={{ color: '#ffffff' }} />}
+        iconBgColor="#10b981"
+        title="Join Snake Draft?"
+        subtitle="Enter a draft code to join a lobby"
+        details={[
+          { label: 'Players', value: '4 players' },
+          { label: 'Picks', value: '9 per player' },
+          { label: 'Time per pick', value: '2 minutes' },
+          { label: 'Rewards', value: '+150 XP (1st) / +100 XP (2nd)', highlight: true, highlightColor: '#f59e0b' }
+        ]}
+        confirmText="Join Draft"
+        confirmColor="#10b981"
+        tutorialModeType="draft"
+      />
+
+      {/* Tutorial Modal */}
+      <TutorialModal />
     </>
   );
 }
