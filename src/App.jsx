@@ -4246,23 +4246,95 @@ const GamePlan = ({
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
   const [noteSaved, setNoteSaved] = useState(false);
 
-  // Handle Save to Notes for Snake Draft
+  // Handle Save to Notes for Snake Draft - saves structured game plan data
   const handleSaveToNotes = () => {
     if (!gamePlan) return;
 
-    const noteEntry = {
-      id: `gameplan_${Date.now()}`,
-      content: gamePlan.strategySummary,
-      source: '🎯 Draft Game Plan',
+    // Build structured tiers from portfolio
+    const portfolio = gamePlan.portfolio || [];
+    const tier1 = portfolio.filter(p => p.tier === 1);
+    const tier2 = portfolio.filter(p => p.tier === 2);
+    const tier3 = portfolio.filter(p => p.tier === 3);
+
+    // Group by category for each tier
+    const buildTierCategories = (tierAssets) => ({
+      steady: tierAssets.filter(a => a.draftCategory === 'steady').map(a => a.symbol),
+      risky: tierAssets.filter(a => a.draftCategory === 'risky').map(a => a.symbol),
+      defensive: tierAssets.filter(a => a.draftCategory === 'defensive').map(a => a.symbol),
+    });
+
+    // Get strategy label
+    const getStrategyLabel = (strategy) => {
+      if (strategy === 'steady-first') return 'Steady First';
+      if (strategy === 'risky-first') return 'Risk Early';
+      if (strategy === 'balanced') return 'Balanced';
+      return 'Custom';
+    };
+
+    // Build tips based on strategy
+    const buildTips = () => {
+      const tips = [];
+      const strategy = gamePlan.draftStrategy;
+
+      if (strategy === 'risky-first') {
+        tips.push('Your strategy: Prioritize RISKY picks early');
+      } else if (strategy === 'steady-first') {
+        tips.push('Your strategy: Lock in STEADY picks first');
+      } else {
+        tips.push('Your strategy: Mix categories each round');
+      }
+
+      // Count needs
+      const defensiveCount = tier1.filter(a => a.draftCategory === 'defensive').length +
+                            tier2.filter(a => a.draftCategory === 'defensive').length;
+      if (defensiveCount < 3) {
+        tips.push(`You need ${3 - defensiveCount} more DEFENSIVE picks - don't forget!`);
+      }
+
+      // Top priority picks
+      if (tier1.length > 0) {
+        tips.push(`Top priority: ${tier1.slice(0, 2).map(a => a.symbol).join(', ')}`);
+      }
+
+      return tips;
+    };
+
+    const savedGamePlan = {
+      id: Date.now(),
+      type: 'game-plan',
       timestamp: new Date().toISOString(),
-      type: 'game_plan'
+      title: 'Draft Strategy',
+
+      // Strategy info
+      strategy: gamePlan.draftStrategy || 'balanced',
+      strategyLabel: getStrategyLabel(gamePlan.draftStrategy),
+
+      // Tiered picks (from DraftPriorityRanker or portfolio)
+      tiers: {
+        tier1: gamePlan.tier1Picks || buildTierCategories(tier1),
+        tier2: gamePlan.tier2Picks || buildTierCategories(tier2),
+        tier3: buildTierCategories(tier3),
+      },
+
+      // Full formatted text for display
+      fullPlanText: gamePlan.strategySummary,
+
+      // Tips
+      tips: buildTips(),
+
+      // Category counts
+      categoryCounts: gamePlan.categoryCounts || {
+        steady: portfolio.filter(p => p.draftCategory === 'steady').length,
+        risky: portfolio.filter(p => p.draftCategory === 'risky').length,
+        defensive: portfolio.filter(p => p.draftCategory === 'defensive').length,
+      },
     };
 
     // Get existing draft notes
     const existingNotes = JSON.parse(localStorage.getItem('draftNotes') || '[]');
 
     // Remove any previous game plan and add new one at top
-    const updatedNotes = [noteEntry, ...existingNotes.filter(n => n.type !== 'game_plan')];
+    const updatedNotes = [savedGamePlan, ...existingNotes.filter(n => n.type !== 'game-plan')];
 
     // Save to localStorage
     localStorage.setItem('draftNotes', JSON.stringify(updatedNotes));
@@ -10860,6 +10932,7 @@ export default function PortfolioDuel() {
   const [draftCopied, setDraftCopied] = useState(false);
   const [selectedDraftCategory, setSelectedDraftCategory] = useState('steady');
   const [draftTimeRemaining, setDraftTimeRemaining] = useState(120);
+  const [draftAssetInfoModal, setDraftAssetInfoModal] = useState(null); // Asset to show info for
 
   // Draft Battle state - Phase 4
   const [draftBattleOpponent, setDraftBattleOpponent] = useState(null);
@@ -23914,64 +23987,159 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* Asset Grid - Phase 4: Mobile Polish */}
+          {/* Ripple animation keyframes */}
+          <style>
+            {`
+              @keyframes pickRipple {
+                0% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; }
+                100% { transform: translate(-50%, -50%) scale(15); opacity: 0; }
+              }
+            `}
+          </style>
+
+          {/* Asset Grid - Phase 4: Enhanced with Glossy PICK buttons */}
           <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
             <div style={{
               maxWidth: '900px',
               margin: '0 auto',
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
-              gap: '8px'
+              gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
+              gap: '10px'
             }}>
               {availableAssets.map(asset => (
-                <button
+                <div
                   key={asset.symbol}
-                  onClick={() => handlePick(asset)}
-                  disabled={!isMyTurn || !canPickFromCategory(selectedDraftCategory)}
+                  onClick={() => setDraftAssetInfoModal(asset)}
                   style={{
                     background: '#161b22',
                     border: '1px solid #21262d',
                     borderRadius: '12px',
-                    padding: '14px 10px',
-                    minHeight: '80px',
+                    padding: '12px 10px',
+                    minHeight: '90px',
                     textAlign: 'center',
-                    cursor: isMyTurn && canPickFromCategory(selectedDraftCategory) ? 'pointer' : 'not-allowed',
-                    opacity: isMyTurn && canPickFromCategory(selectedDraftCategory) ? 1 : 0.5,
-                    transition: 'all 0.2s',
-                    WebkitTapHighlightColor: 'transparent'
+                    cursor: 'pointer',
+                    opacity: isMyTurn && canPickFromCategory(selectedDraftCategory) ? 1 : 0.6,
+                    transition: 'all 0.2s ease',
+                    position: 'relative',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                    e.currentTarget.style.borderColor = 'rgba(0, 217, 255, 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                    e.currentTarget.style.borderColor = '#21262d';
                   }}
                 >
+                  {/* Info hint icon */}
                   <div style={{
-                    fontSize: '16px',
+                    position: 'absolute',
+                    top: '6px',
+                    right: '6px',
+                    fontSize: '10px',
+                    color: '#8b949e',
+                    opacity: 0.5,
+                  }}>
+                    ℹ️
+                  </div>
+
+                  <div style={{
+                    fontSize: '15px',
                     fontWeight: 'bold',
                     color: '#ffffff',
-                    marginBottom: '4px'
+                    marginBottom: '2px'
                   }}>
                     {asset.symbol}
                   </div>
                   <div style={{
-                    fontSize: '11px',
+                    fontSize: '10px',
                     color: '#8b949e',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
+                    whiteSpace: 'nowrap',
+                    marginBottom: '8px'
                   }}>
                     {asset.name}
                   </div>
+
+                  {/* Glossy PICK Button */}
                   {isMyTurn && canPickFromCategory(selectedDraftCategory) && (
-                    <div style={{
-                      marginTop: '8px',
-                      padding: '6px 12px',
-                      background: '#00d9ff',
-                      color: '#000000',
-                      fontWeight: 'bold',
-                      fontSize: '11px',
-                      borderRadius: '6px'
-                    }}>
-                      PICK
-                    </div>
+                    <button
+                      className="pick-button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePick(asset);
+                      }}
+                      style={{
+                        position: 'relative',
+                        overflow: 'hidden',
+                        padding: '8px 16px',
+                        minWidth: '70px',
+                        background: 'linear-gradient(180deg, rgba(0, 230, 255, 0.95) 0%, rgba(0, 190, 220, 1) 50%, rgba(0, 160, 195, 1) 100%)',
+                        border: '1px solid rgba(255, 255, 255, 0.25)',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0, 217, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.15)',
+                        color: '#0d1117',
+                        fontWeight: '700',
+                        fontSize: '11px',
+                        letterSpacing: '0.5px',
+                        textTransform: 'uppercase',
+                        textShadow: '0 1px 0 rgba(255, 255, 255, 0.3)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        userSelect: 'none',
+                        WebkitTapHighlightColor: 'transparent',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                        e.currentTarget.style.boxShadow = '0 6px 16px rgba(0, 217, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 0 rgba(0, 0, 0, 0.15)';
+                        e.currentTarget.style.background = 'linear-gradient(180deg, rgba(0, 240, 255, 1) 0%, rgba(0, 210, 235, 1) 50%, rgba(0, 180, 210, 1) 100%)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 217, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.15)';
+                        e.currentTarget.style.background = 'linear-gradient(180deg, rgba(0, 230, 255, 0.95) 0%, rgba(0, 190, 220, 1) 50%, rgba(0, 160, 195, 1) 100%)';
+                      }}
+                      onMouseDown={(e) => {
+                        e.currentTarget.style.transform = 'translateY(1px) scale(0.98)';
+                        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 217, 255, 0.3), inset 0 2px 4px rgba(0, 0, 0, 0.2)';
+                        // Create ripple
+                        const ripple = document.createElement('span');
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        ripple.style.position = 'absolute';
+                        ripple.style.left = `${e.clientX - rect.left}px`;
+                        ripple.style.top = `${e.clientY - rect.top}px`;
+                        ripple.style.width = '10px';
+                        ripple.style.height = '10px';
+                        ripple.style.background = 'rgba(255, 255, 255, 0.6)';
+                        ripple.style.borderRadius = '50%';
+                        ripple.style.animation = 'pickRipple 0.5s ease-out forwards';
+                        ripple.style.pointerEvents = 'none';
+                        e.currentTarget.appendChild(ripple);
+                        setTimeout(() => ripple.remove(), 500);
+                      }}
+                      onMouseUp={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                        e.currentTarget.style.boxShadow = '0 6px 16px rgba(0, 217, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 0 rgba(0, 0, 0, 0.15)';
+                      }}
+                    >
+                      {/* Glass shine overlay */}
+                      <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: '50%',
+                        background: 'linear-gradient(180deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 100%)',
+                        borderRadius: '7px 7px 0 0',
+                        pointerEvents: 'none',
+                      }} />
+                      <span style={{ position: 'relative', zIndex: 1 }}>PICK</span>
+                    </button>
                   )}
-                </button>
+                </div>
               ))}
             </div>
 
@@ -24006,6 +24174,219 @@ export default function PortfolioDuel() {
               </div>
             </div>
           </div>
+
+          {/* Stock Info Modal - Shows when clicking asset card */}
+          {draftAssetInfoModal && (
+            <div
+              onClick={() => setDraftAssetInfoModal(null)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(0, 0, 0, 0.85)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000,
+                padding: '20px'
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  background: '#0d1117',
+                  border: '1px solid #00d9ff',
+                  borderRadius: '16px',
+                  width: '100%',
+                  maxWidth: '380px',
+                  maxHeight: '80vh',
+                  overflow: 'auto',
+                  position: 'relative'
+                }}
+              >
+                {/* Header */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '16px 20px',
+                  borderBottom: '1px solid #21262d',
+                  background: 'linear-gradient(180deg, #161b22 0%, #0d1117 100%)'
+                }}>
+                  <div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#ffffff' }}>
+                      {draftAssetInfoModal.symbol}
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#8b949e' }}>
+                      {draftAssetInfoModal.name}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setDraftAssetInfoModal(null)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#8b949e',
+                      fontSize: '24px',
+                      cursor: 'pointer',
+                      padding: '4px'
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Price info */}
+                {draftAssetInfoModal.price && (
+                  <div style={{
+                    padding: '16px 20px',
+                    borderBottom: '1px solid #21262d'
+                  }}>
+                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#ffffff' }}>
+                      ${draftAssetInfoModal.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    {draftAssetInfoModal.percentChange !== undefined && (
+                      <div style={{
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: draftAssetInfoModal.percentChange >= 0 ? '#10b981' : '#ef4444',
+                        marginTop: '4px'
+                      }}>
+                        {draftAssetInfoModal.percentChange >= 0 ? '▲' : '▼'} {Math.abs(draftAssetInfoModal.percentChange).toFixed(2)}%
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Category Badge */}
+                <div style={{ padding: '12px 20px' }}>
+                  <span style={{
+                    display: 'inline-block',
+                    padding: '6px 12px',
+                    borderRadius: '20px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    background: selectedDraftCategory === 'steady' ? 'rgba(16, 185, 129, 0.2)' :
+                                selectedDraftCategory === 'risky' ? 'rgba(245, 158, 11, 0.2)' :
+                                'rgba(59, 130, 246, 0.2)',
+                    color: selectedDraftCategory === 'steady' ? '#10b981' :
+                           selectedDraftCategory === 'risky' ? '#f59e0b' : '#3b82f6',
+                    textTransform: 'uppercase'
+                  }}>
+                    {selectedDraftCategory === 'steady' ? '🛡️' : selectedDraftCategory === 'risky' ? '⚡' : '🏛️'} {selectedDraftCategory}
+                  </span>
+                </div>
+
+                {/* Quick Metrics */}
+                <div style={{
+                  padding: '0 20px 16px',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: '12px'
+                }}>
+                  {draftAssetInfoModal.marketCap && (
+                    <div style={{
+                      background: '#161b22',
+                      borderRadius: '10px',
+                      padding: '12px'
+                    }}>
+                      <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '4px' }}>Market Cap</div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#e6edf3' }}>
+                        ${(draftAssetInfoModal.marketCap / 1e9).toFixed(1)}B
+                      </div>
+                    </div>
+                  )}
+                  {draftAssetInfoModal.volume && (
+                    <div style={{
+                      background: '#161b22',
+                      borderRadius: '10px',
+                      padding: '12px'
+                    }}>
+                      <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '4px' }}>Volume</div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#e6edf3' }}>
+                        {(draftAssetInfoModal.volume / 1e6).toFixed(1)}M
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Draft Tip */}
+                <div style={{
+                  margin: '0 20px 16px',
+                  padding: '12px',
+                  background: 'rgba(0, 217, 255, 0.1)',
+                  border: '1px solid rgba(0, 217, 255, 0.3)',
+                  borderRadius: '10px'
+                }}>
+                  <div style={{ fontSize: '12px', color: '#00d9ff', fontWeight: '600', marginBottom: '4px' }}>
+                    💡 Draft Tip
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#e6edf3', lineHeight: '1.4' }}>
+                    {selectedDraftCategory === 'steady'
+                      ? 'Steady picks provide reliable performance. Great for early rounds.'
+                      : selectedDraftCategory === 'risky'
+                      ? 'Risky picks have high volatility. Can swing big in either direction.'
+                      : 'Defensive picks protect against downturns. Balance your portfolio.'}
+                  </div>
+                </div>
+
+                {/* PICK Button */}
+                {isMyTurn && canPickFromCategory(selectedDraftCategory) && (
+                  <div style={{ padding: '0 20px 20px' }}>
+                    <button
+                      onClick={() => {
+                        handlePick(draftAssetInfoModal);
+                        setDraftAssetInfoModal(null);
+                      }}
+                      style={{
+                        width: '100%',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        padding: '14px 24px',
+                        background: 'linear-gradient(180deg, rgba(0, 230, 255, 0.95) 0%, rgba(0, 190, 220, 1) 50%, rgba(0, 160, 195, 1) 100%)',
+                        border: '1px solid rgba(255, 255, 255, 0.25)',
+                        borderRadius: '12px',
+                        boxShadow: '0 4px 16px rgba(0, 217, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.35)',
+                        color: '#0d1117',
+                        fontWeight: '700',
+                        fontSize: '16px',
+                        letterSpacing: '0.5px',
+                        textTransform: 'uppercase',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: '50%',
+                        background: 'linear-gradient(180deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 100%)',
+                        borderRadius: '11px 11px 0 0',
+                        pointerEvents: 'none',
+                      }} />
+                      <span style={{ position: 'relative', zIndex: 1 }}>PICK {draftAssetInfoModal.symbol}</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Disabled state message */}
+                {(!isMyTurn || !canPickFromCategory(selectedDraftCategory)) && (
+                  <div style={{
+                    padding: '16px 20px',
+                    textAlign: 'center',
+                    color: '#8b949e',
+                    fontSize: '13px'
+                  }}>
+                    {!isMyTurn ? "Wait for your turn to pick" : `You've already filled your ${selectedDraftCategory} category`}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Swipeable Portfolio Drawer - Draft Fixes */}
           <div
