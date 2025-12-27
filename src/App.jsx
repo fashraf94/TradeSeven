@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } from './services/LocalStorage';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
+// Firebase battle service for PvP battles
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
 import './firebase/config';
@@ -13628,7 +13630,7 @@ export default function PortfolioDuel() {
     return cpuPortfolio;
   };
 
-  const handleCreateBattle = () => {
+  const handleCreateBattle = async () => {
     if (!portfolioName.trim()) {
       alert('Please enter a portfolio name before creating a battle');
       return;
@@ -13665,37 +13667,60 @@ export default function PortfolioDuel() {
       }
     }
 
-    const newBattle = {
-      id: Date.now().toString(),
-      challengeCode,
-      creator: user.username,
-      creatorPortfolio: portfolioAssets,
-      portfolioName: portfolioName.trim(),
-      opponent: null,
-      opponentPortfolio: null,
-      status: 'waiting',
-      startDate: null,
-      endDate: null,
-      createdAt: new Date().toISOString()
-    };
+    try {
+      console.log('🔥 Creating PvP battle in Firestore...');
 
-    // Load current battles from localStorage
-    const currentBattles = loadBattlesSafe();
-    const updatedBattles = [...currentBattles, newBattle];
+      // Save to Firestore (primary storage for PvP battles)
+      const firestoreBattle = await createFirestoreBattle({
+        challengeCode,
+        creator: {
+          uid: user.odUserId || user.username,
+          username: user.username
+        },
+        portfolioName: portfolioName.trim(),
+        creatorPortfolio: portfolioAssets,
+        portfolioType: portfolioType || 'stocks'
+      });
 
-    // Save to localStorage immediately
-    saveBattlesSafe(updatedBattles);
+      console.log('✅ Battle created in Firestore with ID:', firestoreBattle.id);
 
-    // Update component state
-    setBattles(updatedBattles);
-    setActiveBattleId(newBattle.id);
-    setPortfolio([]);
-    setPortfolioType(null);
-    setPortfolioName('');
-    setSelectedCrypto(null);
-    setCryptoPercentage(10); // Reset to default
-    setBuilderMode('create');
-    setScreen('dashboard');
+      // Create local battle object for state/localStorage (with Firestore ID)
+      const newBattle = {
+        id: firestoreBattle.id, // Use Firestore document ID
+        challengeCode,
+        creator: user.username,
+        creatorPortfolio: portfolioAssets,
+        portfolioName: portfolioName.trim(),
+        portfolioType: portfolioType || 'stocks',
+        opponent: null,
+        opponentPortfolio: null,
+        status: 'waiting',
+        startDate: null,
+        endDate: null,
+        createdAt: new Date().toISOString(),
+        firestoreId: firestoreBattle.id // Reference to Firestore doc
+      };
+
+      // Also save to localStorage as cache
+      const currentBattles = loadBattlesSafe();
+      const updatedBattles = [...currentBattles, newBattle];
+      saveBattlesSafe(updatedBattles);
+
+      // Update component state
+      setBattles(updatedBattles);
+      setActiveBattleId(newBattle.id);
+      setPortfolio([]);
+      setPortfolioType(null);
+      setPortfolioName('');
+      setSelectedCrypto(null);
+      setCryptoPercentage(10); // Reset to default
+      setBuilderMode('create');
+      setScreen('dashboard');
+
+    } catch (error) {
+      console.error('❌ Failed to create battle in Firestore:', error);
+      alert('Failed to create battle. Please check your connection and try again.');
+    }
   };
 
   const handleJoinBattle = async () => {
@@ -13712,39 +13737,6 @@ export default function PortfolioDuel() {
     const totalAssetsJoin = portfolio.length + (selectedCrypto ? 1 : 0);
     if (totalAssetsJoin < 7) {
       alert(`Please complete your portfolio (7-13 total assets). You have ${totalAssetsJoin}.`);
-      return;
-    }
-
-    // Load battles from localStorage to see battles from other tabs/users
-    const allBattles = loadBattlesSafe();
-
-    const battleToJoin = allBattles.find(
-      b => b.challengeCode === joinCode.trim().toUpperCase() && b.status === 'waiting'
-    );
-
-    if (!battleToJoin) {
-      alert(`Battle not found or already started. Searched for: ${joinCode.trim().toUpperCase()}\nFound ${allBattles.length} total battles in storage.`);
-      return;
-    }
-
-    if (battleToJoin.creator === user.username) {
-      alert('You cannot join your own battle');
-      return;
-    }
-
-    // CHECK PORTFOLIO TYPE COMPATIBILITY
-    // Determine creator's portfolio type by checking their assets
-    const creatorFirstAsset = battleToJoin.creatorPortfolio[0];
-    const creatorIsCrypto = POPULAR_CRYPTO.some(c => c.symbol === creatorFirstAsset.symbol);
-    const creatorIsStocks = POPULAR_STOCKS.some(s => s.symbol === creatorFirstAsset.symbol);
-
-    // Determine joiner's portfolio type
-    const joinerIsCrypto = portfolioType === 'crypto';
-    const joinerIsStocks = portfolioType === 'stocks';
-
-    // Validate portfolio types match
-    if ((creatorIsCrypto && joinerIsStocks) || (creatorIsStocks && joinerIsCrypto)) {
-      alert(`Portfolio type mismatch!\n\nThis battle requires a ${creatorIsCrypto ? 'CRYPTO' : 'STOCKS'} portfolio, but you built a ${joinerIsCrypto ? 'CRYPTO' : 'STOCKS'} portfolio.\n\nPlease create a ${creatorIsCrypto ? 'crypto' : 'stocks'} portfolio to join this battle.`);
       return;
     }
 
@@ -13771,80 +13763,132 @@ export default function PortfolioDuel() {
       }
     }
 
-    // Calculate start and end dates
-    const now = new Date();
-    const startDate = new Date(now); // Start immediately for testing
-    const endDate = new Date(startDate.getTime() + battleTimer.BATTLE_DURATION);
-
-    // Fetch starting prices - Lock in prices when battle starts
+    // Fetch starting prices for the opponent's portfolio
     const startingPrices = {};
-    
-    // Get all unique assets from both portfolios
-    const allAssets = [...battleToJoin.creatorPortfolio, ...portfolioAssets];
-    const uniqueSymbols = [...new Set(allAssets.map(a => a.symbol))];
-    
-    for (const symbol of uniqueSymbols) {
-      const asset = allAssets.find(a => a.symbol === symbol);
+    for (const asset of portfolioAssets) {
       try {
-        const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === symbol);
-        
+        const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === asset.symbol);
         if (isCrypto) {
-          const cryptoData = POPULAR_CRYPTO.find(c => c.symbol === symbol);
-          const data = await stockAPI.getCryptoPrice(cryptoData.id);
-          startingPrices[symbol] = data.price;
+          const cryptoDataItem = POPULAR_CRYPTO.find(c => c.symbol === asset.symbol);
+          const data = await stockAPI.getCryptoPrice(cryptoDataItem.id);
+          startingPrices[asset.symbol] = data.price;
         } else {
-          const data = await stockAPI.getStockPrice(symbol);
-          startingPrices[symbol] = data.price;
+          const data = await stockAPI.getStockPrice(asset.symbol);
+          startingPrices[asset.symbol] = data.price;
         }
       } catch (error) {
-        console.error(`Error fetching price for ${symbol}:`, error);
-        startingPrices[symbol] = asset.price; // Fallback to stored price
+        console.error(`Error fetching price for ${asset.symbol}:`, error);
+        startingPrices[asset.symbol] = asset.price;
       }
     }
 
-    // Update both portfolios to use the same starting prices
-    const updatedCreatorPortfolio = battleToJoin.creatorPortfolio.map(asset => ({
-      ...asset,
-      price: startingPrices[asset.symbol] || asset.price
-    }));
-    
-    const updatedOpponentPortfolio = portfolioAssets.map(asset => ({
+    // Update portfolio with starting prices
+    const updatedPortfolio = portfolioAssets.map(asset => ({
       ...asset,
       price: startingPrices[asset.symbol] || asset.price
     }));
 
-    // Update the battle
-    const updatedBattles = allBattles.map(b =>
-      b.id === battleToJoin.id
-        ? {
-            ...b,
-            opponent: user.username,
-            creatorPortfolio: updatedCreatorPortfolio, // ⭐ Updated with starting prices
-            opponentPortfolio: updatedOpponentPortfolio, // ⭐ Updated with starting prices
-            status: 'active',
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString(),
-            startingPrices: startingPrices // ⭐ Store starting prices on battle
-          }
-        : b
-    );
+    try {
+      console.log('🔥 Joining battle in Firestore...');
 
-    // Save to localStorage immediately
-    saveBattlesSafe(updatedBattles);
+      // Try to join via Firestore first (for PvP battles created in Firestore)
+      const updatedBattle = await joinFirestoreBattle(joinCode.trim().toUpperCase(), {
+        uid: user.odUserId || user.username,
+        username: user.username,
+        portfolioName: portfolioName.trim(),
+        portfolio: updatedPortfolio,
+        portfolioType: portfolioType || 'stocks',
+        startingPrices: startingPrices
+      });
 
-    // Update component state
-    setBattles(updatedBattles);
-    setActiveBattleId(battleToJoin.id);
+      console.log('✅ Joined battle in Firestore:', updatedBattle.id);
 
-    setPortfolio([]);
-    setPortfolioType(null);
-    setPortfolioName('');
-    setSelectedCrypto(null);
-    setCryptoPercentage(10); // Reset to default
-    setBuilderMode('create');
-    setJoinCode('');
+      // Create local battle object for state/localStorage
+      const localBattle = {
+        id: updatedBattle.id,
+        challengeCode: updatedBattle.challengeCode,
+        creator: updatedBattle.creator.username,
+        creatorPortfolio: updatedBattle.creator.portfolio,
+        opponent: user.username,
+        opponentPortfolio: updatedPortfolio,
+        portfolioName: portfolioName.trim(),
+        portfolioType: portfolioType || 'stocks',
+        status: 'active',
+        startDate: updatedBattle.timeline.startDate,
+        endDate: updatedBattle.timeline.endDate,
+        startingPrices: startingPrices,
+        createdAt: updatedBattle.timeline.createdAt,
+        firestoreId: updatedBattle.id
+      };
 
-    setScreen('dashboard');
+      // Update localStorage
+      const currentBattles = loadBattlesSafe();
+      const updatedBattles = [...currentBattles.filter(b => b.id !== updatedBattle.id), localBattle];
+      saveBattlesSafe(updatedBattles);
+
+      // Update component state
+      setBattles(updatedBattles);
+      setActiveBattleId(localBattle.id);
+      setPortfolio([]);
+      setPortfolioType(null);
+      setPortfolioName('');
+      setSelectedCrypto(null);
+      setCryptoPercentage(10);
+      setBuilderMode('create');
+      setJoinCode('');
+      setScreen('dashboard');
+
+    } catch (firestoreError) {
+      console.warn('⚠️ Firestore join failed, trying localStorage:', firestoreError.message);
+
+      // Fallback to localStorage for legacy battles
+      const allBattles = loadBattlesSafe();
+      const battleToJoin = allBattles.find(
+        b => b.challengeCode === joinCode.trim().toUpperCase() && b.status === 'waiting'
+      );
+
+      if (!battleToJoin) {
+        alert(`Battle not found or already started. Code: ${joinCode.trim().toUpperCase()}`);
+        return;
+      }
+
+      if (battleToJoin.creator === user.username) {
+        alert('You cannot join your own battle');
+        return;
+      }
+
+      // Calculate start and end dates
+      const now = new Date();
+      const startDate = new Date(now);
+      const endDate = new Date(startDate.getTime() + battleTimer.BATTLE_DURATION);
+
+      // Update the battle in localStorage
+      const updatedBattles = allBattles.map(b =>
+        b.id === battleToJoin.id
+          ? {
+              ...b,
+              opponent: user.username,
+              opponentPortfolio: updatedPortfolio,
+              status: 'active',
+              startDate: startDate.toISOString(),
+              endDate: endDate.toISOString(),
+              startingPrices: startingPrices
+            }
+          : b
+      );
+
+      saveBattlesSafe(updatedBattles);
+      setBattles(updatedBattles);
+      setActiveBattleId(battleToJoin.id);
+      setPortfolio([]);
+      setPortfolioType(null);
+      setPortfolioName('');
+      setSelectedCrypto(null);
+      setCryptoPercentage(10);
+      setBuilderMode('create');
+      setJoinCode('');
+      setScreen('dashboard');
+    }
   };
 
   // ============================================
