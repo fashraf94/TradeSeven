@@ -3,7 +3,7 @@ import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } f
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
-import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle } from './firebase/firebaseService';
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
 import './firebase/config';
@@ -12131,6 +12131,58 @@ export default function PortfolioDuel() {
 
     return () => clearInterval(interval);
   }, [screen, battles]);
+
+  // Subscribe to Firestore battle updates for real-time sync
+  useEffect(() => {
+    if (!user) return;
+
+    const userId = user.odUserId || user.username;
+    if (!userId) return;
+
+    console.log('🔥 Subscribing to Firestore battle updates for:', userId);
+
+    const unsubscribe = subscribeToBattles(userId, (firestoreBattles) => {
+      console.log('📥 Received Firestore battle update:', firestoreBattles.length, 'battles');
+
+      if (firestoreBattles.length > 0) {
+        // Convert Firestore format to local format
+        const convertedBattles = firestoreBattles.map(fb => ({
+          id: fb.id,
+          challengeCode: fb.challengeCode,
+          creator: fb.creator?.username || fb.creator,
+          creatorPortfolio: fb.creator?.portfolio || fb.creatorPortfolio,
+          portfolioName: fb.creator?.portfolioName || fb.portfolioName,
+          portfolioType: fb.creator?.portfolioType || fb.portfolioType,
+          opponent: fb.opponent?.username || fb.opponent,
+          opponentPortfolio: fb.opponent?.portfolio || fb.opponentPortfolio,
+          status: fb.state?.status || fb.status,
+          startDate: fb.timeline?.startDate || fb.startDate,
+          endDate: fb.timeline?.endDate || fb.endDate,
+          createdAt: fb.timeline?.createdAt || fb.createdAt,
+          startingPrices: fb.state?.startingPrices || fb.startingPrices,
+          firestoreId: fb.id
+        }));
+
+        // Merge with local battles (prefer Firestore data for matching IDs)
+        setBattles(prevBattles => {
+          const localOnlyBattles = prevBattles.filter(
+            local => !convertedBattles.some(fb => fb.id === local.id || fb.id === local.firestoreId)
+          );
+          const mergedBattles = [...convertedBattles, ...localOnlyBattles];
+
+          // Also update localStorage cache
+          saveBattlesSafe(mergedBattles);
+
+          return mergedBattles;
+        });
+      }
+    });
+
+    return () => {
+      console.log('🔥 Unsubscribing from Firestore battle updates');
+      unsubscribe();
+    };
+  }, [user]);
 
   // Fetch active draft battles for dashboard
   useEffect(() => {
