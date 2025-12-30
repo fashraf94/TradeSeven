@@ -152,6 +152,62 @@ const getStockSector = (symbol) => {
 };
 
 // ============================================
+// SPOTLIGHT TOUR CONFIGURATION
+// ============================================
+const TOUR_STEPS = [
+  {
+    id: 'welcome',
+    target: null, // No spotlight, just centered modal
+    title: "Welcome to MarketClash! 🎯",
+    description: "Let's take a 30-second tour of your battle station.",
+    position: 'center'
+  },
+  {
+    id: 'rank-section',
+    target: 'tour-rank-section',
+    title: "Your Battle Stats",
+    description: "Track your rank, XP progress, and win streak here. Win battles to level up!",
+    position: 'top'
+  },
+  {
+    id: 'game-mode',
+    target: 'tour-game-mode-toggle',
+    title: "Two Ways to Play",
+    description: "Switch between Snake Draft 4P (4-player strategy) and Builder 1v1 (quick battles).",
+    position: 'bottom'
+  },
+  {
+    id: 'create-join',
+    target: 'tour-create-battle',
+    title: "Start a Battle",
+    description: "Create your own game or join a friend's battle with their code.",
+    position: 'bottom'
+  },
+  {
+    id: 'training',
+    target: 'tour-training-mode',
+    title: "Practice First!",
+    description: "New here? Training mode lets you learn with zero pressure. We recommend starting here!",
+    position: 'top'
+  },
+  {
+    id: 'menu',
+    target: 'tour-hamburger-menu',
+    title: "Everything Else",
+    description: "Your profile, battle history, research tools, and settings are all in here.",
+    position: 'bottom-right'
+  },
+  {
+    id: 'ready',
+    target: null, // No spotlight, centered modal
+    title: "You're Ready! 🚀",
+    description: "Jump into a training game to learn the ropes, or explore on your own.",
+    position: 'center',
+    showActions: true
+  }
+];
+
+// ============================================
 // TRAINING BATTLE HELPERS - 100% Client-Side
 // ============================================
 
@@ -11101,9 +11157,9 @@ export default function PortfolioDuel() {
   const [tutorialMode, setTutorialMode] = useState('classic'); // 'classic' | 'draft' | 'training' | 'draftTraining'
   const [tutorialStep, setTutorialStep] = useState(0);
 
-  // Get Started onboarding modal
-  const [showGetStarted, setShowGetStarted] = useState(false);
-  const [getStartedStep, setGetStartedStep] = useState(0);
+  // Spotlight Tour State (replaces old Get Started modal)
+  const [showSpotlightTour, setShowSpotlightTour] = useState(false);
+  const [tourStep, setTourStep] = useState(0);
 
   // Research Mode state
   const [showResearchMode, setShowResearchMode] = useState(false);
@@ -17789,6 +17845,478 @@ export default function PortfolioDuel() {
     );
   }
 
+  // ============================================
+  // SPOTLIGHT TOUR COMPONENT
+  // ============================================
+  const SpotlightTour = () => {
+    if (!showSpotlightTour) return null;
+
+    const currentStep = TOUR_STEPS[tourStep];
+    const [tooltipStyle, setTooltipStyle] = useState({});
+    const [spotlightStyle, setSpotlightStyle] = useState({});
+    const [arrowStyle, setArrowStyle] = useState({});
+    const [arrowDirection, setArrowDirection] = useState('up');
+
+    useEffect(() => {
+      if (currentStep.target) {
+        const element = document.getElementById(currentStep.target);
+        if (element) {
+          const rect = element.getBoundingClientRect();
+          const padding = 8;
+
+          // Spotlight position (the "hole" in the overlay)
+          setSpotlightStyle({
+            top: rect.top - padding,
+            left: rect.left - padding,
+            width: rect.width + padding * 2,
+            height: rect.height + padding * 2
+          });
+
+          // Tooltip positioning based on specified position
+          const tooltipWidth = 300;
+          const tooltipHeight = 150;
+          let top, left, arrow;
+
+          switch (currentStep.position) {
+            case 'bottom':
+              top = rect.bottom + 20;
+              left = rect.left + rect.width / 2 - tooltipWidth / 2;
+              arrow = 'up';
+              break;
+            case 'top':
+              top = rect.top - tooltipHeight - 20;
+              left = rect.left + rect.width / 2 - tooltipWidth / 2;
+              arrow = 'down';
+              break;
+            case 'bottom-right':
+              top = rect.bottom + 20;
+              left = rect.right - tooltipWidth;
+              arrow = 'up';
+              break;
+            case 'left':
+              top = rect.top + rect.height / 2 - tooltipHeight / 2;
+              left = rect.left - tooltipWidth - 20;
+              arrow = 'right';
+              break;
+            case 'right':
+              top = rect.top + rect.height / 2 - tooltipHeight / 2;
+              left = rect.right + 20;
+              arrow = 'left';
+              break;
+            default:
+              top = rect.bottom + 20;
+              left = rect.left;
+              arrow = 'up';
+          }
+
+          // Keep tooltip on screen
+          left = Math.max(16, Math.min(left, window.innerWidth - tooltipWidth - 16));
+          top = Math.max(16, Math.min(top, window.innerHeight - tooltipHeight - 16));
+
+          setTooltipStyle({ top, left, width: tooltipWidth });
+          setArrowDirection(arrow);
+
+          // Arrow position
+          setArrowStyle({
+            top: arrow === 'down' ? top + tooltipHeight - 8 : arrow === 'up' ? top - 12 : top + tooltipHeight / 2 - 6,
+            left: arrow === 'left' ? left - 12 : arrow === 'right' ? left + tooltipWidth - 8 : rect.left + rect.width / 2 - 6
+          });
+        }
+      }
+    }, [tourStep, currentStep]);
+
+    const handleNext = () => {
+      if (tourStep < TOUR_STEPS.length - 1) {
+        setTourStep(tourStep + 1);
+      }
+    };
+
+    const handleBack = () => {
+      if (tourStep > 0) {
+        setTourStep(tourStep - 1);
+      }
+    };
+
+    const handleClose = () => {
+      setShowSpotlightTour(false);
+      setTourStep(0);
+    };
+
+    const handleStartTraining = (mode) => {
+      handleClose();
+      if (mode === 'classic') {
+        setShowClassicTrainingConfirm(true);
+      } else {
+        setTrainingConfirmType('stocks');
+        setShowTrainingConfirmModal(true);
+      }
+    };
+
+    // Centered modal for welcome/ready steps
+    if (currentStep.position === 'center') {
+      return (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.9)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px',
+          animation: 'fadeIn 0.3s ease'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #161b22 0%, #0d1117 100%)',
+            borderRadius: '20px',
+            border: '2px solid #10b981',
+            padding: '40px 32px',
+            maxWidth: '400px',
+            width: '100%',
+            textAlign: 'center',
+            animation: 'slideUp 0.3s ease',
+            boxShadow: '0 0 60px rgba(16, 185, 129, 0.2)'
+          }}>
+            <h2 style={{
+              margin: '0 0 16px',
+              fontSize: '26px',
+              fontWeight: '700',
+              color: '#ffffff'
+            }}>
+              {currentStep.title}
+            </h2>
+            <p style={{
+              margin: '0 0 32px',
+              fontSize: '16px',
+              color: '#8b949e',
+              lineHeight: 1.6
+            }}>
+              {currentStep.description}
+            </p>
+
+            {currentStep.showActions ? (
+              // Final step with training options
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <button
+                  onClick={() => handleStartTraining('classic')}
+                  style={{
+                    padding: '16px',
+                    background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
+                    border: 'none',
+                    borderRadius: '12px',
+                    color: '#0d1117',
+                    fontSize: '15px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <span>⚔️</span> Try Classic Training
+                </button>
+                <button
+                  onClick={() => handleStartTraining('draft')}
+                  style={{
+                    padding: '16px',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    border: 'none',
+                    borderRadius: '12px',
+                    color: '#ffffff',
+                    fontSize: '15px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <span>🐍</span> Try Snake Draft Training
+                </button>
+                <button
+                  onClick={handleClose}
+                  style={{
+                    padding: '14px',
+                    background: 'transparent',
+                    border: '1px solid #21262d',
+                    borderRadius: '10px',
+                    color: '#6e7681',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  I'll explore on my own
+                </button>
+              </div>
+            ) : (
+              // Welcome step
+              <button
+                onClick={handleNext}
+                style={{
+                  width: '100%',
+                  padding: '16px',
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  border: 'none',
+                  borderRadius: '12px',
+                  color: '#ffffff',
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                Let's Go! →
+              </button>
+            )}
+
+            {/* Progress dots */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              gap: '6px',
+              marginTop: '24px'
+            }}>
+              {TOUR_STEPS.map((_, index) => (
+                <div
+                  key={index}
+                  style={{
+                    width: index === tourStep ? '20px' : '8px',
+                    height: '8px',
+                    borderRadius: '4px',
+                    background: index <= tourStep ? '#10b981' : '#21262d',
+                    transition: 'all 0.3s ease'
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Spotlight overlay for element highlighting
+    return (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 9999,
+        pointerEvents: 'none'
+      }}>
+        {/* CSS Animations for Spotlight Tour */}
+        <style>{`
+          @keyframes spotlight-pulse {
+            0%, 100% {
+              box-shadow: 0 0 20px rgba(16, 185, 129, 0.5), inset 0 0 20px rgba(16, 185, 129, 0.1);
+            }
+            50% {
+              box-shadow: 0 0 30px rgba(16, 185, 129, 0.8), inset 0 0 30px rgba(16, 185, 129, 0.2);
+            }
+          }
+        `}</style>
+
+        {/* Dark overlay with spotlight hole */}
+        <svg
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'auto'
+          }}
+          onClick={handleClose}
+        >
+          <defs>
+            <mask id="spotlight-mask">
+              <rect x="0" y="0" width="100%" height="100%" fill="white" />
+              <rect
+                x={spotlightStyle.left}
+                y={spotlightStyle.top}
+                width={spotlightStyle.width}
+                height={spotlightStyle.height}
+                rx="12"
+                fill="black"
+              />
+            </mask>
+          </defs>
+          <rect
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            fill="rgba(0, 0, 0, 0.85)"
+            mask="url(#spotlight-mask)"
+          />
+        </svg>
+
+        {/* Spotlight border glow */}
+        <div style={{
+          position: 'absolute',
+          top: spotlightStyle.top,
+          left: spotlightStyle.left,
+          width: spotlightStyle.width,
+          height: spotlightStyle.height,
+          borderRadius: '12px',
+          border: '2px solid #10b981',
+          boxShadow: '0 0 20px rgba(16, 185, 129, 0.5), inset 0 0 20px rgba(16, 185, 129, 0.1)',
+          pointerEvents: 'none',
+          animation: 'spotlight-pulse 2s ease-in-out infinite'
+        }} />
+
+        {/* Arrow */}
+        <div style={{
+          position: 'absolute',
+          top: arrowStyle.top,
+          left: arrowStyle.left,
+          width: 0,
+          height: 0,
+          borderLeft: arrowDirection === 'up' || arrowDirection === 'down' ? '8px solid transparent' : arrowDirection === 'left' ? '12px solid #1a2332' : 'none',
+          borderRight: arrowDirection === 'up' || arrowDirection === 'down' ? '8px solid transparent' : arrowDirection === 'right' ? '12px solid #1a2332' : 'none',
+          borderTop: arrowDirection === 'down' ? '12px solid #1a2332' : arrowDirection === 'left' || arrowDirection === 'right' ? '8px solid transparent' : 'none',
+          borderBottom: arrowDirection === 'up' ? '12px solid #1a2332' : arrowDirection === 'left' || arrowDirection === 'right' ? '8px solid transparent' : 'none',
+          pointerEvents: 'none',
+          zIndex: 10001
+        }} />
+
+        {/* Tooltip */}
+        <div
+          style={{
+            position: 'absolute',
+            top: tooltipStyle.top,
+            left: tooltipStyle.left,
+            width: tooltipStyle.width,
+            background: 'linear-gradient(135deg, #1a2332 0%, #0d1117 100%)',
+            borderRadius: '16px',
+            border: '1px solid #21262d',
+            padding: '20px',
+            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+            pointerEvents: 'auto',
+            animation: 'slideUp 0.3s ease',
+            zIndex: 10000
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Step counter */}
+          <div style={{
+            fontSize: '11px',
+            fontWeight: '600',
+            color: '#10b981',
+            marginBottom: '8px',
+            textTransform: 'uppercase',
+            letterSpacing: '1px'
+          }}>
+            Step {tourStep} of {TOUR_STEPS.length - 1}
+          </div>
+
+          <h3 style={{
+            margin: '0 0 8px',
+            fontSize: '18px',
+            fontWeight: '700',
+            color: '#ffffff'
+          }}>
+            {currentStep.title}
+          </h3>
+
+          <p style={{
+            margin: '0 0 20px',
+            fontSize: '14px',
+            color: '#8b949e',
+            lineHeight: 1.6
+          }}>
+            {currentStep.description}
+          </p>
+
+          {/* Navigation buttons */}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {tourStep > 1 && (
+              <button
+                onClick={handleBack}
+                style={{
+                  padding: '10px 16px',
+                  background: 'transparent',
+                  border: '1px solid #21262d',
+                  borderRadius: '8px',
+                  color: '#8b949e',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                ← Back
+              </button>
+            )}
+            <button
+              onClick={handleNext}
+              style={{
+                flex: 1,
+                padding: '10px 16px',
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#ffffff',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              {tourStep === TOUR_STEPS.length - 2 ? "Finish →" : "Next →"}
+            </button>
+          </div>
+
+          {/* Skip link */}
+          <button
+            onClick={handleClose}
+            style={{
+              width: '100%',
+              marginTop: '12px',
+              padding: '8px',
+              background: 'transparent',
+              border: 'none',
+              color: '#6e7681',
+              fontSize: '12px',
+              cursor: 'pointer'
+            }}
+          >
+            Skip tour
+          </button>
+        </div>
+
+        {/* Progress dots */}
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          display: 'flex',
+          gap: '6px',
+          pointerEvents: 'none'
+        }}>
+          {TOUR_STEPS.map((_, index) => (
+            <div
+              key={index}
+              style={{
+                width: index === tourStep ? '20px' : '8px',
+                height: '8px',
+                borderRadius: '4px',
+                background: index <= tourStep ? '#10b981' : '#21262d',
+                transition: 'all 0.3s ease'
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   // DASHBOARD SCREEN - New Flowing Card Layout
   if (screen === 'dashboard') {
     // Get first active battle for preview card
@@ -18130,6 +18658,7 @@ export default function PortfolioDuel() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {/* Hamburger Menu Button */}
                 <button
+                  id="tour-hamburger-menu"
                   onClick={() => setSidebarOpen(true)}
                   style={{
                     minWidth: '44px',
@@ -18154,11 +18683,11 @@ export default function PortfolioDuel() {
                   <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
                 </button>
 
-                {/* Get Started Button */}
+                {/* Get Started Button - Opens Spotlight Tour */}
                 <button
                   onClick={() => {
-                    setGetStartedStep(0);
-                    setShowGetStarted(true);
+                    setTourStep(0);
+                    setShowSpotlightTour(true);
                   }}
                   style={{
                     display: 'flex',
@@ -18249,12 +18778,15 @@ export default function PortfolioDuel() {
           </header>
 
           {/* Game Mode Toggle - Phase 1: Draft Mode Foundation */}
-          <div style={{
-            background: '#161b22',
-            borderBottom: '1px solid #21262d',
-            padding: '12px 16px',
-            marginBottom: '16px'
-          }}>
+          <div
+            id="tour-game-mode-toggle"
+            style={{
+              background: '#161b22',
+              borderBottom: '1px solid #21262d',
+              padding: '12px 16px',
+              marginBottom: '16px'
+            }}
+          >
             <div style={{
               maxWidth: '900px',
               margin: '0 auto',
@@ -18920,6 +19452,7 @@ export default function PortfolioDuel() {
                 const createColor = gameMode === 'draft' ? '#10b981' : colors.cyan;
                 return (
                   <motion.div
+                    id="tour-create-battle"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.2 }}
@@ -19046,6 +19579,7 @@ export default function PortfolioDuel() {
                 const joinColor = gameMode === 'draft' ? '#10b981' : colors.purple;
                 return (
                   <motion.div
+                    id="tour-join-battle"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.3 }}
@@ -19358,6 +19892,7 @@ export default function PortfolioDuel() {
             {gameMode === 'draft' ? (
               /* SNAKE DRAFT TRAINING SECTION - Redesigned with circular buttons */
               <motion.div
+                id="tour-training-mode"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, delay: 0.4 }}
@@ -19684,6 +20219,7 @@ export default function PortfolioDuel() {
             ) : (
               /* Classic Mode Training Section - Unified style matching Snake Draft */
               <motion.div
+                id="tour-training-mode"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, delay: 0.4 }}
@@ -20364,6 +20900,7 @@ export default function PortfolioDuel() {
 
           {/* DESKTOP: Bottom Stats Bar - Fixed */}
           <div
+            id="tour-rank-section"
             className="hidden md:flex"
             style={{
               position: 'fixed',
@@ -22317,470 +22854,8 @@ export default function PortfolioDuel() {
         {/* Tutorial Modal */}
         <TutorialModal />
 
-        {/* ========== GET STARTED ONBOARDING ========== */}
-        {showGetStarted && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0, 0, 0, 0.95)',
-              backdropFilter: 'blur(12px)',
-              zIndex: 2000,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '20px',
-              animation: 'fadeIn 0.3s ease'
-            }}
-          >
-            <div
-              style={{
-                maxWidth: '440px',
-                width: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center'
-              }}
-            >
-              {/* Close Button */}
-              <button
-                onClick={() => setShowGetStarted(false)}
-                style={{
-                  position: 'absolute',
-                  top: '20px',
-                  right: '20px',
-                  background: 'rgba(255,255,255,0.1)',
-                  border: 'none',
-                  borderRadius: '50%',
-                  width: '40px',
-                  height: '40px',
-                  color: '#6e7681',
-                  fontSize: '20px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.2s'
-                }}
-              >
-                ✕
-              </button>
-
-              {/* Content Card */}
-              <div
-                style={{
-                  background: 'linear-gradient(135deg, #161b22 0%, #0d1117 100%)',
-                  borderRadius: '24px',
-                  border: '1px solid #21262d',
-                  padding: '40px 32px',
-                  width: '100%',
-                  textAlign: 'center',
-                  animation: 'slideUp 0.4s ease'
-                }}
-              >
-                {/* Step 0: Welcome */}
-                {getStartedStep === 0 && (
-                  <>
-                    <div style={{ fontSize: '64px', marginBottom: '20px' }}>🎯</div>
-                    <h1 style={{
-                      margin: '0 0 12px',
-                      fontSize: '28px',
-                      fontWeight: '800',
-                      color: '#ffffff',
-                      lineHeight: 1.2
-                    }}>
-                      Welcome to MarketClash
-                    </h1>
-                    <p style={{
-                      margin: '0 0 32px',
-                      fontSize: '16px',
-                      color: '#8b949e',
-                      lineHeight: 1.6
-                    }}>
-                      Fantasy sports meets the stock market.<br/>
-                      Build portfolios. Battle friends. Climb the ranks.
-                    </p>
-                    <button
-                      onClick={() => setGetStartedStep(1)}
-                      style={{
-                        width: '100%',
-                        padding: '16px',
-                        background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
-                        border: 'none',
-                        borderRadius: '12px',
-                        color: '#0d1117',
-                        fontSize: '16px',
-                        fontWeight: '700',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      Show Me Around →
-                    </button>
-                  </>
-                )}
-
-                {/* Step 1: Your Dashboard */}
-                {getStartedStep === 1 && (
-                  <>
-                    <div style={{ fontSize: '64px', marginBottom: '20px' }}>🏠</div>
-                    <h2 style={{ margin: '0 0 12px', fontSize: '24px', fontWeight: '700', color: '#ffffff' }}>
-                      This is Your Dashboard
-                    </h2>
-                    <p style={{ margin: '0 0 24px', fontSize: '15px', color: '#8b949e', lineHeight: 1.7 }}>
-                      Your home base. See your <span style={{ color: '#00d9ff' }}>stats</span>,
-                      track <span style={{ color: '#10b981' }}>active battles</span>,
-                      and jump into new games.
-                    </p>
-                    <div style={{
-                      background: '#0d1117',
-                      borderRadius: '12px',
-                      padding: '16px',
-                      marginBottom: '24px',
-                      textAlign: 'left'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#00d9ff' }}></div>
-                        <span style={{ color: '#c9d1d9', fontSize: '14px' }}>Your rank & XP progress</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }}></div>
-                        <span style={{ color: '#c9d1d9', fontSize: '14px' }}>Active & completed battles</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#9333ea' }}></div>
-                        <span style={{ color: '#c9d1d9', fontSize: '14px' }}>Quick actions to play</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setGetStartedStep(2)}
-                      style={{
-                        width: '100%',
-                        padding: '16px',
-                        background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
-                        border: 'none',
-                        borderRadius: '12px',
-                        color: '#0d1117',
-                        fontSize: '16px',
-                        fontWeight: '700',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Got It →
-                    </button>
-                  </>
-                )}
-
-                {/* Step 2: The Menu */}
-                {getStartedStep === 2 && (
-                  <>
-                    <div style={{ fontSize: '64px', marginBottom: '20px' }}>☰</div>
-                    <h2 style={{ margin: '0 0 12px', fontSize: '24px', fontWeight: '700', color: '#ffffff' }}>
-                      Everything Else? It's Here
-                    </h2>
-                    <p style={{ margin: '0 0 24px', fontSize: '15px', color: '#8b949e', lineHeight: 1.7 }}>
-                      Tap the menu icon anytime to access your profile, history, research tools, and settings.
-                    </p>
-                    <div style={{
-                      background: '#0d1117',
-                      borderRadius: '12px',
-                      padding: '16px',
-                      marginBottom: '24px'
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap', gap: '16px' }}>
-                        <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontSize: '24px', marginBottom: '4px' }}>👤</div>
-                          <span style={{ color: '#8b949e', fontSize: '12px' }}>Profile</span>
-                        </div>
-                        <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontSize: '24px', marginBottom: '4px' }}>📊</div>
-                          <span style={{ color: '#8b949e', fontSize: '12px' }}>History</span>
-                        </div>
-                        <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontSize: '24px', marginBottom: '4px' }}>🔬</div>
-                          <span style={{ color: '#8b949e', fontSize: '12px' }}>Research</span>
-                        </div>
-                        <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontSize: '24px', marginBottom: '4px' }}>⚙️</div>
-                          <span style={{ color: '#8b949e', fontSize: '12px' }}>Settings</span>
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setGetStartedStep(3)}
-                      style={{
-                        width: '100%',
-                        padding: '16px',
-                        background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
-                        border: 'none',
-                        borderRadius: '12px',
-                        color: '#0d1117',
-                        fontSize: '16px',
-                        fontWeight: '700',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Next →
-                    </button>
-                  </>
-                )}
-
-                {/* Step 3: Classic Mode */}
-                {getStartedStep === 3 && (
-                  <>
-                    <div style={{
-                      width: '80px',
-                      height: '80px',
-                      borderRadius: '50%',
-                      background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      margin: '0 auto 20px',
-                      boxShadow: '0 8px 32px rgba(0, 217, 255, 0.3)'
-                    }}>
-                      <span style={{ fontSize: '40px' }}>⚔️</span>
-                    </div>
-                    <h2 style={{ margin: '0 0 8px', fontSize: '24px', fontWeight: '700', color: '#00d9ff' }}>
-                      Classic 1v1
-                    </h2>
-                    <p style={{
-                      margin: '0 0 24px',
-                      fontSize: '18px',
-                      color: '#ffffff',
-                      fontWeight: '500',
-                      lineHeight: 1.6
-                    }}>
-                      Pick your stocks.<br/>
-                      Challenge a friend.<br/>
-                      <span style={{ color: '#10b981' }}>Best returns in 24 hours wins.</span>
-                    </p>
-                    <div style={{
-                      background: '#0d111788',
-                      borderRadius: '10px',
-                      padding: '12px 16px',
-                      marginBottom: '24px',
-                      border: '1px solid #21262d'
-                    }}>
-                      <span style={{ color: '#8b949e', fontSize: '14px' }}>
-                        ⏱️ Quick games • 📈 Real prices • 🏆 Earn XP
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setGetStartedStep(4)}
-                      style={{
-                        width: '100%',
-                        padding: '16px',
-                        background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
-                        border: 'none',
-                        borderRadius: '12px',
-                        color: '#0d1117',
-                        fontSize: '16px',
-                        fontWeight: '700',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      What's Snake Draft? →
-                    </button>
-                  </>
-                )}
-
-                {/* Step 4: Snake Draft Mode */}
-                {getStartedStep === 4 && (
-                  <>
-                    <div style={{
-                      width: '80px',
-                      height: '80px',
-                      borderRadius: '50%',
-                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      margin: '0 auto 20px',
-                      boxShadow: '0 8px 32px rgba(16, 185, 129, 0.3)'
-                    }}>
-                      <span style={{ fontSize: '40px' }}>🐍</span>
-                    </div>
-                    <h2 style={{ margin: '0 0 8px', fontSize: '24px', fontWeight: '700', color: '#10b981' }}>
-                      Snake Draft
-                    </h2>
-                    <p style={{
-                      margin: '0 0 24px',
-                      fontSize: '18px',
-                      color: '#ffffff',
-                      fontWeight: '500',
-                      lineHeight: 1.6
-                    }}>
-                      4 players take turns drafting.<br/>
-                      Build your ultimate team.<br/>
-                      <span style={{ color: '#f59e0b' }}>Top 2 finishers win!</span>
-                    </p>
-                    <div style={{
-                      background: '#0d111788',
-                      borderRadius: '10px',
-                      padding: '12px 16px',
-                      marginBottom: '24px',
-                      border: '1px solid #21262d'
-                    }}>
-                      <span style={{ color: '#8b949e', fontSize: '14px' }}>
-                        👥 Multiplayer • 🎯 Strategic picks • 📅 Week-long battles
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setGetStartedStep(5)}
-                      style={{
-                        width: '100%',
-                        padding: '16px',
-                        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                        border: 'none',
-                        borderRadius: '12px',
-                        color: '#ffffff',
-                        fontSize: '16px',
-                        fontWeight: '700',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      I'm Ready! →
-                    </button>
-                  </>
-                )}
-
-                {/* Step 5: Ready to Play */}
-                {getStartedStep === 5 && (
-                  <>
-                    <div style={{ fontSize: '64px', marginBottom: '20px' }}>🚀</div>
-                    <h2 style={{ margin: '0 0 12px', fontSize: '24px', fontWeight: '700', color: '#ffffff' }}>
-                      You're All Set!
-                    </h2>
-                    <p style={{ margin: '0 0 28px', fontSize: '15px', color: '#8b949e', lineHeight: 1.7 }}>
-                      Start with a practice game to learn the ropes.<br/>
-                      No pressure, just fun.
-                    </p>
-
-                    {/* Training Options */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-                      <button
-                        onClick={() => {
-                          setShowGetStarted(false);
-                          setShowClassicTrainingConfirm(true);
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '16px',
-                          background: 'linear-gradient(135deg, #00d9ff22 0%, #00d9ff11 100%)',
-                          border: '2px solid #00d9ff',
-                          borderRadius: '12px',
-                          color: '#00d9ff',
-                          fontSize: '15px',
-                          fontWeight: '700',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '10px',
-                          transition: 'all 0.2s'
-                        }}
-                        onMouseOver={(e) => {
-                          e.currentTarget.style.background = 'linear-gradient(135deg, #00d9ff33 0%, #00d9ff22 100%)';
-                        }}
-                        onMouseOut={(e) => {
-                          e.currentTarget.style.background = 'linear-gradient(135deg, #00d9ff22 0%, #00d9ff11 100%)';
-                        }}
-                      >
-                        <span>⚔️</span>
-                        <span>Try Classic Training</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setShowGetStarted(false);
-                          setGameMode('draft');
-                          setTrainingConfirmType('stocks');
-                          setShowTrainingConfirmModal(true);
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '16px',
-                          background: 'linear-gradient(135deg, #10b98122 0%, #10b98111 100%)',
-                          border: '2px solid #10b981',
-                          borderRadius: '12px',
-                          color: '#10b981',
-                          fontSize: '15px',
-                          fontWeight: '700',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '10px',
-                          transition: 'all 0.2s'
-                        }}
-                        onMouseOver={(e) => {
-                          e.currentTarget.style.background = 'linear-gradient(135deg, #10b98133 0%, #10b98122 100%)';
-                        }}
-                        onMouseOut={(e) => {
-                          e.currentTarget.style.background = 'linear-gradient(135deg, #10b98122 0%, #10b98111 100%)';
-                        }}
-                      >
-                        <span>🐍</span>
-                        <span>Try Snake Draft Training</span>
-                      </button>
-                    </div>
-
-                    {/* Back to Dashboard */}
-                    <button
-                      onClick={() => setShowGetStarted(false)}
-                      style={{
-                        width: '100%',
-                        padding: '14px',
-                        background: 'transparent',
-                        border: '1px solid #21262d',
-                        borderRadius: '10px',
-                        color: '#6e7681',
-                        fontSize: '14px',
-                        fontWeight: '500',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseOver={(e) => {
-                        e.currentTarget.style.borderColor = '#30363d';
-                        e.currentTarget.style.color = '#8b949e';
-                      }}
-                      onMouseOut={(e) => {
-                        e.currentTarget.style.borderColor = '#21262d';
-                        e.currentTarget.style.color = '#6e7681';
-                      }}
-                    >
-                      I'll explore on my own
-                    </button>
-                  </>
-                )}
-              </div>
-
-              {/* Progress Dots */}
-              <div style={{
-                display: 'flex',
-                gap: '8px',
-                marginTop: '24px'
-              }}>
-                {[0, 1, 2, 3, 4, 5].map((step) => (
-                  <div
-                    key={step}
-                    style={{
-                      width: getStartedStep === step ? '24px' : '8px',
-                      height: '8px',
-                      borderRadius: '4px',
-                      background: getStartedStep >= step ? '#10b981' : '#21262d',
-                      transition: 'all 0.3s ease'
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
+        {/* ========== SPOTLIGHT TOUR (Interactive Onboarding) ========== */}
+        <SpotlightTour />
       </div>
     );
   }
