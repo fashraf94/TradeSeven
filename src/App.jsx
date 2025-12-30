@@ -13014,7 +13014,8 @@ export default function PortfolioDuel() {
             let currentPrice;
             if (isCrypto) {
               const cryptoData = POPULAR_CRYPTO.find(c => c.symbol === asset.symbol);
-              const data = await stockAPI.getCryptoPrice(cryptoData.id);
+              // Use symbol (ETH) not id (ethereum) - EODHD expects symbol format
+              const data = await stockAPI.getCryptoPrice(cryptoData.symbol);
               currentPrice = data.price;
             } else {
               const data = await stockAPI.getStockPrice(asset.symbol);
@@ -13398,7 +13399,8 @@ export default function PortfolioDuel() {
         
         if (isCrypto) {
           const cryptoData = POPULAR_CRYPTO.find(c => c.symbol === asset.symbol);
-          const data = await stockAPI.getCryptoPrice(cryptoData.id);
+          // Use symbol (ETH) not id (ethereum) - EODHD expects symbol format
+          const data = await stockAPI.getCryptoPrice(cryptoData.symbol);
           prices[asset.symbol] = data.price;
         } else {
           const data = await stockAPI.getStockPrice(asset.symbol);
@@ -13826,7 +13828,8 @@ export default function PortfolioDuel() {
         const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === asset.symbol);
         if (isCrypto) {
           const cryptoDataItem = POPULAR_CRYPTO.find(c => c.symbol === asset.symbol);
-          const data = await stockAPI.getCryptoPrice(cryptoDataItem.id);
+          // Use symbol (ETH) not id (ethereum) - EODHD expects symbol format
+          const data = await stockAPI.getCryptoPrice(cryptoDataItem.symbol);
           startingPrices[asset.symbol] = data.price;
         } else {
           const data = await stockAPI.getStockPrice(asset.symbol);
@@ -14007,7 +14010,8 @@ export default function PortfolioDuel() {
         
         if (isCrypto) {
           const cryptoData = POPULAR_CRYPTO.find(c => c.symbol === symbol);
-          const data = await stockAPI.getCryptoPrice(cryptoData.id);
+          // Use symbol (ETH) not id (ethereum) - EODHD expects symbol format
+          const data = await stockAPI.getCryptoPrice(cryptoData.symbol);
           startingPrices[symbol] = data.price;
         } else {
           const data = await stockAPI.getStockPrice(symbol);

@@ -275,8 +275,8 @@ export const executeSwap = async (draftId, odUserId, dropSymbol, addSymbol) => {
       } else {
         // Crypto - use real-time price
         try {
-          // Find the crypto id from the asset data
-          const cryptoData = await stockAPI.getCryptoPrice(addAsset.id || addSymbol.toLowerCase());
+          // Use symbol (ETH) not id (ethereum) - EODHD expects symbol format
+          const cryptoData = await stockAPI.getCryptoPrice(addAsset.symbol || addSymbol);
           priceAtSwap = cryptoData.price;
         } catch (e) {
           console.error('Could not fetch crypto price:', e);
