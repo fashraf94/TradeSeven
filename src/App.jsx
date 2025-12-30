@@ -152,7 +152,7 @@ const getStockSector = (symbol) => {
 };
 
 // ============================================
-// SPOTLIGHT TOUR CONFIGURATION - Updated v2
+// SPOTLIGHT TOUR CONFIGURATION - v3 with fixed positioning
 // ============================================
 const TOUR_STEPS = [
   // Step 0: Welcome
@@ -164,69 +164,74 @@ const TOUR_STEPS = [
     position: 'center'
   },
 
-  // Step 1: XP/Rank - MUST BE VISIBLE
+  // Step 1: XP/Rank - MUST scroll to center and highlight
   {
     id: 'rank-section',
     target: 'tour-rank-section',
     title: "Your Battle Stats",
     description: "This is your rank and XP progress. Win battles to earn XP, level up, and climb the leaderboard. Your win streak is tracked here too!",
-    position: 'top',
-    scrollTo: true  // Flag to scroll element into view
+    position: 'bottom',
+    scrollTo: 'center'
   },
 
-  // Step 2: Snake Draft Mode
+  // Step 2: Snake Draft Mode - highlight ONLY Snake Draft button
   {
     id: 'game-mode-draft',
-    target: 'tour-game-mode-toggle',
+    target: 'tour-snake-draft-btn',
     title: "🐍 Snake Draft 4P",
     description: "The ultimate strategy mode! Four players take turns drafting assets in snake order. Build your dream team, compete for a full week, and outsmart your opponents. Top 2 finishers win!",
-    position: 'bottom'
+    position: 'bottom',
+    scrollTo: 'center'
   },
 
-  // Step 3: Builder 1v1 Mode
+  // Step 3: Builder 1v1 Mode - highlight ONLY Builder button
   {
     id: 'game-mode-classic',
-    target: 'tour-game-mode-toggle',
+    target: 'tour-builder-btn',
     title: "⚔️ Builder 1v1",
     description: "Fast and fierce! Pick your stocks or crypto, challenge a friend, and see who gets the best returns in 24 hours. Perfect for quick battles and settling debates!",
-    position: 'bottom'
+    position: 'bottom',
+    scrollTo: 'center'
   },
 
   // Step 4: Create & Join (BOTH highlighted)
   {
     id: 'create-join',
-    target: 'tour-battle-cards',  // Container holding both cards
+    target: 'tour-battle-cards',
     title: "Start a Battle",
     description: "Ready to compete? Create your own game and share the code with friends, or join someone else's battle using their code. The arena awaits!",
-    position: 'bottom'
+    position: 'bottom',
+    scrollTo: 'center'
   },
 
-  // Step 5: Research Mode (NEW)
+  // Step 5: Research Mode - tooltip ABOVE so it doesn't cover
   {
     id: 'research-mode',
     target: 'tour-research-mode',
     title: "🔬 Research Mode",
     description: "Knowledge is power! Dive deep into stocks and crypto before you battle. Save notes on your favorite assets, track performance trends, and get AI-powered insights to sharpen your picks.",
-    position: 'top'
+    position: 'above',
+    scrollTo: 'center'
   },
 
-  // Step 6: Training Mode (repositioned tooltip)
+  // Step 6: Training Mode - tooltip ABOVE, element centered
   {
     id: 'training',
     target: 'tour-training-mode',
     title: "🎓 Practice First!",
     description: "New here? Training mode is your secret weapon. Battle against AI-generated portfolios with zero pressure. Test out strategies from your research notes and learn the ropes before going live!",
-    position: 'top',  // Tooltip appears ABOVE the training section
-    offsetY: -20      // Extra offset to ensure no overlap
+    position: 'above',
+    scrollTo: 'center'
   },
 
-  // Step 7: Weekly Challenges (NEW)
+  // Step 7: Weekly Challenges - tooltip ABOVE
   {
     id: 'weekly-challenges',
     target: 'tour-weekly-challenges',
     title: "🏆 Weekly Challenges",
     description: "Spice up your battles! Accept challenges to earn bonus XP. Only one can be active per day, and they reset every week. Heads up: training battles don't count - you'll need to play for real!",
-    position: 'top'
+    position: 'above',
+    scrollTo: 'center'
   },
 
   // Step 8: Hamburger Menu
@@ -235,7 +240,8 @@ const TOUR_STEPS = [
     target: 'tour-hamburger-menu',
     title: "📱 Everything Else",
     description: "Your profile, battle history, detailed stats, and settings are all tucked in here. Come back anytime to track your progress!",
-    position: 'bottom-right'
+    position: 'below-right',
+    scrollTo: 'center'
   },
 
   // Step 9: Ready!
@@ -17888,16 +17894,26 @@ export default function PortfolioDuel() {
   }
 
   // ============================================
-  // SPOTLIGHT TOUR COMPONENT - Updated v2
+  // SPOTLIGHT TOUR COMPONENT - v3 with proper positioning
   // ============================================
   const SpotlightTour = () => {
     if (!showSpotlightTour) return null;
 
     const currentStep = TOUR_STEPS[tourStep];
-    const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0, width: 320 });
+    const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
     const [spotlightPosition, setSpotlightPosition] = useState({ top: 0, left: 0, width: 0, height: 0 });
-    const [arrowDirection, setArrowDirection] = useState('up');
+    const [arrowStyle, setArrowStyle] = useState({});
     const [isPositioned, setIsPositioned] = useState(false);
+
+    // Disable body scroll during tour
+    useEffect(() => {
+      if (showSpotlightTour) {
+        document.body.style.overflow = 'hidden';
+      }
+      return () => {
+        document.body.style.overflow = '';
+      };
+    }, [showSpotlightTour]);
 
     useEffect(() => {
       setIsPositioned(false);
@@ -17905,17 +17921,27 @@ export default function PortfolioDuel() {
       if (currentStep.target) {
         const element = document.getElementById(currentStep.target);
         if (element) {
-          // Scroll into view if needed
-          if (currentStep.scrollTo) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Scroll element to CENTER of viewport
+          if (currentStep.scrollTo === 'center') {
+            const elementRect = element.getBoundingClientRect();
+            const absoluteTop = window.pageYOffset + elementRect.top;
+            const centerOffset = absoluteTop - (window.innerHeight / 2) + (elementRect.height / 2);
+
+            window.scrollTo({
+              top: Math.max(0, centerOffset),
+              behavior: 'smooth'
+            });
           }
 
-          // Calculate positions after a brief delay (for scroll)
+          // Wait for scroll, then calculate positions
           const timer = setTimeout(() => {
             const rect = element.getBoundingClientRect();
             const padding = 12;
+            const tooltipWidth = 340;
+            const tooltipHeight = 220;
+            const gap = 20; // Gap between element and tooltip
 
-            // Spotlight
+            // Spotlight position
             setSpotlightPosition({
               top: rect.top - padding,
               left: rect.left - padding,
@@ -17923,52 +17949,76 @@ export default function PortfolioDuel() {
               height: rect.height + padding * 2
             });
 
-            // Tooltip
-            const tooltipWidth = 320;
-            const tooltipHeight = 200;
-            let top, left, arrow;
-            const extraOffset = currentStep.offsetY || 0;
+            // Calculate tooltip position based on 'position' setting
+            let tooltipTop, tooltipLeft, arrowTop, arrowLeft, arrowBorder;
+
+            const viewportHeight = window.innerHeight;
+            const viewportWidth = window.innerWidth;
 
             switch (currentStep.position) {
+              case 'above':
+                // Tooltip ABOVE the element
+                tooltipTop = rect.top - tooltipHeight - gap;
+                tooltipLeft = rect.left + (rect.width / 2) - (tooltipWidth / 2);
+
+                // If tooltip would go off top of screen, check if there's room below
+                if (tooltipTop < 20) {
+                  // Put it below instead
+                  tooltipTop = rect.bottom + gap;
+                  arrowBorder = 'up';
+                } else {
+                  arrowBorder = 'down';
+                }
+
+                // Arrow pointing to element
+                arrowTop = arrowBorder === 'down' ? tooltipTop + tooltipHeight - 2 : tooltipTop - 10;
+                arrowLeft = rect.left + (rect.width / 2) - 10;
+                break;
+
               case 'bottom':
-                top = rect.bottom + 24;
-                left = rect.left + rect.width / 2 - tooltipWidth / 2;
-                arrow = 'up';
+                // Tooltip BELOW the element
+                tooltipTop = rect.bottom + gap;
+                tooltipLeft = rect.left + (rect.width / 2) - (tooltipWidth / 2);
+                arrowBorder = 'up';
+                arrowTop = tooltipTop - 10;
+                arrowLeft = rect.left + (rect.width / 2) - 10;
                 break;
-              case 'top':
-                top = rect.top - tooltipHeight - 24 + extraOffset;
-                left = rect.left + rect.width / 2 - tooltipWidth / 2;
-                arrow = 'down';
+
+              case 'below-right':
+                // Tooltip below and to the right
+                tooltipTop = rect.bottom + gap;
+                tooltipLeft = Math.min(rect.left, viewportWidth - tooltipWidth - 20);
+                arrowBorder = 'up';
+                arrowTop = tooltipTop - 10;
+                arrowLeft = rect.left + (rect.width / 2) - 10;
                 break;
-              case 'bottom-right':
-                top = rect.bottom + 24;
-                left = Math.min(rect.right - tooltipWidth, window.innerWidth - tooltipWidth - 20);
-                arrow = 'up';
-                break;
-              case 'left':
-                top = rect.top + rect.height / 2 - tooltipHeight / 2;
-                left = rect.left - tooltipWidth - 24;
-                arrow = 'right';
-                break;
-              case 'right':
-                top = rect.top + rect.height / 2 - tooltipHeight / 2;
-                left = rect.right + 24;
-                arrow = 'left';
-                break;
+
               default:
-                top = rect.bottom + 24;
-                left = rect.left;
-                arrow = 'up';
+                tooltipTop = rect.bottom + gap;
+                tooltipLeft = rect.left + (rect.width / 2) - (tooltipWidth / 2);
+                arrowBorder = 'up';
+                arrowTop = tooltipTop - 10;
+                arrowLeft = rect.left + (rect.width / 2) - 10;
             }
 
-            // Keep on screen
-            left = Math.max(16, Math.min(left, window.innerWidth - tooltipWidth - 16));
-            top = Math.max(16, Math.min(top, window.innerHeight - tooltipHeight - 100));
+            // Keep tooltip on screen horizontally
+            tooltipLeft = Math.max(16, Math.min(tooltipLeft, viewportWidth - tooltipWidth - 16));
 
-            setTooltipPosition({ top, left, width: tooltipWidth });
-            setArrowDirection(arrow);
+            // Keep tooltip on screen vertically
+            if (tooltipTop < 16) tooltipTop = 16;
+            if (tooltipTop + tooltipHeight > viewportHeight - 60) {
+              tooltipTop = viewportHeight - tooltipHeight - 60;
+            }
+
+            setTooltipPosition({ top: tooltipTop, left: tooltipLeft, width: tooltipWidth });
+            setArrowStyle({
+              top: arrowTop,
+              left: Math.max(30, Math.min(arrowLeft, viewportWidth - 30)),
+              direction: arrowBorder
+            });
             setIsPositioned(true);
-          }, currentStep.scrollTo ? 400 : 50);
+
+          }, currentStep.scrollTo ? 500 : 100);
 
           return () => clearTimeout(timer);
         }
@@ -17992,15 +18042,19 @@ export default function PortfolioDuel() {
     const handleClose = () => {
       setShowSpotlightTour(false);
       setTourStep(0);
+      document.body.style.overflow = '';
     };
 
     const handleStartTraining = (mode) => {
       handleClose();
       if (mode === 'classic') {
-        setShowClassicTrainingConfirm(true);
+        if (typeof setShowClassicTrainingConfirm === 'function') {
+          setShowClassicTrainingConfirm(true);
+        } else {
+          setScreen('training');
+        }
       } else {
-        setTrainingConfirmType('stocks');
-        setShowTrainingConfirmModal(true);
+        setScreen('draftTraining');
       }
     };
 
@@ -18019,8 +18073,7 @@ export default function PortfolioDuel() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '20px',
-          animation: 'fadeIn 0.3s ease'
+          padding: '20px'
         }}>
           <div style={{
             background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 100%)',
@@ -18030,7 +18083,6 @@ export default function PortfolioDuel() {
             maxWidth: '420px',
             width: '100%',
             textAlign: 'center',
-            animation: 'slideUp 0.4s ease',
             boxShadow: '0 0 80px rgba(16, 185, 129, 0.15)'
           }}>
             <h2 style={{
@@ -18068,16 +18120,7 @@ export default function PortfolioDuel() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '10px',
-                    transition: 'transform 0.2s, box-shadow 0.2s',
                     boxShadow: '0 4px 20px rgba(0, 217, 255, 0.3)'
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 6px 30px rgba(0, 217, 255, 0.4)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 217, 255, 0.3)';
                   }}
                 >
                   <span>⚔️</span> Try Classic Training
@@ -18098,16 +18141,7 @@ export default function PortfolioDuel() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '10px',
-                    transition: 'transform 0.2s, box-shadow 0.2s',
                     boxShadow: '0 4px 20px rgba(16, 185, 129, 0.3)'
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 6px 30px rgba(16, 185, 129, 0.4)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 4px 20px rgba(16, 185, 129, 0.3)';
                   }}
                 >
                   <span>🐍</span> Try Snake Draft Training
@@ -18124,16 +18158,7 @@ export default function PortfolioDuel() {
                     fontSize: '14px',
                     fontWeight: '500',
                     cursor: 'pointer',
-                    marginTop: '4px',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.borderColor = '#30363d';
-                    e.currentTarget.style.color = '#8b949e';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.borderColor = '#21262d';
-                    e.currentTarget.style.color = '#6e7681';
+                    marginTop: '4px'
                   }}
                 >
                   I'll explore on my own
@@ -18152,16 +18177,7 @@ export default function PortfolioDuel() {
                   fontSize: '17px',
                   fontWeight: '700',
                   cursor: 'pointer',
-                  transition: 'transform 0.2s, box-shadow 0.2s',
                   boxShadow: '0 4px 20px rgba(16, 185, 129, 0.3)'
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 6px 30px rgba(16, 185, 129, 0.4)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 4px 20px rgba(16, 185, 129, 0.3)';
                 }}
               >
                 Let's Go! →
@@ -18193,8 +18209,20 @@ export default function PortfolioDuel() {
       );
     }
 
-    // Spotlight overlay - wait until positioned
-    if (!isPositioned) return null;
+    // Spotlight overlay - wait for positioning
+    if (!isPositioned) {
+      return (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.88)',
+          zIndex: 9999
+        }} />
+      );
+    }
 
     return (
       <div style={{
@@ -18208,7 +18236,7 @@ export default function PortfolioDuel() {
       }}>
         {/* CSS Animations for Spotlight Tour */}
         <style>{`
-          @keyframes spotlight-pulse {
+          @keyframes pulse {
             0%, 100% {
               box-shadow: 0 0 30px rgba(16, 185, 129, 0.6), inset 0 0 30px rgba(16, 185, 129, 0.1);
             }
@@ -18264,26 +18292,20 @@ export default function PortfolioDuel() {
           border: '2px solid #10b981',
           boxShadow: '0 0 30px rgba(16, 185, 129, 0.6), inset 0 0 30px rgba(16, 185, 129, 0.1)',
           pointerEvents: 'none',
-          animation: 'spotlight-pulse 2s ease-in-out infinite'
+          animation: 'pulse 2s ease-in-out infinite'
         }} />
 
-        {/* Arrow pointing to element */}
+        {/* Arrow */}
         <div style={{
           position: 'absolute',
-          top: arrowDirection === 'down'
-            ? tooltipPosition.top + 195
-            : arrowDirection === 'up'
-              ? tooltipPosition.top - 12
-              : tooltipPosition.top + 100,
-          left: arrowDirection === 'left' || arrowDirection === 'right'
-            ? (arrowDirection === 'left' ? tooltipPosition.left - 12 : tooltipPosition.left + tooltipPosition.width)
-            : spotlightPosition.left + spotlightPosition.width / 2 - 10,
+          top: arrowStyle.top,
+          left: arrowStyle.left,
           width: 0,
           height: 0,
-          borderLeft: (arrowDirection === 'up' || arrowDirection === 'down') ? '10px solid transparent' : (arrowDirection === 'right' ? '12px solid #1a2332' : 'none'),
-          borderRight: (arrowDirection === 'up' || arrowDirection === 'down') ? '10px solid transparent' : (arrowDirection === 'left' ? '12px solid #1a2332' : 'none'),
-          borderTop: arrowDirection === 'down' ? '12px solid #1a2332' : (arrowDirection === 'left' || arrowDirection === 'right' ? '10px solid transparent' : 'none'),
-          borderBottom: arrowDirection === 'up' ? '12px solid #1a2332' : (arrowDirection === 'left' || arrowDirection === 'right' ? '10px solid transparent' : 'none'),
+          borderLeft: '10px solid transparent',
+          borderRight: '10px solid transparent',
+          borderTop: arrowStyle.direction === 'down' ? '12px solid #1a2332' : 'none',
+          borderBottom: arrowStyle.direction === 'up' ? '12px solid #1a2332' : 'none',
           pointerEvents: 'none',
           zIndex: 10001,
           filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
@@ -18302,7 +18324,6 @@ export default function PortfolioDuel() {
             padding: '24px',
             boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)',
             pointerEvents: 'auto',
-            animation: 'slideUp 0.3s ease',
             zIndex: 10000
           }}
           onClick={(e) => e.stopPropagation()}
@@ -18351,16 +18372,7 @@ export default function PortfolioDuel() {
                   color: '#9CA3AF',
                   fontSize: '14px',
                   fontWeight: '600',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.borderColor = '#30363d';
-                  e.currentTarget.style.color = '#ffffff';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.borderColor = '#21262d';
-                  e.currentTarget.style.color = '#9CA3AF';
+                  cursor: 'pointer'
                 }}
               >
                 ← Back
@@ -18378,16 +18390,7 @@ export default function PortfolioDuel() {
                 fontSize: '14px',
                 fontWeight: '700',
                 cursor: 'pointer',
-                transition: 'all 0.2s',
                 boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)'
-              }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.transform = 'translateY(-1px)';
-                e.currentTarget.style.boxShadow = '0 4px 15px rgba(16, 185, 129, 0.4)';
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = '0 2px 10px rgba(16, 185, 129, 0.3)';
               }}
             >
               {tourStep === TOUR_STEPS.length - 2 ? "Finish →" : "Next →"}
@@ -18405,11 +18408,8 @@ export default function PortfolioDuel() {
               border: 'none',
               color: '#6e7681',
               fontSize: '13px',
-              cursor: 'pointer',
-              transition: 'color 0.2s'
+              cursor: 'pointer'
             }}
-            onMouseOver={(e) => e.currentTarget.style.color = '#9CA3AF'}
-            onMouseOut={(e) => e.currentTarget.style.color = '#6e7681'}
           >
             Skip tour
           </button>
@@ -18922,6 +18922,7 @@ export default function PortfolioDuel() {
             }}>
               {/* Snake Draft 4P - LEFT (default) */}
               <button
+                id="tour-snake-draft-btn"
                 onClick={() => setGameMode('draft')}
                 style={{
                   padding: '10px 20px',
@@ -18939,6 +18940,7 @@ export default function PortfolioDuel() {
               </button>
               {/* Builder 1v1 - RIGHT */}
               <button
+                id="tour-builder-btn"
                 onClick={() => setGameMode('classic')}
                 style={{
                   padding: '10px 20px',
