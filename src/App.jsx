@@ -152,7 +152,7 @@ const getStockSector = (symbol) => {
 };
 
 // ============================================
-// SPOTLIGHT TOUR CONFIGURATION - v5 FINAL
+// SPOTLIGHT TOUR CONFIGURATION - v6 FINAL
 // ============================================
 const TOUR_STEPS = [
   // Step 0: Welcome
@@ -164,13 +164,13 @@ const TOUR_STEPS = [
     position: 'center'
   },
 
-  // Step 1: Dashboard Intro
+  // Step 1: Dashboard Overview - SEMI-TRANSPARENT overlay
   {
     id: 'dashboard-intro',
     target: null,
     title: "This is Your Dashboard 🏠",
-    description: "Your home base for everything. Track your stats, start battles, research assets, and take on challenges. Let's walk through the key features!",
-    position: 'center'
+    description: "Your home base for everything. Track stats, start battles, research assets, and take on challenges!",
+    position: 'overlay'
   },
 
   // Step 2: Snake Draft
@@ -178,7 +178,7 @@ const TOUR_STEPS = [
     id: 'game-mode-draft',
     target: 'tour-snake-draft-btn',
     title: "🐍 Snake Draft 4P",
-    description: "The ultimate strategy mode! Four players take turns drafting assets. Build your dream team, compete for a full week. Top 2 finishers win!",
+    description: "Four players take turns drafting assets. Build your dream team, compete for a full week. Top 2 finishers win!",
     position: 'spotlight'
   },
 
@@ -187,7 +187,7 @@ const TOUR_STEPS = [
     id: 'game-mode-classic',
     target: 'tour-builder-btn',
     title: "⚔️ Builder 1v1",
-    description: "Fast and fierce! Pick your stocks or crypto, challenge a friend, and see who gets the best returns in 24 hours. Perfect for quick battles!",
+    description: "Pick your stocks or crypto, challenge a friend, and see who gets the best returns in 24 hours!",
     position: 'spotlight'
   },
 
@@ -196,7 +196,7 @@ const TOUR_STEPS = [
     id: 'create-join',
     target: 'tour-battle-cards',
     title: "Start a Battle",
-    description: "Create your own game and share the code with friends, or join someone else's battle using their code. The arena awaits!",
+    description: "Create your own game and share the code, or join a friend's battle with their code!",
     position: 'spotlight'
   },
 
@@ -205,7 +205,7 @@ const TOUR_STEPS = [
     id: 'research-mode',
     target: 'tour-research-mode',
     title: "🔬 Research Mode",
-    description: "Knowledge is power! Dive deep into stocks and crypto. Save notes, track trends, and get AI-powered insights to sharpen your picks.",
+    description: "Dive deep into stocks and crypto. Save notes, track trends, and get AI-powered insights!",
     position: 'spotlight'
   },
 
@@ -214,7 +214,7 @@ const TOUR_STEPS = [
     id: 'training',
     target: 'tour-training-mode',
     title: "🎓 Practice First!",
-    description: "Training mode is your secret weapon. Battle against AI portfolios with zero pressure. Test strategies and learn the ropes before going live!",
+    description: "Battle against AI portfolios with zero pressure. Test strategies before going live!",
     position: 'spotlight'
   },
 
@@ -223,7 +223,7 @@ const TOUR_STEPS = [
     id: 'weekly-challenges',
     target: 'tour-weekly-challenges',
     title: "🏆 Weekly Challenges",
-    description: "Accept challenges to earn bonus XP. Only one active per day, resets weekly. Note: training battles don't count!",
+    description: "Earn bonus XP! One active per day, resets weekly. Training battles don't count!",
     position: 'spotlight'
   },
 
@@ -232,7 +232,7 @@ const TOUR_STEPS = [
     id: 'menu',
     target: 'tour-hamburger-menu',
     title: "📱 Everything Else",
-    description: "Your profile, battle history, stats, and settings are all here. Come back anytime!",
+    description: "Profile, battle history, stats, and settings are all here!",
     position: 'spotlight'
   },
 
@@ -241,7 +241,7 @@ const TOUR_STEPS = [
     id: 'ready',
     target: null,
     title: "You're Ready to Battle! 🚀",
-    description: "Jump into a training game to practice, or dive straight into the action!",
+    description: "Jump into training to practice, or dive straight into the action!",
     position: 'center',
     showActions: true
   }
@@ -17886,17 +17886,14 @@ export default function PortfolioDuel() {
   }
 
   // ============================================
-  // SPOTLIGHT TOUR COMPONENT - v5 FINAL
+  // SPOTLIGHT TOUR COMPONENT - v6 FINAL
   // ============================================
   const SpotlightTour = () => {
     if (!showSpotlightTour) return null;
 
     const currentStep = TOUR_STEPS[tourStep];
-    const [positions, setPositions] = useState({
-      spotlight: { top: 0, left: 0, width: 0, height: 0 },
-      tooltip: { top: 0, left: 0 },
-      ready: false
-    });
+    const [spotlightRect, setSpotlightRect] = useState(null);
+    const [isReady, setIsReady] = useState(false);
 
     // Lock body scroll
     useEffect(() => {
@@ -17904,84 +17901,40 @@ export default function PortfolioDuel() {
       return () => { document.body.style.overflow = ''; };
     }, []);
 
-    // Calculate positions
+    // Calculate spotlight position
     useEffect(() => {
-      setPositions(p => ({ ...p, ready: false }));
+      setIsReady(false);
+      setSpotlightRect(null);
 
       if (!currentStep.target) {
-        setPositions(p => ({ ...p, ready: true }));
+        setIsReady(true);
         return;
       }
 
       const element = document.getElementById(currentStep.target);
       if (!element) {
-        setPositions(p => ({ ...p, ready: true }));
+        setIsReady(true);
         return;
       }
 
-      // First scroll the element into view with space for tooltip
+      // Scroll element to MIDDLE of screen (below where tooltip will be)
       const rect = element.getBoundingClientRect();
       const absoluteTop = window.pageYOffset + rect.top;
+      const scrollTarget = absoluteTop - (window.innerHeight * 0.4);
 
-      // Scroll so element is in upper portion of screen, leaving room for tooltip below
-      const scrollTarget = absoluteTop - 120;
       window.scrollTo({ top: Math.max(0, scrollTarget), behavior: 'smooth' });
 
-      // Wait for scroll, then calculate
       setTimeout(() => {
         const newRect = element.getBoundingClientRect();
         const padding = 12;
-        const tooltipWidth = 340;
-        const tooltipHeight = 260;
-        const gap = 30; // Gap between element and tooltip
 
-        // Spotlight position
-        const spotlight = {
+        setSpotlightRect({
           top: newRect.top - padding,
           left: newRect.left - padding,
           width: newRect.width + padding * 2,
           height: newRect.height + padding * 2
-        };
-
-        // TOOLTIP POSITION - Always BELOW the element, never overlapping
-        let tooltipTop = newRect.bottom + gap;
-        let tooltipLeft = newRect.left + (newRect.width / 2) - (tooltipWidth / 2);
-
-        // Keep tooltip on screen horizontally
-        tooltipLeft = Math.max(16, Math.min(tooltipLeft, window.innerWidth - tooltipWidth - 16));
-
-        // If tooltip would go off bottom of screen, scroll more to make room
-        if (tooltipTop + tooltipHeight > window.innerHeight - 40) {
-          const extraScroll = (tooltipTop + tooltipHeight) - (window.innerHeight - 40) + 50;
-          window.scrollTo({ top: window.pageYOffset - extraScroll, behavior: 'smooth' });
-
-          // Recalculate after additional scroll
-          setTimeout(() => {
-            const finalRect = element.getBoundingClientRect();
-            setPositions({
-              spotlight: {
-                top: finalRect.top - padding,
-                left: finalRect.left - padding,
-                width: finalRect.width + padding * 2,
-                height: finalRect.height + padding * 2
-              },
-              tooltip: {
-                top: finalRect.bottom + gap,
-                left: Math.max(16, Math.min(
-                  finalRect.left + (finalRect.width / 2) - (tooltipWidth / 2),
-                  window.innerWidth - tooltipWidth - 16
-                ))
-              },
-              ready: true
-            });
-          }, 400);
-        } else {
-          setPositions({
-            spotlight,
-            tooltip: { top: tooltipTop, left: tooltipLeft },
-            ready: true
-          });
-        }
+        });
+        setIsReady(true);
       }, 500);
     }, [tourStep, currentStep]);
 
@@ -18012,13 +17965,13 @@ export default function PortfolioDuel() {
       }
     };
 
-    // Progress dots component
+    // Progress dots
     const ProgressDots = () => (
       <div style={{
         display: 'flex',
         justifyContent: 'center',
         gap: '6px',
-        marginTop: '24px'
+        marginTop: '20px'
       }}>
         {TOUR_STEPS.map((_, index) => (
           <div
@@ -18035,7 +17988,7 @@ export default function PortfolioDuel() {
       </div>
     );
 
-    // CENTERED MODAL (welcome, dashboard intro, ready)
+    // ============ CENTERED MODAL (welcome & ready) ============
     if (currentStep.position === 'center') {
       return (
         <div style={{
@@ -18051,48 +18004,43 @@ export default function PortfolioDuel() {
         }}>
           <div style={{
             background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 100%)',
-            borderRadius: '24px',
+            borderRadius: '20px',
             border: '2px solid #10b981',
-            padding: '40px 32px',
-            maxWidth: '420px',
+            padding: '32px 28px',
+            maxWidth: '380px',
             width: '100%',
-            textAlign: 'center',
-            boxShadow: '0 0 80px rgba(16, 185, 129, 0.15)'
+            textAlign: 'center'
           }}>
             <h2 style={{
-              margin: '0 0 16px',
-              fontSize: '26px',
+              margin: '0 0 12px',
+              fontSize: '24px',
               fontWeight: '800',
               color: '#ffffff'
             }}>
               {currentStep.title}
             </h2>
             <p style={{
-              margin: '0 0 32px',
-              fontSize: '16px',
+              margin: '0 0 24px',
+              fontSize: '15px',
               color: '#9CA3AF',
-              lineHeight: 1.7
+              lineHeight: 1.6
             }}>
               {currentStep.description}
             </p>
 
             {currentStep.showActions ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <button
                   onClick={() => handleStartTraining('classic')}
                   style={{
-                    padding: '16px 24px',
+                    padding: '14px 20px',
                     background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
                     border: 'none',
-                    borderRadius: '12px',
+                    borderRadius: '10px',
                     color: '#0d1117',
-                    fontSize: '16px',
+                    fontSize: '15px',
                     fontWeight: '700',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px'
+                    cursor: 'pointer'
                   }}
                 >
                   ⚔️ Try Classic Training
@@ -18100,18 +18048,14 @@ export default function PortfolioDuel() {
                 <button
                   onClick={() => handleStartTraining('draft')}
                   style={{
-                    padding: '16px 24px',
+                    padding: '14px 20px',
                     background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                     border: 'none',
-                    borderRadius: '12px',
+                    borderRadius: '10px',
                     color: '#ffffff',
-                    fontSize: '16px',
+                    fontSize: '15px',
                     fontWeight: '700',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px'
+                    cursor: 'pointer'
                   }}
                 >
                   🐍 Try Snake Draft Training
@@ -18119,14 +18063,13 @@ export default function PortfolioDuel() {
                 <button
                   onClick={handleClose}
                   style={{
-                    padding: '14px',
+                    padding: '12px',
                     background: 'transparent',
                     border: '1px solid #21262d',
-                    borderRadius: '10px',
+                    borderRadius: '8px',
                     color: '#6e7681',
-                    fontSize: '14px',
-                    cursor: 'pointer',
-                    marginTop: '4px'
+                    fontSize: '13px',
+                    cursor: 'pointer'
                   }}
                 >
                   I'll explore on my own
@@ -18137,17 +18080,17 @@ export default function PortfolioDuel() {
                 onClick={handleNext}
                 style={{
                   width: '100%',
-                  padding: '16px 24px',
+                  padding: '14px 20px',
                   background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                   border: 'none',
-                  borderRadius: '12px',
+                  borderRadius: '10px',
                   color: '#ffffff',
-                  fontSize: '17px',
+                  fontSize: '16px',
                   fontWeight: '700',
                   cursor: 'pointer'
                 }}
               >
-                {tourStep === 0 ? "Let's Go!" : "Next"}
+                Let's Go!
               </button>
             )}
 
@@ -18157,8 +18100,126 @@ export default function PortfolioDuel() {
       );
     }
 
-    // Loading state
-    if (!positions.ready) {
+    // ============ DASHBOARD OVERLAY (semi-transparent, shows dashboard) ============
+    if (currentStep.position === 'overlay') {
+      return (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0, 0, 0, 0.75)',
+          zIndex: 9999,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          padding: '20px'
+        }}>
+          {/* Bounce animation */}
+          <style>{`
+            @keyframes bounce {
+              0%, 100% { transform: translateY(0); }
+              50% { transform: translateY(10px); }
+            }
+          `}</style>
+
+          {/* Tooltip at TOP */}
+          <div style={{
+            background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 100%)',
+            borderRadius: '16px',
+            border: '2px solid #10b981',
+            padding: '24px',
+            maxWidth: '360px',
+            width: '100%',
+            textAlign: 'center',
+            marginTop: '60px'
+          }}>
+            <div style={{
+              fontSize: '11px',
+              fontWeight: '700',
+              color: '#10b981',
+              marginBottom: '8px',
+              textTransform: 'uppercase',
+              letterSpacing: '1.5px'
+            }}>
+              Step {tourStep} of {TOUR_STEPS.length - 1}
+            </div>
+
+            <h2 style={{
+              margin: '0 0 10px',
+              fontSize: '22px',
+              fontWeight: '700',
+              color: '#ffffff'
+            }}>
+              {currentStep.title}
+            </h2>
+            <p style={{
+              margin: '0 0 20px',
+              fontSize: '14px',
+              color: '#9CA3AF',
+              lineHeight: 1.6
+            }}>
+              {currentStep.description}
+            </p>
+
+            <button
+              onClick={handleNext}
+              style={{
+                width: '100%',
+                padding: '12px 20px',
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                border: 'none',
+                borderRadius: '10px',
+                color: '#ffffff',
+                fontSize: '15px',
+                fontWeight: '700',
+                cursor: 'pointer'
+              }}
+            >
+              Next
+            </button>
+
+            <button
+              onClick={handleClose}
+              style={{
+                width: '100%',
+                marginTop: '10px',
+                padding: '8px',
+                background: 'transparent',
+                border: 'none',
+                color: '#6e7681',
+                fontSize: '12px',
+                cursor: 'pointer'
+              }}
+            >
+              Skip tour
+            </button>
+
+            <ProgressDots />
+          </div>
+
+          {/* Arrow pointing down to dashboard */}
+          <div style={{
+            marginTop: '20px',
+            color: '#10b981',
+            fontSize: '24px',
+            animation: 'bounce 1s infinite'
+          }}>
+            ↓
+          </div>
+
+          {/* Hint text */}
+          <p style={{
+            marginTop: '10px',
+            color: '#6e7681',
+            fontSize: '13px'
+          }}>
+            (Your dashboard is visible below)
+          </p>
+        </div>
+      );
+    }
+
+    // ============ SPOTLIGHT VIEW (tooltip at TOP, element below) ============
+    if (!isReady) {
       return (
         <div style={{
           position: 'fixed',
@@ -18169,7 +18230,6 @@ export default function PortfolioDuel() {
       );
     }
 
-    // SPOTLIGHT VIEW
     return (
       <div style={{
         position: 'fixed',
@@ -18177,111 +18237,113 @@ export default function PortfolioDuel() {
         zIndex: 9999,
         pointerEvents: 'none'
       }}>
-        {/* Dark overlay with hole */}
-        <svg
-          style={{
-            position: 'absolute',
-            top: 0, left: 0,
-            width: '100%', height: '100%',
-            pointerEvents: 'auto'
-          }}
-          onClick={handleClose}
-        >
-          <defs>
-            <mask id="spotlight-mask">
-              <rect x="0" y="0" width="100%" height="100%" fill="white" />
-              <rect
-                x={positions.spotlight.left}
-                y={positions.spotlight.top}
-                width={positions.spotlight.width}
-                height={positions.spotlight.height}
-                rx="16"
-                fill="black"
-              />
-            </mask>
-          </defs>
-          <rect
-            x="0" y="0"
-            width="100%" height="100%"
-            fill="rgba(0, 0, 0, 0.88)"
-            mask="url(#spotlight-mask)"
-          />
-        </svg>
+        {/* Dark overlay with spotlight hole */}
+        {spotlightRect && (
+          <svg
+            style={{
+              position: 'absolute',
+              top: 0, left: 0,
+              width: '100%', height: '100%',
+              pointerEvents: 'auto'
+            }}
+            onClick={handleClose}
+          >
+            <defs>
+              <mask id="spotlight-mask">
+                <rect x="0" y="0" width="100%" height="100%" fill="white" />
+                <rect
+                  x={spotlightRect.left}
+                  y={spotlightRect.top}
+                  width={spotlightRect.width}
+                  height={spotlightRect.height}
+                  rx="16"
+                  fill="black"
+                />
+              </mask>
+            </defs>
+            <rect
+              x="0" y="0"
+              width="100%" height="100%"
+              fill="rgba(0, 0, 0, 0.88)"
+              mask="url(#spotlight-mask)"
+            />
+          </svg>
+        )}
 
         {/* Spotlight border */}
-        <div style={{
-          position: 'absolute',
-          top: positions.spotlight.top,
-          left: positions.spotlight.left,
-          width: positions.spotlight.width,
-          height: positions.spotlight.height,
-          borderRadius: '16px',
-          border: '2px solid #10b981',
-          boxShadow: '0 0 30px rgba(16, 185, 129, 0.6)',
-          pointerEvents: 'none'
-        }} />
+        {spotlightRect && (
+          <div style={{
+            position: 'absolute',
+            top: spotlightRect.top,
+            left: spotlightRect.left,
+            width: spotlightRect.width,
+            height: spotlightRect.height,
+            borderRadius: '16px',
+            border: '2px solid #10b981',
+            boxShadow: '0 0 30px rgba(16, 185, 129, 0.5)',
+            pointerEvents: 'none'
+          }} />
+        )}
 
-        {/* Tooltip - ALWAYS BELOW the spotlight, never overlapping */}
+        {/* TOOLTIP - FIXED AT TOP OF SCREEN */}
         <div
           style={{
-            position: 'absolute',
-            top: positions.tooltip.top,
-            left: positions.tooltip.left,
+            position: 'fixed',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
             width: '340px',
+            maxWidth: 'calc(100% - 40px)',
             background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 100%)',
             borderRadius: '16px',
             border: '1px solid #21262d',
-            padding: '24px',
-            boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)',
+            padding: '20px',
+            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
             pointerEvents: 'auto',
             zIndex: 10000
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Step indicator */}
           <div style={{
-            fontSize: '11px',
+            fontSize: '10px',
             fontWeight: '700',
             color: '#10b981',
-            marginBottom: '10px',
+            marginBottom: '8px',
             textTransform: 'uppercase',
             letterSpacing: '1.5px'
           }}>
             Step {tourStep} of {TOUR_STEPS.length - 1}
           </div>
 
-          {/* Title */}
           <h3 style={{
-            margin: '0 0 10px',
-            fontSize: '20px',
+            margin: '0 0 8px',
+            fontSize: '18px',
             fontWeight: '700',
             color: '#ffffff'
           }}>
             {currentStep.title}
           </h3>
 
-          {/* Description */}
           <p style={{
-            margin: '0 0 20px',
-            fontSize: '14px',
+            margin: '0 0 16px',
+            fontSize: '13px',
             color: '#9CA3AF',
-            lineHeight: 1.7
+            lineHeight: 1.6
           }}>
             {currentStep.description}
           </p>
 
-          {/* Buttons - NO TRIANGLE/ARROW */}
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '8px' }}>
             {tourStep > 2 && (
               <button
                 onClick={handleBack}
                 style={{
-                  padding: '12px 20px',
+                  padding: '10px 16px',
                   background: 'transparent',
                   border: '1px solid #21262d',
-                  borderRadius: '10px',
+                  borderRadius: '8px',
                   color: '#9CA3AF',
-                  fontSize: '14px',
+                  fontSize: '13px',
                   fontWeight: '600',
                   cursor: 'pointer'
                 }}
@@ -18293,12 +18355,12 @@ export default function PortfolioDuel() {
               onClick={handleNext}
               style={{
                 flex: 1,
-                padding: '12px 20px',
+                padding: '10px 16px',
                 background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                 border: 'none',
-                borderRadius: '10px',
+                borderRadius: '8px',
                 color: '#ffffff',
-                fontSize: '14px',
+                fontSize: '13px',
                 fontWeight: '700',
                 cursor: 'pointer'
               }}
@@ -18307,17 +18369,16 @@ export default function PortfolioDuel() {
             </button>
           </div>
 
-          {/* Skip */}
           <button
             onClick={handleClose}
             style={{
               width: '100%',
-              marginTop: '14px',
-              padding: '10px',
+              marginTop: '10px',
+              padding: '8px',
               background: 'transparent',
               border: 'none',
               color: '#6e7681',
-              fontSize: '13px',
+              fontSize: '11px',
               cursor: 'pointer'
             }}
           >
@@ -18325,7 +18386,7 @@ export default function PortfolioDuel() {
           </button>
         </div>
 
-        {/* Progress dots at bottom of screen */}
+        {/* Progress dots at bottom */}
         <div style={{
           position: 'fixed',
           bottom: '20px',
@@ -18727,28 +18788,21 @@ export default function PortfolioDuel() {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
-                    padding: '8px 12px',
+                    gap: '4px',
+                    padding: '6px 10px',
                     background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                     border: 'none',
-                    borderRadius: '8px',
+                    borderRadius: '6px',
                     color: '#ffffff',
-                    fontSize: '13px',
+                    fontSize: '11px',
                     fontWeight: '600',
                     cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.4)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(16, 185, 129, 0.3)';
+                    whiteSpace: 'nowrap',
+                    marginRight: '12px',
+                    flexShrink: 0
                   }}
                 >
-                  <Rocket size={16} />
+                  <Rocket size={12} />
                   <span>Get Started</span>
                 </button>
               </div>
