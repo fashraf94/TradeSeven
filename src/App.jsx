@@ -152,7 +152,7 @@ const getStockSector = (symbol) => {
 };
 
 // ============================================
-// SPOTLIGHT TOUR CONFIGURATION - v6 FINAL
+// SPOTLIGHT TOUR CONFIGURATION - v7
 // ============================================
 const TOUR_STEPS = [
   // Step 0: Welcome
@@ -164,13 +164,13 @@ const TOUR_STEPS = [
     position: 'center'
   },
 
-  // Step 1: Dashboard Overview - SEMI-TRANSPARENT overlay
+  // Step 1: Dashboard Overview - SPOTLIGHT entire dashboard content
   {
     id: 'dashboard-intro',
-    target: null,
+    target: 'tour-dashboard-content',
     title: "This is Your Dashboard 🏠",
     description: "Your home base for everything. Track stats, start battles, research assets, and take on challenges!",
-    position: 'overlay'
+    position: 'spotlight'
   },
 
   // Step 2: Snake Draft
@@ -218,13 +218,13 @@ const TOUR_STEPS = [
     position: 'spotlight'
   },
 
-  // Step 7: Weekly Challenges
+  // Step 7: Weekly Challenges - tooltip closer to element
   {
     id: 'weekly-challenges',
     target: 'tour-weekly-challenges',
     title: "🏆 Weekly Challenges",
     description: "Earn bonus XP! One active per day, resets weekly. Training battles don't count!",
-    position: 'spotlight'
+    position: 'spotlight-close'
   },
 
   // Step 8: Hamburger Menu
@@ -17886,7 +17886,7 @@ export default function PortfolioDuel() {
   }
 
   // ============================================
-  // SPOTLIGHT TOUR COMPONENT - v6 FINAL
+  // SPOTLIGHT TOUR COMPONENT - v7 (Dashboard spotlight, closer tooltips)
   // ============================================
   const SpotlightTour = () => {
     if (!showSpotlightTour) return null;
@@ -18285,11 +18285,13 @@ export default function PortfolioDuel() {
           }} />
         )}
 
-        {/* TOOLTIP - FIXED AT TOP OF SCREEN */}
+        {/* TOOLTIP - Fixed at top OR close to element for spotlight-close */}
         <div
           style={{
             position: 'fixed',
-            top: '20px',
+            top: currentStep.position === 'spotlight-close' && spotlightRect
+              ? `${Math.max(20, spotlightRect.top - 200)}px`
+              : '20px',
             left: '50%',
             transform: 'translateX(-50%)',
             width: '340px',
@@ -18924,6 +18926,7 @@ export default function PortfolioDuel() {
 
           {/* Main Content Area - Mobile-first with responsive padding */}
           <div
+            id="tour-dashboard-content"
             className="pt-4 md:pt-0 pb-28 md:pb-20 px-4 md:px-6"
             style={{
               flex: 1,
