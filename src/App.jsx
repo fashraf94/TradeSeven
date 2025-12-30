@@ -18907,7 +18907,14 @@ export default function PortfolioDuel() {
             )}
 
             {/* Create & Join Battle Cards - TRUE SIDE-BY-SIDE on all screens */}
-            <div className="grid grid-cols-2 gap-4 mb-4">
+            <div style={{
+              display: 'flex',
+              gap: '16px',
+              padding: '0 16px',
+              justifyContent: 'center',
+              alignItems: 'stretch',
+              marginBottom: '16px'
+            }}>
               {/* CREATE BATTLE Card */}
               {(() => {
                 const createColor = gameMode === 'draft' ? '#10b981' : colors.cyan;
@@ -18933,9 +18940,11 @@ export default function PortfolioDuel() {
                     }}
                     style={{
                       position: 'relative',
+                      flex: 1,
+                      maxWidth: '180px',
                       background: colors.cardBg,
                       borderRadius: '16px',
-                      padding: hasActiveBattle ? '28px 24px' : '40px 32px',
+                      padding: hasActiveBattle ? '24px 20px' : '32px 24px',
                       border: `1px solid ${colors.border}`,
                       cursor: 'pointer',
                       overflow: 'hidden',
@@ -19057,9 +19066,11 @@ export default function PortfolioDuel() {
                     }}
                     style={{
                       position: 'relative',
+                      flex: 1,
+                      maxWidth: '180px',
                       background: colors.cardBg,
                       borderRadius: '16px',
-                      padding: hasActiveBattle ? '28px 24px' : '40px 32px',
+                      padding: hasActiveBattle ? '24px 20px' : '32px 24px',
                       border: `1px solid ${colors.border}`,
                       cursor: 'pointer',
                       overflow: 'hidden',
@@ -19160,6 +19171,188 @@ export default function PortfolioDuel() {
                 );
               })()}
             </div>
+
+            {/* Futuristic Research Mode Button */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.35 }}
+              onClick={() => setShowResearchMode(true)}
+              style={{
+                margin: '20px 16px',
+                padding: '20px 24px',
+                borderRadius: '16px',
+                cursor: 'pointer',
+                position: 'relative',
+                overflow: 'hidden',
+                background: `linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 50%, rgba(15, 23, 42, 0.95) 100%)`,
+                border: '1px solid transparent',
+                backgroundClip: 'padding-box',
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow = '0 0 30px rgba(0, 217, 255, 0.3), 0 0 60px rgba(139, 92, 246, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.transform = 'translateY(-2px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05)';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              {/* CSS Animations for Research Button */}
+              <style>{`
+                @keyframes gradientShift {
+                  0% { background-position: 0% 50%; }
+                  50% { background-position: 100% 50%; }
+                  100% { background-position: 0% 50%; }
+                }
+                @keyframes scanLine {
+                  0% { left: -100%; }
+                  50% { left: 100%; }
+                  100% { left: 100%; }
+                }
+                @keyframes researchPulse {
+                  0%, 100% { opacity: 0.3; transform: scale(1); }
+                  50% { opacity: 0.8; transform: scale(1.2); }
+                }
+              `}</style>
+
+              {/* Animated gradient border overlay */}
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                borderRadius: '16px',
+                padding: '1px',
+                background: 'linear-gradient(90deg, #00d9ff, #8b5cf6, #00d9ff)',
+                backgroundSize: '200% 100%',
+                animation: 'gradientShift 3s ease infinite',
+                mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                maskComposite: 'exclude',
+                WebkitMaskComposite: 'xor',
+                pointerEvents: 'none',
+              }} />
+
+              {/* Scanning line effect */}
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: '-100%',
+                width: '100%',
+                height: '100%',
+                background: 'linear-gradient(90deg, transparent, rgba(0, 217, 255, 0.1), transparent)',
+                animation: 'scanLine 3s ease-in-out infinite',
+                pointerEvents: 'none',
+              }} />
+
+              {/* Content */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                position: 'relative',
+                zIndex: 1,
+              }}>
+                {/* Left side - Icon and text */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  {/* Futuristic icon */}
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '1px solid rgba(0, 217, 255, 0.3)',
+                  }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="url(#researchIconGradient)" strokeWidth="2">
+                      <defs>
+                        <linearGradient id="researchIconGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#00d9ff" />
+                          <stop offset="100%" stopColor="#8b5cf6" />
+                        </linearGradient>
+                      </defs>
+                      <circle cx="11" cy="11" r="8" />
+                      <path d="M21 21l-4.35-4.35" />
+                      <path d="M8 8h.01M11 8h.01M14 8h.01M8 11h.01M11 11h.01M14 11h.01M8 14h.01M11 14h.01M14 14h.01" strokeWidth="1.5" />
+                    </svg>
+                  </div>
+
+                  {/* Text content */}
+                  <div>
+                    <div style={{
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      letterSpacing: '2px',
+                      color: '#00d9ff',
+                      marginBottom: '4px',
+                      textTransform: 'uppercase',
+                    }}>
+                      AI-Powered
+                    </div>
+                    <div style={{
+                      fontSize: '18px',
+                      fontWeight: '700',
+                      color: '#ffffff',
+                      letterSpacing: '0.5px',
+                    }}>
+                      Research Mode
+                    </div>
+                    <div style={{
+                      fontSize: '12px',
+                      color: 'rgba(255, 255, 255, 0.6)',
+                      marginTop: '2px',
+                    }}>
+                      Advanced market analysis & insights
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right side - Arrow */}
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'transform 0.3s ease',
+                }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00d9ff" strokeWidth="2">
+                    <path d="M5 12h14M12 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Particle dots */}
+              <div style={{
+                position: 'absolute',
+                top: '10px',
+                right: '60px',
+                width: '4px',
+                height: '4px',
+                borderRadius: '50%',
+                background: '#00d9ff',
+                opacity: 0.5,
+                animation: 'researchPulse 2s ease infinite',
+              }} />
+              <div style={{
+                position: 'absolute',
+                bottom: '15px',
+                right: '80px',
+                width: '3px',
+                height: '3px',
+                borderRadius: '50%',
+                background: '#8b5cf6',
+                opacity: 0.4,
+                animation: 'researchPulse 2.5s ease infinite 0.5s',
+              }} />
+            </motion.div>
 
             {/* Training Mode Section - Different design for draft vs classic */}
             {gameMode === 'draft' ? (
@@ -19489,120 +19682,194 @@ export default function PortfolioDuel() {
                 </p>
               </motion.div>
             ) : (
-              /* Classic Mode Training Banner - Shows confirmation popup */
+              /* Classic Mode Training Section - Unified style matching Snake Draft */
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, delay: 0.4 }}
-                className="flex"
-                onClick={() => {
-                  setShowClassicTrainingConfirm(true);
-                }}
                 style={{
-                  background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                  border: 'none',
-                  borderRadius: '14px',
-                  padding: '16px 24px',
-                  alignItems: 'center',
-                  gap: '16px',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s',
+                  background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(168, 85, 247, 0.05) 100%)',
+                  border: '2px solid rgba(139, 92, 246, 0.3)',
+                  borderRadius: '16px',
+                  padding: '20px',
                   marginTop: '12px',
-                  marginBottom: '24px',
-                  boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 8px 30px rgba(139, 92, 246, 0.4)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(139, 92, 246, 0.3)';
+                  marginBottom: '24px'
                 }}
               >
-                <Brain style={{ height: '28px', width: '28px', color: '#ffffff' }} />
-                <div style={{ flex: 1 }}>
-                  <span style={{
+                {/* Header */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  marginBottom: '6px'
+                }}>
+                  <div style={{
+                    width: '28px',
+                    height: '28px',
+                    background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <span style={{ fontSize: '14px' }}>🎯</span>
+                  </div>
+                  <h3 style={{
+                    color: '#ffffff',
                     fontSize: '16px',
                     fontWeight: '700',
-                    color: '#ffffff',
+                    margin: 0,
                     textTransform: 'uppercase',
-                    letterSpacing: '1px'
+                    letterSpacing: '0.5px'
                   }}>
                     Training Mode
-                  </span>
-                  <span style={{
-                    fontSize: '14px',
-                    color: 'rgba(255, 255, 255, 0.85)',
-                    marginLeft: '12px'
-                  }}>
-                    Practice your strategy
-                  </span>
+                  </h3>
                 </div>
-                <ArrowRight style={{ height: '20px', width: '20px', color: '#ffffff' }} />
+
+                {/* Subheader */}
+                <p style={{
+                  color: '#a78bfa',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  margin: '0 0 20px 0'
+                }}>
+                  Practice against CPU opponent!
+                </p>
+
+                {/* CSS Animations for Classic Training Button */}
+                <style>{`
+                  @keyframes classic-pulse-glow {
+                    0%, 100% { opacity: 0.5; transform: scale(1); }
+                    50% { opacity: 0.8; transform: scale(1.08); }
+                  }
+                  @keyframes classic-pulse-ring {
+                    0%, 100% { transform: scale(1); opacity: 0.5; }
+                    50% { transform: scale(1.12); opacity: 0.2; }
+                  }
+                  @keyframes classic-rotate-arc {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                  }
+                `}</style>
+
+                {/* Single Training Button - Centered */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'center'
+                }}>
+                  <button
+                    onClick={() => {
+                      setShowClassicTrainingConfirm(true);
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '8px',
+                      transition: 'transform 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.08)'}
+                    onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                  >
+                    <div style={{ position: 'relative', width: '90px', height: '90px' }}>
+                      {/* Outer glow */}
+                      <div style={{
+                        position: 'absolute',
+                        inset: '-12px',
+                        borderRadius: '50%',
+                        background: 'radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, transparent 70%)',
+                        animation: 'classic-pulse-glow 2s ease-in-out infinite'
+                      }} />
+                      {/* Pulsing ring */}
+                      <div style={{
+                        position: 'absolute',
+                        inset: '-4px',
+                        borderRadius: '50%',
+                        border: '2px solid #8b5cf6',
+                        animation: 'classic-pulse-ring 2s ease-in-out infinite'
+                      }} />
+                      {/* Main circle with gradient */}
+                      <div style={{
+                        width: '90px',
+                        height: '90px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 4px 24px rgba(139, 92, 246, 0.5), inset 0 2px 10px rgba(255,255,255,0.2)',
+                        position: 'relative',
+                        overflow: 'hidden'
+                      }}>
+                        {/* Shine overlay */}
+                        <div style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: '50%',
+                          background: 'linear-gradient(180deg, rgba(255,255,255,0.25) 0%, transparent 100%)',
+                          borderRadius: '50% 50% 0 0'
+                        }} />
+                        {/* Brain/Target Icon */}
+                        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" style={{ position: 'relative', zIndex: 1 }}>
+                          <circle cx="12" cy="12" r="10" stroke="#ffffff" strokeWidth="2" />
+                          <circle cx="12" cy="12" r="6" stroke="#ffffff" strokeWidth="2" />
+                          <circle cx="12" cy="12" r="2" fill="#ffffff" />
+                          <path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" />
+                        </svg>
+                      </div>
+                      {/* Rotating arc */}
+                      <svg style={{
+                        position: 'absolute',
+                        top: '-6px',
+                        left: '-6px',
+                        width: '102px',
+                        height: '102px',
+                        animation: 'classic-rotate-arc 4s linear infinite',
+                        pointerEvents: 'none'
+                      }}>
+                        <circle
+                          cx="51"
+                          cy="51"
+                          r="47"
+                          fill="none"
+                          stroke="#8b5cf6"
+                          strokeWidth="2"
+                          strokeDasharray="50 250"
+                          strokeLinecap="round"
+                          opacity="0.6"
+                        />
+                      </svg>
+                    </div>
+                    <span style={{
+                      color: '#ffffff',
+                      fontSize: '14px',
+                      fontWeight: '800',
+                      letterSpacing: '1px',
+                      textShadow: '0 0 12px rgba(139, 92, 246, 0.6)'
+                    }}>
+                      START TRAINING
+                    </span>
+                    <span style={{ color: '#8b949e', fontSize: '12px' }}>~5 min • Stocks & Crypto</span>
+                  </button>
+                </div>
+
+                {/* Helper Text */}
+                <p style={{
+                  color: '#8b949e',
+                  fontSize: '11px',
+                  textAlign: 'center',
+                  margin: '16px 0 0 0'
+                }}>
+                  Practice against CPU opponent - No pressure, just learning
+                </p>
               </motion.div>
             )}
-
-            {/* Research Mode Banner */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.45 }}
-              onClick={() => setShowResearchMode(true)}
-              style={{
-                background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)',
-                border: '1px solid rgba(0, 217, 255, 0.3)',
-                borderRadius: '14px',
-                padding: '16px 24px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '16px',
-                cursor: 'pointer',
-                transition: 'all 0.3s',
-                marginBottom: '24px'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 30px rgba(0, 217, 255, 0.2)';
-                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 217, 255, 0.15) 0%, rgba(59, 130, 246, 0.15) 100%)';
-                e.currentTarget.style.borderColor = 'rgba(0, 217, 255, 0.5)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = 'none';
-                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 217, 255, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)';
-                e.currentTarget.style.borderColor = 'rgba(0, 217, 255, 0.3)';
-              }}
-            >
-              <div style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '12px',
-                background: 'rgba(0, 217, 255, 0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <BarChart3 style={{ height: '24px', width: '24px', color: colors.cyan }} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{
-                  fontSize: '16px',
-                  fontWeight: '700',
-                  color: colors.cyan,
-                  marginBottom: '2px'
-                }}>
-                  Research Assets
-                </div>
-                <div style={{
-                  fontSize: '13px',
-                  color: '#8b949e'
-                }}>
-                  Analyze stocks & crypto before building your portfolio
-                </div>
-              </div>
-              <ArrowRight style={{ height: '20px', width: '20px', color: colors.cyan }} />
-            </motion.div>
 
             {/* Weekly Challenges Section */}
             <motion.div
