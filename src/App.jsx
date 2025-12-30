@@ -152,7 +152,7 @@ const getStockSector = (symbol) => {
 };
 
 // ============================================
-// SPOTLIGHT TOUR CONFIGURATION - v7
+// SPOTLIGHT TOUR CONFIGURATION - v8
 // ============================================
 const TOUR_STEPS = [
   // Step 0: Welcome
@@ -164,79 +164,70 @@ const TOUR_STEPS = [
     position: 'center'
   },
 
-  // Step 1: Dashboard Overview - SPOTLIGHT entire dashboard content
+  // Step 1: Dashboard
   {
     id: 'dashboard-intro',
-    target: 'tour-dashboard-content',
+    target: null,
     title: "This is Your Dashboard 🏠",
     description: "Your home base for everything. Track stats, start battles, research assets, and take on challenges!",
-    position: 'spotlight'
+    position: 'center'
   },
 
-  // Step 2: Snake Draft
+  // Step 2: Game Modes - highlight the TOGGLE (both buttons)
   {
-    id: 'game-mode-draft',
-    target: 'tour-snake-draft-btn',
-    title: "🐍 Snake Draft 4P",
-    description: "Four players take turns drafting assets. Build your dream team, compete for a full week. Top 2 finishers win!",
-    position: 'spotlight'
+    id: 'game-modes',
+    target: 'tour-game-mode-toggle',
+    title: "Two Ways to Play",
+    description: "Switch between Snake Draft 4P (4-player strategy) and Builder 1v1 (quick battles).",
+    position: 'spotlight-below'
   },
 
-  // Step 3: Builder 1v1
-  {
-    id: 'game-mode-classic',
-    target: 'tour-builder-btn',
-    title: "⚔️ Builder 1v1",
-    description: "Pick your stocks or crypto, challenge a friend, and see who gets the best returns in 24 hours!",
-    position: 'spotlight'
-  },
-
-  // Step 4: Create & Join
+  // Step 3: Create & Join
   {
     id: 'create-join',
     target: 'tour-battle-cards',
     title: "Start a Battle",
     description: "Create your own game and share the code, or join a friend's battle with their code!",
-    position: 'spotlight'
+    position: 'spotlight-below'
   },
 
-  // Step 5: Research Mode
+  // Step 4: Research Mode
   {
     id: 'research-mode',
     target: 'tour-research-mode',
     title: "🔬 Research Mode",
     description: "Dive deep into stocks and crypto. Save notes, track trends, and get AI-powered insights!",
-    position: 'spotlight'
+    position: 'spotlight-below'
   },
 
-  // Step 6: Training Mode
+  // Step 5: Training Mode
   {
     id: 'training',
     target: 'tour-training-mode',
     title: "🎓 Practice First!",
     description: "Battle against AI portfolios with zero pressure. Test strategies before going live!",
-    position: 'spotlight'
+    position: 'spotlight-below'
   },
 
-  // Step 7: Weekly Challenges - tooltip closer to element
+  // Step 6: Weekly Challenges - tooltip ABOVE element
   {
     id: 'weekly-challenges',
     target: 'tour-weekly-challenges',
     title: "🏆 Weekly Challenges",
     description: "Earn bonus XP! One active per day, resets weekly. Training battles don't count!",
-    position: 'spotlight-close'
+    position: 'spotlight-above'
   },
 
-  // Step 8: Hamburger Menu
+  // Step 7: Hamburger Menu
   {
     id: 'menu',
     target: 'tour-hamburger-menu',
     title: "📱 Everything Else",
     description: "Profile, battle history, stats, and settings are all here!",
-    position: 'spotlight'
+    position: 'spotlight-below'
   },
 
-  // Step 9: Ready!
+  // Step 8: Ready!
   {
     id: 'ready',
     target: null,
@@ -17886,22 +17877,21 @@ export default function PortfolioDuel() {
   }
 
   // ============================================
-  // SPOTLIGHT TOUR COMPONENT - v7 (Dashboard spotlight, closer tooltips)
+  // SPOTLIGHT TOUR COMPONENT - v8 (Proper tooltip positioning)
   // ============================================
   const SpotlightTour = () => {
     if (!showSpotlightTour) return null;
 
     const currentStep = TOUR_STEPS[tourStep];
     const [spotlightRect, setSpotlightRect] = useState(null);
+    const [tooltipPos, setTooltipPos] = useState({ top: 0, arrowTop: 0, arrowDirection: 'up' });
     const [isReady, setIsReady] = useState(false);
 
-    // Lock body scroll
     useEffect(() => {
       document.body.style.overflow = 'hidden';
       return () => { document.body.style.overflow = ''; };
     }, []);
 
-    // Calculate spotlight position
     useEffect(() => {
       setIsReady(false);
       setSpotlightRect(null);
@@ -17913,27 +17903,55 @@ export default function PortfolioDuel() {
 
       const element = document.getElementById(currentStep.target);
       if (!element) {
+        console.error('TOUR ERROR: Element not found:', currentStep.target);
         setIsReady(true);
         return;
       }
 
-      // Scroll element to MIDDLE of screen (below where tooltip will be)
+      // Scroll based on position type
       const rect = element.getBoundingClientRect();
       const absoluteTop = window.pageYOffset + rect.top;
-      const scrollTarget = absoluteTop - (window.innerHeight * 0.4);
 
-      window.scrollTo({ top: Math.max(0, scrollTarget), behavior: 'smooth' });
+      if (currentStep.position === 'spotlight-above') {
+        // Element should be at BOTTOM of screen, scroll it there
+        const scrollTarget = absoluteTop - window.innerHeight + rect.height + 150;
+        window.scrollTo({ top: Math.max(0, scrollTarget), behavior: 'smooth' });
+      } else {
+        // Element should be at TOP of screen
+        const scrollTarget = absoluteTop - 100;
+        window.scrollTo({ top: Math.max(0, scrollTarget), behavior: 'smooth' });
+      }
 
       setTimeout(() => {
         const newRect = element.getBoundingClientRect();
-        const padding = 12;
+        const padding = 10;
 
+        // Set spotlight rectangle
         setSpotlightRect({
           top: newRect.top - padding,
           left: newRect.left - padding,
           width: newRect.width + padding * 2,
           height: newRect.height + padding * 2
         });
+
+        // Calculate tooltip position
+        if (currentStep.position === 'spotlight-above') {
+          // Tooltip ABOVE the element
+          const tooltipHeight = 220;
+          setTooltipPos({
+            top: newRect.top - tooltipHeight - 20,
+            arrowTop: newRect.top - 32,
+            arrowDirection: 'down'
+          });
+        } else {
+          // Tooltip BELOW the element (default)
+          setTooltipPos({
+            top: newRect.bottom + 20,
+            arrowTop: newRect.bottom + 8,
+            arrowDirection: 'up'
+          });
+        }
+
         setIsReady(true);
       }, 500);
     }, [tourStep, currentStep]);
@@ -17966,12 +17984,12 @@ export default function PortfolioDuel() {
     };
 
     // Progress dots
-    const ProgressDots = () => (
+    const ProgressDots = ({ mt = '20px' }) => (
       <div style={{
         display: 'flex',
         justifyContent: 'center',
         gap: '6px',
-        marginTop: '20px'
+        marginTop: mt
       }}>
         {TOUR_STEPS.map((_, index) => (
           <div
@@ -17980,22 +17998,20 @@ export default function PortfolioDuel() {
               width: index === tourStep ? '20px' : '6px',
               height: '6px',
               borderRadius: '3px',
-              background: index <= tourStep ? '#10b981' : '#21262d',
-              transition: 'all 0.3s ease'
+              background: index <= tourStep ? '#10b981' : '#21262d'
             }}
           />
         ))}
       </div>
     );
 
-    // ============ CENTERED MODAL (welcome & ready) ============
+    // CENTERED MODAL
     if (currentStep.position === 'center') {
       return (
         <div style={{
           position: 'fixed',
           top: 0, left: 0, right: 0, bottom: 0,
           background: 'rgba(0, 0, 0, 0.92)',
-          backdropFilter: 'blur(8px)',
           zIndex: 9999,
           display: 'flex',
           alignItems: 'center',
@@ -18011,404 +18027,155 @@ export default function PortfolioDuel() {
             width: '100%',
             textAlign: 'center'
           }}>
-            <h2 style={{
-              margin: '0 0 12px',
-              fontSize: '24px',
-              fontWeight: '800',
-              color: '#ffffff'
-            }}>
+            <h2 style={{ margin: '0 0 12px', fontSize: '24px', fontWeight: '800', color: '#fff' }}>
               {currentStep.title}
             </h2>
-            <p style={{
-              margin: '0 0 24px',
-              fontSize: '15px',
-              color: '#9CA3AF',
-              lineHeight: 1.6
-            }}>
+            <p style={{ margin: '0 0 24px', fontSize: '15px', color: '#9CA3AF', lineHeight: 1.6 }}>
               {currentStep.description}
             </p>
 
             {currentStep.showActions ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <button
-                  onClick={() => handleStartTraining('classic')}
-                  style={{
-                    padding: '14px 20px',
-                    background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
-                    border: 'none',
-                    borderRadius: '10px',
-                    color: '#0d1117',
-                    fontSize: '15px',
-                    fontWeight: '700',
-                    cursor: 'pointer'
-                  }}
-                >
-                  ⚔️ Try Classic Training
-                </button>
-                <button
-                  onClick={() => handleStartTraining('draft')}
-                  style={{
-                    padding: '14px 20px',
-                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                    border: 'none',
-                    borderRadius: '10px',
-                    color: '#ffffff',
-                    fontSize: '15px',
-                    fontWeight: '700',
-                    cursor: 'pointer'
-                  }}
-                >
-                  🐍 Try Snake Draft Training
-                </button>
-                <button
-                  onClick={handleClose}
-                  style={{
-                    padding: '12px',
-                    background: 'transparent',
-                    border: '1px solid #21262d',
-                    borderRadius: '8px',
-                    color: '#6e7681',
-                    fontSize: '13px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  I'll explore on my own
-                </button>
+                <button onClick={() => handleStartTraining('classic')} style={{
+                  padding: '14px', background: 'linear-gradient(135deg, #00d9ff, #0099cc)',
+                  border: 'none', borderRadius: '10px', color: '#0d1117', fontSize: '15px', fontWeight: '700', cursor: 'pointer'
+                }}>⚔️ Try Classic Training</button>
+                <button onClick={() => handleStartTraining('draft')} style={{
+                  padding: '14px', background: 'linear-gradient(135deg, #10b981, #059669)',
+                  border: 'none', borderRadius: '10px', color: '#fff', fontSize: '15px', fontWeight: '700', cursor: 'pointer'
+                }}>🐍 Try Snake Draft Training</button>
+                <button onClick={handleClose} style={{
+                  padding: '12px', background: 'transparent', border: '1px solid #21262d',
+                  borderRadius: '8px', color: '#6e7681', fontSize: '13px', cursor: 'pointer'
+                }}>I'll explore on my own</button>
               </div>
             ) : (
-              <button
-                onClick={handleNext}
-                style={{
-                  width: '100%',
-                  padding: '14px 20px',
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  border: 'none',
-                  borderRadius: '10px',
-                  color: '#ffffff',
-                  fontSize: '16px',
-                  fontWeight: '700',
-                  cursor: 'pointer'
-                }}
-              >
-                Let's Go!
-              </button>
+              <button onClick={handleNext} style={{
+                width: '100%', padding: '14px', background: 'linear-gradient(135deg, #10b981, #059669)',
+                border: 'none', borderRadius: '10px', color: '#fff', fontSize: '16px', fontWeight: '700', cursor: 'pointer'
+              }}>Let's Go!</button>
             )}
-
             <ProgressDots />
           </div>
         </div>
       );
     }
 
-    // ============ DASHBOARD OVERLAY (semi-transparent, shows dashboard) ============
-    if (currentStep.position === 'overlay') {
+    // SPOTLIGHT VIEW - Loading
+    if (!isReady || !spotlightRect) {
       return (
         <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          zIndex: 9999,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          padding: '20px'
-        }}>
-          {/* Bounce animation */}
-          <style>{`
-            @keyframes bounce {
-              0%, 100% { transform: translateY(0); }
-              50% { transform: translateY(10px); }
-            }
-          `}</style>
-
-          {/* Tooltip at TOP */}
-          <div style={{
-            background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 100%)',
-            borderRadius: '16px',
-            border: '2px solid #10b981',
-            padding: '24px',
-            maxWidth: '360px',
-            width: '100%',
-            textAlign: 'center',
-            marginTop: '60px'
-          }}>
-            <div style={{
-              fontSize: '11px',
-              fontWeight: '700',
-              color: '#10b981',
-              marginBottom: '8px',
-              textTransform: 'uppercase',
-              letterSpacing: '1.5px'
-            }}>
-              Step {tourStep} of {TOUR_STEPS.length - 1}
-            </div>
-
-            <h2 style={{
-              margin: '0 0 10px',
-              fontSize: '22px',
-              fontWeight: '700',
-              color: '#ffffff'
-            }}>
-              {currentStep.title}
-            </h2>
-            <p style={{
-              margin: '0 0 20px',
-              fontSize: '14px',
-              color: '#9CA3AF',
-              lineHeight: 1.6
-            }}>
-              {currentStep.description}
-            </p>
-
-            <button
-              onClick={handleNext}
-              style={{
-                width: '100%',
-                padding: '12px 20px',
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                border: 'none',
-                borderRadius: '10px',
-                color: '#ffffff',
-                fontSize: '15px',
-                fontWeight: '700',
-                cursor: 'pointer'
-              }}
-            >
-              Next
-            </button>
-
-            <button
-              onClick={handleClose}
-              style={{
-                width: '100%',
-                marginTop: '10px',
-                padding: '8px',
-                background: 'transparent',
-                border: 'none',
-                color: '#6e7681',
-                fontSize: '12px',
-                cursor: 'pointer'
-              }}
-            >
-              Skip tour
-            </button>
-
-            <ProgressDots />
-          </div>
-
-          {/* Arrow pointing down to dashboard */}
-          <div style={{
-            marginTop: '20px',
-            color: '#10b981',
-            fontSize: '24px',
-            animation: 'bounce 1s infinite'
-          }}>
-            ↓
-          </div>
-
-          {/* Hint text */}
-          <p style={{
-            marginTop: '10px',
-            color: '#6e7681',
-            fontSize: '13px'
-          }}>
-            (Your dashboard is visible below)
-          </p>
-        </div>
-      );
-    }
-
-    // ============ SPOTLIGHT VIEW (tooltip at TOP, element below) ============
-    if (!isReady) {
-      return (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.88)',
-          zIndex: 9999
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0, 0, 0, 0.88)', zIndex: 9999
         }} />
       );
     }
 
+    // SPOTLIGHT VIEW - Ready
     return (
       <div style={{
-        position: 'fixed',
-        top: 0, left: 0, right: 0, bottom: 0,
-        zIndex: 9999,
-        pointerEvents: 'none'
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+        zIndex: 9999, pointerEvents: 'none'
       }}>
-        {/* Dark overlay with spotlight hole */}
-        {spotlightRect && (
-          <svg
-            style={{
-              position: 'absolute',
-              top: 0, left: 0,
-              width: '100%', height: '100%',
-              pointerEvents: 'auto'
-            }}
-            onClick={handleClose}
-          >
-            <defs>
-              <mask id="spotlight-mask">
-                <rect x="0" y="0" width="100%" height="100%" fill="white" />
-                <rect
-                  x={spotlightRect.left}
-                  y={spotlightRect.top}
-                  width={spotlightRect.width}
-                  height={spotlightRect.height}
-                  rx="16"
-                  fill="black"
-                />
-              </mask>
-            </defs>
-            <rect
-              x="0" y="0"
-              width="100%" height="100%"
-              fill="rgba(0, 0, 0, 0.88)"
-              mask="url(#spotlight-mask)"
-            />
-          </svg>
-        )}
+        {/* Dark overlay with hole */}
+        <svg style={{
+          position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+          pointerEvents: 'auto'
+        }} onClick={handleClose}>
+          <defs>
+            <mask id="spotlight-mask">
+              <rect x="0" y="0" width="100%" height="100%" fill="white" />
+              <rect
+                x={spotlightRect.left} y={spotlightRect.top}
+                width={spotlightRect.width} height={spotlightRect.height}
+                rx="12" fill="black"
+              />
+            </mask>
+          </defs>
+          <rect x="0" y="0" width="100%" height="100%" fill="rgba(0,0,0,0.88)" mask="url(#spotlight-mask)" />
+        </svg>
 
-        {/* Spotlight border */}
-        {spotlightRect && (
-          <div style={{
-            position: 'absolute',
-            top: spotlightRect.top,
-            left: spotlightRect.left,
-            width: spotlightRect.width,
-            height: spotlightRect.height,
-            borderRadius: '16px',
-            border: '2px solid #10b981',
-            boxShadow: '0 0 30px rgba(16, 185, 129, 0.5)',
-            pointerEvents: 'none'
-          }} />
-        )}
+        {/* Green border glow around spotlight */}
+        <div style={{
+          position: 'absolute',
+          top: spotlightRect.top, left: spotlightRect.left,
+          width: spotlightRect.width, height: spotlightRect.height,
+          borderRadius: '12px',
+          border: '2px solid #10b981',
+          boxShadow: '0 0 20px rgba(16, 185, 129, 0.5)',
+          pointerEvents: 'none'
+        }} />
 
-        {/* TOOLTIP - Fixed at top OR close to element for spotlight-close */}
-        <div
-          style={{
-            position: 'fixed',
-            top: currentStep.position === 'spotlight-close' && spotlightRect
-              ? `${Math.max(20, spotlightRect.top - 200)}px`
-              : '20px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: '340px',
-            maxWidth: 'calc(100% - 40px)',
-            background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 100%)',
-            borderRadius: '16px',
-            border: '1px solid #21262d',
-            padding: '20px',
-            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
-            pointerEvents: 'auto',
-            zIndex: 10000
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
+        {/* Arrow pointing to element */}
+        <div style={{
+          position: 'absolute',
+          top: tooltipPos.arrowTop,
+          left: spotlightRect.left + spotlightRect.width / 2 - 10,
+          width: 0, height: 0,
+          borderLeft: '10px solid transparent',
+          borderRight: '10px solid transparent',
+          borderBottom: tooltipPos.arrowDirection === 'up' ? '12px solid #1a2332' : 'none',
+          borderTop: tooltipPos.arrowDirection === 'down' ? '12px solid #1a2332' : 'none',
+          pointerEvents: 'none', zIndex: 10001
+        }} />
+
+        {/* Tooltip */}
+        <div style={{
+          position: 'absolute',
+          top: tooltipPos.top,
+          left: '50%', transform: 'translateX(-50%)',
+          width: '340px', maxWidth: 'calc(100% - 40px)',
+          background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 100%)',
+          borderRadius: '16px', border: '1px solid #21262d',
+          padding: '20px',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+          pointerEvents: 'auto', zIndex: 10000
+        }} onClick={(e) => e.stopPropagation()}>
+
           <div style={{
-            fontSize: '10px',
-            fontWeight: '700',
-            color: '#10b981',
-            marginBottom: '8px',
-            textTransform: 'uppercase',
-            letterSpacing: '1.5px'
+            fontSize: '10px', fontWeight: '700', color: '#10b981',
+            marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1.5px'
           }}>
             Step {tourStep} of {TOUR_STEPS.length - 1}
           </div>
 
-          <h3 style={{
-            margin: '0 0 8px',
-            fontSize: '18px',
-            fontWeight: '700',
-            color: '#ffffff'
-          }}>
+          <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: '700', color: '#fff' }}>
             {currentStep.title}
           </h3>
 
-          <p style={{
-            margin: '0 0 16px',
-            fontSize: '13px',
-            color: '#9CA3AF',
-            lineHeight: 1.6
-          }}>
+          <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#9CA3AF', lineHeight: 1.6 }}>
             {currentStep.description}
           </p>
 
           <div style={{ display: 'flex', gap: '8px' }}>
-            {tourStep > 2 && (
-              <button
-                onClick={handleBack}
-                style={{
-                  padding: '10px 16px',
-                  background: 'transparent',
-                  border: '1px solid #21262d',
-                  borderRadius: '8px',
-                  color: '#9CA3AF',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                ← Back
-              </button>
+            {tourStep > 1 && (
+              <button onClick={handleBack} style={{
+                padding: '10px 16px', background: 'transparent', border: '1px solid #21262d',
+                borderRadius: '8px', color: '#9CA3AF', fontSize: '13px', fontWeight: '600', cursor: 'pointer'
+              }}>← Back</button>
             )}
-            <button
-              onClick={handleNext}
-              style={{
-                flex: 1,
-                padding: '10px 16px',
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                border: 'none',
-                borderRadius: '8px',
-                color: '#ffffff',
-                fontSize: '13px',
-                fontWeight: '700',
-                cursor: 'pointer'
-              }}
-            >
-              {tourStep === TOUR_STEPS.length - 2 ? "Finish" : "Next"}
-            </button>
+            <button onClick={handleNext} style={{
+              flex: 1, padding: '10px 16px', background: 'linear-gradient(135deg, #10b981, #059669)',
+              border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: 'pointer'
+            }}>{tourStep === TOUR_STEPS.length - 2 ? 'Finish' : 'Next →'}</button>
           </div>
 
-          <button
-            onClick={handleClose}
-            style={{
-              width: '100%',
-              marginTop: '10px',
-              padding: '8px',
-              background: 'transparent',
-              border: 'none',
-              color: '#6e7681',
-              fontSize: '11px',
-              cursor: 'pointer'
-            }}
-          >
-            Skip tour
-          </button>
+          <button onClick={handleClose} style={{
+            width: '100%', marginTop: '10px', padding: '8px',
+            background: 'transparent', border: 'none', color: '#6e7681', fontSize: '11px', cursor: 'pointer'
+          }}>Skip tour</button>
         </div>
 
         {/* Progress dots at bottom */}
         <div style={{
-          position: 'fixed',
-          bottom: '20px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          display: 'flex',
-          gap: '6px',
-          pointerEvents: 'none',
-          zIndex: 10002
+          position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
+          display: 'flex', gap: '6px', pointerEvents: 'none', zIndex: 10002
         }}>
           {TOUR_STEPS.map((_, index) => (
-            <div
-              key={index}
-              style={{
-                width: index === tourStep ? '20px' : '6px',
-                height: '6px',
-                borderRadius: '3px',
-                background: index <= tourStep ? '#10b981' : 'rgba(255,255,255,0.2)'
-              }}
-            />
+            <div key={index} style={{
+              width: index === tourStep ? '20px' : '6px', height: '6px', borderRadius: '3px',
+              background: index <= tourStep ? '#10b981' : 'rgba(255,255,255,0.2)'
+            }} />
           ))}
         </div>
       </div>
