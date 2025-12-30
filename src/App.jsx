@@ -11101,6 +11101,10 @@ export default function PortfolioDuel() {
   const [tutorialMode, setTutorialMode] = useState('classic'); // 'classic' | 'draft' | 'training' | 'draftTraining'
   const [tutorialStep, setTutorialStep] = useState(0);
 
+  // Get Started onboarding modal
+  const [showGetStarted, setShowGetStarted] = useState(false);
+  const [getStartedStep, setGetStartedStep] = useState(0);
+
   // Research Mode state
   const [showResearchMode, setShowResearchMode] = useState(false);
   const [researchAssetType, setResearchAssetType] = useState('stocks');
@@ -18118,30 +18122,68 @@ export default function PortfolioDuel() {
             }}>
 
               {/* Hamburger Menu Button - LEFT */}
-              <button
-                onClick={() => setSidebarOpen(true)}
-                style={{
-                  minWidth: '44px',
-                  minHeight: '44px',
-                  padding: '8px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '5px',
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  touchAction: 'manipulation',
-                  WebkitTapHighlightColor: 'transparent'
-                }}
-                aria-label="Open menu"
-              >
-                {/* Three horizontal cyan lines */}
-                <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
-                <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
-                <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
-              </button>
+              {/* Left section with hamburger and Get Started */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {/* Hamburger Menu Button */}
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  style={{
+                    minWidth: '44px',
+                    minHeight: '44px',
+                    padding: '8px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    touchAction: 'manipulation',
+                    WebkitTapHighlightColor: 'transparent'
+                  }}
+                  aria-label="Open menu"
+                >
+                  {/* Three horizontal cyan lines */}
+                  <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
+                  <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
+                  <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
+                </button>
+
+                {/* Get Started Button */}
+                <button
+                  onClick={() => {
+                    setGetStartedStep(0);
+                    setShowGetStarted(true);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 12px',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: '#ffffff',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.4)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(16, 185, 129, 0.3)';
+                  }}
+                >
+                  <Rocket size={16} />
+                  <span>Get Started</span>
+                </button>
+              </div>
 
               {/* Center - Logo */}
               <div style={{
@@ -22003,6 +22045,471 @@ export default function PortfolioDuel() {
 
         {/* Tutorial Modal */}
         <TutorialModal />
+
+        {/* ========== GET STARTED ONBOARDING ========== */}
+        {showGetStarted && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.95)',
+              backdropFilter: 'blur(12px)',
+              zIndex: 2000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px',
+              animation: 'fadeIn 0.3s ease'
+            }}
+          >
+            <div
+              style={{
+                maxWidth: '440px',
+                width: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center'
+              }}
+            >
+              {/* Close Button */}
+              <button
+                onClick={() => setShowGetStarted(false)}
+                style={{
+                  position: 'absolute',
+                  top: '20px',
+                  right: '20px',
+                  background: 'rgba(255,255,255,0.1)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '40px',
+                  height: '40px',
+                  color: '#6e7681',
+                  fontSize: '20px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s'
+                }}
+              >
+                ✕
+              </button>
+
+              {/* Content Card */}
+              <div
+                style={{
+                  background: 'linear-gradient(135deg, #161b22 0%, #0d1117 100%)',
+                  borderRadius: '24px',
+                  border: '1px solid #21262d',
+                  padding: '40px 32px',
+                  width: '100%',
+                  textAlign: 'center',
+                  animation: 'slideUp 0.4s ease'
+                }}
+              >
+                {/* Step 0: Welcome */}
+                {getStartedStep === 0 && (
+                  <>
+                    <div style={{ fontSize: '64px', marginBottom: '20px' }}>🎯</div>
+                    <h1 style={{
+                      margin: '0 0 12px',
+                      fontSize: '28px',
+                      fontWeight: '800',
+                      color: '#ffffff',
+                      lineHeight: 1.2
+                    }}>
+                      Welcome to MarketClash
+                    </h1>
+                    <p style={{
+                      margin: '0 0 32px',
+                      fontSize: '16px',
+                      color: '#8b949e',
+                      lineHeight: 1.6
+                    }}>
+                      Fantasy sports meets the stock market.<br/>
+                      Build portfolios. Battle friends. Climb the ranks.
+                    </p>
+                    <button
+                      onClick={() => setGetStartedStep(1)}
+                      style={{
+                        width: '100%',
+                        padding: '16px',
+                        background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
+                        border: 'none',
+                        borderRadius: '12px',
+                        color: '#0d1117',
+                        fontSize: '16px',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      Show Me Around →
+                    </button>
+                  </>
+                )}
+
+                {/* Step 1: Your Dashboard */}
+                {getStartedStep === 1 && (
+                  <>
+                    <div style={{ fontSize: '64px', marginBottom: '20px' }}>🏠</div>
+                    <h2 style={{ margin: '0 0 12px', fontSize: '24px', fontWeight: '700', color: '#ffffff' }}>
+                      This is Your Dashboard
+                    </h2>
+                    <p style={{ margin: '0 0 24px', fontSize: '15px', color: '#8b949e', lineHeight: 1.7 }}>
+                      Your home base. See your <span style={{ color: '#00d9ff' }}>stats</span>,
+                      track <span style={{ color: '#10b981' }}>active battles</span>,
+                      and jump into new games.
+                    </p>
+                    <div style={{
+                      background: '#0d1117',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      marginBottom: '24px',
+                      textAlign: 'left'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#00d9ff' }}></div>
+                        <span style={{ color: '#c9d1d9', fontSize: '14px' }}>Your rank & XP progress</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }}></div>
+                        <span style={{ color: '#c9d1d9', fontSize: '14px' }}>Active & completed battles</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#9333ea' }}></div>
+                        <span style={{ color: '#c9d1d9', fontSize: '14px' }}>Quick actions to play</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setGetStartedStep(2)}
+                      style={{
+                        width: '100%',
+                        padding: '16px',
+                        background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
+                        border: 'none',
+                        borderRadius: '12px',
+                        color: '#0d1117',
+                        fontSize: '16px',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Got It →
+                    </button>
+                  </>
+                )}
+
+                {/* Step 2: The Menu */}
+                {getStartedStep === 2 && (
+                  <>
+                    <div style={{ fontSize: '64px', marginBottom: '20px' }}>☰</div>
+                    <h2 style={{ margin: '0 0 12px', fontSize: '24px', fontWeight: '700', color: '#ffffff' }}>
+                      Everything Else? It's Here
+                    </h2>
+                    <p style={{ margin: '0 0 24px', fontSize: '15px', color: '#8b949e', lineHeight: 1.7 }}>
+                      Tap the menu icon anytime to access your profile, history, research tools, and settings.
+                    </p>
+                    <div style={{
+                      background: '#0d1117',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      marginBottom: '24px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap', gap: '16px' }}>
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontSize: '24px', marginBottom: '4px' }}>👤</div>
+                          <span style={{ color: '#8b949e', fontSize: '12px' }}>Profile</span>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontSize: '24px', marginBottom: '4px' }}>📊</div>
+                          <span style={{ color: '#8b949e', fontSize: '12px' }}>History</span>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontSize: '24px', marginBottom: '4px' }}>🔬</div>
+                          <span style={{ color: '#8b949e', fontSize: '12px' }}>Research</span>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontSize: '24px', marginBottom: '4px' }}>⚙️</div>
+                          <span style={{ color: '#8b949e', fontSize: '12px' }}>Settings</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setGetStartedStep(3)}
+                      style={{
+                        width: '100%',
+                        padding: '16px',
+                        background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
+                        border: 'none',
+                        borderRadius: '12px',
+                        color: '#0d1117',
+                        fontSize: '16px',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Next →
+                    </button>
+                  </>
+                )}
+
+                {/* Step 3: Classic Mode */}
+                {getStartedStep === 3 && (
+                  <>
+                    <div style={{
+                      width: '80px',
+                      height: '80px',
+                      borderRadius: '50%',
+                      background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: '0 auto 20px',
+                      boxShadow: '0 8px 32px rgba(0, 217, 255, 0.3)'
+                    }}>
+                      <span style={{ fontSize: '40px' }}>⚔️</span>
+                    </div>
+                    <h2 style={{ margin: '0 0 8px', fontSize: '24px', fontWeight: '700', color: '#00d9ff' }}>
+                      Classic 1v1
+                    </h2>
+                    <p style={{
+                      margin: '0 0 24px',
+                      fontSize: '18px',
+                      color: '#ffffff',
+                      fontWeight: '500',
+                      lineHeight: 1.6
+                    }}>
+                      Pick your stocks.<br/>
+                      Challenge a friend.<br/>
+                      <span style={{ color: '#10b981' }}>Best returns in 24 hours wins.</span>
+                    </p>
+                    <div style={{
+                      background: '#0d111788',
+                      borderRadius: '10px',
+                      padding: '12px 16px',
+                      marginBottom: '24px',
+                      border: '1px solid #21262d'
+                    }}>
+                      <span style={{ color: '#8b949e', fontSize: '14px' }}>
+                        ⏱️ Quick games • 📈 Real prices • 🏆 Earn XP
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setGetStartedStep(4)}
+                      style={{
+                        width: '100%',
+                        padding: '16px',
+                        background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
+                        border: 'none',
+                        borderRadius: '12px',
+                        color: '#0d1117',
+                        fontSize: '16px',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      What's Snake Draft? →
+                    </button>
+                  </>
+                )}
+
+                {/* Step 4: Snake Draft Mode */}
+                {getStartedStep === 4 && (
+                  <>
+                    <div style={{
+                      width: '80px',
+                      height: '80px',
+                      borderRadius: '50%',
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: '0 auto 20px',
+                      boxShadow: '0 8px 32px rgba(16, 185, 129, 0.3)'
+                    }}>
+                      <span style={{ fontSize: '40px' }}>🐍</span>
+                    </div>
+                    <h2 style={{ margin: '0 0 8px', fontSize: '24px', fontWeight: '700', color: '#10b981' }}>
+                      Snake Draft
+                    </h2>
+                    <p style={{
+                      margin: '0 0 24px',
+                      fontSize: '18px',
+                      color: '#ffffff',
+                      fontWeight: '500',
+                      lineHeight: 1.6
+                    }}>
+                      4 players take turns drafting.<br/>
+                      Build your ultimate team.<br/>
+                      <span style={{ color: '#f59e0b' }}>Top 2 finishers win!</span>
+                    </p>
+                    <div style={{
+                      background: '#0d111788',
+                      borderRadius: '10px',
+                      padding: '12px 16px',
+                      marginBottom: '24px',
+                      border: '1px solid #21262d'
+                    }}>
+                      <span style={{ color: '#8b949e', fontSize: '14px' }}>
+                        👥 Multiplayer • 🎯 Strategic picks • 📅 Week-long battles
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setGetStartedStep(5)}
+                      style={{
+                        width: '100%',
+                        padding: '16px',
+                        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                        border: 'none',
+                        borderRadius: '12px',
+                        color: '#ffffff',
+                        fontSize: '16px',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      I'm Ready! →
+                    </button>
+                  </>
+                )}
+
+                {/* Step 5: Ready to Play */}
+                {getStartedStep === 5 && (
+                  <>
+                    <div style={{ fontSize: '64px', marginBottom: '20px' }}>🚀</div>
+                    <h2 style={{ margin: '0 0 12px', fontSize: '24px', fontWeight: '700', color: '#ffffff' }}>
+                      You're All Set!
+                    </h2>
+                    <p style={{ margin: '0 0 28px', fontSize: '15px', color: '#8b949e', lineHeight: 1.7 }}>
+                      Start with a practice game to learn the ropes.<br/>
+                      No pressure, just fun.
+                    </p>
+
+                    {/* Training Options */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+                      <button
+                        onClick={() => {
+                          setShowGetStarted(false);
+                          setShowClassicTrainingConfirm(true);
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '16px',
+                          background: 'linear-gradient(135deg, #00d9ff22 0%, #00d9ff11 100%)',
+                          border: '2px solid #00d9ff',
+                          borderRadius: '12px',
+                          color: '#00d9ff',
+                          fontSize: '15px',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '10px',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.background = 'linear-gradient(135deg, #00d9ff33 0%, #00d9ff22 100%)';
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.background = 'linear-gradient(135deg, #00d9ff22 0%, #00d9ff11 100%)';
+                        }}
+                      >
+                        <span>⚔️</span>
+                        <span>Try Classic Training</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setShowGetStarted(false);
+                          setGameMode('draft');
+                          setTrainingConfirmType('stocks');
+                          setShowTrainingConfirmModal(true);
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '16px',
+                          background: 'linear-gradient(135deg, #10b98122 0%, #10b98111 100%)',
+                          border: '2px solid #10b981',
+                          borderRadius: '12px',
+                          color: '#10b981',
+                          fontSize: '15px',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '10px',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.background = 'linear-gradient(135deg, #10b98133 0%, #10b98122 100%)';
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.background = 'linear-gradient(135deg, #10b98122 0%, #10b98111 100%)';
+                        }}
+                      >
+                        <span>🐍</span>
+                        <span>Try Snake Draft Training</span>
+                      </button>
+                    </div>
+
+                    {/* Back to Dashboard */}
+                    <button
+                      onClick={() => setShowGetStarted(false)}
+                      style={{
+                        width: '100%',
+                        padding: '14px',
+                        background: 'transparent',
+                        border: '1px solid #21262d',
+                        borderRadius: '10px',
+                        color: '#6e7681',
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.borderColor = '#30363d';
+                        e.currentTarget.style.color = '#8b949e';
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.borderColor = '#21262d';
+                        e.currentTarget.style.color = '#6e7681';
+                      }}
+                    >
+                      I'll explore on my own
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Progress Dots */}
+              <div style={{
+                display: 'flex',
+                gap: '8px',
+                marginTop: '24px'
+              }}>
+                {[0, 1, 2, 3, 4, 5].map((step) => (
+                  <div
+                    key={step}
+                    style={{
+                      width: getStartedStep === step ? '24px' : '8px',
+                      height: '8px',
+                      borderRadius: '4px',
+                      background: getStartedStep >= step ? '#10b981' : '#21262d',
+                      transition: 'all 0.3s ease'
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
