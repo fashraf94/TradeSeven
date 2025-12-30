@@ -152,56 +152,98 @@ const getStockSector = (symbol) => {
 };
 
 // ============================================
-// SPOTLIGHT TOUR CONFIGURATION
+// SPOTLIGHT TOUR CONFIGURATION - Updated v2
 // ============================================
 const TOUR_STEPS = [
+  // Step 0: Welcome
   {
     id: 'welcome',
-    target: null, // No spotlight, just centered modal
+    target: null,
     title: "Welcome to MarketClash! 🎯",
-    description: "Let's take a 30-second tour of your battle station.",
+    description: "Let's take a quick tour of your battle station. You'll be ready to compete in under a minute!",
     position: 'center'
   },
+
+  // Step 1: XP/Rank - MUST BE VISIBLE
   {
     id: 'rank-section',
     target: 'tour-rank-section',
     title: "Your Battle Stats",
-    description: "Track your rank, XP progress, and win streak here. Win battles to level up!",
-    position: 'top'
+    description: "This is your rank and XP progress. Win battles to earn XP, level up, and climb the leaderboard. Your win streak is tracked here too!",
+    position: 'top',
+    scrollTo: true  // Flag to scroll element into view
   },
+
+  // Step 2: Snake Draft Mode
   {
-    id: 'game-mode',
+    id: 'game-mode-draft',
     target: 'tour-game-mode-toggle',
-    title: "Two Ways to Play",
-    description: "Switch between Snake Draft 4P (4-player strategy) and Builder 1v1 (quick battles).",
+    title: "🐍 Snake Draft 4P",
+    description: "The ultimate strategy mode! Four players take turns drafting assets in snake order. Build your dream team, compete for a full week, and outsmart your opponents. Top 2 finishers win!",
     position: 'bottom'
   },
+
+  // Step 3: Builder 1v1 Mode
+  {
+    id: 'game-mode-classic',
+    target: 'tour-game-mode-toggle',
+    title: "⚔️ Builder 1v1",
+    description: "Fast and fierce! Pick your stocks or crypto, challenge a friend, and see who gets the best returns in 24 hours. Perfect for quick battles and settling debates!",
+    position: 'bottom'
+  },
+
+  // Step 4: Create & Join (BOTH highlighted)
   {
     id: 'create-join',
-    target: 'tour-create-battle',
+    target: 'tour-battle-cards',  // Container holding both cards
     title: "Start a Battle",
-    description: "Create your own game or join a friend's battle with their code.",
+    description: "Ready to compete? Create your own game and share the code with friends, or join someone else's battle using their code. The arena awaits!",
     position: 'bottom'
   },
+
+  // Step 5: Research Mode (NEW)
+  {
+    id: 'research-mode',
+    target: 'tour-research-mode',
+    title: "🔬 Research Mode",
+    description: "Knowledge is power! Dive deep into stocks and crypto before you battle. Save notes on your favorite assets, track performance trends, and get AI-powered insights to sharpen your picks.",
+    position: 'top'
+  },
+
+  // Step 6: Training Mode (repositioned tooltip)
   {
     id: 'training',
     target: 'tour-training-mode',
-    title: "Practice First!",
-    description: "New here? Training mode lets you learn with zero pressure. We recommend starting here!",
+    title: "🎓 Practice First!",
+    description: "New here? Training mode is your secret weapon. Battle against AI-generated portfolios with zero pressure. Test out strategies from your research notes and learn the ropes before going live!",
+    position: 'top',  // Tooltip appears ABOVE the training section
+    offsetY: -20      // Extra offset to ensure no overlap
+  },
+
+  // Step 7: Weekly Challenges (NEW)
+  {
+    id: 'weekly-challenges',
+    target: 'tour-weekly-challenges',
+    title: "🏆 Weekly Challenges",
+    description: "Spice up your battles! Accept challenges to earn bonus XP. Only one can be active per day, and they reset every week. Heads up: training battles don't count - you'll need to play for real!",
     position: 'top'
   },
+
+  // Step 8: Hamburger Menu
   {
     id: 'menu',
     target: 'tour-hamburger-menu',
-    title: "Everything Else",
-    description: "Your profile, battle history, research tools, and settings are all in here.",
+    title: "📱 Everything Else",
+    description: "Your profile, battle history, detailed stats, and settings are all tucked in here. Come back anytime to track your progress!",
     position: 'bottom-right'
   },
+
+  // Step 9: Ready!
   {
     id: 'ready',
-    target: null, // No spotlight, centered modal
-    title: "You're Ready! 🚀",
-    description: "Jump into a training game to learn the ropes, or explore on your own.",
+    target: null,
+    title: "You're Ready to Battle! 🚀",
+    description: "You've got the basics down. Jump into a training game to practice, or dive straight into the action!",
     position: 'center',
     showActions: true
   }
@@ -17846,82 +17888,92 @@ export default function PortfolioDuel() {
   }
 
   // ============================================
-  // SPOTLIGHT TOUR COMPONENT
+  // SPOTLIGHT TOUR COMPONENT - Updated v2
   // ============================================
   const SpotlightTour = () => {
     if (!showSpotlightTour) return null;
 
     const currentStep = TOUR_STEPS[tourStep];
-    const [tooltipStyle, setTooltipStyle] = useState({});
-    const [spotlightStyle, setSpotlightStyle] = useState({});
-    const [arrowStyle, setArrowStyle] = useState({});
+    const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0, width: 320 });
+    const [spotlightPosition, setSpotlightPosition] = useState({ top: 0, left: 0, width: 0, height: 0 });
     const [arrowDirection, setArrowDirection] = useState('up');
+    const [isPositioned, setIsPositioned] = useState(false);
 
     useEffect(() => {
+      setIsPositioned(false);
+
       if (currentStep.target) {
         const element = document.getElementById(currentStep.target);
         if (element) {
-          const rect = element.getBoundingClientRect();
-          const padding = 8;
-
-          // Spotlight position (the "hole" in the overlay)
-          setSpotlightStyle({
-            top: rect.top - padding,
-            left: rect.left - padding,
-            width: rect.width + padding * 2,
-            height: rect.height + padding * 2
-          });
-
-          // Tooltip positioning based on specified position
-          const tooltipWidth = 300;
-          const tooltipHeight = 150;
-          let top, left, arrow;
-
-          switch (currentStep.position) {
-            case 'bottom':
-              top = rect.bottom + 20;
-              left = rect.left + rect.width / 2 - tooltipWidth / 2;
-              arrow = 'up';
-              break;
-            case 'top':
-              top = rect.top - tooltipHeight - 20;
-              left = rect.left + rect.width / 2 - tooltipWidth / 2;
-              arrow = 'down';
-              break;
-            case 'bottom-right':
-              top = rect.bottom + 20;
-              left = rect.right - tooltipWidth;
-              arrow = 'up';
-              break;
-            case 'left':
-              top = rect.top + rect.height / 2 - tooltipHeight / 2;
-              left = rect.left - tooltipWidth - 20;
-              arrow = 'right';
-              break;
-            case 'right':
-              top = rect.top + rect.height / 2 - tooltipHeight / 2;
-              left = rect.right + 20;
-              arrow = 'left';
-              break;
-            default:
-              top = rect.bottom + 20;
-              left = rect.left;
-              arrow = 'up';
+          // Scroll into view if needed
+          if (currentStep.scrollTo) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
 
-          // Keep tooltip on screen
-          left = Math.max(16, Math.min(left, window.innerWidth - tooltipWidth - 16));
-          top = Math.max(16, Math.min(top, window.innerHeight - tooltipHeight - 16));
+          // Calculate positions after a brief delay (for scroll)
+          const timer = setTimeout(() => {
+            const rect = element.getBoundingClientRect();
+            const padding = 12;
 
-          setTooltipStyle({ top, left, width: tooltipWidth });
-          setArrowDirection(arrow);
+            // Spotlight
+            setSpotlightPosition({
+              top: rect.top - padding,
+              left: rect.left - padding,
+              width: rect.width + padding * 2,
+              height: rect.height + padding * 2
+            });
 
-          // Arrow position
-          setArrowStyle({
-            top: arrow === 'down' ? top + tooltipHeight - 8 : arrow === 'up' ? top - 12 : top + tooltipHeight / 2 - 6,
-            left: arrow === 'left' ? left - 12 : arrow === 'right' ? left + tooltipWidth - 8 : rect.left + rect.width / 2 - 6
-          });
+            // Tooltip
+            const tooltipWidth = 320;
+            const tooltipHeight = 200;
+            let top, left, arrow;
+            const extraOffset = currentStep.offsetY || 0;
+
+            switch (currentStep.position) {
+              case 'bottom':
+                top = rect.bottom + 24;
+                left = rect.left + rect.width / 2 - tooltipWidth / 2;
+                arrow = 'up';
+                break;
+              case 'top':
+                top = rect.top - tooltipHeight - 24 + extraOffset;
+                left = rect.left + rect.width / 2 - tooltipWidth / 2;
+                arrow = 'down';
+                break;
+              case 'bottom-right':
+                top = rect.bottom + 24;
+                left = Math.min(rect.right - tooltipWidth, window.innerWidth - tooltipWidth - 20);
+                arrow = 'up';
+                break;
+              case 'left':
+                top = rect.top + rect.height / 2 - tooltipHeight / 2;
+                left = rect.left - tooltipWidth - 24;
+                arrow = 'right';
+                break;
+              case 'right':
+                top = rect.top + rect.height / 2 - tooltipHeight / 2;
+                left = rect.right + 24;
+                arrow = 'left';
+                break;
+              default:
+                top = rect.bottom + 24;
+                left = rect.left;
+                arrow = 'up';
+            }
+
+            // Keep on screen
+            left = Math.max(16, Math.min(left, window.innerWidth - tooltipWidth - 16));
+            top = Math.max(16, Math.min(top, window.innerHeight - tooltipHeight - 100));
+
+            setTooltipPosition({ top, left, width: tooltipWidth });
+            setArrowDirection(arrow);
+            setIsPositioned(true);
+          }, currentStep.scrollTo ? 400 : 50);
+
+          return () => clearTimeout(timer);
         }
+      } else {
+        setIsPositioned(true);
       }
     }, [tourStep, currentStep]);
 
@@ -17961,7 +18013,7 @@ export default function PortfolioDuel() {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0, 0, 0, 0.9)',
+          background: 'rgba(0, 0, 0, 0.92)',
           backdropFilter: 'blur(8px)',
           zIndex: 9999,
           display: 'flex',
@@ -17971,74 +18023,96 @@ export default function PortfolioDuel() {
           animation: 'fadeIn 0.3s ease'
         }}>
           <div style={{
-            background: 'linear-gradient(135deg, #161b22 0%, #0d1117 100%)',
-            borderRadius: '20px',
+            background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 100%)',
+            borderRadius: '24px',
             border: '2px solid #10b981',
             padding: '40px 32px',
-            maxWidth: '400px',
+            maxWidth: '420px',
             width: '100%',
             textAlign: 'center',
-            animation: 'slideUp 0.3s ease',
-            boxShadow: '0 0 60px rgba(16, 185, 129, 0.2)'
+            animation: 'slideUp 0.4s ease',
+            boxShadow: '0 0 80px rgba(16, 185, 129, 0.15)'
           }}>
             <h2 style={{
               margin: '0 0 16px',
-              fontSize: '26px',
-              fontWeight: '700',
-              color: '#ffffff'
+              fontSize: '28px',
+              fontWeight: '800',
+              color: '#ffffff',
+              lineHeight: 1.3
             }}>
               {currentStep.title}
             </h2>
             <p style={{
               margin: '0 0 32px',
               fontSize: '16px',
-              color: '#8b949e',
-              lineHeight: 1.6
+              color: '#9CA3AF',
+              lineHeight: 1.7
             }}>
               {currentStep.description}
             </p>
 
             {currentStep.showActions ? (
-              // Final step with training options
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <button
                   onClick={() => handleStartTraining('classic')}
                   style={{
-                    padding: '16px',
+                    padding: '16px 24px',
                     background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
                     border: 'none',
                     borderRadius: '12px',
                     color: '#0d1117',
-                    fontSize: '15px',
+                    fontSize: '16px',
                     fontWeight: '700',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: '8px'
+                    gap: '10px',
+                    transition: 'transform 0.2s, box-shadow 0.2s',
+                    boxShadow: '0 4px 20px rgba(0, 217, 255, 0.3)'
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 6px 30px rgba(0, 217, 255, 0.4)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 217, 255, 0.3)';
                   }}
                 >
                   <span>⚔️</span> Try Classic Training
                 </button>
+
                 <button
                   onClick={() => handleStartTraining('draft')}
                   style={{
-                    padding: '16px',
+                    padding: '16px 24px',
                     background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                     border: 'none',
                     borderRadius: '12px',
                     color: '#ffffff',
-                    fontSize: '15px',
+                    fontSize: '16px',
                     fontWeight: '700',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: '8px'
+                    gap: '10px',
+                    transition: 'transform 0.2s, box-shadow 0.2s',
+                    boxShadow: '0 4px 20px rgba(16, 185, 129, 0.3)'
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 6px 30px rgba(16, 185, 129, 0.4)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 4px 20px rgba(16, 185, 129, 0.3)';
                   }}
                 >
                   <span>🐍</span> Try Snake Draft Training
                 </button>
+
                 <button
                   onClick={handleClose}
                   style={{
@@ -18049,26 +18123,45 @@ export default function PortfolioDuel() {
                     color: '#6e7681',
                     fontSize: '14px',
                     fontWeight: '500',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    marginTop: '4px',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.borderColor = '#30363d';
+                    e.currentTarget.style.color = '#8b949e';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.borderColor = '#21262d';
+                    e.currentTarget.style.color = '#6e7681';
                   }}
                 >
                   I'll explore on my own
                 </button>
               </div>
             ) : (
-              // Welcome step
               <button
                 onClick={handleNext}
                 style={{
                   width: '100%',
-                  padding: '16px',
+                  padding: '16px 24px',
                   background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                   border: 'none',
                   borderRadius: '12px',
                   color: '#ffffff',
-                  fontSize: '16px',
+                  fontSize: '17px',
                   fontWeight: '700',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  boxShadow: '0 4px 20px rgba(16, 185, 129, 0.3)'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 6px 30px rgba(16, 185, 129, 0.4)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 20px rgba(16, 185, 129, 0.3)';
                 }}
               >
                 Let's Go! →
@@ -18080,15 +18173,15 @@ export default function PortfolioDuel() {
               display: 'flex',
               justifyContent: 'center',
               gap: '6px',
-              marginTop: '24px'
+              marginTop: '28px'
             }}>
               {TOUR_STEPS.map((_, index) => (
                 <div
                   key={index}
                   style={{
-                    width: index === tourStep ? '20px' : '8px',
-                    height: '8px',
-                    borderRadius: '4px',
+                    width: index === tourStep ? '20px' : '6px',
+                    height: '6px',
+                    borderRadius: '3px',
                     background: index <= tourStep ? '#10b981' : '#21262d',
                     transition: 'all 0.3s ease'
                   }}
@@ -18100,7 +18193,9 @@ export default function PortfolioDuel() {
       );
     }
 
-    // Spotlight overlay for element highlighting
+    // Spotlight overlay - wait until positioned
+    if (!isPositioned) return null;
+
     return (
       <div style={{
         position: 'fixed',
@@ -18115,10 +18210,10 @@ export default function PortfolioDuel() {
         <style>{`
           @keyframes spotlight-pulse {
             0%, 100% {
-              box-shadow: 0 0 20px rgba(16, 185, 129, 0.5), inset 0 0 20px rgba(16, 185, 129, 0.1);
+              box-shadow: 0 0 30px rgba(16, 185, 129, 0.6), inset 0 0 30px rgba(16, 185, 129, 0.1);
             }
             50% {
-              box-shadow: 0 0 30px rgba(16, 185, 129, 0.8), inset 0 0 30px rgba(16, 185, 129, 0.2);
+              box-shadow: 0 0 50px rgba(16, 185, 129, 0.8), inset 0 0 40px rgba(16, 185, 129, 0.15);
             }
           }
         `}</style>
@@ -18139,11 +18234,11 @@ export default function PortfolioDuel() {
             <mask id="spotlight-mask">
               <rect x="0" y="0" width="100%" height="100%" fill="white" />
               <rect
-                x={spotlightStyle.left}
-                y={spotlightStyle.top}
-                width={spotlightStyle.width}
-                height={spotlightStyle.height}
-                rx="12"
+                x={spotlightPosition.left}
+                y={spotlightPosition.top}
+                width={spotlightPosition.width}
+                height={spotlightPosition.height}
+                rx="16"
                 fill="black"
               />
             </mask>
@@ -18153,7 +18248,7 @@ export default function PortfolioDuel() {
             y="0"
             width="100%"
             height="100%"
-            fill="rgba(0, 0, 0, 0.85)"
+            fill="rgba(0, 0, 0, 0.88)"
             mask="url(#spotlight-mask)"
           />
         </svg>
@@ -18161,44 +18256,51 @@ export default function PortfolioDuel() {
         {/* Spotlight border glow */}
         <div style={{
           position: 'absolute',
-          top: spotlightStyle.top,
-          left: spotlightStyle.left,
-          width: spotlightStyle.width,
-          height: spotlightStyle.height,
-          borderRadius: '12px',
+          top: spotlightPosition.top,
+          left: spotlightPosition.left,
+          width: spotlightPosition.width,
+          height: spotlightPosition.height,
+          borderRadius: '16px',
           border: '2px solid #10b981',
-          boxShadow: '0 0 20px rgba(16, 185, 129, 0.5), inset 0 0 20px rgba(16, 185, 129, 0.1)',
+          boxShadow: '0 0 30px rgba(16, 185, 129, 0.6), inset 0 0 30px rgba(16, 185, 129, 0.1)',
           pointerEvents: 'none',
           animation: 'spotlight-pulse 2s ease-in-out infinite'
         }} />
 
-        {/* Arrow */}
+        {/* Arrow pointing to element */}
         <div style={{
           position: 'absolute',
-          top: arrowStyle.top,
-          left: arrowStyle.left,
+          top: arrowDirection === 'down'
+            ? tooltipPosition.top + 195
+            : arrowDirection === 'up'
+              ? tooltipPosition.top - 12
+              : tooltipPosition.top + 100,
+          left: arrowDirection === 'left' || arrowDirection === 'right'
+            ? (arrowDirection === 'left' ? tooltipPosition.left - 12 : tooltipPosition.left + tooltipPosition.width)
+            : spotlightPosition.left + spotlightPosition.width / 2 - 10,
           width: 0,
           height: 0,
-          borderLeft: arrowDirection === 'up' || arrowDirection === 'down' ? '8px solid transparent' : arrowDirection === 'left' ? '12px solid #1a2332' : 'none',
-          borderRight: arrowDirection === 'up' || arrowDirection === 'down' ? '8px solid transparent' : arrowDirection === 'right' ? '12px solid #1a2332' : 'none',
-          borderTop: arrowDirection === 'down' ? '12px solid #1a2332' : arrowDirection === 'left' || arrowDirection === 'right' ? '8px solid transparent' : 'none',
-          borderBottom: arrowDirection === 'up' ? '12px solid #1a2332' : arrowDirection === 'left' || arrowDirection === 'right' ? '8px solid transparent' : 'none',
+          borderLeft: (arrowDirection === 'up' || arrowDirection === 'down') ? '10px solid transparent' : (arrowDirection === 'right' ? '12px solid #1a2332' : 'none'),
+          borderRight: (arrowDirection === 'up' || arrowDirection === 'down') ? '10px solid transparent' : (arrowDirection === 'left' ? '12px solid #1a2332' : 'none'),
+          borderTop: arrowDirection === 'down' ? '12px solid #1a2332' : (arrowDirection === 'left' || arrowDirection === 'right' ? '10px solid transparent' : 'none'),
+          borderBottom: arrowDirection === 'up' ? '12px solid #1a2332' : (arrowDirection === 'left' || arrowDirection === 'right' ? '10px solid transparent' : 'none'),
           pointerEvents: 'none',
-          zIndex: 10001
+          zIndex: 10001,
+          filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
         }} />
 
         {/* Tooltip */}
         <div
           style={{
             position: 'absolute',
-            top: tooltipStyle.top,
-            left: tooltipStyle.left,
-            width: tooltipStyle.width,
-            background: 'linear-gradient(135deg, #1a2332 0%, #0d1117 100%)',
+            top: tooltipPosition.top,
+            left: tooltipPosition.left,
+            width: tooltipPosition.width,
+            background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 100%)',
             borderRadius: '16px',
             border: '1px solid #21262d',
-            padding: '20px',
-            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+            padding: '24px',
+            boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)',
             pointerEvents: 'auto',
             animation: 'slideUp 0.3s ease',
             zIndex: 10000
@@ -18208,20 +18310,21 @@ export default function PortfolioDuel() {
           {/* Step counter */}
           <div style={{
             fontSize: '11px',
-            fontWeight: '600',
+            fontWeight: '700',
             color: '#10b981',
-            marginBottom: '8px',
+            marginBottom: '10px',
             textTransform: 'uppercase',
-            letterSpacing: '1px'
+            letterSpacing: '1.5px'
           }}>
             Step {tourStep} of {TOUR_STEPS.length - 1}
           </div>
 
           <h3 style={{
-            margin: '0 0 8px',
-            fontSize: '18px',
+            margin: '0 0 10px',
+            fontSize: '20px',
             fontWeight: '700',
-            color: '#ffffff'
+            color: '#ffffff',
+            lineHeight: 1.3
           }}>
             {currentStep.title}
           </h3>
@@ -18229,26 +18332,35 @@ export default function PortfolioDuel() {
           <p style={{
             margin: '0 0 20px',
             fontSize: '14px',
-            color: '#8b949e',
-            lineHeight: 1.6
+            color: '#9CA3AF',
+            lineHeight: 1.7
           }}>
             {currentStep.description}
           </p>
 
-          {/* Navigation buttons */}
-          <div style={{ display: 'flex', gap: '8px' }}>
+          {/* Navigation */}
+          <div style={{ display: 'flex', gap: '10px' }}>
             {tourStep > 1 && (
               <button
                 onClick={handleBack}
                 style={{
-                  padding: '10px 16px',
+                  padding: '12px 18px',
                   background: 'transparent',
                   border: '1px solid #21262d',
-                  borderRadius: '8px',
-                  color: '#8b949e',
+                  borderRadius: '10px',
+                  color: '#9CA3AF',
                   fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: 'pointer'
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.borderColor = '#30363d';
+                  e.currentTarget.style.color = '#ffffff';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.borderColor = '#21262d';
+                  e.currentTarget.style.color = '#9CA3AF';
                 }}
               >
                 ← Back
@@ -18258,56 +18370,70 @@ export default function PortfolioDuel() {
               onClick={handleNext}
               style={{
                 flex: 1,
-                padding: '10px 16px',
+                padding: '12px 18px',
                 background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                 border: 'none',
-                borderRadius: '8px',
+                borderRadius: '10px',
                 color: '#ffffff',
                 fontSize: '14px',
-                fontWeight: '600',
-                cursor: 'pointer'
+                fontWeight: '700',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = '0 4px 15px rgba(16, 185, 129, 0.4)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 2px 10px rgba(16, 185, 129, 0.3)';
               }}
             >
               {tourStep === TOUR_STEPS.length - 2 ? "Finish →" : "Next →"}
             </button>
           </div>
 
-          {/* Skip link */}
+          {/* Skip */}
           <button
             onClick={handleClose}
             style={{
               width: '100%',
-              marginTop: '12px',
-              padding: '8px',
+              marginTop: '14px',
+              padding: '10px',
               background: 'transparent',
               border: 'none',
               color: '#6e7681',
-              fontSize: '12px',
-              cursor: 'pointer'
+              fontSize: '13px',
+              cursor: 'pointer',
+              transition: 'color 0.2s'
             }}
+            onMouseOver={(e) => e.currentTarget.style.color = '#9CA3AF'}
+            onMouseOut={(e) => e.currentTarget.style.color = '#6e7681'}
           >
             Skip tour
           </button>
         </div>
 
-        {/* Progress dots */}
+        {/* Progress dots at bottom */}
         <div style={{
           position: 'fixed',
-          bottom: '24px',
+          bottom: '20px',
           left: '50%',
           transform: 'translateX(-50%)',
           display: 'flex',
           gap: '6px',
-          pointerEvents: 'none'
+          pointerEvents: 'none',
+          zIndex: 10002
         }}>
           {TOUR_STEPS.map((_, index) => (
             <div
               key={index}
               style={{
-                width: index === tourStep ? '20px' : '8px',
-                height: '8px',
-                borderRadius: '4px',
-                background: index <= tourStep ? '#10b981' : '#21262d',
+                width: index === tourStep ? '20px' : '6px',
+                height: '6px',
+                borderRadius: '3px',
+                background: index <= tourStep ? '#10b981' : 'rgba(255,255,255,0.2)',
                 transition: 'all 0.3s ease'
               }}
             />
@@ -19439,14 +19565,17 @@ export default function PortfolioDuel() {
             )}
 
             {/* Create & Join Battle Cards - TRUE SIDE-BY-SIDE on all screens */}
-            <div style={{
-              display: 'flex',
-              gap: '16px',
-              padding: '0 16px',
-              justifyContent: 'center',
-              alignItems: 'stretch',
-              marginBottom: '16px'
-            }}>
+            <div
+              id="tour-battle-cards"
+              style={{
+                display: 'flex',
+                gap: '16px',
+                padding: '0 16px',
+                justifyContent: 'center',
+                alignItems: 'stretch',
+                marginBottom: '16px'
+              }}
+            >
               {/* CREATE BATTLE Card */}
               {(() => {
                 const createColor = gameMode === 'draft' ? '#10b981' : colors.cyan;
@@ -19708,6 +19837,7 @@ export default function PortfolioDuel() {
 
             {/* Futuristic Research Mode Button */}
             <motion.div
+              id="tour-research-mode"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.35 }}
@@ -20409,6 +20539,7 @@ export default function PortfolioDuel() {
 
             {/* Weekly Challenges Section */}
             <motion.div
+              id="tour-weekly-challenges"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.45 }}
