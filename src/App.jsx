@@ -152,7 +152,7 @@ const getStockSector = (symbol) => {
 };
 
 // ============================================
-// SPOTLIGHT TOUR CONFIGURATION - v9
+// SPOTLIGHT TOUR CONFIGURATION - v10
 // ============================================
 const TOUR_STEPS = [
   // Step 0: Welcome
@@ -17886,7 +17886,7 @@ export default function PortfolioDuel() {
   }
 
   // ============================================
-  // SPOTLIGHT TOUR COMPONENT - v9 (No scroll lock)
+  // SPOTLIGHT TOUR COMPONENT - v10 (Bug fixes + fallback mode)
   // ============================================
   const SpotlightTour = () => {
     if (!showSpotlightTour) return null;
@@ -17909,7 +17909,14 @@ export default function PortfolioDuel() {
 
       const element = document.getElementById(currentStep.target);
       if (!element) {
-        console.error('Tour element not found:', currentStep.target);
+        console.warn('Tour element not found:', currentStep.target, '- showing fallback tooltip');
+        // Set a fallback centered position so tooltip still renders
+        setSpotlightRect(null); // No spotlight, but that's okay
+        setTooltipPos({
+          top: window.innerHeight / 2 - 110,
+          arrowTop: 0,
+          arrowDirection: 'none' // No arrow when fallback
+        });
         setIsReady(true);
         return;
       }
@@ -17939,17 +17946,20 @@ export default function PortfolioDuel() {
           height: newRect.height + padding * 2
         });
 
-        // Calculate tooltip position
+        // Calculate tooltip position with clamping to prevent off-screen
         if (currentStep.position === 'spotlight-above') {
           const tooltipHeight = 220;
+          const calculatedTop = newRect.top - tooltipHeight - 25;
           setTooltipPos({
-            top: newRect.top - tooltipHeight - 25,
-            arrowTop: newRect.top - 13,
+            top: Math.max(20, calculatedTop), // Never go above 20px from top
+            arrowTop: Math.max(tooltipHeight + 25, newRect.top - 13),
             arrowDirection: 'down'
           });
         } else {
+          const calculatedTop = newRect.bottom + 25;
+          const maxTop = window.innerHeight - 280; // Ensure tooltip doesn't go off bottom
           setTooltipPos({
-            top: newRect.bottom + 25,
+            top: Math.min(calculatedTop, maxTop),
             arrowTop: newRect.bottom + 13,
             arrowDirection: 'up'
           });
@@ -18063,8 +18073,8 @@ export default function PortfolioDuel() {
       );
     }
 
-    // SPOTLIGHT VIEW - Loading
-    if (!isReady || !spotlightRect) {
+    // SPOTLIGHT VIEW - Loading (only check isReady, spotlightRect can be null for fallback)
+    if (!isReady) {
       return (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -18079,47 +18089,65 @@ export default function PortfolioDuel() {
         position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
         zIndex: 9999, pointerEvents: 'none'
       }}>
-        {/* Dark overlay with spotlight hole */}
-        <svg style={{
-          position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-          pointerEvents: 'auto'
-        }} onClick={handleClose}>
-          <defs>
-            <mask id="spotlight-mask">
-              <rect x="0" y="0" width="100%" height="100%" fill="white" />
-              <rect
-                x={spotlightRect.left} y={spotlightRect.top}
-                width={spotlightRect.width} height={spotlightRect.height}
-                rx="12" fill="black"
-              />
-            </mask>
-          </defs>
-          <rect x="0" y="0" width="100%" height="100%" fill="rgba(0,0,0,0.88)" mask="url(#spotlight-mask)" />
-        </svg>
+        {/* Dark overlay with spotlight hole - only if spotlightRect exists */}
+        {spotlightRect && (
+          <svg style={{
+            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+            pointerEvents: 'auto'
+          }} onClick={handleClose}>
+            <defs>
+              <mask id="spotlight-mask">
+                <rect x="0" y="0" width="100%" height="100%" fill="white" />
+                <rect
+                  x={spotlightRect.left} y={spotlightRect.top}
+                  width={spotlightRect.width} height={spotlightRect.height}
+                  rx="12" fill="black"
+                />
+              </mask>
+            </defs>
+            <rect x="0" y="0" width="100%" height="100%" fill="rgba(0,0,0,0.88)" mask="url(#spotlight-mask)" />
+          </svg>
+        )}
 
-        {/* Green border glow */}
-        <div style={{
-          position: 'absolute',
-          top: spotlightRect.top, left: spotlightRect.left,
-          width: spotlightRect.width, height: spotlightRect.height,
-          borderRadius: '12px',
-          border: '2px solid #10b981',
-          boxShadow: '0 0 20px rgba(16, 185, 129, 0.5)',
-          pointerEvents: 'none'
-        }} />
+        {/* If no spotlight (fallback), just show dark overlay */}
+        {!spotlightRect && (
+          <div
+            style={{
+              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+              background: 'rgba(0, 0, 0, 0.88)',
+              pointerEvents: 'auto'
+            }}
+            onClick={handleClose}
+          />
+        )}
 
-        {/* Arrow */}
-        <div style={{
-          position: 'absolute',
-          top: tooltipPos.arrowTop,
-          left: spotlightRect.left + spotlightRect.width / 2 - 10,
-          width: 0, height: 0,
-          borderLeft: '10px solid transparent',
-          borderRight: '10px solid transparent',
-          borderBottom: tooltipPos.arrowDirection === 'up' ? '12px solid #1a2332' : 'none',
-          borderTop: tooltipPos.arrowDirection === 'down' ? '12px solid #1a2332' : 'none',
-          pointerEvents: 'none', zIndex: 10001
-        }} />
+        {/* Green border glow - only if spotlightRect exists */}
+        {spotlightRect && (
+          <div style={{
+            position: 'absolute',
+            top: spotlightRect.top, left: spotlightRect.left,
+            width: spotlightRect.width, height: spotlightRect.height,
+            borderRadius: '12px',
+            border: '2px solid #10b981',
+            boxShadow: '0 0 20px rgba(16, 185, 129, 0.5)',
+            pointerEvents: 'none'
+          }} />
+        )}
+
+        {/* Arrow - only show if we have a spotlight and valid direction */}
+        {spotlightRect && tooltipPos.arrowDirection !== 'none' && (
+          <div style={{
+            position: 'absolute',
+            top: tooltipPos.arrowTop,
+            left: spotlightRect.left + spotlightRect.width / 2 - 10,
+            width: 0, height: 0,
+            borderLeft: '10px solid transparent',
+            borderRight: '10px solid transparent',
+            borderBottom: tooltipPos.arrowDirection === 'up' ? '12px solid #1a2332' : 'none',
+            borderTop: tooltipPos.arrowDirection === 'down' ? '12px solid #1a2332' : 'none',
+            pointerEvents: 'none', zIndex: 10001
+          }} />
+        )}
 
         {/* Tooltip */}
         <div style={{
