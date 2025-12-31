@@ -96,13 +96,24 @@ const SESSION_BONUSES = {
   CLEAN_SWEEP: 30       // Win all 4 sessions (bonus on top of session wins)
 };
 
-// Known crypto symbols for type detection
-const CRYPTO_SYMBOLS = new Set([
+/**
+ * Known crypto symbols for type detection
+ * Exported for use by other services
+ */
+export const CRYPTO_SYMBOLS = new Set([
+  // Major coins
   'BTC', 'ETH', 'SOL', 'ADA', 'DOGE', 'XRP', 'AVAX', 'DOT',
   'MATIC', 'LINK', 'UNI', 'ATOM', 'LTC', 'BCH', 'NEAR', 'APT',
+  // Layer 2 / Alt L1
   'ARB', 'OP', 'SHIB', 'PEPE', 'BNB', 'TRX', 'TON', 'XLM',
-  'ALGO', 'FIL', 'AAVE', 'MKR', 'CRV', 'SNX', 'COMP', 'SAND',
-  'MANA', 'AXS', 'IMX', 'GALA', 'ENJ', 'RNDR', 'FET', 'OCEAN'
+  // DeFi / Infrastructure
+  'ALGO', 'FIL', 'AAVE', 'MKR', 'CRV', 'SNX', 'COMP', 'VET',
+  // Gaming / Metaverse
+  'SAND', 'MANA', 'AXS', 'IMX', 'GALA', 'ENJ',
+  // AI / Data
+  'RNDR', 'FET', 'OCEAN', 'TAO',
+  // Stablecoins (for reference, though they won't be used in battles)
+  'USDT', 'USDC'
 ]);
 
 // ============================================
@@ -660,5 +671,8 @@ export default {
   getSessionTimeRemaining,
   getSessionTimes,
   getScoringConstants,
-  getPortfolioThresholds
+  getPortfolioThresholds,
+
+  // Constants
+  CRYPTO_SYMBOLS
 };

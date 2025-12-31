@@ -23,11 +23,24 @@ const STOCK_DEFAULTS = {
 };
 
 const CRYPTO_DEFAULTS = {
+  // Major coins
   'BTC': 5.0, 'ETH': 6.0, 'SOL': 8.0, 'ADA': 7.0,
   'DOGE': 10.0, 'XRP': 7.0, 'AVAX': 8.0, 'DOT': 7.0,
   'MATIC': 8.0, 'LINK': 7.0, 'UNI': 8.0, 'ATOM': 7.0,
   'LTC': 6.0, 'BCH': 6.0, 'NEAR': 8.0, 'APT': 8.0,
+  // Layer 2 / Alt L1
   'ARB': 9.0, 'OP': 9.0, 'SHIB': 12.0, 'PEPE': 15.0,
+  'BNB': 6.0, 'TRX': 7.0, 'TON': 8.0, 'XLM': 7.0,
+  // DeFi / Infrastructure
+  'ALGO': 8.0, 'FIL': 8.0, 'AAVE': 8.0, 'MKR': 7.0,
+  'CRV': 9.0, 'SNX': 9.0, 'COMP': 8.0, 'VET': 8.0,
+  // Gaming / Metaverse
+  'SAND': 10.0, 'MANA': 10.0, 'AXS': 10.0, 'IMX': 9.0,
+  'GALA': 12.0, 'ENJ': 9.0,
+  // AI / Data
+  'RNDR': 10.0, 'FET': 10.0, 'OCEAN': 10.0, 'TAO': 12.0,
+  // Stablecoins (very low threshold - shouldn't move much)
+  'USDT': 0.5, 'USDC': 0.5,
   'DEFAULT': 6.0
 };
 
