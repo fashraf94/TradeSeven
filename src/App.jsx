@@ -18587,22 +18587,22 @@ export default function PortfolioDuel() {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '3px',
-                    padding: '4px 8px',
+                    gap: '2px',
+                    padding: '3px 6px',
                     background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                     border: 'none',
-                    borderRadius: '6px',
+                    borderRadius: '4px',
                     color: '#ffffff',
-                    fontSize: '10px',
+                    fontSize: '9px',
                     fontWeight: '600',
                     cursor: 'pointer',
                     whiteSpace: 'nowrap',
-                    marginLeft: '8px',
-                    marginRight: '16px',
+                    marginLeft: '6px',
+                    marginRight: 'auto',
                     flexShrink: 0
                   }}
                 >
-                  <Rocket size={10} />
+                  <Rocket size={8} />
                   <span>Get Started</span>
                 </button>
               </div>
