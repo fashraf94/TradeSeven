@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } from './services/LocalStorage';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
+// Firebase battle service for PvP battles
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
 import './firebase/config';
@@ -15,6 +17,10 @@ import ResearchAdvisor from './components/ResearchAdvisor';
 import DraftAdvisor from './components/DraftAdvisor';
 // Research Mode services
 import { generateGamePlan, enhanceRecommendations, getAssetDeepDive } from './services/researchAdvisor';
+// Snake Draft strategy utilities (consolidated from duplicate code paths)
+import { createSnakeDraftGamePlan } from './utils/draftStrategy';
+// Snake Draft asset pools
+import { STEADY_STOCKS, RISKY_STOCKS, DEFENSIVE_STOCKS, STEADY_CRYPTO, RISKY_CRYPTO, DEFENSIVE_CRYPTO } from './services/draftAssets';
 // Recommendation Engine
 import {
   getRecommendations,
@@ -126,10 +132,16 @@ const STOCK_SECTORS = {
   'AEP': 'Utilities', 'EXC': 'Utilities', 'SRE': 'Utilities', 'XEL': 'Utilities',
 };
 
-// Helper to get sector colors
+// Helper to get sector colors (returns full color object)
 const getSectorColors = (sector, isCrypto = false) => {
   if (isCrypto) return SECTOR_COLORS['Cryptocurrency'];
   return SECTOR_COLORS[sector] || SECTOR_COLORS['default'];
+};
+
+// Helper to get sector color (returns just primary color string)
+const getSectorColor = (sector) => {
+  const colorObj = SECTOR_COLORS[sector] || SECTOR_COLORS['default'];
+  return colorObj.primary;
 };
 
 // Helper to get stock sector from database
@@ -138,6 +150,102 @@ const getStockSector = (symbol) => {
   const upperSymbol = symbol.toUpperCase();
   return STOCK_SECTORS[upperSymbol] || null;
 };
+
+// ============================================
+// SPOTLIGHT TOUR CONFIGURATION - v10
+// ============================================
+const TOUR_STEPS = [
+  // Step 0: Welcome
+  {
+    id: 'welcome',
+    target: null,
+    title: "Welcome to MarketClash! 🎯",
+    description: "Let's take a quick tour of your battle station. You'll be ready to compete in under a minute!",
+    position: 'center'
+  },
+
+  // Step 1: Dashboard - SPOTLIGHT (not centered modal)
+  {
+    id: 'dashboard-intro',
+    target: 'tour-dashboard-content',
+    title: "This is Your Dashboard 🏠",
+    description: "Your home base for everything. Track stats, start battles, research assets, and take on challenges!",
+    position: 'spotlight-below'
+  },
+
+  // Step 2: Snake Draft - SPOTLIGHT on button
+  {
+    id: 'snake-draft',
+    target: 'tour-snake-draft-btn',
+    title: "🐍 Snake Draft 4P",
+    description: "Four players take turns drafting assets. Build your dream team, compete for a full week. Top 2 finishers win!",
+    position: 'spotlight-below'
+  },
+
+  // Step 3: Builder 1v1 - SPOTLIGHT on button
+  {
+    id: 'builder-1v1',
+    target: 'tour-builder-btn',
+    title: "⚔️ Builder 1v1",
+    description: "Pick your stocks or crypto, challenge a friend, and see who gets the best returns in 24 hours!",
+    position: 'spotlight-below'
+  },
+
+  // Step 4: Create & Join
+  {
+    id: 'create-join',
+    target: 'tour-battle-cards',
+    title: "Start a Battle",
+    description: "Create your own game and share the code, or join a friend's battle with their code!",
+    position: 'spotlight-below'
+  },
+
+  // Step 5: Research Mode
+  {
+    id: 'research-mode',
+    target: 'tour-research-mode',
+    title: "🔬 Research Mode",
+    description: "Dive deep into stocks and crypto. Save notes, track trends, and get AI-powered insights!",
+    position: 'spotlight-below'
+  },
+
+  // Step 6: Training Mode
+  {
+    id: 'training',
+    target: 'tour-training-mode',
+    title: "🎓 Practice First!",
+    description: "Battle against AI portfolios with zero pressure. Test strategies before going live!",
+    position: 'spotlight-below'
+  },
+
+  // Step 7: Weekly Challenges - tooltip ABOVE
+  {
+    id: 'weekly-challenges',
+    target: 'tour-weekly-challenges',
+    title: "🏆 Weekly Challenges",
+    description: "Earn bonus XP! One active per day, resets weekly. Training battles don't count!",
+    position: 'spotlight-above'
+  },
+
+  // Step 8: Hamburger Menu
+  {
+    id: 'menu',
+    target: 'tour-hamburger-menu',
+    title: "📱 Everything Else",
+    description: "Profile, battle history, stats, and settings are all here!",
+    position: 'spotlight-below'
+  },
+
+  // Step 9: Ready!
+  {
+    id: 'ready',
+    target: null,
+    title: "You're Ready to Battle! 🚀",
+    description: "Jump into training to practice, or dive straight into the action!",
+    position: 'center',
+    showActions: true
+  }
+];
 
 // ============================================
 // TRAINING BATTLE HELPERS - 100% Client-Side
@@ -2816,6 +2924,1046 @@ const ConvictionCheck = ({
 };
 
 // ============================================
+// DRAFT PRIORITY RANKER (Snake Draft Mode)
+// ============================================
+
+/**
+ * DraftPriorityRanker - 4-step flow for Snake Draft mode
+ * Replaces ConvictionCheck when thesis.battleType === 'snake-draft'
+ * Steps: Strategy Setup -> Priority Picks (Tier 1) -> Backup Picks (Tier 2) -> Review & Generate
+ */
+const DraftPriorityRanker = ({
+  thesis,
+  onComplete,
+  onBack,
+  draftStrategy,
+  setDraftStrategy,
+  tier1Picks,
+  setTier1Picks,
+  tier2Picks,
+  setTier2Picks,
+  draftRankerPhase,
+  setDraftRankerPhase,
+  stocksData,
+  cryptoData,
+  colors,
+}) => {
+  const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
+
+  // Category colors from spec
+  const categoryColors = {
+    steady: '#3b82f6',    // Blue
+    risky: '#ef4444',     // Red
+    defensive: '#8b5cf6', // Purple
+  };
+
+  // Primary green theme
+  const primaryGreen = '#10b981';
+
+  // Get assets for selection - use thesis to determine if crypto or stocks
+  const isCryptoMode = thesis?.portfolioType === 'crypto';
+  const steadyAssets = isCryptoMode ? STEADY_CRYPTO : STEADY_STOCKS;
+  const riskyAssets = isCryptoMode ? RISKY_CRYPTO : RISKY_STOCKS;
+  const defensiveAssets = isCryptoMode ? DEFENSIVE_CRYPTO : DEFENSIVE_STOCKS;
+
+  // Current phase (initialize to 'strategy' if null)
+  const phase = draftRankerPhase || 'strategy';
+
+  // Initialize phase on mount if needed
+  React.useEffect(() => {
+    if (!draftRankerPhase) {
+      setDraftRankerPhase('strategy');
+    }
+  }, [draftRankerPhase, setDraftRankerPhase]);
+
+  // Phase navigation
+  const goToPhase = (newPhase) => {
+    setDraftRankerPhase(newPhase);
+  };
+
+  // Count picks
+  const getTier1Count = () => {
+    return tier1Picks.steady.length + tier1Picks.risky.length + tier1Picks.defensive.length;
+  };
+
+  const getTier2Count = () => {
+    return tier2Picks.steady.length + tier2Picks.risky.length + tier2Picks.defensive.length;
+  };
+
+  // Toggle pick in tier
+  const togglePick = (tier, category, symbol) => {
+    const setFn = tier === 1 ? setTier1Picks : setTier2Picks;
+    const picks = tier === 1 ? tier1Picks : tier2Picks;
+    const currentPicks = picks[category] || [];
+    const maxPicks = tier === 1 ? 3 : 2; // Tier 1: 3 per category, Tier 2: 2 per category
+
+    if (currentPicks.includes(symbol)) {
+      // Remove
+      setFn(prev => ({
+        ...prev,
+        [category]: prev[category].filter(s => s !== symbol)
+      }));
+    } else if (currentPicks.length < maxPicks) {
+      // Add
+      setFn(prev => ({
+        ...prev,
+        [category]: [...prev[category], symbol]
+      }));
+    }
+  };
+
+  // Check if asset is already picked in tier 1 (for tier 2 exclusion)
+  const isPickedInTier1 = (symbol) => {
+    return tier1Picks.steady.includes(symbol) ||
+           tier1Picks.risky.includes(symbol) ||
+           tier1Picks.defensive.includes(symbol);
+  };
+
+  // Get step number based on phase
+  const getStepNumber = () => {
+    switch (phase) {
+      case 'strategy': return 4;
+      case 'tier1': return 5;
+      case 'tier2': return 6;
+      case 'review': return 7;
+      default: return 4;
+    }
+  };
+
+  const getStepTitle = () => {
+    switch (phase) {
+      case 'strategy': return 'Draft Strategy Setup';
+      case 'tier1': return 'Priority Picks (Tier 1)';
+      case 'tier2': return 'Backup Picks (Tier 2)';
+      case 'review': return 'Review & Generate';
+      default: return 'Draft Strategy';
+    }
+  };
+
+  // Handle complete - generate game plan with picked assets
+  const handleGenerateGamePlan = () => {
+    // Combine tier 1 and tier 2 picks into portfolio format
+    const allPicks = [];
+
+    // Add Tier 1 picks (priority)
+    ['steady', 'risky', 'defensive'].forEach(category => {
+      tier1Picks[category].forEach((symbol, index) => {
+        const asset = [...steadyAssets, ...riskyAssets, ...defensiveAssets].find(a => a.symbol === symbol);
+        allPicks.push({
+          symbol,
+          name: asset?.name || symbol,
+          type: isCryptoMode ? 'crypto' : 'stock',
+          tier: 1,
+          draftCategory: category,
+          source: 'user_selected',
+          priority: index + 1,
+        });
+      });
+    });
+
+    // Add Tier 2 picks (backup)
+    ['steady', 'risky', 'defensive'].forEach(category => {
+      tier2Picks[category].forEach((symbol, index) => {
+        const asset = [...steadyAssets, ...riskyAssets, ...defensiveAssets].find(a => a.symbol === symbol);
+        allPicks.push({
+          symbol,
+          name: asset?.name || symbol,
+          type: isCryptoMode ? 'crypto' : 'stock',
+          tier: 2,
+          draftCategory: category,
+          source: 'user_selected',
+          priority: index + 1,
+        });
+      });
+    });
+
+    // Call onComplete with the structured data
+    onComplete({
+      draftStrategy,
+      tier1Picks,
+      tier2Picks,
+      portfolio: allPicks,
+      isSnakeDraft: true,
+    });
+  };
+
+  // Render asset card for selection
+  const renderAssetCard = (asset, category, tier) => {
+    const picks = tier === 1 ? tier1Picks : tier2Picks;
+    const isSelected = picks[category].includes(asset.symbol);
+    const isDisabledByTier1 = tier === 2 && isPickedInTier1(asset.symbol);
+    const maxPicks = tier === 1 ? 3 : 2;
+    const isMaxed = picks[category].length >= maxPicks && !isSelected;
+    const isDisabled = isDisabledByTier1 || isMaxed;
+    const categoryColor = categoryColors[category];
+
+    return (
+      <button
+        key={asset.symbol}
+        onClick={() => !isDisabled && togglePick(tier, category, asset.symbol)}
+        disabled={isDisabled}
+        style={{
+          position: 'relative',
+          width: '100%',
+          background: isSelected
+            ? `linear-gradient(145deg, ${categoryColor}20 0%, ${categoryColor}05 100%)`
+            : '#0d1117',
+          border: isSelected
+            ? `2px solid ${categoryColor}`
+            : '1px solid #21262d',
+          borderRadius: '14px',
+          padding: '14px 12px',
+          cursor: isDisabled ? 'not-allowed' : 'pointer',
+          opacity: isDisabled ? 0.4 : 1,
+          overflow: 'hidden',
+          transition: 'all 0.2s ease',
+          transform: isSelected ? 'scale(1.02)' : 'scale(1)',
+          textAlign: 'left',
+        }}
+      >
+        {/* Glow effect when selected */}
+        {isSelected && (
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '14px',
+            boxShadow: `inset 0 0 20px ${categoryColor}30, 0 0 15px ${categoryColor}20`,
+            pointerEvents: 'none',
+          }} />
+        )}
+
+        {/* Checkmark */}
+        <div style={{
+          position: 'absolute',
+          top: '8px',
+          right: '8px',
+          width: '20px',
+          height: '20px',
+          borderRadius: '50%',
+          background: isSelected
+            ? `linear-gradient(135deg, ${categoryColor} 0%, ${categoryColor}cc 100%)`
+            : '#21262d',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          border: isSelected ? 'none' : '1px solid #30363d',
+          transition: 'all 0.2s ease',
+        }}>
+          {isSelected && (
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3">
+              <path d="M20 6L9 17l-5-5"/>
+            </svg>
+          )}
+        </div>
+
+        {/* Content */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+        }}>
+          <div style={{
+            width: '36px',
+            height: '36px',
+            borderRadius: '10px',
+            background: isSelected
+              ? `linear-gradient(135deg, ${categoryColor} 0%, ${categoryColor}bb 100%)`
+              : 'linear-gradient(135deg, #21262d 0%, #161b22 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <span style={{
+              fontSize: '12px',
+              fontWeight: '800',
+              color: isSelected ? '#ffffff' : '#8b949e',
+            }}>
+              {asset.symbol.slice(0, 3)}
+            </span>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: '13px',
+              fontWeight: '700',
+              color: isSelected ? '#ffffff' : '#e6edf3',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}>
+              {asset.symbol}
+            </div>
+            <div style={{
+              fontSize: '11px',
+              color: '#8b949e',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}>
+              {asset.name}
+            </div>
+          </div>
+        </div>
+
+        {/* Tier 1 indicator for Tier 2 view */}
+        {isDisabledByTier1 && (
+          <div style={{
+            position: 'absolute',
+            bottom: '6px',
+            right: '8px',
+            fontSize: '9px',
+            color: primaryGreen,
+            fontWeight: '600',
+          }}>
+            IN TIER 1
+          </div>
+        )}
+      </button>
+    );
+  };
+
+  // Render category section for pick phases
+  const renderCategorySection = (category, label, assets, tier) => {
+    const picks = tier === 1 ? tier1Picks : tier2Picks;
+    const maxPicks = tier === 1 ? 3 : 2;
+    const categoryColor = categoryColors[category];
+    const currentCount = picks[category].length;
+
+    return (
+      <div style={{
+        background: '#161b22',
+        border: '1px solid #21262d',
+        borderRadius: '16px',
+        padding: '16px',
+        marginBottom: '16px',
+      }}>
+        {/* Category Header */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '12px',
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+          }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '10px',
+              background: `linear-gradient(135deg, ${categoryColor} 0%, ${categoryColor}bb 100%)`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: `0 4px 12px ${categoryColor}40`,
+            }}>
+              {category === 'steady' && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                </svg>
+              )}
+              {category === 'risky' && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                </svg>
+              )}
+              {category === 'defensive' && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+              )}
+            </div>
+            <div>
+              <h3 style={{
+                color: '#ffffff',
+                fontSize: '15px',
+                fontWeight: '700',
+                margin: 0,
+              }}>
+                {label}
+              </h3>
+              <p style={{
+                color: '#8b949e',
+                fontSize: '11px',
+                margin: '2px 0 0 0',
+              }}>
+                {category === 'steady' && 'Stable blue-chip assets'}
+                {category === 'risky' && 'High volatility plays'}
+                {category === 'defensive' && 'Safe haven positions'}
+              </p>
+            </div>
+          </div>
+          <span style={{
+            color: currentCount >= maxPicks ? primaryGreen : categoryColor,
+            fontSize: '12px',
+            fontWeight: '700',
+            background: currentCount >= maxPicks ? `${primaryGreen}20` : `${categoryColor}15`,
+            padding: '4px 10px',
+            borderRadius: '8px',
+          }}>
+            {currentCount}/{maxPicks}
+          </span>
+        </div>
+
+        {/* Asset Grid */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: '8px',
+        }}>
+          {assets.slice(0, 8).map(asset => renderAssetCard(asset, category, tier))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      position: 'relative',
+    }}>
+      {/* CSS Animations */}
+      <style>
+        {`
+          @keyframes draftGlow {
+            0%, 100% { box-shadow: 0 0 10px var(--glow-color), 0 0 20px var(--glow-color); }
+            50% { box-shadow: 0 0 20px var(--glow-color), 0 0 35px var(--glow-color); }
+          }
+          @keyframes draftPulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+          }
+        `}
+      </style>
+
+      {/* Back Button + Step Indicator */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '16px',
+      }}>
+        <button
+          onClick={() => {
+            if (phase === 'strategy') {
+              onBack();
+            } else if (phase === 'tier1') {
+              goToPhase('strategy');
+            } else if (phase === 'tier2') {
+              goToPhase('tier1');
+            } else if (phase === 'review') {
+              goToPhase('tier2');
+            }
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: 'transparent',
+            border: 'none',
+            color: primaryGreen,
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            padding: 0,
+          }}
+        >
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+          Back
+        </button>
+        <span style={{
+          color: '#8b949e',
+          fontSize: '13px',
+          background: '#21262d',
+          padding: '6px 12px',
+          borderRadius: '8px',
+        }}>
+          Step {getStepNumber()} of 7
+        </span>
+      </div>
+
+      {/* Scrollable Content */}
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        paddingBottom: '160px',
+      }}>
+        {/* Header with Icon */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px',
+          marginBottom: '8px'
+        }}>
+          <div style={{
+            width: '48px',
+            height: '48px',
+            background: `linear-gradient(135deg, ${primaryGreen} 0%, #059669 100%)`,
+            borderRadius: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: `0 4px 16px ${primaryGreen}40`,
+            fontSize: '20px',
+            fontWeight: '800',
+            color: '#ffffff'
+          }}>
+            {getStepNumber()}
+          </div>
+          <div>
+            <h1 style={{
+              color: '#ffffff',
+              fontSize: '22px',
+              fontWeight: '800',
+              margin: 0
+            }}>
+              {getStepTitle()}
+            </h1>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              marginTop: '4px',
+            }}>
+              <span style={{
+                background: `${primaryGreen}20`,
+                color: primaryGreen,
+                fontSize: '11px',
+                fontWeight: '600',
+                padding: '3px 8px',
+                borderRadius: '6px',
+              }}>
+                🐍 SNAKE DRAFT
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* PHASE 1: Strategy Selection */}
+        {phase === 'strategy' && (
+          <div style={{ marginTop: '20px' }}>
+            <p style={{
+              color: '#8b949e',
+              fontSize: '14px',
+              margin: '0 0 20px 0',
+            }}>
+              Choose your draft approach to optimize your picks across rounds.
+            </p>
+
+            {/* Strategy Cards */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {[
+                {
+                  id: 'steady-first',
+                  title: 'Steady First',
+                  emoji: '🛡️',
+                  description: 'Lock in blue-chip assets early, add risky plays later',
+                  color: categoryColors.steady,
+                },
+                {
+                  id: 'risky-first',
+                  title: 'Risk Early',
+                  emoji: '⚡',
+                  description: 'Grab high-volatility assets before opponents',
+                  color: categoryColors.risky,
+                },
+                {
+                  id: 'balanced',
+                  title: 'Balanced',
+                  emoji: '⚖️',
+                  description: 'Mix categories each round for flexibility',
+                  color: primaryGreen,
+                },
+              ].map(strategy => {
+                const isSelected = draftStrategy === strategy.id;
+                return (
+                  <button
+                    key={strategy.id}
+                    onClick={() => setDraftStrategy(strategy.id)}
+                    style={{
+                      position: 'relative',
+                      background: isSelected
+                        ? `linear-gradient(145deg, ${strategy.color}20 0%, ${strategy.color}05 100%)`
+                        : '#161b22',
+                      border: isSelected
+                        ? `2px solid ${strategy.color}`
+                        : '1px solid #21262d',
+                      borderRadius: '16px',
+                      padding: '20px',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.2s ease',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {/* Glow when selected */}
+                    {isSelected && (
+                      <div style={{
+                        position: 'absolute',
+                        inset: 0,
+                        borderRadius: '16px',
+                        boxShadow: `inset 0 0 30px ${strategy.color}25, 0 0 20px ${strategy.color}15`,
+                        pointerEvents: 'none',
+                      }} />
+                    )}
+
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px',
+                    }}>
+                      <div style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '14px',
+                        background: isSelected
+                          ? `linear-gradient(135deg, ${strategy.color} 0%, ${strategy.color}bb 100%)`
+                          : 'linear-gradient(135deg, #21262d 0%, #161b22 100%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '24px',
+                        boxShadow: isSelected ? `0 4px 16px ${strategy.color}40` : 'none',
+                        transition: 'all 0.2s ease',
+                      }}>
+                        {strategy.emoji}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{
+                          fontSize: '16px',
+                          fontWeight: '700',
+                          color: isSelected ? '#ffffff' : '#e6edf3',
+                          marginBottom: '4px',
+                        }}>
+                          {strategy.title}
+                        </div>
+                        <div style={{
+                          fontSize: '13px',
+                          color: '#8b949e',
+                          lineHeight: '1.4',
+                        }}>
+                          {strategy.description}
+                        </div>
+                      </div>
+                      {/* Radio indicator */}
+                      <div style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '50%',
+                        border: isSelected ? `2px solid ${strategy.color}` : '2px solid #30363d',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.2s ease',
+                      }}>
+                        {isSelected && (
+                          <div style={{
+                            width: '12px',
+                            height: '12px',
+                            borderRadius: '50%',
+                            background: strategy.color,
+                          }} />
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* PHASE 2: Tier 1 Picks */}
+        {phase === 'tier1' && (
+          <div style={{ marginTop: '20px' }}>
+            <p style={{
+              color: '#8b949e',
+              fontSize: '14px',
+              margin: '0 0 20px 0',
+            }}>
+              Select <strong style={{ color: '#fff' }}>3 assets per category</strong> as your priority picks.
+              These are your must-drafts.
+            </p>
+
+            {renderCategorySection('steady', 'Steady Assets', steadyAssets, 1)}
+            {renderCategorySection('risky', 'Risky Assets', riskyAssets, 1)}
+            {renderCategorySection('defensive', 'Defensive Assets', defensiveAssets, 1)}
+          </div>
+        )}
+
+        {/* PHASE 3: Tier 2 Picks */}
+        {phase === 'tier2' && (
+          <div style={{ marginTop: '20px' }}>
+            <p style={{
+              color: '#8b949e',
+              fontSize: '14px',
+              margin: '0 0 20px 0',
+            }}>
+              Select <strong style={{ color: '#fff' }}>2 backup assets per category</strong>.
+              These are alternatives if Tier 1 picks are taken.
+            </p>
+
+            {renderCategorySection('steady', 'Steady Assets', steadyAssets, 2)}
+            {renderCategorySection('risky', 'Risky Assets', riskyAssets, 2)}
+            {renderCategorySection('defensive', 'Defensive Assets', defensiveAssets, 2)}
+          </div>
+        )}
+
+        {/* PHASE 4: Review & Generate */}
+        {phase === 'review' && (
+          <div style={{ marginTop: '20px' }}>
+            <p style={{
+              color: '#8b949e',
+              fontSize: '14px',
+              margin: '0 0 20px 0',
+            }}>
+              Review your selections before generating your draft strategy.
+            </p>
+
+            {/* Strategy Summary */}
+            <div style={{
+              background: '#161b22',
+              border: '1px solid #21262d',
+              borderRadius: '16px',
+              padding: '16px',
+              marginBottom: '16px',
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                marginBottom: '12px',
+              }}>
+                <div style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '10px',
+                  background: `linear-gradient(135deg, ${primaryGreen} 0%, #059669 100%)`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <span style={{ fontSize: '16px' }}>
+                    {draftStrategy === 'steady-first' ? '🛡️' : draftStrategy === 'risky-first' ? '⚡' : '⚖️'}
+                  </span>
+                </div>
+                <div>
+                  <div style={{ color: '#ffffff', fontWeight: '700', fontSize: '14px' }}>
+                    Strategy: {draftStrategy === 'steady-first' ? 'Steady First' : draftStrategy === 'risky-first' ? 'Risk Early' : 'Balanced'}
+                  </div>
+                  <div style={{ color: '#8b949e', fontSize: '12px' }}>
+                    Your chosen draft approach
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Tier 1 Summary */}
+            <div style={{
+              background: '#161b22',
+              border: `1px solid ${primaryGreen}40`,
+              borderRadius: '16px',
+              padding: '16px',
+              marginBottom: '12px',
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '12px',
+              }}>
+                <div style={{
+                  color: primaryGreen,
+                  fontWeight: '700',
+                  fontSize: '14px',
+                }}>
+                  🔥 TIER 1 — Priority Picks
+                </div>
+                <span style={{
+                  background: `${primaryGreen}20`,
+                  color: primaryGreen,
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                }}>
+                  {getTier1Count()} picks
+                </span>
+              </div>
+
+              {['steady', 'risky', 'defensive'].map(category => (
+                <div key={category} style={{ marginBottom: '8px' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '4px',
+                  }}>
+                    <span style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      background: categoryColors[category],
+                    }} />
+                    <span style={{
+                      color: categoryColors[category],
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      textTransform: 'uppercase',
+                    }}>
+                      {category}
+                    </span>
+                  </div>
+                  <div style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '6px',
+                    marginLeft: '16px',
+                  }}>
+                    {tier1Picks[category].length > 0 ? (
+                      tier1Picks[category].map(symbol => (
+                        <span key={symbol} style={{
+                          background: `${categoryColors[category]}20`,
+                          border: `1px solid ${categoryColors[category]}40`,
+                          color: categoryColors[category],
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          padding: '4px 10px',
+                          borderRadius: '8px',
+                        }}>
+                          {symbol}
+                        </span>
+                      ))
+                    ) : (
+                      <span style={{ color: '#6e7681', fontSize: '12px', fontStyle: 'italic' }}>
+                        No picks yet
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Tier 2 Summary */}
+            <div style={{
+              background: '#161b22',
+              border: '1px solid #21262d',
+              borderRadius: '16px',
+              padding: '16px',
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '12px',
+              }}>
+                <div style={{
+                  color: '#8b949e',
+                  fontWeight: '700',
+                  fontSize: '14px',
+                }}>
+                  ⚡ TIER 2 — Backup Picks
+                </div>
+                <span style={{
+                  background: '#21262d',
+                  color: '#8b949e',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                }}>
+                  {getTier2Count()} picks
+                </span>
+              </div>
+
+              {['steady', 'risky', 'defensive'].map(category => (
+                <div key={category} style={{ marginBottom: '8px' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '4px',
+                  }}>
+                    <span style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      background: categoryColors[category],
+                      opacity: 0.6,
+                    }} />
+                    <span style={{
+                      color: categoryColors[category],
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      textTransform: 'uppercase',
+                      opacity: 0.8,
+                    }}>
+                      {category}
+                    </span>
+                  </div>
+                  <div style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '6px',
+                    marginLeft: '16px',
+                  }}>
+                    {tier2Picks[category].length > 0 ? (
+                      tier2Picks[category].map(symbol => (
+                        <span key={symbol} style={{
+                          background: '#21262d',
+                          border: `1px solid ${categoryColors[category]}30`,
+                          color: '#8b949e',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          padding: '4px 10px',
+                          borderRadius: '8px',
+                        }}>
+                          {symbol}
+                        </span>
+                      ))
+                    ) : (
+                      <span style={{ color: '#6e7681', fontSize: '12px', fontStyle: 'italic' }}>
+                        No picks yet
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Fixed Bottom Action Bar */}
+      <div style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        background: 'linear-gradient(to top, #0d1117 90%, transparent)',
+        padding: '24px 0 0 0',
+      }}>
+        <div style={{
+          background: 'linear-gradient(145deg, #1a1f2e 0%, #161b22 100%)',
+          borderRadius: '20px 20px 0 0',
+          padding: '20px',
+          border: '1px solid #2d3548',
+          borderBottom: 'none',
+          boxShadow: '0 -4px 24px rgba(0, 0, 0, 0.4)',
+        }}>
+          {/* Progress indicator */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '8px',
+            marginBottom: '16px',
+          }}>
+            {['strategy', 'tier1', 'tier2', 'review'].map((p, i) => (
+              <div
+                key={p}
+                style={{
+                  width: phase === p ? '24px' : '8px',
+                  height: '8px',
+                  borderRadius: '4px',
+                  background: phase === p ? primaryGreen :
+                    ['strategy', 'tier1', 'tier2', 'review'].indexOf(phase) > i ? primaryGreen : '#30363d',
+                  transition: 'all 0.3s ease',
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Continue/Generate Button */}
+          <button
+            onClick={() => {
+              if (phase === 'strategy' && draftStrategy) {
+                goToPhase('tier1');
+              } else if (phase === 'tier1' && getTier1Count() >= 3) {
+                goToPhase('tier2');
+              } else if (phase === 'tier2') {
+                goToPhase('review');
+              } else if (phase === 'review') {
+                handleGenerateGamePlan();
+              }
+            }}
+            disabled={
+              (phase === 'strategy' && !draftStrategy) ||
+              (phase === 'tier1' && getTier1Count() < 3)
+            }
+            style={{
+              width: '100%',
+              background: (
+                (phase === 'strategy' && !draftStrategy) ||
+                (phase === 'tier1' && getTier1Count() < 3)
+              )
+                ? '#2d3548'
+                : `linear-gradient(135deg, ${primaryGreen} 0%, #059669 50%, ${primaryGreen} 100%)`,
+              border: 'none',
+              borderRadius: '14px',
+              padding: '18px 24px',
+              color: (
+                (phase === 'strategy' && !draftStrategy) ||
+                (phase === 'tier1' && getTier1Count() < 3)
+              ) ? '#6e7681' : '#ffffff',
+              fontSize: '16px',
+              fontWeight: '700',
+              cursor: (
+                (phase === 'strategy' && !draftStrategy) ||
+                (phase === 'tier1' && getTier1Count() < 3)
+              ) ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '10px',
+              boxShadow: !(
+                (phase === 'strategy' && !draftStrategy) ||
+                (phase === 'tier1' && getTier1Count() < 3)
+              )
+                ? `0 4px 20px ${primaryGreen}40, 0 0 40px ${primaryGreen}20`
+                : 'none',
+              transition: 'all 0.3s ease',
+            }}
+          >
+            {phase === 'review' ? (
+              <>
+                <span>Generate Draft Strategy</span>
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </>
+            ) : (
+              <>
+                <span>Continue</span>
+                <span style={{
+                  background: 'rgba(255, 255, 255, 0.2)',
+                  padding: '4px 10px',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: '800',
+                }}>
+                  {phase === 'strategy' && (draftStrategy ? '✓' : 'Select strategy')}
+                  {phase === 'tier1' && `${getTier1Count()}/9 picks`}
+                  {phase === 'tier2' && `${getTier2Count()} backups`}
+                </span>
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
 // ASSET PICKER MODAL (for Conviction Check)
 // ============================================
 
@@ -3202,23 +4350,95 @@ const GamePlan = ({
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
   const [noteSaved, setNoteSaved] = useState(false);
 
-  // Handle Save to Notes for Snake Draft
+  // Handle Save to Notes for Snake Draft - saves structured game plan data
   const handleSaveToNotes = () => {
     if (!gamePlan) return;
 
-    const noteEntry = {
-      id: `gameplan_${Date.now()}`,
-      content: gamePlan.strategySummary,
-      source: '🎯 Draft Game Plan',
+    // Build structured tiers from portfolio
+    const portfolio = gamePlan.portfolio || [];
+    const tier1 = portfolio.filter(p => p.tier === 1);
+    const tier2 = portfolio.filter(p => p.tier === 2);
+    const tier3 = portfolio.filter(p => p.tier === 3);
+
+    // Group by category for each tier
+    const buildTierCategories = (tierAssets) => ({
+      steady: tierAssets.filter(a => a.draftCategory === 'steady').map(a => a.symbol),
+      risky: tierAssets.filter(a => a.draftCategory === 'risky').map(a => a.symbol),
+      defensive: tierAssets.filter(a => a.draftCategory === 'defensive').map(a => a.symbol),
+    });
+
+    // Get strategy label
+    const getStrategyLabel = (strategy) => {
+      if (strategy === 'steady-first') return 'Steady First';
+      if (strategy === 'risky-first') return 'Risk Early';
+      if (strategy === 'balanced') return 'Balanced';
+      return 'Custom';
+    };
+
+    // Build tips based on strategy
+    const buildTips = () => {
+      const tips = [];
+      const strategy = gamePlan.draftStrategy;
+
+      if (strategy === 'risky-first') {
+        tips.push('Your strategy: Prioritize RISKY picks early');
+      } else if (strategy === 'steady-first') {
+        tips.push('Your strategy: Lock in STEADY picks first');
+      } else {
+        tips.push('Your strategy: Mix categories each round');
+      }
+
+      // Count needs
+      const defensiveCount = tier1.filter(a => a.draftCategory === 'defensive').length +
+                            tier2.filter(a => a.draftCategory === 'defensive').length;
+      if (defensiveCount < 3) {
+        tips.push(`You need ${3 - defensiveCount} more DEFENSIVE picks - don't forget!`);
+      }
+
+      // Top priority picks
+      if (tier1.length > 0) {
+        tips.push(`Top priority: ${tier1.slice(0, 2).map(a => a.symbol).join(', ')}`);
+      }
+
+      return tips;
+    };
+
+    const savedGamePlan = {
+      id: Date.now(),
+      type: 'game-plan',
       timestamp: new Date().toISOString(),
-      type: 'game_plan'
+      title: 'Draft Strategy',
+
+      // Strategy info
+      strategy: gamePlan.draftStrategy || 'balanced',
+      strategyLabel: getStrategyLabel(gamePlan.draftStrategy),
+
+      // Tiered picks (from DraftPriorityRanker or portfolio)
+      tiers: {
+        tier1: gamePlan.tier1Picks || buildTierCategories(tier1),
+        tier2: gamePlan.tier2Picks || buildTierCategories(tier2),
+        tier3: buildTierCategories(tier3),
+      },
+
+      // Full formatted text for display
+      fullPlanText: gamePlan.strategySummary,
+
+      // Tips
+      tips: buildTips(),
+
+      // Category counts
+      categoryCounts: gamePlan.categoryCounts || {
+        steady: portfolio.filter(p => p.draftCategory === 'steady').length,
+        risky: portfolio.filter(p => p.draftCategory === 'risky').length,
+        defensive: portfolio.filter(p => p.draftCategory === 'defensive').length,
+      },
     };
 
     // Get existing draft notes
     const existingNotes = JSON.parse(localStorage.getItem('draftNotes') || '[]');
 
     // Remove any previous game plan and add new one at top
-    const updatedNotes = [noteEntry, ...existingNotes.filter(n => n.type !== 'game_plan')];
+    const updatedNotes = [savedGamePlan, ...existingNotes.filter(n => n.type !== 'game-plan')];
 
     // Save to localStorage
     localStorage.setItem('draftNotes', JSON.stringify(updatedNotes));
@@ -3399,37 +4619,47 @@ const GamePlan = ({
                   border: '1px solid #21262d',
                   overflow: 'hidden'
                 }}>
-                  {tierAssets.map((asset, idx) => (
-                    <div key={asset.symbol} style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '12px 16px',
-                      borderBottom: idx < tierAssets.length - 1 ? '1px solid #21262d' : 'none',
-                      borderLeft: `3px solid ${config.color}`
-                    }}>
-                      <div>
-                        <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
-                          {asset.symbol}
-                        </div>
-                        <div style={{ color: '#8b949e', fontSize: '11px' }}>
-                          {asset.tierRationale || asset.rationale || 'Strategic pick'}
-                        </div>
-                      </div>
-                      <div style={{
-                        background: `${config.color}20`,
-                        border: `1px solid ${config.color}40`,
-                        borderRadius: '6px',
-                        padding: '4px 10px',
-                        color: config.color,
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        textTransform: 'uppercase'
+                  {tierAssets.map((asset, idx) => {
+                    // Category styling for Snake Draft
+                    const categoryConfig = {
+                      steady: { label: 'Steady', color: '#22c55e', bg: 'rgba(34, 197, 94, 0.2)' },
+                      risky: { label: 'Risky', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.2)' },
+                      defensive: { label: 'Defensive', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.2)' }
+                    };
+                    const catConfig = categoryConfig[asset.draftCategory] || categoryConfig.risky;
+
+                    return (
+                      <div key={asset.symbol} style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '12px 16px',
+                        borderBottom: idx < tierAssets.length - 1 ? '1px solid #21262d' : 'none',
+                        borderLeft: `3px solid ${config.color}`
                       }}>
-                        {asset.type === 'crypto' ? 'Crypto' : 'Stock'}
+                        <div>
+                          <div style={{ color: '#e6edf3', fontWeight: '700', fontSize: '15px' }}>
+                            {asset.symbol}
+                          </div>
+                          <div style={{ color: '#8b949e', fontSize: '11px' }}>
+                            {asset.tierRationale || asset.rationale || 'Strategic pick'}
+                          </div>
+                        </div>
+                        <div style={{
+                          background: catConfig.bg,
+                          border: `1px solid ${catConfig.color}40`,
+                          borderRadius: '6px',
+                          padding: '4px 10px',
+                          color: catConfig.color,
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          textTransform: 'uppercase'
+                        }}>
+                          {catConfig.label}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -3461,25 +4691,28 @@ const GamePlan = ({
             justifyContent: 'center'
           }}>
             {[
-              { label: 'Steady', count: '0/3', color: '#22c55e' },
-              { label: 'Risky', count: '0/3', color: '#f59e0b' },
-              { label: 'Defensive', count: '0/3', color: '#3b82f6' }
-            ].map(cat => (
-              <div key={cat.label} style={{
-                background: '#0d1117',
-                border: `1px solid ${cat.color}40`,
-                borderRadius: '8px',
-                padding: '8px 14px',
-                textAlign: 'center'
-              }}>
-                <div style={{ color: cat.color, fontSize: '10px', fontWeight: '600', textTransform: 'uppercase' }}>
-                  {cat.label}
+              { label: 'Steady', key: 'steady', color: '#22c55e' },
+              { label: 'Risky', key: 'risky', color: '#f59e0b' },
+              { label: 'Defensive', key: 'defensive', color: '#3b82f6' }
+            ].map(cat => {
+              const count = gamePlan.categoryCounts?.[cat.key] || 0;
+              return (
+                <div key={cat.label} style={{
+                  background: '#0d1117',
+                  border: `1px solid ${cat.color}40`,
+                  borderRadius: '8px',
+                  padding: '8px 14px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ color: cat.color, fontSize: '10px', fontWeight: '600', textTransform: 'uppercase' }}>
+                    {cat.label}
+                  </div>
+                  <div style={{ color: '#e6edf3', fontSize: '14px', fontWeight: '700' }}>
+                    {count}/3
+                  </div>
                 </div>
-                <div style={{ color: '#e6edf3', fontSize: '14px', fontWeight: '700' }}>
-                  {cat.count}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ) : (
@@ -3802,7 +5035,7 @@ const GamePlan = ({
             fontSize: '12px',
             fontWeight: '500',
           }}>
-            Ready to start drafting!
+            {gamePlan.isSnakeDraft ? 'Ready to start drafting!' : 'Ready to battle!'}
           </span>
         </button>
 
@@ -4261,6 +5494,10 @@ const WatchlistNews = ({ colors }) => {
           @keyframes slideUp {
             from { transform: translateY(20px); opacity: 0; }
             to { transform: translateY(0); opacity: 1; }
+          }
+          @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
           }
         `}</style>
         <div
@@ -7668,6 +8905,12 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors 
   const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [assetPickerType, setAssetPickerType] = useState(null);
 
+  // Snake Draft Priority Ranker state
+  const [draftStrategy, setDraftStrategy] = useState(null);
+  const [tier1Picks, setTier1Picks] = useState({ steady: [], risky: [], defensive: [] });
+  const [tier2Picks, setTier2Picks] = useState({ steady: [], risky: [], defensive: [] });
+  const [draftRankerPhase, setDraftRankerPhase] = useState(null);
+
   // Reset flow
   const resetFlow = () => {
     setFlowPhase(1);
@@ -7677,6 +8920,11 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors 
     setConvictionData({ mustHave: [], mustAvoid: [], confidence: null });
     setGamePlan(null);
     setSelectedAsset(null);
+    // Reset draft ranker state
+    setDraftStrategy(null);
+    setTier1Picks({ steady: [], risky: [], defensive: [] });
+    setTier2Picks({ steady: [], risky: [], defensive: [] });
+    setDraftRankerPhase(null);
   };
 
   // Handle thesis completion (Phase 2 → 3)
@@ -7892,87 +9140,13 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors 
 
     const stockCount = portfolio.filter(p => p.type === 'stock').length;
 
-    // SNAKE DRAFT: Assign tiered strategy instead of allocation %
+    // SNAKE DRAFT: Use consolidated utility for tiered strategy
     if (isSnakeDraft) {
-      // Sort by priority: user_selected first (by conviction), then diversification
-      const sortedPortfolio = [
-        ...portfolio.filter(p => p.source === 'user_selected'),
-        ...portfolio.filter(p => p.source === 'diversification'),
-      ];
-
-      // Assign tiers: Tier 1 (1-3), Tier 2 (4-6), Tier 3 (7+)
-      sortedPortfolio.forEach((asset, index) => {
-        if (index < 3) {
-          asset.tier = 1;
-          asset.tierLabel = '🔥 TIER 1';
-          asset.tierRationale = 'Draft ASAP - High priority pick';
-        } else if (index < 6) {
-          asset.tier = 2;
-          asset.tierLabel = '⚡ TIER 2';
-          asset.tierRationale = 'Strong alternative if Tier 1 taken';
-        } else {
-          asset.tier = 3;
-          asset.tierLabel = '📋 TIER 3';
-          asset.tierRationale = 'Category filler for late rounds';
-        }
-        asset.draftRound = index + 1;
+      return createSnakeDraftGamePlan(portfolio, thesis, {
+        userPicksCount: userPicks.length,
+        divPicksCount: divPicks.length,
+        diversificationStrategy
       });
-
-      // Build tiered strategy summary text
-      const tier1Picks = sortedPortfolio.filter(p => p.tier === 1).map(p => p.symbol).join(', ');
-      const tier2Picks = sortedPortfolio.filter(p => p.tier === 2).map(p => p.symbol).join(', ');
-      const tier3Picks = sortedPortfolio.filter(p => p.tier === 3).map(p => p.symbol).join(', ');
-
-      const strategyText = `🐍 SNAKE DRAFT STRATEGY
-
-Based on your thesis: ${thesis.stance || 'Bullish'} on ${thesis.sectors?.join(', ') || 'Growth sectors'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔥 PRIORITY TIER 1 - Draft ASAP (Rounds 1-3)
-These assets match your thesis and will be highly contested.
-${tier1Picks || 'None selected'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-⚡ PRIORITY TIER 2 - Strong Alternatives (Rounds 4-6)
-Excellent picks if Tier 1 targets are taken.
-${tier2Picks || 'None selected'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📋 TIER 3 - Category Fillers (Rounds 7-9)
-Use these to complete your category requirements.
-${tier3Picks || 'None selected'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💡 DRAFT TIPS:
-• Track your category counts - you MUST have 3 Steady, 3 Risky, 3 Defensive
-• If picking late in a round, pivot to best available
-• Watch what opponents pick - adjust on the fly
-
-📊 CATEGORY TRACKER:
-□ Steady: 0/3  □ Risky: 0/3  □ Defensive: 0/3`;
-
-      return {
-        strategySummary: strategyText,
-        portfolio: sortedPortfolio,
-        isSnakeDraft: true,
-        risks: [
-          'High-priority picks may be taken by opponents before your turn',
-          'Draft position affects which assets you can secure',
-          'Week-long format means more exposure to volatility'
-        ],
-        insightConnections: 'Draft order prioritizes your high-conviction picks, with backup targets for each round.',
-        generatedLocally: true,
-        metadata: {
-          userPicks: userPicks.length,
-          diversificationAdded: divPicks.length,
-          totalAssets: sortedPortfolio.length,
-          diversificationStrategy
-        }
-      };
     }
 
     // Build strategy description for Head-to-Head
@@ -8008,6 +9182,51 @@ ${tier3Picks || 'None selected'}
         diversificationStrategy
       }
     };
+  };
+
+  // Handle Draft Priority Ranker complete (Snake Draft mode)
+  const handleDraftRankerComplete = (rankerData) => {
+    setFlowPhase(5);
+    setIsGeneratingPlan(true);
+
+    try {
+      console.log('[DraftRanker] Generating Snake Draft game plan with:', rankerData);
+
+      // Use the portfolio from ranker data (already structured with tiers)
+      const portfolio = rankerData.portfolio || [];
+
+      // Generate game plan using the consolidated Snake Draft utility
+      const plan = createSnakeDraftGamePlan(portfolio, thesis, {
+        userPicksCount: portfolio.filter(p => p.tier === 1).length,
+        divPicksCount: portfolio.filter(p => p.tier === 2).length,
+        diversificationStrategy: rankerData.draftStrategy,
+      });
+
+      // Add the draft strategy info to the game plan
+      plan.draftStrategy = rankerData.draftStrategy;
+      plan.tier1Picks = rankerData.tier1Picks;
+      plan.tier2Picks = rankerData.tier2Picks;
+
+      console.log('[DraftRanker] Generated game plan:', plan);
+      setGamePlan(plan);
+    } catch (error) {
+      console.error('[DraftRanker] Game plan generation failed:', error);
+      // Create a minimal fallback plan
+      setGamePlan({
+        strategySummary: '🐍 SNAKE DRAFT STRATEGY\n\nYour draft picks have been organized by priority tier.',
+        portfolio: rankerData.portfolio || [],
+        isSnakeDraft: true,
+        categoryCounts: {
+          steady: rankerData.tier1Picks?.steady?.length || 0,
+          risky: rankerData.tier1Picks?.risky?.length || 0,
+          defensive: rankerData.tier1Picks?.defensive?.length || 0,
+        },
+        risks: ['High-priority picks may be taken by opponents'],
+        generatedLocally: true,
+      });
+    } finally {
+      setIsGeneratingPlan(false);
+    }
   };
 
   // Handle use portfolio
@@ -8139,6 +9358,29 @@ ${tier3Picks || 'None selected'}
         );
 
       case 4:
+        // Snake Draft mode: Show Draft Priority Ranker
+        if (thesis.battleType === 'snake-draft') {
+          return (
+            <DraftPriorityRanker
+              thesis={thesis}
+              onComplete={handleDraftRankerComplete}
+              onBack={() => setFlowPhase(3)}
+              draftStrategy={draftStrategy}
+              setDraftStrategy={setDraftStrategy}
+              tier1Picks={tier1Picks}
+              setTier1Picks={setTier1Picks}
+              tier2Picks={tier2Picks}
+              setTier2Picks={setTier2Picks}
+              draftRankerPhase={draftRankerPhase}
+              setDraftRankerPhase={setDraftRankerPhase}
+              stocksData={stocksData}
+              cryptoData={cryptoData}
+              colors={c}
+            />
+          );
+        }
+
+        // Classic mode: Show Build Your Lineup (ConvictionCheck)
         return (
           <>
             <ConvictionCheck
@@ -8536,7 +9778,8 @@ import {
   Flame,
   Brain,
   Briefcase,
-  Settings
+  Settings,
+  BookOpen
 } from 'lucide-react';
 
 const PERCENTAGE_OPTIONS = [7.5, 10, 12.5, 15, 17.5, 20];
@@ -8567,6 +9810,138 @@ const colors = {
   border: 'rgba(0, 217, 255, 0.2)',
   borderSubtle: 'rgba(255, 255, 255, 0.1)',
   borderFocus: '#00d9ff'
+};
+
+// ============================================
+// TUTORIAL CONTENT FOR EACH GAME MODE
+// ============================================
+const TUTORIALS = {
+  classic: {
+    title: 'How to Play Classic 1v1',
+    color: '#00d9ff',
+    steps: [
+      {
+        icon: '💼',
+        title: 'Build Your Portfolio',
+        description: 'Select 7-13 assets (stocks or crypto) and allocate your virtual $1M. Each asset requires 7.5% minimum and 20% maximum allocation.',
+        tip: 'Diversify across different sectors to reduce risk!'
+      },
+      {
+        icon: '⚔️',
+        title: 'Create or Join Battle',
+        description: 'Create a battle to get a unique 6-character code, or enter a friend\'s code to join their battle.',
+        tip: 'Share your code with friends to challenge them!'
+      },
+      {
+        icon: '⏱️',
+        title: 'Battle Duration',
+        description: 'Battles last 24 hours using real market prices. Watch your portfolio\'s live performance throughout the day.',
+        tip: 'Crypto markets are open 24/7, stocks during market hours!'
+      },
+      {
+        icon: '📈',
+        title: 'Track Performance',
+        description: 'Monitor your gains and losses as prices change in real-time. Green means winning, red means trailing.',
+        tip: 'Check back often to see live updates!'
+      },
+      {
+        icon: '🏆',
+        title: 'Victory Conditions',
+        description: 'The player with the highest percentage return wins! Earn XP to climb ranks and prove your market skills.',
+        tip: 'Every battle earns XP - win or lose!'
+      }
+    ]
+  },
+  draft: {
+    title: 'How to Play Snake Draft',
+    color: '#10b981',
+    steps: [
+      {
+        icon: '🐍',
+        title: 'The Snake Draft',
+        description: '4 players take turns picking assets in snake order. Round 1: P1→P2→P3→P4, Round 2: P4→P3→P2→P1, then repeat.',
+        tip: 'Later draft positions get back-to-back picks!'
+      },
+      {
+        icon: '🎯',
+        title: 'Build Your Team',
+        description: 'Pick 9 assets total from 75 available. Categories: Steady (safe), Risky (volatile), and Defensive (stable).',
+        tip: 'Balance your categories for optimal results!'
+      },
+      {
+        icon: '⚡',
+        title: 'Time Pressure',
+        description: '30 seconds per pick in training, 2 minutes in real drafts. If time expires, auto-pick selects for you!',
+        tip: 'Research assets beforehand using Research Mode!'
+      },
+      {
+        icon: '🎮',
+        title: 'Battle Phase',
+        description: 'After drafting completes, all 4 players compete simultaneously. Stocks: Until Friday 3PM CT. Crypto: 7 days.',
+        tip: 'Draft ends → Battle begins immediately!'
+      },
+      {
+        icon: '🔄',
+        title: 'Free Agency',
+        description: 'During the battle phase, swap up to 2 assets per day. Strategic trades can turn the tide!',
+        tip: 'Watch the market for buy-low opportunities!'
+      },
+      {
+        icon: '🥇',
+        title: 'Final Standings',
+        description: 'Finish in the top 2 to earn bonus XP rewards. Your draft skills are tracked over time on your profile!',
+        tip: '1st place earns maximum rewards!'
+      }
+    ]
+  },
+  training: {
+    title: 'How Training Mode Works',
+    color: '#9333ea',
+    steps: [
+      {
+        icon: '🎓',
+        title: 'Risk-Free Practice',
+        description: 'Battle against a CPU opponent using the same rules as real battles. Learn the mechanics with zero pressure!',
+        tip: 'Great for testing new strategies!'
+      },
+      {
+        icon: '⏰',
+        title: 'Shorter Duration',
+        description: 'Training battles last only 1 hour instead of 24 hours. Get quick feedback to learn and improve faster.',
+        tip: 'Perfect for testing portfolio ideas!'
+      },
+      {
+        icon: '✨',
+        title: 'Reduced Rewards',
+        description: 'Earn 10 XP for wins and 5 XP for losses. Training battles don\'t affect your official W/L record.',
+        tip: 'Focus on learning, not winning!'
+      }
+    ]
+  },
+  draftTraining: {
+    title: 'How Draft Training Works',
+    color: '#9333ea',
+    steps: [
+      {
+        icon: '🎓',
+        title: 'Practice Drafting',
+        description: 'Draft against 3 CPU opponents. Experience the same rules and time pressure without any stakes!',
+        tip: 'Test different draft strategies safely!'
+      },
+      {
+        icon: '🤖',
+        title: 'CPU Opponents',
+        description: 'CPUs draft automatically using varied strategies. Watch their picks to learn new approaches!',
+        tip: 'CPUs sometimes make surprising picks!'
+      },
+      {
+        icon: '✨',
+        title: 'Training Rewards',
+        description: 'Earn reduced XP but gain valuable drafting experience. Perfect preparation before real competitive drafts!',
+        tip: 'No ranking impact - experiment freely!'
+      }
+    ]
+  }
 };
 
 // ============================================
@@ -9798,6 +11173,7 @@ export default function PortfolioDuel() {
   const [draftCopied, setDraftCopied] = useState(false);
   const [selectedDraftCategory, setSelectedDraftCategory] = useState('steady');
   const [draftTimeRemaining, setDraftTimeRemaining] = useState(120);
+  const [draftAssetInfoModal, setDraftAssetInfoModal] = useState(null); // Asset to show info for
 
   // Draft Battle state - Phase 4
   const [draftBattleOpponent, setDraftBattleOpponent] = useState(null);
@@ -9808,6 +11184,22 @@ export default function PortfolioDuel() {
   const [isRosterExpanded, setIsRosterExpanded] = useState(false);
   const [rosterTouchStart, setRosterTouchStart] = useState(null);
   const [rosterTouchEnd, setRosterTouchEnd] = useState(null);
+
+  // Confirmation popup states
+  const [showCreateBattleConfirm, setShowCreateBattleConfirm] = useState(false);
+  const [showJoinBattleConfirm, setShowJoinBattleConfirm] = useState(false);
+  const [showClassicTrainingConfirm, setShowClassicTrainingConfirm] = useState(false);
+  const [showCreateDraftConfirm, setShowCreateDraftConfirm] = useState(false);
+  const [showJoinDraftConfirm, setShowJoinDraftConfirm] = useState(false);
+
+  // Tutorial modal states
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [tutorialMode, setTutorialMode] = useState('classic'); // 'classic' | 'draft' | 'training' | 'draftTraining'
+  const [tutorialStep, setTutorialStep] = useState(0);
+
+  // Spotlight Tour State (replaces old Get Started modal)
+  const [showSpotlightTour, setShowSpotlightTour] = useState(false);
+  const [tourStep, setTourStep] = useState(0);
 
   // Research Mode state
   const [showResearchMode, setShowResearchMode] = useState(false);
@@ -9855,6 +11247,12 @@ export default function PortfolioDuel() {
   const [assetPickerType, setAssetPickerType] = useState(null); // 'mustHave' | 'mustAvoid'
   const [researchThesis, setResearchThesis] = useState(null); // Store thesis from advisor
   const [researchViewMode, setResearchViewMode] = useState('guided'); // 'guided' | 'classic'
+
+  // Snake Draft Priority Ranker state (replaces conviction check for snake-draft battles)
+  const [draftStrategy, setDraftStrategy] = useState(null); // 'steady-first' | 'risky-first' | 'balanced'
+  const [tier1Picks, setTier1Picks] = useState({ steady: [], risky: [], defensive: [] });
+  const [tier2Picks, setTier2Picks] = useState({ steady: [], risky: [], defensive: [] });
+  const [draftRankerPhase, setDraftRankerPhase] = useState(null); // 'strategy' | 'tier1' | 'tier2' | 'review'
 
   // Desktop background state
   const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' && window.innerWidth > 768);
@@ -10834,6 +12232,58 @@ export default function PortfolioDuel() {
     return () => clearInterval(interval);
   }, [screen, battles]);
 
+  // Subscribe to Firestore battle updates for real-time sync
+  useEffect(() => {
+    if (!user) return;
+
+    const userId = user.odUserId || user.username;
+    if (!userId) return;
+
+    console.log('🔥 Subscribing to Firestore battle updates for:', userId);
+
+    const unsubscribe = subscribeToBattles(userId, (firestoreBattles) => {
+      console.log('📥 Received Firestore battle update:', firestoreBattles.length, 'battles');
+
+      if (firestoreBattles.length > 0) {
+        // Convert Firestore format to local format
+        const convertedBattles = firestoreBattles.map(fb => ({
+          id: fb.id,
+          challengeCode: fb.challengeCode,
+          creator: fb.creator?.username || fb.creator,
+          creatorPortfolio: fb.creator?.portfolio || fb.creatorPortfolio,
+          portfolioName: fb.creator?.portfolioName || fb.portfolioName,
+          portfolioType: fb.creator?.portfolioType || fb.portfolioType,
+          opponent: fb.opponent?.username || fb.opponent,
+          opponentPortfolio: fb.opponent?.portfolio || fb.opponentPortfolio,
+          status: fb.state?.status || fb.status,
+          startDate: fb.timeline?.startDate || fb.startDate,
+          endDate: fb.timeline?.endDate || fb.endDate,
+          createdAt: fb.timeline?.createdAt || fb.createdAt,
+          startingPrices: fb.state?.startingPrices || fb.startingPrices,
+          firestoreId: fb.id
+        }));
+
+        // Merge with local battles (prefer Firestore data for matching IDs)
+        setBattles(prevBattles => {
+          const localOnlyBattles = prevBattles.filter(
+            local => !convertedBattles.some(fb => fb.id === local.id || fb.id === local.firestoreId)
+          );
+          const mergedBattles = [...convertedBattles, ...localOnlyBattles];
+
+          // Also update localStorage cache
+          saveBattlesSafe(mergedBattles);
+
+          return mergedBattles;
+        });
+      }
+    });
+
+    return () => {
+      console.log('🔥 Unsubscribing from Firestore battle updates');
+      unsubscribe();
+    };
+  }, [user]);
+
   // Fetch active draft battles for dashboard
   useEffect(() => {
     if (screen !== 'dashboard') return;
@@ -11660,7 +13110,8 @@ export default function PortfolioDuel() {
             let currentPrice;
             if (isCrypto) {
               const cryptoData = POPULAR_CRYPTO.find(c => c.symbol === asset.symbol);
-              const data = await stockAPI.getCryptoPrice(cryptoData.id);
+              // Use symbol (ETH) not id (ethereum) - EODHD expects symbol format
+              const data = await stockAPI.getCryptoPrice(cryptoData.symbol);
               currentPrice = data.price;
             } else {
               const data = await stockAPI.getStockPrice(asset.symbol);
@@ -12044,7 +13495,8 @@ export default function PortfolioDuel() {
         
         if (isCrypto) {
           const cryptoData = POPULAR_CRYPTO.find(c => c.symbol === asset.symbol);
-          const data = await stockAPI.getCryptoPrice(cryptoData.id);
+          // Use symbol (ETH) not id (ethereum) - EODHD expects symbol format
+          const data = await stockAPI.getCryptoPrice(cryptoData.symbol);
           prices[asset.symbol] = data.price;
         } else {
           const data = await stockAPI.getStockPrice(asset.symbol);
@@ -12332,14 +13784,15 @@ export default function PortfolioDuel() {
     return cpuPortfolio;
   };
 
-  const handleCreateBattle = () => {
+  const handleCreateBattle = async () => {
     if (!portfolioName.trim()) {
       alert('Please enter a portfolio name before creating a battle');
       return;
     }
 
-    if (portfolio.length < 6 || !selectedCrypto) {
-      alert('Please complete your portfolio (6-12 stocks + 1 crypto) before creating a battle');
+    const totalAssets = portfolio.length + (selectedCrypto ? 1 : 0);
+    if (totalAssets < 7) {
+      alert(`Please complete your portfolio (7-13 total assets). You have ${totalAssets}.`);
       return;
     }
 
@@ -12368,37 +13821,60 @@ export default function PortfolioDuel() {
       }
     }
 
-    const newBattle = {
-      id: Date.now().toString(),
-      challengeCode,
-      creator: user.username,
-      creatorPortfolio: portfolioAssets,
-      portfolioName: portfolioName.trim(),
-      opponent: null,
-      opponentPortfolio: null,
-      status: 'waiting',
-      startDate: null,
-      endDate: null,
-      createdAt: new Date().toISOString()
-    };
+    try {
+      console.log('🔥 Creating PvP battle in Firestore...');
 
-    // Load current battles from localStorage
-    const currentBattles = loadBattlesSafe();
-    const updatedBattles = [...currentBattles, newBattle];
+      // Save to Firestore (primary storage for PvP battles)
+      const firestoreBattle = await createFirestoreBattle({
+        challengeCode,
+        creator: {
+          uid: user.odUserId || user.username,
+          username: user.username
+        },
+        portfolioName: portfolioName.trim(),
+        creatorPortfolio: portfolioAssets,
+        portfolioType: portfolioType || 'stocks'
+      });
 
-    // Save to localStorage immediately
-    saveBattlesSafe(updatedBattles);
+      console.log('✅ Battle created in Firestore with ID:', firestoreBattle.id);
 
-    // Update component state
-    setBattles(updatedBattles);
-    setActiveBattleId(newBattle.id);
-    setPortfolio([]);
-    setPortfolioType(null);
-    setPortfolioName('');
-    setSelectedCrypto(null);
-    setCryptoPercentage(10); // Reset to default
-    setBuilderMode('create');
-    setScreen('dashboard');
+      // Create local battle object for state/localStorage (with Firestore ID)
+      const newBattle = {
+        id: firestoreBattle.id, // Use Firestore document ID
+        challengeCode,
+        creator: user.username,
+        creatorPortfolio: portfolioAssets,
+        portfolioName: portfolioName.trim(),
+        portfolioType: portfolioType || 'stocks',
+        opponent: null,
+        opponentPortfolio: null,
+        status: 'waiting',
+        startDate: null,
+        endDate: null,
+        createdAt: new Date().toISOString(),
+        firestoreId: firestoreBattle.id // Reference to Firestore doc
+      };
+
+      // Also save to localStorage as cache
+      const currentBattles = loadBattlesSafe();
+      const updatedBattles = [...currentBattles, newBattle];
+      saveBattlesSafe(updatedBattles);
+
+      // Update component state
+      setBattles(updatedBattles);
+      setActiveBattleId(newBattle.id);
+      setPortfolio([]);
+      setPortfolioType(null);
+      setPortfolioName('');
+      setSelectedCrypto(null);
+      setCryptoPercentage(10); // Reset to default
+      setBuilderMode('create');
+      setScreen('dashboard');
+
+    } catch (error) {
+      console.error('❌ Failed to create battle in Firestore:', error);
+      alert('Failed to create battle. Please check your connection and try again.');
+    }
   };
 
   const handleJoinBattle = async () => {
@@ -12412,41 +13888,9 @@ export default function PortfolioDuel() {
       return;
     }
 
-    if (portfolio.length < 6 || !selectedCrypto) {
-      alert('Please complete your portfolio (6-12 stocks + 1 crypto) before joining');
-      return;
-    }
-
-    // Load battles from localStorage to see battles from other tabs/users
-    const allBattles = loadBattlesSafe();
-
-    const battleToJoin = allBattles.find(
-      b => b.challengeCode === joinCode.trim().toUpperCase() && b.status === 'waiting'
-    );
-
-    if (!battleToJoin) {
-      alert(`Battle not found or already started. Searched for: ${joinCode.trim().toUpperCase()}\nFound ${allBattles.length} total battles in storage.`);
-      return;
-    }
-
-    if (battleToJoin.creator === user.username) {
-      alert('You cannot join your own battle');
-      return;
-    }
-
-    // CHECK PORTFOLIO TYPE COMPATIBILITY
-    // Determine creator's portfolio type by checking their assets
-    const creatorFirstAsset = battleToJoin.creatorPortfolio[0];
-    const creatorIsCrypto = POPULAR_CRYPTO.some(c => c.symbol === creatorFirstAsset.symbol);
-    const creatorIsStocks = POPULAR_STOCKS.some(s => s.symbol === creatorFirstAsset.symbol);
-
-    // Determine joiner's portfolio type
-    const joinerIsCrypto = portfolioType === 'crypto';
-    const joinerIsStocks = portfolioType === 'stocks';
-
-    // Validate portfolio types match
-    if ((creatorIsCrypto && joinerIsStocks) || (creatorIsStocks && joinerIsCrypto)) {
-      alert(`Portfolio type mismatch!\n\nThis battle requires a ${creatorIsCrypto ? 'CRYPTO' : 'STOCKS'} portfolio, but you built a ${joinerIsCrypto ? 'CRYPTO' : 'STOCKS'} portfolio.\n\nPlease create a ${creatorIsCrypto ? 'crypto' : 'stocks'} portfolio to join this battle.`);
+    const totalAssetsJoin = portfolio.length + (selectedCrypto ? 1 : 0);
+    if (totalAssetsJoin < 7) {
+      alert(`Please complete your portfolio (7-13 total assets). You have ${totalAssetsJoin}.`);
       return;
     }
 
@@ -12473,80 +13917,133 @@ export default function PortfolioDuel() {
       }
     }
 
-    // Calculate start and end dates
-    const now = new Date();
-    const startDate = new Date(now); // Start immediately for testing
-    const endDate = new Date(startDate.getTime() + battleTimer.BATTLE_DURATION);
-
-    // Fetch starting prices - Lock in prices when battle starts
+    // Fetch starting prices for the opponent's portfolio
     const startingPrices = {};
-    
-    // Get all unique assets from both portfolios
-    const allAssets = [...battleToJoin.creatorPortfolio, ...portfolioAssets];
-    const uniqueSymbols = [...new Set(allAssets.map(a => a.symbol))];
-    
-    for (const symbol of uniqueSymbols) {
-      const asset = allAssets.find(a => a.symbol === symbol);
+    for (const asset of portfolioAssets) {
       try {
-        const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === symbol);
-        
+        const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === asset.symbol);
         if (isCrypto) {
-          const cryptoData = POPULAR_CRYPTO.find(c => c.symbol === symbol);
-          const data = await stockAPI.getCryptoPrice(cryptoData.id);
-          startingPrices[symbol] = data.price;
+          const cryptoDataItem = POPULAR_CRYPTO.find(c => c.symbol === asset.symbol);
+          // Use symbol (ETH) not id (ethereum) - EODHD expects symbol format
+          const data = await stockAPI.getCryptoPrice(cryptoDataItem.symbol);
+          startingPrices[asset.symbol] = data.price;
         } else {
-          const data = await stockAPI.getStockPrice(symbol);
-          startingPrices[symbol] = data.price;
+          const data = await stockAPI.getStockPrice(asset.symbol);
+          startingPrices[asset.symbol] = data.price;
         }
       } catch (error) {
-        console.error(`Error fetching price for ${symbol}:`, error);
-        startingPrices[symbol] = asset.price; // Fallback to stored price
+        console.error(`Error fetching price for ${asset.symbol}:`, error);
+        startingPrices[asset.symbol] = asset.price;
       }
     }
 
-    // Update both portfolios to use the same starting prices
-    const updatedCreatorPortfolio = battleToJoin.creatorPortfolio.map(asset => ({
-      ...asset,
-      price: startingPrices[asset.symbol] || asset.price
-    }));
-    
-    const updatedOpponentPortfolio = portfolioAssets.map(asset => ({
+    // Update portfolio with starting prices
+    const updatedPortfolio = portfolioAssets.map(asset => ({
       ...asset,
       price: startingPrices[asset.symbol] || asset.price
     }));
 
-    // Update the battle
-    const updatedBattles = allBattles.map(b =>
-      b.id === battleToJoin.id
-        ? {
-            ...b,
-            opponent: user.username,
-            creatorPortfolio: updatedCreatorPortfolio, // ⭐ Updated with starting prices
-            opponentPortfolio: updatedOpponentPortfolio, // ⭐ Updated with starting prices
-            status: 'active',
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString(),
-            startingPrices: startingPrices // ⭐ Store starting prices on battle
-          }
-        : b
-    );
+    try {
+      console.log('🔥 Joining battle in Firestore...');
 
-    // Save to localStorage immediately
-    saveBattlesSafe(updatedBattles);
+      // Try to join via Firestore first (for PvP battles created in Firestore)
+      const updatedBattle = await joinFirestoreBattle(joinCode.trim().toUpperCase(), {
+        uid: user.odUserId || user.username,
+        username: user.username,
+        portfolioName: portfolioName.trim(),
+        portfolio: updatedPortfolio,
+        portfolioType: portfolioType || 'stocks',
+        startingPrices: startingPrices
+      });
 
-    // Update component state
-    setBattles(updatedBattles);
-    setActiveBattleId(battleToJoin.id);
+      console.log('✅ Joined battle in Firestore:', updatedBattle.id);
 
-    setPortfolio([]);
-    setPortfolioType(null);
-    setPortfolioName('');
-    setSelectedCrypto(null);
-    setCryptoPercentage(10); // Reset to default
-    setBuilderMode('create');
-    setJoinCode('');
+      // Create local battle object for state/localStorage
+      const localBattle = {
+        id: updatedBattle.id,
+        challengeCode: updatedBattle.challengeCode,
+        creator: updatedBattle.creator.username,
+        creatorPortfolio: updatedBattle.creator.portfolio,
+        opponent: user.username,
+        opponentPortfolio: updatedPortfolio,
+        portfolioName: portfolioName.trim(),
+        portfolioType: portfolioType || 'stocks',
+        status: 'active',
+        startDate: updatedBattle.timeline.startDate,
+        endDate: updatedBattle.timeline.endDate,
+        startingPrices: startingPrices,
+        createdAt: updatedBattle.timeline.createdAt,
+        firestoreId: updatedBattle.id
+      };
 
-    setScreen('dashboard');
+      // Update localStorage
+      const currentBattles = loadBattlesSafe();
+      const updatedBattles = [...currentBattles.filter(b => b.id !== updatedBattle.id), localBattle];
+      saveBattlesSafe(updatedBattles);
+
+      // Update component state
+      setBattles(updatedBattles);
+      setActiveBattleId(localBattle.id);
+      setPortfolio([]);
+      setPortfolioType(null);
+      setPortfolioName('');
+      setSelectedCrypto(null);
+      setCryptoPercentage(10);
+      setBuilderMode('create');
+      setJoinCode('');
+      setScreen('dashboard');
+
+    } catch (firestoreError) {
+      console.warn('⚠️ Firestore join failed, trying localStorage:', firestoreError.message);
+
+      // Fallback to localStorage for legacy battles
+      const allBattles = loadBattlesSafe();
+      const battleToJoin = allBattles.find(
+        b => b.challengeCode === joinCode.trim().toUpperCase() && b.status === 'waiting'
+      );
+
+      if (!battleToJoin) {
+        alert(`Battle not found or already started. Code: ${joinCode.trim().toUpperCase()}`);
+        return;
+      }
+
+      if (battleToJoin.creator === user.username) {
+        alert('You cannot join your own battle');
+        return;
+      }
+
+      // Calculate start and end dates
+      const now = new Date();
+      const startDate = new Date(now);
+      const endDate = new Date(startDate.getTime() + battleTimer.BATTLE_DURATION);
+
+      // Update the battle in localStorage
+      const updatedBattles = allBattles.map(b =>
+        b.id === battleToJoin.id
+          ? {
+              ...b,
+              opponent: user.username,
+              opponentPortfolio: updatedPortfolio,
+              status: 'active',
+              startDate: startDate.toISOString(),
+              endDate: endDate.toISOString(),
+              startingPrices: startingPrices
+            }
+          : b
+      );
+
+      saveBattlesSafe(updatedBattles);
+      setBattles(updatedBattles);
+      setActiveBattleId(battleToJoin.id);
+      setPortfolio([]);
+      setPortfolioType(null);
+      setPortfolioName('');
+      setSelectedCrypto(null);
+      setCryptoPercentage(10);
+      setBuilderMode('create');
+      setJoinCode('');
+      setScreen('dashboard');
+    }
   };
 
   // ============================================
@@ -12558,8 +14055,9 @@ export default function PortfolioDuel() {
       return;
     }
 
-    if (portfolio.length < 6 || !selectedCrypto) {
-      alert('Please complete your portfolio (6-12 stocks + 1 crypto) before starting training');
+    const totalAssetsTraining = portfolio.length + (selectedCrypto ? 1 : 0);
+    if (totalAssetsTraining < 7) {
+      alert(`Please complete your portfolio (7-13 total assets). You have ${totalAssetsTraining}.`);
       return;
     }
 
@@ -12608,7 +14106,8 @@ export default function PortfolioDuel() {
         
         if (isCrypto) {
           const cryptoData = POPULAR_CRYPTO.find(c => c.symbol === symbol);
-          const data = await stockAPI.getCryptoPrice(cryptoData.id);
+          // Use symbol (ETH) not id (ethereum) - EODHD expects symbol format
+          const data = await stockAPI.getCryptoPrice(cryptoData.symbol);
           startingPrices[symbol] = data.price;
         } else {
           const data = await stockAPI.getStockPrice(symbol);
@@ -13659,6 +15158,477 @@ export default function PortfolioDuel() {
     )
   );
 
+  // ============================================
+  // CONFIRMATION POPUP COMPONENT
+  // ============================================
+  const ConfirmationPopup = ({
+    show,
+    onClose,
+    onConfirm,
+    icon,
+    iconBgColor,
+    title,
+    subtitle,
+    details,
+    confirmText,
+    confirmColor,
+    tutorialModeType
+  }) => {
+    if (!show) return null;
+
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          animation: 'fadeIn 0.2s ease'
+        }}
+        onClick={onClose}
+      >
+        <div
+          style={{
+            background: 'linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%)',
+            borderRadius: '24px',
+            border: '1px solid #21262d',
+            maxWidth: '380px',
+            width: '100%',
+            padding: '32px 24px 24px',
+            boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)',
+            animation: 'slideUp 0.3s ease'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Icon */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            marginBottom: '20px'
+          }}>
+            <div style={{
+              width: '72px',
+              height: '72px',
+              borderRadius: '50%',
+              background: iconBgColor,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: `0 8px 24px ${iconBgColor}44`
+            }}>
+              {icon}
+            </div>
+          </div>
+
+          {/* Title */}
+          <h2 style={{
+            margin: '0 0 8px',
+            fontSize: '22px',
+            fontWeight: '700',
+            color: '#ffffff',
+            textAlign: 'center'
+          }}>
+            {title}
+          </h2>
+
+          {/* Subtitle */}
+          <p style={{
+            margin: '0 0 20px',
+            fontSize: '15px',
+            color: '#8b949e',
+            textAlign: 'center'
+          }}>
+            {subtitle}
+          </p>
+
+          {/* Details Box */}
+          <div style={{
+            background: '#0d1117',
+            borderRadius: '12px',
+            padding: '16px',
+            marginBottom: '20px'
+          }}>
+            {details.map((detail, index) => (
+              <div
+                key={index}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '8px 0',
+                  borderBottom: index < details.length - 1 ? '1px solid #21262d' : 'none'
+                }}
+              >
+                <span style={{ color: '#8b949e', fontSize: '14px' }}>{detail.label}</span>
+                <span style={{
+                  color: detail.highlight ? detail.highlightColor || '#f59e0b' : '#ffffff',
+                  fontSize: '14px',
+                  fontWeight: '600'
+                }}>
+                  {detail.value}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Action Buttons */}
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            marginBottom: '16px'
+          }}>
+            <button
+              onClick={onClose}
+              style={{
+                flex: 1,
+                padding: '14px',
+                borderRadius: '12px',
+                border: '2px solid #21262d',
+                background: 'transparent',
+                color: '#ffffff',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              style={{
+                flex: 1,
+                padding: '14px',
+                borderRadius: '12px',
+                border: 'none',
+                background: confirmColor,
+                color: '#ffffff',
+                fontSize: '16px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                boxShadow: `0 4px 12px ${confirmColor}44`
+              }}
+            >
+              {confirmText}
+            </button>
+          </div>
+
+          {/* Tutorial Button */}
+          <button
+            onClick={() => {
+              setTutorialMode(tutorialModeType);
+              setTutorialStep(0);
+              setShowTutorial(true);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              width: '100%',
+              padding: '12px 16px',
+              background: 'transparent',
+              border: '1px solid #21262d',
+              borderRadius: '10px',
+              color: '#6e7681',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+              e.currentTarget.style.borderColor = '#30363d';
+              e.currentTarget.style.color = '#8b949e';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.borderColor = '#21262d';
+              e.currentTarget.style.color = '#6e7681';
+            }}
+          >
+            <BookOpen size={16} />
+            <span>How to Play</span>
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================
+  // TUTORIAL MODAL COMPONENT
+  // ============================================
+  const TutorialModal = () => {
+    if (!showTutorial) return null;
+
+    const tutorial = TUTORIALS[tutorialMode];
+    const currentStep = tutorial.steps[tutorialStep];
+
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.9)',
+          backdropFilter: 'blur(12px)',
+          zIndex: 1100,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          animation: 'fadeIn 0.2s ease'
+        }}
+        onClick={() => setShowTutorial(false)}
+      >
+        <div
+          style={{
+            background: 'linear-gradient(135deg, #161b22 0%, #0d1117 100%)',
+            borderRadius: '24px',
+            border: `2px solid ${tutorial.color}`,
+            maxWidth: '420px',
+            width: '100%',
+            maxHeight: '85vh',
+            overflow: 'hidden',
+            boxShadow: `0 0 60px ${tutorial.color}33`,
+            animation: 'slideUp 0.3s ease'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div style={{
+            background: `linear-gradient(135deg, ${tutorial.color}22 0%, transparent 100%)`,
+            padding: '20px 24px',
+            borderBottom: '1px solid #21262d',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '10px',
+                background: `${tutorial.color}22`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <BookOpen size={20} style={{ color: tutorial.color }} />
+              </div>
+              <h2 style={{
+                margin: 0,
+                fontSize: '18px',
+                fontWeight: '700',
+                color: '#ffffff'
+              }}>
+                {tutorial.title}
+              </h2>
+            </div>
+            <button
+              onClick={() => setShowTutorial(false)}
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#6e7681',
+                fontSize: '18px',
+                cursor: 'pointer',
+                padding: '6px 10px',
+                lineHeight: 1,
+                transition: 'all 0.2s'
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Content */}
+          <div style={{ padding: '24px' }}>
+            {/* Step Badge */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              marginBottom: '20px'
+            }}>
+              <span style={{
+                background: tutorial.color,
+                color: '#0d1117',
+                padding: '6px 16px',
+                borderRadius: '20px',
+                fontSize: '12px',
+                fontWeight: '700',
+                letterSpacing: '0.5px'
+              }}>
+                STEP {tutorialStep + 1} OF {tutorial.steps.length}
+              </span>
+            </div>
+
+            {/* Icon */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              marginBottom: '20px'
+            }}>
+              <div style={{
+                fontSize: '56px',
+                lineHeight: 1,
+                animation: 'bounce 2s ease-in-out infinite'
+              }}>
+                {currentStep.icon}
+              </div>
+            </div>
+
+            {/* Title */}
+            <h3 style={{
+              margin: '0 0 12px',
+              fontSize: '22px',
+              fontWeight: '700',
+              color: tutorial.color,
+              textAlign: 'center'
+            }}>
+              {currentStep.title}
+            </h3>
+
+            {/* Description */}
+            <p style={{
+              margin: '0 0 20px',
+              fontSize: '15px',
+              color: '#c9d1d9',
+              textAlign: 'center',
+              lineHeight: 1.7
+            }}>
+              {currentStep.description}
+            </p>
+
+            {/* Tip Box */}
+            <div style={{
+              background: `${tutorial.color}12`,
+              border: `1px solid ${tutorial.color}33`,
+              borderRadius: '12px',
+              padding: '14px 16px',
+              marginBottom: '24px'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '10px'
+              }}>
+                <span style={{ fontSize: '16px' }}>💡</span>
+                <span style={{
+                  fontSize: '14px',
+                  color: tutorial.color,
+                  fontWeight: '500',
+                  lineHeight: 1.5
+                }}>
+                  {currentStep.tip}
+                </span>
+              </div>
+            </div>
+
+            {/* Progress Dots */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              gap: '8px',
+              marginBottom: '24px'
+            }}>
+              {tutorial.steps.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => setTutorialStep(index)}
+                  style={{
+                    width: index === tutorialStep ? '28px' : '10px',
+                    height: '10px',
+                    borderRadius: '5px',
+                    border: 'none',
+                    background: index === tutorialStep ? tutorial.color : '#21262d',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s ease',
+                    opacity: index <= tutorialStep ? 1 : 0.5
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Navigation Buttons */}
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setTutorialStep(prev => Math.max(0, prev - 1))}
+                disabled={tutorialStep === 0}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  borderRadius: '12px',
+                  border: '2px solid #21262d',
+                  background: 'transparent',
+                  color: tutorialStep === 0 ? '#6e7681' : '#ffffff',
+                  fontSize: '15px',
+                  fontWeight: '600',
+                  cursor: tutorialStep === 0 ? 'not-allowed' : 'pointer',
+                  opacity: tutorialStep === 0 ? 0.5 : 1,
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                ← Previous
+              </button>
+              {tutorialStep < tutorial.steps.length - 1 ? (
+                <button
+                  onClick={() => setTutorialStep(prev => prev + 1)}
+                  style={{
+                    flex: 1,
+                    padding: '14px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: `linear-gradient(135deg, ${tutorial.color} 0%, ${tutorial.color}cc 100%)`,
+                    color: '#ffffff',
+                    fontSize: '15px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: `0 4px 20px ${tutorial.color}44`
+                  }}
+                >
+                  Next →
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowTutorial(false)}
+                  style={{
+                    flex: 1,
+                    padding: '14px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: `linear-gradient(135deg, ${tutorial.color} 0%, ${tutorial.color}cc 100%)`,
+                    color: '#ffffff',
+                    fontSize: '15px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: `0 4px 20px ${tutorial.color}44`
+                  }}
+                >
+                  Got It! ✓
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // LOGIN SCREEN - Mobile-first responsive with Logo
   if (screen === 'home') {
     return (
@@ -13842,7 +15812,10 @@ export default function PortfolioDuel() {
             stocksData={stocksData}
             cryptoData={cryptoData}
             onUsePortfolio={handleUseResearchFlowPortfolio}
-            onClose={() => setResearchViewMode('classic')}
+            onClose={() => {
+              // Exit research mode and return to dashboard
+              setShowResearchMode(false);
+            }}
             colors={colors}
           />
         </div>
@@ -14239,86 +16212,13 @@ export default function PortfolioDuel() {
 
         const stockCount = portfolio.filter(p => p.type === 'stock').length;
 
-        // SNAKE DRAFT: Assign tiered strategy instead of allocation %
+        // SNAKE DRAFT: Use consolidated utility for tiered strategy
         if (isSnakeDraft) {
-          const sortedPortfolio = [
-            ...portfolio.filter(p => p.source === 'user_selected'),
-            ...portfolio.filter(p => p.source === 'diversification'),
-          ];
-
-          // Assign tiers: Tier 1 (1-3), Tier 2 (4-6), Tier 3 (7+)
-          sortedPortfolio.forEach((asset, index) => {
-            if (index < 3) {
-              asset.tier = 1;
-              asset.tierLabel = '🔥 TIER 1';
-              asset.tierRationale = 'Draft ASAP - High priority pick';
-            } else if (index < 6) {
-              asset.tier = 2;
-              asset.tierLabel = '⚡ TIER 2';
-              asset.tierRationale = 'Strong alternative if Tier 1 taken';
-            } else {
-              asset.tier = 3;
-              asset.tierLabel = '📋 TIER 3';
-              asset.tierRationale = 'Category filler for late rounds';
-            }
-            asset.draftRound = index + 1;
+          return createSnakeDraftGamePlan(portfolio, researchThesis, {
+            userPicksCount: userPicks.length,
+            divPicksCount: divPicks.length,
+            diversificationStrategy
           });
-
-          // Build tiered strategy summary text
-          const tier1Picks = sortedPortfolio.filter(p => p.tier === 1).map(p => p.symbol).join(', ');
-          const tier2Picks = sortedPortfolio.filter(p => p.tier === 2).map(p => p.symbol).join(', ');
-          const tier3Picks = sortedPortfolio.filter(p => p.tier === 3).map(p => p.symbol).join(', ');
-
-          const strategyText = `🐍 SNAKE DRAFT STRATEGY
-
-Based on your thesis: ${researchThesis?.stance || 'Bullish'} on ${researchThesis?.sectors?.join(', ') || 'Growth sectors'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔥 PRIORITY TIER 1 - Draft ASAP (Rounds 1-3)
-These assets match your thesis and will be highly contested.
-${tier1Picks || 'None selected'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-⚡ PRIORITY TIER 2 - Strong Alternatives (Rounds 4-6)
-Excellent picks if Tier 1 targets are taken.
-${tier2Picks || 'None selected'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📋 TIER 3 - Category Fillers (Rounds 7-9)
-Use these to complete your category requirements.
-${tier3Picks || 'None selected'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💡 DRAFT TIPS:
-• Track your category counts - you MUST have 3 Steady, 3 Risky, 3 Defensive
-• If picking late in a round, pivot to best available
-• Watch what opponents pick - adjust on the fly
-
-📊 CATEGORY TRACKER:
-□ Steady: 0/3  □ Risky: 0/3  □ Defensive: 0/3`;
-
-          return {
-            strategySummary: strategyText,
-            portfolio: sortedPortfolio,
-            isSnakeDraft: true,
-            risks: [
-              'High-priority picks may be taken by opponents before your turn',
-              'Draft position affects which assets you can secure',
-              'Week-long format means more exposure to volatility'
-            ],
-            insightConnections: 'Draft order prioritizes your high-conviction picks, with backup targets for each round.',
-            generatedLocally: true,
-            metadata: {
-              userPicks: userPicks.length,
-              diversificationAdded: divPicks.length,
-              totalAssets: sortedPortfolio.length,
-              diversificationStrategy
-            }
-          };
         }
 
         // Build strategy description for Head-to-Head
@@ -14388,6 +16288,52 @@ ${tier3Picks || 'None selected'}
       }
     };
 
+    // Handler when Draft Priority Ranker is complete - generate Snake Draft game plan
+    const handleDraftRankerComplete = (rankerData) => {
+      setResearchPhase('gameplan');
+      setResearchGamePlanLoading(true);
+      setResearchGamePlan(null);
+
+      try {
+        console.log('[DraftRanker] Generating Snake Draft game plan with:', rankerData);
+
+        // Use the portfolio from ranker data directly (already structured with tiers)
+        const portfolio = rankerData.portfolio || [];
+
+        // Generate game plan using the consolidated Snake Draft utility
+        const gamePlan = createSnakeDraftGamePlan(portfolio, researchThesis, {
+          userPicksCount: portfolio.filter(p => p.tier === 1).length,
+          divPicksCount: portfolio.filter(p => p.tier === 2).length,
+          diversificationStrategy: rankerData.draftStrategy,
+        });
+
+        // Add the draft strategy info to the game plan
+        gamePlan.draftStrategy = rankerData.draftStrategy;
+        gamePlan.tier1Picks = rankerData.tier1Picks;
+        gamePlan.tier2Picks = rankerData.tier2Picks;
+
+        console.log('[DraftRanker] Generated game plan:', gamePlan);
+        setResearchGamePlan(gamePlan);
+      } catch (error) {
+        console.error('[DraftRanker] Game plan generation failed:', error);
+        // Create a minimal fallback plan
+        setResearchGamePlan({
+          strategySummary: '🐍 SNAKE DRAFT STRATEGY\n\nYour draft picks have been organized by priority tier.',
+          portfolio: rankerData.portfolio || [],
+          isSnakeDraft: true,
+          categoryCounts: {
+            steady: rankerData.tier1Picks?.steady?.length || 0,
+            risky: rankerData.tier1Picks?.risky?.length || 0,
+            defensive: rankerData.tier1Picks?.defensive?.length || 0,
+          },
+          risks: ['High-priority picks may be taken by opponents'],
+          generatedLocally: true,
+        });
+      } finally {
+        setResearchGamePlanLoading(false);
+      }
+    };
+
     // Handler to use the generated portfolio
     const handleUseResearchPortfolio = (portfolioAllocations) => {
       // Convert allocations to portfolio format
@@ -14409,6 +16355,11 @@ ${tier3Picks || 'None selected'}
       setShowResearchMode(false);
       setResearchPhase('explore');
       setScreen('portfolio');
+      // Reset Draft Ranker state
+      setDraftRankerPhase(null);
+      setDraftStrategy(null);
+      setTier1Picks({ steady: [], risky: [], defensive: [] });
+      setTier2Picks({ steady: [], risky: [], defensive: [] });
     };
 
     // Handler to start training battle with portfolio
@@ -14449,6 +16400,11 @@ ${tier3Picks || 'None selected'}
       setResearchPhase('explore');
       setScreen('dashboard'); // Navigate to dashboard to see the battle
       showToast(`Training battle started vs ${newBattle.opponent}! 🤖`);
+      // Reset Draft Ranker state
+      setDraftRankerPhase(null);
+      setDraftStrategy(null);
+      setTier1Picks({ steady: [], risky: [], defensive: [] });
+      setTier2Picks({ steady: [], risky: [], defensive: [] });
     };
 
     // Handler to save game plan as template
@@ -14500,6 +16456,11 @@ ${tier3Picks || 'None selected'}
     // Handler to go back from conviction check to explore
     const handleBackFromConviction = () => {
       setResearchPhase('explore');
+      // Reset Draft Ranker state when going back
+      setDraftRankerPhase(null);
+      setDraftStrategy(null);
+      setTier1Picks({ steady: [], risky: [], defensive: [] });
+      setTier2Picks({ steady: [], risky: [], defensive: [] });
     };
 
     // Get sector color for stock
@@ -15741,18 +17702,37 @@ ${tier3Picks || 'None selected'}
                   />
                 )}
 
-                {/* Phase 4: Conviction Check */}
+                {/* Phase 4: Conviction Check / Draft Priority Ranker */}
                 {researchPhase === 'conviction' && (
-                  <ConvictionCheck
-                    thesis={researchThesis}
-                    recommendations={[...stocksData, ...cryptoData].slice(0, 20)}
-                    convictionData={convictionData}
-                    setConvictionData={setConvictionData}
-                    onComplete={handleConvictionComplete}
-                    onBack={handleBackFromConviction}
-                    onOpenAssetPicker={handleOpenAssetPicker}
-                    colors={colors}
-                  />
+                  researchThesis?.battleType === 'snake-draft' ? (
+                    <DraftPriorityRanker
+                      thesis={researchThesis}
+                      onComplete={handleDraftRankerComplete}
+                      onBack={handleBackFromConviction}
+                      draftStrategy={draftStrategy}
+                      setDraftStrategy={setDraftStrategy}
+                      tier1Picks={tier1Picks}
+                      setTier1Picks={setTier1Picks}
+                      tier2Picks={tier2Picks}
+                      setTier2Picks={setTier2Picks}
+                      draftRankerPhase={draftRankerPhase}
+                      setDraftRankerPhase={setDraftRankerPhase}
+                      stocksData={stocksData}
+                      cryptoData={cryptoData}
+                      colors={colors}
+                    />
+                  ) : (
+                    <ConvictionCheck
+                      thesis={researchThesis}
+                      recommendations={[...stocksData, ...cryptoData].slice(0, 20)}
+                      convictionData={convictionData}
+                      setConvictionData={setConvictionData}
+                      onComplete={handleConvictionComplete}
+                      onBack={handleBackFromConviction}
+                      onOpenAssetPicker={handleOpenAssetPicker}
+                      colors={colors}
+                    />
+                  )
                 )}
 
                 {/* Phase 5: Game Plan */}
@@ -15765,7 +17745,17 @@ ${tier3Picks || 'None selected'}
                     onUsePortfolio={handleUseResearchPortfolio}
                     onStartTraining={handleStartTrainingBattle}
                     onSaveTemplate={handleSaveAsTemplate}
-                    onReturnToDashboard={() => setShowResearchMode(false)}
+                    onReturnToDashboard={() => {
+                      // Reset research state and exit research mode
+                      setResearchPhase('explore');
+                      setResearchGamePlan(null);
+                      setShowResearchMode(false);
+                      // Reset Draft Ranker state
+                      setDraftRankerPhase(null);
+                      setDraftStrategy(null);
+                      setTier1Picks({ steady: [], risky: [], defensive: [] });
+                      setTier2Picks({ steady: [], risky: [], defensive: [] });
+                    }}
                     onBack={handleBackFromGamePlan}
                     colors={colors}
                   />
@@ -15894,6 +17884,360 @@ ${tier3Picks || 'None selected'}
       </div>
     );
   }
+
+  // ============================================
+  // SPOTLIGHT TOUR CONSTANTS
+  // ============================================
+  const TOUR_CONSTANTS = {
+    TOOLTIP_HEIGHT: 220,
+    TOOLTIP_OFFSET: 25,
+    MIN_TOP_MARGIN: 20,
+    MAX_BOTTOM_MARGIN: 280,
+    SCROLL_OFFSET_ABOVE: 300,
+    SCROLL_OFFSET_BELOW: 100,
+    ANIMATION_DELAY: 500,
+    SPOTLIGHT_PADDING: 10,
+    ARROW_OFFSET: 13,
+    Z_INDEX: 9999
+  };
+
+  // ============================================
+  // SPOTLIGHT TOUR COMPONENT - v10 (Bug fixes + fallback mode)
+  // ============================================
+  const SpotlightTour = () => {
+    if (!showSpotlightTour) return null;
+
+    const currentStep = TOUR_STEPS[tourStep];
+    const [spotlightRect, setSpotlightRect] = useState(null);
+    const [tooltipPos, setTooltipPos] = useState({ top: 0, arrowTop: 0, arrowDirection: 'up' });
+    const [isReady, setIsReady] = useState(false);
+
+    // NO SCROLL LOCK - user can scroll freely
+
+    useEffect(() => {
+      setIsReady(false);
+      setSpotlightRect(null);
+
+      if (!currentStep.target) {
+        setIsReady(true);
+        return;
+      }
+
+      const element = document.getElementById(currentStep.target);
+      if (!element) {
+        // Silent fallback - element not found, showing centered tooltip
+        setSpotlightRect(null); // No spotlight, but that's okay
+        setTooltipPos({
+          top: window.innerHeight / 2 - 110,
+          arrowTop: 0,
+          arrowDirection: 'none' // No arrow when fallback
+        });
+        setIsReady(true);
+        return;
+      }
+
+      // Scroll element into view
+      const rect = element.getBoundingClientRect();
+      const absoluteTop = window.pageYOffset + rect.top;
+
+      if (currentStep.position === 'spotlight-above') {
+        // Element at bottom, scroll so there's room for tooltip above
+        const scrollTarget = absoluteTop - window.innerHeight + rect.height + TOUR_CONSTANTS.SCROLL_OFFSET_ABOVE;
+        window.scrollTo({ top: Math.max(0, scrollTarget), behavior: 'smooth' });
+      } else {
+        // Element at top
+        const scrollTarget = absoluteTop - TOUR_CONSTANTS.SCROLL_OFFSET_BELOW;
+        window.scrollTo({ top: Math.max(0, scrollTarget), behavior: 'smooth' });
+      }
+
+      setTimeout(() => {
+        const newRect = element.getBoundingClientRect();
+        const padding = TOUR_CONSTANTS.SPOTLIGHT_PADDING;
+
+        setSpotlightRect({
+          top: newRect.top - padding,
+          left: newRect.left - padding,
+          width: newRect.width + padding * 2,
+          height: newRect.height + padding * 2
+        });
+
+        // Calculate tooltip position with clamping to prevent off-screen
+        if (currentStep.position === 'spotlight-above') {
+          const tooltipHeight = TOUR_CONSTANTS.TOOLTIP_HEIGHT;
+          const calculatedTop = newRect.top - tooltipHeight - TOUR_CONSTANTS.TOOLTIP_OFFSET;
+          setTooltipPos({
+            top: Math.max(TOUR_CONSTANTS.MIN_TOP_MARGIN, calculatedTop),
+            arrowTop: Math.max(tooltipHeight + TOUR_CONSTANTS.TOOLTIP_OFFSET, newRect.top - TOUR_CONSTANTS.ARROW_OFFSET),
+            arrowDirection: 'down'
+          });
+        } else {
+          const calculatedTop = newRect.bottom + TOUR_CONSTANTS.TOOLTIP_OFFSET;
+          const maxTop = window.innerHeight - TOUR_CONSTANTS.MAX_BOTTOM_MARGIN;
+          setTooltipPos({
+            top: Math.min(calculatedTop, maxTop),
+            arrowTop: newRect.bottom + TOUR_CONSTANTS.ARROW_OFFSET,
+            arrowDirection: 'up'
+          });
+        }
+
+        setIsReady(true);
+      }, TOUR_CONSTANTS.ANIMATION_DELAY);
+    }, [tourStep, currentStep]);
+
+    // Escape key to close tour
+    useEffect(() => {
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          setShowSpotlightTour(false);
+          setTourStep(0);
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    const handleNext = () => {
+      if (tourStep < TOUR_STEPS.length - 1) setTourStep(tourStep + 1);
+    };
+
+    const handleBack = () => {
+      if (tourStep > 0) setTourStep(tourStep - 1);
+    };
+
+    const handleClose = () => {
+      setShowSpotlightTour(false);
+      setTourStep(0);
+    };
+
+    const handleStartTraining = (mode) => {
+      handleClose();
+      if (mode === 'classic') {
+        if (typeof setShowClassicTrainingConfirm === 'function') {
+          setShowClassicTrainingConfirm(true);
+        } else {
+          setScreen('training');
+        }
+      } else {
+        setScreen('draftTraining');
+      }
+    };
+
+    // Progress dots
+    const ProgressDots = () => (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        gap: '6px',
+        marginTop: '20px'
+      }}>
+        {TOUR_STEPS.map((_, index) => (
+          <div
+            key={index}
+            style={{
+              width: index === tourStep ? '20px' : '6px',
+              height: '6px',
+              borderRadius: '3px',
+              background: index <= tourStep ? '#10b981' : '#21262d'
+            }}
+          />
+        ))}
+      </div>
+    );
+
+    // CENTERED MODAL (Steps 0 and 9)
+    if (currentStep.position === 'center') {
+      return (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0, 0, 0, 0.92)',
+          zIndex: TOUR_CONSTANTS.Z_INDEX,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 100%)',
+            borderRadius: '20px',
+            border: '2px solid #10b981',
+            padding: '32px 28px',
+            maxWidth: '380px',
+            width: '100%',
+            textAlign: 'center'
+          }}>
+            <h2 style={{ margin: '0 0 12px', fontSize: '24px', fontWeight: '800', color: '#fff' }}>
+              {currentStep.title}
+            </h2>
+            <p style={{ margin: '0 0 24px', fontSize: '15px', color: '#9CA3AF', lineHeight: 1.6 }}>
+              {currentStep.description}
+            </p>
+
+            {currentStep.showActions ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <button onClick={() => handleStartTraining('classic')} style={{
+                  padding: '14px', background: 'linear-gradient(135deg, #00d9ff, #0099cc)',
+                  border: 'none', borderRadius: '10px', color: '#0d1117', fontSize: '15px', fontWeight: '700', cursor: 'pointer'
+                }}>⚔️ Try Classic Training</button>
+                <button onClick={() => handleStartTraining('draft')} style={{
+                  padding: '14px', background: 'linear-gradient(135deg, #10b981, #059669)',
+                  border: 'none', borderRadius: '10px', color: '#fff', fontSize: '15px', fontWeight: '700', cursor: 'pointer'
+                }}>🐍 Try Snake Draft Training</button>
+                <button onClick={handleClose} style={{
+                  padding: '12px', background: 'transparent', border: '1px solid #21262d',
+                  borderRadius: '8px', color: '#6e7681', fontSize: '13px', cursor: 'pointer'
+                }}>I'll explore on my own</button>
+              </div>
+            ) : (
+              <button onClick={handleNext} style={{
+                width: '100%', padding: '14px', background: 'linear-gradient(135deg, #10b981, #059669)',
+                border: 'none', borderRadius: '10px', color: '#fff', fontSize: '16px', fontWeight: '700', cursor: 'pointer'
+              }}>Let's Go!</button>
+            )}
+            <ProgressDots />
+          </div>
+        </div>
+      );
+    }
+
+    // SPOTLIGHT VIEW - Loading (only check isReady, spotlightRect can be null for fallback)
+    if (!isReady) {
+      return (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0, 0, 0, 0.88)', zIndex: TOUR_CONSTANTS.Z_INDEX
+        }} />
+      );
+    }
+
+    // SPOTLIGHT VIEW - Ready
+    return (
+      <div style={{
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+        zIndex: TOUR_CONSTANTS.Z_INDEX, pointerEvents: 'none'
+      }}>
+        {/* Dark overlay with spotlight hole - only if spotlightRect exists */}
+        {spotlightRect && (
+          <svg style={{
+            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+            pointerEvents: 'auto'
+          }} onClick={handleClose}>
+            <defs>
+              <mask id="spotlight-mask">
+                <rect x="0" y="0" width="100%" height="100%" fill="white" />
+                <rect
+                  x={spotlightRect.left} y={spotlightRect.top}
+                  width={spotlightRect.width} height={spotlightRect.height}
+                  rx="12" fill="black"
+                />
+              </mask>
+            </defs>
+            <rect x="0" y="0" width="100%" height="100%" fill="rgba(0,0,0,0.88)" mask="url(#spotlight-mask)" />
+          </svg>
+        )}
+
+        {/* If no spotlight (fallback), just show dark overlay */}
+        {!spotlightRect && (
+          <div
+            style={{
+              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+              background: 'rgba(0, 0, 0, 0.88)',
+              pointerEvents: 'auto'
+            }}
+            onClick={handleClose}
+          />
+        )}
+
+        {/* Green border glow - only if spotlightRect exists */}
+        {spotlightRect && (
+          <div style={{
+            position: 'absolute',
+            top: spotlightRect.top, left: spotlightRect.left,
+            width: spotlightRect.width, height: spotlightRect.height,
+            borderRadius: '12px',
+            border: '2px solid #10b981',
+            boxShadow: '0 0 20px rgba(16, 185, 129, 0.5)',
+            pointerEvents: 'none'
+          }} />
+        )}
+
+        {/* Arrow - only show if we have a spotlight and valid direction */}
+        {spotlightRect && tooltipPos.arrowDirection !== 'none' && (
+          <div style={{
+            position: 'absolute',
+            top: tooltipPos.arrowTop,
+            left: spotlightRect.left + spotlightRect.width / 2 - 10,
+            width: 0, height: 0,
+            borderLeft: '10px solid transparent',
+            borderRight: '10px solid transparent',
+            borderBottom: tooltipPos.arrowDirection === 'up' ? '12px solid #1a2332' : 'none',
+            borderTop: tooltipPos.arrowDirection === 'down' ? '12px solid #1a2332' : 'none',
+            pointerEvents: 'none', zIndex: 10001
+          }} />
+        )}
+
+        {/* Tooltip */}
+        <div style={{
+          position: 'absolute',
+          top: tooltipPos.top,
+          left: '50%', transform: 'translateX(-50%)',
+          width: '340px', maxWidth: 'calc(100% - 40px)',
+          background: 'linear-gradient(145deg, #1a2332 0%, #0d1117 100%)',
+          borderRadius: '16px', border: '1px solid #21262d',
+          padding: '20px',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+          pointerEvents: 'auto', zIndex: 10000
+        }} onClick={(e) => e.stopPropagation()}>
+
+          <div style={{
+            fontSize: '10px', fontWeight: '700', color: '#10b981',
+            marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1.5px'
+          }}>
+            Step {tourStep} of {TOUR_STEPS.length - 1}
+          </div>
+
+          <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: '700', color: '#fff' }}>
+            {currentStep.title}
+          </h3>
+
+          <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#9CA3AF', lineHeight: 1.6 }}>
+            {currentStep.description}
+          </p>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {tourStep > 1 && (
+              <button onClick={handleBack} style={{
+                padding: '10px 16px', background: 'transparent', border: '1px solid #21262d',
+                borderRadius: '8px', color: '#9CA3AF', fontSize: '13px', fontWeight: '600', cursor: 'pointer'
+              }}>← Back</button>
+            )}
+            <button onClick={handleNext} style={{
+              flex: 1, padding: '10px 16px', background: 'linear-gradient(135deg, #10b981, #059669)',
+              border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: 'pointer'
+            }}>{tourStep === TOUR_STEPS.length - 2 ? 'Finish' : 'Next'}</button>
+          </div>
+
+          <button onClick={handleClose} style={{
+            width: '100%', marginTop: '10px', padding: '8px',
+            background: 'transparent', border: 'none', color: '#6e7681', fontSize: '11px', cursor: 'pointer'
+          }}>Skip tour</button>
+        </div>
+
+        {/* Progress dots at bottom */}
+        <div style={{
+          position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
+          display: 'flex', gap: '6px', pointerEvents: 'none', zIndex: 10002
+        }}>
+          {TOUR_STEPS.map((_, index) => (
+            <div key={index} style={{
+              width: index === tourStep ? '20px' : '6px', height: '6px', borderRadius: '3px',
+              background: index <= tourStep ? '#10b981' : 'rgba(255,255,255,0.2)'
+            }} />
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   // DASHBOARD SCREEN - New Flowing Card Layout
   if (screen === 'dashboard') {
@@ -16232,30 +18576,63 @@ ${tier3Picks || 'None selected'}
             }}>
 
               {/* Hamburger Menu Button - LEFT */}
-              <button
-                onClick={() => setSidebarOpen(true)}
-                style={{
-                  minWidth: '44px',
-                  minHeight: '44px',
-                  padding: '8px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '5px',
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  touchAction: 'manipulation',
-                  WebkitTapHighlightColor: 'transparent'
-                }}
-                aria-label="Open menu"
-              >
-                {/* Three horizontal cyan lines */}
-                <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
-                <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
-                <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
-              </button>
+              {/* Left section with hamburger and Get Started */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {/* Hamburger Menu Button */}
+                <button
+                  id="tour-hamburger-menu"
+                  onClick={() => setSidebarOpen(true)}
+                  style={{
+                    minWidth: '44px',
+                    minHeight: '44px',
+                    padding: '8px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    touchAction: 'manipulation',
+                    WebkitTapHighlightColor: 'transparent'
+                  }}
+                  aria-label="Open menu"
+                >
+                  {/* Three horizontal cyan lines */}
+                  <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
+                  <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
+                  <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
+                </button>
+
+                {/* Get Started Button - Opens Spotlight Tour */}
+                <button
+                  onClick={() => {
+                    setTourStep(0);
+                    setShowSpotlightTour(true);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '2px',
+                    padding: '3px 6px',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    border: 'none',
+                    borderRadius: '4px',
+                    color: '#ffffff',
+                    fontSize: '9px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    marginLeft: '6px',
+                    marginRight: 'auto',
+                    flexShrink: 0
+                  }}
+                >
+                  <Rocket size={8} />
+                  <span>Get Started</span>
+                </button>
+              </div>
 
               {/* Center - Logo */}
               <div style={{
@@ -16317,12 +18694,15 @@ ${tier3Picks || 'None selected'}
           </header>
 
           {/* Game Mode Toggle - Phase 1: Draft Mode Foundation */}
-          <div style={{
-            background: '#161b22',
-            borderBottom: '1px solid #21262d',
-            padding: '12px 16px',
-            marginBottom: '16px'
-          }}>
+          <div
+            id="tour-game-mode-toggle"
+            style={{
+              background: '#161b22',
+              borderBottom: '1px solid #21262d',
+              padding: '12px 16px',
+              marginBottom: '16px'
+            }}
+          >
             <div style={{
               maxWidth: '900px',
               margin: '0 auto',
@@ -16332,6 +18712,7 @@ ${tier3Picks || 'None selected'}
             }}>
               {/* Snake Draft 4P - LEFT (default) */}
               <button
+                id="tour-snake-draft-btn"
                 onClick={() => setGameMode('draft')}
                 style={{
                   padding: '10px 20px',
@@ -16349,6 +18730,7 @@ ${tier3Picks || 'None selected'}
               </button>
               {/* Builder 1v1 - RIGHT */}
               <button
+                id="tour-builder-btn"
                 onClick={() => setGameMode('classic')}
                 style={{
                   padding: '10px 20px',
@@ -16369,6 +18751,7 @@ ${tier3Picks || 'None selected'}
 
           {/* Main Content Area - Mobile-first with responsive padding */}
           <div
+            id="tour-dashboard-content"
             className="pt-4 md:pt-0 pb-28 md:pb-20 px-4 md:px-6"
             style={{
               flex: 1,
@@ -16975,45 +19358,48 @@ ${tier3Picks || 'None selected'}
             )}
 
             {/* Create & Join Battle Cards - TRUE SIDE-BY-SIDE on all screens */}
-            <div className="grid grid-cols-2 gap-4 mb-4">
+            <div
+              id="tour-battle-cards"
+              style={{
+                display: 'flex',
+                gap: '16px',
+                padding: '0 16px',
+                justifyContent: 'center',
+                alignItems: 'stretch',
+                marginBottom: '16px'
+              }}
+            >
               {/* CREATE BATTLE Card */}
               {(() => {
                 const createColor = gameMode === 'draft' ? '#10b981' : colors.cyan;
                 return (
                   <motion.div
+                    id="tour-create-battle"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.2 }}
-                    onClick={async () => {
+                    onClick={() => {
+                      // Reset portfolio state
                       setPortfolio([]); setPortfolioType(null);
                       setPortfolioName('');
                       setAssetType('stocks');
                       setSearchTerm('');
                       setSelectedCrypto(null);
-                      setBuilderMode('create');
 
-                      // Check for upcoming high-impact events and show alert (only once per session)
-                      const alreadyShown = sessionStorage.getItem('volatilityAlertShown');
-                      if (!alreadyShown) {
-                        const highImpact = await checkUpcomingHighImpactEvents();
-                        if (highImpact && highImpact.length > 0) {
-                          setShowVolatilityAlert(true);
-                          sessionStorage.setItem('volatilityAlertShown', 'true');
-                        }
-                      }
-
-                      // Route based on game mode
+                      // Show confirmation popup based on game mode
                       if (gameMode === 'draft') {
-                        setScreen('draftSetup');  // New screen for draft
+                        setShowCreateDraftConfirm(true);
                       } else {
-                        setScreen('builder');     // Existing classic mode
+                        setShowCreateBattleConfirm(true);
                       }
                     }}
                     style={{
                       position: 'relative',
+                      flex: 1,
+                      maxWidth: '180px',
                       background: colors.cardBg,
                       borderRadius: '16px',
-                      padding: hasActiveBattle ? '28px 24px' : '40px 32px',
+                      padding: hasActiveBattle ? '24px 20px' : '32px 24px',
                       border: `1px solid ${colors.border}`,
                       cursor: 'pointer',
                       overflow: 'hidden',
@@ -17115,28 +19501,32 @@ ${tier3Picks || 'None selected'}
                 const joinColor = gameMode === 'draft' ? '#10b981' : colors.purple;
                 return (
                   <motion.div
+                    id="tour-join-battle"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.3 }}
                     onClick={() => {
+                      // Reset portfolio state
                       setPortfolio([]); setPortfolioType(null);
                       setPortfolioName('');
                       setAssetType('stocks');
                       setSearchTerm('');
                       setJoinCode('');
-                      setBuilderMode('join');
-                      // Route based on game mode
+
+                      // Show confirmation popup based on game mode
                       if (gameMode === 'draft') {
-                        setScreen('draftJoin');   // New screen for draft join
+                        setShowJoinDraftConfirm(true);
                       } else {
-                        setScreen('join');        // Code entry screen first
+                        setShowJoinBattleConfirm(true);
                       }
                     }}
                     style={{
                       position: 'relative',
+                      flex: 1,
+                      maxWidth: '180px',
                       background: colors.cardBg,
                       borderRadius: '16px',
-                      padding: hasActiveBattle ? '28px 24px' : '40px 32px',
+                      padding: hasActiveBattle ? '24px 20px' : '32px 24px',
                       border: `1px solid ${colors.border}`,
                       cursor: 'pointer',
                       overflow: 'hidden',
@@ -17238,10 +19628,194 @@ ${tier3Picks || 'None selected'}
               })()}
             </div>
 
+            {/* Futuristic Research Mode Button */}
+            <motion.div
+              id="tour-research-mode"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.35 }}
+              onClick={() => setShowResearchMode(true)}
+              style={{
+                margin: '20px 16px',
+                padding: '20px 24px',
+                borderRadius: '16px',
+                cursor: 'pointer',
+                position: 'relative',
+                overflow: 'hidden',
+                background: `linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 50%, rgba(15, 23, 42, 0.95) 100%)`,
+                border: '1px solid transparent',
+                backgroundClip: 'padding-box',
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow = '0 0 30px rgba(0, 217, 255, 0.3), 0 0 60px rgba(139, 92, 246, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.transform = 'translateY(-2px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05)';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              {/* CSS Animations for Research Button */}
+              <style>{`
+                @keyframes gradientShift {
+                  0% { background-position: 0% 50%; }
+                  50% { background-position: 100% 50%; }
+                  100% { background-position: 0% 50%; }
+                }
+                @keyframes scanLine {
+                  0% { left: -100%; }
+                  50% { left: 100%; }
+                  100% { left: 100%; }
+                }
+                @keyframes researchPulse {
+                  0%, 100% { opacity: 0.3; transform: scale(1); }
+                  50% { opacity: 0.8; transform: scale(1.2); }
+                }
+              `}</style>
+
+              {/* Animated gradient border overlay */}
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                borderRadius: '16px',
+                padding: '1px',
+                background: 'linear-gradient(90deg, #00d9ff, #8b5cf6, #00d9ff)',
+                backgroundSize: '200% 100%',
+                animation: 'gradientShift 3s ease infinite',
+                mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                maskComposite: 'exclude',
+                WebkitMaskComposite: 'xor',
+                pointerEvents: 'none',
+              }} />
+
+              {/* Scanning line effect */}
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: '-100%',
+                width: '100%',
+                height: '100%',
+                background: 'linear-gradient(90deg, transparent, rgba(0, 217, 255, 0.1), transparent)',
+                animation: 'scanLine 3s ease-in-out infinite',
+                pointerEvents: 'none',
+              }} />
+
+              {/* Content */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                position: 'relative',
+                zIndex: 1,
+              }}>
+                {/* Left side - Icon and text */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  {/* Futuristic icon */}
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '1px solid rgba(0, 217, 255, 0.3)',
+                  }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="url(#researchIconGradient)" strokeWidth="2">
+                      <defs>
+                        <linearGradient id="researchIconGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#00d9ff" />
+                          <stop offset="100%" stopColor="#8b5cf6" />
+                        </linearGradient>
+                      </defs>
+                      <circle cx="11" cy="11" r="8" />
+                      <path d="M21 21l-4.35-4.35" />
+                      <path d="M8 8h.01M11 8h.01M14 8h.01M8 11h.01M11 11h.01M14 11h.01M8 14h.01M11 14h.01M14 14h.01" strokeWidth="1.5" />
+                    </svg>
+                  </div>
+
+                  {/* Text content */}
+                  <div>
+                    <div style={{
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      letterSpacing: '2px',
+                      color: '#00d9ff',
+                      marginBottom: '4px',
+                      textTransform: 'uppercase',
+                    }}>
+                      AI-Powered
+                    </div>
+                    <div style={{
+                      fontSize: '18px',
+                      fontWeight: '700',
+                      color: '#ffffff',
+                      letterSpacing: '0.5px',
+                    }}>
+                      Research Mode
+                    </div>
+                    <div style={{
+                      fontSize: '12px',
+                      color: 'rgba(255, 255, 255, 0.6)',
+                      marginTop: '2px',
+                    }}>
+                      Advanced market analysis & insights
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right side - Arrow */}
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'transform 0.3s ease',
+                }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00d9ff" strokeWidth="2">
+                    <path d="M5 12h14M12 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Particle dots */}
+              <div style={{
+                position: 'absolute',
+                top: '10px',
+                right: '60px',
+                width: '4px',
+                height: '4px',
+                borderRadius: '50%',
+                background: '#00d9ff',
+                opacity: 0.5,
+                animation: 'researchPulse 2s ease infinite',
+              }} />
+              <div style={{
+                position: 'absolute',
+                bottom: '15px',
+                right: '80px',
+                width: '3px',
+                height: '3px',
+                borderRadius: '50%',
+                background: '#8b5cf6',
+                opacity: 0.4,
+                animation: 'researchPulse 2.5s ease infinite 0.5s',
+              }} />
+            </motion.div>
+
             {/* Training Mode Section - Different design for draft vs classic */}
             {gameMode === 'draft' ? (
               /* SNAKE DRAFT TRAINING SECTION - Redesigned with circular buttons */
               <motion.div
+                id="tour-training-mode"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, delay: 0.4 }}
@@ -17566,129 +20140,199 @@ ${tier3Picks || 'None selected'}
                 </p>
               </motion.div>
             ) : (
-              /* Classic Mode Training Banner - Unchanged */
+              /* Classic Mode Training Section - Unified style matching Snake Draft */
               <motion.div
+                id="tour-training-mode"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, delay: 0.4 }}
-                className="flex"
-                onClick={() => {
-                  setPortfolio([]); setPortfolioType(null);
-                  setPortfolioName('');
-                  setAssetType('stocks');
-                  setSearchTerm('');
-                  setSelectedCrypto(null);
-                  setBuilderMode('training');
-                  setScreen('builder');
-                }}
                 style={{
-                  background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                  border: 'none',
-                  borderRadius: '14px',
-                  padding: '16px 24px',
-                  alignItems: 'center',
-                  gap: '16px',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s',
+                  background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(168, 85, 247, 0.05) 100%)',
+                  border: '2px solid rgba(139, 92, 246, 0.3)',
+                  borderRadius: '16px',
+                  padding: '20px',
                   marginTop: '12px',
-                  marginBottom: '24px',
-                  boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 8px 30px rgba(139, 92, 246, 0.4)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(139, 92, 246, 0.3)';
+                  marginBottom: '24px'
                 }}
               >
-                <Brain style={{ height: '28px', width: '28px', color: '#ffffff' }} />
-                <div style={{ flex: 1 }}>
-                  <span style={{
+                {/* Header */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  marginBottom: '6px'
+                }}>
+                  <div style={{
+                    width: '28px',
+                    height: '28px',
+                    background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <span style={{ fontSize: '14px' }}>🎯</span>
+                  </div>
+                  <h3 style={{
+                    color: '#ffffff',
                     fontSize: '16px',
                     fontWeight: '700',
-                    color: '#ffffff',
+                    margin: 0,
                     textTransform: 'uppercase',
-                    letterSpacing: '1px'
+                    letterSpacing: '0.5px'
                   }}>
                     Training Mode
-                  </span>
-                  <span style={{
-                    fontSize: '14px',
-                    color: 'rgba(255, 255, 255, 0.85)',
-                    marginLeft: '12px'
-                  }}>
-                    Practice your strategy
-                  </span>
+                  </h3>
                 </div>
-                <ArrowRight style={{ height: '20px', width: '20px', color: '#ffffff' }} />
+
+                {/* Subheader */}
+                <p style={{
+                  color: '#a78bfa',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  margin: '0 0 20px 0'
+                }}>
+                  Practice against CPU opponent!
+                </p>
+
+                {/* CSS Animations for Classic Training Button */}
+                <style>{`
+                  @keyframes classic-pulse-glow {
+                    0%, 100% { opacity: 0.5; transform: scale(1); }
+                    50% { opacity: 0.8; transform: scale(1.08); }
+                  }
+                  @keyframes classic-pulse-ring {
+                    0%, 100% { transform: scale(1); opacity: 0.5; }
+                    50% { transform: scale(1.12); opacity: 0.2; }
+                  }
+                  @keyframes classic-rotate-arc {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                  }
+                `}</style>
+
+                {/* Single Training Button - Centered */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'center'
+                }}>
+                  <button
+                    onClick={() => {
+                      setShowClassicTrainingConfirm(true);
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '8px',
+                      transition: 'transform 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.08)'}
+                    onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                  >
+                    <div style={{ position: 'relative', width: '90px', height: '90px' }}>
+                      {/* Outer glow */}
+                      <div style={{
+                        position: 'absolute',
+                        inset: '-12px',
+                        borderRadius: '50%',
+                        background: 'radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, transparent 70%)',
+                        animation: 'classic-pulse-glow 2s ease-in-out infinite'
+                      }} />
+                      {/* Pulsing ring */}
+                      <div style={{
+                        position: 'absolute',
+                        inset: '-4px',
+                        borderRadius: '50%',
+                        border: '2px solid #8b5cf6',
+                        animation: 'classic-pulse-ring 2s ease-in-out infinite'
+                      }} />
+                      {/* Main circle with gradient */}
+                      <div style={{
+                        width: '90px',
+                        height: '90px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 4px 24px rgba(139, 92, 246, 0.5), inset 0 2px 10px rgba(255,255,255,0.2)',
+                        position: 'relative',
+                        overflow: 'hidden'
+                      }}>
+                        {/* Shine overlay */}
+                        <div style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: '50%',
+                          background: 'linear-gradient(180deg, rgba(255,255,255,0.25) 0%, transparent 100%)',
+                          borderRadius: '50% 50% 0 0'
+                        }} />
+                        {/* Brain/Target Icon */}
+                        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" style={{ position: 'relative', zIndex: 1 }}>
+                          <circle cx="12" cy="12" r="10" stroke="#ffffff" strokeWidth="2" />
+                          <circle cx="12" cy="12" r="6" stroke="#ffffff" strokeWidth="2" />
+                          <circle cx="12" cy="12" r="2" fill="#ffffff" />
+                          <path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" />
+                        </svg>
+                      </div>
+                      {/* Rotating arc */}
+                      <svg style={{
+                        position: 'absolute',
+                        top: '-6px',
+                        left: '-6px',
+                        width: '102px',
+                        height: '102px',
+                        animation: 'classic-rotate-arc 4s linear infinite',
+                        pointerEvents: 'none'
+                      }}>
+                        <circle
+                          cx="51"
+                          cy="51"
+                          r="47"
+                          fill="none"
+                          stroke="#8b5cf6"
+                          strokeWidth="2"
+                          strokeDasharray="50 250"
+                          strokeLinecap="round"
+                          opacity="0.6"
+                        />
+                      </svg>
+                    </div>
+                    <span style={{
+                      color: '#ffffff',
+                      fontSize: '14px',
+                      fontWeight: '800',
+                      letterSpacing: '1px',
+                      textShadow: '0 0 12px rgba(139, 92, 246, 0.6)'
+                    }}>
+                      START TRAINING
+                    </span>
+                    <span style={{ color: '#8b949e', fontSize: '12px' }}>~5 min • Stocks & Crypto</span>
+                  </button>
+                </div>
+
+                {/* Helper Text */}
+                <p style={{
+                  color: '#8b949e',
+                  fontSize: '11px',
+                  textAlign: 'center',
+                  margin: '16px 0 0 0'
+                }}>
+                  Practice against CPU opponent - No pressure, just learning
+                </p>
               </motion.div>
             )}
 
-            {/* Research Mode Banner */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.45 }}
-              onClick={() => setShowResearchMode(true)}
-              style={{
-                background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)',
-                border: '1px solid rgba(0, 217, 255, 0.3)',
-                borderRadius: '14px',
-                padding: '16px 24px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '16px',
-                cursor: 'pointer',
-                transition: 'all 0.3s',
-                marginBottom: '24px'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 30px rgba(0, 217, 255, 0.2)';
-                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 217, 255, 0.15) 0%, rgba(59, 130, 246, 0.15) 100%)';
-                e.currentTarget.style.borderColor = 'rgba(0, 217, 255, 0.5)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = 'none';
-                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 217, 255, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)';
-                e.currentTarget.style.borderColor = 'rgba(0, 217, 255, 0.3)';
-              }}
-            >
-              <div style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '12px',
-                background: 'rgba(0, 217, 255, 0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <BarChart3 style={{ height: '24px', width: '24px', color: colors.cyan }} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{
-                  fontSize: '16px',
-                  fontWeight: '700',
-                  color: colors.cyan,
-                  marginBottom: '2px'
-                }}>
-                  Research Assets
-                </div>
-                <div style={{
-                  fontSize: '13px',
-                  color: '#8b949e'
-                }}>
-                  Analyze stocks & crypto before building your portfolio
-                </div>
-              </div>
-              <ArrowRight style={{ height: '20px', width: '20px', color: colors.cyan }} />
-            </motion.div>
-
             {/* Weekly Challenges Section */}
             <motion.div
+              id="tour-weekly-challenges"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.45 }}
@@ -18180,6 +20824,7 @@ ${tier3Picks || 'None selected'}
 
           {/* DESKTOP: Bottom Stats Bar - Fixed */}
           <div
+            id="tour-rank-section"
             className="hidden md:flex"
             style={{
               position: 'fixed',
@@ -19871,6 +22516,43 @@ ${tier3Picks || 'None selected'}
                     Start Draft
                   </button>
                 </div>
+
+                {/* Tutorial Button */}
+                <button
+                  onClick={() => {
+                    setTutorialMode('draftTraining');
+                    setTutorialStep(0);
+                    setShowTutorial(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    marginTop: '16px',
+                    padding: '12px',
+                    background: 'transparent',
+                    border: '1px dashed rgba(139, 92, 246, 0.4)',
+                    borderRadius: '10px',
+                    color: '#a78bfa',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(139, 92, 246, 0.1)';
+                    e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.6)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.4)';
+                  }}
+                >
+                  <BookOpen size={16} />
+                  <span>How to Play</span>
+                </button>
               </div>
             </div>
           </>
@@ -19975,6 +22657,129 @@ ${tier3Picks || 'None selected'}
             </div>
           </>
         )}
+
+        {/* ========== CONFIRMATION POPUPS ========== */}
+        <ConfirmationPopup
+          show={showCreateBattleConfirm}
+          onClose={() => setShowCreateBattleConfirm(false)}
+          onConfirm={() => {
+            setShowCreateBattleConfirm(false);
+            setBuilderMode('create');
+            setScreen('builder');
+          }}
+          icon={<TrendingUp size={32} style={{ color: '#ffffff' }} />}
+          iconBgColor="#00d9ff"
+          title="Create Battle?"
+          subtitle="Challenge opponents with your portfolio picks"
+          details={[
+            { label: 'Assets Required', value: '7-13 picks' },
+            { label: 'Duration', value: '24 hours' },
+            { label: 'Rewards', value: '+100 XP (win) / +25 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
+          ]}
+          confirmText="Create Battle"
+          confirmColor="#00d9ff"
+          tutorialModeType="classic"
+        />
+
+        <ConfirmationPopup
+          show={showJoinBattleConfirm}
+          onClose={() => setShowJoinBattleConfirm(false)}
+          onConfirm={() => {
+            setShowJoinBattleConfirm(false);
+            setBuilderMode('join');
+            setScreen('join');
+          }}
+          icon={<Users size={32} style={{ color: '#ffffff' }} />}
+          iconBgColor="#00d9ff"
+          title="Join Battle?"
+          subtitle="Enter a challenge code to compete"
+          details={[
+            { label: 'Assets Required', value: '7-13 picks' },
+            { label: 'Duration', value: '24 hours' },
+            { label: 'Rewards', value: '+100 XP (win) / +25 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
+          ]}
+          confirmText="Join Battle"
+          confirmColor="#00d9ff"
+          tutorialModeType="classic"
+        />
+
+        <ConfirmationPopup
+          show={showClassicTrainingConfirm}
+          onClose={() => setShowClassicTrainingConfirm(false)}
+          onConfirm={() => {
+            setShowClassicTrainingConfirm(false);
+            setPortfolio([]);
+            setPortfolioType(null);
+            setPortfolioName('');
+            setAssetType('stocks');
+            setSearchTerm('');
+            setSelectedCrypto(null);
+            setBuilderMode('training');
+            setScreen('builder');
+          }}
+          icon={<GraduationCap size={32} style={{ color: '#ffffff' }} />}
+          iconBgColor="#9333ea"
+          title="Start Training Battle?"
+          subtitle="Practice against a CPU opponent"
+          details={[
+            { label: 'Assets Required', value: '7-13 picks' },
+            { label: 'Duration', value: '1 hour' },
+            { label: 'Rewards', value: '+10 XP (win) / +5 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
+          ]}
+          confirmText="Start Training"
+          confirmColor="#9333ea"
+          tutorialModeType="training"
+        />
+
+        <ConfirmationPopup
+          show={showCreateDraftConfirm}
+          onClose={() => setShowCreateDraftConfirm(false)}
+          onConfirm={() => {
+            setShowCreateDraftConfirm(false);
+            setScreen('draftSetup');
+          }}
+          icon={<TrendingUp size={32} style={{ color: '#ffffff' }} />}
+          iconBgColor="#10b981"
+          title="Create Snake Draft?"
+          subtitle="Start a 4-player snake draft lobby"
+          details={[
+            { label: 'Players', value: '4 players' },
+            { label: 'Picks', value: '9 per player' },
+            { label: 'Time per pick', value: '2 minutes' },
+            { label: 'Rewards', value: '+150 XP (1st) / +100 XP (2nd)', highlight: true, highlightColor: '#f59e0b' }
+          ]}
+          confirmText="Create Draft"
+          confirmColor="#10b981"
+          tutorialModeType="draft"
+        />
+
+        <ConfirmationPopup
+          show={showJoinDraftConfirm}
+          onClose={() => setShowJoinDraftConfirm(false)}
+          onConfirm={() => {
+            setShowJoinDraftConfirm(false);
+            setScreen('draftJoin');
+          }}
+          icon={<Users size={32} style={{ color: '#ffffff' }} />}
+          iconBgColor="#10b981"
+          title="Join Snake Draft?"
+          subtitle="Enter a draft code to join a lobby"
+          details={[
+            { label: 'Players', value: '4 players' },
+            { label: 'Picks', value: '9 per player' },
+            { label: 'Time per pick', value: '2 minutes' },
+            { label: 'Rewards', value: '+150 XP (1st) / +100 XP (2nd)', highlight: true, highlightColor: '#f59e0b' }
+          ]}
+          confirmText="Join Draft"
+          confirmColor="#10b981"
+          tutorialModeType="draft"
+        />
+
+        {/* Tutorial Modal */}
+        <TutorialModal />
+
+        {/* ========== SPOTLIGHT TOUR (Interactive Onboarding) ========== */}
+        <SpotlightTour />
       </div>
     );
   }
@@ -21228,59 +24033,56 @@ ${tier3Picks || 'None selected'}
                   }
                   setShowPortfolioManager(false);
                 }}
-                disabled={
-                  !portfolioName ||
-                  portfolio.length < 6 ||
-                  portfolio.length > 12 ||
-                  !selectedCrypto ||
-                  Math.abs(totalPercentage - 100) >= 0.01 ||
-                  cryptoPercentage < 7.5 || cryptoPercentage > 20 ||
-                  (builderMode === 'join' && (!joinCode || joinCode.length !== 6))
-                }
-                style={{
-                  width: '100%',
-                  backgroundColor: portfolioName && portfolio.length >= 6 && portfolio.length <= 12 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01 && cryptoPercentage >= 7.5 && cryptoPercentage <= 20
-                    ? builderMode === 'training' ? '#a855f7' : builderMode === 'join' ? '#06b6d4' : '#8b5cf6'
-                    : '#21262d',
-                  color: portfolioName && portfolio.length >= 6 && portfolio.length <= 12 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01 && cryptoPercentage >= 7.5 && cryptoPercentage <= 20
-                    ? '#ffffff'
-                    : '#6e7681',
-                  border: 'none',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                  cursor: portfolioName && portfolio.length >= 6 && portfolio.length <= 12 && selectedCrypto && Math.abs(totalPercentage - 100) < 0.01 && cryptoPercentage >= 7.5 && cryptoPercentage <= 20
-                    ? 'pointer'
-                    : 'not-allowed',
-                  marginTop: '20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  transition: 'all 0.2s'
-                }}
+                disabled={(() => {
+                  const totalAssets = portfolio.length + (selectedCrypto ? 1 : 0);
+                  return !portfolioName ||
+                    totalAssets < 7 ||
+                    totalAssets > 13 ||
+                    Math.abs(totalPercentage - 100) >= 0.01 ||
+                    cryptoPercentage < 7.5 || cryptoPercentage > 20 ||
+                    (builderMode === 'join' && (!joinCode || joinCode.length !== 6));
+                })()}
+                style={(() => {
+                  const totalAssets = portfolio.length + (selectedCrypto ? 1 : 0);
+                  const canProceed = portfolioName && totalAssets >= 7 && totalAssets <= 13 && Math.abs(totalPercentage - 100) < 0.01 && cryptoPercentage >= 7.5 && cryptoPercentage <= 20;
+                  return {
+                    width: '100%',
+                    backgroundColor: canProceed
+                      ? builderMode === 'training' ? '#a855f7' : builderMode === 'join' ? '#06b6d4' : '#8b5cf6'
+                      : '#21262d',
+                    color: canProceed ? '#ffffff' : '#6e7681',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    fontSize: '16px',
+                    fontWeight: 'bold',
+                    cursor: canProceed ? 'pointer' : 'not-allowed',
+                    marginTop: '20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    transition: 'all 0.2s'
+                  };
+                })()}
               >
                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
-                {!portfolioName
-                  ? 'Enter Portfolio Name'
-                  : portfolio.length === 0
-                  ? 'Add Assets'
-                  : portfolio.length < 7
-                  ? `Need ${7 - portfolio.length} More Assets`
-                  : portfolio.length > 13
-                  ? `Remove ${portfolio.length - 13} Assets`
-                  : !selectedCrypto
-                  ? 'Select 1 Crypto'
-                  : Math.abs(totalPercentage - 100) >= 0.01
-                  ? `Adjust to 100% (${totalPercentage.toFixed(1)}%)`
-                  : builderMode === 'training'
-                  ? '🤖 Start Training Battle'
-                  : builderMode === 'join'
-                  ? '🎯 Join Battle'
-                  : '⚔️ Create Battle'}
+                {(() => {
+                  const totalAssets = portfolio.length + (selectedCrypto ? 1 : 0);
+                  const assetsNeeded = 7 - totalAssets;
+                  const assetsOver = totalAssets - 13;
+
+                  if (!portfolioName) return 'Enter Portfolio Name';
+                  if (totalAssets === 0) return 'Add Assets';
+                  if (totalAssets < 7) return `Need ${assetsNeeded} More Asset${assetsNeeded !== 1 ? 's' : ''}`;
+                  if (totalAssets > 13) return `Remove ${assetsOver} Asset${assetsOver !== 1 ? 's' : ''}`;
+                  if (Math.abs(totalPercentage - 100) >= 0.01) return `Adjust to 100% (${totalPercentage.toFixed(1)}%)`;
+                  if (builderMode === 'training') return '🤖 Start Training Battle';
+                  if (builderMode === 'join') return '🎯 Join Battle';
+                  return '⚔️ Create Battle';
+                })()}
               </button>
             </div>
           </div>
@@ -22826,64 +25628,119 @@ ${tier3Picks || 'None selected'}
             </div>
           </div>
 
-          {/* Asset Grid - Phase 4: Mobile Polish */}
+          {/* Ripple animation keyframes */}
+          <style>
+            {`
+              @keyframes pickRipple {
+                0% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; }
+                100% { transform: translate(-50%, -50%) scale(15); opacity: 0; }
+              }
+            `}
+          </style>
+
+          {/* Asset Grid - Phase 4: Enhanced with Glossy PICK buttons */}
           <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
             <div style={{
               maxWidth: '900px',
               margin: '0 auto',
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
-              gap: '8px'
+              gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
+              gap: '10px'
             }}>
               {availableAssets.map(asset => (
-                <button
+                <div
                   key={asset.symbol}
-                  onClick={() => handlePick(asset)}
-                  disabled={!isMyTurn || !canPickFromCategory(selectedDraftCategory)}
+                  onClick={() => setDraftAssetInfoModal(asset)}
                   style={{
                     background: '#161b22',
                     border: '1px solid #21262d',
                     borderRadius: '12px',
-                    padding: '14px 10px',
-                    minHeight: '80px',
+                    padding: '12px 10px',
+                    minHeight: '90px',
                     textAlign: 'center',
-                    cursor: isMyTurn && canPickFromCategory(selectedDraftCategory) ? 'pointer' : 'not-allowed',
-                    opacity: isMyTurn && canPickFromCategory(selectedDraftCategory) ? 1 : 0.5,
-                    transition: 'all 0.2s',
-                    WebkitTapHighlightColor: 'transparent'
+                    cursor: 'pointer',
+                    opacity: isMyTurn && canPickFromCategory(selectedDraftCategory) ? 1 : 0.6,
+                    transition: 'all 0.2s ease',
+                    position: 'relative',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                    e.currentTarget.style.borderColor = 'rgba(0, 217, 255, 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                    e.currentTarget.style.borderColor = '#21262d';
                   }}
                 >
                   <div style={{
-                    fontSize: '16px',
+                    fontSize: '15px',
                     fontWeight: 'bold',
                     color: '#ffffff',
-                    marginBottom: '4px'
+                    marginBottom: '2px'
                   }}>
                     {asset.symbol}
                   </div>
                   <div style={{
-                    fontSize: '11px',
+                    fontSize: '10px',
                     color: '#8b949e',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
+                    whiteSpace: 'nowrap',
+                    marginBottom: '8px'
                   }}>
                     {asset.name}
                   </div>
+
+                  {/* Subtle PICK Button */}
                   {isMyTurn && canPickFromCategory(selectedDraftCategory) && (
-                    <div style={{
-                      marginTop: '8px',
-                      padding: '6px 12px',
-                      background: '#00d9ff',
-                      color: '#000000',
-                      fontWeight: 'bold',
-                      fontSize: '11px',
-                      borderRadius: '6px'
-                    }}>
+                    <button
+                      className="pick-button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePick(asset);
+                      }}
+                      style={{
+                        padding: '8px 16px',
+                        minWidth: '70px',
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        borderRadius: '6px',
+                        color: 'rgba(255, 255, 255, 0.9)',
+                        fontWeight: '600',
+                        fontSize: '12px',
+                        letterSpacing: '0.5px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        userSelect: 'none',
+                        WebkitTapHighlightColor: 'transparent',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(0, 217, 255, 0.15)';
+                        e.currentTarget.style.borderColor = 'rgba(0, 217, 255, 0.4)';
+                        e.currentTarget.style.color = '#00d9ff';
+                        e.currentTarget.style.boxShadow = '0 0 12px rgba(0, 217, 255, 0.2)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+                        e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                      onMouseDown={(e) => {
+                        e.currentTarget.style.transform = 'scale(0.97)';
+                        e.currentTarget.style.background = 'rgba(0, 217, 255, 0.25)';
+                      }}
+                      onMouseUp={(e) => {
+                        e.currentTarget.style.transform = 'scale(1)';
+                        e.currentTarget.style.background = 'rgba(0, 217, 255, 0.15)';
+                      }}
+                    >
                       PICK
-                    </div>
+                    </button>
                   )}
-                </button>
+                </div>
               ))}
             </div>
 
@@ -22918,6 +25775,343 @@ ${tier3Picks || 'None selected'}
               </div>
             </div>
           </div>
+
+          {/* Full Stock Details Modal - Shows when clicking asset card */}
+          {draftAssetInfoModal && (() => {
+            // Get additional stock data from stocksData
+            const stockData = stocksData?.find(s => s.symbol === draftAssetInfoModal.symbol) || draftAssetInfoModal;
+            const sector = stockData.sector || getStockSector(draftAssetInfoModal.symbol) || 'Technology';
+            const sectorColor = getSectorColor(sector);
+
+            // Calculate analyst sentiment
+            const analystRating = stockData.analystRating || {};
+            const totalAnalysts = (analystRating.buy || 0) + (analystRating.hold || 0) + (analystRating.sell || 0);
+            const buyPercent = totalAnalysts > 0 ? ((analystRating.buy || 0) / totalAnalysts * 100) : null;
+            const sentiment = buyPercent !== null
+              ? buyPercent >= 60 ? 'Buy' : buyPercent >= 40 ? 'Hold' : 'Sell'
+              : null;
+            const sentimentColor = sentiment === 'Buy' ? '#10b981' : sentiment === 'Sell' ? '#ef4444' : '#f59e0b';
+
+            return (
+            <div
+              onClick={() => setDraftAssetInfoModal(null)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(0, 0, 0, 0.9)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000,
+                padding: '16px'
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  background: '#0d1117',
+                  border: `1px solid ${sectorColor}`,
+                  borderRadius: '16px',
+                  width: '100%',
+                  maxWidth: '420px',
+                  maxHeight: '85vh',
+                  overflow: 'auto',
+                  position: 'relative',
+                  boxShadow: `0 0 40px ${sectorColor}40`
+                }}
+              >
+                {/* Header with Sector Color Accent */}
+                <div style={{
+                  padding: '20px',
+                  background: `linear-gradient(180deg, ${sectorColor}15 0%, #0d1117 100%)`,
+                  borderBottom: '1px solid #21262d',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{
+                        fontSize: '28px',
+                        fontWeight: '800',
+                        color: '#ffffff',
+                        letterSpacing: '1px',
+                        textShadow: `0 0 20px ${sectorColor}60`
+                      }}>
+                        {draftAssetInfoModal.symbol}
+                      </div>
+                      <div style={{ fontSize: '14px', color: '#8b949e', marginTop: '2px' }}>
+                        {draftAssetInfoModal.name}
+                      </div>
+                      <div style={{
+                        display: 'inline-block',
+                        marginTop: '8px',
+                        padding: '4px 10px',
+                        background: `${sectorColor}20`,
+                        border: `1px solid ${sectorColor}40`,
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        color: sectorColor,
+                        fontWeight: '600'
+                      }}>
+                        {sector}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setDraftAssetInfoModal(null)}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: 'none',
+                        color: '#8b949e',
+                        fontSize: '18px',
+                        cursor: 'pointer',
+                        padding: '8px',
+                        borderRadius: '8px',
+                        lineHeight: 1
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Large Price Display */}
+                  <div style={{ marginTop: '16px' }}>
+                    <div style={{ fontSize: '36px', fontWeight: '700', color: '#ffffff' }}>
+                      ${(stockData.price || draftAssetInfoModal.price)?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    {(stockData.percentChange !== undefined || draftAssetInfoModal.percentChange !== undefined) && (
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        marginTop: '4px',
+                        padding: '4px 10px',
+                        background: (stockData.percentChange || draftAssetInfoModal.percentChange) >= 0
+                          ? 'rgba(16, 185, 129, 0.15)'
+                          : 'rgba(239, 68, 68, 0.15)',
+                        borderRadius: '6px',
+                        fontSize: '15px',
+                        fontWeight: '600',
+                        color: (stockData.percentChange || draftAssetInfoModal.percentChange) >= 0 ? '#10b981' : '#ef4444',
+                      }}>
+                        {(stockData.percentChange || draftAssetInfoModal.percentChange) >= 0 ? '▲' : '▼'}
+                        {Math.abs(stockData.percentChange || draftAssetInfoModal.percentChange).toFixed(2)}% today
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Analyst Sentiment */}
+                {sentiment && (
+                  <div style={{
+                    padding: '16px 20px',
+                    borderBottom: '1px solid #21262d',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '11px', color: '#8b949e', textTransform: 'uppercase', marginBottom: '4px' }}>
+                        Analyst Rating
+                      </div>
+                      <div style={{
+                        fontSize: '20px',
+                        fontWeight: '700',
+                        color: sentimentColor
+                      }}>
+                        {sentiment}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '4px' }}>
+                        {totalAnalysts} Analysts
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', fontSize: '12px' }}>
+                        <span style={{ color: '#10b981' }}>{analystRating.buy || 0} Buy</span>
+                        <span style={{ color: '#f59e0b' }}>{analystRating.hold || 0} Hold</span>
+                        <span style={{ color: '#ef4444' }}>{analystRating.sell || 0} Sell</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Key Metrics Grid */}
+                <div style={{
+                  padding: '16px 20px',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: '12px',
+                  borderBottom: '1px solid #21262d'
+                }}>
+                  <div style={{
+                    background: '#161b22',
+                    borderRadius: '10px',
+                    padding: '14px'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase' }}>Market Cap</div>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#e6edf3' }}>
+                      {stockData.marketCap
+                        ? stockData.marketCap >= 1e12
+                          ? `$${(stockData.marketCap / 1e12).toFixed(2)}T`
+                          : `$${(stockData.marketCap / 1e9).toFixed(1)}B`
+                        : 'N/A'}
+                    </div>
+                  </div>
+                  <div style={{
+                    background: '#161b22',
+                    borderRadius: '10px',
+                    padding: '14px'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase' }}>P/E Ratio</div>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#e6edf3' }}>
+                      {stockData.pe ? stockData.pe.toFixed(1) : stockData.peRatio ? stockData.peRatio.toFixed(1) : 'N/A'}
+                    </div>
+                  </div>
+                  <div style={{
+                    background: '#161b22',
+                    borderRadius: '10px',
+                    padding: '14px'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase' }}>Revenue Growth</div>
+                    <div style={{
+                      fontSize: '16px',
+                      fontWeight: '700',
+                      color: (stockData.revenueGrowth || 0) >= 0 ? '#10b981' : '#ef4444'
+                    }}>
+                      {stockData.revenueGrowth
+                        ? `${stockData.revenueGrowth >= 0 ? '+' : ''}${stockData.revenueGrowth.toFixed(1)}%`
+                        : 'N/A'}
+                    </div>
+                  </div>
+                  <div style={{
+                    background: '#161b22',
+                    borderRadius: '10px',
+                    padding: '14px'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase' }}>Profit Margin</div>
+                    <div style={{
+                      fontSize: '16px',
+                      fontWeight: '700',
+                      color: (stockData.profitMargin || 0) >= 0 ? '#10b981' : '#ef4444'
+                    }}>
+                      {stockData.profitMargin
+                        ? `${stockData.profitMargin.toFixed(1)}%`
+                        : 'N/A'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Additional Stats Row */}
+                <div style={{
+                  padding: '12px 20px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  borderBottom: '1px solid #21262d',
+                  fontSize: '12px'
+                }}>
+                  <div>
+                    <span style={{ color: '#8b949e' }}>52W High: </span>
+                    <span style={{ color: '#e6edf3', fontWeight: '600' }}>
+                      ${stockData.high52 ? stockData.high52.toFixed(2) : 'N/A'}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#8b949e' }}>52W Low: </span>
+                    <span style={{ color: '#e6edf3', fontWeight: '600' }}>
+                      ${stockData.low52 ? stockData.low52.toFixed(2) : 'N/A'}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#8b949e' }}>Vol: </span>
+                    <span style={{ color: '#e6edf3', fontWeight: '600' }}>
+                      {stockData.volume
+                        ? stockData.volume >= 1e6
+                          ? `${(stockData.volume / 1e6).toFixed(1)}M`
+                          : `${(stockData.volume / 1e3).toFixed(0)}K`
+                        : 'N/A'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Category Badge */}
+                <div style={{ padding: '16px 20px', borderBottom: '1px solid #21262d' }}>
+                  <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '8px', textTransform: 'uppercase' }}>
+                    Draft Category
+                  </div>
+                  <span style={{
+                    display: 'inline-block',
+                    padding: '8px 14px',
+                    borderRadius: '20px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    background: selectedDraftCategory === 'steady' ? 'rgba(16, 185, 129, 0.2)' :
+                                selectedDraftCategory === 'risky' ? 'rgba(245, 158, 11, 0.2)' :
+                                'rgba(59, 130, 246, 0.2)',
+                    color: selectedDraftCategory === 'steady' ? '#10b981' :
+                           selectedDraftCategory === 'risky' ? '#f59e0b' : '#3b82f6',
+                    textTransform: 'uppercase'
+                  }}>
+                    {selectedDraftCategory === 'steady' ? '🛡️ Steady' : selectedDraftCategory === 'risky' ? '⚡ Risky' : '🏛️ Defensive'}
+                  </span>
+                  <div style={{ marginTop: '10px', fontSize: '12px', color: '#8b949e', lineHeight: '1.5' }}>
+                    {selectedDraftCategory === 'steady'
+                      ? 'Steady picks provide reliable, consistent performance with lower volatility. Great foundation for your portfolio.'
+                      : selectedDraftCategory === 'risky'
+                      ? 'Risky picks have higher volatility and potential for big swings. High risk, high reward plays.'
+                      : 'Defensive picks offer protection during market downturns. Helps balance aggressive positions.'}
+                  </div>
+                </div>
+
+                {/* PICK Button - Subtle Style */}
+                {isMyTurn && canPickFromCategory(selectedDraftCategory) && (
+                  <div style={{ padding: '20px' }}>
+                    <button
+                      onClick={() => {
+                        handlePick(draftAssetInfoModal);
+                        setDraftAssetInfoModal(null);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '16px 24px',
+                        background: 'rgba(0, 217, 255, 0.15)',
+                        border: '1px solid rgba(0, 217, 255, 0.4)',
+                        borderRadius: '12px',
+                        color: '#00d9ff',
+                        fontWeight: '700',
+                        fontSize: '15px',
+                        letterSpacing: '0.5px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(0, 217, 255, 0.25)';
+                        e.currentTarget.style.boxShadow = '0 0 20px rgba(0, 217, 255, 0.3)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(0, 217, 255, 0.15)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    >
+                      PICK {draftAssetInfoModal.symbol}
+                    </button>
+                  </div>
+                )}
+
+                {/* Disabled state message */}
+                {(!isMyTurn || !canPickFromCategory(selectedDraftCategory)) && (
+                  <div style={{
+                    padding: '20px',
+                    textAlign: 'center',
+                    color: '#8b949e',
+                    fontSize: '13px'
+                  }}>
+                    {!isMyTurn ? "Wait for your turn to pick" : `You've already filled your ${selectedDraftCategory} category`}
+                  </div>
+                )}
+              </div>
+            </div>
+            );
+          })()}
 
           {/* Swipeable Portfolio Drawer - Draft Fixes */}
           <div
@@ -27528,6 +30722,7 @@ ${tier3Picks || 'None selected'}
           {toast.message}
         </div>
       )}
+
     </>
   );
 }

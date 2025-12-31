@@ -144,9 +144,21 @@ const STOCK_ANALYSIS_DATA = {
   }
 };
 
-// Notes Modal Component
+// Helper to get category emoji
+const getCategoryEmoji = (category) => {
+  if (category === 'steady') return '🛡️';
+  if (category === 'risky') return '⚡';
+  if (category === 'defensive') return '🏛️';
+  return '📊';
+};
+
+// Notes Modal Component - Enhanced with Game Plan display
 const NotesModal = ({ isOpen, onClose, notes }) => {
   if (!isOpen) return null;
+
+  // Read saved game plan from localStorage
+  const draftNotes = JSON.parse(localStorage.getItem('draftNotes') || '[]');
+  const gamePlan = draftNotes.find(note => note.type === 'game-plan');
 
   return (
     <div
@@ -174,7 +186,7 @@ const NotesModal = ({ isOpen, onClose, notes }) => {
           borderRadius: '12px',
           width: '90%',
           maxWidth: '400px',
-          maxHeight: '60vh',
+          maxHeight: '70vh',
           display: 'flex',
           flexDirection: 'column'
         }}
@@ -213,7 +225,134 @@ const NotesModal = ({ isOpen, onClose, notes }) => {
             flex: 1
           }}
         >
-          {notes.length === 0 ? (
+          {/* Saved Game Plan - Prominent Display */}
+          {gamePlan && (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, #161b22 100%)',
+              border: '2px solid #10b981',
+              borderRadius: '12px',
+              padding: '16px',
+              marginBottom: '16px',
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginBottom: '12px'
+              }}>
+                <span style={{ fontSize: '18px' }}>🐍</span>
+                <span style={{ fontWeight: '700', color: '#10b981', fontSize: '14px' }}>Your Draft Strategy</span>
+                <span style={{
+                  fontSize: '11px',
+                  color: '#8b949e',
+                  marginLeft: 'auto'
+                }}>
+                  {new Date(gamePlan.timestamp).toLocaleDateString()}
+                </span>
+              </div>
+
+              {/* Strategy badge */}
+              <div style={{
+                display: 'inline-block',
+                background: 'rgba(16, 185, 129, 0.2)',
+                padding: '4px 12px',
+                borderRadius: '20px',
+                fontSize: '12px',
+                color: '#10b981',
+                fontWeight: '600',
+                marginBottom: '12px'
+              }}>
+                {gamePlan.strategyLabel} Strategy
+              </div>
+
+              {/* Tier 1 picks - most important */}
+              {gamePlan.tiers?.tier1 && (
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{
+                    fontSize: '12px',
+                    color: '#f59e0b',
+                    fontWeight: '600',
+                    marginBottom: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}>
+                    🔥 TIER 1 — Draft First
+                  </div>
+                  <div style={{
+                    fontSize: '13px',
+                    color: '#e6edf3',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '6px'
+                  }}>
+                    {Object.entries(gamePlan.tiers.tier1)
+                      .filter(([_, picks]) => picks && picks.length > 0)
+                      .map(([category, picks]) => (
+                        <span key={category} style={{
+                          background: category === 'steady' ? 'rgba(59, 130, 246, 0.2)' :
+                                      category === 'risky' ? 'rgba(239, 68, 68, 0.2)' :
+                                      'rgba(139, 92, 246, 0.2)',
+                          border: `1px solid ${category === 'steady' ? '#3b82f6' :
+                                              category === 'risky' ? '#ef4444' : '#8b5cf6'}40`,
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          fontSize: '12px'
+                        }}>
+                          {getCategoryEmoji(category)} {picks.join(', ')}
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Tier 2 picks */}
+              {gamePlan.tiers?.tier2 && Object.values(gamePlan.tiers.tier2).some(arr => arr && arr.length > 0) && (
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{
+                    fontSize: '11px',
+                    color: '#8b949e',
+                    fontWeight: '600',
+                    marginBottom: '4px'
+                  }}>
+                    ⚡ TIER 2 — Backups
+                  </div>
+                  <div style={{
+                    fontSize: '12px',
+                    color: '#8b949e',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '4px'
+                  }}>
+                    {Object.entries(gamePlan.tiers.tier2)
+                      .filter(([_, picks]) => picks && picks.length > 0)
+                      .map(([category, picks]) => (
+                        <span key={category}>
+                          {getCategoryEmoji(category)} {picks.join(', ')}
+                        </span>
+                      ))
+                      .reduce((prev, curr, i) => i === 0 ? [curr] : [...prev, ' | ', curr], [])}
+                  </div>
+                </div>
+              )}
+
+              {/* Quick tips */}
+              {gamePlan.tips && gamePlan.tips.length > 0 && (
+                <div style={{
+                  fontSize: '12px',
+                  color: '#8b949e',
+                  borderTop: '1px solid #21262d',
+                  paddingTop: '12px',
+                  marginTop: '8px'
+                }}>
+                  💡 {gamePlan.tips[0]}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Regular notes */}
+          {notes.length === 0 && !gamePlan ? (
             <p style={{ color: '#8b949e', textAlign: 'center', padding: '20px' }}>No notes saved yet</p>
           ) : (
             notes.map((note, i) => (
