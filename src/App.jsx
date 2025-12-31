@@ -17886,6 +17886,22 @@ export default function PortfolioDuel() {
   }
 
   // ============================================
+  // SPOTLIGHT TOUR CONSTANTS
+  // ============================================
+  const TOUR_CONSTANTS = {
+    TOOLTIP_HEIGHT: 220,
+    TOOLTIP_OFFSET: 25,
+    MIN_TOP_MARGIN: 20,
+    MAX_BOTTOM_MARGIN: 280,
+    SCROLL_OFFSET_ABOVE: 300,
+    SCROLL_OFFSET_BELOW: 100,
+    ANIMATION_DELAY: 500,
+    SPOTLIGHT_PADDING: 10,
+    ARROW_OFFSET: 13,
+    Z_INDEX: 9999
+  };
+
+  // ============================================
   // SPOTLIGHT TOUR COMPONENT - v10 (Bug fixes + fallback mode)
   // ============================================
   const SpotlightTour = () => {
@@ -17909,8 +17925,7 @@ export default function PortfolioDuel() {
 
       const element = document.getElementById(currentStep.target);
       if (!element) {
-        console.warn('Tour element not found:', currentStep.target, '- showing fallback tooltip');
-        // Set a fallback centered position so tooltip still renders
+        // Silent fallback - element not found, showing centered tooltip
         setSpotlightRect(null); // No spotlight, but that's okay
         setTooltipPos({
           top: window.innerHeight / 2 - 110,
@@ -17927,17 +17942,17 @@ export default function PortfolioDuel() {
 
       if (currentStep.position === 'spotlight-above') {
         // Element at bottom, scroll so there's room for tooltip above
-        const scrollTarget = absoluteTop - window.innerHeight + rect.height + 300;
+        const scrollTarget = absoluteTop - window.innerHeight + rect.height + TOUR_CONSTANTS.SCROLL_OFFSET_ABOVE;
         window.scrollTo({ top: Math.max(0, scrollTarget), behavior: 'smooth' });
       } else {
         // Element at top
-        const scrollTarget = absoluteTop - 100;
+        const scrollTarget = absoluteTop - TOUR_CONSTANTS.SCROLL_OFFSET_BELOW;
         window.scrollTo({ top: Math.max(0, scrollTarget), behavior: 'smooth' });
       }
 
       setTimeout(() => {
         const newRect = element.getBoundingClientRect();
-        const padding = 10;
+        const padding = TOUR_CONSTANTS.SPOTLIGHT_PADDING;
 
         setSpotlightRect({
           top: newRect.top - padding,
@@ -17948,26 +17963,38 @@ export default function PortfolioDuel() {
 
         // Calculate tooltip position with clamping to prevent off-screen
         if (currentStep.position === 'spotlight-above') {
-          const tooltipHeight = 220;
-          const calculatedTop = newRect.top - tooltipHeight - 25;
+          const tooltipHeight = TOUR_CONSTANTS.TOOLTIP_HEIGHT;
+          const calculatedTop = newRect.top - tooltipHeight - TOUR_CONSTANTS.TOOLTIP_OFFSET;
           setTooltipPos({
-            top: Math.max(20, calculatedTop), // Never go above 20px from top
-            arrowTop: Math.max(tooltipHeight + 25, newRect.top - 13),
+            top: Math.max(TOUR_CONSTANTS.MIN_TOP_MARGIN, calculatedTop),
+            arrowTop: Math.max(tooltipHeight + TOUR_CONSTANTS.TOOLTIP_OFFSET, newRect.top - TOUR_CONSTANTS.ARROW_OFFSET),
             arrowDirection: 'down'
           });
         } else {
-          const calculatedTop = newRect.bottom + 25;
-          const maxTop = window.innerHeight - 280; // Ensure tooltip doesn't go off bottom
+          const calculatedTop = newRect.bottom + TOUR_CONSTANTS.TOOLTIP_OFFSET;
+          const maxTop = window.innerHeight - TOUR_CONSTANTS.MAX_BOTTOM_MARGIN;
           setTooltipPos({
             top: Math.min(calculatedTop, maxTop),
-            arrowTop: newRect.bottom + 13,
+            arrowTop: newRect.bottom + TOUR_CONSTANTS.ARROW_OFFSET,
             arrowDirection: 'up'
           });
         }
 
         setIsReady(true);
-      }, 500);
+      }, TOUR_CONSTANTS.ANIMATION_DELAY);
     }, [tourStep, currentStep]);
+
+    // Escape key to close tour
+    useEffect(() => {
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          setShowSpotlightTour(false);
+          setTourStep(0);
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
 
     const handleNext = () => {
       if (tourStep < TOUR_STEPS.length - 1) setTourStep(tourStep + 1);
@@ -18024,7 +18051,7 @@ export default function PortfolioDuel() {
           position: 'fixed',
           top: 0, left: 0, right: 0, bottom: 0,
           background: 'rgba(0, 0, 0, 0.92)',
-          zIndex: 9999,
+          zIndex: TOUR_CONSTANTS.Z_INDEX,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -18078,7 +18105,7 @@ export default function PortfolioDuel() {
       return (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.88)', zIndex: 9999
+          background: 'rgba(0, 0, 0, 0.88)', zIndex: TOUR_CONSTANTS.Z_INDEX
         }} />
       );
     }
@@ -18087,7 +18114,7 @@ export default function PortfolioDuel() {
     return (
       <div style={{
         position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-        zIndex: 9999, pointerEvents: 'none'
+        zIndex: TOUR_CONSTANTS.Z_INDEX, pointerEvents: 'none'
       }}>
         {/* Dark overlay with spotlight hole - only if spotlightRect exists */}
         {spotlightRect && (
