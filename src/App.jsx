@@ -11484,6 +11484,7 @@ export default function PortfolioDuel() {
 
   // Notification type config
   const NOTIFICATION_TYPES = {
+    // Existing types
     rematch_request: { icon: '⚔️', color: '#f59e0b', title: 'Rematch Request' },
     rematch_accepted: { icon: '✅', color: '#22c55e', title: 'Rematch Accepted' },
     rematch_declined: { icon: '❌', color: '#ef4444', title: 'Rematch Declined' },
@@ -11496,7 +11497,38 @@ export default function PortfolioDuel() {
     xp_earned: { icon: '⭐', color: '#eab308', title: 'XP Earned' },
     rank_up: { icon: '🎖️', color: '#6366f1', title: 'Rank Up' },
     friend_battle: { icon: '👋', color: '#06b6d4', title: 'Friend Battle' },
-    system: { icon: '📢', color: '#8b949e', title: 'System' }
+    system: { icon: '📢', color: '#8b949e', title: 'System' },
+
+    // TD Scoring - Breakout events
+    breakout: { icon: '🎯', color: '#10b981', title: 'Breakout!' },
+    rally: { icon: '🚀', color: '#f59e0b', title: 'Rally!' },
+    moonshot: { icon: '🌙', color: '#8b5cf6', title: 'Moonshot!' },
+    bust: { icon: '📉', color: '#ef4444', title: 'Bust' },
+    crash: { icon: '💥', color: '#dc2626', title: 'Crash' },
+    meltdown: { icon: '🔥', color: '#991b1b', title: 'Meltdown' },
+
+    // TD Scoring - Session events
+    session_start: { icon: '⏱️', color: '#3b82f6', title: 'Session Started' },
+    session_complete: { icon: '✓', color: '#10b981', title: 'Session Complete' },
+    session_win: { icon: '🏆', color: '#f59e0b', title: 'Session Won!' },
+    session_loss: { icon: '😤', color: '#ef4444', title: 'Session Lost' },
+
+    // TD Scoring - Battle events
+    battle_lead_change: { icon: '📊', color: '#8b5cf6', title: 'Lead Change' },
+    green_sweep: { icon: '💚', color: '#10b981', title: 'Green Sweep!' },
+    clean_sweep: { icon: '🧹', color: '#f59e0b', title: 'Clean Sweep!' },
+    battle_complete: { icon: '🏁', color: '#3b82f6', title: 'Battle Complete' },
+    battle_victory: { icon: '🏆', color: '#10b981', title: 'Victory!' },
+    battle_defeat: { icon: '😤', color: '#ef4444', title: 'Defeat' },
+
+    // TD Scoring - Substitution events
+    sub_window_open: { icon: '🔄', color: '#8b5cf6', title: 'Sub Window Open' },
+    sub_window_closing: { icon: '⏰', color: '#f59e0b', title: 'Window Closing' },
+    substitution_made: { icon: '↔️', color: '#3b82f6', title: 'Substitution Made' },
+
+    // TD Scoring - Opponent events
+    opponent_breakout: { icon: '⚠️', color: '#f59e0b', title: 'Opponent Breakout' },
+    opponent_substitution: { icon: '👀', color: '#6b7280', title: 'Opponent Sub' }
   };
 
   // Load notifications from localStorage
@@ -18645,6 +18677,7 @@ export default function PortfolioDuel() {
                   id="tour-hamburger-menu"
                   onClick={() => setSidebarOpen(true)}
                   style={{
+                    position: 'relative',
                     minWidth: '44px',
                     minHeight: '44px',
                     padding: '8px',
@@ -18665,6 +18698,30 @@ export default function PortfolioDuel() {
                   <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
                   <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
                   <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
+
+                  {/* Unread notifications badge */}
+                  {unreadCount > 0 && (
+                    <span style={{
+                      position: 'absolute',
+                      top: '4px',
+                      right: '4px',
+                      minWidth: '18px',
+                      height: '18px',
+                      padding: '0 5px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: '#ef4444',
+                      borderRadius: '9px',
+                      color: '#ffffff',
+                      fontSize: '10px',
+                      fontWeight: '700',
+                      lineHeight: 1,
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                    }}>
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
                 </button>
 
                 {/* Get Started Button - Opens Spotlight Tour */}
