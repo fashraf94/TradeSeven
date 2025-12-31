@@ -30,6 +30,67 @@ import {
 } from './services/recommendationEngine';
 
 // ============================================
+// ENVIRONMENT-AWARE LOGGING UTILITY
+// ============================================
+const logger = {
+  log: (...args) => {
+    if (import.meta.env.DEV) console.log(...args);
+  },
+  warn: (...args) => {
+    if (import.meta.env.DEV) console.warn(...args);
+  },
+  error: (...args) => {
+    // Always log errors, even in production
+    console.error(...args);
+  }
+};
+
+// ============================================
+// INPUT SANITIZATION UTILITIES
+// ============================================
+const sanitizePortfolioName = (name) => {
+  if (!name) return '';
+  return name
+    .trim()
+    .slice(0, 50) // Max 50 characters
+    .replace(/[<>'"&]/g, ''); // Remove potentially dangerous characters
+};
+
+// ============================================
+// LOCALSTORAGE WITH EXPIRY UTILITY
+// ============================================
+const storageWithExpiry = {
+  set: (key, value, ttlHours = 24 * 30) => { // Default 30 days
+    const item = {
+      value: value,
+      expiry: Date.now() + (ttlHours * 60 * 60 * 1000)
+    };
+    localStorage.setItem(key, JSON.stringify(item));
+  },
+
+  get: (key) => {
+    const itemStr = localStorage.getItem(key);
+    if (!itemStr) return null;
+
+    try {
+      const item = JSON.parse(itemStr);
+      // Check if it has expiry format
+      if (item.expiry && item.value !== undefined) {
+        if (Date.now() > item.expiry) {
+          localStorage.removeItem(key);
+          return null;
+        }
+        return item.value;
+      }
+      // Fallback: return raw value for old format data
+      return item;
+    } catch {
+      return localStorage.getItem(key); // Fallback for non-JSON data
+    }
+  }
+};
+
+// ============================================
 // SECTOR COLOR DEFINITIONS
 // ============================================
 const SECTOR_COLORS = {
@@ -246,6 +307,28 @@ const TOUR_STEPS = [
     showActions: true
   }
 ];
+
+// Tour progress dots component - extracted for performance (no re-creation on render)
+const TourProgressDots = ({ currentStep, totalSteps }) => (
+  <div style={{
+    display: 'flex',
+    justifyContent: 'center',
+    gap: '6px',
+    marginTop: '20px'
+  }}>
+    {Array.from({ length: totalSteps }).map((_, index) => (
+      <div
+        key={index}
+        style={{
+          width: index === currentStep ? '20px' : '6px',
+          height: '6px',
+          borderRadius: '3px',
+          background: index <= currentStep ? '#10b981' : '#21262d'
+        }}
+      />
+    ))}
+  </div>
+);
 
 // ============================================
 // TRAINING BATTLE HELPERS - 100% Client-Side
@@ -18022,28 +18105,6 @@ export default function PortfolioDuel() {
       }
     };
 
-    // Progress dots
-    const ProgressDots = () => (
-      <div style={{
-        display: 'flex',
-        justifyContent: 'center',
-        gap: '6px',
-        marginTop: '20px'
-      }}>
-        {TOUR_STEPS.map((_, index) => (
-          <div
-            key={index}
-            style={{
-              width: index === tourStep ? '20px' : '6px',
-              height: '6px',
-              borderRadius: '3px',
-              background: index <= tourStep ? '#10b981' : '#21262d'
-            }}
-          />
-        ))}
-      </div>
-    );
-
     // CENTERED MODAL (Steps 0 and 9)
     if (currentStep.position === 'center') {
       return (
@@ -18094,7 +18155,7 @@ export default function PortfolioDuel() {
                 border: 'none', borderRadius: '10px', color: '#fff', fontSize: '16px', fontWeight: '700', cursor: 'pointer'
               }}>Let's Go!</button>
             )}
-            <ProgressDots />
+            <TourProgressDots currentStep={tourStep} totalSteps={TOUR_STEPS.length} />
           </div>
         </div>
       );
@@ -18339,6 +18400,7 @@ export default function PortfolioDuel() {
                 {/* Close button */}
                 <button
                   onClick={() => setShowXPModal(false)}
+                  aria-label="Close modal"
                   style={{
                     position: 'absolute',
                     top: '16px',
@@ -18611,6 +18673,7 @@ export default function PortfolioDuel() {
                     setTourStep(0);
                     setShowSpotlightTour(true);
                   }}
+                  aria-label="Start onboarding tour"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -20140,7 +20203,9 @@ export default function PortfolioDuel() {
                 </p>
               </motion.div>
             ) : (
-              /* Classic Mode Training Section - Unified style matching Snake Draft */
+              /* Classic Mode Training Section - Unified style matching Snake Draft
+                 NOTE: Same ID as Snake Draft version - only one renders at a time (mutually exclusive)
+                 so DOM won't have duplicates. Spotlight Tour targets this ID. */
               <motion.div
                 id="tour-training-mode"
                 initial={{ opacity: 0, y: 20 }}
@@ -21456,6 +21521,7 @@ export default function PortfolioDuel() {
                 </div>
                 <button
                   onClick={() => setShowRulesModal(false)}
+                  aria-label="Close rules"
                   style={{
                     background: 'transparent',
                     border: 'none',
@@ -22181,6 +22247,7 @@ export default function PortfolioDuel() {
                 </h2>
                 <button
                   onClick={() => setShowTemplatesModal(false)}
+                  aria-label="Close templates"
                   style={{
                     padding: '6px',
                     backgroundColor: 'transparent',
@@ -23694,8 +23761,9 @@ export default function PortfolioDuel() {
                 <input
                   type="text"
                   value={portfolioName}
-                  onChange={(e) => setPortfolioName(e.target.value)}
+                  onChange={(e) => setPortfolioName(sanitizePortfolioName(e.target.value))}
                   placeholder="Enter portfolio name"
+                  maxLength={50}
                   style={{
                     width: '100%',
                     backgroundColor: '#161b22',
@@ -27218,13 +27286,13 @@ export default function PortfolioDuel() {
       // FORCE REPAIR: Manual button to fix locked prices
       const forceRepairPrices = async () => {
         if (!currentDraft) {
-          console.log('[ForceRepair] No current draft to repair');
+          logger.log('[ForceRepair] No current draft to repair');
           return;
         }
 
         setRepairStatus('repairing');
-        console.log('[ForceRepair] Starting forced price repair for:', currentDraft.code || currentDraft.id);
-        console.log('[ForceRepair] Current locked prices:', currentDraft.lockedPrices);
+        logger.log('[ForceRepair] Starting forced price repair for:', currentDraft.code || currentDraft.id);
+        logger.log('[ForceRepair] Current locked prices:', currentDraft.lockedPrices);
 
         try {
           const stockAPIModule = await import('./services/eodhdAPI');
@@ -27237,15 +27305,15 @@ export default function PortfolioDuel() {
             player.picks?.forEach(symbol => allSymbols.add(symbol));
           });
           const symbolList = Array.from(allSymbols);
-          console.log('[ForceRepair] Assets to fix:', symbolList);
+          logger.log('[ForceRepair] Assets to fix:', symbolList);
 
           // Fetch real prices using batch API
           let newLockedPrices = {};
 
           if (battleType === 'crypto') {
-            console.log('[ForceRepair] Fetching crypto prices...');
+            logger.log('[ForceRepair] Fetching crypto prices...');
             const priceData = await stockAPIModule.getAllCryptoPrices(symbolList);
-            console.log('[ForceRepair] Price data received:', priceData);
+            logger.log('[ForceRepair] Price data received:', priceData);
 
             for (const symbol of symbolList) {
               const coinGeckoId = stockAPIModule.symbolToCoinGeckoId(symbol);
@@ -27253,16 +27321,16 @@ export default function PortfolioDuel() {
 
               if (data?.price && data.price > 0) {
                 newLockedPrices[symbol] = data.price;
-                console.log(`[ForceRepair] ${symbol} (${coinGeckoId}): $${data.price}`);
+                logger.log(`[ForceRepair] ${symbol} (${coinGeckoId}): $${data.price}`);
               } else {
                 // Use fallback
                 const fallback = stockAPIModule.FALLBACK_CRYPTO_PRICES[coinGeckoId] || 1;
                 newLockedPrices[symbol] = fallback;
-                console.log(`[ForceRepair] ${symbol} (${coinGeckoId}): $${fallback} (fallback)`);
+                logger.log(`[ForceRepair] ${symbol} (${coinGeckoId}): $${fallback} (fallback)`);
               }
             }
           } else {
-            console.log('[ForceRepair] Fetching stock prices...');
+            logger.log('[ForceRepair] Fetching stock prices...');
             const priceData = await stockAPIModule.getAllStockPrices(symbolList);
 
             for (const symbol of symbolList) {
@@ -27271,18 +27339,18 @@ export default function PortfolioDuel() {
             }
           }
 
-          console.log('[ForceRepair] New locked prices:', newLockedPrices);
+          logger.log('[ForceRepair] New locked prices:', newLockedPrices);
 
           // Direct Firebase update
           if (currentDraft.id) {
-            console.log('[ForceRepair] Updating Firebase document:', currentDraft.id);
+            logger.log('[ForceRepair] Updating Firebase document:', currentDraft.id);
             const draftRef = doc(db, 'drafts', currentDraft.id);
             await updateDoc(draftRef, {
               lockedPrices: newLockedPrices,
               lockedPricesRepairedAt: serverTimestamp(),
               pricesRepaired: true
             });
-            console.log('[ForceRepair] ✅ Firebase updated successfully!');
+            logger.log('[ForceRepair] ✅ Firebase updated successfully!');
           }
 
           // Update local state
@@ -27294,13 +27362,13 @@ export default function PortfolioDuel() {
           setCurrentDraft(repairedDraft);
 
           setRepairStatus('success');
-          console.log('[ForceRepair] ✅ Repair complete! Prices are now correct.');
+          logger.log('[ForceRepair] ✅ Repair complete! Prices are now correct.');
 
           // Auto-dismiss success message after 3 seconds
           setTimeout(() => setRepairStatus(null), 3000);
 
         } catch (error) {
-          console.error('[ForceRepair] Failed:', error);
+          logger.error('[ForceRepair] Failed:', error);
           setRepairStatus('error');
           setTimeout(() => setRepairStatus(null), 5000);
         }
@@ -27422,10 +27490,6 @@ export default function PortfolioDuel() {
               allPrices = await stockAPIModule.getAllStockPrices(symbolList);
             }
 
-            // DEBUG: Log what we received from API and what's in lockedPrices
-            console.log('[DraftBattle] Current prices received:', allPrices);
-            console.log('[DraftBattle] Locked prices from draft:', currentDraft.lockedPrices);
-
             // STEP 3: Calculate each player's performance using cached prices
             const playerPerformances = currentDraft.players.map((player) => {
               let totalGain = 0;
@@ -27451,9 +27515,6 @@ export default function PortfolioDuel() {
                 const lockedPrice = Number(currentDraft.lockedPrices?.[symbol] ||
                                    currentDraft.lockedPrices?.[lookupKey] ||
                                    currentPrice) || 0;
-
-                // DEBUG: Log price comparison for each asset
-                console.log(`[DraftBattle] ${symbol}: locked=$${(Number(lockedPrice) || 0).toFixed(4)}, current=$${(Number(currentPrice) || 0).toFixed(4)}, isFallback=${priceData?.isFallback || false}`);
 
                 // Calculate gain with sanity checks
                 let gain = 0;
