@@ -7,6 +7,7 @@ export { default as BreakoutFeed } from './BreakoutFeed';
 export { default as TDBattleScoreboard } from './TDBattleScoreboard';
 export { default as AssetPerformanceRow } from './AssetPerformanceRow';
 export { default as SubstitutionPanel } from './SubstitutionPanel';
+export { default as TDBattleView } from './TDBattleView';
 
 // Portfolio Builder Components
 export { default as BenchSelector } from './BenchSelector';

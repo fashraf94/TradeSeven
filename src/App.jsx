@@ -15,6 +15,18 @@ import { getWeekAheadEvents } from './data/weekAheadEvents';
 // AI Advisors
 import ResearchAdvisor from './components/ResearchAdvisor';
 import DraftAdvisor from './components/DraftAdvisor';
+// TD Scoring Components
+import {
+  SessionScoreCard,
+  BreakoutFeed,
+  TDBattleScoreboard,
+  AssetPerformanceRow,
+  SubstitutionPanel,
+  PortfolioBuilderTD,
+  ThresholdPreview,
+  BenchSelector,
+  TDBattleView
+} from './components/TDScoring';
 // Research Mode services
 import { generateGamePlan, enhanceRecommendations, getAssetDeepDive } from './services/researchAdvisor';
 // Snake Draft strategy utilities (consolidated from duplicate code paths)
@@ -10555,6 +10567,9 @@ const isNewWeek = (lastWeekStart) => {
   return getWeekStartDate() !== lastWeekStart;
 };
 
+// Helper to check if battle is TD (V2) format
+const isTDBattle = (battle) => battle?._v === 2;
+
 // ============================================
 // CHALLENGE MODAL COMPONENT (Placeholder)
 // ============================================
@@ -11274,6 +11289,10 @@ export default function PortfolioDuel() {
   const [showClassicTrainingConfirm, setShowClassicTrainingConfirm] = useState(false);
   const [showCreateDraftConfirm, setShowCreateDraftConfirm] = useState(false);
   const [showJoinDraftConfirm, setShowJoinDraftConfirm] = useState(false);
+  const [showCreateTDBattleConfirm, setShowCreateTDBattleConfirm] = useState(false);
+  const [showJoinTDBattleConfirm, setShowJoinTDBattleConfirm] = useState(false);
+  // TD Scoring battle mode selection in create battle confirmation
+  const [battleScoringMode, setBattleScoringMode] = useState('classic'); // 'classic' | 'td'
 
   // Tutorial modal states
   const [showTutorial, setShowTutorial] = useState(false);
@@ -15287,7 +15306,8 @@ export default function PortfolioDuel() {
     details,
     confirmText,
     confirmColor,
-    tutorialModeType
+    tutorialModeType,
+    customContent // Optional custom content to render before details
   }) => {
     if (!show) return null;
 
@@ -15363,6 +15383,9 @@ export default function PortfolioDuel() {
           }}>
             {subtitle}
           </p>
+
+          {/* Custom Content (e.g., mode toggle) */}
+          {customContent}
 
           {/* Details Box */}
           <div style={{
@@ -22785,24 +22808,82 @@ export default function PortfolioDuel() {
         {/* ========== CONFIRMATION POPUPS ========== */}
         <ConfirmationPopup
           show={showCreateBattleConfirm}
-          onClose={() => setShowCreateBattleConfirm(false)}
+          onClose={() => {
+            setShowCreateBattleConfirm(false);
+            setBattleScoringMode('classic'); // Reset to classic when closing
+          }}
           onConfirm={() => {
             setShowCreateBattleConfirm(false);
             setBuilderMode('create');
-            setScreen('builder');
+            // If TD mode selected, go to TD portfolio builder
+            if (battleScoringMode === 'td') {
+              setScreen('tdBuilder');
+            } else {
+              setScreen('builder');
+            }
           }}
           icon={<TrendingUp size={32} style={{ color: '#ffffff' }} />}
-          iconBgColor="#00d9ff"
+          iconBgColor={battleScoringMode === 'td' ? '#06b6d4' : '#00d9ff'}
           title="Create Battle?"
-          subtitle="Challenge opponents with your portfolio picks"
-          details={[
+          subtitle={battleScoringMode === 'td' ? 'Session-based scoring with breakout bonuses' : 'Challenge opponents with your portfolio picks'}
+          details={battleScoringMode === 'td' ? [
+            { label: 'Scoring', value: 'TD Scoring (4 Sessions)' },
+            { label: 'Roster', value: '6 stocks + 1 crypto' },
+            { label: 'Bench', value: '4 stocks + 1 crypto' },
+            { label: 'Breakout Bonuses', value: '+15 / +30 / +50 pts', highlight: true, highlightColor: '#06b6d4' }
+          ] : [
             { label: 'Assets Required', value: '7-13 picks' },
             { label: 'Duration', value: '24 hours' },
             { label: 'Rewards', value: '+100 XP (win) / +25 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
           ]}
-          confirmText="Create Battle"
-          confirmColor="#00d9ff"
+          confirmText={battleScoringMode === 'td' ? 'Create TD Battle' : 'Create Battle'}
+          confirmColor={battleScoringMode === 'td' ? '#06b6d4' : '#00d9ff'}
           tutorialModeType="classic"
+          customContent={
+            <div style={{
+              display: 'flex',
+              gap: '8px',
+              marginBottom: '16px',
+              padding: '4px',
+              background: 'rgba(255,255,255,0.05)',
+              borderRadius: '12px'
+            }}>
+              <button
+                onClick={() => setBattleScoringMode('classic')}
+                style={{
+                  flex: 1,
+                  padding: '10px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: battleScoringMode === 'classic' ? '#00d9ff' : 'transparent',
+                  color: battleScoringMode === 'classic' ? '#0a0a0a' : 'rgba(255,255,255,0.6)',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Classic
+              </button>
+              <button
+                onClick={() => setBattleScoringMode('td')}
+                style={{
+                  flex: 1,
+                  padding: '10px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: battleScoringMode === 'td' ? '#06b6d4' : 'transparent',
+                  color: battleScoringMode === 'td' ? '#0a0a0a' : 'rgba(255,255,255,0.6)',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                TD Scoring
+              </button>
+            </div>
+          }
         />
 
         <ConfirmationPopup
@@ -24508,6 +24589,123 @@ export default function PortfolioDuel() {
             </div>
           </>
         )}
+      </div>
+    );
+  }
+
+  // TD SCORING PORTFOLIO BUILDER SCREEN
+  if (screen === 'tdBuilder') {
+    return (
+      <div style={containerStyle}>
+        <DesktopBackground isDesktop={isDesktop} />
+
+        <div style={{ minHeight: '100vh', background: '#0d1117', position: 'relative', zIndex: 1 }}>
+          <PortfolioBuilderTD
+            stockPrices={stocksData.reduce((acc, s) => {
+              acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
+              return acc;
+            }, {})}
+            cryptoPrices={cryptoData.reduce((acc, c) => {
+              acc[c.symbol] = { price: c.price, percentChange: c.percentChange };
+              return acc;
+            }, {})}
+            thresholds={{}} // Will be fetched in component or passed from volatility service
+            onSubmit={async (portfolioData) => {
+              // Create TD battle in Firestore
+              const challengeCode = generateChallengeCode();
+              try {
+                console.log('🔥 Creating TD Battle in Firestore...', portfolioData);
+
+                // Format portfolio assets
+                const portfolioAssets = portfolioData.roster.map(asset => ({
+                  symbol: asset.symbol,
+                  name: asset.name,
+                  price: asset.price || 0,
+                  amount: (asset.amount / 100) * 1000000,
+                  position: 'long'
+                }));
+
+                // Add crypto
+                if (portfolioData.crypto) {
+                  portfolioAssets.push({
+                    symbol: portfolioData.crypto.symbol,
+                    name: portfolioData.crypto.name,
+                    price: portfolioData.crypto.price || 0,
+                    amount: 100000, // 10% fixed allocation
+                    position: 'long'
+                  });
+                }
+
+                // Format bench
+                const benchAssets = portfolioData.bench.map(asset => ({
+                  symbol: asset.symbol,
+                  name: asset.name,
+                  price: asset.price || 0
+                }));
+
+                if (portfolioData.benchCrypto) {
+                  benchAssets.push({
+                    symbol: portfolioData.benchCrypto.symbol,
+                    name: portfolioData.benchCrypto.name,
+                    price: portfolioData.benchCrypto.price || 0
+                  });
+                }
+
+                // Save to Firestore with TD schema
+                const firestoreBattle = await createFirestoreBattle({
+                  challengeCode,
+                  creator: {
+                    uid: user.odUserId || user.username,
+                    username: user.username,
+                    portfolio: portfolioAssets,
+                    bench: benchAssets
+                  },
+                  portfolioName: portfolioData.portfolioName || 'TD Portfolio',
+                  portfolioType: 'td',
+                  _v: 2, // TD Scoring version marker
+                  thresholds: portfolioData.thresholds || {},
+                  sessions: {
+                    MORNING_BELL: { status: 'pending' },
+                    MIDDAY: { status: 'pending' },
+                    POWER_HOUR: { status: 'pending' },
+                    NIGHT_GAME: { status: 'pending' }
+                  }
+                });
+
+                console.log('✅ TD Battle created with ID:', firestoreBattle.id);
+
+                // Create local battle object
+                const newBattle = {
+                  id: firestoreBattle.id,
+                  challengeCode,
+                  creator: user.username,
+                  creatorPortfolio: portfolioAssets,
+                  bench: benchAssets,
+                  portfolioName: portfolioData.portfolioName || 'TD Portfolio',
+                  portfolioType: 'td',
+                  _v: 2,
+                  status: 'waiting',
+                  createdAt: new Date().toISOString()
+                };
+
+                // Update state
+                const currentBattles = loadBattlesSafe();
+                const updatedBattles = [...currentBattles, newBattle];
+                saveBattlesSafe(updatedBattles);
+                setBattles(updatedBattles);
+                setActiveBattleId(newBattle.id);
+                setScreen('dashboard');
+              } catch (error) {
+                console.error('❌ Failed to create TD battle:', error);
+                alert('Failed to create TD battle. Please try again.');
+              }
+            }}
+            onBack={() => {
+              setScreen('dashboard');
+              setBattleScoringMode('classic');
+            }}
+          />
+        </div>
       </div>
     );
   }
