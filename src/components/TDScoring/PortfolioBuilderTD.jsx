@@ -11,6 +11,7 @@ import {
 import { STOCKS, CRYPTO } from '../../data/assets';
 import { getVolatilityThresholds } from '../../services/volatilityService';
 import { getMultipleStockPrices, getMultipleCryptoPrices } from '../../services/eodhdAPI';
+import StockDetailModal from './StockDetailModal';
 
 // Color scheme matching existing app
 const colors = {
@@ -177,6 +178,56 @@ const DifficultyHeader = ({ level, count }) => {
   );
 };
 
+// Default thresholds fallback for when API fails
+const getDefaultThresholds = () => {
+  const defaults = {};
+
+  // Stock defaults based on typical volatility
+  const stockDefaults = {
+    'AAPL': 1.5, 'MSFT': 1.3, 'GOOGL': 1.8, 'AMZN': 2.0, 'META': 2.5,
+    'NVDA': 3.5, 'TSLA': 4.0, 'AMD': 3.2, 'AVGO': 2.5, 'CRM': 2.0,
+    'V': 1.3, 'MA': 1.4, 'JPM': 1.5, 'BAC': 1.8, 'GS': 2.0,
+    'JNJ': 1.0, 'UNH': 1.5, 'PFE': 1.8, 'MRK': 1.5, 'ABBV': 1.6,
+    'XOM': 1.8, 'CVX': 1.7, 'COP': 2.2, 'SLB': 2.5, 'EOG': 2.3,
+    'WMT': 1.2, 'PG': 1.0, 'KO': 1.0, 'PEP': 1.1, 'COST': 1.4,
+    'HD': 1.6, 'NKE': 2.0, 'MCD': 1.2, 'SBUX': 1.8, 'TGT': 2.0,
+    'CAT': 1.8, 'HON': 1.5, 'UPS': 1.6, 'BA': 2.5, 'GE': 2.0,
+    'NEE': 1.4, 'DUK': 1.2, 'SO': 1.1, 'D': 1.3, 'AEP': 1.2,
+    'PLD': 2.0, 'AMT': 1.8, 'SPG': 2.2, 'O': 1.5, 'EQIX': 1.8,
+    'T': 1.5, 'VZ': 1.3, 'TMUS': 1.6, 'CMCSA': 1.7, 'CHTR': 2.0,
+    'DEFAULT': 2.0
+  };
+
+  const cryptoDefaults = {
+    'BTC': 5.0, 'ETH': 6.0, 'SOL': 8.0, 'ADA': 7.0, 'AVAX': 8.5,
+    'DOT': 7.0, 'NEAR': 9.0, 'APT': 10.0, 'DOGE': 10.0, 'XRP': 6.5,
+    'LINK': 7.5, 'MATIC': 8.0, 'ATOM': 7.0, 'UNI': 8.0, 'LTC': 5.5,
+    'DEFAULT': 7.0
+  };
+
+  // Build threshold objects for stocks
+  STOCKS.forEach(stock => {
+    const base = stockDefaults[stock.symbol] || stockDefaults['DEFAULT'];
+    defaults[stock.symbol] = {
+      threshold: base,
+      rallyThreshold: base * 1.5,
+      moonshotThreshold: base * 2
+    };
+  });
+
+  // Build threshold objects for crypto
+  CRYPTO.forEach(crypto => {
+    const base = cryptoDefaults[crypto.symbol] || cryptoDefaults['DEFAULT'];
+    defaults[crypto.symbol] = {
+      threshold: base,
+      rallyThreshold: base * 1.5,
+      moonshotThreshold: base * 2
+    };
+  });
+
+  return defaults;
+};
+
 /**
  * PortfolioBuilderTD - Main component
  */
@@ -200,73 +251,63 @@ export default function PortfolioBuilderTD({
   const [showCart, setShowCart] = useState(false);
   const [showBenchModal, setShowBenchModal] = useState(false);
   const [benchModalType, setBenchModalType] = useState('stock');
+  const [selectedStockForDetail, setSelectedStockForDetail] = useState(null);
 
   // Data state
   const [stockPrices, setStockPrices] = useState(initialStockPrices);
   const [cryptoPrices, setCryptoPrices] = useState(initialCryptoPrices);
   const [thresholds, setThresholds] = useState(initialThresholds);
   const [isLoadingPrices, setIsLoadingPrices] = useState(Object.keys(initialStockPrices).length === 0);
+  const [isLoadingThresholds, setIsLoadingThresholds] = useState(Object.keys(initialThresholds).length === 0);
   const [isCreating, setIsCreating] = useState(false);
 
-  // Load prices on mount
+  // Load prices and thresholds on mount
   useEffect(() => {
-    if (Object.keys(initialStockPrices).length > 0) return;
+    const loadData = async () => {
+      const needsPrices = Object.keys(initialStockPrices).length === 0;
+      const needsThresholds = Object.keys(initialThresholds).length === 0;
 
-    const loadPrices = async () => {
-      setIsLoadingPrices(true);
+      if (needsPrices) setIsLoadingPrices(true);
+      if (needsThresholds) setIsLoadingThresholds(true);
+
       try {
         const stockSymbols = STOCKS.map(s => s.symbol);
         const cryptoSymbols = CRYPTO.filter(c => c.category !== 'Stablecoin').map(c => c.symbol);
 
-        const [stocks, crypto] = await Promise.all([
-          getMultipleStockPrices(stockSymbols),
-          getMultipleCryptoPrices(cryptoSymbols)
+        // Fetch prices and thresholds in parallel
+        const [stockPricesResult, cryptoPricesResult, stockThresholds, cryptoThresholds] = await Promise.all([
+          needsPrices ? getMultipleStockPrices(stockSymbols) : Promise.resolve(null),
+          needsPrices ? getMultipleCryptoPrices(cryptoSymbols) : Promise.resolve(null),
+          needsThresholds ? getVolatilityThresholds(stockSymbols, 'stock') : Promise.resolve(null),
+          needsThresholds ? getVolatilityThresholds(cryptoSymbols, 'crypto') : Promise.resolve(null)
         ]);
 
-        setStockPrices(stocks || {});
-        setCryptoPrices(crypto || {});
+        if (stockPricesResult) setStockPrices(stockPricesResult);
+        if (cryptoPricesResult) setCryptoPrices(cryptoPricesResult);
+
+        if (stockThresholds || cryptoThresholds) {
+          const allThresholds = { ...(stockThresholds || {}), ...(cryptoThresholds || {}) };
+          // If we got some thresholds, use them; otherwise use defaults
+          if (Object.keys(allThresholds).length > 0) {
+            setThresholds(allThresholds);
+          } else {
+            setThresholds(getDefaultThresholds());
+          }
+        }
       } catch (error) {
-        console.error('Error loading prices:', error);
+        console.error('Error loading data:', error);
+        // Use fallback defaults if threshold fetch fails
+        if (Object.keys(initialThresholds).length === 0) {
+          setThresholds(getDefaultThresholds());
+        }
       } finally {
         setIsLoadingPrices(false);
+        setIsLoadingThresholds(false);
       }
     };
 
-    loadPrices();
-  }, [initialStockPrices]);
-
-  // Fetch thresholds when assets change
-  useEffect(() => {
-    const allSymbols = [
-      ...portfolio.map(p => p.symbol),
-      selectedCrypto?.symbol,
-      ...bench.map(b => b.symbol),
-      benchCrypto?.symbol
-    ].filter(Boolean);
-
-    if (allSymbols.length === 0) return;
-
-    const missingSymbols = allSymbols.filter(s => !thresholds[s]);
-    if (missingSymbols.length === 0) return;
-
-    const fetchThresholds = async () => {
-      try {
-        const stockSymbols = missingSymbols.filter(s => STOCKS.some(stock => stock.symbol === s));
-        const cryptoSymbols = missingSymbols.filter(s => CRYPTO.some(crypto => crypto.symbol === s));
-
-        const [stockThresholds, cryptoThresholds] = await Promise.all([
-          stockSymbols.length > 0 ? getVolatilityThresholds(stockSymbols, 'stock') : {},
-          cryptoSymbols.length > 0 ? getVolatilityThresholds(cryptoSymbols, 'crypto') : {}
-        ]);
-
-        setThresholds(prev => ({ ...prev, ...(stockThresholds || {}), ...(cryptoThresholds || {}) }));
-      } catch (error) {
-        console.error('Error fetching thresholds:', error);
-      }
-    };
-
-    fetchThresholds();
-  }, [portfolio, selectedCrypto, bench, benchCrypto, thresholds]);
+    loadData();
+  }, [initialStockPrices, initialThresholds]);
 
   // Filter stocks by sector and search
   const filteredStocks = useMemo(() => {
@@ -439,7 +480,7 @@ export default function PortfolioBuilderTD({
   };
 
   // Loading state
-  if (isLoadingPrices) {
+  if (isLoadingPrices || isLoadingThresholds) {
     return (
       <div style={{
         minHeight: '100vh',
@@ -458,7 +499,9 @@ export default function PortfolioBuilderTD({
             margin: '0 auto 16px',
             animation: 'spin 1s linear infinite'
           }} />
-          <div style={{ color: colors.textSecondary }}>Loading market data...</div>
+          <div style={{ color: colors.textSecondary }}>
+            {isLoadingThresholds ? 'Loading breakout thresholds...' : 'Loading market data...'}
+          </div>
           <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
         </div>
       </div>
@@ -670,7 +713,7 @@ export default function PortfolioBuilderTD({
                     return (
                       <button
                         key={stock.symbol}
-                        onClick={() => toggleStock(stock)}
+                        onClick={() => setSelectedStockForDetail(stock)}
                         style={{
                           display: 'flex',
                           flexDirection: 'column',
@@ -763,10 +806,14 @@ export default function PortfolioBuilderTD({
             const change = cryptoPrices[crypto.symbol]?.percentChange || 0;
             const isSelected = selectedCrypto?.symbol === crypto.symbol;
 
+            const threshold = thresholds[crypto.symbol];
+            const difficultyLevel = threshold?.threshold <= 6 ? 'medium' : 'hard';
+            const difficultyColor = difficultyLevel === 'medium' ? colors.yellow : colors.red;
+
             return (
               <button
                 key={crypto.symbol}
-                onClick={() => setSelectedCrypto(isSelected ? null : crypto)}
+                onClick={() => setSelectedStockForDetail(crypto)}
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
@@ -776,10 +823,21 @@ export default function PortfolioBuilderTD({
                   border: `2px solid ${isSelected ? colors.yellow : 'transparent'}`,
                   borderRadius: '12px',
                   cursor: 'pointer',
+                  position: 'relative',
+                  overflow: 'hidden',
                   transition: 'all 0.2s'
                 }}
               >
-                <div style={{ fontSize: '15px', fontWeight: '700', color: colors.yellow }}>
+                {/* Difficulty indicator bar */}
+                <div style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: '3px',
+                  backgroundColor: difficultyColor
+                }} />
+                <div style={{ fontSize: '15px', fontWeight: '700', color: colors.yellow, marginTop: '2px' }}>
                   {crypto.symbol}
                 </div>
                 <div style={{ fontSize: '12px', color: colors.primary, marginTop: '6px' }}>
@@ -791,6 +849,15 @@ export default function PortfolioBuilderTD({
                   marginTop: '2px'
                 }}>
                   {change >= 0 ? '+' : ''}{change.toFixed(1)}%
+                </div>
+                {/* Threshold display */}
+                <div style={{
+                  fontSize: '10px',
+                  fontWeight: '600',
+                  marginTop: '4px',
+                  color: difficultyColor
+                }}>
+                  TD: {threshold?.threshold?.toFixed(1) || '—'}%
                 </div>
               </button>
             );
@@ -1379,6 +1446,31 @@ export default function PortfolioBuilderTD({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Stock Detail Modal */}
+      {selectedStockForDetail && (
+        <StockDetailModal
+          stock={selectedStockForDetail}
+          price={stockPrices[selectedStockForDetail.symbol]?.price || cryptoPrices[selectedStockForDetail.symbol]?.price}
+          priceChange={stockPrices[selectedStockForDetail.symbol]?.percentChange || cryptoPrices[selectedStockForDetail.symbol]?.percentChange}
+          threshold={thresholds[selectedStockForDetail.symbol]}
+          isSelected={portfolio.some(p => p.symbol === selectedStockForDetail.symbol) || selectedCrypto?.symbol === selectedStockForDetail.symbol}
+          onSelect={(asset) => {
+            // Check if it's a crypto
+            if (CRYPTO.some(c => c.symbol === asset.symbol)) {
+              if (selectedCrypto?.symbol === asset.symbol) {
+                setSelectedCrypto(null);
+              } else {
+                setSelectedCrypto(asset);
+              }
+            } else {
+              toggleStock(asset);
+            }
+          }}
+          onClose={() => setSelectedStockForDetail(null)}
+          isCrypto={CRYPTO.some(c => c.symbol === selectedStockForDetail.symbol)}
+        />
+      )}
 
       <style>{`
         input[type="range"]::-webkit-slider-thumb {

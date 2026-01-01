@@ -13,6 +13,7 @@ export { default as TDBattleView } from './TDBattleView';
 export { default as BenchSelector } from './BenchSelector';
 export { default as ThresholdPreview } from './ThresholdPreview';
 export { default as PortfolioBuilderTD } from './PortfolioBuilderTD';
+export { default as StockDetailModal } from './StockDetailModal';
 
 // Portfolio Builder Sub-Components (Accordion Style)
 export { default as AccordionSection } from './AccordionSection';
