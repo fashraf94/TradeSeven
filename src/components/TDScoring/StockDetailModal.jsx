@@ -21,14 +21,6 @@ const colors = {
   textMuted: 'rgba(255,255,255,0.4)'
 };
 
-// Get difficulty info from threshold value
-const getDifficultyInfo = (thresholdValue) => {
-  if (!thresholdValue) return { label: 'Unknown', color: colors.textMuted, description: 'Threshold data unavailable' };
-  if (thresholdValue <= 2) return { label: 'Easy', color: colors.green, description: 'Lower threshold, more consistent TD scoring' };
-  if (thresholdValue <= 4) return { label: 'Medium', color: colors.yellow, description: 'Balanced risk and reward' };
-  return { label: 'Hard', color: colors.red, description: 'Higher threshold, but bigger bonus potential' };
-};
-
 // Mock fundamental data (in production, fetch from API)
 const getMockFundamentals = (symbol) => {
   const defaults = {
@@ -74,7 +66,6 @@ const StockDetailModal = ({
 
   if (!stock) return null;
 
-  const difficulty = getDifficultyInfo(threshold?.threshold);
   const fundamentals = getMockFundamentals(stock.symbol);
   const ratingColor = fundamentals.rating?.includes('Strong') ? colors.green :
     fundamentals.rating === 'Buy' ? colors.primary :
@@ -222,25 +213,6 @@ const StockDetailModal = ({
                 <h2 style={{ fontSize: '14px', fontWeight: '700', letterSpacing: '0.5px', margin: 0 }}>
                   TD BREAKOUT THRESHOLDS
                 </h2>
-              </div>
-
-              {/* Difficulty Banner */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '12px 16px',
-                borderRadius: '12px',
-                border: `1px solid ${difficulty.color}`,
-                backgroundColor: `${difficulty.color}20`,
-                marginBottom: '16px'
-              }}>
-                <span style={{ fontWeight: '700', fontSize: '14px', color: difficulty.color }}>
-                  {difficulty.label} TD
-                </span>
-                <span style={{ fontSize: '12px', color: colors.textSecondary }}>
-                  {difficulty.description}
-                </span>
               </div>
 
               {/* Threshold Cards */}

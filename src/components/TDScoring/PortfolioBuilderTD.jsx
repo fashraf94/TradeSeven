@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Monitor, Building2, Heart, ShoppingBag, ShoppingCart,
   Zap, Factory, Lightbulb, Home, Radio,
-  Target, TrendingUp, Rocket
+  Target, TrendingUp, Rocket, Info
 } from 'lucide-react';
 import { STOCKS, CRYPTO } from '../../data/assets';
 import { getVolatilityThresholds } from '../../services/volatilityService';
@@ -43,19 +43,27 @@ const SECTORS = [
   { id: 'Telecom', label: 'Telecom', icon: Radio, color: '#06b6d4' }
 ];
 
-// Difficulty config for threshold badges
-const DIFFICULTY_CONFIG = {
-  easy: { label: 'Easy', color: '#10b981', threshold: 2 },
-  medium: { label: 'Medium', color: '#f59e0b', threshold: 4 },
-  hard: { label: 'Hard', color: '#ef4444', threshold: Infinity }
+// Threshold range config (neutral, no difficulty labels)
+const THRESHOLD_RANGES = {
+  low: { label: '0-2% TD', color: '#10b981', max: 2 },
+  mid: { label: '2-4% TD', color: '#f59e0b', max: 4 },
+  high: { label: '4%+ TD', color: '#ef4444', max: Infinity }
 };
 
-// Get difficulty level from threshold value
-const getDifficultyLevel = (threshold) => {
-  if (!threshold) return null;
-  if (threshold <= 2) return 'easy';
-  if (threshold <= 4) return 'medium';
-  return 'hard';
+// Get threshold range from value
+const getThresholdRange = (threshold) => {
+  if (!threshold) return 'mid';
+  if (threshold <= 2) return 'low';
+  if (threshold <= 4) return 'mid';
+  return 'high';
+};
+
+// Get threshold bar color
+const getThresholdColor = (threshold) => {
+  if (!threshold) return 'rgba(255,255,255,0.2)';
+  if (threshold <= 2) return '#10b981';
+  if (threshold <= 4) return '#f59e0b';
+  return '#ef4444';
 };
 
 // Allocation constraints
@@ -64,11 +72,10 @@ const STOCK_MAX_ALLOCATION = 20;
 const CRYPTO_ALLOCATION = 10;
 const STOCK_TOTAL_ALLOCATION = 90;
 
-// Get difficulty info from threshold
-const getDifficulty = (threshold) => {
-  const level = getDifficultyLevel(threshold);
-  if (!level) return null;
-  return DIFFICULTY_CONFIG[level];
+// Get threshold range info
+const getThresholdRangeInfo = (threshold) => {
+  const range = getThresholdRange(threshold);
+  return THRESHOLD_RANGES[range];
 };
 
 // ThresholdBadge component - styled icon badge for breakout thresholds
@@ -136,43 +143,31 @@ const SectorTab = ({ sector, isActive, onClick, count }) => {
   );
 };
 
-// DifficultyHeader component for grouped stock sections
-const DifficultyHeader = ({ level, count }) => {
-  const config = {
-    easy: { icon: Target, hint: 'Lower thresholds, more consistent scoring' },
-    medium: { icon: TrendingUp, hint: 'Balanced risk and reward' },
-    hard: { icon: Rocket, hint: 'Higher thresholds, bigger bonus potential' }
-  };
-
-  const { icon: Icon, hint } = config[level];
-  const { label, color } = DIFFICULTY_CONFIG[level];
+// ThresholdRangeHeader component - neutral range labels without difficulty judgment
+const ThresholdRangeHeader = ({ range, count }) => {
+  const { label, color } = THRESHOLD_RANGES[range];
 
   return (
     <div style={{
       display: 'flex',
       alignItems: 'center',
-      justifyContent: 'space-between',
+      gap: '8px',
       padding: '8px 0',
-      borderBottom: '1px solid rgba(255,255,255,0.1)',
-      marginBottom: '12px'
+      marginBottom: '12px',
+      borderBottom: '1px solid rgba(255,255,255,0.1)'
     }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        padding: '4px 12px',
-        borderRadius: '16px',
-        fontSize: '13px',
+      <span style={{
+        fontSize: '14px',
         fontWeight: '600',
-        backgroundColor: `${color}15`,
         color: color
       }}>
-        <Icon size={14} />
-        <span>{label} TD</span>
-        <span style={{ opacity: 0.7, fontWeight: '400' }}>({count})</span>
-      </div>
-      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
-        {hint}
+        {label}
+      </span>
+      <span style={{
+        fontSize: '13px',
+        color: 'rgba(255,255,255,0.5)'
+      }}>
+        ({count})
       </span>
     </div>
   );
@@ -672,7 +667,7 @@ export default function PortfolioBuilderTD({
         ))}
       </div>
 
-      {/* Stock Grid - Grouped by Difficulty */}
+      {/* Stock Grid - Grouped by Threshold Range */}
       <div style={{
         display: 'flex',
         flexDirection: 'column',
@@ -680,24 +675,24 @@ export default function PortfolioBuilderTD({
         padding: '0 16px 16px'
       }}>
         {(() => {
-          // Group stocks by difficulty
-          const grouped = { easy: [], medium: [], hard: [] };
+          // Group stocks by threshold range (neutral labels)
+          const grouped = { low: [], mid: [], high: [] };
           filteredStocks.forEach(stock => {
             const threshold = thresholds[stock.symbol]?.threshold || 2.5;
-            const level = getDifficultyLevel(threshold);
-            if (level && grouped[level]) {
-              grouped[level].push(stock);
+            const range = getThresholdRange(threshold);
+            if (range && grouped[range]) {
+              grouped[range].push(stock);
             }
           });
 
           // Render grouped sections
-          return ['easy', 'medium', 'hard'].map(level => {
-            const stocks = grouped[level];
+          return ['low', 'mid', 'high'].map(range => {
+            const stocks = grouped[range];
             if (stocks.length === 0) return null;
 
             return (
-              <div key={level} style={{ display: 'flex', flexDirection: 'column' }}>
-                <DifficultyHeader level={level} count={stocks.length} />
+              <div key={range} style={{ display: 'flex', flexDirection: 'column' }}>
+                <ThresholdRangeHeader range={range} count={stocks.length} />
                 <div style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
@@ -708,17 +703,17 @@ export default function PortfolioBuilderTD({
                     const change = stockPrices[stock.symbol]?.percentChange || 0;
                     const isSelected = portfolio.some(p => p.symbol === stock.symbol);
                     const threshold = thresholds[stock.symbol];
-                    const difficultyColor = DIFFICULTY_CONFIG[level].color;
+                    const rangeColor = THRESHOLD_RANGES[range].color;
 
                     return (
-                      <button
+                      <div
                         key={stock.symbol}
-                        onClick={() => setSelectedStockForDetail(stock)}
+                        onClick={() => toggleStock(stock)}
                         style={{
                           display: 'flex',
                           flexDirection: 'column',
                           alignItems: 'center',
-                          padding: '14px 10px',
+                          padding: '16px 12px 12px',
                           backgroundColor: isSelected ? 'rgba(0,217,255,0.1)' : colors.cardBg,
                           border: `2px solid ${isSelected ? colors.primary : 'transparent'}`,
                           borderRadius: '12px',
@@ -727,22 +722,52 @@ export default function PortfolioBuilderTD({
                           overflow: 'hidden',
                           transition: 'all 0.2s'
                         }}
+                        className="stock-card-hover"
                       >
-                        {/* Difficulty indicator bar at top */}
+                        {/* Threshold indicator bar at top */}
                         <div style={{
                           position: 'absolute',
                           top: 0,
                           left: 0,
                           right: 0,
                           height: '3px',
-                          backgroundColor: difficultyColor
+                          backgroundColor: rangeColor
                         }} />
 
-                        <div style={{ fontSize: '15px', fontWeight: '700', color: colors.textPrimary, marginTop: '2px' }}>
+                        {/* Info/Details button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedStockForDetail(stock);
+                          }}
+                          title="View details"
+                          style={{
+                            position: 'absolute',
+                            top: '8px',
+                            right: '8px',
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '50%',
+                            background: 'rgba(255,255,255,0.1)',
+                            border: 'none',
+                            color: 'rgba(255,255,255,0.6)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            opacity: 0,
+                            transition: 'all 0.2s'
+                          }}
+                          className="details-btn"
+                        >
+                          <Info size={14} />
+                        </button>
+
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: colors.textPrimary, marginTop: '4px' }}>
                           {stock.symbol}
                         </div>
                         <div style={{
-                          fontSize: '10px',
+                          fontSize: '11px',
                           color: colors.textMuted,
                           textAlign: 'center',
                           marginTop: '2px',
@@ -753,26 +778,17 @@ export default function PortfolioBuilderTD({
                         }}>
                           {stock.name}
                         </div>
-                        <div style={{ fontSize: '13px', color: colors.primary, marginTop: '6px' }}>
+                        <div style={{ fontSize: '14px', color: colors.primary, marginTop: '8px', fontWeight: '600' }}>
                           ${price.toFixed(2)}
                         </div>
                         <div style={{
-                          fontSize: '11px',
+                          fontSize: '12px',
                           color: change >= 0 ? colors.green : colors.red,
                           marginTop: '2px'
                         }}>
                           {change >= 0 ? '+' : ''}{change.toFixed(1)}%
                         </div>
-                        {/* Threshold display */}
-                        <div style={{
-                          fontSize: '11px',
-                          fontWeight: '600',
-                          marginTop: '4px',
-                          color: difficultyColor
-                        }}>
-                          TD: {threshold?.threshold?.toFixed(1) || '—'}%
-                        </div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -807,18 +823,17 @@ export default function PortfolioBuilderTD({
             const isSelected = selectedCrypto?.symbol === crypto.symbol;
 
             const threshold = thresholds[crypto.symbol];
-            const difficultyLevel = threshold?.threshold <= 6 ? 'medium' : 'hard';
-            const difficultyColor = difficultyLevel === 'medium' ? colors.yellow : colors.red;
+            const thresholdColor = getThresholdColor(threshold?.threshold);
 
             return (
-              <button
+              <div
                 key={crypto.symbol}
-                onClick={() => setSelectedStockForDetail(crypto)}
+                onClick={() => setSelectedCrypto(isSelected ? null : crypto)}
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  padding: '12px 8px',
+                  padding: '16px 10px 12px',
                   backgroundColor: isSelected ? 'rgba(245,158,11,0.15)' : colors.cardBg,
                   border: `2px solid ${isSelected ? colors.yellow : 'transparent'}`,
                   borderRadius: '12px',
@@ -827,20 +842,51 @@ export default function PortfolioBuilderTD({
                   overflow: 'hidden',
                   transition: 'all 0.2s'
                 }}
+                className="stock-card-hover"
               >
-                {/* Difficulty indicator bar */}
+                {/* Threshold indicator bar */}
                 <div style={{
                   position: 'absolute',
                   top: 0,
                   left: 0,
                   right: 0,
                   height: '3px',
-                  backgroundColor: difficultyColor
+                  backgroundColor: thresholdColor
                 }} />
-                <div style={{ fontSize: '15px', fontWeight: '700', color: colors.yellow, marginTop: '2px' }}>
+
+                {/* Info/Details button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedStockForDetail(crypto);
+                  }}
+                  title="View details"
+                  style={{
+                    position: 'absolute',
+                    top: '8px',
+                    right: '8px',
+                    width: '22px',
+                    height: '22px',
+                    borderRadius: '50%',
+                    background: 'rgba(255,255,255,0.1)',
+                    border: 'none',
+                    color: 'rgba(255,255,255,0.6)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: 0,
+                    transition: 'all 0.2s'
+                  }}
+                  className="details-btn"
+                >
+                  <Info size={12} />
+                </button>
+
+                <div style={{ fontSize: '15px', fontWeight: '700', color: colors.yellow, marginTop: '4px' }}>
                   {crypto.symbol}
                 </div>
-                <div style={{ fontSize: '12px', color: colors.primary, marginTop: '6px' }}>
+                <div style={{ fontSize: '13px', color: colors.primary, marginTop: '6px', fontWeight: '600' }}>
                   ${price < 1 ? price.toFixed(4) : price.toFixed(2)}
                 </div>
                 <div style={{
@@ -850,16 +896,7 @@ export default function PortfolioBuilderTD({
                 }}>
                   {change >= 0 ? '+' : ''}{change.toFixed(1)}%
                 </div>
-                {/* Threshold display */}
-                <div style={{
-                  fontSize: '10px',
-                  fontWeight: '600',
-                  marginTop: '4px',
-                  color: difficultyColor
-                }}>
-                  TD: {threshold?.threshold?.toFixed(1) || '—'}%
-                </div>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -1011,7 +1048,6 @@ export default function PortfolioBuilderTD({
                 <div style={{ marginBottom: '16px' }}>
                   {portfolio.map(stock => {
                     const threshold = thresholds[stock.symbol];
-                    const difficulty = getDifficulty(threshold?.threshold);
 
                     return (
                       <div
@@ -1106,19 +1142,6 @@ export default function PortfolioBuilderTD({
                             <ThresholdBadge type="breakout" value={threshold.threshold?.toFixed(1)} />
                             <ThresholdBadge type="rally" value={threshold.rallyThreshold?.toFixed(1)} />
                             <ThresholdBadge type="moonshot" value={threshold.moonshotThreshold?.toFixed(1)} />
-                            {difficulty && (
-                              <span style={{
-                                marginLeft: 'auto',
-                                padding: '4px 8px',
-                                borderRadius: '8px',
-                                backgroundColor: `${difficulty.color}20`,
-                                color: difficulty.color,
-                                fontWeight: '600',
-                                fontSize: '11px'
-                              }}>
-                                {difficulty.label}
-                              </span>
-                            )}
                           </div>
                         )}
                       </div>
@@ -1491,6 +1514,19 @@ export default function PortfolioBuilderTD({
           border: 2px solid #fff;
         }
         div::-webkit-scrollbar { display: none; }
+
+        /* Show details button on hover */
+        .stock-card-hover:hover {
+          background: rgba(255,255,255,0.06) !important;
+          border-color: rgba(255,255,255,0.2) !important;
+        }
+        .stock-card-hover:hover .details-btn {
+          opacity: 1 !important;
+        }
+        .details-btn:hover {
+          background: rgba(0,217,255,0.3) !important;
+          color: ${colors.primary} !important;
+        }
       `}</style>
     </div>
   );
