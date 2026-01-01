@@ -1,4 +1,4 @@
-// StockSearch - Search/filter component for adding stocks in TD Portfolio Builder
+// StockSelector - Sector-tabbed grid for selecting stocks in TD Portfolio Builder
 import React, { useState, useMemo } from 'react';
 
 const colors = {
@@ -15,6 +15,20 @@ const colors = {
   textMuted: 'rgba(255,255,255,0.4)'
 };
 
+// Sector definitions with icons
+const SECTORS = [
+  { id: 'Technology', label: 'Tech', icon: '💻' },
+  { id: 'Finance', label: 'Finance', icon: '🏦' },
+  { id: 'Healthcare', label: 'Health', icon: '🏥' },
+  { id: 'Consumer Discretionary', label: 'Consumer', icon: '🛍️' },
+  { id: 'Consumer Staples', label: 'Staples', icon: '🛒' },
+  { id: 'Energy', label: 'Energy', icon: '⚡' },
+  { id: 'Industrials', label: 'Industrial', icon: '🏭' },
+  { id: 'Utilities', label: 'Utilities', icon: '💡' },
+  { id: 'Real Estate', label: 'Real Estate', icon: '🏢' },
+  { id: 'Telecom', label: 'Telecom', icon: '📡' }
+];
+
 /**
  * Get difficulty label and color from threshold
  */
@@ -26,160 +40,124 @@ const getDifficultyFromThreshold = (threshold) => {
 };
 
 /**
- * StockSearch - Search and filter stocks for roster/bench selection
+ * StockSearch (StockSelector) - Sector-tabbed grid for stock selection
  *
  * @param {Function} onSelect - Callback when stock is selected
  * @param {Array} excludeSymbols - Symbols to exclude from results
  * @param {Array} stocks - Available stocks array
  * @param {Object} stockPrices - Price data by symbol
  * @param {Object} thresholds - Threshold data by symbol
- * @param {string} placeholder - Search placeholder text
- * @param {number} maxResults - Maximum results to show
+ * @param {string} placeholder - Unused (kept for compatibility)
+ * @param {number} maxResults - Unused (kept for compatibility)
  */
 export default function StockSearch({
   onSelect,
   excludeSymbols = [],
   stocks = [],
   stockPrices = {},
-  thresholds = {},
-  placeholder = 'Search stocks...',
-  maxResults = 10
+  thresholds = {}
 }) {
-  const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState('all'); // 'all', 'easy', 'medium', 'hard'
-  const [showResults, setShowResults] = useState(false);
+  const [activeTab, setActiveTab] = useState('Technology');
 
+  // Filter stocks by active sector and exclude already selected
   const filteredStocks = useMemo(() => {
     const excludeSet = new Set(excludeSymbols);
+    return stocks.filter(stock =>
+      stock.sector === activeTab && !excludeSet.has(stock.symbol)
+    );
+  }, [stocks, activeTab, excludeSymbols]);
 
-    return stocks.filter(stock => {
-      // Exclude already selected
-      if (excludeSet.has(stock.symbol)) return false;
-
-      // Search query match
-      if (query) {
-        const q = query.toLowerCase();
-        const matchesSymbol = stock.symbol.toLowerCase().includes(q);
-        const matchesName = stock.name?.toLowerCase().includes(q);
-        if (!matchesSymbol && !matchesName) return false;
-      }
-
-      // Difficulty filter
-      if (filter !== 'all') {
-        const threshold = thresholds[stock.symbol]?.threshold;
-        if (!threshold) return false;
-
-        switch (filter) {
-          case 'easy':
-            if (threshold > 2) return false;
-            break;
-          case 'medium':
-            if (threshold <= 2 || threshold > 4) return false;
-            break;
-          case 'hard':
-            if (threshold <= 4) return false;
-            break;
-        }
-      }
-
-      return true;
-    }).slice(0, maxResults);
-  }, [stocks, excludeSymbols, query, filter, thresholds, maxResults]);
+  // Get count of available stocks per sector
+  const sectorCounts = useMemo(() => {
+    const excludeSet = new Set(excludeSymbols);
+    const counts = {};
+    SECTORS.forEach(sector => {
+      counts[sector.id] = stocks.filter(
+        s => s.sector === sector.id && !excludeSet.has(s.symbol)
+      ).length;
+    });
+    return counts;
+  }, [stocks, excludeSymbols]);
 
   const handleSelect = (stock) => {
     onSelect(stock);
-    setQuery('');
-    setShowResults(false);
   };
 
   return (
-    <div style={{
-      position: 'relative',
-      marginTop: '12px'
-    }}>
-      {/* Search Row */}
+    <div style={{ marginTop: '12px' }}>
+      {/* Sector Tabs - Horizontal scrollable */}
       <div style={{
         display: 'flex',
-        gap: '8px'
+        gap: '8px',
+        overflowX: 'auto',
+        paddingBottom: '12px',
+        marginBottom: '12px',
+        WebkitOverflowScrolling: 'touch',
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none'
       }}>
-        <div style={{
-          flex: 1,
-          position: 'relative'
-        }}>
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setShowResults(true);
-            }}
-            onFocus={() => setShowResults(true)}
-            placeholder={placeholder}
-            style={{
-              width: '100%',
-              padding: '12px 16px',
-              paddingLeft: '40px',
-              borderRadius: '10px',
-              border: `1px solid ${colors.border}`,
-              backgroundColor: colors.cardBg,
-              color: colors.textPrimary,
-              fontSize: '14px',
-              outline: 'none',
-              transition: 'border-color 0.2s'
-            }}
-          />
-          <span style={{
-            position: 'absolute',
-            left: '14px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            fontSize: '16px',
-            color: colors.textMuted
-          }}>
-            🔍
-          </span>
-        </div>
+        {SECTORS.map(sector => {
+          const isActive = activeTab === sector.id;
+          const count = sectorCounts[sector.id] || 0;
 
-        {/* Filter Dropdown */}
-        <select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          style={{
-            padding: '12px 16px',
-            borderRadius: '10px',
-            border: `1px solid ${colors.border}`,
-            backgroundColor: colors.cardBg,
-            color: colors.textPrimary,
-            fontSize: '14px',
-            cursor: 'pointer',
-            outline: 'none',
-            minWidth: '100px'
-          }}
-        >
-          <option value="all">All</option>
-          <option value="easy">Easy TD</option>
-          <option value="medium">Medium TD</option>
-          <option value="hard">Hard TD</option>
-        </select>
+          return (
+            <button
+              key={sector.id}
+              onClick={() => setActiveTab(sector.id)}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                padding: '8px 14px',
+                borderRadius: '10px',
+                background: isActive ? 'rgba(0,217,255,0.15)' : colors.cardBg,
+                border: `1px solid ${isActive ? colors.primary : colors.border}`,
+                color: isActive ? colors.primary : colors.textSecondary,
+                whiteSpace: 'nowrap',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                minWidth: '70px',
+                opacity: count === 0 ? 0.5 : 1
+              }}
+            >
+              <span style={{ fontSize: '18px', marginBottom: '4px' }}>
+                {sector.icon}
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: '500' }}>
+                {sector.label}
+              </span>
+              <span style={{
+                fontSize: '10px',
+                color: isActive ? colors.primary : colors.textMuted,
+                marginTop: '2px'
+              }}>
+                ({count})
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Results Dropdown */}
-      {showResults && filteredStocks.length > 0 && (
-        <div style={{
-          position: 'absolute',
-          top: '100%',
-          left: 0,
-          right: 0,
-          marginTop: '4px',
-          maxHeight: '240px',
-          overflowY: 'auto',
-          borderRadius: '10px',
-          border: `1px solid ${colors.border}`,
-          backgroundColor: '#12121a',
-          boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
-          zIndex: 50
-        }}>
-          {filteredStocks.map((stock) => {
+      {/* Stock Grid */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(95px, 1fr))',
+        gap: '10px',
+        maxHeight: '280px',
+        overflowY: 'auto',
+        padding: '4px'
+      }}>
+        {filteredStocks.length === 0 ? (
+          <div style={{
+            gridColumn: '1 / -1',
+            textAlign: 'center',
+            padding: '24px',
+            color: colors.textMuted
+          }}>
+            No stocks available in this sector
+          </div>
+        ) : (
+          filteredStocks.map((stock) => {
             const price = stockPrices[stock.symbol]?.price || 0;
             const threshold = thresholds[stock.symbol];
             const difficulty = getDifficultyFromThreshold(threshold?.threshold);
@@ -189,96 +167,86 @@ export default function StockSearch({
                 key={stock.symbol}
                 onClick={() => handleSelect(stock)}
                 style={{
-                  width: '100%',
                   display: 'flex',
+                  flexDirection: 'column',
                   alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '12px 16px',
-                  background: 'transparent',
-                  border: 'none',
-                  borderBottom: `1px solid ${colors.border}`,
+                  padding: '10px 6px',
+                  borderRadius: '10px',
+                  background: colors.cardBg,
+                  border: `1px solid ${colors.border}`,
                   cursor: 'pointer',
-                  textAlign: 'left',
-                  transition: 'background 0.2s'
+                  transition: 'all 0.2s ease',
+                  textAlign: 'center'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = colors.cardBgHover}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = colors.cardBgHover;
+                  e.currentTarget.style.borderColor = colors.primary;
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = colors.cardBg;
+                  e.currentTarget.style.borderColor = colors.border;
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
               >
-                <div>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}>
-                    <span style={{
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      color: colors.textPrimary
-                    }}>
-                      {stock.symbol}
-                    </span>
-                    {difficulty && (
-                      <span style={{
-                        fontSize: '10px',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        backgroundColor: `${difficulty.color}20`,
-                        color: difficulty.color,
-                        fontWeight: '500'
-                      }}>
-                        {difficulty.label}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{
-                    fontSize: '12px',
-                    color: colors.textMuted,
-                    marginTop: '2px',
-                    maxWidth: '200px',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis'
-                  }}>
-                    {stock.name}
-                  </div>
+                {/* Symbol */}
+                <div style={{
+                  fontSize: '14px',
+                  fontWeight: '700',
+                  color: colors.primary,
+                  marginBottom: '2px'
+                }}>
+                  {stock.symbol}
                 </div>
 
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{
-                    fontSize: '14px',
-                    color: colors.textSecondary
-                  }}>
-                    ${price.toFixed(2)}
-                  </div>
-                  {threshold && (
-                    <div style={{
-                      fontSize: '11px',
-                      color: colors.textMuted
-                    }}>
-                      🎯 {threshold.threshold?.toFixed(1)}%
-                    </div>
-                  )}
+                {/* Name */}
+                <div style={{
+                  fontSize: '10px',
+                  color: colors.textMuted,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  maxWidth: '100%',
+                  marginBottom: '4px'
+                }}>
+                  {stock.name}
                 </div>
+
+                {/* Price */}
+                <div style={{
+                  fontSize: '12px',
+                  color: colors.textSecondary,
+                  marginBottom: '4px'
+                }}>
+                  ${price.toFixed(2)}
+                </div>
+
+                {/* Difficulty Badge */}
+                {difficulty && (
+                  <div style={{
+                    fontSize: '9px',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    backgroundColor: `${difficulty.color}20`,
+                    color: difficulty.color,
+                    fontWeight: '600'
+                  }}>
+                    {difficulty.label}
+                  </div>
+                )}
               </button>
             );
-          })}
-        </div>
-      )}
+          })
+        )}
+      </div>
 
-      {/* Click outside to close */}
-      {showResults && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 40
-          }}
-          onClick={() => setShowResults(false)}
-        />
-      )}
+      {/* Hide scrollbar styles */}
+      <style>{`
+        div::-webkit-scrollbar {
+          height: 0;
+          width: 0;
+        }
+      `}</style>
     </div>
   );
 }

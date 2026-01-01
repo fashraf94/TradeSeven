@@ -24616,39 +24616,35 @@ export default function PortfolioDuel() {
               try {
                 console.log('🔥 Creating TD Battle in Firestore...', portfolioData);
 
-                // Format portfolio assets
-                const portfolioAssets = portfolioData.roster.map(asset => ({
-                  symbol: asset.symbol,
-                  name: asset.name,
-                  price: asset.price || 0,
-                  amount: (asset.amount / 100) * 1000000,
-                  position: 'long'
-                }));
+                // Portfolio assets are already formatted with amounts in dollars
+                // (crypto is already included in roster from PortfolioBuilderTD)
+                const portfolioAssets = (portfolioData.roster || [])
+                  .filter(asset => asset && asset.symbol)
+                  .map(asset => ({
+                    symbol: String(asset.symbol || ''),
+                    name: String(asset.name || asset.symbol || ''),
+                    price: Number(asset.price) || 0,
+                    amount: Number(asset.amount) || 0,
+                    position: String(asset.position || 'long')
+                  }));
 
-                // Add crypto
-                if (portfolioData.crypto) {
-                  portfolioAssets.push({
-                    symbol: portfolioData.crypto.symbol,
-                    name: portfolioData.crypto.name,
-                    price: portfolioData.crypto.price || 0,
-                    amount: 100000, // 10% fixed allocation
+                // Bench assets are already formatted
+                // (bench crypto is already included in bench from PortfolioBuilderTD)
+                const benchAssets = (portfolioData.bench || [])
+                  .filter(asset => asset && asset.symbol)
+                  .map(asset => ({
+                    symbol: String(asset.symbol || ''),
+                    name: String(asset.name || asset.symbol || ''),
+                    price: Number(asset.price) || 0,
+                    amount: 0,
                     position: 'long'
-                  });
-                }
+                  }));
 
-                // Format bench
-                const benchAssets = portfolioData.bench.map(asset => ({
-                  symbol: asset.symbol,
-                  name: asset.name,
-                  price: asset.price || 0
-                }));
-
-                if (portfolioData.benchCrypto) {
-                  benchAssets.push({
-                    symbol: portfolioData.benchCrypto.symbol,
-                    name: portfolioData.benchCrypto.name,
-                    price: portfolioData.benchCrypto.price || 0
-                  });
+                // Validate - no empty arrays allowed
+                if (portfolioAssets.length === 0) {
+                  console.error('No portfolio assets provided');
+                  alert('Please add stocks and crypto to your portfolio');
+                  return;
                 }
 
                 // Save to Firestore with TD schema

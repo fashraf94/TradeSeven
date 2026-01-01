@@ -270,39 +270,88 @@ export default function PortfolioBuilderTD({
 
     setIsCreating(true);
     try {
-      // Build crypto asset with fixed 10% allocation
-      const cryptoAsset = selectedCrypto ? {
-        ...selectedCrypto,
-        amount: CRYPTO_ALLOCATION,
-        price: cryptoPrices[selectedCrypto.symbol]?.price || 0,
-        position: 'long'
-      } : null;
+      // Build portfolio array - ensure no undefined values
+      const creatorPortfolio = portfolio
+        .filter(stock => stock && stock.symbol) // Remove any undefined/null entries
+        .map(stock => ({
+          symbol: stock.symbol || '',
+          name: stock.name || stock.symbol || '',
+          price: Number(stock.price) || Number(stockPrices[stock.symbol]?.price) || 0,
+          amount: Math.round((Number(stock.amount) || 15) / 100 * 1000000), // Convert % to dollar amount
+          position: 'long'
+        }));
 
-      // Build bench assets
-      const benchAssets = bench.map(stock => ({
-        ...stock,
-        amount: 0,
-        price: stockPrices[stock.symbol]?.price || 0,
-        position: 'long'
-      }));
+      // Add crypto to portfolio (fixed 10% = $100,000)
+      if (selectedCrypto) {
+        creatorPortfolio.push({
+          symbol: selectedCrypto.symbol || '',
+          name: selectedCrypto.name || selectedCrypto.symbol || '',
+          price: Number(cryptoPrices[selectedCrypto.symbol]?.price) || Number(selectedCrypto.price) || 0,
+          amount: 100000, // Fixed 10% of $1M
+          position: 'long'
+        });
+      }
 
-      const benchCryptoAsset = benchCrypto ? {
-        ...benchCrypto,
-        amount: 0,
-        price: cryptoPrices[benchCrypto.symbol]?.price || 0,
-        position: 'long'
-      } : null;
+      // Build bench array - ensure no undefined values
+      const creatorBench = bench
+        .filter(stock => stock && stock.symbol)
+        .map(stock => ({
+          symbol: stock.symbol || '',
+          name: stock.name || stock.symbol || '',
+          price: Number(stock.price) || Number(stockPrices[stock.symbol]?.price) || 0,
+          amount: 0, // Bench has no allocation
+          position: 'long'
+        }));
+
+      // Add bench crypto
+      if (benchCrypto) {
+        creatorBench.push({
+          symbol: benchCrypto.symbol || '',
+          name: benchCrypto.name || benchCrypto.symbol || '',
+          price: Number(cryptoPrices[benchCrypto.symbol]?.price) || Number(benchCrypto.price) || 0,
+          amount: 0,
+          position: 'long'
+        });
+      }
+
+      // Validate no undefined values before sending to Firebase
+      const hasUndefined = (arr) => arr.some(item =>
+        !item.symbol || item.price === undefined || item.amount === undefined
+      );
+
+      if (hasUndefined(creatorPortfolio)) {
+        console.error('Portfolio has undefined values:', creatorPortfolio);
+        alert('Error: Some portfolio data is missing. Please try again.');
+        setIsCreating(false);
+        return;
+      }
+
+      if (creatorBench.length > 0 && hasUndefined(creatorBench)) {
+        console.error('Bench has undefined values:', creatorBench);
+        alert('Error: Some bench data is missing. Please try again.');
+        setIsCreating(false);
+        return;
+      }
+
+      // Log for debugging
+      console.log('Creating TD Battle with:', {
+        portfolioName: portfolioName.trim(),
+        creatorPortfolio,
+        creatorBench,
+        thresholds
+      });
 
       await onSubmit({
-        portfolioName: portfolioName.trim(),
-        roster: portfolio,
-        crypto: cryptoAsset,
-        bench: benchAssets,
-        benchCrypto: benchCryptoAsset,
+        portfolioName: portfolioName.trim() || 'TD Portfolio',
+        roster: creatorPortfolio,
+        crypto: null, // Already included in roster
+        bench: creatorBench,
+        benchCrypto: null, // Already included in bench
         thresholds
       });
     } catch (error) {
       console.error('Error creating battle:', error);
+      alert('Failed to create TD battle. Please try again.');
     } finally {
       setIsCreating(false);
     }
@@ -831,25 +880,28 @@ export default function PortfolioBuilderTD({
             animate={{ opacity: 1, scale: 1 }}
             style={{
               width: '100%',
-              maxWidth: '400px',
-              maxHeight: '70vh',
+              maxWidth: '600px',
+              maxHeight: '80vh',
               backgroundColor: '#12121a',
               borderRadius: '16px',
               border: `1px solid ${colors.border}`,
-              overflow: 'hidden'
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column'
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{
-              padding: '16px',
+              padding: '16px 20px',
               borderBottom: `1px solid ${colors.border}`,
               display: 'flex',
               justifyContent: 'space-between',
-              alignItems: 'center'
+              alignItems: 'center',
+              flexShrink: 0
             }}>
               <h3 style={{
                 margin: 0,
-                fontSize: '16px',
+                fontSize: '18px',
                 fontWeight: '600',
                 color: colors.textPrimary
               }}>
@@ -858,20 +910,36 @@ export default function PortfolioBuilderTD({
               <button
                 onClick={() => setShowBenchStockModal(false)}
                 style={{
-                  background: 'transparent',
+                  background: 'none',
                   border: 'none',
                   color: colors.textMuted,
                   cursor: 'pointer',
-                  fontSize: '20px'
+                  fontSize: '24px',
+                  padding: 0,
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '8px',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                  e.currentTarget.style.color = colors.textPrimary;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'none';
+                  e.currentTarget.style.color = colors.textMuted;
                 }}
               >
                 ×
               </button>
             </div>
             <div style={{
-              padding: '16px',
-              overflowY: 'auto',
-              maxHeight: 'calc(70vh - 60px)'
+              padding: '16px 20px',
+              flex: 1,
+              overflowY: 'auto'
             }}>
               <StockSearch
                 onSelect={handleAddToBench}
@@ -879,8 +947,6 @@ export default function PortfolioBuilderTD({
                 stocks={STOCKS}
                 stockPrices={stockPrices}
                 thresholds={thresholds}
-                placeholder="🔍 Search bench stocks..."
-                maxResults={15}
               />
             </div>
           </motion.div>
