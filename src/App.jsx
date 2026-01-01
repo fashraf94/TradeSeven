@@ -3,7 +3,7 @@ import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } f
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
-import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles } from './firebase/firebaseService';
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBattleTD } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
 import './firebase/config';
@@ -25053,29 +25053,27 @@ export default function PortfolioDuel() {
             }, {})}
             thresholds={{}} // Will be fetched in component or passed from volatility service
             onSubmit={async (portfolioData) => {
-              // Create TD battle in Firestore
+              // Create TD battle in Firestore using V2 schema
               const challengeCode = generateChallengeCode();
               try {
                 console.log('🔥 Creating TD Battle in Firestore...', portfolioData);
 
-                // Portfolio assets are already formatted with amounts in dollars
-                // (crypto is already included in roster from PortfolioBuilderTD)
+                // Portfolio assets - sanitize with strict type coercion
                 const portfolioAssets = (portfolioData.roster || [])
                   .filter(asset => asset && asset.symbol)
                   .map(asset => ({
-                    symbol: String(asset.symbol || ''),
+                    symbol: String(asset.symbol || '').toUpperCase(),
                     name: String(asset.name || asset.symbol || ''),
                     price: Number(asset.price) || 0,
                     amount: Number(asset.amount) || 0,
                     position: String(asset.position || 'long')
                   }));
 
-                // Bench assets are already formatted
-                // (bench crypto is already included in bench from PortfolioBuilderTD)
+                // Bench assets - sanitize with strict type coercion
                 const benchAssets = (portfolioData.bench || [])
                   .filter(asset => asset && asset.symbol)
                   .map(asset => ({
-                    symbol: String(asset.symbol || ''),
+                    symbol: String(asset.symbol || '').toUpperCase(),
                     name: String(asset.name || asset.symbol || ''),
                     price: Number(asset.price) || 0,
                     amount: 0,
@@ -25089,25 +25087,32 @@ export default function PortfolioDuel() {
                   return;
                 }
 
-                // Save to Firestore with TD schema
-                const firestoreBattle = await createFirestoreBattle({
+                // Sanitize thresholds - ensure no undefined values
+                const sanitizedThresholds = {};
+                for (const [symbol, data] of Object.entries(portfolioData.thresholds || {})) {
+                  if (data && typeof data === 'object') {
+                    sanitizedThresholds[symbol] = {
+                      threshold: Number(data.threshold) || 2.0,
+                      rallyThreshold: Number(data.rallyThreshold) || (Number(data.threshold) * 1.5) || 3.0,
+                      moonshotThreshold: Number(data.moonshotThreshold) || (Number(data.threshold) * 2) || 4.0
+                    };
+                  }
+                }
+
+                console.log('📤 Sanitized data:', { portfolioAssets, benchAssets, sanitizedThresholds });
+
+                // Use createBattleTD for V2 TD Scoring battles
+                const firestoreBattle = await createBattleTD({
                   challengeCode,
                   creator: {
-                    uid: user.odUserId || user.username,
-                    username: user.username,
-                    portfolio: portfolioAssets,
-                    bench: benchAssets
+                    uid: String(user.odUserId || user.username || 'anonymous'),
+                    username: String(user.username || 'Player')
                   },
-                  portfolioName: portfolioData.portfolioName || 'TD Portfolio',
-                  portfolioType: 'td',
-                  _v: 2, // TD Scoring version marker
-                  thresholds: portfolioData.thresholds || {},
-                  sessions: {
-                    MORNING_BELL: { status: 'pending' },
-                    MIDDAY: { status: 'pending' },
-                    POWER_HOUR: { status: 'pending' },
-                    NIGHT_GAME: { status: 'pending' }
-                  }
+                  portfolioName: String(portfolioData.portfolioName || 'TD Portfolio').trim(),
+                  portfolioType: 'stocks',
+                  creatorPortfolio: portfolioAssets,
+                  creatorBench: benchAssets
+                  // Note: thresholds are fetched inside createBattleTD
                 });
 
                 console.log('✅ TD Battle created with ID:', firestoreBattle.id);
@@ -25115,7 +25120,7 @@ export default function PortfolioDuel() {
                 // Create local battle object
                 const newBattle = {
                   id: firestoreBattle.id,
-                  challengeCode,
+                  challengeCode: firestoreBattle.challengeCode || challengeCode,
                   creator: user.username,
                   creatorPortfolio: portfolioAssets,
                   bench: benchAssets,
@@ -25135,7 +25140,7 @@ export default function PortfolioDuel() {
                 setScreen('dashboard');
               } catch (error) {
                 console.error('❌ Failed to create TD battle:', error);
-                alert('Failed to create TD battle. Please try again.');
+                alert(`Failed to create TD battle: ${error.message}`);
               }
             }}
             onBack={() => {

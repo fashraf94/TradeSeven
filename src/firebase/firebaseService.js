@@ -19,6 +19,41 @@ import { getVolatilityThresholds } from '../services/volatilityService.js';
 import { isCrypto, SESSION_ORDER } from '../services/sessionScoringService.js';
 
 // =====================================================
+// HELPERS
+// =====================================================
+
+/**
+ * Remove undefined values recursively from an object
+ * Firebase does not accept undefined values
+ *
+ * @param {any} obj - Object to clean
+ * @returns {any} - Cleaned object with no undefined values
+ */
+function removeUndefined(obj) {
+  if (obj === null || obj === undefined) {
+    return null;
+  }
+  if (Array.isArray(obj)) {
+    return obj
+      .map(item => removeUndefined(item))
+      .filter(item => item !== undefined);
+  }
+  if (typeof obj === 'object' && obj !== null) {
+    const cleaned = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        const cleanedValue = removeUndefined(value);
+        if (cleanedValue !== undefined) {
+          cleaned[key] = cleanedValue;
+        }
+      }
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
+// =====================================================
 // BATTLES
 // =====================================================
 
@@ -578,16 +613,17 @@ export function calculateBattleTiming() {
 
 /**
  * Initialize empty session prices structure
+ * Uses empty objects/strings instead of null to avoid Firebase issues
  */
 function initializeSessionPrices() {
   const sessionPrices = {};
   for (const sessionId of SESSION_ORDER) {
     sessionPrices[sessionId] = {
-      open: null,
-      close: null,
+      open: {},
+      close: {},
       capturedAt: {
-        open: null,
-        close: null
+        open: '',
+        close: ''
       }
     };
   }
@@ -596,14 +632,15 @@ function initializeSessionPrices() {
 
 /**
  * Initialize empty session scores structure
+ * Uses 0 and empty string instead of null to avoid Firebase issues
  */
 function initializeSessionScores() {
   const sessionScores = {};
   for (const sessionId of SESSION_ORDER) {
     sessionScores[sessionId] = {
-      creator: null,
-      opponent: null,
-      winner: null
+      creator: 0,
+      opponent: 0,
+      winner: ''
     };
   }
   return sessionScores;
@@ -652,68 +689,103 @@ async function fetchAllThresholds(portfolio, bench) {
  */
 export async function createBattleTD(battleData) {
   try {
+    console.log('🔥 createBattleTD called with:', battleData);
+
+    // Validate required data
+    if (!battleData.creatorPortfolio || battleData.creatorPortfolio.length === 0) {
+      throw new Error('Portfolio is required');
+    }
+
     // Fetch volatility thresholds for creator's assets
-    const creatorThresholds = await fetchAllThresholds(
-      battleData.creatorPortfolio,
-      battleData.creatorBench
-    );
+    let creatorThresholds = {};
+    try {
+      creatorThresholds = await fetchAllThresholds(
+        battleData.creatorPortfolio,
+        battleData.creatorBench
+      );
+    } catch (thresholdError) {
+      console.warn('⚠️ Could not fetch thresholds, using empty object:', thresholdError.message);
+    }
+
+    // Build portfolio with strict type coercion - NO undefined values allowed
+    const sanitizedPortfolio = (battleData.creatorPortfolio || [])
+      .filter(asset => asset && asset.symbol)
+      .map(asset => ({
+        symbol: String(asset.symbol || '').toUpperCase(),
+        name: String(asset.name || asset.assetName || asset.symbol || ''),
+        price: Number(asset.price) || 0,
+        amount: Number(asset.amount || asset.allocation) || 0,
+        position: String(asset.position || 'long')
+      }));
+
+    // Build bench with strict type coercion
+    const sanitizedBench = (battleData.creatorBench || [])
+      .filter(asset => asset && asset.symbol)
+      .map(asset => ({
+        symbol: String(asset.symbol || '').toUpperCase(),
+        name: String(asset.name || asset.assetName || asset.symbol || ''),
+        price: Number(asset.price) || 0,
+        amount: 0,
+        position: String(asset.position || 'long')
+      }));
+
+    // Sanitize thresholds
+    const sanitizedThresholds = {};
+    for (const [symbol, data] of Object.entries(creatorThresholds || {})) {
+      if (data && typeof data === 'object') {
+        sanitizedThresholds[String(symbol)] = {
+          threshold: Number(data.threshold) || 2.0,
+          rallyThreshold: Number(data.rallyThreshold) || 3.0,
+          moonshotThreshold: Number(data.moonshotThreshold) || 4.0
+        };
+      }
+    }
 
     const battle = {
       _v: 2,  // Schema version for TD Scoring
 
-      challengeCode: battleData.challengeCode,
+      challengeCode: String(battleData.challengeCode || ''),
 
       creator: {
-        uid: battleData.creator.uid,
-        username: battleData.creator.username,
-        portfolioName: battleData.portfolioName,
-        portfolioType: battleData.portfolioType,
-        portfolio: battleData.creatorPortfolio.map(asset => ({
-          symbol: asset.symbol.toUpperCase(),
-          name: asset.name || asset.assetName || asset.symbol,
-          price: asset.price || 0,
-          amount: asset.amount || asset.allocation || 0,
-          position: asset.position || 'long'
-        })),
-        bench: (battleData.creatorBench || []).map(asset => ({
-          symbol: asset.symbol.toUpperCase(),
-          name: asset.name || asset.assetName || asset.symbol,
-          price: asset.price || 0,
-          amount: 0,  // Bench assets have no allocation
-          position: asset.position || 'long'
-        })),
+        uid: String(battleData.creator?.uid || 'anonymous'),
+        username: String(battleData.creator?.username || 'Player'),
+        portfolioName: String(battleData.portfolioName || 'TD Portfolio'),
+        portfolioType: String(battleData.portfolioType || 'stocks'),
+        portfolio: sanitizedPortfolio,
+        bench: sanitizedBench,
         cryptoAllocation: 10  // Fixed at 10% for V2
       },
 
+      // Opponent starts empty - all fields must be explicit, no undefined
       opponent: {
-        uid: null,
-        username: null,
-        portfolioName: null,
-        portfolioType: null,
-        portfolio: null,
-        bench: null,
-        cryptoAllocation: null
+        uid: '',
+        username: '',
+        portfolioName: '',
+        portfolioType: '',
+        portfolio: [],
+        bench: [],
+        cryptoAllocation: 0
       },
 
       timeline: {
         createdAt: new Date().toISOString(),
-        startDate: null,  // Set when opponent joins
-        endDate: null,    // 8:00 PM ET same day
-        completedAt: null
+        startDate: '',  // Set when opponent joins
+        endDate: '',    // 8:00 PM ET same day
+        completedAt: ''
       },
 
       state: {
         status: 'waiting',
-        currentSession: null,    // MORNING_BELL, MIDDAY, POWER_HOUR, NIGHT_GAME
+        currentSession: '',    // MORNING_BELL, MIDDAY, POWER_HOUR, NIGHT_GAME
         completedSessions: [],   // Array of completed session IDs
-        startingPrices: null
+        startingPrices: {}
       },
 
       // Price snapshots per session
       sessionPrices: initializeSessionPrices(),
 
       // Volatility thresholds locked at battle creation
-      thresholds: creatorThresholds,
+      thresholds: sanitizedThresholds,
 
       // Breakout events log
       breakouts: {
@@ -727,7 +799,7 @@ export async function createBattleTD(battleData) {
       // Per-session scores
       sessionScores: initializeSessionScores(),
 
-      result: null,
+      result: {},
 
       metadata: {
         spectatorCount: 0,
@@ -739,17 +811,22 @@ export async function createBattleTD(battleData) {
       updatedAt: new Date().toISOString()
     };
 
-    const battleRef = await addDoc(collection(db, 'battles'), battle);
+    // Remove any remaining undefined values recursively
+    const cleanedBattle = removeUndefined(battle);
+
+    console.log('📤 Cleaned battle object for Firebase:', JSON.stringify(cleanedBattle, null, 2));
+
+    const battleRef = await addDoc(collection(db, 'battles'), cleanedBattle);
 
     console.log('✅ TD Scoring battle created:', battleRef.id);
 
     return {
       id: battleRef.id,
-      ...battle
+      ...cleanedBattle
     };
   } catch (error) {
     console.error('❌ Error creating TD battle:', error);
-    throw new Error('Failed to create TD Scoring battle. Please try again.');
+    throw new Error(`Failed to create TD Scoring battle: ${error.message}`);
   }
 }
 
