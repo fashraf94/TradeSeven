@@ -58,6 +58,29 @@ const logger = {
 };
 
 // ============================================
+// BATTLE DEBUG HELPER
+// ============================================
+const debugBattles = (label, battles, extra = {}) => {
+  if (!import.meta.env.DEV) return;
+
+  console.group(`🔍 [BATTLES] ${label}`);
+  console.log('Count:', battles.length);
+  console.log('IDs:', battles.map(b => b.id));
+  console.log('Statuses:', battles.map(b => `${b.id?.slice(-4)}: ${b.status}`));
+  console.log('Creators:', battles.map(b => `${b.id?.slice(-4)}: ${b.creator}`));
+  if (Object.keys(extra).length > 0) {
+    console.log('Extra:', extra);
+  }
+  console.groupEnd();
+};
+
+// ============================================
+// BATTLE LIMITS
+// ============================================
+const MAX_PVP_BATTLES = 3;
+const MAX_TRAINING_BATTLES = 2;
+
+// ============================================
 // INPUT SANITIZATION UTILITIES
 // ============================================
 const sanitizePortfolioName = (name) => {
@@ -12379,52 +12402,70 @@ export default function PortfolioDuel() {
 
     const unsubscribe = subscribeToBattles(userId, (firestoreBattles) => {
       console.log('📥 Received Firestore battle update:', firestoreBattles.length, 'battles');
+      debugBattles('Firebase incoming', firestoreBattles);
 
-      if (firestoreBattles.length > 0) {
-        // Convert Firestore format to local format
-        const convertedBattles = firestoreBattles.map(fb => ({
-          id: fb.id,
-          challengeCode: fb.challengeCode,
-          creator: fb.creator?.username || fb.creator,
-          creatorPortfolio: fb.creator?.portfolio || fb.creatorPortfolio,
-          bench: fb.creator?.bench || fb.bench,
-          portfolioName: fb.creator?.portfolioName || fb.portfolioName,
-          portfolioType: fb.creator?.portfolioType || fb.portfolioType,
-          opponent: fb.opponent?.username || fb.opponent,
-          opponentPortfolio: fb.opponent?.portfolio || fb.opponentPortfolio,
-          status: fb.state?.status || fb.status,
-          startDate: fb.timeline?.startDate || fb.startDate,
-          endDate: fb.timeline?.endDate || fb.endDate,
-          createdAt: fb.timeline?.createdAt || fb.createdAt,
-          startingPrices: fb.state?.startingPrices || fb.startingPrices,
-          firestoreId: fb.id,
-          _v: fb._v || 1 // Preserve version marker
-        }));
+      // Convert Firestore format to local format
+      const convertedBattles = firestoreBattles.map(fb => ({
+        id: fb.id,
+        challengeCode: fb.challengeCode,
+        creator: fb.creator?.username || fb.creator,
+        creatorPortfolio: fb.creator?.portfolio || fb.creatorPortfolio,
+        bench: fb.creator?.bench || fb.bench,
+        portfolioName: fb.creator?.portfolioName || fb.portfolioName,
+        portfolioType: fb.creator?.portfolioType || fb.portfolioType,
+        opponent: fb.opponent?.username || fb.opponent,
+        opponentPortfolio: fb.opponent?.portfolio || fb.opponentPortfolio,
+        status: fb.state?.status || fb.status,
+        startDate: fb.timeline?.startDate || fb.startDate,
+        endDate: fb.timeline?.endDate || fb.endDate,
+        createdAt: fb.timeline?.createdAt || fb.createdAt,
+        startingPrices: fb.state?.startingPrices || fb.startingPrices,
+        firestoreId: fb.id,
+        _v: fb._v || 1, // Preserve version marker
+        _source: 'firestore' // Mark source for debugging
+      }));
 
-        // Merge with local battles (prefer Firestore data for matching IDs)
-        setBattles(prevBattles => {
-          // Use a Map to deduplicate by ID
-          const battleMap = new Map();
+      // Merge with local battles (prefer Firestore data for matching IDs)
+      setBattles(prevBattles => {
+        debugBattles('Before Firebase merge', prevBattles);
 
-          // First add local battles
-          prevBattles.forEach(battle => {
-            const key = battle.firestoreId || battle.id;
-            battleMap.set(key, battle);
-          });
+        // Use a Map to deduplicate by ID, keyed by firestoreId
+        const battleMap = new Map();
 
-          // Then overwrite with Firestore battles (they have fresher data)
-          convertedBattles.forEach(battle => {
-            battleMap.set(battle.id, battle);
-          });
-
-          const mergedBattles = Array.from(battleMap.values());
-
-          // Also update localStorage cache
-          saveBattlesSafe(mergedBattles);
-
-          return mergedBattles;
+        // First add ALL local battles (including training battles that don't sync to Firestore)
+        prevBattles.forEach(battle => {
+          const key = battle.firestoreId || battle.id;
+          battleMap.set(key, { ...battle, _source: battle._source || 'local' });
         });
-      }
+
+        // Then merge Firestore battles (update existing, add new)
+        convertedBattles.forEach(battle => {
+          const existingBattle = battleMap.get(battle.id);
+          if (existingBattle) {
+            // Merge: keep local fields, update with Firestore data
+            battleMap.set(battle.id, { ...existingBattle, ...battle, _source: 'firestore' });
+          } else {
+            // New battle from Firestore
+            battleMap.set(battle.id, battle);
+          }
+        });
+
+        const mergedBattles = Array.from(battleMap.values());
+        debugBattles('After Firebase merge', mergedBattles);
+
+        // Only update localStorage if there are actual changes
+        const prevIds = new Set(prevBattles.map(b => b.firestoreId || b.id));
+        const mergedIds = new Set(mergedBattles.map(b => b.firestoreId || b.id));
+        const hasChanges = mergedBattles.length !== prevBattles.length ||
+          [...mergedIds].some(id => !prevIds.has(id));
+
+        if (hasChanges) {
+          saveBattlesSafe(mergedBattles);
+          console.log('💾 Saved merged battles to localStorage');
+        }
+
+        return mergedBattles;
+      });
     });
 
     return () => {
@@ -14301,13 +14342,6 @@ export default function PortfolioDuel() {
       createdAt: new Date().toISOString()
     };
 
-    // Load current battles and add training battle
-    const currentBattles = loadBattlesSafe();
-    const updatedBattles = [...currentBattles, trainingBattle];
-
-    // Save to localStorage (for backward compatibility)
-    saveBattlesSafe(updatedBattles);
-
     // ⭐ SAVE TO FIREBASE for persistence across sessions
     try {
       const { doc, setDoc } = await import('firebase/firestore');
@@ -14379,8 +14413,20 @@ export default function PortfolioDuel() {
       // Continue anyway - localStorage backup exists
     }
 
-    // Update component state
-    setBattles(updatedBattles);
+    // Update component state using functional update to prevent race conditions
+    debugBattles('Before classic training battle creation', battles);
+    setBattles(prevBattles => {
+      // Check if battle already exists (prevent duplicates)
+      const exists = prevBattles.some(b => b.id === trainingBattle.id);
+      if (exists) {
+        console.log('⚠️ Training battle already exists, skipping add');
+        return prevBattles;
+      }
+      const updatedBattles = [...prevBattles, trainingBattle];
+      debugBattles('After classic training battle creation', updatedBattles);
+      saveBattlesSafe(updatedBattles);
+      return updatedBattles;
+    });
     setActiveBattleId(trainingBattle.id);
     setPortfolio([]);
     setPortfolioType(null);
@@ -14494,13 +14540,6 @@ export default function PortfolioDuel() {
       createdAt: now.toISOString()
     };
 
-    // Load current battles and add training battle
-    const currentBattles = loadBattlesSafe();
-    const updatedBattles = [...currentBattles, trainingBattle];
-
-    // Save to localStorage (for backward compatibility)
-    saveBattlesSafe(updatedBattles);
-
     // Save to Firebase for persistence across sessions
     try {
       const { doc, setDoc } = await import('firebase/firestore');
@@ -14583,8 +14622,20 @@ export default function PortfolioDuel() {
       // Continue anyway - localStorage backup exists
     }
 
-    // Update component state
-    setBattles(updatedBattles);
+    // Update component state using functional update to prevent race conditions
+    debugBattles('Before TD training battle creation', battles);
+    setBattles(prevBattles => {
+      // Check if battle already exists (prevent duplicates)
+      const exists = prevBattles.some(b => b.id === trainingBattle.id);
+      if (exists) {
+        console.log('⚠️ TD Training battle already exists, skipping add');
+        return prevBattles;
+      }
+      const updatedBattles = [...prevBattles, trainingBattle];
+      debugBattles('After TD training battle creation', updatedBattles);
+      saveBattlesSafe(updatedBattles);
+      return updatedBattles;
+    });
     setActiveBattleId(trainingBattle.id);
     setBuilderMode('create');
     setTrainingBattleType('classic');
@@ -23120,6 +23171,16 @@ export default function PortfolioDuel() {
             setBattleScoringMode('classic'); // Reset to classic when closing
           }}
           onConfirm={() => {
+            // Check PvP battle limit
+            const activePvPBattles = battles.filter(b =>
+              !b.isTrainingBattle &&
+              (b.status === 'waiting' || b.status === 'active')
+            ).length;
+            if (activePvPBattles >= MAX_PVP_BATTLES) {
+              alert(`You've reached the maximum of ${MAX_PVP_BATTLES} active PvP battles. Complete or delete a battle first.`);
+              setShowCreateBattleConfirm(false);
+              return;
+            }
             setShowCreateBattleConfirm(false);
             setBuilderMode('create');
             // If TD mode selected, go to TD portfolio builder
@@ -23222,6 +23283,16 @@ export default function PortfolioDuel() {
             setTrainingBattleType('classic'); // Reset on close
           }}
           onConfirm={() => {
+            // Check training battle limit
+            const activeTrainingBattles = battles.filter(b =>
+              b.isTrainingBattle &&
+              (b.status === 'waiting' || b.status === 'active')
+            ).length;
+            if (activeTrainingBattles >= MAX_TRAINING_BATTLES) {
+              alert(`You've reached the maximum of ${MAX_TRAINING_BATTLES} active training battles. Complete or delete a battle first.`);
+              setShowClassicTrainingConfirm(false);
+              return;
+            }
             setShowClassicTrainingConfirm(false);
             setPortfolio([]);
             setPortfolioType(null);
@@ -25145,11 +25216,22 @@ export default function PortfolioDuel() {
                   firestoreId: firestoreBattle.id // Add firestoreId for merge logic
                 };
 
-                // Update state
-                const currentBattles = loadBattlesSafe();
-                const updatedBattles = [...currentBattles, newBattle];
-                saveBattlesSafe(updatedBattles);
-                setBattles(updatedBattles);
+                // Update state using functional update to prevent race conditions
+                debugBattles('Before TD battle creation', battles);
+                setBattles(prevBattles => {
+                  // Check if battle already exists (prevent duplicates)
+                  const exists = prevBattles.some(b =>
+                    b.id === newBattle.id || b.firestoreId === newBattle.id
+                  );
+                  if (exists) {
+                    console.log('⚠️ TD Battle already exists, skipping add');
+                    return prevBattles;
+                  }
+                  const updatedBattles = [...prevBattles, newBattle];
+                  debugBattles('After TD battle creation', updatedBattles);
+                  saveBattlesSafe(updatedBattles);
+                  return updatedBattles;
+                });
                 setActiveBattleId(newBattle.id);
                 setScreen('dashboard');
               } catch (error) {
@@ -27623,10 +27705,20 @@ export default function PortfolioDuel() {
         createdAt: now.toISOString()
       };
 
-      // Save battle
-      const currentBattles = loadBattlesSafe();
-      saveBattlesSafe([...currentBattles, newBattle]);
-      setBattles(prev => [...prev, newBattle]);
+      // Save battle using functional update to prevent race conditions
+      debugBattles('Before draft battle creation', battles);
+      setBattles(prevBattles => {
+        // Check if battle already exists (prevent duplicates)
+        const exists = prevBattles.some(b => b.id === newBattle.id);
+        if (exists) {
+          console.log('⚠️ Draft battle already exists, skipping add');
+          return prevBattles;
+        }
+        const updatedBattles = [...prevBattles, newBattle];
+        debugBattles('After draft battle creation', updatedBattles);
+        saveBattlesSafe(updatedBattles);
+        return updatedBattles;
+      });
 
       // Navigate to dashboard to see the new battle
       setScreen('dashboard');
