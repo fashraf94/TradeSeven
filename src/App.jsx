@@ -18715,17 +18715,15 @@ export default function PortfolioDuel() {
 
   // DASHBOARD SCREEN - New Flowing Card Layout
   if (screen === 'dashboard') {
-    // Get first active battle for preview card
-    const primaryActiveBattle = activeBattles[0];
-    const hasActiveBattle = activeBattles.length > 0;
+    // Helper function to calculate battle preview data for any battle
+    const calculateBattlePreviewData = (battle) => {
+      if (!battle) return null;
+      const isCreator = battle.creator === user.username;
+      const opponent = isCreator ? battle.opponent : battle.creator;
+      const myPortfolio = isCreator ? battle.creatorPortfolio : battle.opponentPortfolio;
+      const theirPortfolio = isCreator ? battle.opponentPortfolio : battle.creatorPortfolio;
 
-    // Calculate battle stats for preview
-    let battlePreviewData = null;
-    if (primaryActiveBattle) {
-      const isCreator = primaryActiveBattle.creator === user.username;
-      const opponent = isCreator ? primaryActiveBattle.opponent : primaryActiveBattle.creator;
-      const myPortfolio = isCreator ? primaryActiveBattle.creatorPortfolio : primaryActiveBattle.opponentPortfolio;
-      const theirPortfolio = isCreator ? primaryActiveBattle.opponentPortfolio : primaryActiveBattle.creatorPortfolio;
+      if (!myPortfolio || !theirPortfolio) return null;
 
       let myValue = 0;
       myPortfolio.forEach(asset => {
@@ -18744,8 +18742,23 @@ export default function PortfolioDuel() {
       const isWinning = myGain > theirGain;
       const leadBy = Math.abs(myGain - theirGain);
 
-      battlePreviewData = { opponent, myGain, theirGain, isWinning, leadBy, myValue, theirValue };
-    }
+      return { opponent, myGain, theirGain, isWinning, leadBy, myValue, theirValue };
+    };
+
+    // Calculate preview data for all active battles
+    const activeBattlesWithData = activeBattles.map(battle => ({
+      battle,
+      previewData: calculateBattlePreviewData(battle)
+    })).filter(item => item.previewData !== null);
+
+    // Debug log battle counts
+    debugBattles('Dashboard render', battles, {
+      activeBattles: activeBattles.length,
+      waitingBattles: waitingBattles.length,
+      completedBattles: completedBattles.length
+    });
+
+    const hasActiveBattle = activeBattlesWithData.length > 0;
 
     // XP calculation for modal
     const xpForNextLevel = 10000;
@@ -19260,183 +19273,238 @@ export default function PortfolioDuel() {
               margin: '0 auto'
             }}
           >
-            {/* Active Battle Preview Card - Only shows when user has active battle */}
-            {hasActiveBattle && primaryActiveBattle && battlePreviewData && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4 }}
-                style={{
-                  background: colors.cardBg,
-                  borderRadius: '16px',
-                  padding: '20px 24px',
-                  marginBottom: '24px',
-                  border: `1px solid ${colors.border}`,
-                  cursor: 'pointer',
-                  transition: 'all 0.3s'
-                }}
-                onClick={() => {
-                  setCurrentBattle(primaryActiveBattle);
-                  setScreen('battle');
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = colors.cyan;
-                  e.currentTarget.style.boxShadow = `0 0 20px ${colors.cyan}30`;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = colors.border;
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
-              >
-                {/* Battle Header */}
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '20px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {primaryActiveBattle.isTrainingBattle && <GraduationCap style={{ height: '16px', width: '16px', color: colors.purple }} />}
+            {/* Active Battles Section - Shows ALL active battles */}
+            {hasActiveBattle && (
+              <div style={{ marginBottom: '24px' }}>
+                {/* Section Header - Only show when multiple battles */}
+                {activeBattlesWithData.length > 1 && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    marginBottom: '16px'
+                  }}>
+                    <Swords style={{ height: '18px', width: '18px', color: colors.cyan }} />
                     <span style={{
-                      fontSize: '13px',
+                      fontSize: '14px',
                       fontWeight: '600',
-                      color: colors.textSecondary,
+                      color: colors.textPrimary,
                       textTransform: 'uppercase',
                       letterSpacing: '1px'
                     }}>
-                      {primaryActiveBattle.isTrainingBattle ? 'TRAINING BATTLE' : 'ACTIVE BATTLE'}: vs {battlePreviewData.opponent}
+                      Active Battles
+                    </span>
+                    <span style={{
+                      background: `${colors.cyan}30`,
+                      color: colors.cyan,
+                      padding: '2px 10px',
+                      borderRadius: '10px',
+                      fontSize: '12px',
+                      fontWeight: '600'
+                    }}>
+                      {activeBattlesWithData.length}
                     </span>
                   </div>
-                  <span style={{
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    color: colors.cyan,
-                    fontFamily: "'SF Mono', 'Monaco', monospace"
-                  }}>
-                    {battleTimer.formatTimeRemaining(primaryActiveBattle)} left
-                  </span>
-                </div>
+                )}
 
-                {/* Player Comparison */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '16px'
-                }}>
-                  {/* You */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{
-                      width: '48px',
-                      height: '48px',
-                      borderRadius: '50%',
-                      background: `linear-gradient(135deg, ${colors.green}30 0%, ${colors.cyan}30 100%)`,
-                      border: `2px solid ${colors.green}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      <User style={{ height: '20px', width: '20px', color: colors.green }} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '13px', color: colors.textSecondary }}>YOU ({user.username})</div>
-                      <div style={{
-                        fontSize: '24px',
-                        fontWeight: 'bold',
-                        color: battlePreviewData.myGain >= 0 ? colors.green : colors.red
-                      }}>
-                        {battlePreviewData.myGain >= 0 ? '+' : ''}{battlePreviewData.myGain.toFixed(1)}%
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Opponent */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexDirection: 'row-reverse' }}>
-                    <div style={{
-                      width: '48px',
-                      height: '48px',
-                      borderRadius: '50%',
-                      background: `linear-gradient(135deg, ${colors.red}30 0%, ${colors.purple}30 100%)`,
-                      border: `2px solid ${colors.red}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      <Target style={{ height: '20px', width: '20px', color: colors.red }} />
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '13px', color: colors.textSecondary }}>OPPONENT</div>
-                      <div style={{
-                        fontSize: '24px',
-                        fontWeight: 'bold',
-                        color: battlePreviewData.theirGain >= 0 ? colors.green : colors.red
-                      }}>
-                        {battlePreviewData.theirGain >= 0 ? '+' : ''}{battlePreviewData.theirGain.toFixed(1)}%
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Progress Bar */}
-                <div style={{
-                  position: 'relative',
-                  height: '8px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '9999px',
-                  overflow: 'hidden',
-                  marginBottom: '12px'
-                }}>
+                {/* Render ALL active battle cards */}
+                {activeBattlesWithData.map(({ battle, previewData }, index) => (
                   <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${(battlePreviewData.myValue / (battlePreviewData.myValue + battlePreviewData.theirValue)) * 100}%` }}
-                    transition={{ duration: 0.6, ease: 'easeOut' }}
+                    key={battle.id || battle.firestoreId || index}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: index * 0.1 }}
                     style={{
-                      position: 'absolute',
-                      height: '100%',
-                      borderRadius: '9999px',
-                      background: battlePreviewData.isWinning
-                        ? 'linear-gradient(90deg, #4ADE80 0%, #10B981 100%)'
-                        : 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)'
-                    }}
-                  />
-                </div>
-
-                {/* Status & Button */}
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <span style={{
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    color: battlePreviewData.isWinning ? colors.green : colors.red
-                  }}>
-                    {battlePreviewData.isWinning ? `LEADING BY +${battlePreviewData.leadBy.toFixed(1)}%` : `TRAILING BY -${battlePreviewData.leadBy.toFixed(1)}%`}
-                  </span>
-                  <button
-                    style={{
-                      padding: '8px 16px',
-                      background: primaryActiveBattle.isTrainingBattle ? colors.purple : colors.cyan,
-                      border: 'none',
-                      borderRadius: '8px',
-                      color: colors.background,
-                      fontSize: '13px',
-                      fontWeight: '600',
+                      background: colors.cardBg,
+                      borderRadius: '16px',
+                      padding: '20px 24px',
+                      marginBottom: index < activeBattlesWithData.length - 1 ? '12px' : 0,
+                      border: `1px solid ${battle.isTrainingBattle ? colors.purple + '60' : colors.border}`,
                       cursor: 'pointer',
-                      transition: 'all 0.2s'
+                      transition: 'all 0.3s'
+                    }}
+                    onClick={() => {
+                      setCurrentBattle(battle);
+                      // Route to TD battle view if it's a TD battle
+                      if (battle._v === 2) {
+                        setSelectedTDBattle(battle);
+                        setScreen('tdBattleView');
+                      } else {
+                        setScreen('battle');
+                      }
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'scale(1.05)';
+                      e.currentTarget.style.borderColor = battle.isTrainingBattle ? colors.purple : colors.cyan;
+                      e.currentTarget.style.boxShadow = `0 0 20px ${battle.isTrainingBattle ? colors.purple : colors.cyan}30`;
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)';
+                      e.currentTarget.style.borderColor = battle.isTrainingBattle ? colors.purple + '60' : colors.border;
+                      e.currentTarget.style.boxShadow = 'none';
                     }}
                   >
-                    VIEW BATTLE
-                  </button>
-                </div>
-              </motion.div>
+                    {/* Battle Header */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '20px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {battle.isTrainingBattle && <GraduationCap style={{ height: '16px', width: '16px', color: colors.purple }} />}
+                        {battle._v === 2 && (
+                          <span style={{
+                            background: `${colors.purple}30`,
+                            color: colors.purple,
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: '700'
+                          }}>
+                            TD
+                          </span>
+                        )}
+                        <span style={{
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          color: colors.textSecondary,
+                          textTransform: 'uppercase',
+                          letterSpacing: '1px'
+                        }}>
+                          {battle.isTrainingBattle ? 'TRAINING' : 'BATTLE'}: vs {previewData.opponent}
+                        </span>
+                      </div>
+                      <span style={{
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: colors.cyan,
+                        fontFamily: "'SF Mono', 'Monaco', monospace"
+                      }}>
+                        {battleTimer.formatTimeRemaining(battle)} left
+                      </span>
+                    </div>
+
+                    {/* Player Comparison */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: '16px'
+                    }}>
+                      {/* You */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                          width: '48px',
+                          height: '48px',
+                          borderRadius: '50%',
+                          background: `linear-gradient(135deg, ${colors.green}30 0%, ${colors.cyan}30 100%)`,
+                          border: `2px solid ${colors.green}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <User style={{ height: '20px', width: '20px', color: colors.green }} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '13px', color: colors.textSecondary }}>YOU ({user.username})</div>
+                          <div style={{
+                            fontSize: '24px',
+                            fontWeight: 'bold',
+                            color: previewData.myGain >= 0 ? colors.green : colors.red
+                          }}>
+                            {previewData.myGain >= 0 ? '+' : ''}{previewData.myGain.toFixed(1)}%
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Opponent */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexDirection: 'row-reverse' }}>
+                        <div style={{
+                          width: '48px',
+                          height: '48px',
+                          borderRadius: '50%',
+                          background: `linear-gradient(135deg, ${colors.red}30 0%, ${colors.purple}30 100%)`,
+                          border: `2px solid ${colors.red}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <Target style={{ height: '20px', width: '20px', color: colors.red }} />
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '13px', color: colors.textSecondary }}>OPPONENT</div>
+                          <div style={{
+                            fontSize: '24px',
+                            fontWeight: 'bold',
+                            color: previewData.theirGain >= 0 ? colors.green : colors.red
+                          }}>
+                            {previewData.theirGain >= 0 ? '+' : ''}{previewData.theirGain.toFixed(1)}%
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div style={{
+                      position: 'relative',
+                      height: '8px',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      borderRadius: '9999px',
+                      overflow: 'hidden',
+                      marginBottom: '12px'
+                    }}>
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${(previewData.myValue / (previewData.myValue + previewData.theirValue)) * 100}%` }}
+                        transition={{ duration: 0.6, ease: 'easeOut' }}
+                        style={{
+                          position: 'absolute',
+                          height: '100%',
+                          borderRadius: '9999px',
+                          background: previewData.isWinning
+                            ? 'linear-gradient(90deg, #4ADE80 0%, #10B981 100%)'
+                            : 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)'
+                        }}
+                      />
+                    </div>
+
+                    {/* Status & Button */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span style={{
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        color: previewData.isWinning ? colors.green : colors.red
+                      }}>
+                        {previewData.isWinning ? `LEADING BY +${previewData.leadBy.toFixed(1)}%` : `TRAILING BY -${previewData.leadBy.toFixed(1)}%`}
+                      </span>
+                      <button
+                        style={{
+                          padding: '8px 16px',
+                          background: battle.isTrainingBattle ? colors.purple : colors.cyan,
+                          border: 'none',
+                          borderRadius: '8px',
+                          color: colors.background,
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'scale(1.05)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                        }}
+                      >
+                        VIEW BATTLE
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
             )}
 
             {/* Active Draft Battles Section */}
