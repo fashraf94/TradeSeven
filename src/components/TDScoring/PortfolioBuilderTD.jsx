@@ -3,6 +3,11 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Monitor, Building2, Heart, ShoppingBag, ShoppingCart,
+  Zap, Factory, Lightbulb, Home, Radio,
+  Target, TrendingUp, Rocket
+} from 'lucide-react';
 import { STOCKS, CRYPTO } from '../../data/assets';
 import { getVolatilityThresholds } from '../../services/volatilityService';
 import { getMultipleStockPrices, getMultipleCryptoPrices } from '../../services/eodhdAPI';
@@ -23,19 +28,34 @@ const colors = {
   textMuted: 'rgba(255,255,255,0.4)'
 };
 
-// Sector definitions
+// Sector definitions with Lucide icons
 const SECTORS = [
-  { id: 'Technology', name: 'Tech', icon: '💻' },
-  { id: 'Finance', name: 'Finance', icon: '🏦' },
-  { id: 'Healthcare', name: 'Health', icon: '🏥' },
-  { id: 'Consumer Discretionary', name: 'Consumer', icon: '🛍️' },
-  { id: 'Consumer Staples', name: 'Staples', icon: '🛒' },
-  { id: 'Energy', name: 'Energy', icon: '⚡' },
-  { id: 'Industrials', name: 'Industrial', icon: '🏭' },
-  { id: 'Utilities', name: 'Utilities', icon: '💡' },
-  { id: 'Real Estate', name: 'Real Estate', icon: '🏢' },
-  { id: 'Telecom', name: 'Telecom', icon: '📡' }
+  { id: 'Technology', label: 'Tech', icon: Monitor, color: '#8b5cf6' },
+  { id: 'Finance', label: 'Finance', icon: Building2, color: '#3b82f6' },
+  { id: 'Healthcare', label: 'Health', icon: Heart, color: '#10b981' },
+  { id: 'Consumer Discretionary', label: 'Consumer', icon: ShoppingBag, color: '#f59e0b' },
+  { id: 'Consumer Staples', label: 'Staples', icon: ShoppingCart, color: '#6366f1' },
+  { id: 'Energy', label: 'Energy', icon: Zap, color: '#eab308' },
+  { id: 'Industrials', label: 'Industrial', icon: Factory, color: '#64748b' },
+  { id: 'Utilities', label: 'Utilities', icon: Lightbulb, color: '#22c55e' },
+  { id: 'Real Estate', label: 'Real Estate', icon: Home, color: '#ec4899' },
+  { id: 'Telecom', label: 'Telecom', icon: Radio, color: '#06b6d4' }
 ];
+
+// Difficulty config for threshold badges
+const DIFFICULTY_CONFIG = {
+  easy: { label: 'Easy', color: '#10b981', threshold: 2 },
+  medium: { label: 'Medium', color: '#f59e0b', threshold: 4 },
+  hard: { label: 'Hard', color: '#ef4444', threshold: Infinity }
+};
+
+// Get difficulty level from threshold value
+const getDifficultyLevel = (threshold) => {
+  if (!threshold) return null;
+  if (threshold <= 2) return 'easy';
+  if (threshold <= 4) return 'medium';
+  return 'hard';
+};
 
 // Allocation constraints
 const STOCK_MIN_ALLOCATION = 7.5;
@@ -43,12 +63,118 @@ const STOCK_MAX_ALLOCATION = 20;
 const CRYPTO_ALLOCATION = 10;
 const STOCK_TOTAL_ALLOCATION = 90;
 
-// Get difficulty from threshold
+// Get difficulty info from threshold
 const getDifficulty = (threshold) => {
-  if (!threshold) return null;
-  if (threshold <= 2) return { label: 'Easy', color: colors.green };
-  if (threshold <= 4) return { label: 'Medium', color: colors.yellow };
-  return { label: 'Hard', color: colors.red };
+  const level = getDifficultyLevel(threshold);
+  if (!level) return null;
+  return DIFFICULTY_CONFIG[level];
+};
+
+// ThresholdBadge component - styled icon badge for breakout thresholds
+const ThresholdBadge = ({ type, value }) => {
+  const config = {
+    breakout: { label: 'TD', color: '#10b981', icon: Target },
+    rally: { label: 'Rally', color: '#f59e0b', icon: TrendingUp },
+    moonshot: { label: 'Moon', color: '#8b5cf6', icon: Rocket }
+  };
+
+  const { color, icon: Icon } = config[type];
+
+  return (
+    <div style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '4px',
+      padding: '4px 8px',
+      backgroundColor: `${color}20`,
+      borderRadius: '12px',
+      fontSize: '11px',
+      color: color
+    }}>
+      <Icon size={12} />
+      <span>{value}%</span>
+    </div>
+  );
+};
+
+// SectorTab component - styled sector tab with Lucide icons
+const SectorTab = ({ sector, isActive, onClick, count }) => {
+  const Icon = sector.icon;
+
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '8px 16px',
+        background: isActive ? `${sector.color}15` : 'rgba(255,255,255,0.03)',
+        border: `1px solid ${isActive ? sector.color : 'rgba(255,255,255,0.1)'}`,
+        borderRadius: '20px',
+        color: isActive ? sector.color : 'rgba(255,255,255,0.7)',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        whiteSpace: 'nowrap'
+      }}
+    >
+      <div style={{
+        width: '28px',
+        height: '28px',
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: isActive ? sector.color : `${sector.color}20`
+      }}>
+        <Icon size={16} color={isActive ? '#fff' : sector.color} />
+      </div>
+      <span style={{ fontWeight: '500', fontSize: '14px' }}>{sector.label}</span>
+      <span style={{ fontSize: '12px', opacity: 0.7 }}>({count})</span>
+    </button>
+  );
+};
+
+// DifficultyHeader component for grouped stock sections
+const DifficultyHeader = ({ level, count }) => {
+  const config = {
+    easy: { icon: Target, hint: 'Lower thresholds, more consistent scoring' },
+    medium: { icon: TrendingUp, hint: 'Balanced risk and reward' },
+    hard: { icon: Rocket, hint: 'Higher thresholds, bigger bonus potential' }
+  };
+
+  const { icon: Icon, hint } = config[level];
+  const { label, color } = DIFFICULTY_CONFIG[level];
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '8px 0',
+      borderBottom: '1px solid rgba(255,255,255,0.1)',
+      marginBottom: '12px'
+    }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '4px 12px',
+        borderRadius: '16px',
+        fontSize: '13px',
+        fontWeight: '600',
+        backgroundColor: `${color}15`,
+        color: color
+      }}>
+        <Icon size={14} />
+        <span>{label} TD</span>
+        <span style={{ opacity: 0.7, fontWeight: '400' }}>({count})</span>
+      </div>
+      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+        {hint}
+      </span>
+    </div>
+  );
 };
 
 /**
@@ -492,113 +618,125 @@ export default function PortfolioBuilderTD({
         WebkitOverflowScrolling: 'touch',
         scrollbarWidth: 'none'
       }}>
-        {SECTORS.map(sector => {
-          const isActive = activeTab === sector.id;
-          const count = getStockCountBySector(sector.id);
-          return (
-            <button
-              key={sector.id}
-              onClick={() => setActiveTab(sector.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '8px 14px',
-                borderRadius: '20px',
-                border: `1px solid ${isActive ? colors.primary : colors.border}`,
-                backgroundColor: isActive ? 'rgba(0,217,255,0.15)' : 'transparent',
-                color: isActive ? colors.primary : colors.textSecondary,
-                fontSize: '13px',
-                fontWeight: '500',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                transition: 'all 0.2s'
-              }}
-            >
-              <span>{sector.icon}</span>
-              <span>{sector.name}</span>
-              <span style={{ opacity: 0.6 }}>({count})</span>
-            </button>
-          );
-        })}
+        {SECTORS.map(sector => (
+          <SectorTab
+            key={sector.id}
+            sector={sector}
+            isActive={activeTab === sector.id}
+            onClick={() => setActiveTab(sector.id)}
+            count={getStockCountBySector(sector.id)}
+          />
+        ))}
       </div>
 
-      {/* Stock Grid */}
+      {/* Stock Grid - Grouped by Difficulty */}
       <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
-        gap: '10px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '24px',
         padding: '0 16px 16px'
       }}>
-        {filteredStocks.map(stock => {
-          const price = stockPrices[stock.symbol]?.price || 0;
-          const change = stockPrices[stock.symbol]?.percentChange || 0;
-          const isSelected = portfolio.some(p => p.symbol === stock.symbol);
-          const threshold = thresholds[stock.symbol];
+        {(() => {
+          // Group stocks by difficulty
+          const grouped = { easy: [], medium: [], hard: [] };
+          filteredStocks.forEach(stock => {
+            const threshold = thresholds[stock.symbol]?.threshold || 2.5;
+            const level = getDifficultyLevel(threshold);
+            if (level && grouped[level]) {
+              grouped[level].push(stock);
+            }
+          });
 
-          return (
-            <button
-              key={stock.symbol}
-              onClick={() => toggleStock(stock)}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                padding: '14px 10px',
-                backgroundColor: isSelected ? 'rgba(0,217,255,0.1)' : colors.cardBg,
-                border: `2px solid ${isSelected ? colors.primary : 'transparent'}`,
-                borderRadius: '12px',
-                cursor: 'pointer',
-                position: 'relative',
-                transition: 'all 0.2s'
-              }}
-            >
-              {/* Threshold Badge */}
-              {threshold && (
+          // Render grouped sections
+          return ['easy', 'medium', 'hard'].map(level => {
+            const stocks = grouped[level];
+            if (stocks.length === 0) return null;
+
+            return (
+              <div key={level} style={{ display: 'flex', flexDirection: 'column' }}>
+                <DifficultyHeader level={level} count={stocks.length} />
                 <div style={{
-                  position: 'absolute',
-                  top: '4px',
-                  right: '4px',
-                  fontSize: '9px',
-                  padding: '2px 4px',
-                  backgroundColor: 'rgba(0,0,0,0.6)',
-                  borderRadius: '4px',
-                  color: 'rgba(255,255,255,0.7)',
-                  opacity: isSelected ? 1 : 0,
-                  transition: 'opacity 0.2s'
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
+                  gap: '10px'
                 }}>
-                  🎯 {threshold.threshold?.toFixed(1)}%
-                </div>
-              )}
+                  {stocks.map(stock => {
+                    const price = stockPrices[stock.symbol]?.price || 0;
+                    const change = stockPrices[stock.symbol]?.percentChange || 0;
+                    const isSelected = portfolio.some(p => p.symbol === stock.symbol);
+                    const threshold = thresholds[stock.symbol];
+                    const difficultyColor = DIFFICULTY_CONFIG[level].color;
 
-              <div style={{ fontSize: '15px', fontWeight: '700', color: colors.textPrimary }}>
-                {stock.symbol}
+                    return (
+                      <button
+                        key={stock.symbol}
+                        onClick={() => toggleStock(stock)}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          padding: '14px 10px',
+                          backgroundColor: isSelected ? 'rgba(0,217,255,0.1)' : colors.cardBg,
+                          border: `2px solid ${isSelected ? colors.primary : 'transparent'}`,
+                          borderRadius: '12px',
+                          cursor: 'pointer',
+                          position: 'relative',
+                          overflow: 'hidden',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        {/* Difficulty indicator bar at top */}
+                        <div style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: '3px',
+                          backgroundColor: difficultyColor
+                        }} />
+
+                        <div style={{ fontSize: '15px', fontWeight: '700', color: colors.textPrimary, marginTop: '2px' }}>
+                          {stock.symbol}
+                        </div>
+                        <div style={{
+                          fontSize: '10px',
+                          color: colors.textMuted,
+                          textAlign: 'center',
+                          marginTop: '2px',
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {stock.name}
+                        </div>
+                        <div style={{ fontSize: '13px', color: colors.primary, marginTop: '6px' }}>
+                          ${price.toFixed(2)}
+                        </div>
+                        <div style={{
+                          fontSize: '11px',
+                          color: change >= 0 ? colors.green : colors.red,
+                          marginTop: '2px'
+                        }}>
+                          {change >= 0 ? '+' : ''}{change.toFixed(1)}%
+                        </div>
+                        {/* Threshold display */}
+                        <div style={{
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          marginTop: '4px',
+                          color: difficultyColor
+                        }}>
+                          TD: {threshold?.threshold?.toFixed(1) || '—'}%
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div style={{
-                fontSize: '10px',
-                color: colors.textMuted,
-                textAlign: 'center',
-                marginTop: '2px',
-                maxWidth: '100%',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap'
-              }}>
-                {stock.name}
-              </div>
-              <div style={{ fontSize: '13px', color: colors.primary, marginTop: '6px' }}>
-                ${price.toFixed(2)}
-              </div>
-              <div style={{
-                fontSize: '11px',
-                color: change >= 0 ? colors.green : colors.red,
-                marginTop: '2px'
-              }}>
-                {change >= 0 ? '+' : ''}{change.toFixed(1)}%
-              </div>
-            </button>
-          );
-        })}
+            );
+          });
+        })()}
       </div>
 
       {/* Crypto Section */}
@@ -893,22 +1031,23 @@ export default function PortfolioBuilderTD({
                           <div style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '8px',
+                            gap: '6px',
+                            flexWrap: 'wrap',
                             paddingTop: '8px',
-                            borderTop: `1px solid ${colors.border}`,
-                            fontSize: '11px'
+                            borderTop: `1px solid ${colors.border}`
                           }}>
-                            <span style={{ color: colors.textMuted }}>🎯 {threshold.threshold?.toFixed(1)}%</span>
-                            <span style={{ color: colors.textMuted }}>🚀 {threshold.rallyThreshold?.toFixed(1)}%</span>
-                            <span style={{ color: colors.textMuted }}>🌙 {threshold.moonshotThreshold?.toFixed(1)}%</span>
+                            <ThresholdBadge type="breakout" value={threshold.threshold?.toFixed(1)} />
+                            <ThresholdBadge type="rally" value={threshold.rallyThreshold?.toFixed(1)} />
+                            <ThresholdBadge type="moonshot" value={threshold.moonshotThreshold?.toFixed(1)} />
                             {difficulty && (
                               <span style={{
                                 marginLeft: 'auto',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
+                                padding: '4px 8px',
+                                borderRadius: '8px',
                                 backgroundColor: `${difficulty.color}20`,
                                 color: difficulty.color,
-                                fontWeight: '500'
+                                fontWeight: '600',
+                                fontSize: '11px'
                               }}>
                                 {difficulty.label}
                               </span>
@@ -943,12 +1082,13 @@ export default function PortfolioBuilderTD({
                       {thresholds[selectedCrypto.symbol] && (
                         <div style={{
                           marginTop: '8px',
-                          fontSize: '11px',
-                          color: colors.textMuted
+                          display: 'flex',
+                          gap: '6px',
+                          flexWrap: 'wrap'
                         }}>
-                          🎯 {thresholds[selectedCrypto.symbol].threshold?.toFixed(1)}%
-                          {' • '}🚀 {thresholds[selectedCrypto.symbol].rallyThreshold?.toFixed(1)}%
-                          {' • '}🌙 {thresholds[selectedCrypto.symbol].moonshotThreshold?.toFixed(1)}%
+                          <ThresholdBadge type="breakout" value={thresholds[selectedCrypto.symbol].threshold?.toFixed(1)} />
+                          <ThresholdBadge type="rally" value={thresholds[selectedCrypto.symbol].rallyThreshold?.toFixed(1)} />
+                          <ThresholdBadge type="moonshot" value={thresholds[selectedCrypto.symbol].moonshotThreshold?.toFixed(1)} />
                         </div>
                       )}
                     </div>
