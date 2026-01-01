@@ -12387,6 +12387,7 @@ export default function PortfolioDuel() {
           challengeCode: fb.challengeCode,
           creator: fb.creator?.username || fb.creator,
           creatorPortfolio: fb.creator?.portfolio || fb.creatorPortfolio,
+          bench: fb.creator?.bench || fb.bench,
           portfolioName: fb.creator?.portfolioName || fb.portfolioName,
           portfolioType: fb.creator?.portfolioType || fb.portfolioType,
           opponent: fb.opponent?.username || fb.opponent,
@@ -12396,15 +12397,27 @@ export default function PortfolioDuel() {
           endDate: fb.timeline?.endDate || fb.endDate,
           createdAt: fb.timeline?.createdAt || fb.createdAt,
           startingPrices: fb.state?.startingPrices || fb.startingPrices,
-          firestoreId: fb.id
+          firestoreId: fb.id,
+          _v: fb._v || 1 // Preserve version marker
         }));
 
         // Merge with local battles (prefer Firestore data for matching IDs)
         setBattles(prevBattles => {
-          const localOnlyBattles = prevBattles.filter(
-            local => !convertedBattles.some(fb => fb.id === local.id || fb.id === local.firestoreId)
-          );
-          const mergedBattles = [...convertedBattles, ...localOnlyBattles];
+          // Use a Map to deduplicate by ID
+          const battleMap = new Map();
+
+          // First add local battles
+          prevBattles.forEach(battle => {
+            const key = battle.firestoreId || battle.id;
+            battleMap.set(key, battle);
+          });
+
+          // Then overwrite with Firestore battles (they have fresher data)
+          convertedBattles.forEach(battle => {
+            battleMap.set(battle.id, battle);
+          });
+
+          const mergedBattles = Array.from(battleMap.values());
 
           // Also update localStorage cache
           saveBattlesSafe(mergedBattles);
@@ -25128,7 +25141,8 @@ export default function PortfolioDuel() {
                   portfolioType: 'td',
                   _v: 2,
                   status: 'waiting',
-                  createdAt: new Date().toISOString()
+                  createdAt: new Date().toISOString(),
+                  firestoreId: firestoreBattle.id // Add firestoreId for merge logic
                 };
 
                 // Update state
