@@ -11293,6 +11293,8 @@ export default function PortfolioDuel() {
   const [showJoinTDBattleConfirm, setShowJoinTDBattleConfirm] = useState(false);
   // TD Scoring battle mode selection in create battle confirmation
   const [battleScoringMode, setBattleScoringMode] = useState('classic'); // 'classic' | 'td'
+  // Training Mode battle type selection
+  const [trainingBattleType, setTrainingBattleType] = useState('classic'); // 'classic' | 'td'
 
   // Tutorial modal states
   const [showTutorial, setShowTutorial] = useState(false);
@@ -14376,6 +14378,298 @@ export default function PortfolioDuel() {
 
     // Navigate to dashboard (battle will show as active)
     setScreen('dashboard');
+  };
+
+  // ============================================
+  // TD TRAINING MODE: CREATE TD TRAINING BATTLE
+  // ============================================
+  const handleCreateTDTrainingBattle = async (portfolioData) => {
+    if (!portfolioData.portfolioName?.trim()) {
+      alert('Please enter a portfolio name before starting training');
+      return;
+    }
+
+    // User portfolio is already formatted from PortfolioBuilderTD
+    const userPortfolioAssets = (portfolioData.roster || [])
+      .filter(asset => asset && asset.symbol)
+      .map(asset => ({
+        symbol: String(asset.symbol || ''),
+        name: String(asset.name || asset.symbol || ''),
+        price: Number(asset.price) || 0,
+        amount: Number(asset.amount) || 0,
+        position: String(asset.position || 'long')
+      }));
+
+    // User bench assets
+    const userBenchAssets = (portfolioData.bench || [])
+      .filter(asset => asset && asset.symbol)
+      .map(asset => ({
+        symbol: String(asset.symbol || ''),
+        name: String(asset.name || asset.symbol || ''),
+        price: Number(asset.price) || 0,
+        amount: 0,
+        position: 'long'
+      }));
+
+    // Generate CPU portfolio for TD mode
+    const cpuPortfolioData = generateCPUPortfolioTD(stocksData, cryptoData);
+
+    // Calculate start and end dates (1 hour for training)
+    const now = new Date();
+    const startDate = new Date(now);
+    const TRAINING_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
+    const endDate = new Date(startDate.getTime() + TRAINING_DURATION);
+
+    // Fetch starting prices for all assets
+    const startingPrices = {};
+    const allAssets = [...userPortfolioAssets, ...cpuPortfolioData.portfolio];
+    const uniqueSymbols = [...new Set(allAssets.map(a => a.symbol))];
+
+    for (const symbol of uniqueSymbols) {
+      const asset = allAssets.find(a => a.symbol === symbol);
+      try {
+        const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === symbol);
+
+        if (isCrypto) {
+          const cryptoInfo = POPULAR_CRYPTO.find(c => c.symbol === symbol);
+          const data = await stockAPI.getCryptoPrice(cryptoInfo?.symbol || symbol);
+          startingPrices[symbol] = data.price;
+        } else {
+          const data = await stockAPI.getStockPrice(symbol);
+          startingPrices[symbol] = data.price;
+        }
+      } catch (error) {
+        console.error(`Error fetching price for ${symbol}:`, error);
+        startingPrices[symbol] = asset?.price || 0;
+      }
+    }
+
+    // Update portfolios with locked starting prices
+    const updatedUserPortfolio = userPortfolioAssets.map(asset => ({
+      ...asset,
+      price: startingPrices[asset.symbol] || asset.price
+    }));
+
+    const updatedCPUPortfolio = cpuPortfolioData.portfolio.map(asset => ({
+      ...asset,
+      price: startingPrices[asset.symbol] || asset.price
+    }));
+
+    // Generate unique battle ID for Firebase
+    const battleId = `training_td_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const odUserId = user.odUserId || user.username;
+
+    // Create TD training battle object (for localStorage compatibility)
+    const trainingBattle = {
+      id: battleId,
+      challengeCode: 'TRAINING', // Special code for training battles
+      creator: user.username,
+      opponent: 'CPU Opponent',
+      creatorPortfolio: updatedUserPortfolio,
+      opponentPortfolio: updatedCPUPortfolio,
+      creatorBench: userBenchAssets,
+      opponentBench: cpuPortfolioData.bench,
+      portfolioName: portfolioData.portfolioName.trim(),
+      portfolioType: 'td',
+      _v: 2, // TD Scoring version marker
+      status: 'active',
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      startingPrices: startingPrices,
+      thresholds: portfolioData.thresholds || {},
+      isTrainingBattle: true,
+      createdAt: now.toISOString()
+    };
+
+    // Load current battles and add training battle
+    const currentBattles = loadBattlesSafe();
+    const updatedBattles = [...currentBattles, trainingBattle];
+
+    // Save to localStorage (for backward compatibility)
+    saveBattlesSafe(updatedBattles);
+
+    // Save to Firebase for persistence across sessions
+    try {
+      const { doc, setDoc } = await import('firebase/firestore');
+      const { db } = await import('./firebase/config');
+
+      const firebaseBattle = {
+        _v: 2, // TD Scoring version marker
+        id: battleId,
+        mode: 'training',
+        type: 'td',
+
+        // Players
+        player1: {
+          odUserId: odUserId,
+          username: user.username,
+          portfolioName: portfolioData.portfolioName.trim(),
+          portfolio: updatedUserPortfolio,
+          bench: userBenchAssets,
+          portfolioType: 'td',
+          startValue: 1000000,
+          currentValue: 1000000,
+          percentChange: 0,
+          isCreator: true
+        },
+        player2: {
+          odUserId: 'cpu',
+          username: 'CPU Opponent',
+          portfolioName: 'CPU TD Strategy',
+          portfolio: updatedCPUPortfolio,
+          bench: cpuPortfolioData.bench,
+          portfolioType: 'td',
+          startValue: 1000000,
+          currentValue: 1000000,
+          percentChange: 0,
+          isCPU: true
+        },
+
+        // Timing
+        timeline: {
+          createdAt: now.toISOString(),
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          completedAt: null
+        },
+
+        // State
+        state: {
+          status: 'active',
+          startingPrices: startingPrices,
+          endingPrices: null
+        },
+
+        // TD Scoring specific
+        thresholds: portfolioData.thresholds || {},
+        sessions: {
+          MORNING_BELL: { status: 'pending' },
+          MIDDAY: { status: 'pending' },
+          POWER_HOUR: { status: 'pending' },
+          NIGHT_GAME: { status: 'pending' }
+        },
+
+        // For querying
+        playerIds: [odUserId, 'cpu'],
+        creatorId: odUserId,
+
+        // Metadata
+        challengeCode: null,
+        result: null,
+        challengeIds: [],
+        midGameChallenges: [],
+        halftimeLeader: null,
+        archived: false,
+        updatedAt: now.toISOString()
+      };
+
+      await setDoc(doc(db, 'trainingBattles', battleId), firebaseBattle);
+      console.log('✅ TD Training battle saved to Firebase:', battleId);
+    } catch (firebaseError) {
+      console.error('⚠️ Failed to save TD training battle to Firebase:', firebaseError);
+      // Continue anyway - localStorage backup exists
+    }
+
+    // Update component state
+    setBattles(updatedBattles);
+    setActiveBattleId(trainingBattle.id);
+    setBuilderMode('create');
+    setTrainingBattleType('classic');
+
+    // Navigate to dashboard
+    setScreen('dashboard');
+    showToast(`TD Training battle started vs CPU! 🤖🏈`);
+  };
+
+  // Generate CPU portfolio for TD mode
+  const generateCPUPortfolioTD = (stocks, crypto) => {
+    // Select random stocks with varied thresholds from different sectors
+    const sectors = ['Technology', 'Finance', 'Healthcare', 'Energy', 'Consumer Discretionary', 'Industrials'];
+    const cpuStocks = [];
+
+    // Pick stocks from different sectors
+    sectors.forEach(sector => {
+      const sectorStocks = stocks.filter(s =>
+        s.sector === sector || s.category === sector
+      );
+      if (sectorStocks.length > 0) {
+        const randomStock = sectorStocks[Math.floor(Math.random() * sectorStocks.length)];
+        if (!cpuStocks.find(s => s.symbol === randomStock.symbol)) {
+          cpuStocks.push(randomStock);
+        }
+      }
+    });
+
+    // Fill to 7 stocks if needed
+    while (cpuStocks.length < 7) {
+      const randomStock = stocks[Math.floor(Math.random() * stocks.length)];
+      if (!cpuStocks.find(s => s.symbol === randomStock.symbol)) {
+        cpuStocks.push(randomStock);
+      }
+    }
+
+    // Limit to 7 stocks max
+    const selectedStocks = cpuStocks.slice(0, 7);
+
+    // Distribute allocations evenly (90% for stocks)
+    const allocation = 90 / selectedStocks.length;
+    const portfolio = selectedStocks.map(stock => ({
+      symbol: stock.symbol,
+      name: stock.name || stock.symbol,
+      price: stock.price || 0,
+      amount: Math.round((allocation / 100) * 1000000),
+      position: 'long'
+    }));
+
+    // Add random crypto (10%)
+    const eligibleCrypto = crypto.filter(c =>
+      !c.category || c.category !== 'Stablecoin'
+    ).slice(0, 8);
+    const randomCrypto = eligibleCrypto[Math.floor(Math.random() * eligibleCrypto.length)];
+    if (randomCrypto) {
+      portfolio.push({
+        symbol: randomCrypto.symbol,
+        name: randomCrypto.name || randomCrypto.symbol,
+        price: randomCrypto.price || 0,
+        amount: 100000, // Fixed 10%
+        position: 'long'
+      });
+    }
+
+    // Generate bench (4 stocks + 1 crypto)
+    const bench = [];
+    const usedSymbols = new Set(portfolio.map(p => p.symbol));
+
+    // Add bench stocks
+    for (let i = 0; i < 4 && bench.length < 4; i++) {
+      const randomStock = stocks[Math.floor(Math.random() * stocks.length)];
+      if (!usedSymbols.has(randomStock.symbol)) {
+        usedSymbols.add(randomStock.symbol);
+        bench.push({
+          symbol: randomStock.symbol,
+          name: randomStock.name || randomStock.symbol,
+          price: randomStock.price || 0,
+          amount: 0,
+          position: 'long'
+        });
+      }
+    }
+
+    // Add bench crypto (different from main crypto)
+    const benchCrypto = eligibleCrypto.find(c =>
+      c.symbol !== randomCrypto?.symbol && !usedSymbols.has(c.symbol)
+    );
+    if (benchCrypto) {
+      bench.push({
+        symbol: benchCrypto.symbol,
+        name: benchCrypto.name || benchCrypto.symbol,
+        price: benchCrypto.price || 0,
+        amount: 0,
+        position: 'long'
+      });
+    }
+
+    return { portfolio, bench };
   };
 
   // ============================================
@@ -22910,7 +23204,10 @@ export default function PortfolioDuel() {
 
         <ConfirmationPopup
           show={showClassicTrainingConfirm}
-          onClose={() => setShowClassicTrainingConfirm(false)}
+          onClose={() => {
+            setShowClassicTrainingConfirm(false);
+            setTrainingBattleType('classic'); // Reset on close
+          }}
           onConfirm={() => {
             setShowClassicTrainingConfirm(false);
             setPortfolio([]);
@@ -22920,12 +23217,157 @@ export default function PortfolioDuel() {
             setSearchTerm('');
             setSelectedCrypto(null);
             setBuilderMode('training');
-            setScreen('builder');
+
+            // Route based on battle type selection
+            if (trainingBattleType === 'td') {
+              setScreen('trainingPortfolioBuilderTD');
+            } else {
+              setScreen('builder');
+            }
           }}
           icon={<GraduationCap size={32} style={{ color: '#ffffff' }} />}
           iconBgColor="#9333ea"
           title="Start Training Battle?"
           subtitle="Practice against a CPU opponent"
+          customContent={
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{
+                fontSize: '12px',
+                color: 'rgba(255,255,255,0.5)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                marginBottom: '10px',
+                textAlign: 'center'
+              }}>
+                Select Battle Type
+              </div>
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}>
+                {/* Classic Battle Option */}
+                <button
+                  onClick={() => setTrainingBattleType('classic')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '14px',
+                    padding: '14px 16px',
+                    background: trainingBattleType === 'classic'
+                      ? 'rgba(139, 92, 246, 0.15)'
+                      : 'rgba(255,255,255,0.03)',
+                    border: trainingBattleType === 'classic'
+                      ? '2px solid #9333ea'
+                      : '2px solid rgba(255,255,255,0.1)',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    textAlign: 'left'
+                  }}
+                >
+                  <div style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '10px',
+                    background: trainingBattleType === 'classic'
+                      ? 'linear-gradient(135deg, #9333ea 0%, #7c3aed 100%)'
+                      : 'rgba(255,255,255,0.05)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '20px'
+                  }}>
+                    📊
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{
+                      fontSize: '15px',
+                      fontWeight: '600',
+                      color: '#fff',
+                      marginBottom: '3px'
+                    }}>
+                      Classic Battle
+                    </div>
+                    <div style={{
+                      fontSize: '12px',
+                      color: 'rgba(255,255,255,0.5)'
+                    }}>
+                      Simple % returns determine the winner
+                    </div>
+                  </div>
+                </button>
+
+                {/* TD Battle Option */}
+                <button
+                  onClick={() => setTrainingBattleType('td')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '14px',
+                    padding: '14px 16px',
+                    background: trainingBattleType === 'td'
+                      ? 'rgba(16, 185, 129, 0.15)'
+                      : 'rgba(255,255,255,0.03)',
+                    border: trainingBattleType === 'td'
+                      ? '2px solid #10b981'
+                      : '2px solid rgba(255,255,255,0.1)',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    textAlign: 'left',
+                    position: 'relative'
+                  }}
+                >
+                  <div style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '10px',
+                    background: trainingBattleType === 'td'
+                      ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                      : 'rgba(255,255,255,0.05)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '20px'
+                  }}>
+                    🏈
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{
+                      fontSize: '15px',
+                      fontWeight: '600',
+                      color: '#fff',
+                      marginBottom: '3px'
+                    }}>
+                      TD Battle
+                    </div>
+                    <div style={{
+                      fontSize: '12px',
+                      color: 'rgba(255,255,255,0.5)'
+                    }}>
+                      Score points with breakout bonuses
+                    </div>
+                  </div>
+                  {/* NEW Badge */}
+                  <span style={{
+                    position: 'absolute',
+                    top: '8px',
+                    right: '8px',
+                    padding: '3px 6px',
+                    background: 'linear-gradient(135deg, #f59e0b, #ef4444)',
+                    borderRadius: '4px',
+                    fontSize: '9px',
+                    fontWeight: '700',
+                    color: '#fff',
+                    textTransform: 'uppercase'
+                  }}>
+                    NEW
+                  </span>
+                </button>
+              </div>
+            </div>
+          }
           details={[
             { label: 'Assets Required', value: '7-13 picks' },
             { label: 'Duration', value: '1 hour' },
@@ -24699,6 +25141,53 @@ export default function PortfolioDuel() {
             onBack={() => {
               setScreen('dashboard');
               setBattleScoringMode('classic');
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // TD SCORING TRAINING PORTFOLIO BUILDER SCREEN
+  if (screen === 'trainingPortfolioBuilderTD') {
+    return (
+      <div style={containerStyle}>
+        <DesktopBackground isDesktop={isDesktop} />
+
+        <div style={{ minHeight: '100vh', background: '#0d1117', position: 'relative', zIndex: 1 }}>
+          {/* Training Mode Banner */}
+          <div style={{
+            background: 'linear-gradient(135deg, #9333ea 0%, #7c3aed 100%)',
+            padding: '8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px'
+          }}>
+            <span style={{ fontSize: '16px' }}>🤖</span>
+            <span style={{ color: '#fff', fontSize: '13px', fontWeight: '600' }}>
+              Training Mode • TD Battle vs CPU
+            </span>
+          </div>
+
+          <PortfolioBuilderTD
+            stockPrices={stocksData.reduce((acc, s) => {
+              acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
+              return acc;
+            }, {})}
+            cryptoPrices={cryptoData.reduce((acc, c) => {
+              acc[c.symbol] = { price: c.price, percentChange: c.percentChange };
+              return acc;
+            }, {})}
+            thresholds={{}} // Will be fetched in component
+            onSubmit={async (portfolioData) => {
+              // Create TD training battle against CPU
+              await handleCreateTDTrainingBattle(portfolioData);
+            }}
+            onBack={() => {
+              setScreen('dashboard');
+              setBuilderMode('create');
+              setTrainingBattleType('classic');
             }}
           />
         </div>

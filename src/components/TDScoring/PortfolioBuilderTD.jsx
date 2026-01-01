@@ -247,6 +247,7 @@ export default function PortfolioBuilderTD({
   const [showBenchModal, setShowBenchModal] = useState(false);
   const [benchModalType, setBenchModalType] = useState('stock');
   const [selectedStockForDetail, setSelectedStockForDetail] = useState(null);
+  const [isMobile, setIsMobile] = useState(false);
 
   // Data state
   const [stockPrices, setStockPrices] = useState(initialStockPrices);
@@ -303,6 +304,21 @@ export default function PortfolioBuilderTD({
 
     loadData();
   }, [initialStockPrices, initialThresholds]);
+
+  // Detect mobile/touch device
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(
+        window.matchMedia('(max-width: 768px)').matches ||
+        'ontouchstart' in window ||
+        navigator.maxTouchPoints > 0
+      );
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Filter stocks by sector and search
   const filteredStocks = useMemo(() => {
@@ -666,6 +682,39 @@ export default function PortfolioBuilderTD({
           />
         ))}
       </div>
+
+      {/* Mobile Double-Tap Hint */}
+      {isMobile && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '12px 16px',
+          margin: '0 16px 16px',
+          background: 'rgba(0, 217, 255, 0.1)',
+          border: '1px solid rgba(0, 217, 255, 0.3)',
+          borderRadius: '10px',
+          fontSize: '13px',
+          color: 'rgba(255, 255, 255, 0.8)'
+        }}>
+          <span style={{ fontSize: '18px' }}>👆</span>
+          <span style={{ flex: 1, lineHeight: 1.4 }}>
+            <strong style={{ color: colors.primary }}>Tip:</strong> Double-tap to add a stock. Tap the{' '}
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '16px',
+              height: '16px',
+              background: 'rgba(255, 255, 255, 0.2)',
+              borderRadius: '50%',
+              fontSize: '10px',
+              verticalAlign: 'middle'
+            }}>i</span>{' '}
+            icon for details.
+          </span>
+        </div>
+      )}
 
       {/* Stock Grid - Grouped by Threshold Range */}
       <div style={{
