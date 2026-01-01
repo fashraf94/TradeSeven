@@ -1,22 +1,33 @@
-// PortfolioBuilderTD - Wrapper component for TD Scoring portfolio creation
-// Orchestrates the 4-step portfolio building flow
+// PortfolioBuilderTD - Accordion-style TD Scoring portfolio builder
+// Single-page layout with collapsible sections for roster, crypto, bench, and scoring preview
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { cn } from '@/lib/utils';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { STOCKS, CRYPTO } from '../../data/assets';
 import { getVolatilityThresholds } from '../../services/volatilityService';
 import { getMultipleStockPrices, getMultipleCryptoPrices } from '../../services/eodhdAPI';
-import BenchSelector from './BenchSelector';
-import ThresholdPreview from './ThresholdPreview';
+import AccordionSection from './AccordionSection';
+import RosterAssetCard from './RosterAssetCard';
+import AllocationBar from './AllocationBar';
+import { BenchCard, AddBenchCard } from './BenchCard';
+import ScoringPreviewNew from './ScoringPreviewNew';
+import BottomActionBar from './BottomActionBar';
+import StockSearch from './StockSearch';
 
-// Step definitions
-const STEPS = [
-  { id: 'roster', label: 'Roster', description: 'Select 6-12 stocks' },
-  { id: 'crypto', label: 'Crypto', description: 'Pick 1 crypto (10%)' },
-  { id: 'bench', label: 'Bench', description: 'Choose backups' },
-  { id: 'review', label: 'Review', description: 'Confirm & create' }
-];
+// Color scheme matching existing app
+const colors = {
+  background: '#0a0a0f',
+  cardBg: 'rgba(255,255,255,0.03)',
+  cardBgHover: 'rgba(255,255,255,0.06)',
+  border: 'rgba(255,255,255,0.1)',
+  primary: '#00d9ff',
+  green: '#10b981',
+  yellow: '#f59e0b',
+  red: '#ef4444',
+  textPrimary: '#ffffff',
+  textSecondary: 'rgba(255,255,255,0.6)',
+  textMuted: 'rgba(255,255,255,0.4)'
+};
 
 // Allocation constraints
 const STOCK_MIN_ALLOCATION = 7.5;
@@ -26,45 +37,46 @@ const STOCK_TOTAL_ALLOCATION = 90; // Remaining 90%
 
 /**
  * PortfolioBuilderTD
- * Main wrapper for TD Scoring portfolio creation
+ * Accordion-style single-page portfolio builder for TD Scoring battles
  *
- * @param {Object} props
- * @param {Function} props.onComplete - Callback when portfolio is ready
- * @param {Object} props.user - Current user object
- * @param {Function} props.onCancel - Cancel callback
+ * @param {Function} onSubmit - Callback when portfolio is ready to create battle
+ * @param {Function} onBack - Callback to go back/cancel
+ * @param {Object} stockPrices - Optional pre-loaded stock prices
+ * @param {Object} cryptoPrices - Optional pre-loaded crypto prices
+ * @param {Object} thresholds - Optional pre-loaded thresholds
  */
 export default function PortfolioBuilderTD({
-  onComplete,
-  user,
-  onCancel
+  onSubmit,
+  onBack,
+  stockPrices: initialStockPrices = {},
+  cryptoPrices: initialCryptoPrices = {},
+  thresholds: initialThresholds = {}
 }) {
-  // Step state
-  const [currentStep, setCurrentStep] = useState('roster');
-
   // Portfolio state
-  const [portfolio, setPortfolio] = useState([]); // Stock allocations
+  const [portfolioName, setPortfolioName] = useState('');
+  const [portfolio, setPortfolio] = useState([]); // roster stocks with allocations
   const [selectedCrypto, setSelectedCrypto] = useState(null);
   const [bench, setBench] = useState([]); // 4 stocks
   const [benchCrypto, setBenchCrypto] = useState(null);
-  const [portfolioName, setPortfolioName] = useState('');
 
-  // Thresholds (fetched on review step)
-  const [thresholds, setThresholds] = useState({});
-  const [loadingThresholds, setLoadingThresholds] = useState(false);
+  // UI state
+  const [stockPrices, setStockPrices] = useState(initialStockPrices);
+  const [cryptoPrices, setCryptoPrices] = useState(initialCryptoPrices);
+  const [thresholds, setThresholds] = useState(initialThresholds);
+  const [isLoadingPrices, setIsLoadingPrices] = useState(Object.keys(initialStockPrices).length === 0);
+  const [isLoadingThresholds, setIsLoadingThresholds] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
 
-  // Price data
-  const [stockPrices, setStockPrices] = useState({});
-  const [cryptoPrices, setCryptoPrices] = useState({});
-  const [loadingPrices, setLoadingPrices] = useState(true);
+  // Bench selection modal state
+  const [showBenchStockModal, setShowBenchStockModal] = useState(false);
+  const [showBenchCryptoModal, setShowBenchCryptoModal] = useState(false);
 
-  // Search states for roster and crypto steps
-  const [stockSearch, setStockSearch] = useState('');
-  const [cryptoSearch, setCryptoSearch] = useState('');
-
-  // Load prices on mount
+  // Load prices on mount if not provided
   useEffect(() => {
+    if (Object.keys(initialStockPrices).length > 0) return;
+
     const loadPrices = async () => {
-      setLoadingPrices(true);
+      setIsLoadingPrices(true);
       try {
         const stockSymbols = STOCKS.map(s => s.symbol);
         const cryptoSymbols = CRYPTO.filter(c => c.category !== 'Stablecoin').map(c => c.symbol);
@@ -74,510 +86,932 @@ export default function PortfolioBuilderTD({
           getMultipleCryptoPrices(cryptoSymbols)
         ]);
 
-        setStockPrices(stocks);
-        setCryptoPrices(crypto);
+        setStockPrices(stocks || {});
+        setCryptoPrices(crypto || {});
       } catch (error) {
         console.error('Error loading prices:', error);
       } finally {
-        setLoadingPrices(false);
+        setIsLoadingPrices(false);
       }
     };
 
     loadPrices();
-  }, []);
+  }, [initialStockPrices]);
 
-  // Fetch thresholds when entering review step
+  // Fetch thresholds when assets change
   useEffect(() => {
-    if (currentStep !== 'review') return;
+    const allSymbols = [
+      ...portfolio.map(p => p.symbol),
+      selectedCrypto?.symbol,
+      ...bench.map(b => b.symbol),
+      benchCrypto?.symbol
+    ].filter(Boolean);
+
+    if (allSymbols.length === 0) return;
+
+    // Check if we already have thresholds for all symbols
+    const missingSymbols = allSymbols.filter(s => !thresholds[s]);
+    if (missingSymbols.length === 0) return;
 
     const fetchThresholds = async () => {
-      setLoadingThresholds(true);
+      setIsLoadingThresholds(true);
       try {
-        // Collect all symbols
-        const stockSymbols = [...portfolio.map(a => a.symbol), ...bench.map(a => a.symbol)];
-        const cryptoSymbols = [
-          selectedCrypto?.symbol,
-          benchCrypto?.symbol
-        ].filter(Boolean);
+        const stockSymbols = missingSymbols.filter(s =>
+          STOCKS.some(stock => stock.symbol === s)
+        );
+        const cryptoSymbols = missingSymbols.filter(s =>
+          CRYPTO.some(crypto => crypto.symbol === s)
+        );
 
         const [stockThresholds, cryptoThresholds] = await Promise.all([
           stockSymbols.length > 0 ? getVolatilityThresholds(stockSymbols, 'stock') : {},
           cryptoSymbols.length > 0 ? getVolatilityThresholds(cryptoSymbols, 'crypto') : {}
         ]);
 
-        setThresholds({ ...stockThresholds, ...cryptoThresholds });
+        setThresholds(prev => ({
+          ...prev,
+          ...(stockThresholds || {}),
+          ...(cryptoThresholds || {})
+        }));
       } catch (error) {
         console.error('Error fetching thresholds:', error);
       } finally {
-        setLoadingThresholds(false);
+        setIsLoadingThresholds(false);
       }
     };
 
     fetchThresholds();
-  }, [currentStep, portfolio, bench, selectedCrypto, benchCrypto]);
+  }, [portfolio, selectedCrypto, bench, benchCrypto, thresholds]);
 
-  // Calculate remaining allocation for stocks
+  // Calculate allocation
   const totalStockAllocation = useMemo(() => {
     return portfolio.reduce((sum, asset) => sum + (asset.amount || 0), 0);
   }, [portfolio]);
 
   const remainingAllocation = STOCK_TOTAL_ALLOCATION - totalStockAllocation;
 
-  // Filter available stocks for roster selection
-  const availableStocks = useMemo(() => {
-    const selectedSymbols = new Set(portfolio.map(a => a.symbol));
-    return STOCKS.filter(stock => {
-      const matchesSearch = !stockSearch ||
-        stock.symbol.toLowerCase().includes(stockSearch.toLowerCase()) ||
-        stock.name.toLowerCase().includes(stockSearch.toLowerCase());
-      return matchesSearch && !selectedSymbols.has(stock.symbol);
-    });
-  }, [stockSearch, portfolio]);
+  // Validation states
+  const rosterComplete = portfolio.length >= 6 && portfolio.length <= 12 &&
+    Math.abs(totalStockAllocation - STOCK_TOTAL_ALLOCATION) < 0.1;
+  const cryptoComplete = selectedCrypto !== null;
+  const benchComplete = bench.length === 4 && benchCrypto !== null;
+  const nameComplete = portfolioName.trim().length > 0;
 
-  // Filter available crypto (exclude stablecoins)
+  // Validation errors
+  const validationErrors = useMemo(() => {
+    const errors = [];
+    if (portfolio.length < 6) errors.push(`Need ${6 - portfolio.length} more stocks (minimum 6)`);
+    if (portfolio.length > 12) errors.push('Too many stocks (maximum 12)');
+    if (portfolio.length >= 6 && Math.abs(totalStockAllocation - 90) >= 0.1) {
+      if (totalStockAllocation < 90) {
+        errors.push(`Need ${(90 - totalStockAllocation).toFixed(1)}% more allocation to reach 90%`);
+      } else {
+        errors.push(`${(totalStockAllocation - 90).toFixed(1)}% over allocation limit`);
+      }
+    }
+    if (!selectedCrypto) errors.push('Select 1 crypto for your portfolio');
+    if (bench.length < 4) errors.push(`Bench needs ${4 - bench.length} more stocks`);
+    if (!benchCrypto) errors.push('Bench needs 1 crypto');
+    if (!portfolioName.trim()) errors.push('Enter a portfolio name');
+    return errors;
+  }, [portfolio, totalStockAllocation, selectedCrypto, bench, benchCrypto, portfolioName]);
+
+  // Section statuses
+  const getRosterStatus = () => rosterComplete ? 'complete' : 'incomplete';
+  const getCryptoStatus = () => cryptoComplete ? 'complete' : 'incomplete';
+  const getBenchStatus = () => benchComplete ? 'complete' : 'incomplete';
+
+  // Add stock to portfolio
+  const handleAddStock = useCallback((stock) => {
+    if (portfolio.length >= 12) return;
+    const defaultAllocation = Math.min(
+      STOCK_MAX_ALLOCATION,
+      Math.max(STOCK_MIN_ALLOCATION, remainingAllocation / Math.max(1, 6 - portfolio.length))
+    );
+    const price = stockPrices[stock.symbol]?.price || stock.price || 0;
+    setPortfolio(prev => [...prev, {
+      ...stock,
+      price,
+      amount: Math.round(defaultAllocation * 2) / 2, // Round to 0.5
+      position: 'long'
+    }]);
+  }, [portfolio.length, remainingAllocation, stockPrices]);
+
+  // Remove stock from portfolio
+  const handleRemoveStock = useCallback((symbol) => {
+    setPortfolio(prev => prev.filter(s => s.symbol !== symbol));
+  }, []);
+
+  // Update stock allocation
+  const handleUpdateAllocation = useCallback((symbol, amount) => {
+    setPortfolio(prev => prev.map(s =>
+      s.symbol === symbol
+        ? { ...s, amount: Math.round(Math.max(STOCK_MIN_ALLOCATION, Math.min(STOCK_MAX_ALLOCATION, amount)) * 2) / 2 }
+        : s
+    ));
+  }, []);
+
+  // Auto-balance allocations
+  const handleAutoBalance = useCallback(() => {
+    if (portfolio.length === 0) return;
+    const remaining = STOCK_TOTAL_ALLOCATION - totalStockAllocation;
+    if (Math.abs(remaining) < 0.1) return;
+
+    const perStock = remaining / portfolio.length;
+    setPortfolio(prev => prev.map(s => ({
+      ...s,
+      amount: Math.round(Math.min(STOCK_MAX_ALLOCATION, Math.max(STOCK_MIN_ALLOCATION, s.amount + perStock)) * 2) / 2
+    })));
+  }, [portfolio, totalStockAllocation]);
+
+  // Equal split allocations
+  const handleEqualSplit = useCallback(() => {
+    if (portfolio.length === 0) return;
+    const perStock = STOCK_TOTAL_ALLOCATION / portfolio.length;
+    const clamped = Math.min(STOCK_MAX_ALLOCATION, Math.max(STOCK_MIN_ALLOCATION, perStock));
+    setPortfolio(prev => prev.map(s => ({
+      ...s,
+      amount: Math.round(clamped * 2) / 2
+    })));
+  }, [portfolio.length]);
+
+  // Add stock to bench
+  const handleAddToBench = useCallback((stock) => {
+    if (bench.length >= 4) return;
+    const price = stockPrices[stock.symbol]?.price || stock.price || 0;
+    setBench(prev => [...prev, { ...stock, price }]);
+    setShowBenchStockModal(false);
+  }, [bench.length, stockPrices]);
+
+  // Remove stock from bench
+  const handleRemoveFromBench = useCallback((symbol) => {
+    setBench(prev => prev.filter(s => s.symbol !== symbol));
+  }, []);
+
+  // Filter available stocks (exclude those already in roster or bench)
+  const excludedStockSymbols = useMemo(() => [
+    ...portfolio.map(p => p.symbol),
+    ...bench.map(b => b.symbol)
+  ], [portfolio, bench]);
+
+  // Filter available crypto (exclude selected and bench crypto)
   const availableCrypto = useMemo(() => {
     return CRYPTO.filter(crypto => {
       if (crypto.category === 'Stablecoin') return false;
-      const matchesSearch = !cryptoSearch ||
-        crypto.symbol.toLowerCase().includes(cryptoSearch.toLowerCase()) ||
-        crypto.name.toLowerCase().includes(cryptoSearch.toLowerCase());
-      return matchesSearch;
+      if (selectedCrypto?.symbol === crypto.symbol) return false;
+      if (benchCrypto?.symbol === crypto.symbol) return false;
+      return true;
     });
-  }, [cryptoSearch]);
+  }, [selectedCrypto, benchCrypto]);
 
-  // Add stock to portfolio
-  const handleAddStock = (stock) => {
-    if (portfolio.length >= 12) return;
-    const defaultAllocation = Math.min(STOCK_MAX_ALLOCATION, Math.max(STOCK_MIN_ALLOCATION, remainingAllocation));
-    const price = stockPrices[stock.symbol]?.price || 0;
-    setPortfolio([...portfolio, {
-      ...stock,
-      price,
-      amount: defaultAllocation,
-      position: 'long'
-    }]);
-  };
+  // Handle create battle
+  const handleCreateBattle = async () => {
+    if (!rosterComplete || !cryptoComplete || !benchComplete || !nameComplete) return;
 
-  // Remove stock from portfolio
-  const handleRemoveStock = (symbol) => {
-    setPortfolio(portfolio.filter(s => s.symbol !== symbol));
-  };
+    setIsCreating(true);
+    try {
+      // Build crypto asset with fixed 10% allocation
+      const cryptoAsset = selectedCrypto ? {
+        ...selectedCrypto,
+        amount: CRYPTO_ALLOCATION,
+        price: cryptoPrices[selectedCrypto.symbol]?.price || 0,
+        position: 'long'
+      } : null;
 
-  // Update stock allocation
-  const handleUpdateAllocation = (symbol, amount) => {
-    setPortfolio(portfolio.map(s =>
-      s.symbol === symbol ? { ...s, amount: Math.max(STOCK_MIN_ALLOCATION, Math.min(STOCK_MAX_ALLOCATION, amount)) } : s
-    ));
-  };
+      // Build bench assets
+      const benchAssets = bench.map(stock => ({
+        ...stock,
+        amount: 0,
+        price: stockPrices[stock.symbol]?.price || 0,
+        position: 'long'
+      }));
 
-  // Validate current step
-  const isStepValid = useMemo(() => {
-    switch (currentStep) {
-      case 'roster':
-        return portfolio.length >= 6 && portfolio.length <= 12 &&
-               Math.abs(totalStockAllocation - STOCK_TOTAL_ALLOCATION) < 0.1;
-      case 'crypto':
-        return selectedCrypto !== null;
-      case 'bench':
-        return bench.length === 4 && benchCrypto !== null;
-      case 'review':
-        return portfolioName.trim().length > 0;
-      default:
-        return false;
-    }
-  }, [currentStep, portfolio, totalStockAllocation, selectedCrypto, bench, benchCrypto, portfolioName]);
+      const benchCryptoAsset = benchCrypto ? {
+        ...benchCrypto,
+        amount: 0,
+        price: cryptoPrices[benchCrypto.symbol]?.price || 0,
+        position: 'long'
+      } : null;
 
-  // Navigate steps
-  const goToNextStep = () => {
-    const stepIndex = STEPS.findIndex(s => s.id === currentStep);
-    if (stepIndex < STEPS.length - 1) {
-      setCurrentStep(STEPS[stepIndex + 1].id);
+      await onSubmit({
+        portfolioName: portfolioName.trim(),
+        roster: portfolio,
+        crypto: cryptoAsset,
+        bench: benchAssets,
+        benchCrypto: benchCryptoAsset,
+        thresholds
+      });
+    } catch (error) {
+      console.error('Error creating battle:', error);
+    } finally {
+      setIsCreating(false);
     }
   };
 
-  const goToPrevStep = () => {
-    const stepIndex = STEPS.findIndex(s => s.id === currentStep);
-    if (stepIndex > 0) {
-      setCurrentStep(STEPS[stepIndex - 1].id);
-    }
-  };
-
-  // Complete portfolio creation
-  const handleComplete = () => {
-    if (!isStepValid) return;
-
-    // Build crypto asset with fixed 10% allocation
-    const cryptoAsset = selectedCrypto ? {
-      ...selectedCrypto,
-      amount: CRYPTO_ALLOCATION,
-      price: cryptoPrices[selectedCrypto.symbol]?.price || 0,
-      position: 'long'
-    } : null;
-
-    // Build bench assets
-    const benchAssets = bench.map(stock => ({
-      ...stock,
-      amount: 0,
-      price: stockPrices[stock.symbol]?.price || 0,
-      position: 'long'
-    }));
-
-    const benchCryptoAsset = benchCrypto ? {
-      ...benchCrypto,
-      amount: 0,
-      price: cryptoPrices[benchCrypto.symbol]?.price || 0,
-      position: 'long'
-    } : null;
-
-    onComplete({
-      portfolioName: portfolioName.trim(),
-      portfolio: [...portfolio, cryptoAsset].filter(Boolean),
-      bench: [...benchAssets, benchCryptoAsset].filter(Boolean),
-      thresholds
-    });
-  };
-
-  // Current step index for progress
-  const currentStepIndex = STEPS.findIndex(s => s.id === currentStep);
+  // Loading state
+  if (isLoadingPrices) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: colors.background,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '3px solid transparent',
+            borderTopColor: colors.primary,
+            borderRadius: '50%',
+            margin: '0 auto 16px',
+            animation: 'spin 1s linear infinite'
+          }} />
+          <div style={{ color: colors.textSecondary }}>Loading market data...</div>
+          <style>{`
+            @keyframes spin {
+              from { transform: rotate(0deg); }
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col h-full max-h-[90vh]">
+    <div style={{
+      minHeight: '100vh',
+      backgroundColor: colors.background,
+      display: 'flex',
+      flexDirection: 'column'
+    }}>
       {/* Header */}
-      <div className="px-4 py-3 border-b border-border">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold">Create TD Portfolio</h2>
-          {onCancel && (
-            <button
-              onClick={onCancel}
-              className="text-muted-foreground hover:text-foreground p-2"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
+      <header style={{
+        padding: '16px',
+        borderBottom: `1px solid ${colors.border}`,
+        backgroundColor: 'rgba(10,10,15,0.95)',
+        backdropFilter: 'blur(8px)',
+        position: 'sticky',
+        top: 0,
+        zIndex: 50
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '12px'
+        }}>
+          <button
+            onClick={onBack}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'transparent',
+              border: 'none',
+              color: colors.textSecondary,
+              cursor: 'pointer',
+              padding: '8px',
+              fontSize: '14px'
+            }}
+          >
+            ← Back
+          </button>
+          <h1 style={{
+            fontSize: '18px',
+            fontWeight: '700',
+            color: colors.textPrimary,
+            margin: 0
+          }}>
+            Create TD Battle
+          </h1>
+          <div style={{ width: '60px' }} /> {/* Spacer for centering */}
         </div>
 
-        {/* Step indicator */}
-        <div className="flex items-center gap-2 mt-3">
-          {STEPS.map((step, index) => (
-            <React.Fragment key={step.id}>
-              <div
-                className={cn(
-                  'flex items-center gap-1.5 text-xs font-medium transition-colors',
-                  index === currentStepIndex && 'text-cyan-500',
-                  index < currentStepIndex && 'text-emerald-500',
-                  index > currentStepIndex && 'text-muted-foreground'
-                )}
+        {/* Portfolio Name Input */}
+        <input
+          type="text"
+          value={portfolioName}
+          onChange={(e) => setPortfolioName(e.target.value)}
+          placeholder="Portfolio Name..."
+          maxLength={30}
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            borderRadius: '10px',
+            border: `1px solid ${nameComplete ? colors.green : colors.border}`,
+            backgroundColor: colors.cardBg,
+            color: colors.textPrimary,
+            fontSize: '16px',
+            fontWeight: '500',
+            outline: 'none',
+            transition: 'border-color 0.2s'
+          }}
+        />
+      </header>
+
+      {/* Scrollable Content */}
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        padding: '16px',
+        paddingBottom: '140px' // Space for sticky bottom bar
+      }}>
+        {/* Allocation Helper Bar */}
+        <AllocationBar
+          stocks={portfolio}
+          remaining={remainingAllocation}
+          target={STOCK_TOTAL_ALLOCATION}
+        />
+
+        {/* ROSTER Section */}
+        <AccordionSection
+          title="ROSTER"
+          subtitle={`${portfolio.length}/6-12 stocks · ${totalStockAllocation.toFixed(1)}%/90%`}
+          status={getRosterStatus()}
+          defaultOpen={true}
+        >
+          {/* Allocation Helpers */}
+          {portfolio.length >= 2 && (
+            <div style={{
+              display: 'flex',
+              gap: '8px',
+              marginBottom: '12px'
+            }}>
+              <button
+                onClick={handleAutoBalance}
+                style={{
+                  flex: 1,
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: `1px solid ${colors.border}`,
+                  background: 'transparent',
+                  color: colors.textSecondary,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
               >
-                <div className={cn(
-                  'w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold',
-                  index === currentStepIndex && 'bg-cyan-500 text-white',
-                  index < currentStepIndex && 'bg-emerald-500 text-white',
-                  index > currentStepIndex && 'bg-muted text-muted-foreground'
-                )}>
-                  {index < currentStepIndex ? '✓' : index + 1}
+                Auto-Balance
+              </button>
+              <button
+                onClick={handleEqualSplit}
+                style={{
+                  flex: 1,
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: `1px solid ${colors.border}`,
+                  background: 'transparent',
+                  color: colors.textSecondary,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Equal Split
+              </button>
+            </div>
+          )}
+
+          {/* Roster Cards */}
+          <div style={{ marginBottom: '12px' }}>
+            {portfolio.map((stock) => (
+              <RosterAssetCard
+                key={stock.symbol}
+                asset={stock}
+                threshold={thresholds[stock.symbol]}
+                onRemove={handleRemoveStock}
+                onAllocationChange={handleUpdateAllocation}
+              />
+            ))}
+          </div>
+
+          {/* Add Stock Search */}
+          {portfolio.length < 12 && (
+            <StockSearch
+              onSelect={handleAddStock}
+              excludeSymbols={excludedStockSymbols}
+              stocks={STOCKS}
+              stockPrices={stockPrices}
+              thresholds={thresholds}
+              placeholder="🔍 Search stocks to add..."
+            />
+          )}
+
+          {/* Constraints Info */}
+          <div style={{
+            marginTop: '12px',
+            padding: '10px 12px',
+            backgroundColor: 'rgba(0,0,0,0.2)',
+            borderRadius: '8px',
+            fontSize: '12px',
+            color: colors.textMuted
+          }}>
+            <p style={{ margin: '0 0 4px 0' }}>• Each stock: {STOCK_MIN_ALLOCATION}% - {STOCK_MAX_ALLOCATION}%</p>
+            <p style={{ margin: '0 0 4px 0' }}>• Total stocks: 6-12 picks</p>
+            <p style={{ margin: 0 }}>• Crypto gets fixed 10% (next section)</p>
+          </div>
+        </AccordionSection>
+
+        {/* CRYPTO Section */}
+        <AccordionSection
+          title="CRYPTO"
+          subtitle={selectedCrypto ? `${selectedCrypto.symbol} · 10% fixed` : 'Select 1 crypto'}
+          status={getCryptoStatus()}
+        >
+          {/* Selected Crypto */}
+          {selectedCrypto && (
+            <div style={{
+              padding: '16px',
+              backgroundColor: 'rgba(245,158,11,0.1)',
+              border: '1px solid rgba(245,158,11,0.3)',
+              borderRadius: '10px',
+              marginBottom: '12px'
+            }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <div style={{
+                    fontSize: '18px',
+                    fontWeight: '700',
+                    color: colors.yellow
+                  }}>
+                    {selectedCrypto.symbol}
+                  </div>
+                  <div style={{
+                    fontSize: '13px',
+                    color: colors.textSecondary
+                  }}>
+                    {selectedCrypto.name}
+                  </div>
                 </div>
-                <span className="hidden sm:inline">{step.label}</span>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{
+                    fontSize: '16px',
+                    fontWeight: '700',
+                    color: colors.primary
+                  }}>
+                    10%
+                  </div>
+                  <div style={{
+                    fontSize: '12px',
+                    color: colors.textMuted
+                  }}>
+                    ${(cryptoPrices[selectedCrypto.symbol]?.price || 0).toFixed(2)}
+                  </div>
+                </div>
               </div>
-              {index < STEPS.length - 1 && (
-                <div className={cn(
-                  'flex-1 h-0.5 rounded',
-                  index < currentStepIndex ? 'bg-emerald-500' : 'bg-muted'
-                )} />
+              <button
+                onClick={() => setSelectedCrypto(null)}
+                style={{
+                  marginTop: '12px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: colors.textMuted,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  textDecoration: 'underline'
+                }}
+              >
+                Remove and pick another
+              </button>
+            </div>
+          )}
+
+          {/* Crypto Grid */}
+          {!selectedCrypto && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
+              gap: '8px'
+            }}>
+              {availableCrypto.map((crypto) => (
+                <button
+                  key={crypto.symbol}
+                  onClick={() => setSelectedCrypto(crypto)}
+                  style={{
+                    padding: '12px',
+                    backgroundColor: colors.cardBg,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = colors.yellow;
+                    e.currentTarget.style.backgroundColor = colors.cardBgHover;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = colors.border;
+                    e.currentTarget.style.backgroundColor = colors.cardBg;
+                  }}
+                >
+                  <div style={{
+                    fontSize: '16px',
+                    fontWeight: '700',
+                    color: colors.yellow
+                  }}>
+                    {crypto.symbol}
+                  </div>
+                  <div style={{
+                    fontSize: '11px',
+                    color: colors.textMuted,
+                    marginTop: '4px'
+                  }}>
+                    ${(cryptoPrices[crypto.symbol]?.price || 0).toFixed(2)}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </AccordionSection>
+
+        {/* BENCH Section */}
+        <AccordionSection
+          title="BENCH"
+          subtitle={`${bench.length}/4 stocks · ${benchCrypto ? '1' : '0'}/1 crypto`}
+          status={getBenchStatus()}
+        >
+          {/* Info Tooltip */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '8px',
+            padding: '10px 12px',
+            backgroundColor: 'rgba(0,217,255,0.05)',
+            border: '1px solid rgba(0,217,255,0.1)',
+            borderRadius: '8px',
+            marginBottom: '16px'
+          }}>
+            <span style={{ fontSize: '14px' }}>ℹ️</span>
+            <p style={{
+              margin: 0,
+              fontSize: '12px',
+              color: colors.textSecondary,
+              lineHeight: 1.4
+            }}>
+              Bench assets can substitute in during battle windows (11:30am & 2:00pm ET).
+              Choose backups that complement your roster strategy.
+            </p>
+          </div>
+
+          {/* Stock Bench */}
+          <div style={{
+            marginBottom: '16px'
+          }}>
+            <div style={{
+              fontSize: '12px',
+              fontWeight: '600',
+              color: colors.textMuted,
+              marginBottom: '8px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}>
+              STOCKS ({bench.length}/4)
+            </div>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
+              gap: '8px'
+            }}>
+              {bench.map((stock) => (
+                <BenchCard
+                  key={stock.symbol}
+                  asset={stock}
+                  threshold={thresholds[stock.symbol]}
+                  onRemove={handleRemoveFromBench}
+                />
+              ))}
+              {bench.length < 4 && (
+                <AddBenchCard
+                  onClick={() => setShowBenchStockModal(true)}
+                  type="stock"
+                />
               )}
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
+            </div>
+          </div>
 
-      {/* Step content */}
-      <div className="flex-1 overflow-y-auto p-4">
-        <AnimatePresence mode="wait">
-          {/* Step 1: Roster */}
-          {currentStep === 'roster' && (
-            <motion.div
-              key="roster"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-4"
-            >
-              <div className="text-center">
-                <h3 className="text-lg font-bold">Select Your Roster</h3>
-                <p className="text-sm text-muted-foreground">
-                  Choose 6-12 stocks (allocations must total 90%)
-                </p>
-              </div>
+          {/* Crypto Bench */}
+          <div>
+            <div style={{
+              fontSize: '12px',
+              fontWeight: '600',
+              color: colors.textMuted,
+              marginBottom: '8px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}>
+              CRYPTO ({benchCrypto ? '1' : '0'}/1)
+            </div>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
+              gap: '8px'
+            }}>
+              {benchCrypto ? (
+                <BenchCard
+                  asset={benchCrypto}
+                  threshold={thresholds[benchCrypto.symbol]}
+                  onRemove={() => setBenchCrypto(null)}
+                  isCrypto
+                />
+              ) : (
+                <AddBenchCard
+                  onClick={() => setShowBenchCryptoModal(true)}
+                  type="crypto"
+                />
+              )}
+            </div>
+          </div>
+        </AccordionSection>
 
-              {/* Allocation summary */}
-              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                <span className="text-sm">Stock Allocation</span>
-                <span className={cn(
-                  'font-bold',
-                  Math.abs(totalStockAllocation - 90) < 0.1 ? 'text-emerald-500' : 'text-amber-500'
-                )}>
-                  {totalStockAllocation.toFixed(1)}% / 90%
+        {/* SCORING PREVIEW Section */}
+        <AccordionSection
+          title="SCORING PREVIEW"
+          subtitle="Estimated points & strategy"
+          status="info"
+        >
+          {isLoadingThresholds ? (
+            <div style={{
+              textAlign: 'center',
+              padding: '24px',
+              color: colors.textMuted
+            }}>
+              <div style={{
+                width: '24px',
+                height: '24px',
+                border: '2px solid transparent',
+                borderTopColor: colors.primary,
+                borderRadius: '50%',
+                margin: '0 auto 8px',
+                animation: 'spin 0.8s linear infinite'
+              }} />
+              Loading thresholds...
+            </div>
+          ) : (
+            <ScoringPreviewNew
+              portfolio={portfolio}
+              crypto={selectedCrypto}
+              bench={bench}
+              benchCrypto={benchCrypto}
+              thresholds={thresholds}
+            />
+          )}
+        </AccordionSection>
+
+        {/* Validation Warnings */}
+        {validationErrors.length > 0 && (
+          <div style={{
+            padding: '12px 16px',
+            backgroundColor: 'rgba(245,158,11,0.1)',
+            border: '1px solid rgba(245,158,11,0.2)',
+            borderRadius: '10px',
+            marginTop: '16px'
+          }}>
+            {validationErrors.map((error, i) => (
+              <div
+                key={i}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginBottom: i < validationErrors.length - 1 ? '6px' : 0
+                }}
+              >
+                <span style={{ color: colors.yellow }}>⚠️</span>
+                <span style={{
+                  fontSize: '13px',
+                  color: colors.textSecondary
+                }}>
+                  {error}
                 </span>
               </div>
-
-              {/* Selected stocks */}
-              <div className="space-y-2">
-                {portfolio.map((stock) => (
-                  <div
-                    key={stock.symbol}
-                    className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm">{stock.symbol}</div>
-                      <div className="text-xs text-muted-foreground truncate">{stock.name}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        value={stock.amount}
-                        onChange={(e) => handleUpdateAllocation(stock.symbol, parseFloat(e.target.value) || 0)}
-                        min={STOCK_MIN_ALLOCATION}
-                        max={STOCK_MAX_ALLOCATION}
-                        step={0.5}
-                        className="w-16 px-2 py-1 text-sm text-center rounded border border-border bg-background"
-                      />
-                      <span className="text-sm text-muted-foreground">%</span>
-                      <button
-                        onClick={() => handleRemoveStock(stock.symbol)}
-                        className="p-1 text-muted-foreground hover:text-red-500"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Add stock */}
-              {portfolio.length < 12 && (
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={stockSearch}
-                    onChange={(e) => setStockSearch(e.target.value)}
-                    placeholder="Search stocks to add..."
-                    className="w-full px-4 py-2.5 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
-                  />
-                  {stockSearch && availableStocks.length > 0 && (
-                    <div className="absolute z-10 top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-border bg-card shadow-xl">
-                      {availableStocks.slice(0, 10).map((stock) => (
-                        <button
-                          key={stock.symbol}
-                          onClick={() => {
-                            handleAddStock(stock);
-                            setStockSearch('');
-                          }}
-                          className="w-full px-4 py-2 flex items-center justify-between text-left hover:bg-accent"
-                        >
-                          <div>
-                            <span className="font-medium text-sm">{stock.symbol}</span>
-                            <span className="text-xs text-muted-foreground ml-2">{stock.name}</span>
-                          </div>
-                          <span className="text-xs text-muted-foreground">
-                            ${(stockPrices[stock.symbol]?.price || 0).toFixed(2)}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Constraints info */}
-              <div className="p-3 rounded-lg bg-muted/50 text-xs text-muted-foreground">
-                <p>• Each stock: {STOCK_MIN_ALLOCATION}% - {STOCK_MAX_ALLOCATION}%</p>
-                <p>• Total stocks: 6-12 picks</p>
-                <p>• Crypto gets fixed 10% (next step)</p>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Step 2: Crypto */}
-          {currentStep === 'crypto' && (
-            <motion.div
-              key="crypto"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-4"
-            >
-              <div className="text-center">
-                <h3 className="text-lg font-bold">Select Your Crypto</h3>
-                <p className="text-sm text-muted-foreground">
-                  Pick 1 cryptocurrency (fixed at 10% allocation)
-                </p>
-              </div>
-
-              {/* Selected crypto */}
-              {selectedCrypto && (
-                <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/30">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-bold text-amber-500">{selectedCrypto.symbol}</div>
-                      <div className="text-sm text-muted-foreground">{selectedCrypto.name}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold">10%</div>
-                      <div className="text-xs text-muted-foreground">
-                        ${(cryptoPrices[selectedCrypto.symbol]?.price || 0).toFixed(2)}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setSelectedCrypto(null)}
-                    className="mt-2 text-xs text-muted-foreground hover:text-red-500"
-                  >
-                    Remove and pick another
-                  </button>
-                </div>
-              )}
-
-              {/* Crypto search */}
-              {!selectedCrypto && (
-                <>
-                  <input
-                    type="text"
-                    value={cryptoSearch}
-                    onChange={(e) => setCryptoSearch(e.target.value)}
-                    placeholder="Search crypto..."
-                    className="w-full px-4 py-2.5 rounded-lg border border-amber-500/30 bg-card text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-                  />
-
-                  <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
-                    {availableCrypto.map((crypto) => (
-                      <button
-                        key={crypto.symbol}
-                        onClick={() => setSelectedCrypto(crypto)}
-                        className="p-3 rounded-lg border border-border bg-card text-left hover:border-amber-500/50 transition-colors"
-                      >
-                        <div className="font-medium text-amber-500">{crypto.symbol}</div>
-                        <div className="text-xs text-muted-foreground truncate">{crypto.name}</div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          ${(cryptoPrices[crypto.symbol]?.price || 0).toFixed(2)}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </motion.div>
-          )}
-
-          {/* Step 3: Bench */}
-          {currentStep === 'bench' && (
-            <motion.div
-              key="bench"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-            >
-              <BenchSelector
-                portfolio={portfolio}
-                selectedCrypto={selectedCrypto}
-                bench={bench}
-                setBench={setBench}
-                benchCrypto={benchCrypto}
-                setBenchCrypto={setBenchCrypto}
-                stockPrices={stockPrices}
-                cryptoPrices={cryptoPrices}
-              />
-            </motion.div>
-          )}
-
-          {/* Step 4: Review */}
-          {currentStep === 'review' && (
-            <motion.div
-              key="review"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-4"
-            >
-              <div className="text-center">
-                <h3 className="text-lg font-bold">Review & Create</h3>
-                <p className="text-sm text-muted-foreground">
-                  Name your portfolio and confirm details
-                </p>
-              </div>
-
-              {/* Portfolio name */}
-              <div>
-                <label className="block text-sm font-medium mb-2">Portfolio Name</label>
-                <input
-                  type="text"
-                  value={portfolioName}
-                  onChange={(e) => setPortfolioName(e.target.value)}
-                  placeholder="e.g., Tech Titans, Value Plays..."
-                  maxLength={30}
-                  className="w-full px-4 py-2.5 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
-                />
-              </div>
-
-              {/* Thresholds preview */}
-              {loadingThresholds ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <div className="animate-spin w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full mx-auto mb-2" />
-                  Loading thresholds...
-                </div>
-              ) : (
-                <ThresholdPreview
-                  portfolio={portfolio}
-                  crypto={selectedCrypto}
-                  bench={bench}
-                  benchCrypto={benchCrypto}
-                  thresholds={thresholds}
-                />
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* Footer navigation */}
-      <div className="px-4 py-3 border-t border-border flex items-center justify-between">
-        <button
-          onClick={currentStepIndex === 0 ? onCancel : goToPrevStep}
-          className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {currentStepIndex === 0 ? 'Cancel' : '← Back'}
-        </button>
-
-        {currentStep === 'review' ? (
-          <button
-            onClick={handleComplete}
-            disabled={!isStepValid || loadingThresholds}
-            className={cn(
-              'px-6 py-2 rounded-lg font-medium text-sm transition-colors',
-              isStepValid && !loadingThresholds
-                ? 'bg-cyan-500 text-white hover:bg-cyan-600'
-                : 'bg-muted text-muted-foreground cursor-not-allowed'
-            )}
-          >
-            Create Battle →
-          </button>
-        ) : (
-          <button
-            onClick={goToNextStep}
-            disabled={!isStepValid}
-            className={cn(
-              'px-6 py-2 rounded-lg font-medium text-sm transition-colors',
-              isStepValid
-                ? 'bg-cyan-500 text-white hover:bg-cyan-600'
-                : 'bg-muted text-muted-foreground cursor-not-allowed'
-            )}
-          >
-            Next →
-          </button>
+            ))}
+          </div>
         )}
       </div>
+
+      {/* Sticky Bottom Action Bar */}
+      <BottomActionBar
+        rosterComplete={rosterComplete}
+        cryptoComplete={cryptoComplete}
+        benchComplete={benchComplete}
+        nameComplete={nameComplete}
+        onCreateBattle={handleCreateBattle}
+        isLoading={isCreating}
+      />
+
+      {/* Bench Stock Selection Modal */}
+      {showBenchStockModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.85)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px'
+          }}
+          onClick={() => setShowBenchStockModal(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            style={{
+              width: '100%',
+              maxWidth: '400px',
+              maxHeight: '70vh',
+              backgroundColor: '#12121a',
+              borderRadius: '16px',
+              border: `1px solid ${colors.border}`,
+              overflow: 'hidden'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{
+              padding: '16px',
+              borderBottom: `1px solid ${colors.border}`,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <h3 style={{
+                margin: 0,
+                fontSize: '16px',
+                fontWeight: '600',
+                color: colors.textPrimary
+              }}>
+                Add Bench Stock
+              </h3>
+              <button
+                onClick={() => setShowBenchStockModal(false)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: colors.textMuted,
+                  cursor: 'pointer',
+                  fontSize: '20px'
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{
+              padding: '16px',
+              overflowY: 'auto',
+              maxHeight: 'calc(70vh - 60px)'
+            }}>
+              <StockSearch
+                onSelect={handleAddToBench}
+                excludeSymbols={excludedStockSymbols}
+                stocks={STOCKS}
+                stockPrices={stockPrices}
+                thresholds={thresholds}
+                placeholder="🔍 Search bench stocks..."
+                maxResults={15}
+              />
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Bench Crypto Selection Modal */}
+      {showBenchCryptoModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.85)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px'
+          }}
+          onClick={() => setShowBenchCryptoModal(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            style={{
+              width: '100%',
+              maxWidth: '400px',
+              maxHeight: '70vh',
+              backgroundColor: '#12121a',
+              borderRadius: '16px',
+              border: `1px solid ${colors.border}`,
+              overflow: 'hidden'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{
+              padding: '16px',
+              borderBottom: `1px solid ${colors.border}`,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <h3 style={{
+                margin: 0,
+                fontSize: '16px',
+                fontWeight: '600',
+                color: colors.textPrimary
+              }}>
+                Add Bench Crypto
+              </h3>
+              <button
+                onClick={() => setShowBenchCryptoModal(false)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: colors.textMuted,
+                  cursor: 'pointer',
+                  fontSize: '20px'
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{
+              padding: '16px',
+              overflowY: 'auto',
+              maxHeight: 'calc(70vh - 60px)'
+            }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
+                gap: '8px'
+              }}>
+                {availableCrypto.map((crypto) => (
+                  <button
+                    key={crypto.symbol}
+                    onClick={() => {
+                      setBenchCrypto(crypto);
+                      setShowBenchCryptoModal(false);
+                    }}
+                    style={{
+                      padding: '12px',
+                      backgroundColor: colors.cardBg,
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = colors.yellow;
+                      e.currentTarget.style.backgroundColor = colors.cardBgHover;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = colors.border;
+                      e.currentTarget.style.backgroundColor = colors.cardBg;
+                    }}
+                  >
+                    <div style={{
+                      fontSize: '16px',
+                      fontWeight: '700',
+                      color: colors.yellow
+                    }}>
+                      {crypto.symbol}
+                    </div>
+                    <div style={{
+                      fontSize: '11px',
+                      color: colors.textMuted,
+                      marginTop: '4px'
+                    }}>
+                      ${(cryptoPrices[crypto.symbol]?.price || 0).toFixed(2)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Keyframes */}
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
