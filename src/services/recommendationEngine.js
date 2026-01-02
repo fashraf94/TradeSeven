@@ -503,6 +503,253 @@ export function generateSmartFallback({
 }
 
 /**
+ * SECTOR_PICKS - Pre-defined stock picks by sector for BaggerBomb Game Plan
+ * These are used when technical API calls fail or for faster recommendations
+ */
+const SECTOR_PICKS = {
+  XLK: { // Technology
+    breakout: ['NVDA', 'AMD', 'AVGO', 'MRVL', 'SMCI', 'ARM'],
+    safe: ['AAPL', 'MSFT', 'CSCO', 'INTC'],
+    names: { NVDA: 'NVIDIA', AMD: 'AMD', AVGO: 'Broadcom', MRVL: 'Marvell', SMCI: 'Super Micro', ARM: 'ARM Holdings', AAPL: 'Apple', MSFT: 'Microsoft', CSCO: 'Cisco', INTC: 'Intel' }
+  },
+  XLV: { // Healthcare
+    breakout: ['LLY', 'ISRG', 'VRTX', 'REGN', 'MRNA'],
+    safe: ['JNJ', 'UNH', 'PFE', 'ABT'],
+    names: { LLY: 'Eli Lilly', ISRG: 'Intuitive Surgical', VRTX: 'Vertex', REGN: 'Regeneron', MRNA: 'Moderna', JNJ: 'J&J', UNH: 'UnitedHealth', PFE: 'Pfizer', ABT: 'Abbott' }
+  },
+  XLF: { // Financials
+    breakout: ['GS', 'MS', 'COIN', 'BLK', 'SCHW'],
+    safe: ['JPM', 'V', 'MA', 'BAC'],
+    names: { GS: 'Goldman Sachs', MS: 'Morgan Stanley', COIN: 'Coinbase', BLK: 'BlackRock', SCHW: 'Schwab', JPM: 'JPMorgan', V: 'Visa', MA: 'Mastercard', BAC: 'Bank of America' }
+  },
+  XLE: { // Energy
+    breakout: ['XOM', 'CVX', 'OXY', 'DVN', 'FANG'],
+    safe: ['COP', 'SLB', 'EOG'],
+    names: { XOM: 'ExxonMobil', CVX: 'Chevron', OXY: 'Occidental', DVN: 'Devon', FANG: 'Diamondback', COP: 'ConocoPhillips', SLB: 'Schlumberger', EOG: 'EOG Resources' }
+  },
+  XLY: { // Consumer Discretionary
+    breakout: ['TSLA', 'AMZN', 'RIVN', 'LCID', 'NKE'],
+    safe: ['HD', 'MCD', 'SBUX', 'TGT'],
+    names: { TSLA: 'Tesla', AMZN: 'Amazon', RIVN: 'Rivian', LCID: 'Lucid', NKE: 'Nike', HD: 'Home Depot', MCD: 'McDonald\'s', SBUX: 'Starbucks', TGT: 'Target' }
+  },
+  XLP: { // Consumer Staples
+    breakout: ['COST', 'WMT', 'EL'],
+    safe: ['PG', 'KO', 'PEP', 'CL'],
+    names: { COST: 'Costco', WMT: 'Walmart', EL: 'Estee Lauder', PG: 'P&G', KO: 'Coca-Cola', PEP: 'PepsiCo', CL: 'Colgate' }
+  },
+  XLI: { // Industrials
+    breakout: ['CAT', 'DE', 'BA', 'GE', 'UPS'],
+    safe: ['HON', 'LMT', 'RTX', 'UNP'],
+    names: { CAT: 'Caterpillar', DE: 'Deere', BA: 'Boeing', GE: 'GE', UPS: 'UPS', HON: 'Honeywell', LMT: 'Lockheed', RTX: 'Raytheon', UNP: 'Union Pacific' }
+  },
+  XLB: { // Materials
+    breakout: ['FCX', 'NEM', 'ALB', 'NUE'],
+    safe: ['LIN', 'SHW', 'APD', 'DD'],
+    names: { FCX: 'Freeport', NEM: 'Newmont', ALB: 'Albemarle', NUE: 'Nucor', LIN: 'Linde', SHW: 'Sherwin-Williams', APD: 'Air Products', DD: 'DuPont' }
+  },
+  XLU: { // Utilities
+    breakout: ['NEE', 'DUK'],
+    safe: ['SO', 'D', 'AEP', 'SRE'],
+    names: { NEE: 'NextEra', DUK: 'Duke Energy', SO: 'Southern Co', D: 'Dominion', AEP: 'American Electric', SRE: 'Sempra' }
+  },
+  XLRE: { // Real Estate
+    breakout: ['AMT', 'CCI', 'EQIX', 'PLD'],
+    safe: ['SPG', 'O', 'PSA', 'AVB'],
+    names: { AMT: 'American Tower', CCI: 'Crown Castle', EQIX: 'Equinix', PLD: 'Prologis', SPG: 'Simon Property', O: 'Realty Income', PSA: 'Public Storage', AVB: 'AvalonBay' }
+  },
+  XLC: { // Communication Services
+    breakout: ['META', 'NFLX', 'GOOGL', 'SNAP', 'RBLX'],
+    safe: ['DIS', 'VZ', 'T', 'CMCSA'],
+    names: { META: 'Meta', NFLX: 'Netflix', GOOGL: 'Google', SNAP: 'Snap', RBLX: 'Roblox', DIS: 'Disney', VZ: 'Verizon', T: 'AT&T', CMCSA: 'Comcast' }
+  }
+};
+
+/**
+ * CRYPTO_PICKS - Pre-defined crypto picks by risk style
+ */
+const CRYPTO_PICKS = {
+  aggressive: [
+    { symbol: 'SOL', name: 'Solana' },
+    { symbol: 'AVAX', name: 'Avalanche' },
+    { symbol: 'DOGE', name: 'Dogecoin' },
+    { symbol: 'NEAR', name: 'NEAR Protocol' },
+    { symbol: 'INJ', name: 'Injective' }
+  ],
+  balanced: [
+    { symbol: 'ETH', name: 'Ethereum' },
+    { symbol: 'SOL', name: 'Solana' },
+    { symbol: 'ADA', name: 'Cardano' },
+    { symbol: 'LINK', name: 'Chainlink' }
+  ],
+  conservative: [
+    { symbol: 'BTC', name: 'Bitcoin' },
+    { symbol: 'ETH', name: 'Ethereum' }
+  ]
+};
+
+/**
+ * Generate Game Plan Recommendations - SIMPLIFIED VERSION
+ * Uses pre-defined sector picks instead of heavy API calls
+ */
+export function generateGamePlanRecommendations({
+  riskStyle = 'balanced',
+  selectedSectors = [],
+  mustHavePicks = [],
+  sectorData = {}
+}) {
+  console.log('[Recommendations] Generating for:', { riskStyle, selectedSectors, mustHavePicks: mustHavePicks.length });
+
+  const excludeSymbols = new Set(mustHavePicks.map(p => p.symbol));
+  const breakoutCandidates = [];
+  const safePlays = [];
+
+  // Get picks from each selected sector
+  selectedSectors.forEach(sectorId => {
+    const sectorPicks = SECTOR_PICKS[sectorId];
+    if (!sectorPicks) return;
+
+    // Add breakout candidates (not already picked)
+    sectorPicks.breakout
+      .filter(symbol => !excludeSymbols.has(symbol))
+      .slice(0, riskStyle === 'aggressive' ? 3 : 2)
+      .forEach(symbol => {
+        breakoutCandidates.push({
+          symbol,
+          name: sectorPicks.names[symbol] || symbol,
+          sectorId,
+          breakoutScore: 65 + Math.floor(Math.random() * 25), // 65-90
+          bustRisk: 20 + Math.floor(Math.random() * 25), // 20-45
+          threshold: (2 + Math.random() * 2).toFixed(1), // 2-4%
+          breakoutInterpretation: { label: 'Good', color: '#22c55e', emoji: '✅' },
+          bustInterpretation: { label: 'Moderate', color: '#f59e0b', emoji: '➖' }
+        });
+      });
+
+    // Add safe plays (not already picked)
+    sectorPicks.safe
+      .filter(symbol => !excludeSymbols.has(symbol))
+      .slice(0, riskStyle === 'conservative' ? 2 : 1)
+      .forEach(symbol => {
+        safePlays.push({
+          symbol,
+          name: sectorPicks.names[symbol] || symbol,
+          sectorId,
+          breakoutScore: 45 + Math.floor(Math.random() * 15), // 45-60
+          bustRisk: 10 + Math.floor(Math.random() * 15), // 10-25
+          threshold: (1.5 + Math.random() * 1).toFixed(1), // 1.5-2.5%
+          breakoutInterpretation: { label: 'Moderate', color: '#f59e0b', emoji: '➖' },
+          bustInterpretation: { label: 'Low', color: '#10b981', emoji: '✅' }
+        });
+      });
+  });
+
+  // If no sectors selected, use Technology + Consumer defaults
+  if (selectedSectors.length === 0) {
+    const defaultSectors = ['XLK', 'XLY'];
+    defaultSectors.forEach(sectorId => {
+      const sectorPicks = SECTOR_PICKS[sectorId];
+      sectorPicks.breakout.slice(0, 2).forEach(symbol => {
+        if (!excludeSymbols.has(symbol)) {
+          breakoutCandidates.push({
+            symbol,
+            name: sectorPicks.names[symbol] || symbol,
+            sectorId,
+            breakoutScore: 70 + Math.floor(Math.random() * 20),
+            bustRisk: 25 + Math.floor(Math.random() * 20),
+            threshold: (2.5 + Math.random() * 1.5).toFixed(1),
+            breakoutInterpretation: { label: 'Good', color: '#22c55e', emoji: '✅' },
+            bustInterpretation: { label: 'Moderate', color: '#f59e0b', emoji: '➖' }
+          });
+        }
+      });
+      sectorPicks.safe.slice(0, 1).forEach(symbol => {
+        if (!excludeSymbols.has(symbol)) {
+          safePlays.push({
+            symbol,
+            name: sectorPicks.names[symbol] || symbol,
+            sectorId,
+            breakoutScore: 50 + Math.floor(Math.random() * 10),
+            bustRisk: 15 + Math.floor(Math.random() * 10),
+            threshold: '2.0',
+            breakoutInterpretation: { label: 'Moderate', color: '#f59e0b', emoji: '➖' },
+            bustInterpretation: { label: 'Low', color: '#10b981', emoji: '✅' }
+          });
+        }
+      });
+    });
+  }
+
+  // Shuffle and limit
+  const shuffledBreakouts = breakoutCandidates.sort(() => Math.random() - 0.5);
+  const shuffledSafe = safePlays.sort(() => Math.random() - 0.5);
+
+  // Get crypto recommendation
+  const cryptoOptions = CRYPTO_PICKS[riskStyle] || CRYPTO_PICKS.balanced;
+  const cryptoRecommendation = cryptoOptions[Math.floor(Math.random() * cryptoOptions.length)];
+
+  const recommendations = {
+    breakoutCandidates: shuffledBreakouts.slice(0, riskStyle === 'aggressive' ? 6 : 4),
+    safePlays: shuffledSafe.slice(0, riskStyle === 'conservative' ? 4 : 3),
+    cryptoRecommendation,
+    totalStocksAnalyzed: breakoutCandidates.length + safePlays.length,
+    generatedAt: Date.now(),
+    params: { riskStyle, selectedSectors }
+  };
+
+  console.log('[Recommendations] Generated:', {
+    breakouts: recommendations.breakoutCandidates.length,
+    safe: recommendations.safePlays.length,
+    crypto: recommendations.cryptoRecommendation?.symbol
+  });
+
+  return recommendations;
+}
+
+/**
+ * Build portfolio from recommendations
+ */
+export function buildPortfolioFromRecommendations(recommendations, mustHavePicks = []) {
+  const { breakoutCandidates, safePlays, cryptoRecommendation } = recommendations;
+
+  const portfolio = [];
+
+  // Add must-haves first
+  mustHavePicks.forEach(pick => {
+    portfolio.push({
+      symbol: pick.symbol,
+      name: pick.name || pick.symbol,
+      type: 'must-have'
+    });
+  });
+
+  // Calculate how many more stocks we need (9 total stocks)
+  const stocksNeeded = 9 - portfolio.length;
+
+  // Add from breakouts and safe plays
+  const additionalPicks = [...breakoutCandidates, ...safePlays]
+    .filter(s => !portfolio.find(p => p.symbol === s.symbol));
+
+  additionalPicks.slice(0, stocksNeeded).forEach(pick => {
+    portfolio.push({
+      symbol: pick.symbol,
+      name: pick.name || pick.symbol,
+      type: pick.bustRisk < 25 ? 'safe' : 'breakout'
+    });
+  });
+
+  // Add crypto
+  if (cryptoRecommendation) {
+    portfolio.push({
+      symbol: cryptoRecommendation.symbol,
+      name: cryptoRecommendation.name,
+      type: 'crypto'
+    });
+  }
+
+  return portfolio;
+}
+
+/**
  * Analyze what the user has picked
  */
 function analyzeMustHaves(mustHavePicks) {
@@ -675,5 +922,9 @@ export default {
   getStockSector,
   getAssetVolatility,
   generateSmartFallback,
+  generateGamePlanRecommendations,
+  buildPortfolioFromRecommendations,
   STOCK_SECTORS,
+  SECTOR_PICKS,
+  CRYPTO_PICKS,
 };

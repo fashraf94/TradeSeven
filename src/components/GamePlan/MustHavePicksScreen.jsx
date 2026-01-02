@@ -3,6 +3,26 @@ import { ArrowLeft, Search, X, Check, TrendingUp, TrendingDown, Info } from 'luc
 import { SECTORS } from '../../constants/sectors';
 import { stockAPI } from '../../services/eodhdAPI';
 
+// Sector colors mapping
+const SECTOR_COLORS = {
+  XLK: '#00d9ff',   // Technology - Cyan
+  XLV: '#f472b6',   // Healthcare - Pink
+  XLF: '#10b981',   // Financials - Green
+  XLE: '#f59e0b',   // Energy - Amber
+  XLY: '#8b5cf6',   // Consumer Discretionary - Purple
+  XLP: '#06b6d4',   // Consumer Staples - Teal
+  XLI: '#6366f1',   // Industrials - Indigo
+  XLB: '#ec4899',   // Materials - Pink
+  XLU: '#eab308',   // Utilities - Yellow
+  XLRE: '#14b8a6',  // Real Estate - Teal
+  XLC: '#f97316',   // Communication - Orange
+  default: '#00d9ff'
+};
+
+const getSectorColor = (sectorId) => {
+  return SECTOR_COLORS[sectorId] || SECTOR_COLORS.default;
+};
+
 // Sector tags for stocks
 const getSectorTag = (sectorId) => {
   const sectorTags = {
@@ -63,6 +83,7 @@ const POPULAR_STOCKS = [
 const StockCard = ({ stock, selected, onSelect, disabled, stockData, size = 'normal' }) => {
   const data = stockData[stock.symbol] || {};
   const changePercent = data.changePercent || 0;
+  const sectorColor = getSectorColor(stock.sector);
 
   const handleClick = (e) => {
     e.preventDefault();
@@ -79,53 +100,56 @@ const StockCard = ({ stock, selected, onSelect, disabled, stockData, size = 'nor
       tabIndex={0}
       onKeyPress={(e) => e.key === 'Enter' && handleClick(e)}
       style={{
-        backgroundColor: selected ? '#00d9ff15' : '#161b22',
-        border: selected ? '2px solid #00d9ff' : '1px solid #21262d',
+        backgroundColor: selected ? `${sectorColor}15` : '#161b22',
+        border: selected ? `2px solid ${sectorColor}` : '1px solid #21262d',
         borderRadius: '12px',
-        padding: size === 'compact' ? '12px' : '16px',
+        padding: size === 'compact' ? '10px' : '14px',
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: '8px',
+        gap: '6px',
         transition: 'all 0.2s ease',
         position: 'relative',
-        minWidth: size === 'compact' ? '100px' : '110px',
+        minWidth: size === 'compact' ? '85px' : '100px',
+        maxWidth: size === 'compact' ? '95px' : '110px',
         userSelect: 'none',
-        WebkitTapHighlightColor: 'transparent'
+        WebkitTapHighlightColor: 'transparent',
+        boxSizing: 'border-box'
       }}
     >
-      {/* Selection indicator */}
+      {/* Selection indicator - use sector color */}
       {selected && (
         <div style={{
           position: 'absolute',
-          top: '8px',
-          right: '8px',
-          width: '20px',
-          height: '20px',
+          top: '6px',
+          right: '6px',
+          width: '18px',
+          height: '18px',
           borderRadius: '50%',
-          backgroundColor: '#00d9ff',
+          backgroundColor: sectorColor,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center'
         }}>
-          <Check size={12} color="#000" />
+          <Check size={10} color="#000" strokeWidth={3} />
         </div>
       )}
 
-      {/* Logo Circle */}
+      {/* Logo Circle - use sector color tint when selected */}
       <div style={{
-        width: size === 'compact' ? '48px' : '56px',
-        height: size === 'compact' ? '48px' : '56px',
+        width: size === 'compact' ? '40px' : '48px',
+        height: size === 'compact' ? '40px' : '48px',
         borderRadius: '50%',
-        backgroundColor: '#21262d',
+        backgroundColor: selected ? `${sectorColor}30` : '#21262d',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: size === 'compact' ? '14px' : '16px',
+        fontSize: size === 'compact' ? '12px' : '14px',
         fontWeight: '700',
-        color: '#8b949e',
+        color: selected ? sectorColor : '#8b949e',
+        transition: 'all 0.2s ease',
         pointerEvents: 'none'
       }}>
         {getInitials(stock.symbol)}
@@ -134,7 +158,7 @@ const StockCard = ({ stock, selected, onSelect, disabled, stockData, size = 'nor
       {/* Stock Name */}
       <div style={{
         fontWeight: '600',
-        fontSize: size === 'compact' ? '13px' : '14px',
+        fontSize: size === 'compact' ? '12px' : '13px',
         color: '#ffffff',
         textAlign: 'center',
         pointerEvents: 'none'
@@ -144,21 +168,21 @@ const StockCard = ({ stock, selected, onSelect, disabled, stockData, size = 'nor
 
       {/* Performance Badge */}
       <div style={{
-        padding: '3px 8px',
+        padding: '2px 6px',
         backgroundColor: changePercent >= 0 ? '#10b98120' : '#ef444420',
-        borderRadius: '10px',
+        borderRadius: '8px',
         display: 'flex',
         alignItems: 'center',
-        gap: '3px',
+        gap: '2px',
         pointerEvents: 'none'
       }}>
         {changePercent >= 0 ? (
-          <TrendingUp size={10} color="#10b981" />
+          <TrendingUp size={9} color="#10b981" />
         ) : (
-          <TrendingDown size={10} color="#ef4444" />
+          <TrendingDown size={9} color="#ef4444" />
         )}
         <span style={{
-          fontSize: '11px',
+          fontSize: '10px',
           fontWeight: '600',
           color: changePercent >= 0 ? '#10b981' : '#ef4444'
         }}>
@@ -166,12 +190,13 @@ const StockCard = ({ stock, selected, onSelect, disabled, stockData, size = 'nor
         </span>
       </div>
 
-      {/* Sector Tag */}
+      {/* Sector Tag - use sector color when selected */}
       <div style={{
-        fontSize: '9px',
-        fontWeight: '600',
-        color: '#8b949e',
+        fontSize: '8px',
+        fontWeight: '700',
+        color: selected ? sectorColor : '#8b949e',
         letterSpacing: '0.5px',
+        textTransform: 'uppercase',
         pointerEvents: 'none'
       }}>
         {stock.tag}
@@ -197,6 +222,26 @@ const MustHavePicksScreen = ({
   const allStocks = useMemo(() => getAllStocks(), []);
   const MAX_PICKS = 5;
 
+  // Get suggested stocks from selected sectors (or use popular stocks as fallback)
+  const suggestedStocks = useMemo(() => {
+    if (selectedSectors.length === 0) {
+      // No sectors selected - show popular stocks
+      return POPULAR_STOCKS;
+    }
+
+    return selectedSectors
+      .flatMap(sectorId => {
+        const sector = SECTORS[sectorId];
+        return sector?.topHoldings?.slice(0, 8).map(symbol => ({
+          symbol,
+          sector: sectorId,
+          tag: getSectorTag(sectorId)
+        })) || [];
+      })
+      .filter((stock, index, arr) => arr.findIndex(s => s.symbol === stock.symbol) === index)
+      .slice(0, 12);
+  }, [selectedSectors]);
+
   // Fetch prices for displayed stocks
   useEffect(() => {
     const fetchPrices = async () => {
@@ -218,27 +263,7 @@ const MustHavePicksScreen = ({
     };
 
     fetchPrices();
-  }, [selectedPicks.length]); // Only refetch when picks change
-
-  // Get suggested stocks from selected sectors (or use popular stocks as fallback)
-  const suggestedStocks = useMemo(() => {
-    if (selectedSectors.length === 0) {
-      // No sectors selected - show popular stocks
-      return POPULAR_STOCKS;
-    }
-
-    return selectedSectors
-      .flatMap(sectorId => {
-        const sector = SECTORS[sectorId];
-        return sector?.topHoldings?.slice(0, 8).map(symbol => ({
-          symbol,
-          sector: sectorId,
-          tag: getSectorTag(sectorId)
-        })) || [];
-      })
-      .filter((stock, index, arr) => arr.findIndex(s => s.symbol === stock.symbol) === index)
-      .slice(0, 12);
-  }, [selectedSectors]);
+  }, [selectedPicks.length, suggestedStocks]);
 
   // Search handler with debounce
   const searchTimeoutRef = React.useRef(null);
@@ -394,7 +419,7 @@ const MustHavePicksScreen = ({
           </div>
           <div style={{
             display: 'flex',
-            gap: '12px',
+            gap: '10px',
             overflowX: 'auto',
             paddingBottom: '8px'
           }}>
@@ -468,8 +493,8 @@ const MustHavePicksScreen = ({
           <div style={{
             marginTop: '12px',
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
-            gap: '12px'
+            gridTemplateColumns: 'repeat(auto-fill, minmax(95px, 1fr))',
+            gap: '10px'
           }}>
             {searchResults.map(stock => (
               <StockCard
@@ -503,8 +528,8 @@ const MustHavePicksScreen = ({
           </div>
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
-            gap: '12px'
+            gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
+            gap: '10px'
           }}>
             {suggestedStocks.map(stock => (
               <StockCard
