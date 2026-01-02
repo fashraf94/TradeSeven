@@ -25,7 +25,8 @@ import {
   PortfolioBuilderBaggerBomb,
   ThresholdPreview,
   BenchSelector,
-  BaggerBombBattleView
+  BaggerBombBattleView,
+  BaggerBombBattleViewRedesign
 } from './components/BaggerBomb';
 
 // Legacy aliases for backwards compatibility
@@ -14524,23 +14525,87 @@ export default function PortfolioDuel() {
     const odUserId = user.odUserId || user.username;
 
     // Create BaggerBomb training battle object (for localStorage compatibility)
+    // Uses V2 structure with creator/opponent objects for BaggerBombBattleViewRedesign compatibility
     const trainingBattle = {
       id: battleId,
       challengeCode: 'TRAINING', // Special code for training battles
-      creator: user.username,
-      opponent: 'CPU Opponent',
+      _v: 2, // BaggerBomb Scoring version marker
+
+      // Creator object (user)
+      creator: {
+        uid: user.odUserId || user.username,
+        odUserId: user.odUserId || user.username,
+        username: user.username,
+        portfolioName: portfolioData.portfolioName.trim(),
+        portfolio: updatedUserPortfolio,
+        bench: userBenchAssets,
+        portfolioType: 'baggerbomb',
+        cryptoAllocation: 10
+      },
+
+      // Opponent object (CPU)
+      opponent: {
+        uid: 'cpu',
+        odUserId: 'cpu',
+        username: 'CPU Opponent',
+        portfolioName: 'CPU BaggerBomb Strategy',
+        portfolio: updatedCPUPortfolio,
+        bench: cpuPortfolioData.bench,
+        portfolioType: 'baggerbomb',
+        cryptoAllocation: 10
+      },
+
+      // Legacy fields for classic view compatibility (in case it falls through)
       creatorPortfolio: updatedUserPortfolio,
       opponentPortfolio: updatedCPUPortfolio,
       creatorBench: userBenchAssets,
       opponentBench: cpuPortfolioData.bench,
       portfolioName: portfolioData.portfolioName.trim(),
       portfolioType: 'baggerbomb',
-      _v: 2, // BaggerBomb Scoring version marker
+
+      // Timeline
+      timeline: {
+        createdAt: now.toISOString(),
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        completedAt: null
+      },
+
+      // State
+      state: {
+        status: 'active',
+        currentSession: '',
+        completedSessions: [],
+        startingPrices: startingPrices
+      },
+
+      // Session prices (empty initially)
+      sessionPrices: {
+        MORNING_BELL: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
+        MIDDAY: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
+        POWER_HOUR: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
+        NIGHT_GAME: { open: {}, close: {}, capturedAt: { open: '', close: '' } }
+      },
+
+      // BaggerBomb specific
+      thresholds: portfolioData.thresholds || {},
+      breakouts: { creator: [], opponent: [] },
+      substitutions: [],
+      sessionScores: {
+        MORNING_BELL: { creator: 0, opponent: 0, winner: '' },
+        MIDDAY: { creator: 0, opponent: 0, winner: '' },
+        POWER_HOUR: { creator: 0, opponent: 0, winner: '' },
+        NIGHT_GAME: { creator: 0, opponent: 0, winner: '' }
+      },
+
+      // Legacy fields
       status: 'active',
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
       startingPrices: startingPrices,
-      thresholds: portfolioData.thresholds || {},
+
+      // Training flags
+      isTraining: true,
       isTrainingBattle: true,
       createdAt: now.toISOString()
     };
@@ -29679,6 +29744,19 @@ export default function PortfolioDuel() {
 
   // BATTLE VIEW SCREEN - ESPN STYLE REDESIGN
   if (screen === 'battle' && currentBattle) {
+    // Check if this is a BaggerBomb (V2) battle - route to redesigned view
+    if (currentBattle._v === 2) {
+      return (
+        <BaggerBombBattleViewRedesign
+          battle={currentBattle}
+          user={user}
+          onBack={() => setScreen('dashboard')}
+          isTraining={currentBattle.isTraining || false}
+        />
+      );
+    }
+
+    // Classic (V1) battle view continues below...
     const isCreator = currentBattle.creator === user.username;
     const opponent = isCreator ? currentBattle.opponent : currentBattle.creator;
     const myPortfolio = isCreator ? currentBattle.creatorPortfolio : currentBattle.opponentPortfolio;

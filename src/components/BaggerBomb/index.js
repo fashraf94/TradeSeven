@@ -8,6 +8,7 @@ export { default as BaggerBombScoreboard } from './BaggerBombScoreboard';
 export { default as AssetPerformanceRow } from './AssetPerformanceRow';
 export { default as SubstitutionPanel } from './SubstitutionPanel';
 export { default as BaggerBombBattleView } from './BaggerBombBattleView';
+export { default as BaggerBombBattleViewRedesign } from './BaggerBombBattleViewRedesign';
 
 // Portfolio Builder Components
 export { default as BenchSelector } from './BenchSelector';
