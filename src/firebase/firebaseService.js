@@ -940,13 +940,15 @@ export async function joinBaggerBombBattle(challengeCode, opponentData) {
     }));
 
     // Update battle with opponent
+    // CRITICAL: Firebase does NOT allow undefined values - use empty string as fallback
     const battleRef = doc(db, 'battles', battleDoc.id);
 
     await updateDoc(battleRef, {
-      'opponent.uid': opponentData.uid,
-      'opponent.username': opponentData.username,
-      'opponent.portfolioName': opponentData.portfolioName,
-      'opponent.portfolioType': opponentData.portfolioType || 'stocks',
+      'opponent.uid': opponentData.uid || opponentData.odUserId || '',
+      'opponent.odUserId': opponentData.odUserId || opponentData.uid || '',
+      'opponent.username': opponentData.username || opponentData.odUsername || '',
+      'opponent.portfolioName': opponentData.portfolioName || 'Portfolio',
+      'opponent.portfolioType': opponentData.portfolioType || 'baggerbomb',
       'opponent.portfolio': formattedPortfolio,
       'opponent.bench': formattedBench,
       'opponent.cryptoAllocation': 10,

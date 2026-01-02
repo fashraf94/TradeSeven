@@ -25491,12 +25491,17 @@ export default function PortfolioDuel() {
                   return;
                 }
 
+                // CRITICAL: Firebase does NOT allow undefined values
+                const odUserId = user?.odUserId || user?.uid || user?.email || 'anonymous';
                 const opponentData = {
-                  odUserId: user?.odUserId || user?.uid,
-                  uid: user?.odUserId || user?.uid, // Also include uid for validation
-                  username: user?.username || user?.email?.split('@')[0] || 'Anonymous',
+                  odUserId: odUserId,
+                  uid: odUserId, // Also include uid for validation
+                  username: user?.username || user?.email?.split('@')[0] || 'Player',
+                  odUsername: user?.username || user?.email?.split('@')[0] || 'Player',
+                  portfolioName: portfolioData.portfolioName || 'Portfolio',
                   portfolio: portfolio,
                   bench: bench,
+                  portfolioType: 'baggerbomb',
                   allocations: portfolioData.allocations || {}
                 };
 
