@@ -23345,12 +23345,24 @@ export default function PortfolioDuel() {
             setBattleScoringMode('classic'); // Reset to classic when closing
           }}
           onConfirm={() => {
-            // Check PvP battle limit
-            const activePvPBattles = battles.filter(b =>
-              !b.isTrainingBattle &&
-              (b.status === 'waiting' || b.status === 'active')
-            ).length;
-            if (activePvPBattles >= MAX_PVP_BATTLES) {
+            // Check PvP battle limit - MUST filter by current user
+            const userPvPBattles = battles.filter(b => {
+              // Skip training battles
+              if (b.isTrainingBattle) return false;
+
+              // Check if battle is active or waiting
+              const isActiveOrWaiting = b.status === 'waiting' || b.status === 'active';
+              if (!isActiveOrWaiting) return false;
+
+              // Check if current user is involved in this battle
+              // Handle both V1 (string) and V2 (object) formats
+              const creatorUsername = typeof b.creator === 'object' ? b.creator?.username : b.creator;
+              const opponentUsername = typeof b.opponent === 'object' ? b.opponent?.username : b.opponent;
+
+              return creatorUsername === user?.username || opponentUsername === user?.username;
+            });
+
+            if (userPvPBattles.length >= MAX_PVP_BATTLES) {
               alert(`You've reached the maximum of ${MAX_PVP_BATTLES} active PvP battles. Complete or delete a battle first.`);
               setShowCreateBattleConfirm(false);
               return;
@@ -23457,12 +23469,24 @@ export default function PortfolioDuel() {
             setTrainingBattleType('classic'); // Reset on close
           }}
           onConfirm={() => {
-            // Check training battle limit
-            const activeTrainingBattles = battles.filter(b =>
-              b.isTrainingBattle &&
-              (b.status === 'waiting' || b.status === 'active')
-            ).length;
-            if (activeTrainingBattles >= MAX_TRAINING_BATTLES) {
+            // Check training battle limit - MUST filter by current user
+            const userTrainingBattles = battles.filter(b => {
+              // Must be a training battle
+              if (!b.isTrainingBattle && !b.isTraining) return false;
+
+              // Check if battle is active or waiting
+              const isActiveOrWaiting = b.status === 'waiting' || b.status === 'active' ||
+                                        b.state?.status === 'active' || b.state?.status === 'waiting';
+              if (!isActiveOrWaiting) return false;
+
+              // Check if current user is the creator of this training battle
+              // Handle both V1 (string) and V2 (object) formats
+              const creatorUsername = typeof b.creator === 'object' ? b.creator?.username : b.creator;
+
+              return creatorUsername === user?.username;
+            });
+
+            if (userTrainingBattles.length >= MAX_TRAINING_BATTLES) {
               alert(`You've reached the maximum of ${MAX_TRAINING_BATTLES} active training battles. Complete or delete a battle first.`);
               setShowClassicTrainingConfirm(false);
               return;
