@@ -28,6 +28,8 @@ import {
   BaggerBombBattleView,
   BaggerBombBattleViewRedesign
 } from './components/BaggerBomb';
+// BaggerBomb Game Plan Flow
+import { BaggerBombGamePlanFlow } from './components/GamePlan';
 
 // Legacy aliases for backwards compatibility
 const TDBattleScoreboard = BaggerBombScoreboard;
@@ -8094,6 +8096,7 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
       options: [
         { id: 'head-to-head', label: '⚔️ Head-to-Head', description: '24-hour battle', color: c.cyan },
         { id: 'snake-draft', label: '🐍 Snake Draft', description: 'Week-long competition', color: c.green },
+        { id: 'baggerbomb', label: '💣 BaggerBomb', description: 'Session-based scoring', color: '#f59e0b', badge: 'NEW' },
       ],
       field: 'battleType',
     },
@@ -8402,8 +8405,23 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
                   fontSize: '18px',
                   fontWeight: '600',
                   marginBottom: option.description ? '4px' : '0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
                 }}>
                   {option.label}
+                  {option.badge && (
+                    <span style={{
+                      background: option.color,
+                      color: '#000',
+                      fontSize: '10px',
+                      fontWeight: '700',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                    }}>
+                      {option.badge}
+                    </span>
+                  )}
                 </div>
                 {option.description && (
                   <div style={{ color: '#8b949e', fontSize: '13px' }}>
@@ -9004,11 +9022,12 @@ const AssetDetailView = ({ asset, thesis, pinnedInsights, onPin, onBack, colors 
 // RESEARCH FLOW - MAIN CONTAINER
 // ============================================
 
-const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors }) => {
+const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors, user }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
 
   // Flow state
   const [flowPhase, setFlowPhase] = useState(1);
+  const [showBaggerBombFlow, setShowBaggerBombFlow] = useState(false);
   const [thesis, setThesis] = useState({
     battleType: null,
     stance: null,
@@ -9054,6 +9073,13 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors 
   // Handle thesis completion (Phase 2 → 3)
   const handleThesisComplete = async (completedThesis) => {
     setThesis(completedThesis);
+
+    // BaggerBomb has its own dedicated flow
+    if (completedThesis.battleType === 'baggerbomb') {
+      setShowBaggerBombFlow(true);
+      return;
+    }
+
     setFlowPhase(3);
 
     // Get all assets
@@ -9429,6 +9455,25 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors 
 
   // Render current phase
   const renderPhase = () => {
+    // BaggerBomb has its own dedicated flow
+    if (showBaggerBombFlow) {
+      return (
+        <BaggerBombGamePlanFlow
+          onComplete={(portfolio) => {
+            // Handle the completed game plan - user can use portfolio for battle
+            onUsePortfolio(portfolio.map(p => p.symbol));
+            setShowBaggerBombFlow(false);
+            resetFlow();
+          }}
+          onBack={() => {
+            setShowBaggerBombFlow(false);
+            setFlowPhase(2); // Go back to battle type selection
+          }}
+          user={user}
+        />
+      );
+    }
+
     // If viewing asset detail, show that instead
     if (selectedAsset) {
       return (
@@ -16385,6 +16430,7 @@ export default function PortfolioDuel() {
               setShowResearchMode(false);
             }}
             colors={colors}
+            user={user}
           />
         </div>
       );

@@ -1,8 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ArrowLeft, Search, X, Plus, Check, Info } from 'lucide-react';
 import { SECTORS } from '../../constants/sectors';
-import { fetchStockPrices } from '../../services/eodhdAPI';
-import debounce from 'lodash/debounce';
+import { stockAPI } from '../../services/eodhdAPI';
+
+// Custom debounce function (replaces lodash/debounce)
+const debounce = (func, wait) => {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
+};
 
 // Popular stocks for quick selection
 const POPULAR_STOCKS = [
@@ -59,7 +67,7 @@ const MustHavePicksScreen = ({
 
       try {
         const symbols = selectedPicks.map(p => p.symbol);
-        const prices = await fetchStockPrices(symbols);
+        const prices = await stockAPI.getMultipleStockPrices(symbols);
         setStockPrices(prices);
       } catch (error) {
         console.error('Error fetching prices:', error);
