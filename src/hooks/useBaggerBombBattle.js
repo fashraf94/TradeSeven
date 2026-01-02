@@ -52,31 +52,26 @@ const SESSIONS = {
 
 const SESSION_ORDER = ['MORNING_BELL', 'MIDDAY', 'POWER_HOUR', 'NIGHT_GAME'];
 
-// Scoring constants
+// Scoring constants - SIMPLIFIED (no conviction multiplier)
 const POINTS_PER_PERCENT = 10;
+const BAGGERBOMB_BONUS = 15;  // Flat +15 for ANY breakout (crosses threshold)
 
-const CONVICTION_TIERS = [
-  { min: 15.1, max: 100, multiplier: 1.30 },
-  { min: 10.1, max: 15, multiplier: 1.15 },
-  { min: 0, max: 10, multiplier: 1.00 }
-];
-
+// Breakout bonus - single tier, flat +15 (no stacking)
 const BREAKOUT_BONUSES = {
-  BREAKOUT: { threshold: 1.0, points: 15, label: 'BaggerBomb', emoji: '💣' },
-  RALLY: { threshold: 1.5, points: 30, label: 'Double Bagger', emoji: '💣💣' },
-  MOONSHOT: { threshold: 2.0, points: 50, label: 'TenBagger', emoji: '🚀💣' }
+  BREAKOUT: { threshold: 1.0, points: 15, label: 'BaggerBomb', emoji: '💣' }
 };
 
+// Bust penalties - NOT stacked, only highest tier applies
 const BUST_PENALTIES = {
   BUST: { threshold: 1.0, points: -10, label: 'Bust', emoji: '📉' },
   CRASH: { threshold: 1.5, points: -20, label: 'Crash', emoji: '💥' },
   MELTDOWN: { threshold: 2.0, points: -35, label: 'Meltdown', emoji: '🔥' }
 };
 
+// Session bonuses
 const SESSION_BONUSES = {
-  SESSION_WIN: 10,
-  GREEN_SWEEP: 20,  // All assets positive
-  CLEAN_SWEEP: 30   // Win all 4 sessions
+  SESSION_WIN: 10,      // +10 per session win
+  CLEAN_SWEEP: 50       // +50 additional for winning all 4 sessions
 };
 
 // ==================== HELPER FUNCTIONS ====================
@@ -125,20 +120,17 @@ const getSessionTimeRemaining = (session) => {
   return { hours, minutes, seconds };
 };
 
-const getConvictionMultiplier = (allocationPercent) => {
-  for (const tier of CONVICTION_TIERS) {
-    if (allocationPercent >= tier.min && allocationPercent <= tier.max) {
-      return tier.multiplier;
-    }
-  }
-  return 1.0;
-};
+// Conviction multiplier REMOVED - always returns 1.0 for backwards compatibility
+const getConvictionMultiplier = () => 1.0;
 
 // ==================== SCORING FUNCTIONS ====================
 
 /**
  * Calculate score for a single asset
- * FIXES THE NEGATIVE MOVEMENT BUG - properly handles negative percentages
+ * SIMPLIFIED SCORING:
+ * - No conviction multiplier
+ * - Flat +15 for ANY breakout (crosses threshold)
+ * - Bust penalties NOT stacked (only highest tier)
  */
 const calculateAssetScore = (asset, openPrice, currentPrice, threshold, totalPortfolioValue = 1000000) => {
   if (!openPrice || openPrice === 0) {
@@ -161,66 +153,56 @@ const calculateAssetScore = (asset, openPrice, currentPrice, threshold, totalPor
 
   const percentChange = ((currentPrice - openPrice) / openPrice) * 100;
   const allocationPercent = (asset.amount / totalPortfolioValue) * 100;
-  const convictionMultiplier = getConvictionMultiplier(allocationPercent);
 
   // Base points: 10 points per 1% change (can be negative!)
   const basePoints = percentChange * POINTS_PER_PERCENT;
 
-  // Threshold values
+  // Threshold values for bust tiers
   const baseThreshold = threshold?.threshold || (isCrypto(asset.symbol) ? 5.0 : 2.0);
-  const rallyThreshold = threshold?.rallyThreshold || baseThreshold * 1.5;
-  const moonshotThreshold = threshold?.moonshotThreshold || baseThreshold * 2.0;
+  const crashThreshold = baseThreshold * 1.5;  // 1.5x threshold for CRASH
+  const meltdownThreshold = baseThreshold * 2.0;  // 2.0x threshold for MELTDOWN
 
   let breakoutBonus = 0;
   let bustPenalty = 0;
   let breakoutType = null;
   let bustType = null;
 
-  // POSITIVE MOVEMENT - Check for breakouts (bonuses stack!)
-  if (percentChange > 0) {
-    if (percentChange >= moonshotThreshold) {
-      breakoutBonus = BREAKOUT_BONUSES.BREAKOUT.points + BREAKOUT_BONUSES.RALLY.points + BREAKOUT_BONUSES.MOONSHOT.points;
-      breakoutType = 'MOONSHOT';
-    } else if (percentChange >= rallyThreshold) {
-      breakoutBonus = BREAKOUT_BONUSES.BREAKOUT.points + BREAKOUT_BONUSES.RALLY.points;
-      breakoutType = 'RALLY';
-    } else if (percentChange >= baseThreshold) {
-      breakoutBonus = BREAKOUT_BONUSES.BREAKOUT.points;
-      breakoutType = 'BREAKOUT';
-    }
+  // POSITIVE MOVEMENT - Flat +15 for ANY breakout (crosses threshold)
+  if (percentChange >= baseThreshold) {
+    breakoutBonus = BAGGERBOMB_BONUS;  // Flat +15, no stacking
+    breakoutType = 'BREAKOUT';
   }
 
-  // NEGATIVE MOVEMENT - Check for busts (penalties stack!)
+  // NEGATIVE MOVEMENT - NOT stacked, only highest tier applies
   if (percentChange < 0) {
     const absChange = Math.abs(percentChange);
-    if (absChange >= moonshotThreshold) {
-      bustPenalty = BUST_PENALTIES.BUST.points + BUST_PENALTIES.CRASH.points + BUST_PENALTIES.MELTDOWN.points;
+    if (absChange >= meltdownThreshold) {
+      // MELTDOWN: -35 pts (only this, not stacked)
+      bustPenalty = BUST_PENALTIES.MELTDOWN.points;
       bustType = 'MELTDOWN';
-    } else if (absChange >= rallyThreshold) {
-      bustPenalty = BUST_PENALTIES.BUST.points + BUST_PENALTIES.CRASH.points;
+    } else if (absChange >= crashThreshold) {
+      // CRASH: -20 pts (only this, not stacked)
+      bustPenalty = BUST_PENALTIES.CRASH.points;
       bustType = 'CRASH';
     } else if (absChange >= baseThreshold) {
+      // BUST: -10 pts
       bustPenalty = BUST_PENALTIES.BUST.points;
       bustType = 'BUST';
     }
   }
 
-  // Apply conviction multiplier to base points and bonuses
-  const adjustedBasePoints = basePoints * convictionMultiplier;
-  const adjustedBreakoutBonus = breakoutBonus * convictionMultiplier;
-  // Penalties are NOT multiplied (you don't get punished more for conviction)
-
-  const totalPoints = adjustedBasePoints + adjustedBreakoutBonus + bustPenalty;
+  // No conviction multiplier - just raw points
+  const totalPoints = basePoints + breakoutBonus + bustPenalty;
 
   return {
     symbol: asset.symbol,
     percentChange,
-    basePoints: adjustedBasePoints,
-    breakoutBonus: adjustedBreakoutBonus,
+    basePoints,
+    breakoutBonus,
     bustPenalty,
     breakoutType,
     bustType,
-    convictionMultiplier,
+    convictionMultiplier: 1,  // Always 1 now (removed)
     allocationPercent,
     totalPoints,
     openPrice,
@@ -234,6 +216,7 @@ const calculateAssetScore = (asset, openPrice, currentPrice, threshold, totalPor
 
 /**
  * Calculate total score for a portfolio
+ * Session bonuses (+10 per win, +50 clean sweep) are applied at battle level, not here
  */
 const calculatePortfolioScore = (portfolio, openPrices, currentPrices, thresholds) => {
   let totalScore = 0;
@@ -271,16 +254,14 @@ const calculatePortfolioScore = (portfolio, openPrices, currentPrices, threshold
     }
   });
 
-  // Check for green sweep (all assets positive)
+  // Count all positive assets (for display purposes)
   const allPositive = assetScores.every(s => s.percentChange >= 0);
-  const greenSweepBonus = allPositive && assetScores.length > 0 ? SESSION_BONUSES.GREEN_SWEEP : 0;
 
   return {
-    totalScore: Math.round(totalScore + greenSweepBonus),
+    totalScore: Math.round(totalScore),
     assetScores,
     breakouts,
     busts,
-    greenSweepBonus,
     allPositive
   };
 };
@@ -330,16 +311,29 @@ export const useBaggerBombBattle = (battleId, userId) => {
     return calculatePortfolioScore(oppPortfolio, openPrices, currentPrices, thresholds);
   }, [oppPortfolio, openPrices, currentPrices, thresholds]);
 
-  // Add completed session scores
+  // Add completed session scores + session win bonuses
   const myTotalScore = useMemo(() => {
     let total = myScoreData.totalScore;
     const sessionScores = battle?.sessionScores || {};
     const completedSessions = battle?.state?.completedSessions || [];
+    let sessionWins = 0;
 
     completedSessions.forEach(sessionId => {
-      const score = sessionScores[sessionId]?.[isCreator ? 'creator' : 'opponent'] || 0;
-      total += score;
+      const myScore = sessionScores[sessionId]?.[isCreator ? 'creator' : 'opponent'] || 0;
+      const oppScore = sessionScores[sessionId]?.[isCreator ? 'opponent' : 'creator'] || 0;
+      total += myScore;
+
+      // Session win bonus: +10 for each session won
+      if (myScore > oppScore) {
+        total += SESSION_BONUSES.SESSION_WIN;
+        sessionWins++;
+      }
     });
+
+    // Clean sweep bonus: +50 if won all 4 sessions
+    if (sessionWins === 4) {
+      total += SESSION_BONUSES.CLEAN_SWEEP;
+    }
 
     return Math.round(total);
   }, [myScoreData, battle, isCreator]);
@@ -348,11 +342,24 @@ export const useBaggerBombBattle = (battleId, userId) => {
     let total = oppScoreData.totalScore;
     const sessionScores = battle?.sessionScores || {};
     const completedSessions = battle?.state?.completedSessions || [];
+    let sessionWins = 0;
 
     completedSessions.forEach(sessionId => {
-      const score = sessionScores[sessionId]?.[isCreator ? 'opponent' : 'creator'] || 0;
-      total += score;
+      const oppScore = sessionScores[sessionId]?.[isCreator ? 'opponent' : 'creator'] || 0;
+      const myScore = sessionScores[sessionId]?.[isCreator ? 'creator' : 'opponent'] || 0;
+      total += oppScore;
+
+      // Session win bonus: +10 for each session won
+      if (oppScore > myScore) {
+        total += SESSION_BONUSES.SESSION_WIN;
+        sessionWins++;
+      }
     });
+
+    // Clean sweep bonus: +50 if won all 4 sessions
+    if (sessionWins === 4) {
+      total += SESSION_BONUSES.CLEAN_SWEEP;
+    }
 
     return Math.round(total);
   }, [oppScoreData, battle, isCreator]);

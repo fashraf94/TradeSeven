@@ -18,13 +18,12 @@ import {
   Rocket
 } from 'lucide-react';
 
-// Import scoring from our hook (fixes negative scoring bug)
+// Import scoring from our hook (simplified: no conviction multiplier, flat +15 breakout)
 import {
   calculateAssetScore,
   calculatePortfolioScore,
   getCurrentSession,
   getSessionTimeRemaining,
-  getConvictionMultiplier,
   SESSIONS,
   SESSION_ORDER,
   isCrypto,
@@ -74,10 +73,10 @@ const SESSION_CONFIG = {
   }
 };
 
+// Simplified scoring: flat +15 for any breakout, bust penalties NOT stacked
 const BREAKOUT_CONFIG = {
   BREAKOUT: { emoji: '💣', label: 'BaggerBomb', color: '#10b981', points: 15 },
-  RALLY: { emoji: '💣💣', label: 'Double Bagger', color: '#f59e0b', points: 30 },
-  MOONSHOT: { emoji: '🚀💣', label: 'TenBagger', color: '#8b5cf6', points: 50 },
+  // Bust penalties (only highest tier applies, NOT stacked)
   BUST: { emoji: '📉', label: 'Bust', color: '#ef4444', points: -10 },
   CRASH: { emoji: '💥', label: 'Crash', color: '#dc2626', points: -20 },
   MELTDOWN: { emoji: '🔥', label: 'Meltdown', color: '#991b1b', points: -35 }
@@ -755,12 +754,10 @@ export default function BaggerBombBattleViewRedesign({
     );
   };
 
-  // Asset Card with Threshold Progress
+  // Asset Card with Threshold Progress (Simplified: flat +15 breakout, no conviction)
   const renderAssetCard = (asset, isYours = true) => {
     const progress = getAssetProgress(asset);
     const allocationPercent = asset.amount ? (asset.amount / 1000000) * 100 : asset.allocation || 10;
-    const conviction = getConvictionMultiplier(allocationPercent);
-    const potentialPoints = Math.round(15 * conviction); // Base BaggerBomb points * conviction
 
     const isApproaching = progress.progress >= 75 && progress.progress < 100;
     const hasBreakout = progress.progress >= 100;
@@ -856,23 +853,13 @@ export default function BaggerBombBattleViewRedesign({
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <span>💰 {allocationPercent.toFixed(1)}%</span>
-            {conviction > 1 && (
-              <span style={{
-                color: '#f59e0b',
-                backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                padding: '1px 6px',
-                borderRadius: '4px'
-              }}>
-                {conviction.toFixed(2)}x
-              </span>
-            )}
           </div>
           <div style={{ color: '#10b981' }}>
-            💣 +{potentialPoints} if hit
+            💣 +15 if hit
           </div>
         </div>
 
-        {/* Threshold Zones (shown on approach) */}
+        {/* Threshold info (shown on approach) */}
         {isApproaching && (
           <div style={{
             marginTop: '10px',
@@ -881,11 +868,9 @@ export default function BaggerBombBattleViewRedesign({
             borderRadius: '6px',
             fontSize: '11px'
           }}>
-            <div style={{ color: '#8b949e', marginBottom: '4px' }}>Breakout Zones:</div>
+            <div style={{ color: '#8b949e', marginBottom: '4px' }}>Breakout Target:</div>
             <div style={{ display: 'flex', gap: '12px' }}>
-              <span style={{ color: '#10b981' }}>💣 {progress.threshold?.toFixed(1)}%</span>
-              <span style={{ color: '#f59e0b' }}>💣💣 {progress.rallyThreshold?.toFixed(1)}%</span>
-              <span style={{ color: '#8b5cf6' }}>🚀 {progress.moonshotThreshold?.toFixed(1)}%</span>
+              <span style={{ color: '#10b981' }}>💣 +{progress.threshold?.toFixed(1)}% = +15 pts</span>
             </div>
           </div>
         )}
@@ -963,12 +948,11 @@ export default function BaggerBombBattleViewRedesign({
     </div>
   );
 
-  // Celebration Overlay
+  // Celebration Overlay (simplified: only BREAKOUT type now)
   const renderCelebration = () => {
     if (!celebrationEvent) return null;
 
     const config = BREAKOUT_CONFIG[celebrationEvent.type] || BREAKOUT_CONFIG.BREAKOUT;
-    const isMoonshot = celebrationEvent.type === 'MOONSHOT';
 
     return (
       <div style={{
@@ -977,7 +961,7 @@ export default function BaggerBombBattleViewRedesign({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: isMoonshot ? 'rgba(139, 92, 246, 0.3)' : 'rgba(16, 185, 129, 0.2)',
+        backgroundColor: 'rgba(16, 185, 129, 0.2)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
