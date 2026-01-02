@@ -1,13 +1,10 @@
 /**
  * Sector Data Service
  * Fetches and calculates sector-level metrics for Game Plan Generator
- * Uses Vercel proxy endpoints to avoid CORS issues
+ * Uses consolidated /api/stocks/prices endpoint to avoid CORS issues
  */
 
 import { SECTORS, CRYPTO_SECTOR, SECTOR_ORDER } from '../constants/sectors';
-
-// Use proxy endpoints to avoid CORS issues
-const API_BASE = '/api/stocks';
 
 // Cache for sector data (refresh every 15 minutes)
 let sectorCache = {};
@@ -15,13 +12,14 @@ let cacheTimestamp = null;
 const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
 
 /**
- * Fetch historical prices for a symbol via proxy
+ * Fetch historical prices for a symbol via consolidated proxy
+ * Uses: /api/stocks/prices?symbols=XLK&type=historical&days=180
  */
 const fetchHistoricalPrices = async (symbol, days = 180) => {
   try {
-    const url = `${API_BASE}/historical?symbol=${encodeURIComponent(symbol)}&days=${days}`;
+    const url = `/api/stocks/prices?symbols=${encodeURIComponent(symbol)}&type=historical&days=${days}`;
 
-    console.log(`[SectorData] Fetching ${symbol} via proxy`);
+    console.log(`[SectorData] Fetching ${symbol} historical via proxy`);
 
     const response = await fetch(url);
 
@@ -52,11 +50,12 @@ const fetchHistoricalPrices = async (symbol, days = 180) => {
 };
 
 /**
- * Fetch technical indicator (SMA) for a symbol via proxy
+ * Fetch technical indicator (SMA) for a symbol via consolidated proxy
+ * Uses: /api/stocks/prices?symbols=XLK&type=sma&period=50
  */
 const fetchSMA = async (symbol, period = 50) => {
   try {
-    const url = `${API_BASE}/technical?symbol=${encodeURIComponent(symbol)}&indicator=sma&period=${period}`;
+    const url = `/api/stocks/prices?symbols=${encodeURIComponent(symbol)}&type=sma&period=${period}`;
 
     const response = await fetch(url);
 
