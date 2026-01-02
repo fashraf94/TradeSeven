@@ -3,7 +3,7 @@ import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } f
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
-import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles } from './firebase/firebaseService';
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
 import './firebase/config';
@@ -15,6 +15,23 @@ import { getWeekAheadEvents } from './data/weekAheadEvents';
 // AI Advisors
 import ResearchAdvisor from './components/ResearchAdvisor';
 import DraftAdvisor from './components/DraftAdvisor';
+// BaggerBomb Scoring Components
+import {
+  SessionScoreCard,
+  BreakoutFeed,
+  BaggerBombScoreboard,
+  AssetPerformanceRow,
+  SubstitutionPanel,
+  PortfolioBuilderBaggerBomb,
+  ThresholdPreview,
+  BenchSelector,
+  BaggerBombBattleView
+} from './components/BaggerBomb';
+
+// Legacy aliases for backwards compatibility
+const TDBattleScoreboard = BaggerBombScoreboard;
+const PortfolioBuilderTD = PortfolioBuilderBaggerBomb;
+const TDBattleView = BaggerBombBattleView;
 // Research Mode services
 import { generateGamePlan, enhanceRecommendations, getAssetDeepDive } from './services/researchAdvisor';
 // Snake Draft strategy utilities (consolidated from duplicate code paths)
@@ -44,6 +61,29 @@ const logger = {
     console.error(...args);
   }
 };
+
+// ============================================
+// BATTLE DEBUG HELPER
+// ============================================
+const debugBattles = (label, battles, extra = {}) => {
+  if (!import.meta.env.DEV) return;
+
+  console.group(`🔍 [BATTLES] ${label}`);
+  console.log('Count:', battles.length);
+  console.log('IDs:', battles.map(b => b.id));
+  console.log('Statuses:', battles.map(b => `${b.id?.slice(-4)}: ${b.status}`));
+  console.log('Creators:', battles.map(b => `${b.id?.slice(-4)}: ${b.creator}`));
+  if (Object.keys(extra).length > 0) {
+    console.log('Extra:', extra);
+  }
+  console.groupEnd();
+};
+
+// ============================================
+// BATTLE LIMITS
+// ============================================
+const MAX_PVP_BATTLES = 3;
+const MAX_TRAINING_BATTLES = 2;
 
 // ============================================
 // INPUT SANITIZATION UTILITIES
@@ -10555,6 +10595,9 @@ const isNewWeek = (lastWeekStart) => {
   return getWeekStartDate() !== lastWeekStart;
 };
 
+// Helper to check if battle is BaggerBomb (V2) format
+const isBaggerBombBattle = (battle) => battle?._v === 2;
+
 // ============================================
 // CHALLENGE MODAL COMPONENT (Placeholder)
 // ============================================
@@ -11274,6 +11317,12 @@ export default function PortfolioDuel() {
   const [showClassicTrainingConfirm, setShowClassicTrainingConfirm] = useState(false);
   const [showCreateDraftConfirm, setShowCreateDraftConfirm] = useState(false);
   const [showJoinDraftConfirm, setShowJoinDraftConfirm] = useState(false);
+  const [showCreateBaggerBombBattleConfirm, setShowCreateBaggerBombBattleConfirm] = useState(false);
+  const [showJoinBaggerBombBattleConfirm, setShowJoinBaggerBombBattleConfirm] = useState(false);
+  // BaggerBomb Scoring battle mode selection in create battle confirmation
+  const [battleScoringMode, setBattleScoringMode] = useState('classic'); // 'classic' | 'baggerbomb'
+  // Training Mode battle type selection
+  const [trainingBattleType, setTrainingBattleType] = useState('classic'); // 'classic' | 'baggerbomb'
 
   // Tutorial modal states
   const [showTutorial, setShowTutorial] = useState(false);
@@ -11484,6 +11533,7 @@ export default function PortfolioDuel() {
 
   // Notification type config
   const NOTIFICATION_TYPES = {
+    // Existing types
     rematch_request: { icon: '⚔️', color: '#f59e0b', title: 'Rematch Request' },
     rematch_accepted: { icon: '✅', color: '#22c55e', title: 'Rematch Accepted' },
     rematch_declined: { icon: '❌', color: '#ef4444', title: 'Rematch Declined' },
@@ -11496,7 +11546,38 @@ export default function PortfolioDuel() {
     xp_earned: { icon: '⭐', color: '#eab308', title: 'XP Earned' },
     rank_up: { icon: '🎖️', color: '#6366f1', title: 'Rank Up' },
     friend_battle: { icon: '👋', color: '#06b6d4', title: 'Friend Battle' },
-    system: { icon: '📢', color: '#8b949e', title: 'System' }
+    system: { icon: '📢', color: '#8b949e', title: 'System' },
+
+    // BaggerBomb Scoring - Breakout events
+    breakout: { icon: '🎯', color: '#10b981', title: 'Breakout!' },
+    rally: { icon: '🚀', color: '#f59e0b', title: 'Rally!' },
+    moonshot: { icon: '🌙', color: '#8b5cf6', title: 'Moonshot!' },
+    bust: { icon: '📉', color: '#ef4444', title: 'Bust' },
+    crash: { icon: '💥', color: '#dc2626', title: 'Crash' },
+    meltdown: { icon: '🔥', color: '#991b1b', title: 'Meltdown' },
+
+    // BaggerBomb Scoring - Session events
+    session_start: { icon: '⏱️', color: '#3b82f6', title: 'Session Started' },
+    session_complete: { icon: '✓', color: '#10b981', title: 'Session Complete' },
+    session_win: { icon: '🏆', color: '#f59e0b', title: 'Session Won!' },
+    session_loss: { icon: '😤', color: '#ef4444', title: 'Session Lost' },
+
+    // BaggerBomb Scoring - Battle events
+    battle_lead_change: { icon: '📊', color: '#8b5cf6', title: 'Lead Change' },
+    green_sweep: { icon: '💚', color: '#10b981', title: 'Green Sweep!' },
+    clean_sweep: { icon: '🧹', color: '#f59e0b', title: 'Clean Sweep!' },
+    battle_complete: { icon: '🏁', color: '#3b82f6', title: 'Battle Complete' },
+    battle_victory: { icon: '🏆', color: '#10b981', title: 'Victory!' },
+    battle_defeat: { icon: '😤', color: '#ef4444', title: 'Defeat' },
+
+    // BaggerBomb Scoring - Substitution events
+    sub_window_open: { icon: '🔄', color: '#8b5cf6', title: 'Sub Window Open' },
+    sub_window_closing: { icon: '⏰', color: '#f59e0b', title: 'Window Closing' },
+    substitution_made: { icon: '↔️', color: '#3b82f6', title: 'Substitution Made' },
+
+    // BaggerBomb Scoring - Opponent events
+    opponent_breakout: { icon: '⚠️', color: '#f59e0b', title: 'Opponent Breakout' },
+    opponent_substitution: { icon: '👀', color: '#6b7280', title: 'Opponent Sub' }
   };
 
   // Load notifications from localStorage
@@ -12326,39 +12407,70 @@ export default function PortfolioDuel() {
 
     const unsubscribe = subscribeToBattles(userId, (firestoreBattles) => {
       console.log('📥 Received Firestore battle update:', firestoreBattles.length, 'battles');
+      debugBattles('Firebase incoming', firestoreBattles);
 
-      if (firestoreBattles.length > 0) {
-        // Convert Firestore format to local format
-        const convertedBattles = firestoreBattles.map(fb => ({
-          id: fb.id,
-          challengeCode: fb.challengeCode,
-          creator: fb.creator?.username || fb.creator,
-          creatorPortfolio: fb.creator?.portfolio || fb.creatorPortfolio,
-          portfolioName: fb.creator?.portfolioName || fb.portfolioName,
-          portfolioType: fb.creator?.portfolioType || fb.portfolioType,
-          opponent: fb.opponent?.username || fb.opponent,
-          opponentPortfolio: fb.opponent?.portfolio || fb.opponentPortfolio,
-          status: fb.state?.status || fb.status,
-          startDate: fb.timeline?.startDate || fb.startDate,
-          endDate: fb.timeline?.endDate || fb.endDate,
-          createdAt: fb.timeline?.createdAt || fb.createdAt,
-          startingPrices: fb.state?.startingPrices || fb.startingPrices,
-          firestoreId: fb.id
-        }));
+      // Convert Firestore format to local format
+      const convertedBattles = firestoreBattles.map(fb => ({
+        id: fb.id,
+        challengeCode: fb.challengeCode,
+        creator: fb.creator?.username || fb.creator,
+        creatorPortfolio: fb.creator?.portfolio || fb.creatorPortfolio,
+        bench: fb.creator?.bench || fb.bench,
+        portfolioName: fb.creator?.portfolioName || fb.portfolioName,
+        portfolioType: fb.creator?.portfolioType || fb.portfolioType,
+        opponent: fb.opponent?.username || fb.opponent,
+        opponentPortfolio: fb.opponent?.portfolio || fb.opponentPortfolio,
+        status: fb.state?.status || fb.status,
+        startDate: fb.timeline?.startDate || fb.startDate,
+        endDate: fb.timeline?.endDate || fb.endDate,
+        createdAt: fb.timeline?.createdAt || fb.createdAt,
+        startingPrices: fb.state?.startingPrices || fb.startingPrices,
+        firestoreId: fb.id,
+        _v: fb._v || 1, // Preserve version marker
+        _source: 'firestore' // Mark source for debugging
+      }));
 
-        // Merge with local battles (prefer Firestore data for matching IDs)
-        setBattles(prevBattles => {
-          const localOnlyBattles = prevBattles.filter(
-            local => !convertedBattles.some(fb => fb.id === local.id || fb.id === local.firestoreId)
-          );
-          const mergedBattles = [...convertedBattles, ...localOnlyBattles];
+      // Merge with local battles (prefer Firestore data for matching IDs)
+      setBattles(prevBattles => {
+        debugBattles('Before Firebase merge', prevBattles);
 
-          // Also update localStorage cache
-          saveBattlesSafe(mergedBattles);
+        // Use a Map to deduplicate by ID, keyed by firestoreId
+        const battleMap = new Map();
 
-          return mergedBattles;
+        // First add ALL local battles (including training battles that don't sync to Firestore)
+        prevBattles.forEach(battle => {
+          const key = battle.firestoreId || battle.id;
+          battleMap.set(key, { ...battle, _source: battle._source || 'local' });
         });
-      }
+
+        // Then merge Firestore battles (update existing, add new)
+        convertedBattles.forEach(battle => {
+          const existingBattle = battleMap.get(battle.id);
+          if (existingBattle) {
+            // Merge: keep local fields, update with Firestore data
+            battleMap.set(battle.id, { ...existingBattle, ...battle, _source: 'firestore' });
+          } else {
+            // New battle from Firestore
+            battleMap.set(battle.id, battle);
+          }
+        });
+
+        const mergedBattles = Array.from(battleMap.values());
+        debugBattles('After Firebase merge', mergedBattles);
+
+        // Only update localStorage if there are actual changes
+        const prevIds = new Set(prevBattles.map(b => b.firestoreId || b.id));
+        const mergedIds = new Set(mergedBattles.map(b => b.firestoreId || b.id));
+        const hasChanges = mergedBattles.length !== prevBattles.length ||
+          [...mergedIds].some(id => !prevIds.has(id));
+
+        if (hasChanges) {
+          saveBattlesSafe(mergedBattles);
+          console.log('💾 Saved merged battles to localStorage');
+        }
+
+        return mergedBattles;
+      });
     });
 
     return () => {
@@ -14235,13 +14347,6 @@ export default function PortfolioDuel() {
       createdAt: new Date().toISOString()
     };
 
-    // Load current battles and add training battle
-    const currentBattles = loadBattlesSafe();
-    const updatedBattles = [...currentBattles, trainingBattle];
-
-    // Save to localStorage (for backward compatibility)
-    saveBattlesSafe(updatedBattles);
-
     // ⭐ SAVE TO FIREBASE for persistence across sessions
     try {
       const { doc, setDoc } = await import('firebase/firestore');
@@ -14313,8 +14418,20 @@ export default function PortfolioDuel() {
       // Continue anyway - localStorage backup exists
     }
 
-    // Update component state
-    setBattles(updatedBattles);
+    // Update component state using functional update to prevent race conditions
+    debugBattles('Before classic training battle creation', battles);
+    setBattles(prevBattles => {
+      // Check if battle already exists (prevent duplicates)
+      const exists = prevBattles.some(b => b.id === trainingBattle.id);
+      if (exists) {
+        console.log('⚠️ Training battle already exists, skipping add');
+        return prevBattles;
+      }
+      const updatedBattles = [...prevBattles, trainingBattle];
+      debugBattles('After classic training battle creation', updatedBattles);
+      saveBattlesSafe(updatedBattles);
+      return updatedBattles;
+    });
     setActiveBattleId(trainingBattle.id);
     setPortfolio([]);
     setPortfolioType(null);
@@ -14325,6 +14442,303 @@ export default function PortfolioDuel() {
 
     // Navigate to dashboard (battle will show as active)
     setScreen('dashboard');
+  };
+
+  // ============================================
+  // BAGGERBOMB TRAINING MODE: CREATE BAGGERBOMB TRAINING BATTLE
+  // ============================================
+  const handleCreateBaggerBombTrainingBattle = async (portfolioData) => {
+    if (!portfolioData.portfolioName?.trim()) {
+      alert('Please enter a portfolio name before starting training');
+      return;
+    }
+
+    // User portfolio is already formatted from PortfolioBuilderBaggerBomb
+    const userPortfolioAssets = (portfolioData.roster || [])
+      .filter(asset => asset && asset.symbol)
+      .map(asset => ({
+        symbol: String(asset.symbol || ''),
+        name: String(asset.name || asset.symbol || ''),
+        price: Number(asset.price) || 0,
+        amount: Number(asset.amount) || 0,
+        position: String(asset.position || 'long')
+      }));
+
+    // User bench assets
+    const userBenchAssets = (portfolioData.bench || [])
+      .filter(asset => asset && asset.symbol)
+      .map(asset => ({
+        symbol: String(asset.symbol || ''),
+        name: String(asset.name || asset.symbol || ''),
+        price: Number(asset.price) || 0,
+        amount: 0,
+        position: 'long'
+      }));
+
+    // Generate CPU portfolio for BaggerBomb mode
+    const cpuPortfolioData = generateCPUPortfolioBaggerBomb(stocksData, cryptoData);
+
+    // Calculate start and end dates (1 hour for training)
+    const now = new Date();
+    const startDate = new Date(now);
+    const TRAINING_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
+    const endDate = new Date(startDate.getTime() + TRAINING_DURATION);
+
+    // Fetch starting prices for all assets
+    const startingPrices = {};
+    const allAssets = [...userPortfolioAssets, ...cpuPortfolioData.portfolio];
+    const uniqueSymbols = [...new Set(allAssets.map(a => a.symbol))];
+
+    for (const symbol of uniqueSymbols) {
+      const asset = allAssets.find(a => a.symbol === symbol);
+      try {
+        const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === symbol);
+
+        if (isCrypto) {
+          const cryptoInfo = POPULAR_CRYPTO.find(c => c.symbol === symbol);
+          const data = await stockAPI.getCryptoPrice(cryptoInfo?.symbol || symbol);
+          startingPrices[symbol] = data.price;
+        } else {
+          const data = await stockAPI.getStockPrice(symbol);
+          startingPrices[symbol] = data.price;
+        }
+      } catch (error) {
+        console.error(`Error fetching price for ${symbol}:`, error);
+        startingPrices[symbol] = asset?.price || 0;
+      }
+    }
+
+    // Update portfolios with locked starting prices
+    const updatedUserPortfolio = userPortfolioAssets.map(asset => ({
+      ...asset,
+      price: startingPrices[asset.symbol] || asset.price
+    }));
+
+    const updatedCPUPortfolio = cpuPortfolioData.portfolio.map(asset => ({
+      ...asset,
+      price: startingPrices[asset.symbol] || asset.price
+    }));
+
+    // Generate unique battle ID for Firebase
+    const battleId = `training_baggerbomb_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const odUserId = user.odUserId || user.username;
+
+    // Create BaggerBomb training battle object (for localStorage compatibility)
+    const trainingBattle = {
+      id: battleId,
+      challengeCode: 'TRAINING', // Special code for training battles
+      creator: user.username,
+      opponent: 'CPU Opponent',
+      creatorPortfolio: updatedUserPortfolio,
+      opponentPortfolio: updatedCPUPortfolio,
+      creatorBench: userBenchAssets,
+      opponentBench: cpuPortfolioData.bench,
+      portfolioName: portfolioData.portfolioName.trim(),
+      portfolioType: 'baggerbomb',
+      _v: 2, // BaggerBomb Scoring version marker
+      status: 'active',
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      startingPrices: startingPrices,
+      thresholds: portfolioData.thresholds || {},
+      isTrainingBattle: true,
+      createdAt: now.toISOString()
+    };
+
+    // Save to Firebase for persistence across sessions
+    try {
+      const { doc, setDoc } = await import('firebase/firestore');
+      const { db } = await import('./firebase/config');
+
+      const firebaseBattle = {
+        _v: 2, // BaggerBomb Scoring version marker
+        id: battleId,
+        mode: 'training',
+        type: 'baggerbomb',
+
+        // Players
+        player1: {
+          odUserId: odUserId,
+          username: user.username,
+          portfolioName: portfolioData.portfolioName.trim(),
+          portfolio: updatedUserPortfolio,
+          bench: userBenchAssets,
+          portfolioType: 'baggerbomb',
+          startValue: 1000000,
+          currentValue: 1000000,
+          percentChange: 0,
+          isCreator: true
+        },
+        player2: {
+          odUserId: 'cpu',
+          username: 'CPU Opponent',
+          portfolioName: 'CPU BaggerBomb Strategy',
+          portfolio: updatedCPUPortfolio,
+          bench: cpuPortfolioData.bench,
+          portfolioType: 'baggerbomb',
+          startValue: 1000000,
+          currentValue: 1000000,
+          percentChange: 0,
+          isCPU: true
+        },
+
+        // Timing
+        timeline: {
+          createdAt: now.toISOString(),
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          completedAt: null
+        },
+
+        // State
+        state: {
+          status: 'active',
+          startingPrices: startingPrices,
+          endingPrices: null
+        },
+
+        // BaggerBomb Scoring specific
+        thresholds: portfolioData.thresholds || {},
+        sessions: {
+          MORNING_BELL: { status: 'pending' },
+          MIDDAY: { status: 'pending' },
+          POWER_HOUR: { status: 'pending' },
+          NIGHT_GAME: { status: 'pending' }
+        },
+
+        // For querying
+        playerIds: [odUserId, 'cpu'],
+        creatorId: odUserId,
+
+        // Metadata
+        challengeCode: null,
+        result: null,
+        challengeIds: [],
+        midGameChallenges: [],
+        halftimeLeader: null,
+        archived: false,
+        updatedAt: now.toISOString()
+      };
+
+      await setDoc(doc(db, 'trainingBattles', battleId), firebaseBattle);
+      console.log('✅ BaggerBomb Training battle saved to Firebase:', battleId);
+    } catch (firebaseError) {
+      console.error('⚠️ Failed to save BaggerBomb training battle to Firebase:', firebaseError);
+      // Continue anyway - localStorage backup exists
+    }
+
+    // Update component state using functional update to prevent race conditions
+    debugBattles('Before BaggerBomb training battle creation', battles);
+    setBattles(prevBattles => {
+      // Check if battle already exists (prevent duplicates)
+      const exists = prevBattles.some(b => b.id === trainingBattle.id);
+      if (exists) {
+        console.log('⚠️ BaggerBomb Training battle already exists, skipping add');
+        return prevBattles;
+      }
+      const updatedBattles = [...prevBattles, trainingBattle];
+      debugBattles('After BaggerBomb training battle creation', updatedBattles);
+      saveBattlesSafe(updatedBattles);
+      return updatedBattles;
+    });
+    setActiveBattleId(trainingBattle.id);
+    setBuilderMode('create');
+    setTrainingBattleType('classic');
+
+    // Navigate to dashboard
+    setScreen('dashboard');
+    showToast(`BaggerBomb Training battle started vs CPU! 🤖🏈`);
+  };
+
+  // Generate CPU portfolio for BaggerBomb mode
+  const generateCPUPortfolioBaggerBomb = (stocks, crypto) => {
+    // Select random stocks with varied thresholds from different sectors
+    const sectors = ['Technology', 'Finance', 'Healthcare', 'Energy', 'Consumer Discretionary', 'Industrials'];
+    const cpuStocks = [];
+
+    // Pick stocks from different sectors
+    sectors.forEach(sector => {
+      const sectorStocks = stocks.filter(s =>
+        s.sector === sector || s.category === sector
+      );
+      if (sectorStocks.length > 0) {
+        const randomStock = sectorStocks[Math.floor(Math.random() * sectorStocks.length)];
+        if (!cpuStocks.find(s => s.symbol === randomStock.symbol)) {
+          cpuStocks.push(randomStock);
+        }
+      }
+    });
+
+    // Fill to 7 stocks if needed
+    while (cpuStocks.length < 7) {
+      const randomStock = stocks[Math.floor(Math.random() * stocks.length)];
+      if (!cpuStocks.find(s => s.symbol === randomStock.symbol)) {
+        cpuStocks.push(randomStock);
+      }
+    }
+
+    // Limit to 7 stocks max
+    const selectedStocks = cpuStocks.slice(0, 7);
+
+    // Distribute allocations evenly (90% for stocks)
+    const allocation = 90 / selectedStocks.length;
+    const portfolio = selectedStocks.map(stock => ({
+      symbol: stock.symbol,
+      name: stock.name || stock.symbol,
+      price: stock.price || 0,
+      amount: Math.round((allocation / 100) * 1000000),
+      position: 'long'
+    }));
+
+    // Add random crypto (10%)
+    const eligibleCrypto = crypto.filter(c =>
+      !c.category || c.category !== 'Stablecoin'
+    ).slice(0, 8);
+    const randomCrypto = eligibleCrypto[Math.floor(Math.random() * eligibleCrypto.length)];
+    if (randomCrypto) {
+      portfolio.push({
+        symbol: randomCrypto.symbol,
+        name: randomCrypto.name || randomCrypto.symbol,
+        price: randomCrypto.price || 0,
+        amount: 100000, // Fixed 10%
+        position: 'long'
+      });
+    }
+
+    // Generate bench (4 stocks + 1 crypto)
+    const bench = [];
+    const usedSymbols = new Set(portfolio.map(p => p.symbol));
+
+    // Add bench stocks
+    for (let i = 0; i < 4 && bench.length < 4; i++) {
+      const randomStock = stocks[Math.floor(Math.random() * stocks.length)];
+      if (!usedSymbols.has(randomStock.symbol)) {
+        usedSymbols.add(randomStock.symbol);
+        bench.push({
+          symbol: randomStock.symbol,
+          name: randomStock.name || randomStock.symbol,
+          price: randomStock.price || 0,
+          amount: 0,
+          position: 'long'
+        });
+      }
+    }
+
+    // Add bench crypto (different from main crypto)
+    const benchCrypto = eligibleCrypto.find(c =>
+      c.symbol !== randomCrypto?.symbol && !usedSymbols.has(c.symbol)
+    );
+    if (benchCrypto) {
+      bench.push({
+        symbol: benchCrypto.symbol,
+        name: benchCrypto.name || benchCrypto.symbol,
+        price: benchCrypto.price || 0,
+        amount: 0,
+        position: 'long'
+      });
+    }
+
+    return { portfolio, bench };
   };
 
   // ============================================
@@ -15255,7 +15669,8 @@ export default function PortfolioDuel() {
     details,
     confirmText,
     confirmColor,
-    tutorialModeType
+    tutorialModeType,
+    customContent // Optional custom content to render before details
   }) => {
     if (!show) return null;
 
@@ -15331,6 +15746,9 @@ export default function PortfolioDuel() {
           }}>
             {subtitle}
           </p>
+
+          {/* Custom Content (e.g., mode toggle) */}
+          {customContent}
 
           {/* Details Box */}
           <div style={{
@@ -18302,17 +18720,15 @@ export default function PortfolioDuel() {
 
   // DASHBOARD SCREEN - New Flowing Card Layout
   if (screen === 'dashboard') {
-    // Get first active battle for preview card
-    const primaryActiveBattle = activeBattles[0];
-    const hasActiveBattle = activeBattles.length > 0;
+    // Helper function to calculate battle preview data for any battle
+    const calculateBattlePreviewData = (battle) => {
+      if (!battle) return null;
+      const isCreator = battle.creator === user.username;
+      const opponent = isCreator ? battle.opponent : battle.creator;
+      const myPortfolio = isCreator ? battle.creatorPortfolio : battle.opponentPortfolio;
+      const theirPortfolio = isCreator ? battle.opponentPortfolio : battle.creatorPortfolio;
 
-    // Calculate battle stats for preview
-    let battlePreviewData = null;
-    if (primaryActiveBattle) {
-      const isCreator = primaryActiveBattle.creator === user.username;
-      const opponent = isCreator ? primaryActiveBattle.opponent : primaryActiveBattle.creator;
-      const myPortfolio = isCreator ? primaryActiveBattle.creatorPortfolio : primaryActiveBattle.opponentPortfolio;
-      const theirPortfolio = isCreator ? primaryActiveBattle.opponentPortfolio : primaryActiveBattle.creatorPortfolio;
+      if (!myPortfolio || !theirPortfolio) return null;
 
       let myValue = 0;
       myPortfolio.forEach(asset => {
@@ -18331,8 +18747,23 @@ export default function PortfolioDuel() {
       const isWinning = myGain > theirGain;
       const leadBy = Math.abs(myGain - theirGain);
 
-      battlePreviewData = { opponent, myGain, theirGain, isWinning, leadBy, myValue, theirValue };
-    }
+      return { opponent, myGain, theirGain, isWinning, leadBy, myValue, theirValue };
+    };
+
+    // Calculate preview data for all active battles
+    const activeBattlesWithData = activeBattles.map(battle => ({
+      battle,
+      previewData: calculateBattlePreviewData(battle)
+    })).filter(item => item.previewData !== null);
+
+    // Debug log battle counts
+    debugBattles('Dashboard render', battles, {
+      activeBattles: activeBattles.length,
+      waitingBattles: waitingBattles.length,
+      completedBattles: completedBattles.length
+    });
+
+    const hasActiveBattle = activeBattlesWithData.length > 0;
 
     // XP calculation for modal
     const xpForNextLevel = 10000;
@@ -18645,6 +19076,7 @@ export default function PortfolioDuel() {
                   id="tour-hamburger-menu"
                   onClick={() => setSidebarOpen(true)}
                   style={{
+                    position: 'relative',
                     minWidth: '44px',
                     minHeight: '44px',
                     padding: '8px',
@@ -18665,6 +19097,30 @@ export default function PortfolioDuel() {
                   <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
                   <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
                   <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
+
+                  {/* Unread notifications badge */}
+                  {unreadCount > 0 && (
+                    <span style={{
+                      position: 'absolute',
+                      top: '4px',
+                      right: '4px',
+                      minWidth: '18px',
+                      height: '18px',
+                      padding: '0 5px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: '#ef4444',
+                      borderRadius: '9px',
+                      color: '#ffffff',
+                      fontSize: '10px',
+                      fontWeight: '700',
+                      lineHeight: 1,
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                    }}>
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
                 </button>
 
                 {/* Get Started Button - Opens Spotlight Tour */}
@@ -18822,183 +19278,238 @@ export default function PortfolioDuel() {
               margin: '0 auto'
             }}
           >
-            {/* Active Battle Preview Card - Only shows when user has active battle */}
-            {hasActiveBattle && primaryActiveBattle && battlePreviewData && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4 }}
-                style={{
-                  background: colors.cardBg,
-                  borderRadius: '16px',
-                  padding: '20px 24px',
-                  marginBottom: '24px',
-                  border: `1px solid ${colors.border}`,
-                  cursor: 'pointer',
-                  transition: 'all 0.3s'
-                }}
-                onClick={() => {
-                  setCurrentBattle(primaryActiveBattle);
-                  setScreen('battle');
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = colors.cyan;
-                  e.currentTarget.style.boxShadow = `0 0 20px ${colors.cyan}30`;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = colors.border;
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
-              >
-                {/* Battle Header */}
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '20px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {primaryActiveBattle.isTrainingBattle && <GraduationCap style={{ height: '16px', width: '16px', color: colors.purple }} />}
+            {/* Active Battles Section - Shows ALL active battles */}
+            {hasActiveBattle && (
+              <div style={{ marginBottom: '24px' }}>
+                {/* Section Header - Only show when multiple battles */}
+                {activeBattlesWithData.length > 1 && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    marginBottom: '16px'
+                  }}>
+                    <Swords style={{ height: '18px', width: '18px', color: colors.cyan }} />
                     <span style={{
-                      fontSize: '13px',
+                      fontSize: '14px',
                       fontWeight: '600',
-                      color: colors.textSecondary,
+                      color: colors.textPrimary,
                       textTransform: 'uppercase',
                       letterSpacing: '1px'
                     }}>
-                      {primaryActiveBattle.isTrainingBattle ? 'TRAINING BATTLE' : 'ACTIVE BATTLE'}: vs {battlePreviewData.opponent}
+                      Active Battles
+                    </span>
+                    <span style={{
+                      background: `${colors.cyan}30`,
+                      color: colors.cyan,
+                      padding: '2px 10px',
+                      borderRadius: '10px',
+                      fontSize: '12px',
+                      fontWeight: '600'
+                    }}>
+                      {activeBattlesWithData.length}
                     </span>
                   </div>
-                  <span style={{
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    color: colors.cyan,
-                    fontFamily: "'SF Mono', 'Monaco', monospace"
-                  }}>
-                    {battleTimer.formatTimeRemaining(primaryActiveBattle)} left
-                  </span>
-                </div>
+                )}
 
-                {/* Player Comparison */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '16px'
-                }}>
-                  {/* You */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{
-                      width: '48px',
-                      height: '48px',
-                      borderRadius: '50%',
-                      background: `linear-gradient(135deg, ${colors.green}30 0%, ${colors.cyan}30 100%)`,
-                      border: `2px solid ${colors.green}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      <User style={{ height: '20px', width: '20px', color: colors.green }} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '13px', color: colors.textSecondary }}>YOU ({user.username})</div>
-                      <div style={{
-                        fontSize: '24px',
-                        fontWeight: 'bold',
-                        color: battlePreviewData.myGain >= 0 ? colors.green : colors.red
-                      }}>
-                        {battlePreviewData.myGain >= 0 ? '+' : ''}{battlePreviewData.myGain.toFixed(1)}%
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Opponent */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexDirection: 'row-reverse' }}>
-                    <div style={{
-                      width: '48px',
-                      height: '48px',
-                      borderRadius: '50%',
-                      background: `linear-gradient(135deg, ${colors.red}30 0%, ${colors.purple}30 100%)`,
-                      border: `2px solid ${colors.red}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      <Target style={{ height: '20px', width: '20px', color: colors.red }} />
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '13px', color: colors.textSecondary }}>OPPONENT</div>
-                      <div style={{
-                        fontSize: '24px',
-                        fontWeight: 'bold',
-                        color: battlePreviewData.theirGain >= 0 ? colors.green : colors.red
-                      }}>
-                        {battlePreviewData.theirGain >= 0 ? '+' : ''}{battlePreviewData.theirGain.toFixed(1)}%
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Progress Bar */}
-                <div style={{
-                  position: 'relative',
-                  height: '8px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '9999px',
-                  overflow: 'hidden',
-                  marginBottom: '12px'
-                }}>
+                {/* Render ALL active battle cards */}
+                {activeBattlesWithData.map(({ battle, previewData }, index) => (
                   <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${(battlePreviewData.myValue / (battlePreviewData.myValue + battlePreviewData.theirValue)) * 100}%` }}
-                    transition={{ duration: 0.6, ease: 'easeOut' }}
+                    key={battle.id || battle.firestoreId || index}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: index * 0.1 }}
                     style={{
-                      position: 'absolute',
-                      height: '100%',
-                      borderRadius: '9999px',
-                      background: battlePreviewData.isWinning
-                        ? 'linear-gradient(90deg, #4ADE80 0%, #10B981 100%)'
-                        : 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)'
-                    }}
-                  />
-                </div>
-
-                {/* Status & Button */}
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <span style={{
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    color: battlePreviewData.isWinning ? colors.green : colors.red
-                  }}>
-                    {battlePreviewData.isWinning ? `LEADING BY +${battlePreviewData.leadBy.toFixed(1)}%` : `TRAILING BY -${battlePreviewData.leadBy.toFixed(1)}%`}
-                  </span>
-                  <button
-                    style={{
-                      padding: '8px 16px',
-                      background: primaryActiveBattle.isTrainingBattle ? colors.purple : colors.cyan,
-                      border: 'none',
-                      borderRadius: '8px',
-                      color: colors.background,
-                      fontSize: '13px',
-                      fontWeight: '600',
+                      background: colors.cardBg,
+                      borderRadius: '16px',
+                      padding: '20px 24px',
+                      marginBottom: index < activeBattlesWithData.length - 1 ? '12px' : 0,
+                      border: `1px solid ${battle.isTrainingBattle ? colors.purple + '60' : colors.border}`,
                       cursor: 'pointer',
-                      transition: 'all 0.2s'
+                      transition: 'all 0.3s'
+                    }}
+                    onClick={() => {
+                      setCurrentBattle(battle);
+                      // Route to BaggerBomb battle view if it's a BaggerBomb battle
+                      if (battle._v === 2) {
+                        setSelectedTDBattle(battle);
+                        setScreen('tdBattleView');
+                      } else {
+                        setScreen('battle');
+                      }
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'scale(1.05)';
+                      e.currentTarget.style.borderColor = battle.isTrainingBattle ? colors.purple : colors.cyan;
+                      e.currentTarget.style.boxShadow = `0 0 20px ${battle.isTrainingBattle ? colors.purple : colors.cyan}30`;
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)';
+                      e.currentTarget.style.borderColor = battle.isTrainingBattle ? colors.purple + '60' : colors.border;
+                      e.currentTarget.style.boxShadow = 'none';
                     }}
                   >
-                    VIEW BATTLE
-                  </button>
-                </div>
-              </motion.div>
+                    {/* Battle Header */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '20px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {battle.isTrainingBattle && <GraduationCap style={{ height: '16px', width: '16px', color: colors.purple }} />}
+                        {battle._v === 2 && (
+                          <span style={{
+                            background: `${colors.purple}30`,
+                            color: colors.purple,
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: '700'
+                          }}>
+                            BB
+                          </span>
+                        )}
+                        <span style={{
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          color: colors.textSecondary,
+                          textTransform: 'uppercase',
+                          letterSpacing: '1px'
+                        }}>
+                          {battle.isTrainingBattle ? 'TRAINING' : 'BATTLE'}: vs {previewData.opponent}
+                        </span>
+                      </div>
+                      <span style={{
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: colors.cyan,
+                        fontFamily: "'SF Mono', 'Monaco', monospace"
+                      }}>
+                        {battleTimer.formatTimeRemaining(battle)} left
+                      </span>
+                    </div>
+
+                    {/* Player Comparison */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: '16px'
+                    }}>
+                      {/* You */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                          width: '48px',
+                          height: '48px',
+                          borderRadius: '50%',
+                          background: `linear-gradient(135deg, ${colors.green}30 0%, ${colors.cyan}30 100%)`,
+                          border: `2px solid ${colors.green}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <User style={{ height: '20px', width: '20px', color: colors.green }} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '13px', color: colors.textSecondary }}>YOU ({user.username})</div>
+                          <div style={{
+                            fontSize: '24px',
+                            fontWeight: 'bold',
+                            color: previewData.myGain >= 0 ? colors.green : colors.red
+                          }}>
+                            {previewData.myGain >= 0 ? '+' : ''}{previewData.myGain.toFixed(1)}%
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Opponent */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexDirection: 'row-reverse' }}>
+                        <div style={{
+                          width: '48px',
+                          height: '48px',
+                          borderRadius: '50%',
+                          background: `linear-gradient(135deg, ${colors.red}30 0%, ${colors.purple}30 100%)`,
+                          border: `2px solid ${colors.red}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <Target style={{ height: '20px', width: '20px', color: colors.red }} />
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '13px', color: colors.textSecondary }}>OPPONENT</div>
+                          <div style={{
+                            fontSize: '24px',
+                            fontWeight: 'bold',
+                            color: previewData.theirGain >= 0 ? colors.green : colors.red
+                          }}>
+                            {previewData.theirGain >= 0 ? '+' : ''}{previewData.theirGain.toFixed(1)}%
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div style={{
+                      position: 'relative',
+                      height: '8px',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      borderRadius: '9999px',
+                      overflow: 'hidden',
+                      marginBottom: '12px'
+                    }}>
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${(previewData.myValue / (previewData.myValue + previewData.theirValue)) * 100}%` }}
+                        transition={{ duration: 0.6, ease: 'easeOut' }}
+                        style={{
+                          position: 'absolute',
+                          height: '100%',
+                          borderRadius: '9999px',
+                          background: previewData.isWinning
+                            ? 'linear-gradient(90deg, #4ADE80 0%, #10B981 100%)'
+                            : 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)'
+                        }}
+                      />
+                    </div>
+
+                    {/* Status & Button */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span style={{
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        color: previewData.isWinning ? colors.green : colors.red
+                      }}>
+                        {previewData.isWinning ? `LEADING BY +${previewData.leadBy.toFixed(1)}%` : `TRAILING BY -${previewData.leadBy.toFixed(1)}%`}
+                      </span>
+                      <button
+                        style={{
+                          padding: '8px 16px',
+                          background: battle.isTrainingBattle ? colors.purple : colors.cyan,
+                          border: 'none',
+                          borderRadius: '8px',
+                          color: colors.background,
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'scale(1.05)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                        }}
+                      >
+                        VIEW BATTLE
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
             )}
 
             {/* Active Draft Battles Section */}
@@ -22728,24 +23239,92 @@ export default function PortfolioDuel() {
         {/* ========== CONFIRMATION POPUPS ========== */}
         <ConfirmationPopup
           show={showCreateBattleConfirm}
-          onClose={() => setShowCreateBattleConfirm(false)}
+          onClose={() => {
+            setShowCreateBattleConfirm(false);
+            setBattleScoringMode('classic'); // Reset to classic when closing
+          }}
           onConfirm={() => {
+            // Check PvP battle limit
+            const activePvPBattles = battles.filter(b =>
+              !b.isTrainingBattle &&
+              (b.status === 'waiting' || b.status === 'active')
+            ).length;
+            if (activePvPBattles >= MAX_PVP_BATTLES) {
+              alert(`You've reached the maximum of ${MAX_PVP_BATTLES} active PvP battles. Complete or delete a battle first.`);
+              setShowCreateBattleConfirm(false);
+              return;
+            }
             setShowCreateBattleConfirm(false);
             setBuilderMode('create');
-            setScreen('builder');
+            // If BaggerBomb mode selected, go to BaggerBomb portfolio builder
+            if (battleScoringMode === 'baggerbomb') {
+              setScreen('tdBuilder');
+            } else {
+              setScreen('builder');
+            }
           }}
           icon={<TrendingUp size={32} style={{ color: '#ffffff' }} />}
-          iconBgColor="#00d9ff"
+          iconBgColor={battleScoringMode === 'baggerbomb' ? '#06b6d4' : '#00d9ff'}
           title="Create Battle?"
-          subtitle="Challenge opponents with your portfolio picks"
-          details={[
+          subtitle={battleScoringMode === 'baggerbomb' ? 'Session-based scoring with breakout bonuses' : 'Challenge opponents with your portfolio picks'}
+          details={battleScoringMode === 'baggerbomb' ? [
+            { label: 'Scoring', value: 'BaggerBomb (4 Sessions)' },
+            { label: 'Roster', value: '6 stocks + 1 crypto' },
+            { label: 'Bench', value: '4 stocks + 1 crypto' },
+            { label: 'Breakout Bonuses', value: '+15 / +30 / +50 pts', highlight: true, highlightColor: '#06b6d4' }
+          ] : [
             { label: 'Assets Required', value: '7-13 picks' },
             { label: 'Duration', value: '24 hours' },
             { label: 'Rewards', value: '+100 XP (win) / +25 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
           ]}
-          confirmText="Create Battle"
-          confirmColor="#00d9ff"
+          confirmText={battleScoringMode === 'baggerbomb' ? 'Create BaggerBomb Battle' : 'Create Battle'}
+          confirmColor={battleScoringMode === 'baggerbomb' ? '#06b6d4' : '#00d9ff'}
           tutorialModeType="classic"
+          customContent={
+            <div style={{
+              display: 'flex',
+              gap: '8px',
+              marginBottom: '16px',
+              padding: '4px',
+              background: 'rgba(255,255,255,0.05)',
+              borderRadius: '12px'
+            }}>
+              <button
+                onClick={() => setBattleScoringMode('classic')}
+                style={{
+                  flex: 1,
+                  padding: '10px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: battleScoringMode === 'classic' ? '#00d9ff' : 'transparent',
+                  color: battleScoringMode === 'classic' ? '#0a0a0a' : 'rgba(255,255,255,0.6)',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Classic
+              </button>
+              <button
+                onClick={() => setBattleScoringMode('baggerbomb')}
+                style={{
+                  flex: 1,
+                  padding: '10px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: battleScoringMode === 'baggerbomb' ? '#06b6d4' : 'transparent',
+                  color: battleScoringMode === 'baggerbomb' ? '#0a0a0a' : 'rgba(255,255,255,0.6)',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                BaggerBomb
+              </button>
+            </div>
+          }
         />
 
         <ConfirmationPopup
@@ -22772,8 +23351,21 @@ export default function PortfolioDuel() {
 
         <ConfirmationPopup
           show={showClassicTrainingConfirm}
-          onClose={() => setShowClassicTrainingConfirm(false)}
+          onClose={() => {
+            setShowClassicTrainingConfirm(false);
+            setTrainingBattleType('classic'); // Reset on close
+          }}
           onConfirm={() => {
+            // Check training battle limit
+            const activeTrainingBattles = battles.filter(b =>
+              b.isTrainingBattle &&
+              (b.status === 'waiting' || b.status === 'active')
+            ).length;
+            if (activeTrainingBattles >= MAX_TRAINING_BATTLES) {
+              alert(`You've reached the maximum of ${MAX_TRAINING_BATTLES} active training battles. Complete or delete a battle first.`);
+              setShowClassicTrainingConfirm(false);
+              return;
+            }
             setShowClassicTrainingConfirm(false);
             setPortfolio([]);
             setPortfolioType(null);
@@ -22782,12 +23374,157 @@ export default function PortfolioDuel() {
             setSearchTerm('');
             setSelectedCrypto(null);
             setBuilderMode('training');
-            setScreen('builder');
+
+            // Route based on battle type selection
+            if (trainingBattleType === 'baggerbomb') {
+              setScreen('trainingPortfolioBuilderTD');
+            } else {
+              setScreen('builder');
+            }
           }}
           icon={<GraduationCap size={32} style={{ color: '#ffffff' }} />}
           iconBgColor="#9333ea"
           title="Start Training Battle?"
           subtitle="Practice against a CPU opponent"
+          customContent={
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{
+                fontSize: '12px',
+                color: 'rgba(255,255,255,0.5)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                marginBottom: '10px',
+                textAlign: 'center'
+              }}>
+                Select Battle Type
+              </div>
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}>
+                {/* Classic Battle Option */}
+                <button
+                  onClick={() => setTrainingBattleType('classic')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '14px',
+                    padding: '14px 16px',
+                    background: trainingBattleType === 'classic'
+                      ? 'rgba(139, 92, 246, 0.15)'
+                      : 'rgba(255,255,255,0.03)',
+                    border: trainingBattleType === 'classic'
+                      ? '2px solid #9333ea'
+                      : '2px solid rgba(255,255,255,0.1)',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    textAlign: 'left'
+                  }}
+                >
+                  <div style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '10px',
+                    background: trainingBattleType === 'classic'
+                      ? 'linear-gradient(135deg, #9333ea 0%, #7c3aed 100%)'
+                      : 'rgba(255,255,255,0.05)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '20px'
+                  }}>
+                    📊
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{
+                      fontSize: '15px',
+                      fontWeight: '600',
+                      color: '#fff',
+                      marginBottom: '3px'
+                    }}>
+                      Classic Battle
+                    </div>
+                    <div style={{
+                      fontSize: '12px',
+                      color: 'rgba(255,255,255,0.5)'
+                    }}>
+                      Simple % returns determine the winner
+                    </div>
+                  </div>
+                </button>
+
+                {/* BaggerBomb Battle Option */}
+                <button
+                  onClick={() => setTrainingBattleType('baggerbomb')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '14px',
+                    padding: '14px 16px',
+                    background: trainingBattleType === 'baggerbomb'
+                      ? 'rgba(16, 185, 129, 0.15)'
+                      : 'rgba(255,255,255,0.03)',
+                    border: trainingBattleType === 'baggerbomb'
+                      ? '2px solid #10b981'
+                      : '2px solid rgba(255,255,255,0.1)',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    textAlign: 'left',
+                    position: 'relative'
+                  }}
+                >
+                  <div style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '10px',
+                    background: trainingBattleType === 'baggerbomb'
+                      ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                      : 'rgba(255,255,255,0.05)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '20px'
+                  }}>
+                    🏈
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{
+                      fontSize: '15px',
+                      fontWeight: '600',
+                      color: '#fff',
+                      marginBottom: '3px'
+                    }}>
+                      BaggerBomb
+                    </div>
+                    <div style={{
+                      fontSize: '12px',
+                      color: 'rgba(255,255,255,0.5)'
+                    }}>
+                      Score points with breakout bonuses
+                    </div>
+                  </div>
+                  {/* NEW Badge */}
+                  <span style={{
+                    position: 'absolute',
+                    top: '8px',
+                    right: '8px',
+                    padding: '3px 6px',
+                    background: 'linear-gradient(135deg, #f59e0b, #ef4444)',
+                    borderRadius: '4px',
+                    fontSize: '9px',
+                    fontWeight: '700',
+                    color: '#fff',
+                    textTransform: 'uppercase'
+                  }}>
+                    NEW
+                  </span>
+                </button>
+              </div>
+            </div>
+          }
           details={[
             { label: 'Assets Required', value: '7-13 picks' },
             { label: 'Duration', value: '1 hour' },
@@ -24451,6 +25188,183 @@ export default function PortfolioDuel() {
             </div>
           </>
         )}
+      </div>
+    );
+  }
+
+  // BAGGERBOMB SCORING PORTFOLIO BUILDER SCREEN
+  if (screen === 'tdBuilder') {
+    return (
+      <div style={containerStyle}>
+        <DesktopBackground isDesktop={isDesktop} />
+
+        <div style={{ minHeight: '100vh', background: '#0d1117', position: 'relative', zIndex: 1 }}>
+          <PortfolioBuilderBaggerBomb
+            stockPrices={stocksData.reduce((acc, s) => {
+              acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
+              return acc;
+            }, {})}
+            cryptoPrices={cryptoData.reduce((acc, c) => {
+              acc[c.symbol] = { price: c.price, percentChange: c.percentChange };
+              return acc;
+            }, {})}
+            thresholds={{}} // Will be fetched in component or passed from volatility service
+            onSubmit={async (portfolioData) => {
+              // Create BaggerBomb battle in Firestore using V2 schema
+              const challengeCode = generateChallengeCode();
+              try {
+                console.log('🔥 Creating BaggerBomb Battle in Firestore...', portfolioData);
+
+                // Portfolio assets - sanitize with strict type coercion
+                const portfolioAssets = (portfolioData.roster || [])
+                  .filter(asset => asset && asset.symbol)
+                  .map(asset => ({
+                    symbol: String(asset.symbol || '').toUpperCase(),
+                    name: String(asset.name || asset.symbol || ''),
+                    price: Number(asset.price) || 0,
+                    amount: Number(asset.amount) || 0,
+                    position: String(asset.position || 'long')
+                  }));
+
+                // Bench assets - sanitize with strict type coercion
+                const benchAssets = (portfolioData.bench || [])
+                  .filter(asset => asset && asset.symbol)
+                  .map(asset => ({
+                    symbol: String(asset.symbol || '').toUpperCase(),
+                    name: String(asset.name || asset.symbol || ''),
+                    price: Number(asset.price) || 0,
+                    amount: 0,
+                    position: 'long'
+                  }));
+
+                // Validate - no empty arrays allowed
+                if (portfolioAssets.length === 0) {
+                  console.error('No portfolio assets provided');
+                  alert('Please add stocks and crypto to your portfolio');
+                  return;
+                }
+
+                // Sanitize thresholds - ensure no undefined values
+                const sanitizedThresholds = {};
+                for (const [symbol, data] of Object.entries(portfolioData.thresholds || {})) {
+                  if (data && typeof data === 'object') {
+                    sanitizedThresholds[symbol] = {
+                      threshold: Number(data.threshold) || 2.0,
+                      rallyThreshold: Number(data.rallyThreshold) || (Number(data.threshold) * 1.5) || 3.0,
+                      moonshotThreshold: Number(data.moonshotThreshold) || (Number(data.threshold) * 2) || 4.0
+                    };
+                  }
+                }
+
+                console.log('📤 Sanitized data:', { portfolioAssets, benchAssets, sanitizedThresholds });
+
+                // Use createBaggerBombBattle for V2 BaggerBomb Scoring battles
+                const firestoreBattle = await createBaggerBombBattle({
+                  challengeCode,
+                  creator: {
+                    uid: String(user.odUserId || user.username || 'anonymous'),
+                    username: String(user.username || 'Player')
+                  },
+                  portfolioName: String(portfolioData.portfolioName || 'BaggerBomb Portfolio').trim(),
+                  portfolioType: 'stocks',
+                  creatorPortfolio: portfolioAssets,
+                  creatorBench: benchAssets
+                  // Note: thresholds are fetched inside createBaggerBombBattle
+                });
+
+                console.log('✅ BaggerBomb Battle created with ID:', firestoreBattle.id);
+
+                // Create local battle object
+                const newBattle = {
+                  id: firestoreBattle.id,
+                  challengeCode: firestoreBattle.challengeCode || challengeCode,
+                  creator: user.username,
+                  creatorPortfolio: portfolioAssets,
+                  bench: benchAssets,
+                  portfolioName: portfolioData.portfolioName || 'BaggerBomb Portfolio',
+                  portfolioType: 'baggerbomb',
+                  _v: 2,
+                  status: 'waiting',
+                  createdAt: new Date().toISOString(),
+                  firestoreId: firestoreBattle.id // Add firestoreId for merge logic
+                };
+
+                // Update state using functional update to prevent race conditions
+                debugBattles('Before BaggerBomb battle creation', battles);
+                setBattles(prevBattles => {
+                  // Check if battle already exists (prevent duplicates)
+                  const exists = prevBattles.some(b =>
+                    b.id === newBattle.id || b.firestoreId === newBattle.id
+                  );
+                  if (exists) {
+                    console.log('⚠️ BaggerBomb Battle already exists, skipping add');
+                    return prevBattles;
+                  }
+                  const updatedBattles = [...prevBattles, newBattle];
+                  debugBattles('After BaggerBomb battle creation', updatedBattles);
+                  saveBattlesSafe(updatedBattles);
+                  return updatedBattles;
+                });
+                setActiveBattleId(newBattle.id);
+                setScreen('dashboard');
+              } catch (error) {
+                console.error('❌ Failed to create BaggerBomb battle:', error);
+                alert(`Failed to create BaggerBomb battle: ${error.message}`);
+              }
+            }}
+            onBack={() => {
+              setScreen('dashboard');
+              setBattleScoringMode('classic');
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // BAGGERBOMB SCORING TRAINING PORTFOLIO BUILDER SCREEN
+  if (screen === 'trainingPortfolioBuilderTD') {
+    return (
+      <div style={containerStyle}>
+        <DesktopBackground isDesktop={isDesktop} />
+
+        <div style={{ minHeight: '100vh', background: '#0d1117', position: 'relative', zIndex: 1 }}>
+          {/* Training Mode Banner */}
+          <div style={{
+            background: 'linear-gradient(135deg, #9333ea 0%, #7c3aed 100%)',
+            padding: '8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px'
+          }}>
+            <span style={{ fontSize: '16px' }}>🤖</span>
+            <span style={{ color: '#fff', fontSize: '13px', fontWeight: '600' }}>
+              Training Mode • BaggerBomb vs CPU
+            </span>
+          </div>
+
+          <PortfolioBuilderBaggerBomb
+            stockPrices={stocksData.reduce((acc, s) => {
+              acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
+              return acc;
+            }, {})}
+            cryptoPrices={cryptoData.reduce((acc, c) => {
+              acc[c.symbol] = { price: c.price, percentChange: c.percentChange };
+              return acc;
+            }, {})}
+            thresholds={{}} // Will be fetched in component
+            onSubmit={async (portfolioData) => {
+              // Create BaggerBomb training battle against CPU
+              await handleCreateBaggerBombTrainingBattle(portfolioData);
+            }}
+            onBack={() => {
+              setScreen('dashboard');
+              setBuilderMode('create');
+              setTrainingBattleType('classic');
+            }}
+          />
+        </div>
       </div>
     );
   }
@@ -26864,10 +27778,20 @@ export default function PortfolioDuel() {
         createdAt: now.toISOString()
       };
 
-      // Save battle
-      const currentBattles = loadBattlesSafe();
-      saveBattlesSafe([...currentBattles, newBattle]);
-      setBattles(prev => [...prev, newBattle]);
+      // Save battle using functional update to prevent race conditions
+      debugBattles('Before draft battle creation', battles);
+      setBattles(prevBattles => {
+        // Check if battle already exists (prevent duplicates)
+        const exists = prevBattles.some(b => b.id === newBattle.id);
+        if (exists) {
+          console.log('⚠️ Draft battle already exists, skipping add');
+          return prevBattles;
+        }
+        const updatedBattles = [...prevBattles, newBattle];
+        debugBattles('After draft battle creation', updatedBattles);
+        saveBattlesSafe(updatedBattles);
+        return updatedBattles;
+      });
 
       // Navigate to dashboard to see the new battle
       setScreen('dashboard');
