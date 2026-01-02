@@ -8159,11 +8159,18 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
         onUpdate({ ...thesis, [currentQ.field]: [...current, optionId] });
       }
     } else {
-      onUpdate({ ...thesis, [currentQ.field]: optionId });
+      const updatedThesis = { ...thesis, [currentQ.field]: optionId };
+      onUpdate(updatedThesis);
+
       // Auto-advance for single select
       setTimeout(() => {
-        if (isLastQuestion) {
-          onComplete({ ...thesis, [currentQ.field]: optionId });
+        // BaggerBomb has its own flow for risk/sectors - skip questions 3 & 4
+        // Complete after question 2 (stance) for baggerbomb battles
+        if (updatedThesis.battleType === 'baggerbomb' && currentQuestion === 2) {
+          console.log('[ThesisBuilder] BaggerBomb detected - completing early to launch dedicated flow');
+          onComplete(updatedThesis);
+        } else if (isLastQuestion) {
+          onComplete(updatedThesis);
         } else {
           setCurrentQuestion(prev => prev + 1);
         }

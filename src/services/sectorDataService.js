@@ -1,19 +1,13 @@
 /**
  * Sector Data Service
  * Fetches and calculates sector-level metrics for Game Plan Generator
+ * Uses Vercel proxy endpoints to avoid CORS issues
  */
 
 import { SECTORS, CRYPTO_SECTOR, SECTOR_ORDER } from '../constants/sectors';
 
-const EODHD_API_KEY = import.meta.env.VITE_EODHD_API_KEY;
-const EODHD_BASE_URL = 'https://eodhd.com/api';
-
-// Verify API key exists
-if (!EODHD_API_KEY) {
-  console.error('[SectorData] EODHD API key not configured! Check VITE_EODHD_API_KEY in .env');
-} else {
-  console.log('[SectorData] API Key configured: Yes');
-}
+// Use proxy endpoints to avoid CORS issues
+const API_BASE = '/api/stocks';
 
 // Cache for sector data (refresh every 15 minutes)
 let sectorCache = {};
@@ -21,27 +15,29 @@ let cacheTimestamp = null;
 const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
 
 /**
- * Fetch historical prices for a symbol with debugging
+ * Fetch historical prices for a symbol via proxy
  */
 const fetchHistoricalPrices = async (symbol, days = 180) => {
   try {
-    const endDate = new Date().toISOString().split('T')[0];
-    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const url = `${API_BASE}/historical?symbol=${encodeURIComponent(symbol)}&days=${days}`;
 
-    const url = `${EODHD_BASE_URL}/eod/${symbol}.US?api_token=${EODHD_API_KEY}&from=${startDate}&to=${endDate}&fmt=json`;
-
-    console.log(`[SectorData] Fetching ${symbol}: ${url.replace(EODHD_API_KEY, 'API_KEY')}`);
+    console.log(`[SectorData] Fetching ${symbol} via proxy`);
 
     const response = await fetch(url);
 
-    console.log(`[SectorData] ${symbol} response status: ${response.status}`);
-
     if (!response.ok) {
-      console.error(`[SectorData] Failed to fetch ${symbol}: ${response.status} ${response.statusText}`);
+      console.error(`[SectorData] Failed to fetch ${symbol}: ${response.status}`);
       return [];
     }
 
-    const data = await response.json();
+    const result = await response.json();
+
+    if (!result.success) {
+      console.error(`[SectorData] API error for ${symbol}:`, result.error);
+      return [];
+    }
+
+    const data = result.data || [];
     console.log(`[SectorData] ${symbol} returned ${data.length} data points`);
 
     if (data.length > 0) {
@@ -56,17 +52,27 @@ const fetchHistoricalPrices = async (symbol, days = 180) => {
 };
 
 /**
- * Fetch technical indicator (SMA) for a symbol
+ * Fetch technical indicator (SMA) for a symbol via proxy
  */
 const fetchSMA = async (symbol, period = 50) => {
   try {
-    const response = await fetch(
-      `${EODHD_BASE_URL}/technical/${symbol}.US?api_token=${EODHD_API_KEY}&function=sma&period=${period}&fmt=json`
-    );
+    const url = `${API_BASE}/technical?symbol=${encodeURIComponent(symbol)}&indicator=sma&period=${period}`;
 
-    if (!response.ok) throw new Error(`Failed to fetch SMA for ${symbol}`);
-    const data = await response.json();
-    return data[data.length - 1]?.sma || null;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      console.error(`[SectorData] Failed to fetch SMA for ${symbol}: ${response.status}`);
+      return null;
+    }
+
+    const result = await response.json();
+
+    if (!result.success) {
+      console.error(`[SectorData] SMA API error for ${symbol}:`, result.error);
+      return null;
+    }
+
+    return result.value;
   } catch (error) {
     console.error(`Error fetching SMA for ${symbol}:`, error);
     return null;

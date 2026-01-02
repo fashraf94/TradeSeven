@@ -1,16 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowLeft, Search, X, Check, TrendingUp, TrendingDown, Info } from 'lucide-react';
 import { SECTORS } from '../../constants/sectors';
 import { stockAPI } from '../../services/eodhdAPI';
-
-// Custom debounce function
-const debounce = (func, wait) => {
-  let timeout;
-  return (...args) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), wait);
-  };
-};
 
 // Sector tags for stocks
 const getSectorTag = (sectorId) => {
@@ -35,7 +26,7 @@ const getInitials = (symbol) => {
   return symbol.substring(0, 2).toUpperCase();
 };
 
-// All searchable stocks
+// All searchable stocks - memoized outside component
 const getAllStocks = () => {
   const allStocks = [];
   Object.entries(SECTORS).forEach(([sectorId, sector]) => {
@@ -52,6 +43,143 @@ const getAllStocks = () => {
   return allStocks;
 };
 
+// Popular stocks fallback when no sectors selected
+const POPULAR_STOCKS = [
+  { symbol: 'AAPL', sector: 'XLK', tag: 'TECHNOLOGY' },
+  { symbol: 'MSFT', sector: 'XLK', tag: 'TECHNOLOGY' },
+  { symbol: 'GOOGL', sector: 'XLC', tag: 'COMMUNICATION' },
+  { symbol: 'AMZN', sector: 'XLY', tag: 'CONSUMER' },
+  { symbol: 'NVDA', sector: 'XLK', tag: 'TECHNOLOGY' },
+  { symbol: 'TSLA', sector: 'XLY', tag: 'CONSUMER' },
+  { symbol: 'META', sector: 'XLC', tag: 'COMMUNICATION' },
+  { symbol: 'JPM', sector: 'XLF', tag: 'FINANCIALS' },
+  { symbol: 'V', sector: 'XLF', tag: 'FINANCIALS' },
+  { symbol: 'UNH', sector: 'XLV', tag: 'HEALTHCARE' },
+  { symbol: 'XOM', sector: 'XLE', tag: 'ENERGY' },
+  { symbol: 'HD', sector: 'XLY', tag: 'CONSUMER' }
+];
+
+// Stock Card Component - defined outside to prevent recreation
+const StockCard = ({ stock, selected, onSelect, disabled, stockData, size = 'normal' }) => {
+  const data = stockData[stock.symbol] || {};
+  const changePercent = data.changePercent || 0;
+
+  const handleClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!disabled) {
+      onSelect(stock);
+    }
+  };
+
+  return (
+    <div
+      onClick={handleClick}
+      role="button"
+      tabIndex={0}
+      onKeyPress={(e) => e.key === 'Enter' && handleClick(e)}
+      style={{
+        backgroundColor: selected ? '#00d9ff15' : '#161b22',
+        border: selected ? '2px solid #00d9ff' : '1px solid #21262d',
+        borderRadius: '12px',
+        padding: size === 'compact' ? '12px' : '16px',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '8px',
+        transition: 'all 0.2s ease',
+        position: 'relative',
+        minWidth: size === 'compact' ? '100px' : '110px',
+        userSelect: 'none',
+        WebkitTapHighlightColor: 'transparent'
+      }}
+    >
+      {/* Selection indicator */}
+      {selected && (
+        <div style={{
+          position: 'absolute',
+          top: '8px',
+          right: '8px',
+          width: '20px',
+          height: '20px',
+          borderRadius: '50%',
+          backgroundColor: '#00d9ff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <Check size={12} color="#000" />
+        </div>
+      )}
+
+      {/* Logo Circle */}
+      <div style={{
+        width: size === 'compact' ? '48px' : '56px',
+        height: size === 'compact' ? '48px' : '56px',
+        borderRadius: '50%',
+        backgroundColor: '#21262d',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: size === 'compact' ? '14px' : '16px',
+        fontWeight: '700',
+        color: '#8b949e',
+        pointerEvents: 'none'
+      }}>
+        {getInitials(stock.symbol)}
+      </div>
+
+      {/* Stock Name */}
+      <div style={{
+        fontWeight: '600',
+        fontSize: size === 'compact' ? '13px' : '14px',
+        color: '#ffffff',
+        textAlign: 'center',
+        pointerEvents: 'none'
+      }}>
+        {stock.symbol}
+      </div>
+
+      {/* Performance Badge */}
+      <div style={{
+        padding: '3px 8px',
+        backgroundColor: changePercent >= 0 ? '#10b98120' : '#ef444420',
+        borderRadius: '10px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '3px',
+        pointerEvents: 'none'
+      }}>
+        {changePercent >= 0 ? (
+          <TrendingUp size={10} color="#10b981" />
+        ) : (
+          <TrendingDown size={10} color="#ef4444" />
+        )}
+        <span style={{
+          fontSize: '11px',
+          fontWeight: '600',
+          color: changePercent >= 0 ? '#10b981' : '#ef4444'
+        }}>
+          {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(1)}%
+        </span>
+      </div>
+
+      {/* Sector Tag */}
+      <div style={{
+        fontSize: '9px',
+        fontWeight: '600',
+        color: '#8b949e',
+        letterSpacing: '0.5px',
+        pointerEvents: 'none'
+      }}>
+        {stock.tag}
+      </div>
+    </div>
+  );
+};
+
 const MustHavePicksScreen = ({
   onBack,
   onNext,
@@ -65,42 +193,67 @@ const MustHavePicksScreen = ({
   const [stockData, setStockData] = useState({});
   const [showSearch, setShowSearch] = useState(false);
 
-  const allStocks = getAllStocks();
+  // Memoize allStocks
+  const allStocks = useMemo(() => getAllStocks(), []);
   const MAX_PICKS = 5;
 
-  // Fetch prices for selected stocks
+  // Fetch prices for displayed stocks
   useEffect(() => {
     const fetchPrices = async () => {
-      if (selectedPicks.length === 0) return;
+      // Fetch prices for selected picks and suggested stocks
+      const stocksToFetch = new Set([
+        ...selectedPicks.map(p => p.symbol),
+        ...suggestedStocks.map(s => s.symbol)
+      ]);
+
+      if (stocksToFetch.size === 0) return;
 
       try {
-        const symbols = selectedPicks.map(p => p.symbol);
+        const symbols = Array.from(stocksToFetch);
         const prices = await stockAPI.getMultipleStockPrices(symbols);
-        setStockData(prices);
+        setStockData(prev => ({ ...prev, ...prices }));
       } catch (error) {
         console.error('Error fetching prices:', error);
       }
     };
 
     fetchPrices();
-  }, [selectedPicks]);
+  }, [selectedPicks.length]); // Only refetch when picks change
 
-  // Get suggested stocks from selected sectors
-  const suggestedStocks = selectedSectors
-    .flatMap(sectorId => {
-      const sector = SECTORS[sectorId];
-      return sector?.topHoldings?.slice(0, 8).map(symbol => ({
-        symbol,
-        sector: sectorId,
-        tag: getSectorTag(sectorId)
-      })) || [];
-    })
-    .filter((stock, index, arr) => arr.findIndex(s => s.symbol === stock.symbol) === index)
-    .slice(0, 12);
+  // Get suggested stocks from selected sectors (or use popular stocks as fallback)
+  const suggestedStocks = useMemo(() => {
+    if (selectedSectors.length === 0) {
+      // No sectors selected - show popular stocks
+      return POPULAR_STOCKS;
+    }
 
-  // Debounced search
-  const debouncedSearch = useCallback(
-    debounce((query) => {
+    return selectedSectors
+      .flatMap(sectorId => {
+        const sector = SECTORS[sectorId];
+        return sector?.topHoldings?.slice(0, 8).map(symbol => ({
+          symbol,
+          sector: sectorId,
+          tag: getSectorTag(sectorId)
+        })) || [];
+      })
+      .filter((stock, index, arr) => arr.findIndex(s => s.symbol === stock.symbol) === index)
+      .slice(0, 12);
+  }, [selectedSectors]);
+
+  // Search handler with debounce
+  const searchTimeoutRef = React.useRef(null);
+
+  const handleSearchChange = useCallback((query) => {
+    setSearchQuery(query);
+    setShowSearch(true);
+
+    // Clear existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // Debounce search
+    searchTimeoutRef.current = setTimeout(() => {
       if (!query.trim()) {
         setSearchResults([]);
         return;
@@ -112,131 +265,39 @@ const MustHavePicksScreen = ({
       ).slice(0, 8);
 
       setSearchResults(results);
-    }, 300),
-    [allStocks]
-  );
+    }, 200);
+  }, [allStocks]);
 
+  // Cleanup timeout on unmount
   useEffect(() => {
-    debouncedSearch(searchQuery);
-  }, [searchQuery, debouncedSearch]);
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
 
-  const handleSelectStock = (stock) => {
-    if (selectedPicks.find(p => p.symbol === stock.symbol)) {
-      setSelectedPicks(prev => prev.filter(p => p.symbol !== stock.symbol));
-    } else if (selectedPicks.length < MAX_PICKS) {
-      setSelectedPicks(prev => [...prev, stock]);
-      setSearchQuery('');
-      setSearchResults([]);
-      setShowSearch(false);
-    }
-  };
+  const handleSelectStock = useCallback((stock) => {
+    console.log('[MustHaves] Selecting stock:', stock.symbol);
+    setSelectedPicks(prev => {
+      const exists = prev.find(p => p.symbol === stock.symbol);
+      if (exists) {
+        console.log('[MustHaves] Deselecting:', stock.symbol);
+        return prev.filter(p => p.symbol !== stock.symbol);
+      } else if (prev.length < MAX_PICKS) {
+        console.log('[MustHaves] Adding:', stock.symbol, 'Count:', prev.length + 1);
+        return [...prev, stock];
+      }
+      return prev;
+    });
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowSearch(false);
+  }, []);
 
-  const isSelected = (symbol) => selectedPicks.some(p => p.symbol === symbol);
-
-  // Stock Card Component
-  const StockCard = ({ stock, size = 'normal' }) => {
-    const selected = isSelected(stock.symbol);
-    const data = stockData[stock.symbol] || {};
-    const changePercent = data.changePercent || 0;
-
-    return (
-      <div
-        onClick={() => handleSelectStock(stock)}
-        style={{
-          backgroundColor: selected ? '#00d9ff15' : '#161b22',
-          border: selected ? '2px solid #00d9ff' : '1px solid #21262d',
-          borderRadius: '12px',
-          padding: size === 'compact' ? '12px' : '16px',
-          cursor: selectedPicks.length >= MAX_PICKS && !selected ? 'not-allowed' : 'pointer',
-          opacity: selectedPicks.length >= MAX_PICKS && !selected ? 0.5 : 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '8px',
-          transition: 'all 0.2s ease',
-          position: 'relative',
-          minWidth: size === 'compact' ? '100px' : '110px'
-        }}
-      >
-        {/* Selection indicator */}
-        {selected && (
-          <div style={{
-            position: 'absolute',
-            top: '8px',
-            right: '8px',
-            width: '20px',
-            height: '20px',
-            borderRadius: '50%',
-            backgroundColor: '#00d9ff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <Check size={12} color="#000" />
-          </div>
-        )}
-
-        {/* Logo Circle */}
-        <div style={{
-          width: size === 'compact' ? '48px' : '56px',
-          height: size === 'compact' ? '48px' : '56px',
-          borderRadius: '50%',
-          backgroundColor: '#21262d',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: size === 'compact' ? '14px' : '16px',
-          fontWeight: '700',
-          color: '#8b949e'
-        }}>
-          {getInitials(stock.symbol)}
-        </div>
-
-        {/* Stock Name */}
-        <div style={{
-          fontWeight: '600',
-          fontSize: size === 'compact' ? '13px' : '14px',
-          color: '#ffffff',
-          textAlign: 'center'
-        }}>
-          {stock.symbol}
-        </div>
-
-        {/* Performance Badge */}
-        <div style={{
-          padding: '3px 8px',
-          backgroundColor: changePercent >= 0 ? '#10b98120' : '#ef444420',
-          borderRadius: '10px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '3px'
-        }}>
-          {changePercent >= 0 ? (
-            <TrendingUp size={10} color="#10b981" />
-          ) : (
-            <TrendingDown size={10} color="#ef4444" />
-          )}
-          <span style={{
-            fontSize: '11px',
-            fontWeight: '600',
-            color: changePercent >= 0 ? '#10b981' : '#ef4444'
-          }}>
-            {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(1)}%
-          </span>
-        </div>
-
-        {/* Sector Tag */}
-        <div style={{
-          fontSize: '9px',
-          fontWeight: '600',
-          color: '#8b949e',
-          letterSpacing: '0.5px'
-        }}>
-          {stock.tag}
-        </div>
-      </div>
-    );
-  };
+  const isSelected = useCallback((symbol) => {
+    return selectedPicks.some(p => p.symbol === symbol);
+  }, [selectedPicks]);
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#0d1117', color: '#ffffff' }}>
@@ -338,7 +399,15 @@ const MustHavePicksScreen = ({
             paddingBottom: '8px'
           }}>
             {selectedPicks.map(pick => (
-              <StockCard key={pick.symbol} stock={pick} size="compact" />
+              <StockCard
+                key={pick.symbol}
+                stock={pick}
+                selected={true}
+                onSelect={handleSelectStock}
+                disabled={false}
+                stockData={stockData}
+                size="compact"
+              />
             ))}
           </div>
         </div>
@@ -359,10 +428,7 @@ const MustHavePicksScreen = ({
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setShowSearch(true);
-            }}
+            onChange={(e) => handleSearchChange(e.target.value)}
             onFocus={() => setShowSearch(true)}
             placeholder="Search stocks (e.g., AAPL, MSFT)..."
             style={{
@@ -406,7 +472,15 @@ const MustHavePicksScreen = ({
             gap: '12px'
           }}>
             {searchResults.map(stock => (
-              <StockCard key={stock.symbol} stock={stock} size="compact" />
+              <StockCard
+                key={stock.symbol}
+                stock={stock}
+                selected={isSelected(stock.symbol)}
+                onSelect={handleSelectStock}
+                disabled={selectedPicks.length >= MAX_PICKS && !isSelected(stock.symbol)}
+                stockData={stockData}
+                size="compact"
+              />
             ))}
           </div>
         )}
@@ -425,7 +499,7 @@ const MustHavePicksScreen = ({
             gap: '8px'
           }}>
             <span style={{ fontSize: '14px' }}>🎯</span>
-            SUGGESTED FROM YOUR SECTORS
+            {selectedSectors.length > 0 ? 'SUGGESTED FROM YOUR SECTORS' : 'POPULAR STOCKS'}
           </div>
           <div style={{
             display: 'grid',
@@ -433,7 +507,14 @@ const MustHavePicksScreen = ({
             gap: '12px'
           }}>
             {suggestedStocks.map(stock => (
-              <StockCard key={stock.symbol} stock={stock} />
+              <StockCard
+                key={stock.symbol}
+                stock={stock}
+                selected={isSelected(stock.symbol)}
+                onSelect={handleSelectStock}
+                disabled={selectedPicks.length >= MAX_PICKS && !isSelected(stock.symbol)}
+                stockData={stockData}
+              />
             ))}
           </div>
         </div>
