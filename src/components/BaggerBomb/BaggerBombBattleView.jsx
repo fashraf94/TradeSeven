@@ -1,12 +1,12 @@
-// TDBattleView - Complete battle view for TD Scoring battles
-// Combines all TD scoring components into a cohesive battle experience
+// BaggerBombBattleView - Complete battle view for BaggerBomb Scoring battles
+// Combines all BaggerBomb scoring components into a cohesive battle experience
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
-// TD Components
-import TDBattleScoreboard from './TDBattleScoreboard';
+// BaggerBomb Components
+import BaggerBombScoreboard from './BaggerBombScoreboard';
 import BreakoutFeed from './BreakoutFeed';
 import AssetPerformanceRow from './AssetPerformanceRow';
 import SubstitutionPanel from './SubstitutionPanel';
@@ -22,8 +22,8 @@ import { isCrypto } from '../../services/sessionScoringService';
 const PRICE_POLL_INTERVAL = 60000;
 
 /**
- * TDBattleView
- * Complete battle view for TD Scoring battles
+ * BaggerBombBattleView
+ * Complete battle view for BaggerBomb Scoring battles
  *
  * @param {Object} props
  * @param {Object} props.battle - Battle document from Firestore
@@ -31,7 +31,7 @@ const PRICE_POLL_INTERVAL = 60000;
  * @param {Function} props.onSubstitute - Callback for substitution actions
  * @param {Function} props.onBack - Callback to go back
  */
-export default function TDBattleView({
+export default function BaggerBombBattleView({
   battle,
   user,
   onSubstitute,
@@ -116,7 +116,7 @@ export default function TDBattleView({
 
       return prices;
     } catch (error) {
-      console.error('[TDBattleView] Error fetching prices:', error);
+      console.error('[BaggerBombBattleView] Error fetching prices:', error);
       setLoadingPrices(false);
       return {};
     }
@@ -302,7 +302,7 @@ export default function TDBattleView({
           )}
 
           {/* Scoreboard */}
-          <TDBattleScoreboard
+          <BaggerBombScoreboard
             battle={battle}
             currentUser={user}
           />

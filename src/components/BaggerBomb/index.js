@@ -1,18 +1,18 @@
-// TDScoring Components
-// UI components for the MarketClash TD Scoring system
+// BaggerBomb Components
+// UI components for the MarketClash BaggerBomb Scoring system
 
 // Battle UI Components
 export { default as SessionScoreCard } from './SessionScoreCard';
 export { default as BreakoutFeed } from './BreakoutFeed';
-export { default as TDBattleScoreboard } from './TDBattleScoreboard';
+export { default as BaggerBombScoreboard } from './BaggerBombScoreboard';
 export { default as AssetPerformanceRow } from './AssetPerformanceRow';
 export { default as SubstitutionPanel } from './SubstitutionPanel';
-export { default as TDBattleView } from './TDBattleView';
+export { default as BaggerBombBattleView } from './BaggerBombBattleView';
 
 // Portfolio Builder Components
 export { default as BenchSelector } from './BenchSelector';
 export { default as ThresholdPreview } from './ThresholdPreview';
-export { default as PortfolioBuilderTD } from './PortfolioBuilderTD';
+export { default as PortfolioBuilderBaggerBomb } from './PortfolioBuilderBaggerBomb';
 export { default as StockDetailModal } from './StockDetailModal';
 
 // Portfolio Builder Sub-Components (Accordion Style)
@@ -23,3 +23,8 @@ export { BenchCard, AddBenchCard } from './BenchCard';
 export { default as ScoringPreviewNew } from './ScoringPreviewNew';
 export { default as BottomActionBar } from './BottomActionBar';
 export { default as StockSearch } from './StockSearch';
+
+// Legacy exports for backwards compatibility during migration
+export { default as TDBattleScoreboard } from './BaggerBombScoreboard';
+export { default as TDBattleView } from './BaggerBombBattleView';
+export { default as PortfolioBuilderTD } from './PortfolioBuilderBaggerBomb';

@@ -3,7 +3,7 @@ import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } f
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
-import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBattleTD } from './firebase/firebaseService';
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
 import './firebase/config';
@@ -15,18 +15,23 @@ import { getWeekAheadEvents } from './data/weekAheadEvents';
 // AI Advisors
 import ResearchAdvisor from './components/ResearchAdvisor';
 import DraftAdvisor from './components/DraftAdvisor';
-// TD Scoring Components
+// BaggerBomb Scoring Components
 import {
   SessionScoreCard,
   BreakoutFeed,
-  TDBattleScoreboard,
+  BaggerBombScoreboard,
   AssetPerformanceRow,
   SubstitutionPanel,
-  PortfolioBuilderTD,
+  PortfolioBuilderBaggerBomb,
   ThresholdPreview,
   BenchSelector,
-  TDBattleView
-} from './components/TDScoring';
+  BaggerBombBattleView
+} from './components/BaggerBomb';
+
+// Legacy aliases for backwards compatibility
+const TDBattleScoreboard = BaggerBombScoreboard;
+const PortfolioBuilderTD = PortfolioBuilderBaggerBomb;
+const TDBattleView = BaggerBombBattleView;
 // Research Mode services
 import { generateGamePlan, enhanceRecommendations, getAssetDeepDive } from './services/researchAdvisor';
 // Snake Draft strategy utilities (consolidated from duplicate code paths)
@@ -10590,8 +10595,8 @@ const isNewWeek = (lastWeekStart) => {
   return getWeekStartDate() !== lastWeekStart;
 };
 
-// Helper to check if battle is TD (V2) format
-const isTDBattle = (battle) => battle?._v === 2;
+// Helper to check if battle is BaggerBomb (V2) format
+const isBaggerBombBattle = (battle) => battle?._v === 2;
 
 // ============================================
 // CHALLENGE MODAL COMPONENT (Placeholder)
@@ -11312,12 +11317,12 @@ export default function PortfolioDuel() {
   const [showClassicTrainingConfirm, setShowClassicTrainingConfirm] = useState(false);
   const [showCreateDraftConfirm, setShowCreateDraftConfirm] = useState(false);
   const [showJoinDraftConfirm, setShowJoinDraftConfirm] = useState(false);
-  const [showCreateTDBattleConfirm, setShowCreateTDBattleConfirm] = useState(false);
-  const [showJoinTDBattleConfirm, setShowJoinTDBattleConfirm] = useState(false);
-  // TD Scoring battle mode selection in create battle confirmation
-  const [battleScoringMode, setBattleScoringMode] = useState('classic'); // 'classic' | 'td'
+  const [showCreateBaggerBombBattleConfirm, setShowCreateBaggerBombBattleConfirm] = useState(false);
+  const [showJoinBaggerBombBattleConfirm, setShowJoinBaggerBombBattleConfirm] = useState(false);
+  // BaggerBomb Scoring battle mode selection in create battle confirmation
+  const [battleScoringMode, setBattleScoringMode] = useState('classic'); // 'classic' | 'baggerbomb'
   // Training Mode battle type selection
-  const [trainingBattleType, setTrainingBattleType] = useState('classic'); // 'classic' | 'td'
+  const [trainingBattleType, setTrainingBattleType] = useState('classic'); // 'classic' | 'baggerbomb'
 
   // Tutorial modal states
   const [showTutorial, setShowTutorial] = useState(false);
@@ -11543,7 +11548,7 @@ export default function PortfolioDuel() {
     friend_battle: { icon: '👋', color: '#06b6d4', title: 'Friend Battle' },
     system: { icon: '📢', color: '#8b949e', title: 'System' },
 
-    // TD Scoring - Breakout events
+    // BaggerBomb Scoring - Breakout events
     breakout: { icon: '🎯', color: '#10b981', title: 'Breakout!' },
     rally: { icon: '🚀', color: '#f59e0b', title: 'Rally!' },
     moonshot: { icon: '🌙', color: '#8b5cf6', title: 'Moonshot!' },
@@ -11551,13 +11556,13 @@ export default function PortfolioDuel() {
     crash: { icon: '💥', color: '#dc2626', title: 'Crash' },
     meltdown: { icon: '🔥', color: '#991b1b', title: 'Meltdown' },
 
-    // TD Scoring - Session events
+    // BaggerBomb Scoring - Session events
     session_start: { icon: '⏱️', color: '#3b82f6', title: 'Session Started' },
     session_complete: { icon: '✓', color: '#10b981', title: 'Session Complete' },
     session_win: { icon: '🏆', color: '#f59e0b', title: 'Session Won!' },
     session_loss: { icon: '😤', color: '#ef4444', title: 'Session Lost' },
 
-    // TD Scoring - Battle events
+    // BaggerBomb Scoring - Battle events
     battle_lead_change: { icon: '📊', color: '#8b5cf6', title: 'Lead Change' },
     green_sweep: { icon: '💚', color: '#10b981', title: 'Green Sweep!' },
     clean_sweep: { icon: '🧹', color: '#f59e0b', title: 'Clean Sweep!' },
@@ -11565,12 +11570,12 @@ export default function PortfolioDuel() {
     battle_victory: { icon: '🏆', color: '#10b981', title: 'Victory!' },
     battle_defeat: { icon: '😤', color: '#ef4444', title: 'Defeat' },
 
-    // TD Scoring - Substitution events
+    // BaggerBomb Scoring - Substitution events
     sub_window_open: { icon: '🔄', color: '#8b5cf6', title: 'Sub Window Open' },
     sub_window_closing: { icon: '⏰', color: '#f59e0b', title: 'Window Closing' },
     substitution_made: { icon: '↔️', color: '#3b82f6', title: 'Substitution Made' },
 
-    // TD Scoring - Opponent events
+    // BaggerBomb Scoring - Opponent events
     opponent_breakout: { icon: '⚠️', color: '#f59e0b', title: 'Opponent Breakout' },
     opponent_substitution: { icon: '👀', color: '#6b7280', title: 'Opponent Sub' }
   };
@@ -14440,15 +14445,15 @@ export default function PortfolioDuel() {
   };
 
   // ============================================
-  // TD TRAINING MODE: CREATE TD TRAINING BATTLE
+  // BAGGERBOMB TRAINING MODE: CREATE BAGGERBOMB TRAINING BATTLE
   // ============================================
-  const handleCreateTDTrainingBattle = async (portfolioData) => {
+  const handleCreateBaggerBombTrainingBattle = async (portfolioData) => {
     if (!portfolioData.portfolioName?.trim()) {
       alert('Please enter a portfolio name before starting training');
       return;
     }
 
-    // User portfolio is already formatted from PortfolioBuilderTD
+    // User portfolio is already formatted from PortfolioBuilderBaggerBomb
     const userPortfolioAssets = (portfolioData.roster || [])
       .filter(asset => asset && asset.symbol)
       .map(asset => ({
@@ -14470,8 +14475,8 @@ export default function PortfolioDuel() {
         position: 'long'
       }));
 
-    // Generate CPU portfolio for TD mode
-    const cpuPortfolioData = generateCPUPortfolioTD(stocksData, cryptoData);
+    // Generate CPU portfolio for BaggerBomb mode
+    const cpuPortfolioData = generateCPUPortfolioBaggerBomb(stocksData, cryptoData);
 
     // Calculate start and end dates (1 hour for training)
     const now = new Date();
@@ -14515,10 +14520,10 @@ export default function PortfolioDuel() {
     }));
 
     // Generate unique battle ID for Firebase
-    const battleId = `training_td_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const battleId = `training_baggerbomb_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const odUserId = user.odUserId || user.username;
 
-    // Create TD training battle object (for localStorage compatibility)
+    // Create BaggerBomb training battle object (for localStorage compatibility)
     const trainingBattle = {
       id: battleId,
       challengeCode: 'TRAINING', // Special code for training battles
@@ -14529,8 +14534,8 @@ export default function PortfolioDuel() {
       creatorBench: userBenchAssets,
       opponentBench: cpuPortfolioData.bench,
       portfolioName: portfolioData.portfolioName.trim(),
-      portfolioType: 'td',
-      _v: 2, // TD Scoring version marker
+      portfolioType: 'baggerbomb',
+      _v: 2, // BaggerBomb Scoring version marker
       status: 'active',
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
@@ -14546,10 +14551,10 @@ export default function PortfolioDuel() {
       const { db } = await import('./firebase/config');
 
       const firebaseBattle = {
-        _v: 2, // TD Scoring version marker
+        _v: 2, // BaggerBomb Scoring version marker
         id: battleId,
         mode: 'training',
-        type: 'td',
+        type: 'baggerbomb',
 
         // Players
         player1: {
@@ -14558,7 +14563,7 @@ export default function PortfolioDuel() {
           portfolioName: portfolioData.portfolioName.trim(),
           portfolio: updatedUserPortfolio,
           bench: userBenchAssets,
-          portfolioType: 'td',
+          portfolioType: 'baggerbomb',
           startValue: 1000000,
           currentValue: 1000000,
           percentChange: 0,
@@ -14567,10 +14572,10 @@ export default function PortfolioDuel() {
         player2: {
           odUserId: 'cpu',
           username: 'CPU Opponent',
-          portfolioName: 'CPU TD Strategy',
+          portfolioName: 'CPU BaggerBomb Strategy',
           portfolio: updatedCPUPortfolio,
           bench: cpuPortfolioData.bench,
-          portfolioType: 'td',
+          portfolioType: 'baggerbomb',
           startValue: 1000000,
           currentValue: 1000000,
           percentChange: 0,
@@ -14592,7 +14597,7 @@ export default function PortfolioDuel() {
           endingPrices: null
         },
 
-        // TD Scoring specific
+        // BaggerBomb Scoring specific
         thresholds: portfolioData.thresholds || {},
         sessions: {
           MORNING_BELL: { status: 'pending' },
@@ -14616,23 +14621,23 @@ export default function PortfolioDuel() {
       };
 
       await setDoc(doc(db, 'trainingBattles', battleId), firebaseBattle);
-      console.log('✅ TD Training battle saved to Firebase:', battleId);
+      console.log('✅ BaggerBomb Training battle saved to Firebase:', battleId);
     } catch (firebaseError) {
-      console.error('⚠️ Failed to save TD training battle to Firebase:', firebaseError);
+      console.error('⚠️ Failed to save BaggerBomb training battle to Firebase:', firebaseError);
       // Continue anyway - localStorage backup exists
     }
 
     // Update component state using functional update to prevent race conditions
-    debugBattles('Before TD training battle creation', battles);
+    debugBattles('Before BaggerBomb training battle creation', battles);
     setBattles(prevBattles => {
       // Check if battle already exists (prevent duplicates)
       const exists = prevBattles.some(b => b.id === trainingBattle.id);
       if (exists) {
-        console.log('⚠️ TD Training battle already exists, skipping add');
+        console.log('⚠️ BaggerBomb Training battle already exists, skipping add');
         return prevBattles;
       }
       const updatedBattles = [...prevBattles, trainingBattle];
-      debugBattles('After TD training battle creation', updatedBattles);
+      debugBattles('After BaggerBomb training battle creation', updatedBattles);
       saveBattlesSafe(updatedBattles);
       return updatedBattles;
     });
@@ -14642,11 +14647,11 @@ export default function PortfolioDuel() {
 
     // Navigate to dashboard
     setScreen('dashboard');
-    showToast(`TD Training battle started vs CPU! 🤖🏈`);
+    showToast(`BaggerBomb Training battle started vs CPU! 🤖🏈`);
   };
 
-  // Generate CPU portfolio for TD mode
-  const generateCPUPortfolioTD = (stocks, crypto) => {
+  // Generate CPU portfolio for BaggerBomb mode
+  const generateCPUPortfolioBaggerBomb = (stocks, crypto) => {
     // Select random stocks with varied thresholds from different sectors
     const sectors = ['Technology', 'Finance', 'Healthcare', 'Energy', 'Consumer Discretionary', 'Industrials'];
     const cpuStocks = [];
@@ -19325,7 +19330,7 @@ export default function PortfolioDuel() {
                     }}
                     onClick={() => {
                       setCurrentBattle(battle);
-                      // Route to TD battle view if it's a TD battle
+                      // Route to BaggerBomb battle view if it's a BaggerBomb battle
                       if (battle._v === 2) {
                         setSelectedTDBattle(battle);
                         setScreen('tdBattleView');
@@ -19360,7 +19365,7 @@ export default function PortfolioDuel() {
                             fontSize: '10px',
                             fontWeight: '700'
                           }}>
-                            TD
+                            BB
                           </span>
                         )}
                         <span style={{
@@ -23251,19 +23256,19 @@ export default function PortfolioDuel() {
             }
             setShowCreateBattleConfirm(false);
             setBuilderMode('create');
-            // If TD mode selected, go to TD portfolio builder
-            if (battleScoringMode === 'td') {
+            // If BaggerBomb mode selected, go to BaggerBomb portfolio builder
+            if (battleScoringMode === 'baggerbomb') {
               setScreen('tdBuilder');
             } else {
               setScreen('builder');
             }
           }}
           icon={<TrendingUp size={32} style={{ color: '#ffffff' }} />}
-          iconBgColor={battleScoringMode === 'td' ? '#06b6d4' : '#00d9ff'}
+          iconBgColor={battleScoringMode === 'baggerbomb' ? '#06b6d4' : '#00d9ff'}
           title="Create Battle?"
-          subtitle={battleScoringMode === 'td' ? 'Session-based scoring with breakout bonuses' : 'Challenge opponents with your portfolio picks'}
-          details={battleScoringMode === 'td' ? [
-            { label: 'Scoring', value: 'TD Scoring (4 Sessions)' },
+          subtitle={battleScoringMode === 'baggerbomb' ? 'Session-based scoring with breakout bonuses' : 'Challenge opponents with your portfolio picks'}
+          details={battleScoringMode === 'baggerbomb' ? [
+            { label: 'Scoring', value: 'BaggerBomb (4 Sessions)' },
             { label: 'Roster', value: '6 stocks + 1 crypto' },
             { label: 'Bench', value: '4 stocks + 1 crypto' },
             { label: 'Breakout Bonuses', value: '+15 / +30 / +50 pts', highlight: true, highlightColor: '#06b6d4' }
@@ -23272,8 +23277,8 @@ export default function PortfolioDuel() {
             { label: 'Duration', value: '24 hours' },
             { label: 'Rewards', value: '+100 XP (win) / +25 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
           ]}
-          confirmText={battleScoringMode === 'td' ? 'Create TD Battle' : 'Create Battle'}
-          confirmColor={battleScoringMode === 'td' ? '#06b6d4' : '#00d9ff'}
+          confirmText={battleScoringMode === 'baggerbomb' ? 'Create BaggerBomb Battle' : 'Create Battle'}
+          confirmColor={battleScoringMode === 'baggerbomb' ? '#06b6d4' : '#00d9ff'}
           tutorialModeType="classic"
           customContent={
             <div style={{
@@ -23302,21 +23307,21 @@ export default function PortfolioDuel() {
                 Classic
               </button>
               <button
-                onClick={() => setBattleScoringMode('td')}
+                onClick={() => setBattleScoringMode('baggerbomb')}
                 style={{
                   flex: 1,
                   padding: '10px 16px',
                   borderRadius: '8px',
                   border: 'none',
-                  background: battleScoringMode === 'td' ? '#06b6d4' : 'transparent',
-                  color: battleScoringMode === 'td' ? '#0a0a0a' : 'rgba(255,255,255,0.6)',
+                  background: battleScoringMode === 'baggerbomb' ? '#06b6d4' : 'transparent',
+                  color: battleScoringMode === 'baggerbomb' ? '#0a0a0a' : 'rgba(255,255,255,0.6)',
                   fontSize: '14px',
                   fontWeight: '600',
                   cursor: 'pointer',
                   transition: 'all 0.2s'
                 }}
               >
-                TD Scoring
+                BaggerBomb
               </button>
             </div>
           }
@@ -23371,7 +23376,7 @@ export default function PortfolioDuel() {
             setBuilderMode('training');
 
             // Route based on battle type selection
-            if (trainingBattleType === 'td') {
+            if (trainingBattleType === 'baggerbomb') {
               setScreen('trainingPortfolioBuilderTD');
             } else {
               setScreen('builder');
@@ -23450,18 +23455,18 @@ export default function PortfolioDuel() {
                   </div>
                 </button>
 
-                {/* TD Battle Option */}
+                {/* BaggerBomb Battle Option */}
                 <button
-                  onClick={() => setTrainingBattleType('td')}
+                  onClick={() => setTrainingBattleType('baggerbomb')}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '14px',
                     padding: '14px 16px',
-                    background: trainingBattleType === 'td'
+                    background: trainingBattleType === 'baggerbomb'
                       ? 'rgba(16, 185, 129, 0.15)'
                       : 'rgba(255,255,255,0.03)',
-                    border: trainingBattleType === 'td'
+                    border: trainingBattleType === 'baggerbomb'
                       ? '2px solid #10b981'
                       : '2px solid rgba(255,255,255,0.1)',
                     borderRadius: '12px',
@@ -23475,7 +23480,7 @@ export default function PortfolioDuel() {
                     width: '42px',
                     height: '42px',
                     borderRadius: '10px',
-                    background: trainingBattleType === 'td'
+                    background: trainingBattleType === 'baggerbomb'
                       ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
                       : 'rgba(255,255,255,0.05)',
                     display: 'flex',
@@ -23492,7 +23497,7 @@ export default function PortfolioDuel() {
                       color: '#fff',
                       marginBottom: '3px'
                     }}>
-                      TD Battle
+                      BaggerBomb
                     </div>
                     <div style={{
                       fontSize: '12px',
@@ -25187,14 +25192,14 @@ export default function PortfolioDuel() {
     );
   }
 
-  // TD SCORING PORTFOLIO BUILDER SCREEN
+  // BAGGERBOMB SCORING PORTFOLIO BUILDER SCREEN
   if (screen === 'tdBuilder') {
     return (
       <div style={containerStyle}>
         <DesktopBackground isDesktop={isDesktop} />
 
         <div style={{ minHeight: '100vh', background: '#0d1117', position: 'relative', zIndex: 1 }}>
-          <PortfolioBuilderTD
+          <PortfolioBuilderBaggerBomb
             stockPrices={stocksData.reduce((acc, s) => {
               acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
               return acc;
@@ -25205,10 +25210,10 @@ export default function PortfolioDuel() {
             }, {})}
             thresholds={{}} // Will be fetched in component or passed from volatility service
             onSubmit={async (portfolioData) => {
-              // Create TD battle in Firestore using V2 schema
+              // Create BaggerBomb battle in Firestore using V2 schema
               const challengeCode = generateChallengeCode();
               try {
-                console.log('🔥 Creating TD Battle in Firestore...', portfolioData);
+                console.log('🔥 Creating BaggerBomb Battle in Firestore...', portfolioData);
 
                 // Portfolio assets - sanitize with strict type coercion
                 const portfolioAssets = (portfolioData.roster || [])
@@ -25253,21 +25258,21 @@ export default function PortfolioDuel() {
 
                 console.log('📤 Sanitized data:', { portfolioAssets, benchAssets, sanitizedThresholds });
 
-                // Use createBattleTD for V2 TD Scoring battles
-                const firestoreBattle = await createBattleTD({
+                // Use createBaggerBombBattle for V2 BaggerBomb Scoring battles
+                const firestoreBattle = await createBaggerBombBattle({
                   challengeCode,
                   creator: {
                     uid: String(user.odUserId || user.username || 'anonymous'),
                     username: String(user.username || 'Player')
                   },
-                  portfolioName: String(portfolioData.portfolioName || 'TD Portfolio').trim(),
+                  portfolioName: String(portfolioData.portfolioName || 'BaggerBomb Portfolio').trim(),
                   portfolioType: 'stocks',
                   creatorPortfolio: portfolioAssets,
                   creatorBench: benchAssets
-                  // Note: thresholds are fetched inside createBattleTD
+                  // Note: thresholds are fetched inside createBaggerBombBattle
                 });
 
-                console.log('✅ TD Battle created with ID:', firestoreBattle.id);
+                console.log('✅ BaggerBomb Battle created with ID:', firestoreBattle.id);
 
                 // Create local battle object
                 const newBattle = {
@@ -25276,8 +25281,8 @@ export default function PortfolioDuel() {
                   creator: user.username,
                   creatorPortfolio: portfolioAssets,
                   bench: benchAssets,
-                  portfolioName: portfolioData.portfolioName || 'TD Portfolio',
-                  portfolioType: 'td',
+                  portfolioName: portfolioData.portfolioName || 'BaggerBomb Portfolio',
+                  portfolioType: 'baggerbomb',
                   _v: 2,
                   status: 'waiting',
                   createdAt: new Date().toISOString(),
@@ -25285,26 +25290,26 @@ export default function PortfolioDuel() {
                 };
 
                 // Update state using functional update to prevent race conditions
-                debugBattles('Before TD battle creation', battles);
+                debugBattles('Before BaggerBomb battle creation', battles);
                 setBattles(prevBattles => {
                   // Check if battle already exists (prevent duplicates)
                   const exists = prevBattles.some(b =>
                     b.id === newBattle.id || b.firestoreId === newBattle.id
                   );
                   if (exists) {
-                    console.log('⚠️ TD Battle already exists, skipping add');
+                    console.log('⚠️ BaggerBomb Battle already exists, skipping add');
                     return prevBattles;
                   }
                   const updatedBattles = [...prevBattles, newBattle];
-                  debugBattles('After TD battle creation', updatedBattles);
+                  debugBattles('After BaggerBomb battle creation', updatedBattles);
                   saveBattlesSafe(updatedBattles);
                   return updatedBattles;
                 });
                 setActiveBattleId(newBattle.id);
                 setScreen('dashboard');
               } catch (error) {
-                console.error('❌ Failed to create TD battle:', error);
-                alert(`Failed to create TD battle: ${error.message}`);
+                console.error('❌ Failed to create BaggerBomb battle:', error);
+                alert(`Failed to create BaggerBomb battle: ${error.message}`);
               }
             }}
             onBack={() => {
@@ -25317,7 +25322,7 @@ export default function PortfolioDuel() {
     );
   }
 
-  // TD SCORING TRAINING PORTFOLIO BUILDER SCREEN
+  // BAGGERBOMB SCORING TRAINING PORTFOLIO BUILDER SCREEN
   if (screen === 'trainingPortfolioBuilderTD') {
     return (
       <div style={containerStyle}>
@@ -25335,11 +25340,11 @@ export default function PortfolioDuel() {
           }}>
             <span style={{ fontSize: '16px' }}>🤖</span>
             <span style={{ color: '#fff', fontSize: '13px', fontWeight: '600' }}>
-              Training Mode • TD Battle vs CPU
+              Training Mode • BaggerBomb vs CPU
             </span>
           </div>
 
-          <PortfolioBuilderTD
+          <PortfolioBuilderBaggerBomb
             stockPrices={stocksData.reduce((acc, s) => {
               acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
               return acc;
@@ -25350,8 +25355,8 @@ export default function PortfolioDuel() {
             }, {})}
             thresholds={{}} // Will be fetched in component
             onSubmit={async (portfolioData) => {
-              // Create TD training battle against CPU
-              await handleCreateTDTrainingBattle(portfolioData);
+              // Create BaggerBomb training battle against CPU
+              await handleCreateBaggerBombTrainingBattle(portfolioData);
             }}
             onBack={() => {
               setScreen('dashboard');

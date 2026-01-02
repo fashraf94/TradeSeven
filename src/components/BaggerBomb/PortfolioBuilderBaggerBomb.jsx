@@ -1,4 +1,4 @@
-// PortfolioBuilderTD - TD Scoring portfolio builder mirroring Classic builder design
+// PortfolioBuilderBaggerBomb - BaggerBomb Scoring portfolio builder mirroring Classic builder design
 // Clean grid selection with cart modal for allocations
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -224,9 +224,9 @@ const getDefaultThresholds = () => {
 };
 
 /**
- * PortfolioBuilderTD - Main component
+ * PortfolioBuilderBaggerBomb - Main component
  */
-export default function PortfolioBuilderTD({
+export default function PortfolioBuilderBaggerBomb({
   onSubmit,
   onBack,
   stockPrices: initialStockPrices = {},

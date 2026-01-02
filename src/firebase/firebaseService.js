@@ -544,7 +544,7 @@ export function subscribeToChallenges(battleId, callback) {
 }
 
 // =====================================================
-// TD SCORING V2 BATTLES
+// BAGGERBOMB SCORING V2 BATTLES
 // =====================================================
 
 /**
@@ -682,14 +682,14 @@ async function fetchAllThresholds(portfolio, bench) {
 }
 
 /**
- * Create a new TD Scoring V2 battle
+ * Create a new BaggerBomb Scoring V2 battle
  *
  * @param {Object} battleData - Battle data
  * @returns {Promise<Object>} - Created battle with Firestore ID
  */
-export async function createBattleTD(battleData) {
+export async function createBaggerBombBattle(battleData) {
   try {
-    console.log('🔥 createBattleTD called with:', battleData);
+    console.log('🔥 createBaggerBombBattle called with:', battleData);
 
     // Validate required data
     if (!battleData.creatorPortfolio || battleData.creatorPortfolio.length === 0) {
@@ -742,14 +742,14 @@ export async function createBattleTD(battleData) {
     }
 
     const battle = {
-      _v: 2,  // Schema version for TD Scoring
+      _v: 2,  // Schema version for BaggerBomb Scoring
 
       challengeCode: String(battleData.challengeCode || ''),
 
       creator: {
         uid: String(battleData.creator?.uid || 'anonymous'),
         username: String(battleData.creator?.username || 'Player'),
-        portfolioName: String(battleData.portfolioName || 'TD Portfolio'),
+        portfolioName: String(battleData.portfolioName || 'BaggerBomb Portfolio'),
         portfolioType: String(battleData.portfolioType || 'stocks'),
         portfolio: sanitizedPortfolio,
         bench: sanitizedBench,
@@ -804,7 +804,7 @@ export async function createBattleTD(battleData) {
       metadata: {
         spectatorCount: 0,
         featured: false,
-        tags: ['td-scoring', 'v2']
+        tags: ['baggerbomb-scoring', 'v2']
       },
 
       archived: false,
@@ -818,26 +818,26 @@ export async function createBattleTD(battleData) {
 
     const battleRef = await addDoc(collection(db, 'battles'), cleanedBattle);
 
-    console.log('✅ TD Scoring battle created:', battleRef.id);
+    console.log('✅ BaggerBomb battle created:', battleRef.id);
 
     return {
       id: battleRef.id,
       ...cleanedBattle
     };
   } catch (error) {
-    console.error('❌ Error creating TD battle:', error);
-    throw new Error(`Failed to create TD Scoring battle: ${error.message}`);
+    console.error('❌ Error creating BaggerBomb battle:', error);
+    throw new Error(`Failed to create BaggerBomb battle: ${error.message}`);
   }
 }
 
 /**
- * Join a TD Scoring V2 battle
+ * Join a BaggerBomb Scoring V2 battle
  *
  * @param {string} challengeCode - 4-character challenge code
  * @param {Object} opponentData - Opponent's data
  * @returns {Promise<Object>} - Updated battle
  */
-export async function joinBattleTD(challengeCode, opponentData) {
+export async function joinBaggerBombBattle(challengeCode, opponentData) {
   try {
     // Find V2 battle by challenge code
     const q = query(
@@ -851,7 +851,7 @@ export async function joinBattleTD(challengeCode, opponentData) {
     const snapshot = await getDocs(q);
 
     if (snapshot.empty) {
-      throw new Error('TD Scoring battle not found or already started');
+      throw new Error('BaggerBomb battle not found or already started');
     }
 
     const battleDoc = snapshot.docs[0];
@@ -940,13 +940,13 @@ export async function joinBattleTD(challengeCode, opponentData) {
       updatedAt: new Date().toISOString()
     });
 
-    console.log('✅ TD Scoring battle joined:', battleDoc.id);
+    console.log('✅ BaggerBomb battle joined:', battleDoc.id);
 
     // Return updated battle
     const updatedBattle = await getBattle(battleDoc.id);
     return updatedBattle;
   } catch (error) {
-    console.error('❌ Error joining TD battle:', error);
+    console.error('❌ Error joining BaggerBomb battle:', error);
     throw error;
   }
 }
@@ -1056,13 +1056,13 @@ export async function addBreakoutEvent(battleId, playerId, breakout) {
 }
 
 /**
- * Complete a TD Scoring V2 battle
+ * Complete a BaggerBomb Scoring V2 battle
  *
  * @param {string} battleId - Battle ID
  * @param {Object} resultData - Final battle results
  * @returns {Promise<void>}
  */
-export async function completeBattleTD(battleId, resultData) {
+export async function completeBaggerBombBattle(battleId, resultData) {
   try {
     const battleRef = doc(db, 'battles', battleId);
 
@@ -1082,9 +1082,9 @@ export async function completeBattleTD(battleId, resultData) {
       updatedAt: new Date().toISOString()
     });
 
-    console.log('✅ TD Scoring battle completed:', battleId);
+    console.log('✅ BaggerBomb battle completed:', battleId);
   } catch (error) {
-    console.error('❌ Error completing TD battle:', error);
+    console.error('❌ Error completing BaggerBomb battle:', error);
     throw error;
   }
 }
@@ -1104,15 +1104,15 @@ export default {
   subscribeToBattles,
   archiveBattle,
 
-  // V2 TD Scoring Battles
+  // V2 BaggerBomb Scoring Battles
   calculateBattleTiming,
-  createBattleTD,
-  joinBattleTD,
+  createBaggerBombBattle,
+  joinBaggerBombBattle,
   updateSessionPrices,
   recordSessionScores,
   updateCurrentSession,
   addBreakoutEvent,
-  completeBattleTD,
+  completeBaggerBombBattle,
 
   // Challenges
   createChallenge,

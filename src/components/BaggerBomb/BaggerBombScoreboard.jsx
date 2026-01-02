@@ -1,5 +1,5 @@
-// TDBattleScoreboard - Main scoreboard showing total scores and session breakdown
-// Central UI component for TD Scoring battles
+// BaggerBombScoreboard - Main scoreboard showing total scores and session breakdown
+// Central UI component for BaggerBomb Scoring battles
 
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
@@ -9,14 +9,14 @@ import SessionScoreCard from './SessionScoreCard';
 const SESSION_ORDER = ['MORNING_BELL', 'MIDDAY', 'POWER_HOUR', 'NIGHT_GAME'];
 
 /**
- * TDBattleScoreboard
+ * BaggerBombScoreboard
  * Main scoreboard showing total scores and session breakdown
  *
  * @param {Object} props
  * @param {Object} props.battle - Battle document from Firestore
  * @param {Object} props.currentUser - Current user object { uid, username }
  */
-export default function TDBattleScoreboard({ battle, currentUser }) {
+export default function BaggerBombScoreboard({ battle, currentUser }) {
   // Determine if current user is creator or opponent
   const isCreator = battle?.creator?.uid === currentUser?.uid;
   const playerKey = isCreator ? 'creator' : 'opponent';

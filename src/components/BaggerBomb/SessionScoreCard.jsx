@@ -1,5 +1,5 @@
 // SessionScoreCard - Displays a single session's scores for both players
-// Used in the TDBattleScoreboard to show session-by-session breakdown
+// Used in the BaggerBombScoreboard to show session-by-session breakdown
 
 import React from 'react';
 import { motion } from 'framer-motion';
