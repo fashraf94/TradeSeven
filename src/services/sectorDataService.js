@@ -8,27 +8,49 @@ import { SECTORS, CRYPTO_SECTOR, SECTOR_ORDER } from '../constants/sectors';
 const EODHD_API_KEY = import.meta.env.VITE_EODHD_API_KEY;
 const EODHD_BASE_URL = 'https://eodhd.com/api';
 
+// Verify API key exists
+if (!EODHD_API_KEY) {
+  console.error('[SectorData] EODHD API key not configured! Check VITE_EODHD_API_KEY in .env');
+} else {
+  console.log('[SectorData] API Key configured: Yes');
+}
+
 // Cache for sector data (refresh every 15 minutes)
 let sectorCache = {};
 let cacheTimestamp = null;
 const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
 
 /**
- * Fetch historical prices for a symbol
+ * Fetch historical prices for a symbol with debugging
  */
 const fetchHistoricalPrices = async (symbol, days = 180) => {
   try {
     const endDate = new Date().toISOString().split('T')[0];
     const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    const response = await fetch(
-      `${EODHD_BASE_URL}/eod/${symbol}.US?api_token=${EODHD_API_KEY}&from=${startDate}&to=${endDate}&fmt=json`
-    );
+    const url = `${EODHD_BASE_URL}/eod/${symbol}.US?api_token=${EODHD_API_KEY}&from=${startDate}&to=${endDate}&fmt=json`;
 
-    if (!response.ok) throw new Error(`Failed to fetch ${symbol}`);
-    return await response.json();
+    console.log(`[SectorData] Fetching ${symbol}: ${url.replace(EODHD_API_KEY, 'API_KEY')}`);
+
+    const response = await fetch(url);
+
+    console.log(`[SectorData] ${symbol} response status: ${response.status}`);
+
+    if (!response.ok) {
+      console.error(`[SectorData] Failed to fetch ${symbol}: ${response.status} ${response.statusText}`);
+      return [];
+    }
+
+    const data = await response.json();
+    console.log(`[SectorData] ${symbol} returned ${data.length} data points`);
+
+    if (data.length > 0) {
+      console.log(`[SectorData] ${symbol} latest price: ${data[data.length - 1]?.adjusted_close || data[data.length - 1]?.close}`);
+    }
+
+    return data;
   } catch (error) {
-    console.error(`Error fetching historical prices for ${symbol}:`, error);
+    console.error(`[SectorData] Error fetching ${symbol}:`, error);
     return [];
   }
 };
@@ -262,6 +284,53 @@ const generateInsight = (sectorData) => {
 };
 
 /**
+ * Fetch ETF technicals (50-day and 200-day MA relationship)
+ */
+const fetchETFTechnicals = async (etfSymbol) => {
+  try {
+    const [sma50, sma200, prices] = await Promise.all([
+      fetchSMA(etfSymbol, 50),
+      fetchSMA(etfSymbol, 200),
+      fetchHistoricalPrices(etfSymbol, 7)
+    ]);
+
+    const currentPrice = prices.length > 0
+      ? (prices[prices.length - 1]?.adjusted_close || prices[prices.length - 1]?.close)
+      : null;
+
+    if (!currentPrice) {
+      console.log(`[SectorData] ETF technicals: No current price for ${etfSymbol}`);
+      return {
+        above50SMA: null,
+        above200SMA: null,
+        distanceFrom50SMA: null,
+        distanceFrom200SMA: null
+      };
+    }
+
+    console.log(`[SectorData] ETF technicals for ${etfSymbol}: price=${currentPrice}, sma50=${sma50}, sma200=${sma200}`);
+
+    return {
+      currentPrice,
+      sma50,
+      sma200,
+      above50SMA: sma50 ? currentPrice > sma50 : null,
+      above200SMA: sma200 ? currentPrice > sma200 : null,
+      distanceFrom50SMA: sma50 ? ((currentPrice - sma50) / sma50) * 100 : null,
+      distanceFrom200SMA: sma200 ? ((currentPrice - sma200) / sma200) * 100 : null
+    };
+  } catch (error) {
+    console.error(`[SectorData] ETF technicals failed for ${etfSymbol}:`, error);
+    return {
+      above50SMA: null,
+      above200SMA: null,
+      distanceFrom50SMA: null,
+      distanceFrom200SMA: null
+    };
+  }
+};
+
+/**
  * Fetch complete sector data
  */
 export const fetchSectorData = async (sectorId) => {
@@ -269,15 +338,20 @@ export const fetchSectorData = async (sectorId) => {
   if (!sector) throw new Error(`Unknown sector: ${sectorId}`);
 
   try {
+    console.log(`[SectorData] Fetching sector data for ${sectorId}...`);
+
     // Fetch ETF performance
     const etfPrices = await fetchHistoricalPrices(sectorId, 180);
     const performance = calculatePerformance(etfPrices);
     const trend = determineTrend(performance);
 
-    // Fetch breadth (parallel with other calls)
-    const [breadth, baggerBombStats] = await Promise.all([
+    console.log(`[SectorData] ${sectorId} performance: week1=${performance.week1?.toFixed(2)}%, month1=${performance.month1?.toFixed(2)}%`);
+
+    // Fetch breadth, BaggerBomb stats, and ETF technicals in parallel
+    const [breadth, baggerBombStats, etfTechnicals] = await Promise.all([
       calculateBreadth(sector.topHoldings),
-      getBaggerBombStats(sectorId)
+      getBaggerBombStats(sectorId),
+      fetchETFTechnicals(sectorId)
     ]);
 
     // Fetch leadership (needs sector performance first)
@@ -295,6 +369,7 @@ export const fetchSectorData = async (sectorId) => {
       breadth,
       leadership,
       baggerBombStats,
+      etfTechnicals,
       insight: '',
       lastUpdated: Date.now()
     };
@@ -304,7 +379,7 @@ export const fetchSectorData = async (sectorId) => {
 
     return sectorData;
   } catch (error) {
-    console.error(`Error fetching sector data for ${sectorId}:`, error);
+    console.error(`[SectorData] Error fetching sector data for ${sectorId}:`, error);
     throw error;
   }
 };

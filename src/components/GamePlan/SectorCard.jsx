@@ -1,5 +1,15 @@
-import React from 'react';
-import { TrendingUp, TrendingDown, Activity, Users, ChevronRight } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  TrendingUp,
+  TrendingDown,
+  ChevronDown,
+  ChevronUp,
+  Activity,
+  Users,
+  Target,
+  BarChart3,
+  Check
+} from 'lucide-react';
 
 const SectorCard = ({
   sector,
@@ -8,6 +18,8 @@ const SectorCard = ({
   onViewDetails,
   compact = false
 }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   const {
     id,
     name,
@@ -18,44 +30,74 @@ const SectorCard = ({
     breadth = {},
     leadership = [],
     baggerBombStats = {},
-    insight = ''
+    insight = '',
+    etfTechnicals = {}
   } = sector;
 
   const formatPercent = (value) => {
-    if (value === undefined || value === null) return '--';
+    if (value === undefined || value === null || isNaN(value)) return '--';
     const sign = value >= 0 ? '+' : '';
     return `${sign}${value.toFixed(1)}%`;
   };
 
   const healthyLeaders = leadership.filter(l => l.healthStatus === '✅').length;
 
-  // Compact version for selection grid
-  if (compact) {
-    return (
-      <div
-        onClick={() => onSelect?.(id)}
-        style={{
-          backgroundColor: isSelected ? `${color}20` : '#161b22',
-          border: isSelected ? `2px solid ${color}` : '1px solid #21262d',
-          borderRadius: '12px',
-          padding: '16px',
-          cursor: 'pointer',
-          transition: 'all 0.2s ease'
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '24px' }}>{emoji}</span>
+  const handleCardClick = (e) => {
+    // Don't trigger select if clicking expand button
+    if (e.target.closest('.expand-button')) return;
+    onSelect?.(id);
+  };
+
+  const handleExpandClick = (e) => {
+    e.stopPropagation();
+    setIsExpanded(!isExpanded);
+  };
+
+  return (
+    <div
+      onClick={handleCardClick}
+      style={{
+        backgroundColor: isSelected ? `${color}15` : '#161b22',
+        border: isSelected ? `2px solid ${color}` : '1px solid #21262d',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease'
+      }}
+    >
+      {/* Main Card Content */}
+      <div style={{ padding: '16px' }}>
+        {/* Header Row */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginBottom: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '10px',
+              backgroundColor: `${color}20`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '20px'
+            }}>
+              {emoji}
+            </div>
             <div>
-              <div style={{ fontWeight: '600', color: '#ffffff' }}>{name}</div>
+              <div style={{ fontWeight: '600', color: '#ffffff', fontSize: '15px' }}>{name}</div>
               <div style={{ fontSize: '12px', color: '#8b949e' }}>{id}</div>
             </div>
           </div>
+
           <div style={{ textAlign: 'right' }}>
             <div style={{
               fontWeight: '600',
-              color: performance.month1 >= 0 ? '#10b981' : '#ef4444',
-              fontSize: '16px'
+              fontSize: '16px',
+              color: performance.month1 >= 0 ? '#10b981' : '#ef4444'
             }}>
               {formatPercent(performance.month1)}
             </div>
@@ -63,282 +105,271 @@ const SectorCard = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ color: trend.color }}>{trend.emoji}</span>
-            <span style={{ color: '#8b949e' }}>{trend.label}</span>
+        {/* Quick Stats Row */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: trend.color || '#8b949e'
+            }} />
+            <span style={{ fontSize: '12px', color: '#8b949e' }}>{trend.label || 'Neutral'}</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span>💣</span>
-            <span style={{ color: '#8b949e' }}>{baggerBombStats.breakouts7d || 0}</span>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: '12px' }}>💣</span>
+              <span style={{ fontSize: '12px', color: '#8b949e' }}>
+                {baggerBombStats.breakouts7d || 0}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Activity size={12} color="#8b949e" />
+              <span style={{ fontSize: '12px', color: '#8b949e' }}>
+                {breadth.percent || 50}%
+              </span>
+            </div>
           </div>
         </div>
 
+        {/* Selected Badge */}
         {isSelected && (
           <div style={{
-            marginTop: '12px',
-            paddingTop: '12px',
-            borderTop: '1px solid #21262d',
-            textAlign: 'center'
+            padding: '6px 12px',
+            backgroundColor: color,
+            borderRadius: '6px',
+            textAlign: 'center',
+            marginBottom: '12px'
           }}>
-            <span style={{ color: color, fontWeight: '600', fontSize: '12px' }}>✓ SELECTED</span>
+            <span style={{ color: '#000', fontWeight: '600', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+              <Check size={14} /> SELECTED
+            </span>
           </div>
         )}
-      </div>
-    );
-  }
 
-  // Full version with all details
-  return (
-    <div
-      style={{
-        backgroundColor: '#161b22',
-        border: isSelected ? `2px solid ${color}` : '1px solid #21262d',
-        borderRadius: '16px',
-        overflow: 'hidden',
-        transition: 'all 0.2s ease'
-      }}
-    >
-      {/* Header */}
-      <div style={{
-        padding: '20px',
-        borderBottom: '1px solid #21262d',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{
-            width: '48px',
-            height: '48px',
-            borderRadius: '12px',
-            backgroundColor: `${color}20`,
+        {/* Expand Button */}
+        <button
+          className="expand-button"
+          onClick={handleExpandClick}
+          style={{
+            width: '100%',
+            padding: '8px',
+            backgroundColor: '#21262d',
+            border: 'none',
+            borderRadius: '6px',
+            color: '#8b949e',
+            fontSize: '12px',
+            cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: '24px'
-          }}>
-            {emoji}
-          </div>
-          <div>
-            <div style={{ fontWeight: '700', fontSize: '18px', color: '#ffffff' }}>{name}</div>
-            <div style={{ fontSize: '13px', color: '#8b949e' }}>{id}</div>
-          </div>
-        </div>
-
-        <div style={{ textAlign: 'right' }}>
-          <div style={{
-            fontWeight: '700',
-            fontSize: '24px',
-            color: performance.month1 >= 0 ? '#10b981' : '#ef4444',
-            display: 'flex',
-            alignItems: 'center',
             gap: '6px'
-          }}>
-            {performance.month1 >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
-            {formatPercent(performance.month1)}
-          </div>
-          <div style={{ fontSize: '12px', color: '#8b949e' }}>1 Month</div>
-        </div>
+          }}
+        >
+          {isExpanded ? 'Hide Details' : 'View Details'}
+          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
       </div>
 
-      {/* Body */}
-      <div style={{ padding: '20px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
-
-          {/* Performance Column */}
-          <div>
-            <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '12px', fontWeight: '600' }}>
+      {/* Expanded Details */}
+      {isExpanded && (
+        <div style={{
+          padding: '16px',
+          borderTop: '1px solid #21262d',
+          backgroundColor: '#0d1117'
+        }}>
+          {/* Performance Grid */}
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '8px', fontWeight: '600' }}>
               PERFORMANCE
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#8b949e', fontSize: '13px' }}>1W</span>
-                <span style={{ color: performance.week1 >= 0 ? '#10b981' : '#ef4444', fontWeight: '500' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+              <div style={{ textAlign: 'center', padding: '8px', backgroundColor: '#161b22', borderRadius: '6px' }}>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: performance.week1 >= 0 ? '#10b981' : '#ef4444' }}>
                   {formatPercent(performance.week1)}
-                </span>
+                </div>
+                <div style={{ fontSize: '10px', color: '#8b949e' }}>1W</div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#8b949e', fontSize: '13px' }}>1M</span>
-                <span style={{ color: performance.month1 >= 0 ? '#10b981' : '#ef4444', fontWeight: '500' }}>
+              <div style={{ textAlign: 'center', padding: '8px', backgroundColor: '#161b22', borderRadius: '6px' }}>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: performance.month1 >= 0 ? '#10b981' : '#ef4444' }}>
                   {formatPercent(performance.month1)}
-                </span>
+                </div>
+                <div style={{ fontSize: '10px', color: '#8b949e' }}>1M</div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#8b949e', fontSize: '13px' }}>3M</span>
-                <span style={{ color: performance.month3 >= 0 ? '#10b981' : '#ef4444', fontWeight: '500' }}>
+              <div style={{ textAlign: 'center', padding: '8px', backgroundColor: '#161b22', borderRadius: '6px' }}>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: performance.month3 >= 0 ? '#10b981' : '#ef4444' }}>
                   {formatPercent(performance.month3)}
-                </span>
+                </div>
+                <div style={{ fontSize: '10px', color: '#8b949e' }}>3M</div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px solid #21262d' }}>
-                <span style={{ color: '#8b949e', fontSize: '13px' }}>Trend</span>
-                <span style={{ color: trend.color, fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div style={{ textAlign: 'center', padding: '8px', backgroundColor: '#161b22', borderRadius: '6px' }}>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: trend.color }}>
                   {trend.emoji} {trend.label}
-                </span>
+                </div>
+                <div style={{ fontSize: '10px', color: '#8b949e' }}>Trend</div>
               </div>
             </div>
           </div>
 
-          {/* BaggerBomb Stats Column */}
-          <div>
-            <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '12px', fontWeight: '600' }}>
-              BAGGERBOMB STATS
+          {/* ETF Technicals */}
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '8px', fontWeight: '600' }}>
+              {id} ETF TECHNICALS
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#8b949e', fontSize: '13px' }}>💣 Breakouts (7d)</span>
-                <span style={{ color: '#10b981', fontWeight: '500' }}>{baggerBombStats.breakouts7d || 0}</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+              <div style={{
+                padding: '10px',
+                backgroundColor: '#161b22',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <BarChart3 size={16} color={etfTechnicals.above50SMA ? '#10b981' : '#ef4444'} />
+                <div>
+                  <div style={{ fontSize: '12px', color: '#fff' }}>
+                    {etfTechnicals.above50SMA ? 'Above' : 'Below'} 50-day MA
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#8b949e' }}>
+                    {etfTechnicals.distanceFrom50SMA ? `${etfTechnicals.distanceFrom50SMA > 0 ? '+' : ''}${etfTechnicals.distanceFrom50SMA.toFixed(1)}%` : '--'}
+                  </div>
+                </div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#8b949e', fontSize: '13px' }}>📉 Busts (7d)</span>
-                <span style={{ color: '#ef4444', fontWeight: '500' }}>{baggerBombStats.busts7d || 0}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#8b949e', fontSize: '13px' }}>Hit Rate</span>
-                <span style={{ color: '#ffffff', fontWeight: '500' }}>{baggerBombStats.hitRate || 0}%</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px solid #21262d' }}>
-                <span style={{ color: '#8b949e', fontSize: '13px' }}>Avg Threshold</span>
-                <span style={{ color: color, fontWeight: '600' }}>{baggerBombStats.avgThreshold || 0}%</span>
+              <div style={{
+                padding: '10px',
+                backgroundColor: '#161b22',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <Target size={16} color={etfTechnicals.above200SMA ? '#10b981' : '#ef4444'} />
+                <div>
+                  <div style={{ fontSize: '12px', color: '#fff' }}>
+                    {etfTechnicals.above200SMA ? 'Above' : 'Below'} 200-day MA
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#8b949e' }}>
+                    {etfTechnicals.distanceFrom200SMA ? `${etfTechnicals.distanceFrom200SMA > 0 ? '+' : ''}${etfTechnicals.distanceFrom200SMA.toFixed(1)}%` : '--'}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Sector Health Row */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '20px',
-          padding: '16px',
-          backgroundColor: '#0d1117',
-          borderRadius: '12px',
-          marginBottom: '20px'
-        }}>
-          <div>
-            <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '8px', fontWeight: '600' }}>
+          {/* Sector Health */}
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '8px', fontWeight: '600' }}>
               SECTOR HEALTH
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Activity size={18} color={breadth.color} />
-              <div>
-                <div style={{ color: '#ffffff', fontWeight: '600' }}>
-                  Breadth: {breadth.percent}%
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+              <div style={{ padding: '10px', backgroundColor: '#161b22', borderRadius: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                  <Activity size={14} color={breadth.color || '#8b949e'} />
+                  <span style={{ fontSize: '12px', color: '#fff' }}>Breadth</span>
                 </div>
-                <div style={{ fontSize: '11px', color: '#8b949e' }}>
-                  Stocks above 50-day MA
+                <div style={{ fontSize: '18px', fontWeight: '600', color: breadth.color || '#8b949e' }}>
+                  {breadth.percent || 50}%
                 </div>
+                <div style={{ fontSize: '10px', color: '#8b949e' }}>Stocks above 50-day</div>
+              </div>
+              <div style={{ padding: '10px', backgroundColor: '#161b22', borderRadius: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                  <Users size={14} color={healthyLeaders >= 5 ? '#10b981' : '#f59e0b'} />
+                  <span style={{ fontSize: '12px', color: '#fff' }}>Leadership</span>
+                </div>
+                <div style={{ fontSize: '18px', fontWeight: '600', color: healthyLeaders >= 5 ? '#10b981' : '#f59e0b' }}>
+                  {healthyLeaders}/{leadership.length}
+                </div>
+                <div style={{ fontSize: '10px', color: '#8b949e' }}>Leaders healthy</div>
               </div>
             </div>
           </div>
 
-          <div>
-            <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '8px', fontWeight: '600' }}>
-              LEADERSHIP
+          {/* BaggerBomb Stats */}
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '8px', fontWeight: '600' }}>
+              BAGGERBOMB STATS (7 DAYS)
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Users size={18} color={healthyLeaders >= 5 ? '#10b981' : healthyLeaders >= 3 ? '#f59e0b' : '#ef4444'} />
-              <div>
-                <div style={{ color: '#ffffff', fontWeight: '600' }}>
-                  {healthyLeaders}/{leadership.length} Healthy
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+              <div style={{ textAlign: 'center', padding: '10px', backgroundColor: '#161b22', borderRadius: '6px' }}>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#10b981' }}>
+                  {baggerBombStats.breakouts7d || 0}
                 </div>
-                <div style={{ fontSize: '11px', color: '#8b949e' }}>
-                  Leaders outperforming
+                <div style={{ fontSize: '10px', color: '#8b949e' }}>💣 Breakouts</div>
+              </div>
+              <div style={{ textAlign: 'center', padding: '10px', backgroundColor: '#161b22', borderRadius: '6px' }}>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#ef4444' }}>
+                  {baggerBombStats.busts7d || 0}
                 </div>
+                <div style={{ fontSize: '10px', color: '#8b949e' }}>📉 Busts</div>
+              </div>
+              <div style={{ textAlign: 'center', padding: '10px', backgroundColor: '#161b22', borderRadius: '6px' }}>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#ffffff' }}>
+                  {baggerBombStats.hitRate || 0}%
+                </div>
+                <div style={{ fontSize: '10px', color: '#8b949e' }}>Hit Rate</div>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Leadership List */}
-        <div style={{ marginBottom: '20px' }}>
-          <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '12px', fontWeight: '600' }}>
-            TOP LEADERS
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {leadership.slice(0, 7).map((leader) => (
-              <div
-                key={leader.symbol}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 12px',
-                  backgroundColor: '#0d1117',
-                  borderRadius: '20px',
-                  fontSize: '13px'
-                }}
-              >
-                <span style={{ fontWeight: '600', color: '#ffffff' }}>{leader.symbol}</span>
-                <span>{leader.healthStatus}</span>
-                <span style={{
-                  color: leader.relativePerformance >= 0 ? '#10b981' : '#ef4444',
-                  fontSize: '11px'
-                }}>
-                  {leader.relativePerformance >= 0 ? '+' : ''}{leader.relativePerformance?.toFixed(1)}%
-                </span>
+          {/* Leadership List */}
+          {leadership.length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '8px', fontWeight: '600' }}>
+                TOP LEADERS
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Insight */}
-        {insight && (
-          <div style={{
-            padding: '14px',
-            backgroundColor: `${color}10`,
-            borderRadius: '10px',
-            borderLeft: `3px solid ${color}`,
-            marginBottom: '20px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-              <span style={{ fontSize: '16px' }}>💡</span>
-              <p style={{ margin: 0, color: '#c9d1d9', fontSize: '13px', lineHeight: '1.5' }}>
-                {insight}
-              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {leadership.slice(0, 7).map((leader) => (
+                  <div
+                    key={leader.symbol}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '4px 10px',
+                      backgroundColor: '#161b22',
+                      borderRadius: '14px',
+                      fontSize: '12px'
+                    }}
+                  >
+                    <span style={{ fontWeight: '600', color: '#fff' }}>{leader.symbol}</span>
+                    <span>{leader.healthStatus}</span>
+                    <span style={{
+                      color: leader.relativePerformance >= 0 ? '#10b981' : '#ef4444',
+                      fontSize: '10px'
+                    }}>
+                      {leader.relativePerformance >= 0 ? '+' : ''}{leader.relativePerformance?.toFixed(1)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Actions */}
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button
-            onClick={() => onViewDetails?.(id)}
-            style={{
-              flex: 1,
+          {/* Insight */}
+          {insight && (
+            <div style={{
               padding: '12px',
-              backgroundColor: '#21262d',
-              border: 'none',
+              backgroundColor: `${color}10`,
               borderRadius: '8px',
-              color: '#c9d1d9',
-              fontWeight: '600',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px'
-            }}
-          >
-            View All Stocks <ChevronRight size={16} />
-          </button>
-
-          <button
-            onClick={() => onSelect?.(id)}
-            style={{
-              flex: 1,
-              padding: '12px',
-              backgroundColor: isSelected ? color : `${color}20`,
-              border: isSelected ? 'none' : `1px solid ${color}`,
-              borderRadius: '8px',
-              color: isSelected ? '#000000' : color,
-              fontWeight: '600',
-              cursor: 'pointer'
-            }}
-          >
-            {isSelected ? '✓ Selected' : 'Select Sector'}
-          </button>
+              borderLeft: `3px solid ${color}`
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                <span style={{ fontSize: '14px' }}>💡</span>
+                <p style={{ margin: 0, color: '#c9d1d9', fontSize: '12px', lineHeight: '1.5' }}>
+                  {insight}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 };

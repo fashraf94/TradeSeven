@@ -480,6 +480,192 @@ export function getAvailableSectors(assets) {
   return Array.from(sectors);
 }
 
+/**
+ * Generate smart fallback recommendations when scoring fails
+ * Analyzes user's must-haves and suggests complementary picks
+ */
+export function generateSmartFallback({
+  mustHavePicks = [],
+  selectedSectors = [],
+  riskStyle = 'balanced'
+}) {
+  // Analyze user's picks
+  const analysis = analyzeMustHaves(mustHavePicks);
+
+  // Get stocks from selected sectors that complement the user's picks
+  const suggestions = getSuggestions(analysis, selectedSectors, riskStyle);
+
+  return {
+    analysis,
+    suggestions,
+    reasoning: generateFallbackReasoning(analysis, suggestions)
+  };
+}
+
+/**
+ * Analyze what the user has picked
+ */
+function analyzeMustHaves(mustHavePicks) {
+  const analysis = {
+    sectors: {},
+    characteristics: [],
+    gaps: []
+  };
+
+  // Count sectors
+  mustHavePicks.forEach(pick => {
+    const sector = getStockSector(pick.symbol) || pick.sector || 'Unknown';
+    analysis.sectors[sector] = (analysis.sectors[sector] || 0) + 1;
+  });
+
+  // Identify characteristics
+  const sectorCount = Object.keys(analysis.sectors).length;
+  const totalPicks = mustHavePicks.length;
+
+  if (sectorCount === 1 && totalPicks > 0) {
+    analysis.characteristics.push('sector-concentrated');
+  } else if (sectorCount >= 3) {
+    analysis.characteristics.push('diversified');
+  }
+
+  // Check for mega-cap bias
+  const megaCaps = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK.B'];
+  const megaCapCount = mustHavePicks.filter(p => megaCaps.includes(p.symbol)).length;
+  if (megaCapCount >= 3) {
+    analysis.characteristics.push('mega-cap-heavy');
+  }
+
+  // Identify gaps
+  const hasTech = analysis.sectors['Technology'] > 0;
+  const hasDefensive = analysis.sectors['Healthcare'] > 0 ||
+                       analysis.sectors['Consumer'] > 0 ||
+                       analysis.sectors['Utilities'] > 0;
+  const hasEnergy = analysis.sectors['Energy'] > 0;
+  const hasFinancials = analysis.sectors['Financials'] > 0;
+
+  if (!hasDefensive && totalPicks > 0) {
+    analysis.gaps.push({ type: 'defensive', reason: 'No defensive/stable picks' });
+  }
+  if (!hasEnergy && !hasFinancials && totalPicks > 0) {
+    analysis.gaps.push({ type: 'cyclical', reason: 'No cyclical exposure' });
+  }
+  if (megaCapCount === totalPicks && totalPicks > 0) {
+    analysis.gaps.push({ type: 'mid-cap', reason: 'All mega-caps, no mid-cap growth' });
+  }
+
+  return analysis;
+}
+
+/**
+ * Get suggestions based on analysis
+ */
+function getSuggestions(analysis, selectedSectors, riskStyle) {
+  const suggestions = {
+    breakoutCandidates: [],
+    safePlays: [],
+    reasoning: []
+  };
+
+  // Breakout candidates based on gaps
+  if (analysis.gaps.find(g => g.type === 'mid-cap')) {
+    suggestions.breakoutCandidates.push(
+      { symbol: 'AMD', reason: 'Mid-cap semiconductor with high volatility', tag: 'MID-CAP GROWTH' },
+      { symbol: 'MRVL', reason: 'Chip momentum play', tag: 'SEMICONDUCTOR' },
+      { symbol: 'PLTR', reason: 'AI/Data mid-cap with swing potential', tag: 'AI/DATA' }
+    );
+    suggestions.reasoning.push('Adding mid-cap growth for higher breakout potential');
+  }
+
+  if (analysis.characteristics.includes('sector-concentrated')) {
+    // Add diversification picks
+    const diversificationPicks = {
+      Technology: [
+        { symbol: 'XOM', reason: 'Energy diversification', tag: 'ENERGY' },
+        { symbol: 'JPM', reason: 'Financials exposure', tag: 'FINANCIALS' }
+      ],
+      Financials: [
+        { symbol: 'NVDA', reason: 'Tech growth exposure', tag: 'TECHNOLOGY' },
+        { symbol: 'XOM', reason: 'Energy hedge', tag: 'ENERGY' }
+      ],
+      Energy: [
+        { symbol: 'MSFT', reason: 'Tech stability', tag: 'TECHNOLOGY' },
+        { symbol: 'UNH', reason: 'Healthcare defensive', tag: 'HEALTHCARE' }
+      ]
+    };
+
+    const concentratedSector = Object.keys(analysis.sectors)[0];
+    const picks = diversificationPicks[concentratedSector] || diversificationPicks.Technology;
+    suggestions.breakoutCandidates.push(...picks);
+    suggestions.reasoning.push('Adding sector diversification to reduce correlation risk');
+  }
+
+  // Safe plays based on gaps
+  if (analysis.gaps.find(g => g.type === 'defensive')) {
+    suggestions.safePlays.push(
+      { symbol: 'JNJ', reason: 'Healthcare defensive with low volatility', tag: 'HEALTHCARE' },
+      { symbol: 'PG', reason: 'Consumer staples stability', tag: 'STAPLES' },
+      { symbol: 'KO', reason: 'Consistent performer, low bust risk', tag: 'STAPLES' }
+    );
+    suggestions.reasoning.push('Adding defensive plays to reduce bust risk');
+  }
+
+  // Risk-style adjustments
+  if (riskStyle === 'aggressive' && suggestions.breakoutCandidates.length < 4) {
+    suggestions.breakoutCandidates.push(
+      { symbol: 'COIN', reason: 'High volatility crypto-adjacent', tag: 'FINTECH' },
+      { symbol: 'RIVN', reason: 'EV momentum play', tag: 'EV' }
+    );
+  }
+
+  if (riskStyle === 'conservative' && suggestions.safePlays.length < 3) {
+    suggestions.safePlays.push(
+      { symbol: 'BRK.B', reason: 'Diversified conglomerate', tag: 'DIVERSIFIED' },
+      { symbol: 'V', reason: 'Stable fintech leader', tag: 'FINTECH' }
+    );
+  }
+
+  // Default fallback if nothing was added
+  if (suggestions.breakoutCandidates.length === 0 && suggestions.safePlays.length === 0) {
+    suggestions.breakoutCandidates = [
+      { symbol: 'NVDA', reason: 'AI leader with momentum', tag: 'TECHNOLOGY' },
+      { symbol: 'AMD', reason: 'Semiconductor growth', tag: 'TECHNOLOGY' },
+      { symbol: 'AAPL', reason: 'Mega-cap stability with upside', tag: 'TECHNOLOGY' }
+    ];
+    suggestions.safePlays = [
+      { symbol: 'JNJ', reason: 'Healthcare blue chip', tag: 'HEALTHCARE' },
+      { symbol: 'KO', reason: 'Consumer staples stability', tag: 'STAPLES' }
+    ];
+    suggestions.reasoning.push('Balanced mix of growth and stability');
+  }
+
+  return suggestions;
+}
+
+/**
+ * Generate human-readable reasoning
+ */
+function generateFallbackReasoning(analysis, suggestions) {
+  const parts = [];
+
+  if (analysis.characteristics.includes('mega-cap-heavy')) {
+    parts.push('Your picks are mega-cap heavy');
+  }
+  if (analysis.characteristics.includes('sector-concentrated')) {
+    const sector = Object.keys(analysis.sectors)[0];
+    parts.push(`concentrated in ${sector}`);
+  }
+
+  if (suggestions.reasoning.length > 0) {
+    parts.push(suggestions.reasoning.join('. '));
+  }
+
+  if (parts.length === 0) {
+    return 'Based on your selections, here are complementary picks to balance your portfolio.';
+  }
+
+  return parts.join('. ') + '.';
+}
+
 export default {
   calculateThesisAlignment,
   getRecommendations,
@@ -488,5 +674,6 @@ export default {
   getAvailableSectors,
   getStockSector,
   getAssetVolatility,
+  generateSmartFallback,
   STOCK_SECTORS,
 };

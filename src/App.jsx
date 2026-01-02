@@ -29,7 +29,7 @@ import {
   BaggerBombBattleViewRedesign
 } from './components/BaggerBomb';
 // BaggerBomb Game Plan Flow
-import { BaggerBombGamePlanFlow } from './components/GamePlan';
+import { BaggerBombGamePlanFlow, RiskStyleScreen, SectorSelectionScreen } from './components/GamePlan';
 
 // Legacy aliases for backwards compatibility
 const TDBattleScoreboard = BaggerBombScoreboard;
@@ -8135,34 +8135,15 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
     },
     {
       id: 3,
-      title: "Any sector focus?",
-      subtitle: "Select up to 2 sectors, or skip for all",
-      multiSelect: true,
-      maxSelections: 2,
-      options: [
-        { id: 'Technology', label: '💻 Tech', color: c.cyan },
-        { id: 'Financials', label: '🏦 Finance', color: '#10b981' },
-        { id: 'Healthcare', label: '🏥 Healthcare', color: '#f43f5e' },
-        { id: 'Energy', label: '⚡ Energy', color: '#ef4444' },
-        { id: 'Consumer Discretionary', label: '🛍️ Consumer', color: '#f59e0b' },
-        { id: 'Industrials', label: '🏭 Industrial', color: '#6366f1' },
-        { id: 'Layer 1', label: '🔷 L1 Crypto', color: '#8b5cf6' },
-        { id: 'DeFi', label: '🏛️ DeFi', color: '#14b8a6' },
-        { id: 'Meme', label: '🐕 Meme Coins', color: '#ec4899' },
-      ],
-      field: 'sectors',
-      skippable: true,
+      title: "Risk Style",
+      field: 'risk',
+      useNewScreen: 'RiskStyleScreen', // Use new GamePlan screen
     },
     {
       id: 4,
-      title: "Risk tolerance?",
-      subtitle: "How much volatility can you handle?",
-      options: [
-        { id: 'aggressive', label: '🔥 Aggressive', description: 'High risk, high reward', color: c.red },
-        { id: 'balanced', label: '⚖️ Balanced', description: 'Mix of growth and stability', color: '#f59e0b' },
-        { id: 'conservative', label: '🛡️ Conservative', description: 'Protect downside first', color: c.green },
-      ],
-      field: 'risk',
+      title: "Sector Focus",
+      field: 'sectors',
+      useNewScreen: 'SectorSelectionScreen', // Use new GamePlan screen
     },
   ];
 
@@ -8213,6 +8194,35 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
     return thesis[currentQ.field] === optionId;
   };
 
+  // Render new GamePlan screens for questions 3 and 4
+  if (currentQ.useNewScreen === 'RiskStyleScreen') {
+    return (
+      <RiskStyleScreen
+        onBack={handleBack}
+        onNext={(riskStyle) => {
+          onUpdate({ ...thesis, risk: riskStyle });
+          setTimeout(() => setCurrentQuestion(prev => prev + 1), 100);
+        }}
+        selectedStyle={thesis.risk}
+      />
+    );
+  }
+
+  if (currentQ.useNewScreen === 'SectorSelectionScreen') {
+    return (
+      <SectorSelectionScreen
+        onBack={handleBack}
+        onNext={(selectedSectors) => {
+          const updatedThesis = { ...thesis, sectors: selectedSectors };
+          onUpdate(updatedThesis);
+          onComplete(updatedThesis);
+        }}
+        riskStyle={thesis.risk || 'balanced'}
+        maxSelections={2}
+      />
+    );
+  }
+
   return (
     <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
       {/* Header */}
@@ -8256,7 +8266,7 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
         gap: '12px',
         marginBottom: '24px',
       }}>
-        {currentQ.options.map(option => {
+        {currentQ.options?.map(option => {
           const selected = isSelected(option.id);
 
           // Gradient icon SVGs for market stance
