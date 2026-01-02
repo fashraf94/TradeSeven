@@ -3,7 +3,7 @@ import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } f
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
-import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle } from './firebase/firebaseService';
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, joinBaggerBombBattle } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
 import './firebase/config';
@@ -11324,6 +11324,8 @@ export default function PortfolioDuel() {
   const [battleScoringMode, setBattleScoringMode] = useState('classic'); // 'classic' | 'baggerbomb'
   // Training Mode battle type selection
   const [trainingBattleType, setTrainingBattleType] = useState('classic'); // 'classic' | 'baggerbomb'
+  // Join Battle type selection
+  const [joinBattleType, setJoinBattleType] = useState('classic'); // 'classic' | 'baggerbomb'
 
   // Tutorial modal states
   const [showTutorial, setShowTutorial] = useState(false);
@@ -25387,6 +25389,80 @@ export default function PortfolioDuel() {
     );
   }
 
+  // BAGGERBOMB SCORING JOIN PORTFOLIO BUILDER SCREEN
+  if (screen === 'joinPortfolioBuilderTD') {
+    return (
+      <div style={containerStyle}>
+        <DesktopBackground isDesktop={isDesktop} />
+
+        <div style={{ minHeight: '100vh', background: '#0d1117', position: 'relative', zIndex: 1 }}>
+          {/* Join Mode Banner */}
+          <div style={{
+            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+            padding: '8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px'
+          }}>
+            <span style={{ fontSize: '16px' }}>💣</span>
+            <span style={{ color: '#fff', fontSize: '13px', fontWeight: '600' }}>
+              Join BaggerBomb Battle • Code: {joinCode}
+            </span>
+          </div>
+
+          <PortfolioBuilderBaggerBomb
+            stockPrices={stocksData.reduce((acc, s) => {
+              acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
+              return acc;
+            }, {})}
+            cryptoPrices={cryptoData.reduce((acc, c) => {
+              acc[c.symbol] = { price: c.price, percentChange: c.percentChange };
+              return acc;
+            }, {})}
+            thresholds={{}} // Will be fetched in component
+            onSubmit={async (portfolioData) => {
+              // Join BaggerBomb battle with portfolio
+              try {
+                const opponentData = {
+                  odUserId: user?.odUserId || user?.uid,
+                  username: user?.username || user?.email?.split('@')[0] || 'Anonymous',
+                  portfolio: portfolioData.portfolio,
+                  bench: portfolioData.bench || [],
+                  allocations: portfolioData.allocations || {}
+                };
+
+                const joinedBattle = await joinBaggerBombBattle(joinCode, opponentData);
+
+                if (joinedBattle) {
+                  // Add to local battles list
+                  const updatedBattles = [...battles, joinedBattle];
+                  setBattles(updatedBattles);
+                  saveBattlesSafe(updatedBattles);
+
+                  // Navigate to battle view
+                  setCurrentBattle(joinedBattle);
+                  setScreen('battle');
+                  setJoinCode('');
+                  setJoinBattleType('classic');
+                } else {
+                  alert('Could not find a battle with that code. Make sure the code is correct and the battle hasn\'t started yet.');
+                }
+              } catch (error) {
+                console.error('Error joining BaggerBomb battle:', error);
+                alert('Error joining battle: ' + (error.message || 'Unknown error'));
+              }
+            }}
+            onBack={() => {
+              setScreen('join');
+              setJoinBattleType('classic');
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // BAGGERBOMB SCORING TRAINING PORTFOLIO BUILDER SCREEN
   if (screen === 'trainingPortfolioBuilderTD') {
     return (
@@ -25454,7 +25530,7 @@ export default function PortfolioDuel() {
             zIndex: 50
           }}>
             <button
-              onClick={() => { setJoinCode(''); setBuilderMode('create'); setScreen('dashboard'); }}
+              onClick={() => { setJoinCode(''); setJoinBattleType('classic'); setBuilderMode('create'); setScreen('dashboard'); }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -25539,15 +25615,155 @@ export default function PortfolioDuel() {
                   boxSizing: 'border-box',
                   background: 'rgba(0, 0, 0, 0.3)',
                   color: '#ffffff',
-                  marginBottom: '24px'
+                  marginBottom: '20px'
                 }}
               />
+
+              {/* Battle Type Selection */}
+              <div style={{ marginBottom: '24px' }}>
+                <div style={{
+                  fontSize: '12px',
+                  color: 'rgba(255,255,255,0.5)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  marginBottom: '10px',
+                  textAlign: 'center'
+                }}>
+                  Select Battle Type
+                </div>
+                <div style={{
+                  display: 'flex',
+                  gap: '10px'
+                }}>
+                  {/* Classic Battle Option */}
+                  <button
+                    onClick={() => setJoinBattleType('classic')}
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '14px 12px',
+                      background: joinBattleType === 'classic'
+                        ? 'rgba(6, 182, 212, 0.15)'
+                        : 'rgba(255,255,255,0.03)',
+                      border: joinBattleType === 'classic'
+                        ? '2px solid #06b6d4'
+                        : '2px solid rgba(255,255,255,0.1)',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <div style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '8px',
+                      background: joinBattleType === 'classic'
+                        ? 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)'
+                        : 'rgba(255,255,255,0.05)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '18px'
+                    }}>
+                      📊
+                    </div>
+                    <div style={{
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      color: '#fff'
+                    }}>
+                      Classic
+                    </div>
+                    <div style={{
+                      fontSize: '10px',
+                      color: 'rgba(255,255,255,0.5)',
+                      textAlign: 'center'
+                    }}>
+                      % returns
+                    </div>
+                  </button>
+
+                  {/* BaggerBomb Battle Option */}
+                  <button
+                    onClick={() => setJoinBattleType('baggerbomb')}
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '14px 12px',
+                      background: joinBattleType === 'baggerbomb'
+                        ? 'rgba(16, 185, 129, 0.15)'
+                        : 'rgba(255,255,255,0.03)',
+                      border: joinBattleType === 'baggerbomb'
+                        ? '2px solid #10b981'
+                        : '2px solid rgba(255,255,255,0.1)',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      position: 'relative'
+                    }}
+                  >
+                    <div style={{
+                      position: 'absolute',
+                      top: '-8px',
+                      right: '-8px',
+                      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                      color: '#fff',
+                      fontSize: '8px',
+                      fontWeight: '700',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      textTransform: 'uppercase'
+                    }}>
+                      New
+                    </div>
+                    <div style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '8px',
+                      background: joinBattleType === 'baggerbomb'
+                        ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                        : 'rgba(255,255,255,0.05)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '18px'
+                    }}>
+                      💣
+                    </div>
+                    <div style={{
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      color: '#fff'
+                    }}>
+                      BaggerBomb
+                    </div>
+                    <div style={{
+                      fontSize: '10px',
+                      color: 'rgba(255,255,255,0.5)',
+                      textAlign: 'center'
+                    }}>
+                      Threshold scoring
+                    </div>
+                  </button>
+                </div>
+              </div>
 
               {/* Continue Button */}
               <button
                 onClick={() => {
                   if (joinCode.length === 6) {
-                    setScreen('builder');
+                    // Route based on battle type selection
+                    if (joinBattleType === 'baggerbomb') {
+                      setScreen('joinPortfolioBuilderTD');
+                    } else {
+                      setScreen('builder');
+                    }
                   }
                 }}
                 disabled={joinCode.length !== 6}
@@ -25560,7 +25776,9 @@ export default function PortfolioDuel() {
                   borderRadius: '12px',
                   cursor: joinCode.length === 6 ? 'pointer' : 'not-allowed',
                   background: joinCode.length === 6
-                    ? 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)'
+                    ? joinBattleType === 'baggerbomb'
+                      ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                      : 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)'
                     : '#21262d',
                   color: joinCode.length === 6 ? '#ffffff' : '#6e7681',
                   display: 'flex',
@@ -25568,7 +25786,11 @@ export default function PortfolioDuel() {
                   justifyContent: 'center',
                   gap: '8px',
                   transition: 'all 0.2s',
-                  boxShadow: joinCode.length === 6 ? '0 4px 12px rgba(6, 182, 212, 0.3)' : 'none'
+                  boxShadow: joinCode.length === 6
+                    ? joinBattleType === 'baggerbomb'
+                      ? '0 4px 12px rgba(16, 185, 129, 0.3)'
+                      : '0 4px 12px rgba(6, 182, 212, 0.3)'
+                    : 'none'
                 }}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
