@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Monitor, Building2, Heart, ShoppingBag, ShoppingCart,
   Zap, Factory, Lightbulb, Home, Radio,
-  Target, TrendingUp, Rocket, Info
+  Target, TrendingUp, Rocket, Info, Check
 } from 'lucide-react';
 import { STOCKS, CRYPTO } from '../../data/assets';
 import { getVolatilityThresholds } from '../../services/volatilityService';
@@ -246,6 +246,8 @@ export default function PortfolioBuilderTD({
   const [showCart, setShowCart] = useState(false);
   const [showBenchModal, setShowBenchModal] = useState(false);
   const [benchModalType, setBenchModalType] = useState('stock');
+  const [benchActiveTab, setBenchActiveTab] = useState('Technology'); // Sector tab for bench modal
+  const [selectedBenchStocks, setSelectedBenchStocks] = useState([]); // Multi-select for bench
   const [selectedStockForDetail, setSelectedStockForDetail] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -320,6 +322,13 @@ export default function PortfolioBuilderTD({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Sync selectedBenchStocks when bench modal opens
+  useEffect(() => {
+    if (showBenchModal && benchModalType === 'stock') {
+      setSelectedBenchStocks(bench.map(s => s.symbol));
+    }
+  }, [showBenchModal, benchModalType, bench]);
+
   // Filter stocks by sector and search
   const filteredStocks = useMemo(() => {
     return STOCKS.filter(stock => {
@@ -390,7 +399,7 @@ export default function PortfolioBuilderTD({
     }));
   }, [portfolio.length]);
 
-  // Add to bench
+  // Add to bench (single - used for crypto)
   const addToBench = useCallback((asset, type) => {
     if (type === 'stock') {
       if (bench.length >= 4) return;
@@ -401,6 +410,33 @@ export default function PortfolioBuilderTD({
     }
     setShowBenchModal(false);
   }, [bench.length, stockPrices, cryptoPrices]);
+
+  // Toggle bench stock selection (multi-select)
+  const toggleBenchStock = useCallback((symbol) => {
+    setSelectedBenchStocks(prev => {
+      if (prev.includes(symbol)) {
+        return prev.filter(s => s !== symbol);
+      } else if (prev.length < 4) {
+        return [...prev, symbol];
+      }
+      return prev;
+    });
+  }, []);
+
+  // Confirm bench stocks selection (multi-select)
+  const confirmBenchStocks = useCallback(() => {
+    const newBench = selectedBenchStocks.map(symbol => {
+      const stock = STOCKS.find(s => s.symbol === symbol);
+      return {
+        symbol: stock.symbol,
+        name: stock.name,
+        sector: stock.sector,
+        price: stockPrices[stock.symbol]?.price || 0
+      };
+    });
+    setBench(newBench);
+    setShowBenchModal(false);
+  }, [selectedBenchStocks, stockPrices]);
 
   // Remove from bench
   const removeFromBench = useCallback((symbol, type) => {
@@ -1264,53 +1300,73 @@ export default function PortfolioBuilderTD({
                   </p>
 
                   {/* Bench Stocks */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
-                    {bench.map(stock => (
-                      <div
-                        key={stock.symbol}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          padding: '6px 10px',
-                          backgroundColor: 'rgba(0,0,0,0.3)',
-                          borderRadius: '6px',
-                          fontSize: '12px',
-                          color: colors.textSecondary
-                        }}
-                      >
-                        {stock.symbol}
-                        <button
-                          onClick={() => removeFromBench(stock.symbol, 'stock')}
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: colors.textMuted,
-                            cursor: 'pointer',
-                            padding: '0 2px',
-                            fontSize: '14px'
-                          }}
-                        >
-                          ×
-                        </button>
+                  <div style={{ marginBottom: '10px' }}>
+                    {/* Display current bench stocks as chips */}
+                    {bench.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+                        {bench.map(stock => (
+                          <div
+                            key={stock.symbol}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '6px 10px',
+                              backgroundColor: 'rgba(0,217,255,0.1)',
+                              border: '1px solid rgba(0,217,255,0.3)',
+                              borderRadius: '16px',
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              color: colors.primary
+                            }}
+                          >
+                            {stock.symbol}
+                            <button
+                              onClick={() => removeFromBench(stock.symbol, 'stock')}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'rgba(0,217,255,0.6)',
+                                cursor: 'pointer',
+                                padding: '0',
+                                fontSize: '14px',
+                                lineHeight: 1
+                              }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                    {bench.length < 4 && (
-                      <button
-                        onClick={() => { setBenchModalType('stock'); setShowBenchModal(true); }}
-                        style={{
-                          padding: '6px 12px',
-                          borderRadius: '6px',
-                          border: `1px dashed ${colors.border}`,
-                          backgroundColor: 'transparent',
-                          color: colors.primary,
-                          fontSize: '12px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        + Add Stock
-                      </button>
                     )}
+
+                    {/* Single button to open multi-select modal */}
+                    <button
+                      onClick={() => { setBenchModalType('stock'); setShowBenchModal(true); }}
+                      style={{
+                        padding: '10px 16px',
+                        borderRadius: '8px',
+                        border: bench.length === 4 ? `1px solid ${colors.green}` : `1px dashed ${colors.border}`,
+                        backgroundColor: bench.length === 4 ? `${colors.green}15` : 'transparent',
+                        color: bench.length === 4 ? colors.green : colors.primary,
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        cursor: 'pointer',
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      {bench.length === 0 ? (
+                        <>+ Select 4 Bench Stocks</>
+                      ) : bench.length === 4 ? (
+                        <>✓ Edit Bench Stocks</>
+                      ) : (
+                        <>Edit Bench Stocks ({bench.length}/4)</>
+                      )}
+                    </button>
                   </div>
 
                   {/* Bench Crypto */}
@@ -1397,7 +1453,7 @@ export default function PortfolioBuilderTD({
         )}
       </AnimatePresence>
 
-      {/* Bench Add Modal */}
+      {/* Bench Add Modal - Multi-select with Sector Tabs */}
       <AnimatePresence>
         {showBenchModal && (
           <div
@@ -1423,9 +1479,9 @@ export default function PortfolioBuilderTD({
               exit={{ opacity: 0, scale: 0.95 }}
               style={{
                 width: '100%',
-                maxWidth: '400px',
-                maxHeight: '70vh',
-                backgroundColor: '#12121a',
+                maxWidth: benchModalType === 'stock' ? '600px' : '400px',
+                maxHeight: '85vh',
+                backgroundColor: '#0a0a0f',
                 borderRadius: '16px',
                 border: `1px solid ${colors.border}`,
                 overflow: 'hidden',
@@ -1434,16 +1490,25 @@ export default function PortfolioBuilderTD({
               }}
               onClick={e => e.stopPropagation()}
             >
+              {/* Header */}
               <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '16px',
+                alignItems: 'flex-start',
+                padding: '20px',
                 borderBottom: `1px solid ${colors.border}`
               }}>
-                <h3 style={{ margin: 0, fontSize: '16px', color: colors.textPrimary }}>
-                  Add Bench {benchModalType === 'stock' ? 'Stock' : 'Crypto'}
-                </h3>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: colors.textPrimary }}>
+                    {benchModalType === 'stock' ? 'Select Bench Stocks' : 'Select Bench Crypto'}
+                  </h3>
+                  <p style={{ margin: '4px 0 0', fontSize: '13px', color: colors.textMuted }}>
+                    {benchModalType === 'stock'
+                      ? `Choose up to 4 stocks • ${selectedBenchStocks.length}/4 selected`
+                      : 'Choose 1 crypto for your bench'
+                    }
+                  </p>
+                </div>
                 <button
                   onClick={() => setShowBenchModal(false)}
                   style={{
@@ -1451,69 +1516,280 @@ export default function PortfolioBuilderTD({
                     border: 'none',
                     color: colors.textMuted,
                     fontSize: '20px',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    padding: '4px',
+                    borderRadius: '6px'
                   }}
                 >
                   ×
                 </button>
               </div>
 
-              <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+              {/* Selected Preview (stocks only) */}
+              {benchModalType === 'stock' && selectedBenchStocks.length > 0 && (
                 <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))',
-                  gap: '8px'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '12px 20px',
+                  background: 'rgba(0,217,255,0.05)',
+                  borderBottom: `1px solid ${colors.border}`
                 }}>
-                  {benchModalType === 'stock'
-                    ? STOCKS.filter(s => !excludedSymbols.includes(s.symbol)).map(stock => (
+                  <span style={{ fontSize: '12px', color: colors.textMuted, whiteSpace: 'nowrap' }}>
+                    Selected:
+                  </span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {selectedBenchStocks.map(symbol => (
+                      <div
+                        key={symbol}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '4px 8px 4px 10px',
+                          background: 'rgba(0,217,255,0.15)',
+                          border: '1px solid rgba(0,217,255,0.3)',
+                          borderRadius: '16px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          color: colors.primary
+                        }}
+                      >
+                        {symbol}
                         <button
-                          key={stock.symbol}
-                          onClick={() => addToBench(stock, 'stock')}
+                          onClick={() => setSelectedBenchStocks(prev => prev.filter(s => s !== symbol))}
                           style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            padding: '10px 6px',
-                            backgroundColor: colors.cardBg,
-                            border: `1px solid ${colors.border}`,
-                            borderRadius: '8px',
-                            cursor: 'pointer'
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'rgba(0,217,255,0.6)',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            lineHeight: 1,
+                            padding: 0
                           }}
                         >
-                          <span style={{ fontSize: '13px', fontWeight: '600', color: colors.primary }}>
-                            {stock.symbol}
-                          </span>
-                          <span style={{ fontSize: '10px', color: colors.textMuted, marginTop: '2px' }}>
-                            ${stockPrices[stock.symbol]?.price?.toFixed(2) || '0.00'}
-                          </span>
+                          ×
                         </button>
-                      ))
-                    : availableCrypto.filter(c => !excludedSymbols.includes(c.symbol)).map(crypto => (
-                        <button
-                          key={crypto.symbol}
-                          onClick={() => addToBench(crypto, 'crypto')}
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            padding: '10px 6px',
-                            backgroundColor: colors.cardBg,
-                            border: `1px solid ${colors.border}`,
-                            borderRadius: '8px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <span style={{ fontSize: '13px', fontWeight: '600', color: colors.yellow }}>
-                            {crypto.symbol}
-                          </span>
-                          <span style={{ fontSize: '10px', color: colors.textMuted, marginTop: '2px' }}>
-                            ${cryptoPrices[crypto.symbol]?.price?.toFixed(2) || '0.00'}
-                          </span>
-                        </button>
-                      ))
-                  }
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              )}
+
+              {/* Sector Tabs (stocks only) */}
+              {benchModalType === 'stock' && (
+                <div style={{
+                  padding: '12px 20px',
+                  borderBottom: `1px solid rgba(255,255,255,0.05)`,
+                  overflowX: 'auto',
+                  WebkitOverflowScrolling: 'touch'
+                }}>
+                  <div style={{ display: 'flex', gap: '8px', minWidth: 'max-content' }}>
+                    {SECTORS.map(sector => {
+                      const Icon = sector.icon;
+                      const sectorStocks = STOCKS.filter(s =>
+                        s.sector === sector.id &&
+                        !portfolio.some(p => p.symbol === s.symbol) &&
+                        selectedCrypto?.symbol !== s.symbol
+                      );
+
+                      return (
+                        <button
+                          key={sector.id}
+                          onClick={() => setBenchActiveTab(sector.id)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '8px 12px',
+                            background: benchActiveTab === sector.id ? `${sector.color}15` : 'rgba(255,255,255,0.03)',
+                            border: `1px solid ${benchActiveTab === sector.id ? sector.color : 'rgba(255,255,255,0.1)'}`,
+                            borderRadius: '20px',
+                            color: benchActiveTab === sector.id ? sector.color : 'rgba(255,255,255,0.6)',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          <Icon size={14} />
+                          <span style={{ fontWeight: '500' }}>{sector.label}</span>
+                          <span style={{ opacity: 0.7 }}>({sectorStocks.length})</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Stock/Crypto Grid */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+                {benchModalType === 'stock' ? (
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '10px'
+                  }}>
+                    {STOCKS
+                      .filter(s =>
+                        s.sector === benchActiveTab &&
+                        !portfolio.some(p => p.symbol === s.symbol) &&
+                        selectedCrypto?.symbol !== s.symbol
+                      )
+                      .map(stock => {
+                        const isSelected = selectedBenchStocks.includes(stock.symbol);
+                        const isDisabled = !isSelected && selectedBenchStocks.length >= 4;
+
+                        return (
+                          <button
+                            key={stock.symbol}
+                            onClick={() => !isDisabled && toggleBenchStock(stock.symbol)}
+                            disabled={isDisabled}
+                            style={{
+                              position: 'relative',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              padding: '14px 10px',
+                              background: isSelected ? 'rgba(0,217,255,0.1)' : 'rgba(255,255,255,0.03)',
+                              border: `2px solid ${isSelected ? colors.primary : 'rgba(255,255,255,0.1)'}`,
+                              borderRadius: '10px',
+                              cursor: isDisabled ? 'not-allowed' : 'pointer',
+                              opacity: isDisabled ? 0.4 : 1,
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            {/* Selection badge */}
+                            {isSelected && (
+                              <div style={{
+                                position: 'absolute',
+                                top: '6px',
+                                right: '6px',
+                                width: '18px',
+                                height: '18px',
+                                background: colors.primary,
+                                borderRadius: '50%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}>
+                                <Check size={12} color="#000" />
+                              </div>
+                            )}
+
+                            <span style={{ fontSize: '14px', fontWeight: '700', color: colors.primary }}>
+                              {stock.symbol}
+                            </span>
+                            <span style={{
+                              fontSize: '10px',
+                              color: colors.textMuted,
+                              textAlign: 'center',
+                              marginTop: '2px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              maxWidth: '100%'
+                            }}>
+                              {stock.name}
+                            </span>
+                            <span style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '6px' }}>
+                              ${stockPrices[stock.symbol]?.price?.toFixed(2) || '—'}
+                            </span>
+                          </button>
+                        );
+                      })
+                    }
+                  </div>
+                ) : (
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))',
+                    gap: '8px'
+                  }}>
+                    {availableCrypto.filter(c =>
+                      !portfolio.some(p => p.symbol === c.symbol) &&
+                      selectedCrypto?.symbol !== c.symbol &&
+                      benchCrypto?.symbol !== c.symbol
+                    ).map(crypto => (
+                      <button
+                        key={crypto.symbol}
+                        onClick={() => addToBench(crypto, 'crypto')}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          padding: '10px 6px',
+                          backgroundColor: colors.cardBg,
+                          border: `1px solid ${colors.border}`,
+                          borderRadius: '8px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: colors.yellow }}>
+                          {crypto.symbol}
+                        </span>
+                        <span style={{ fontSize: '10px', color: colors.textMuted, marginTop: '2px' }}>
+                          ${cryptoPrices[crypto.symbol]?.price?.toFixed(2) || '0.00'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {/* Footer (stocks only - with confirm button) */}
+              {benchModalType === 'stock' && (
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '16px 20px',
+                  borderTop: `1px solid ${colors.border}`,
+                  background: 'rgba(0,0,0,0.3)'
+                }}>
+                  <div style={{ fontSize: '13px' }}>
+                    {selectedBenchStocks.length < 4 ? (
+                      <span style={{ color: colors.textMuted }}>
+                        {4 - selectedBenchStocks.length} slot{4 - selectedBenchStocks.length !== 1 ? 's' : ''} remaining
+                      </span>
+                    ) : (
+                      <span style={{ color: colors.green, fontWeight: '600' }}>✓ Bench full</span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button
+                      onClick={() => setShowBenchModal(false)}
+                      style={{
+                        padding: '10px 16px',
+                        background: 'rgba(255,255,255,0.05)',
+                        border: `1px solid rgba(255,255,255,0.2)`,
+                        borderRadius: '8px',
+                        color: colors.textSecondary,
+                        fontSize: '14px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={confirmBenchStocks}
+                      style={{
+                        padding: '10px 20px',
+                        background: colors.primary,
+                        border: 'none',
+                        borderRadius: '8px',
+                        color: '#000',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Confirm ({selectedBenchStocks.length})
+                    </button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           </div>
         )}
