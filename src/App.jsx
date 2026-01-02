@@ -19397,13 +19397,9 @@ export default function PortfolioDuel() {
                     }}
                     onClick={() => {
                       setCurrentBattle(battle);
-                      // Route to BaggerBomb battle view if it's a BaggerBomb battle
-                      if (battle._v === 2) {
-                        setSelectedTDBattle(battle);
-                        setScreen('tdBattleView');
-                      } else {
-                        setScreen('battle');
-                      }
+                      // All battles now go to 'battle' screen
+                      // V2 (BaggerBomb) battles are routed in the battle screen handler
+                      setScreen('battle');
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.borderColor = battle.isTrainingBattle ? colors.purple : colors.cyan;
@@ -19782,19 +19778,57 @@ export default function PortfolioDuel() {
                       key={battle.id}
                       onClick={() => {
                         // Convert Firebase format to localStorage format for battle view
+                        // Check if this is a BaggerBomb (V2) battle
+                        const isBaggerBomb = battle._v === 2 || battle.type === 'baggerbomb';
+
                         const convertedBattle = {
                           id: battle.id,
+                          _v: isBaggerBomb ? 2 : 1, // Preserve version for routing
                           challengeCode: 'TRAINING',
-                          creator: battle.player1?.username || user.username,
-                          opponent: 'CPU Opponent',
+
+                          // V2 format: creator/opponent objects for BaggerBombBattleViewRedesign
+                          creator: isBaggerBomb ? {
+                            uid: battle.player1?.odUserId || user.odUserId,
+                            odUserId: battle.player1?.odUserId || user.odUserId,
+                            username: battle.player1?.username || user.username,
+                            portfolioName: battle.player1?.portfolioName || 'Training Portfolio',
+                            portfolio: battle.player1?.portfolio || [],
+                            bench: battle.player1?.bench || [],
+                            portfolioType: battle.player1?.portfolioType || 'baggerbomb'
+                          } : undefined,
+                          opponent: isBaggerBomb ? {
+                            uid: 'cpu',
+                            odUserId: 'cpu',
+                            username: 'CPU Opponent',
+                            portfolioName: battle.player2?.portfolioName || 'CPU Strategy',
+                            portfolio: battle.player2?.portfolio || [],
+                            bench: battle.player2?.bench || [],
+                            portfolioType: 'baggerbomb'
+                          } : undefined,
+
+                          // Legacy fields for Classic view compatibility
                           creatorPortfolio: battle.player1?.portfolio || [],
                           opponentPortfolio: battle.player2?.portfolio || [],
                           portfolioName: battle.player1?.portfolioName || 'Training Portfolio',
                           portfolioType: battle.player1?.portfolioType || 'stocks',
                           status: 'active',
+
+                          // Timeline
+                          timeline: battle.timeline,
                           startDate: battle.timeline?.startDate,
                           endDate: battle.timeline?.endDate,
+
+                          // State
+                          state: battle.state,
                           startingPrices: battle.state?.startingPrices || {},
+
+                          // BaggerBomb specific
+                          thresholds: battle.thresholds || {},
+                          breakouts: battle.breakouts || { creator: [], opponent: [] },
+                          sessionScores: battle.sessions || {},
+
+                          // Training flags
+                          isTraining: true,
                           isTrainingBattle: true,
                           createdAt: battle.timeline?.createdAt
                         };
@@ -29966,6 +30000,16 @@ export default function PortfolioDuel() {
 
   // BATTLE VIEW SCREEN - ESPN STYLE REDESIGN
   if (screen === 'battle' && currentBattle) {
+    // Debug: Log battle routing decision
+    console.log('🎮 BATTLE ROUTING DEBUG:', {
+      screen,
+      hasBattle: !!currentBattle,
+      battleVersion: currentBattle?._v,
+      isTraining: currentBattle?.isTraining,
+      hasCreatorObj: !!currentBattle?.creator,
+      battleType: currentBattle?.portfolioType
+    });
+
     // Check if this is a BaggerBomb (V2) battle - route to redesigned view
     if (currentBattle._v === 2) {
       return (
