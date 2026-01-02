@@ -25482,13 +25482,29 @@ export default function PortfolioDuel() {
             onSubmit={async (portfolioData) => {
               // Join BaggerBomb battle with portfolio
               try {
+                // PortfolioBuilderBaggerBomb uses 'roster' not 'portfolio'
+                const portfolio = portfolioData.roster || portfolioData.portfolio || [];
+                const bench = portfolioData.bench || [];
+
+                if (!Array.isArray(portfolio) || portfolio.length === 0) {
+                  alert('Please build your portfolio before joining.');
+                  return;
+                }
+
                 const opponentData = {
                   odUserId: user?.odUserId || user?.uid,
+                  uid: user?.odUserId || user?.uid, // Also include uid for validation
                   username: user?.username || user?.email?.split('@')[0] || 'Anonymous',
-                  portfolio: portfolioData.portfolio,
-                  bench: portfolioData.bench || [],
+                  portfolio: portfolio,
+                  bench: bench,
                   allocations: portfolioData.allocations || {}
                 };
+
+                console.log('🎮 Join BaggerBomb with data:', {
+                  portfolioLength: portfolio.length,
+                  benchLength: bench.length,
+                  opponentData
+                });
 
                 const joinedBattle = await joinBaggerBombBattle(joinCode, opponentData);
 

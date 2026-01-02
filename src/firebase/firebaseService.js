@@ -839,6 +839,30 @@ export async function createBaggerBombBattle(battleData) {
  */
 export async function joinBaggerBombBattle(challengeCode, opponentData) {
   try {
+    // Validate input data
+    if (!challengeCode || typeof challengeCode !== 'string') {
+      throw new Error('Invalid challenge code');
+    }
+
+    if (!opponentData) {
+      throw new Error('Opponent data is required');
+    }
+
+    // Ensure portfolio is an array
+    if (!Array.isArray(opponentData.portfolio)) {
+      console.error('Invalid portfolio data:', opponentData);
+      throw new Error('Portfolio must be an array');
+    }
+
+    if (opponentData.portfolio.length === 0) {
+      throw new Error('Portfolio cannot be empty');
+    }
+
+    // Ensure bench is an array (default to empty array if not provided)
+    if (opponentData.bench && !Array.isArray(opponentData.bench)) {
+      opponentData.bench = [];
+    }
+
     // Find V2 battle by challenge code
     const q = query(
       collection(db, 'battles'),
