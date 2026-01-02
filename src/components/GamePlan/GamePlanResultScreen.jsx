@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Sparkles, TrendingUp, Shield, Zap, AlertTriangle, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Sparkles, TrendingUp, Shield, Zap, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Save, Clock } from 'lucide-react';
 import { generateRecommendations, buildPortfolioFromRecommendations } from '../../services/baggerBombRecommendationEngine';
+import { generateAIStrategy, generateAIPicks, getCurrentSession } from '../../services/aiStrategyService';
+import { saveTemplate } from '../../services/templateService';
 import { SECTORS } from '../../constants/sectors';
 
-const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData }) => {
+const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData, user }) => {
   const { riskStyle, selectedSectors, mustHavePicks } = gamePlanData;
 
   const [recommendations, setRecommendations] = useState(null);
@@ -11,9 +13,28 @@ const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData }) => {
   const [error, setError] = useState(null);
   const [expandedSection, setExpandedSection] = useState('breakout');
 
+  // AI-related state
+  const [aiStrategy, setAiStrategy] = useState('');
+  const [aiPicks, setAiPicks] = useState({ wildcards: [], sessionPicks: [] });
+  const [loadingAI, setLoadingAI] = useState(false);
+
+  // Template state
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
+
+  const currentSession = getCurrentSession();
+
   useEffect(() => {
     loadRecommendations();
   }, [riskStyle, selectedSectors]);
+
+  // Load AI content after recommendations are ready
+  useEffect(() => {
+    if (recommendations && !loadingAI && !aiStrategy) {
+      loadAIContent();
+    }
+  }, [recommendations]);
 
   const loadRecommendations = async () => {
     try {
@@ -35,11 +56,74 @@ const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData }) => {
     }
   };
 
+  const loadAIContent = async () => {
+    try {
+      setLoadingAI(true);
+
+      // Generate AI strategy
+      const strategy = await generateAIStrategy({
+        riskStyle,
+        selectedSectors,
+        mustHavePicks: mustHavePicks || [],
+        breakoutCandidates: recommendations.breakoutCandidates,
+        safePlays: recommendations.safePlays,
+        cryptoRecommendation: recommendations.cryptoRecommendation,
+        sectorData: {}
+      });
+      setAiStrategy(strategy);
+
+      // Generate AI picks to fill remaining slots
+      const userPickCount = mustHavePicks?.length || 0;
+      if (userPickCount < 9) {
+        const picks = await generateAIPicks({
+          riskStyle,
+          selectedSectors,
+          mustHavePicks: mustHavePicks || [],
+          allAvailableStocks: [...(recommendations.breakoutCandidates || []), ...(recommendations.safePlays || [])],
+          currentSession
+        });
+        setAiPicks(picks);
+      }
+
+    } catch (error) {
+      console.error('Error loading AI content:', error);
+    } finally {
+      setLoadingAI(false);
+    }
+  };
+
   const handleCreatePortfolio = () => {
     if (!recommendations) return;
 
     const portfolio = buildPortfolioFromRecommendations(recommendations);
     onComplete?.(portfolio);
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!templateName.trim()) {
+      return;
+    }
+
+    try {
+      setSavingTemplate(true);
+
+      await saveTemplate({
+        userId: user?.odUserId || user?.uid || 'anonymous',
+        name: templateName,
+        riskStyle,
+        sectors: selectedSectors,
+        mustHavePicks: mustHavePicks || [],
+        portfolio: recommendations ? buildPortfolioFromRecommendations(recommendations) : [],
+        strategyText: aiStrategy
+      });
+
+      setShowSaveModal(false);
+      setTemplateName('');
+    } catch (error) {
+      console.error('Error saving template:', error);
+    } finally {
+      setSavingTemplate(false);
+    }
   };
 
   const getSectorNames = () => {
@@ -183,7 +267,7 @@ const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData }) => {
       </div>
 
       {/* Content */}
-      <div style={{ padding: '20px', paddingBottom: '120px' }}>
+      <div style={{ padding: '20px', paddingBottom: '140px' }}>
         {/* Strategy Summary Card */}
         <div style={{
           padding: '20px',
@@ -215,23 +299,54 @@ const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData }) => {
             </div>
           </div>
 
-          {/* Strategy Text */}
-          <div style={{
-            padding: '16px',
-            backgroundColor: '#0d1117',
-            borderRadius: '12px',
-            borderLeft: `3px solid ${styleInfo.color}`
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <Sparkles size={16} color="#f59e0b" />
-              <span style={{ fontWeight: '600', color: '#f59e0b', fontSize: '13px' }}>
-                AI Strategy Summary
-              </span>
+          {/* AI Strategy Text */}
+          {loadingAI ? (
+            <div style={{
+              padding: '16px',
+              backgroundColor: '#0d1117',
+              borderRadius: '12px',
+              borderLeft: '3px solid #a855f7',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <div style={{
+                width: '20px',
+                height: '20px',
+                border: '2px solid #21262d',
+                borderTopColor: '#a855f7',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite'
+              }} />
+              <span style={{ color: '#8b949e' }}>AI is analyzing your game plan...</span>
             </div>
-            <p style={{ color: '#c9d1d9', fontSize: '14px', lineHeight: '1.6' }}>
-              {recommendations?.strategyText || 'Analyzing your selections...'}
-            </p>
-          </div>
+          ) : (
+            <div style={{
+              padding: '16px',
+              backgroundColor: '#0d1117',
+              borderRadius: '12px',
+              borderLeft: '3px solid #a855f7'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <Sparkles size={16} color="#a855f7" />
+                <span style={{ fontWeight: '600', color: '#a855f7', fontSize: '13px' }}>
+                  AI Strategy
+                </span>
+                <span style={{
+                  padding: '2px 8px',
+                  backgroundColor: '#a855f720',
+                  borderRadius: '10px',
+                  fontSize: '10px',
+                  color: '#a855f7'
+                }}>
+                  CLAUDE AI
+                </span>
+              </div>
+              <p style={{ color: '#c9d1d9', fontSize: '14px', lineHeight: '1.6', margin: 0 }}>
+                {aiStrategy || recommendations?.strategyText || 'Analyzing your selections...'}
+              </p>
+            </div>
+          )}
 
           {/* Stats Row */}
           <div style={{
@@ -260,6 +375,159 @@ const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData }) => {
             </div>
           </div>
         </div>
+
+        {/* User's Must-Have Picks */}
+        {mustHavePicks && mustHavePicks.length > 0 && (
+          <div style={{
+            backgroundColor: '#161b22',
+            borderRadius: '16px',
+            padding: '16px 20px',
+            marginBottom: '16px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <div style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                backgroundColor: '#00d9ff20',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '12px'
+              }}>
+                ⭐
+              </div>
+              <span style={{ fontWeight: '600' }}>Your Must-Have Picks</span>
+              <span style={{ color: '#8b949e', fontSize: '13px' }}>({mustHavePicks.length})</span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {mustHavePicks.map(pick => (
+                <div
+                  key={pick.symbol}
+                  style={{
+                    padding: '8px 14px',
+                    backgroundColor: '#00d9ff20',
+                    border: '1px solid #00d9ff',
+                    borderRadius: '20px',
+                    fontSize: '13px',
+                    fontWeight: '600'
+                  }}
+                >
+                  {pick.symbol}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* AI Wildcard Picks */}
+        {aiPicks.wildcards?.length > 0 && (
+          <div style={{
+            backgroundColor: '#161b22',
+            borderRadius: '16px',
+            padding: '16px 20px',
+            marginBottom: '16px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <div style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                backgroundColor: '#a855f720',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Sparkles size={14} color="#a855f7" />
+              </div>
+              <span style={{ fontWeight: '600' }}>AI Wildcards</span>
+              <span style={{
+                padding: '2px 8px',
+                backgroundColor: '#a855f720',
+                borderRadius: '10px',
+                fontSize: '10px',
+                color: '#a855f7'
+              }}>
+                SURPRISE
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {aiPicks.wildcards.map(symbol => (
+                <div
+                  key={symbol}
+                  style={{
+                    padding: '8px 14px',
+                    backgroundColor: '#a855f720',
+                    border: '1px solid #a855f7',
+                    borderRadius: '20px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    color: '#a855f7'
+                  }}
+                >
+                  {symbol}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Session Picks */}
+        {aiPicks.sessionPicks?.length > 0 && (
+          <div style={{
+            backgroundColor: '#161b22',
+            borderRadius: '16px',
+            padding: '16px 20px',
+            marginBottom: '16px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <div style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                backgroundColor: '#fbbf2420',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Clock size={14} color="#fbbf24" />
+              </div>
+              <span style={{ fontWeight: '600' }}>Session Picks</span>
+              <span style={{
+                padding: '2px 8px',
+                backgroundColor: '#fbbf2420',
+                borderRadius: '10px',
+                fontSize: '10px',
+                color: '#fbbf24'
+              }}>
+                {currentSession.name.toUpperCase()}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {aiPicks.sessionPicks.map(symbol => (
+                <div
+                  key={symbol}
+                  style={{
+                    padding: '8px 14px',
+                    backgroundColor: '#fbbf2420',
+                    border: '1px solid #fbbf24',
+                    borderRadius: '20px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    color: '#fbbf24'
+                  }}
+                >
+                  {symbol}
+                </div>
+              ))}
+            </div>
+            {aiPicks.reasoning && (
+              <p style={{ marginTop: '10px', fontSize: '12px', color: '#8b949e', fontStyle: 'italic' }}>
+                {aiPicks.reasoning}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Breakout Candidates Section */}
         <div style={{
@@ -474,37 +742,132 @@ const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData }) => {
         backgroundColor: '#161b22',
         borderTop: '1px solid #21262d'
       }}>
-        <button
-          onClick={handleCreatePortfolio}
-          disabled={!recommendations}
-          style={{
-            width: '100%',
-            padding: '16px',
-            backgroundColor: recommendations ? '#00d9ff' : '#21262d',
-            border: 'none',
-            borderRadius: '12px',
-            color: recommendations ? '#000' : '#8b949e',
-            fontWeight: '600',
-            fontSize: '16px',
-            cursor: recommendations ? 'pointer' : 'not-allowed',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px'
-          }}
-        >
-          <Sparkles size={18} />
-          Create Portfolio from Game Plan
-        </button>
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '8px' }}>
+          <button
+            onClick={() => setShowSaveModal(true)}
+            style={{
+              padding: '14px 20px',
+              backgroundColor: '#21262d',
+              border: 'none',
+              borderRadius: '10px',
+              color: '#ffffff',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <Save size={18} />
+          </button>
+          <button
+            onClick={handleCreatePortfolio}
+            disabled={!recommendations}
+            style={{
+              flex: 1,
+              padding: '14px',
+              backgroundColor: recommendations ? '#00d9ff' : '#21262d',
+              border: 'none',
+              borderRadius: '10px',
+              color: recommendations ? '#000' : '#8b949e',
+              fontWeight: '600',
+              fontSize: '16px',
+              cursor: recommendations ? 'pointer' : 'not-allowed',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
+            }}
+          >
+            <Sparkles size={18} />
+            Use This Plan
+          </button>
+        </div>
         <p style={{
           textAlign: 'center',
           fontSize: '12px',
           color: '#8b949e',
-          marginTop: '8px'
+          margin: 0
         }}>
           9 stocks + 1 crypto = $1M portfolio
         </p>
       </div>
+
+      {/* Save Template Modal */}
+      {showSaveModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#161b22',
+            borderRadius: '16px',
+            padding: '24px',
+            width: '100%',
+            maxWidth: '400px'
+          }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: '18px' }}>Save Game Plan</h3>
+
+            <input
+              type="text"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              placeholder="Template name (e.g., 'Aggressive Tech Play')"
+              style={{
+                width: '100%',
+                padding: '12px 16px',
+                backgroundColor: '#0d1117',
+                border: '1px solid #21262d',
+                borderRadius: '8px',
+                color: '#ffffff',
+                fontSize: '15px',
+                marginBottom: '16px',
+                boxSizing: 'border-box'
+              }}
+            />
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setShowSaveModal(false)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  backgroundColor: '#21262d',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#fff',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveTemplate}
+                disabled={savingTemplate || !templateName.trim()}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  backgroundColor: '#00d9ff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#000',
+                  fontWeight: '600',
+                  cursor: savingTemplate ? 'not-allowed' : 'pointer',
+                  opacity: savingTemplate || !templateName.trim() ? 0.7 : 1
+                }}
+              >
+                {savingTemplate ? 'Saving...' : 'Save Template'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

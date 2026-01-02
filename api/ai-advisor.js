@@ -45,6 +45,22 @@ RULES:
 - Keep responses concise with bullet points`;
 };
 
+const GAMEPLAN_SYSTEM_PROMPT = `You are the BaggerBomb Strategy Advisor for MarketClash, a competitive stock trading game.
+
+Your role is to provide brief, actionable game plan strategies for players. Keep responses:
+- Concise (3-4 sentences max)
+- Conversational and exciting
+- Data-driven but accessible
+- Confident without being arrogant
+
+SCORING RULES TO REFERENCE:
+- BaggerBomb: +15 points when stock crosses volatility threshold
+- Base: +/-10 points per 1% change
+- Session Win: +10 bonus points
+- Busts: -10 to -35 penalty for negative threshold crosses
+
+Always mention specific stock symbols when relevant. Make it feel like a game!`;
+
 const DRAFT_SYSTEM_PROMPT = `You are a tactical draft advisor for MarketClash snake drafts.
 
 CRITICAL RULES FOR MARKETCLASH DRAFTS:
@@ -781,6 +797,47 @@ export default async function handler(req, res) {
 
     if (!advisorType || (!message && !action)) {
       return res.status(400).json({ error: 'Missing advisorType and message/action' });
+    }
+
+    // Handle gameplan advisorType - uses direct prompt from client
+    if (advisorType === 'gameplan') {
+      const { prompt, maxTokens } = req.body;
+
+      if (!prompt) {
+        return res.status(400).json({ error: 'Missing prompt for gameplan' });
+      }
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-haiku-20241022',
+          max_tokens: maxTokens || 300,
+          system: GAMEPLAN_SYSTEM_PROMPT,
+          messages: [
+            { role: 'user', content: prompt }
+          ],
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.error || !response.ok) {
+        console.error('[AI Advisor] Gameplan error:', data.error);
+        return res.status(500).json({
+          error: 'AI service error',
+          details: data.error?.message || 'Unknown error'
+        });
+      }
+
+      return res.status(200).json({
+        response: data.content?.[0]?.text || '',
+        usage: data.usage
+      });
     }
 
     // Determine system prompt based on advisor type

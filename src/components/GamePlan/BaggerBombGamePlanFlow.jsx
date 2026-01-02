@@ -11,7 +11,7 @@ const STEPS = {
   GAME_PLAN_RESULT: 'game_plan_result'
 };
 
-const BaggerBombGamePlanFlow = ({ onComplete, onBack }) => {
+const BaggerBombGamePlanFlow = ({ onComplete, onBack, user }) => {
   const [currentStep, setCurrentStep] = useState(STEPS.RISK_STYLE);
   const [gamePlanData, setGamePlanData] = useState({
     riskStyle: null,
@@ -81,6 +81,7 @@ const BaggerBombGamePlanFlow = ({ onComplete, onBack }) => {
           onNext={handleMustHavePicks}
           selectedSectors={gamePlanData.selectedSectors}
           riskStyle={gamePlanData.riskStyle}
+          initialPicks={gamePlanData.mustHavePicks}
         />
       );
 
@@ -90,6 +91,7 @@ const BaggerBombGamePlanFlow = ({ onComplete, onBack }) => {
           onBack={handleBack}
           onComplete={handleComplete}
           gamePlanData={gamePlanData}
+          user={user}
         />
       );
 
