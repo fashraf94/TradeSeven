@@ -18,22 +18,27 @@ import {
   Rocket
 } from 'lucide-react';
 
-// Import services
+// Import scoring from our hook (fixes negative scoring bug)
 import {
+  calculateAssetScore,
+  calculatePortfolioScore,
   getCurrentSession,
   getSessionTimeRemaining,
-  calculateAssetSessionScore,
   getConvictionMultiplier,
   SESSIONS,
   SESSION_ORDER,
-  isCrypto
-} from '../../services/sessionScoringService';
+  isCrypto,
+  BREAKOUT_BONUSES,
+  BUST_PENALTIES
+} from '../../hooks/useBaggerBombBattle';
+
+// Import other services
 import {
   checkPortfolioBreakouts,
   getBreakoutSummary
 } from '../../services/breakoutDetectionService';
 import { getVolatilityThresholds } from '../../services/volatilityService';
-import { getMultipleStockPrices, getMultipleCryptoPrices } from '../../services/eodhdAPI';
+import { stockAPI, POPULAR_CRYPTO } from '../../services/eodhdAPI';
 
 // Constants
 const PRICE_POLL_INTERVAL = 60000; // 60 seconds
@@ -78,7 +83,7 @@ const BREAKOUT_CONFIG = {
   MELTDOWN: { emoji: '🔥', label: 'Meltdown', color: '#991b1b', points: -35 }
 };
 
-const sessionOrder = ['MORNING_BELL', 'MIDDAY', 'POWER_HOUR', 'NIGHT_GAME'];
+// SESSION_ORDER is now imported as SESSION_ORDER from useBaggerBombBattle hook
 
 /**
  * BaggerBombBattleViewRedesign
@@ -135,27 +140,49 @@ export default function BaggerBombBattleViewRedesign({
       const stockSymbols = uniqueSymbols.filter(s => !isCrypto(s));
       const cryptoSymbols = uniqueSymbols.filter(s => isCrypto(s));
 
-      const [stockPrices, cryptoPrices] = await Promise.all([
-        stockSymbols.length > 0 ? getMultipleStockPrices(stockSymbols) : {},
-        cryptoSymbols.length > 0 ? getMultipleCryptoPrices(cryptoSymbols) : {}
-      ]);
-
-      // Combine prices
+      // Fetch prices using stockAPI
       const combinedPrices = {};
-      Object.entries(stockPrices).forEach(([symbol, data]) => {
-        combinedPrices[symbol] = typeof data === 'object' ? data.price : data;
-      });
-      Object.entries(cryptoPrices).forEach(([symbol, data]) => {
-        combinedPrices[symbol] = typeof data === 'object' ? data.price : data;
-      });
 
-      setCurrentPrices(combinedPrices);
+      // Fetch stock prices
+      for (const symbol of stockSymbols) {
+        try {
+          const data = await stockAPI.getStockPrice(symbol);
+          if (data?.price) {
+            combinedPrices[symbol] = data.price;
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch price for ${symbol}`);
+        }
+      }
+
+      // Fetch crypto prices
+      for (const symbol of cryptoSymbols) {
+        try {
+          const data = await stockAPI.getCryptoPrice(symbol);
+          if (data?.price) {
+            combinedPrices[symbol] = data.price;
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch crypto price for ${symbol}`);
+        }
+      }
+
+      // Fallback to starting prices if no current prices fetched
+      if (Object.keys(combinedPrices).length === 0 && battle?.state?.startingPrices) {
+        setCurrentPrices(battle.state.startingPrices);
+      } else {
+        setCurrentPrices(prev => ({ ...prev, ...combinedPrices }));
+      }
       setLoadingPrices(false);
     } catch (error) {
       console.error('[BaggerBombBattleView] Error fetching prices:', error);
+      // Fallback to starting prices on error
+      if (battle?.state?.startingPrices) {
+        setCurrentPrices(battle.state.startingPrices);
+      }
       setLoadingPrices(false);
     }
-  }, [myPortfolio, oppPortfolio, myData?.bench, oppData?.bench]);
+  }, [myPortfolio, oppPortfolio, myData?.bench, oppData?.bench, battle?.state?.startingPrices]);
 
   // ==================== EFFECTS ====================
 
@@ -242,14 +269,14 @@ export default function BaggerBombBattleViewRedesign({
     const sessionScores = battle?.sessionScores || {};
 
     // Add completed session scores
-    sessionOrder.forEach(sessionId => {
+    SESSION_ORDER.forEach(sessionId => {
       const sessionScore = sessionScores[sessionId];
       if (sessionScore && sessionScore[playerId] !== undefined && sessionScore[playerId] !== 0) {
         total += sessionScore[playerId];
       }
     });
 
-    // Add current session live score
+    // Add current session live score using new calculateAssetScore (fixes negative scoring bug)
     if (currentSession && Object.keys(currentPrices).length > 0) {
       const openPrices = battle?.sessionPrices?.[currentSession.id]?.open || battle?.state?.startingPrices || {};
       let sessionTotal = 0;
@@ -260,15 +287,16 @@ export default function BaggerBombBattleViewRedesign({
         const threshold = thresholds[asset.symbol];
         const totalValue = 1000000; // $1M portfolio
 
-        if (threshold && openPrice > 0) {
-          const score = calculateAssetSessionScore(
+        if (openPrice > 0) {
+          // Use new calculateAssetScore from hook - properly handles negative movements
+          const score = calculateAssetScore(
             asset,
             openPrice,
             currentPrice,
             threshold,
             totalValue
           );
-          sessionTotal += score.totalScore || 0;
+          sessionTotal += score.totalPoints || 0;
         }
       });
 
@@ -375,7 +403,7 @@ export default function BaggerBombBattleViewRedesign({
       marginBottom: '16px',
       overflowX: 'auto'
     }}>
-      {sessionOrder.map((sessionId) => {
+      {SESSION_ORDER.map((sessionId) => {
         const config = SESSION_CONFIG[sessionId];
         const status = getSessionStatus(sessionId);
         const Icon = config.icon;
@@ -583,7 +611,7 @@ export default function BaggerBombBattleViewRedesign({
             gap: '8px',
             flexWrap: 'wrap'
           }}>
-            <span>Session {sessionOrder.indexOf(currentSession.id) + 1} of 4</span>
+            <span>Session {SESSION_ORDER.indexOf(currentSession.id) + 1} of 4</span>
             <span>•</span>
             <span style={{ color: SESSION_CONFIG[currentSession.id]?.color }}>
               {SESSION_CONFIG[currentSession.id]?.label}
