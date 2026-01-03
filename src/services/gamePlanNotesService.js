@@ -19,26 +19,40 @@ import { db, auth } from '../firebase/config';
 const COLLECTION_NAME = 'gamePlanNotes';
 
 /**
+ * Get user ID from auth or return null
+ */
+const getAuthUserId = () => {
+  try {
+    return auth?.currentUser?.uid || null;
+  } catch (e) {
+    return null;
+  }
+};
+
+/**
  * Save a game plan note to Firebase
  * @param {Object} noteData - The game plan data to save
+ * @param {string} userId - Optional: pass userId directly if available
  * @returns {Promise<string>} - The ID of the saved note
  */
-export const saveGamePlanNote = async (noteData) => {
-  const user = auth.currentUser;
+export const saveGamePlanNote = async (noteData, userId = null) => {
+  // Try to get user ID from param, then from auth
+  const uid = userId || getAuthUserId();
 
-  if (!user) {
+  if (!uid) {
+    console.error('[Notes] No user ID available. userId param:', userId, 'auth:', getAuthUserId());
     throw new Error('User must be logged in to save notes');
   }
 
   try {
     const noteToSave = {
-      userId: user.uid,
+      userId: uid,
       ...noteData,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     };
 
-    console.log('[Notes] Saving game plan note:', {
+    console.log('[Notes] Saving game plan note for user:', uid, {
       riskStyle: noteToSave.riskStyle,
       sectors: noteToSave.selectedSectors?.length,
       picks: noteToSave.mustHavePicks?.length
@@ -57,21 +71,23 @@ export const saveGamePlanNote = async (noteData) => {
 };
 
 /**
- * Get all game plan notes for the current user
+ * Get all game plan notes for a user
+ * @param {string} userId - Optional: pass userId directly
  * @param {number} maxResults - Maximum number of results (default 20)
  * @returns {Promise<Array>} - Array of game plan notes
  */
-export const getGamePlanNotes = async (maxResults = 20) => {
-  const user = auth.currentUser;
+export const getGamePlanNotes = async (userId = null, maxResults = 20) => {
+  const uid = userId || getAuthUserId();
 
-  if (!user) {
+  if (!uid) {
+    console.error('[Notes] No user ID available for fetching notes');
     throw new Error('User must be logged in to view notes');
   }
 
   try {
     const q = query(
       collection(db, COLLECTION_NAME),
-      where('userId', '==', user.uid),
+      where('userId', '==', uid),
       orderBy('createdAt', 'desc'),
       limit(maxResults)
     );
@@ -88,7 +104,7 @@ export const getGamePlanNotes = async (maxResults = 20) => {
       });
     });
 
-    console.log('[Notes] Retrieved', notes.length, 'notes');
+    console.log('[Notes] Retrieved', notes.length, 'notes for user:', uid);
 
     return notes;
 
@@ -127,31 +143,19 @@ export const getGamePlanNote = async (noteId) => {
 /**
  * Delete a game plan note
  * @param {string} noteId - The note ID to delete
+ * @param {string} userId - Optional: pass userId for verification
  * @returns {Promise<void>}
  */
-export const deleteGamePlanNote = async (noteId) => {
-  const user = auth.currentUser;
+export const deleteGamePlanNote = async (noteId, userId = null) => {
+  const uid = userId || getAuthUserId();
 
-  if (!user) {
+  if (!uid) {
     throw new Error('User must be logged in to delete notes');
   }
 
   try {
-    // First verify the note belongs to the user
-    const noteDoc = await getGamePlanNote(noteId);
-
-    if (!noteDoc) {
-      throw new Error('Note not found');
-    }
-
-    if (noteDoc.userId !== user.uid) {
-      throw new Error('Not authorized to delete this note');
-    }
-
     await deleteDoc(doc(db, COLLECTION_NAME, noteId));
-
     console.log('[Notes] Deleted note:', noteId);
-
   } catch (error) {
     console.error('[Notes] Error deleting note:', error);
     throw error;

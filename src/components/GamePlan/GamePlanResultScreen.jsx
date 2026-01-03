@@ -6,7 +6,7 @@ import { saveTemplate } from '../../services/templateService';
 import { saveGamePlanNote } from '../../services/gamePlanNotesService';
 import { SECTORS } from '../../constants/sectors';
 
-const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData, user }) => {
+const GamePlanResultScreen = ({ onBack, onComplete, onGoHome, gamePlanData, user }) => {
   const { riskStyle, selectedSectors, mustHavePicks } = gamePlanData;
 
   const [recommendations, setRecommendations] = useState(null);
@@ -150,7 +150,9 @@ const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData, user }) => {
         sessionPicks: aiPicks?.sessionPicks || []
       };
 
-      await saveGamePlanNote(noteData);
+      // Pass user ID directly to avoid auth.currentUser issues
+      const userId = user?.odUserId || user?.uid || user?.username;
+      await saveGamePlanNote(noteData, userId);
       setSavedNote(true);
 
       // Reset saved status after 3 seconds
@@ -164,10 +166,14 @@ const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData, user }) => {
     }
   };
 
-  // Return to dashboard/main screen
+  // Return to dashboard/main screen (exits the entire flow)
   const handleReturnToDashboard = () => {
-    // Use onBack to navigate back to the main screen
-    onBack?.();
+    // Use onGoHome to exit the flow completely, fallback to onBack
+    if (onGoHome) {
+      onGoHome();
+    } else {
+      onBack?.();
+    }
   };
 
   const getSectorNames = () => {

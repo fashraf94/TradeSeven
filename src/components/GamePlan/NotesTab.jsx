@@ -35,22 +35,25 @@ const RISK_STYLES = {
   conservative: { label: 'Conservative', color: '#3b82f6', emoji: '🛡️' }
 };
 
-const NotesTab = () => {
+const NotesTab = ({ user }) => {
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedNote, setExpandedNote] = useState(null);
   const [deleting, setDeleting] = useState(null);
 
+  // Get user ID from prop
+  const userId = user?.odUserId || user?.uid || user?.username;
+
   useEffect(() => {
     loadNotes();
-  }, []);
+  }, [userId]);
 
   const loadNotes = async () => {
     try {
       setLoading(true);
       setError(null);
-      const fetchedNotes = await getGamePlanNotes(20);
+      const fetchedNotes = await getGamePlanNotes(userId, 20);
       setNotes(fetchedNotes);
     } catch (err) {
       console.error('Error loading notes:', err);
@@ -70,7 +73,7 @@ const NotesTab = () => {
     setDeleting(noteId);
 
     try {
-      await deleteGamePlanNote(noteId);
+      await deleteGamePlanNote(noteId, userId);
       setNotes(prev => prev.filter(n => n.id !== noteId));
     } catch (err) {
       console.error('Error deleting note:', err);

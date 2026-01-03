@@ -90,6 +90,7 @@ const BaggerBombGamePlanFlow = ({ onComplete, onBack, user }) => {
         <GamePlanResultScreen
           onBack={handleBack}
           onComplete={handleComplete}
+          onGoHome={onBack}
           gamePlanData={gamePlanData}
           user={user}
         />
