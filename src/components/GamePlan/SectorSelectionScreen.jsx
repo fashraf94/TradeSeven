@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Loader2, Check, RefreshCw } from 'lucide-react';
 import { fetchSectorData } from '../../services/sectorDataService';
 import { SECTORS } from '../../constants/sectors';
+import SectorCard from './SectorCard';
 
 // Sector recommendation logic based on market stance + risk style
 const getRecommendedSectors = (marketStance, riskStyle) => {
@@ -350,7 +351,7 @@ const SectorSelectionScreen = ({
         </span>
       </div>
 
-      {/* Sector Cards - CENTERED */}
+      {/* Sector Cards - CENTERED using SectorCard component */}
       <div style={{
         flex: 1,
         padding: '0 20px 120px',
@@ -364,7 +365,7 @@ const SectorSelectionScreen = ({
           flexWrap: 'wrap',
           gap: '16px',
           justifyContent: 'center',
-          maxWidth: '900px',
+          maxWidth: '960px',
           width: '100%'
         }}>
           {displayedSectors.map(sectorId => {
@@ -372,24 +373,23 @@ const SectorSelectionScreen = ({
             const sector = getSectorInfo(sectorId);
             const isLoading = loadingSectors.has(sectorId);
             const isSelected = selectedSectors.includes(sectorId);
-            const canSelect = isSelected || selectedSectors.length < maxSelections;
 
-            // Loading state
+            // Loading state placeholder
             if (isLoading && !data) {
               return (
                 <div
                   key={sectorId}
                   style={{
-                    width: '280px',
+                    width: '300px',
                     backgroundColor: '#161b22',
                     border: '1px solid #21262d',
-                    borderRadius: '16px',
+                    borderRadius: '12px',
                     padding: '32px',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    minHeight: '180px'
+                    minHeight: '200px'
                   }}
                 >
                   <Loader2
@@ -408,134 +408,19 @@ const SectorSelectionScreen = ({
               );
             }
 
-            // Sector Card
-            return (
-              <div
-                key={sectorId}
-                onClick={() => canSelect && handleSectorSelect(sectorId)}
-                style={{
-                  width: '280px',
-                  backgroundColor: isSelected ? `${sector.color}15` : '#161b22',
-                  border: isSelected
-                    ? `2px solid ${sector.color}`
-                    : '1px solid #21262d',
-                  borderRadius: '16px',
-                  padding: '20px',
-                  cursor: canSelect ? 'pointer' : 'not-allowed',
-                  opacity: canSelect ? 1 : 0.5,
-                  transition: 'all 0.2s ease',
-                  position: 'relative'
-                }}
-              >
-                {/* Selection Indicator */}
-                {isSelected && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '12px',
-                    right: '12px',
-                    width: '24px',
-                    height: '24px',
-                    borderRadius: '50%',
-                    backgroundColor: sector.color,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    <Check size={14} color="#000" strokeWidth={3} />
-                  </div>
-                )}
+            // Use SectorCard component with full data
+            if (data) {
+              return (
+                <SectorCard
+                  key={sectorId}
+                  sector={data}
+                  isSelected={isSelected}
+                  onSelect={() => handleSectorSelect(sectorId)}
+                />
+              );
+            }
 
-                {/* Sector Header */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                  <div style={{
-                    width: '48px',
-                    height: '48px',
-                    borderRadius: '12px',
-                    backgroundColor: `${sector.color}20`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '24px'
-                  }}>
-                    {sector.emoji}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: '600', fontSize: '16px', color: '#fff' }}>
-                      {sector.name}
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#8b949e' }}>
-                      {sectorId}
-                    </div>
-                  </div>
-                  {/* Performance */}
-                  {data?.performance && (
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{
-                        fontSize: '16px',
-                        fontWeight: '700',
-                        color: (data.performance.month1 || 0) >= 0 ? '#10b981' : '#ef4444'
-                      }}>
-                        {(data.performance.month1 || 0) >= 0 ? '+' : ''}
-                        {(data.performance.month1 || 0).toFixed(1)}%
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#8b949e' }}>1M</div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Trend & Breadth */}
-                {data && (
-                  <div style={{
-                    display: 'flex',
-                    gap: '12px',
-                    fontSize: '13px',
-                    color: '#8b949e'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ color: data.trend?.color || '#f59e0b' }}>●</span>
-                      {data.trend?.label || 'Neutral'}
-                    </div>
-                    {data.breadth && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        📊 {data.breadth.percent || 50}% breadth
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* BaggerBomb Stats */}
-                {data?.baggerBombStats && (
-                  <div style={{
-                    marginTop: '12px',
-                    padding: '10px',
-                    backgroundColor: '#0d1117',
-                    borderRadius: '8px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    fontSize: '12px'
-                  }}>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ color: '#10b981', fontWeight: '700' }}>
-                        {data.baggerBombStats.breakouts7d || 0}
-                      </div>
-                      <div style={{ color: '#8b949e' }}>Breakouts</div>
-                    </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ color: '#ef4444', fontWeight: '700' }}>
-                        {data.baggerBombStats.busts7d || 0}
-                      </div>
-                      <div style={{ color: '#8b949e' }}>Busts</div>
-                    </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ color: '#00d9ff', fontWeight: '700' }}>
-                        {data.baggerBombStats.hitRate || 0}%
-                      </div>
-                      <div style={{ color: '#8b949e' }}>Hit Rate</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
+            return null;
           })}
         </div>
       </div>
