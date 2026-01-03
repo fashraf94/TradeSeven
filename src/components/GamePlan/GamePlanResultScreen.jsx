@@ -872,6 +872,29 @@ const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData, user }) => {
   );
 };
 
+// Helper to safely render values that might be objects, strings, or numbers
+const safeRender = (value, decimals = 2) => {
+  if (value === null || value === undefined) return '—';
+
+  // Handle interpretation objects like { label: 'Good', color: '#22c55e', emoji: '✅' }
+  if (typeof value === 'object') {
+    if (value.label) return `${value.emoji || ''} ${value.label}`.trim();
+    // Handle MACD-like objects
+    if (value.macd !== undefined) return value.macd?.toFixed?.(decimals) ?? '—';
+    // Try to get first numeric value
+    const firstValue = Object.values(value).find(v => typeof v === 'number');
+    return firstValue?.toFixed?.(decimals) ?? '—';
+  }
+
+  // Handle strings (might already be formatted)
+  if (typeof value === 'string') return value;
+
+  // Handle numbers
+  if (typeof value === 'number') return value.toFixed(decimals);
+
+  return String(value);
+};
+
 // Stock Recommendation Card Component
 const StockRecommendationCard = ({ stock, rank, type }) => {
   const isBreakout = type === 'breakout';
@@ -985,7 +1008,7 @@ const StockRecommendationCard = ({ stock, rank, type }) => {
             fontWeight: '700',
             color: '#00d9ff'
           }}>
-            {stock.threshold?.toFixed(1) || '—'}%
+            {safeRender(stock.threshold, 1)}%
           </div>
           <div style={{ fontSize: '10px', color: '#8b949e' }}>Threshold</div>
         </div>
@@ -999,9 +1022,11 @@ const StockRecommendationCard = ({ stock, rank, type }) => {
           backgroundColor: 'rgba(0, 217, 255, 0.05)',
           borderRadius: '8px',
           fontSize: '12px',
-          color: '#8b949e'
+          color: typeof stock.breakoutInterpretation === 'object'
+            ? stock.breakoutInterpretation.color || '#8b949e'
+            : '#8b949e'
         }}>
-          {stock.breakoutInterpretation}
+          {safeRender(stock.breakoutInterpretation)}
         </div>
       )}
     </div>
