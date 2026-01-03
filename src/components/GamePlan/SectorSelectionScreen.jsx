@@ -1,167 +1,161 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, RefreshCw, AlertCircle, ChevronRight } from 'lucide-react';
-import SectorCard from './SectorCard';
-import SectorDetailModal from './SectorDetailModal';
-import { fetchSectorData, SECTOR_ORDER } from '../../services/sectorDataService';
-import { getRecommendedSectors, getSectorTabs } from '../../utils/sectorRecommendations';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, Loader2, Check, RefreshCw } from 'lucide-react';
+import { fetchSectorData } from '../../services/sectorDataService';
+import { SECTORS } from '../../constants/sectors';
+
+// Sector recommendation logic based on market stance + risk style
+const getRecommendedSectors = (marketStance, riskStyle) => {
+  const recommendations = {
+    'bullish-aggressive': ['XLK', 'XLY', 'XLC'],
+    'bullish-balanced': ['XLK', 'XLF', 'XLV'],
+    'bullish-conservative': ['XLV', 'XLP', 'XLU'],
+    'bearish-aggressive': ['XLE', 'XLF', 'XLB'],
+    'bearish-balanced': ['XLU', 'XLP', 'XLV'],
+    'bearish-conservative': ['XLU', 'XLP', 'XLRE'],
+    'neutral-aggressive': ['XLK', 'XLE', 'XLF'],
+    'neutral-balanced': ['XLK', 'XLV', 'XLF'],
+    'neutral-conservative': ['XLP', 'XLU', 'XLV']
+  };
+
+  const key = `${(marketStance || 'neutral').toLowerCase()}-${(riskStyle || 'balanced').toLowerCase()}`;
+  return recommendations[key] || recommendations['neutral-balanced'];
+};
+
+const ALL_SECTORS = ['XLK', 'XLV', 'XLF', 'XLE', 'XLY', 'XLP', 'XLI', 'XLB', 'XLU', 'XLRE', 'XLC'];
+
+// Explicit sector name mapping (fallback if SECTORS constant doesn't have names)
+const SECTOR_NAMES = {
+  XLK: { name: 'Technology', emoji: '💻', color: '#00d9ff' },
+  XLV: { name: 'Healthcare', emoji: '🏥', color: '#f472b6' },
+  XLF: { name: 'Financials', emoji: '🏦', color: '#10b981' },
+  XLE: { name: 'Energy', emoji: '⚡', color: '#f59e0b' },
+  XLY: { name: 'Consumer Disc', emoji: '🛍️', color: '#8b5cf6' },
+  XLP: { name: 'Consumer Staples', emoji: '🛒', color: '#06b6d4' },
+  XLI: { name: 'Industrials', emoji: '🏭', color: '#6366f1' },
+  XLB: { name: 'Materials', emoji: '🧱', color: '#ec4899' },
+  XLU: { name: 'Utilities', emoji: '💡', color: '#eab308' },
+  XLRE: { name: 'Real Estate', emoji: '🏠', color: '#14b8a6' },
+  XLC: { name: 'Communication', emoji: '📡', color: '#f97316' }
+};
+
+// Helper to get sector info (prefers SECTORS constant, falls back to SECTOR_NAMES)
+const getSectorInfo = (sectorId) => {
+  return SECTORS?.[sectorId] || SECTOR_NAMES[sectorId] || {
+    name: sectorId,
+    emoji: '📊',
+    color: '#8b949e'
+  };
+};
 
 const SectorSelectionScreen = ({
   onBack,
   onNext,
   riskStyle = 'balanced',
   marketStance = 'neutral',
+  initialSelections = [],
   maxSelections = 3
 }) => {
-  const [sectorsData, setSectorsData] = useState({});
-  const [selectedSectors, setSelectedSectors] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState(null);
-  const [detailModalSector, setDetailModalSector] = useState(null);
-  const [activeTab, setActiveTab] = useState('recommended');
-  const [loadedTabs, setLoadedTabs] = useState(['recommended']);
-
-  const tabsRef = useRef(null);
-
-  // Get recommended sectors based on market stance and risk style
+  // Get recommended sectors
   const recommendedSectorIds = getRecommendedSectors(marketStance, riskStyle);
-  const tabs = getSectorTabs(recommendedSectorIds);
+  const otherSectorIds = ALL_SECTORS.filter(id => !recommendedSectorIds.includes(id));
+
+  // State
+  const [selectedSectors, setSelectedSectors] = useState(initialSelections);
+  const [sectorData, setSectorData] = useState({});
+  const [loadingSectors, setLoadingSectors] = useState(new Set());
+  const [loadedSectors, setLoadedSectors] = useState(new Set());
+  const [activeTab, setActiveTab] = useState('recommended');
 
   // Load recommended sectors on mount
   useEffect(() => {
-    loadRecommendedSectors();
+    loadSectors(recommendedSectorIds);
   }, []);
 
-  const loadRecommendedSectors = async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  // Load sectors function
+  const loadSectors = async (sectorIds) => {
+    const sectorsToLoad = sectorIds.filter(id =>
+      !loadedSectors.has(id) && !loadingSectors.has(id)
+    );
 
-      // Only load the 3 recommended sectors initially
-      const data = {};
-      await Promise.all(
-        recommendedSectorIds.map(async (sectorId) => {
+    if (sectorsToLoad.length === 0) return;
+
+    setLoadingSectors(prev => new Set([...prev, ...sectorsToLoad]));
+
+    try {
+      const results = await Promise.all(
+        sectorsToLoad.map(async (sectorId) => {
           try {
-            const sectorData = await fetchSectorData(sectorId);
-            if (sectorData) {
-              data[sectorId] = sectorData;
-            }
+            const data = await fetchSectorData(sectorId);
+            return { sectorId, data };
           } catch (err) {
             console.error(`Error loading sector ${sectorId}:`, err);
+            return { sectorId, data: null };
           }
         })
       );
 
-      setSectorsData(data);
+      setSectorData(prev => {
+        const updated = { ...prev };
+        results.forEach(({ sectorId, data }) => {
+          if (data) updated[sectorId] = data;
+        });
+        return updated;
+      });
+
+      setLoadedSectors(prev => new Set([...prev, ...sectorsToLoad]));
+
     } catch (err) {
       console.error('Error loading sectors:', err);
-      setError('Failed to load sector data. Please try again.');
     } finally {
-      setLoading(false);
+      setLoadingSectors(prev => {
+        const next = new Set(prev);
+        sectorsToLoad.forEach(id => next.delete(id));
+        return next;
+      });
     }
   };
 
-  // Load sectors for a specific tab on-demand
-  const loadTabSectors = async (tabId) => {
-    if (loadedTabs.includes(tabId)) return;
-
-    const tab = tabs.find(t => t.id === tabId);
-    if (!tab || tab.sectors.length === 0) return;
-
-    setLoadingMore(true);
-
-    try {
-      const data = { ...sectorsData };
-      await Promise.all(
-        tab.sectors.map(async (sectorId) => {
-          if (!data[sectorId]) {
-            try {
-              const sectorData = await fetchSectorData(sectorId);
-              if (sectorData) {
-                data[sectorId] = sectorData;
-              }
-            } catch (err) {
-              console.error(`Error loading sector ${sectorId}:`, err);
-            }
-          }
-        })
-      );
-
-      setSectorsData(data);
-      setLoadedTabs(prev => [...prev, tabId]);
-    } catch (err) {
-      console.error('Error loading tab sectors:', err);
-    } finally {
-      setLoadingMore(false);
-    }
-  };
-
-  const handleTabChange = async (tabId) => {
+  // Handle tab click
+  const handleTabClick = (tabId) => {
     setActiveTab(tabId);
-    await loadTabSectors(tabId);
+
+    // If it's an individual sector tab, load it
+    if (tabId !== 'recommended' && !loadedSectors.has(tabId)) {
+      loadSectors([tabId]);
+    }
   };
 
-  const handleSelectSector = (sectorId) => {
+  // Handle sector selection
+  const handleSectorSelect = (sectorId) => {
     setSelectedSectors(prev => {
       if (prev.includes(sectorId)) {
         return prev.filter(id => id !== sectorId);
       }
       if (prev.length >= maxSelections) {
-        // Replace oldest selection
-        return [...prev.slice(1), sectorId];
+        return prev; // Can't select more
       }
       return [...prev, sectorId];
     });
   };
 
-  const handleViewDetails = (sectorId) => {
-    setDetailModalSector(sectorsData[sectorId]);
-  };
-
-  const handleNext = () => {
-    if (selectedSectors.length === 0) {
-      alert('Please select at least one sector');
-      return;
+  // Get sectors to display
+  const getDisplayedSectors = () => {
+    if (activeTab === 'recommended') {
+      return recommendedSectorIds;
     }
-    onNext?.(selectedSectors);
+    return [activeTab]; // Single sector
   };
 
-  // Get current tab's sectors
-  const currentTab = tabs.find(t => t.id === activeTab) || tabs[0];
-  const currentSectors = currentTab?.sectors || [];
-
-  if (loading) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        backgroundColor: '#0d1117',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#ffffff'
-      }}>
-        <div style={{
-          width: '48px',
-          height: '48px',
-          border: '3px solid #21262d',
-          borderTopColor: '#00d9ff',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite',
-          marginBottom: '16px'
-        }} />
-        <div style={{ color: '#8b949e' }}>Loading recommended sectors...</div>
-        <style>{`
-          @keyframes spin {
-            to { transform: rotate(360deg); }
-          }
-        `}</style>
-      </div>
-    );
-  }
+  const displayedSectors = getDisplayedSectors();
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0d1117', color: '#ffffff' }}>
+    <div style={{
+      minHeight: '100vh',
+      backgroundColor: '#0d1117',
+      color: '#ffffff',
+      display: 'flex',
+      flexDirection: 'column'
+    }}>
       {/* Header */}
       <div style={{
         padding: '16px 20px',
@@ -185,13 +179,9 @@ const SectorSelectionScreen = ({
         >
           <ArrowLeft size={18} /> Back
         </button>
-
-        <div style={{ fontSize: '14px', color: '#8b949e' }}>
-          Step 3 of 5
-        </div>
-
+        <span style={{ color: '#8b949e', fontSize: '14px' }}>Step 3 of 5</span>
         <button
-          onClick={loadRecommendedSectors}
+          onClick={() => loadSectors(recommendedSectorIds)}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -218,208 +208,336 @@ const SectorSelectionScreen = ({
 
       {/* Title */}
       <div style={{ textAlign: 'center', padding: '0 20px 16px' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: '700', marginBottom: '8px' }}>
+        <h1 style={{ fontSize: '26px', fontWeight: '700', marginBottom: '8px' }}>
           Select Your Sectors
         </h1>
-        <p style={{ color: '#8b949e', fontSize: '15px' }}>
+        <p style={{ color: '#8b949e', fontSize: '14px' }}>
           Choose 1-{maxSelections} sectors you're bullish on
         </p>
       </div>
 
-      {/* Error Banner */}
-      {error && (
+      {/* Selected Sectors Pills */}
+      {selectedSectors.length > 0 && (
         <div style={{
-          margin: '0 20px 16px',
-          padding: '12px 16px',
-          backgroundColor: 'rgba(239, 68, 68, 0.1)',
-          border: '1px solid #ef4444',
-          borderRadius: '8px',
           display: 'flex',
-          alignItems: 'center',
-          gap: '10px'
+          justifyContent: 'center',
+          gap: '8px',
+          marginBottom: '16px',
+          flexWrap: 'wrap',
+          padding: '0 20px'
         }}>
-          <AlertCircle size={18} color="#ef4444" />
-          <span style={{ color: '#ef4444' }}>{error}</span>
+          {selectedSectors.map(sectorId => {
+            const sector = getSectorInfo(sectorId);
+            return (
+              <div
+                key={sectorId}
+                onClick={() => handleSectorSelect(sectorId)}
+                style={{
+                  padding: '6px 12px',
+                  backgroundColor: `${sector.color}30`,
+                  border: `1px solid ${sector.color}`,
+                  borderRadius: '20px',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  color: sector.color,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                {sector.emoji} {sectorId}
+                <span style={{ opacity: 0.7 }}>✕</span>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Horizontal Tabs */}
-      <div
-        ref={tabsRef}
-        style={{
+      {/* Sector Tabs - Horizontal Scroll with Individual Sectors */}
+      <div style={{
+        padding: '0 20px',
+        marginBottom: '20px',
+        overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none'
+      }}>
+        <div style={{
           display: 'flex',
           gap: '8px',
-          padding: '0 20px 16px',
-          overflowX: 'auto',
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-          WebkitOverflowScrolling: 'touch'
-        }}
-      >
-        {tabs.map((tab) => (
+          paddingBottom: '8px',
+          justifyContent: 'flex-start'
+        }}>
+          {/* Recommended Tab */}
           <button
-            key={tab.id}
-            onClick={() => handleTabChange(tab.id)}
+            onClick={() => handleTabClick('recommended')}
             style={{
+              padding: '10px 16px',
+              backgroundColor: activeTab === 'recommended' ? '#f59e0b' : '#21262d',
+              border: 'none',
+              borderRadius: '20px',
+              color: activeTab === 'recommended' ? '#000' : '#8b949e',
+              fontWeight: '600',
+              fontSize: '13px',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '10px 16px',
-              backgroundColor: activeTab === tab.id ? '#00d9ff' : '#21262d',
-              border: 'none',
-              borderRadius: '20px',
-              color: activeTab === tab.id ? '#000' : '#fff',
-              fontSize: '13px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              transition: 'all 0.2s ease'
+              flexShrink: 0
             }}
           >
-            <span>{tab.emoji}</span>
-            <span>{tab.label}</span>
-            <span style={{
-              padding: '2px 6px',
-              backgroundColor: activeTab === tab.id ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.1)',
-              borderRadius: '10px',
-              fontSize: '11px'
-            }}>
-              {tab.sectors.length}
-            </span>
+            ⭐ Recommended
           </button>
-        ))}
+
+          {/* Individual Sector Tabs */}
+          {otherSectorIds.map(sectorId => {
+            const sector = getSectorInfo(sectorId);
+            const isLoading = loadingSectors.has(sectorId);
+            const isActive = activeTab === sectorId;
+            const isSelected = selectedSectors.includes(sectorId);
+
+            return (
+              <button
+                key={sectorId}
+                onClick={() => handleTabClick(sectorId)}
+                style={{
+                  padding: '10px 16px',
+                  backgroundColor: isActive ? (sector.color) :
+                                   isSelected ? `${sector.color}40` : '#21262d',
+                  border: isSelected && !isActive ? `1px solid ${sector.color}` : 'none',
+                  borderRadius: '20px',
+                  color: isActive ? '#000' : isSelected ? sector.color : '#8b949e',
+                  fontWeight: '600',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: isLoading ? 0.7 : 1,
+                  flexShrink: 0
+                }}
+              >
+                {sector.emoji} {sector.name}
+                {isLoading && (
+                  <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                )}
+                {isSelected && !isLoading && <Check size={14} />}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Selection Counter */}
       <div style={{
+        margin: '0 20px 16px',
+        padding: '10px 16px',
+        backgroundColor: '#161b22',
+        borderRadius: '10px',
         display: 'flex',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '0 20px',
-        marginBottom: '16px'
+        alignItems: 'center'
       }}>
-        <div style={{ fontSize: '14px', color: '#8b949e' }}>
-          {selectedSectors.length} of {maxSelections} selected
-        </div>
-        {selectedSectors.length > 0 && (
-          <div style={{ display: 'flex', gap: '6px' }}>
-            {selectedSectors.map(id => (
-              <span
-                key={id}
-                style={{
-                  padding: '4px 10px',
-                  backgroundColor: sectorsData[id]?.color || '#00d9ff',
-                  borderRadius: '12px',
-                  fontSize: '11px',
-                  fontWeight: '600',
-                  color: '#000'
-                }}
-              >
-                {id}
-              </span>
-            ))}
-          </div>
-        )}
+        <span style={{ color: '#8b949e' }}>Selected</span>
+        <span style={{
+          fontWeight: '700',
+          color: selectedSectors.length === maxSelections ? '#10b981' : '#00d9ff'
+        }}>
+          {selectedSectors.length} / {maxSelections}
+        </span>
       </div>
 
-      {/* Loading More Indicator */}
-      {loadingMore && (
+      {/* Sector Cards - CENTERED */}
+      <div style={{
+        flex: 1,
+        padding: '0 20px 120px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center'
+      }}>
+        {/* Centered Grid Container */}
         <div style={{
           display: 'flex',
-          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '16px',
           justifyContent: 'center',
-          gap: '8px',
-          padding: '12px 20px',
-          color: '#8b949e'
+          maxWidth: '900px',
+          width: '100%'
         }}>
-          <div style={{
-            width: '16px',
-            height: '16px',
-            border: '2px solid #21262d',
-            borderTopColor: '#00d9ff',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite'
-          }} />
-          Loading sectors...
-        </div>
-      )}
+          {displayedSectors.map(sectorId => {
+            const data = sectorData[sectorId];
+            const sector = getSectorInfo(sectorId);
+            const isLoading = loadingSectors.has(sectorId);
+            const isSelected = selectedSectors.includes(sectorId);
+            const canSelect = isSelected || selectedSectors.length < maxSelections;
 
-      {/* Sector Cards */}
-      <div style={{ padding: '0 20px 100px' }}>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-          gap: '16px'
-        }}>
-          {currentSectors.map(sectorId => (
-            sectorsData[sectorId] ? (
-              <SectorCard
-                key={sectorId}
-                sector={sectorsData[sectorId]}
-                isSelected={selectedSectors.includes(sectorId)}
-                onSelect={handleSelectSector}
-                onViewDetails={handleViewDetails}
-                compact={true}
-              />
-            ) : (
+            // Loading state
+            if (isLoading && !data) {
+              return (
+                <div
+                  key={sectorId}
+                  style={{
+                    width: '280px',
+                    backgroundColor: '#161b22',
+                    border: '1px solid #21262d',
+                    borderRadius: '16px',
+                    padding: '32px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minHeight: '180px'
+                  }}
+                >
+                  <Loader2
+                    size={32}
+                    color={sector.color}
+                    style={{ animation: 'spin 1s linear infinite' }}
+                  />
+                  <span style={{
+                    marginTop: '16px',
+                    color: '#8b949e',
+                    fontSize: '14px'
+                  }}>
+                    Loading {sector.name}...
+                  </span>
+                </div>
+              );
+            }
+
+            // Sector Card
+            return (
               <div
                 key={sectorId}
+                onClick={() => canSelect && handleSectorSelect(sectorId)}
                 style={{
+                  width: '280px',
+                  backgroundColor: isSelected ? `${sector.color}15` : '#161b22',
+                  border: isSelected
+                    ? `2px solid ${sector.color}`
+                    : '1px solid #21262d',
+                  borderRadius: '16px',
                   padding: '20px',
-                  backgroundColor: '#161b22',
-                  borderRadius: '12px',
-                  border: '1px solid #21262d',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  minHeight: '120px'
+                  cursor: canSelect ? 'pointer' : 'not-allowed',
+                  opacity: canSelect ? 1 : 0.5,
+                  transition: 'all 0.2s ease',
+                  position: 'relative'
                 }}
               >
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '8px',
-                  color: '#8b949e'
-                }}>
+                {/* Selection Indicator */}
+                {isSelected && (
                   <div style={{
+                    position: 'absolute',
+                    top: '12px',
+                    right: '12px',
                     width: '24px',
                     height: '24px',
-                    border: '2px solid #21262d',
-                    borderTopColor: '#00d9ff',
                     borderRadius: '50%',
-                    animation: 'spin 1s linear infinite'
-                  }} />
-                  <span style={{ fontSize: '13px' }}>Loading {sectorId}...</span>
-                </div>
-              </div>
-            )
-          ))}
-        </div>
+                    backgroundColor: sector.color,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <Check size={14} color="#000" strokeWidth={3} />
+                  </div>
+                )}
 
-        {/* Show All Sectors Link */}
-        {activeTab === 'recommended' && tabs.length > 1 && (
-          <button
-            onClick={() => handleTabChange(tabs[1]?.id || 'growth')}
-            style={{
-              width: '100%',
-              marginTop: '20px',
-              padding: '14px',
-              backgroundColor: '#21262d',
-              border: '1px solid #30363d',
-              borderRadius: '10px',
-              color: '#8b949e',
-              fontSize: '14px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px'
-            }}
-          >
-            Explore more sectors <ChevronRight size={16} />
-          </button>
-        )}
+                {/* Sector Header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '12px',
+                    backgroundColor: `${sector.color}20`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '24px'
+                  }}>
+                    {sector.emoji}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: '600', fontSize: '16px', color: '#fff' }}>
+                      {sector.name}
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#8b949e' }}>
+                      {sectorId}
+                    </div>
+                  </div>
+                  {/* Performance */}
+                  {data?.performance && (
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{
+                        fontSize: '16px',
+                        fontWeight: '700',
+                        color: (data.performance.month1 || 0) >= 0 ? '#10b981' : '#ef4444'
+                      }}>
+                        {(data.performance.month1 || 0) >= 0 ? '+' : ''}
+                        {(data.performance.month1 || 0).toFixed(1)}%
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#8b949e' }}>1M</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Trend & Breadth */}
+                {data && (
+                  <div style={{
+                    display: 'flex',
+                    gap: '12px',
+                    fontSize: '13px',
+                    color: '#8b949e'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ color: data.trend?.color || '#f59e0b' }}>●</span>
+                      {data.trend?.label || 'Neutral'}
+                    </div>
+                    {data.breadth && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        📊 {data.breadth.percent || 50}% breadth
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* BaggerBomb Stats */}
+                {data?.baggerBombStats && (
+                  <div style={{
+                    marginTop: '12px',
+                    padding: '10px',
+                    backgroundColor: '#0d1117',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '12px'
+                  }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ color: '#10b981', fontWeight: '700' }}>
+                        {data.baggerBombStats.breakouts7d || 0}
+                      </div>
+                      <div style={{ color: '#8b949e' }}>Breakouts</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ color: '#ef4444', fontWeight: '700' }}>
+                        {data.baggerBombStats.busts7d || 0}
+                      </div>
+                      <div style={{ color: '#8b949e' }}>Busts</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ color: '#00d9ff', fontWeight: '700' }}>
+                        {data.baggerBombStats.hitRate || 0}%
+                      </div>
+                      <div style={{ color: '#8b949e' }}>Hit Rate</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Bottom Action Bar */}
@@ -442,7 +560,7 @@ const SectorSelectionScreen = ({
             backgroundColor: '#21262d',
             border: 'none',
             borderRadius: '10px',
-            color: '#ffffff',
+            color: '#fff',
             fontWeight: '600',
             cursor: 'pointer'
           }}
@@ -450,7 +568,7 @@ const SectorSelectionScreen = ({
           Back
         </button>
         <button
-          onClick={handleNext}
+          onClick={() => onNext(selectedSectors)}
           disabled={selectedSectors.length === 0}
           style={{
             flex: 2,
@@ -458,28 +576,22 @@ const SectorSelectionScreen = ({
             backgroundColor: selectedSectors.length > 0 ? '#00d9ff' : '#21262d',
             border: 'none',
             borderRadius: '10px',
-            color: selectedSectors.length > 0 ? '#000000' : '#8b949e',
+            color: selectedSectors.length > 0 ? '#000' : '#8b949e',
             fontWeight: '600',
-            cursor: selectedSectors.length > 0 ? 'pointer' : 'not-allowed',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px'
+            cursor: selectedSectors.length > 0 ? 'pointer' : 'not-allowed'
           }}
         >
           Continue with {selectedSectors.length} Sector{selectedSectors.length !== 1 ? 's' : ''} →
         </button>
       </div>
 
-      {/* Sector Detail Modal */}
-      {detailModalSector && (
-        <SectorDetailModal
-          sector={detailModalSector}
-          onClose={() => setDetailModalSector(null)}
-          onSelectSector={handleSelectSector}
-          isSelected={selectedSectors.includes(detailModalSector.id)}
-        />
-      )}
+      <style>
+        {`
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+        `}
+      </style>
     </div>
   );
 };
