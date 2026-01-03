@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Sparkles, TrendingUp, Shield, Zap, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Save, Clock } from 'lucide-react';
+import { ArrowLeft, Sparkles, TrendingUp, Shield, Zap, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Save, Clock, Home, Check } from 'lucide-react';
 import { generateRecommendations, buildPortfolioFromRecommendations } from '../../services/baggerBombRecommendationEngine';
 import { generateAIStrategy, generateAIPicks, getCurrentSession } from '../../services/aiStrategyService';
 import { saveTemplate } from '../../services/templateService';
+import { saveGamePlanNote } from '../../services/gamePlanNotesService';
 import { SECTORS } from '../../constants/sectors';
 
 const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData, user }) => {
@@ -22,6 +23,10 @@ const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData, user }) => {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [savingTemplate, setSavingTemplate] = useState(false);
+
+  // Notes state
+  const [savingNote, setSavingNote] = useState(false);
+  const [savedNote, setSavedNote] = useState(false);
 
   const currentSession = getCurrentSession();
 
@@ -124,6 +129,45 @@ const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData, user }) => {
     } finally {
       setSavingTemplate(false);
     }
+  };
+
+  // Save game plan to Notes
+  const handleSaveToNotes = async () => {
+    if (savingNote || savedNote) return;
+
+    setSavingNote(true);
+
+    try {
+      const noteData = {
+        riskStyle,
+        selectedSectors,
+        mustHavePicks: mustHavePicks || [],
+        aiStrategy: aiStrategy || '',
+        breakoutCandidates: recommendations?.breakoutCandidates || [],
+        safePlays: recommendations?.safePlays || [],
+        cryptoRecommendation: recommendations?.cryptoRecommendation || null,
+        wildcards: aiPicks?.wildcards || [],
+        sessionPicks: aiPicks?.sessionPicks || []
+      };
+
+      await saveGamePlanNote(noteData);
+      setSavedNote(true);
+
+      // Reset saved status after 3 seconds
+      setTimeout(() => setSavedNote(false), 3000);
+
+    } catch (error) {
+      console.error('Error saving game plan:', error);
+      alert('Failed to save game plan. Please try again.');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  // Return to dashboard/main screen
+  const handleReturnToDashboard = () => {
+    // Use onBack to navigate back to the main screen
+    onBack?.();
   };
 
   const getSectorNames = () => {
@@ -740,57 +784,81 @@ const GamePlanResultScreen = ({ onBack, onComplete, gamePlanData, user }) => {
         right: 0,
         padding: '16px 20px',
         backgroundColor: '#161b22',
-        borderTop: '1px solid #21262d'
+        borderTop: '1px solid #21262d',
+        zIndex: 100
       }}>
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '8px' }}>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          {/* Return to Dashboard Button */}
           <button
-            onClick={() => setShowSaveModal(true)}
+            onClick={handleReturnToDashboard}
             style={{
+              flex: 1,
               padding: '14px 20px',
               backgroundColor: '#21262d',
-              border: 'none',
+              border: '1px solid #30363d',
               borderRadius: '10px',
               color: '#ffffff',
               fontWeight: '600',
+              fontSize: '14px',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '6px'
+              justifyContent: 'center',
+              gap: '8px',
+              transition: 'all 0.2s ease'
             }}
           >
-            <Save size={18} />
+            <Home size={18} />
+            Dashboard
           </button>
+
+          {/* Save to Notes Button */}
           <button
-            onClick={handleCreatePortfolio}
-            disabled={!recommendations}
+            onClick={handleSaveToNotes}
+            disabled={savingNote || savedNote}
             style={{
-              flex: 1,
-              padding: '14px',
-              backgroundColor: recommendations ? '#00d9ff' : '#21262d',
+              flex: 1.5,
+              padding: '14px 20px',
+              backgroundColor: savedNote ? '#10b981' : '#f59e0b',
               border: 'none',
               borderRadius: '10px',
-              color: recommendations ? '#000' : '#8b949e',
+              color: '#000000',
               fontWeight: '600',
-              fontSize: '16px',
-              cursor: recommendations ? 'pointer' : 'not-allowed',
+              fontSize: '14px',
+              cursor: savingNote || savedNote ? 'default' : 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '8px'
+              gap: '8px',
+              transition: 'all 0.2s ease',
+              opacity: savingNote ? 0.7 : 1
             }}
           >
-            <Sparkles size={18} />
-            Use This Plan
+            {savedNote ? (
+              <>
+                <Check size={18} />
+                Saved!
+              </>
+            ) : savingNote ? (
+              <>
+                <div style={{
+                  width: '16px',
+                  height: '16px',
+                  border: '2px solid #000',
+                  borderTopColor: 'transparent',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }} />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save size={18} />
+                Save to Notes
+              </>
+            )}
           </button>
         </div>
-        <p style={{
-          textAlign: 'center',
-          fontSize: '12px',
-          color: '#8b949e',
-          margin: 0
-        }}>
-          9 stocks + 1 crypto = $1M portfolio
-        </p>
       </div>
 
       {/* Save Template Modal */}
