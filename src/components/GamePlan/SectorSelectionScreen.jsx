@@ -1,31 +1,57 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, RefreshCw, AlertCircle, ChevronRight } from 'lucide-react';
 import SectorCard from './SectorCard';
 import SectorDetailModal from './SectorDetailModal';
-import { fetchAllSectorsData, SECTOR_ORDER } from '../../services/sectorDataService';
+import { fetchSectorData, SECTOR_ORDER } from '../../services/sectorDataService';
+import { getRecommendedSectors, getSectorTabs } from '../../utils/sectorRecommendations';
 
 const SectorSelectionScreen = ({
   onBack,
   onNext,
   riskStyle = 'balanced',
+  marketStance = 'neutral',
   maxSelections = 3
 }) => {
   const [sectorsData, setSectorsData] = useState({});
   const [selectedSectors, setSelectedSectors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
   const [detailModalSector, setDetailModalSector] = useState(null);
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
+  const [activeTab, setActiveTab] = useState('recommended');
+  const [loadedTabs, setLoadedTabs] = useState(['recommended']);
 
+  const tabsRef = useRef(null);
+
+  // Get recommended sectors based on market stance and risk style
+  const recommendedSectorIds = getRecommendedSectors(marketStance, riskStyle);
+  const tabs = getSectorTabs(recommendedSectorIds);
+
+  // Load recommended sectors on mount
   useEffect(() => {
-    loadSectorsData();
+    loadRecommendedSectors();
   }, []);
 
-  const loadSectorsData = async (forceRefresh = false) => {
+  const loadRecommendedSectors = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await fetchAllSectorsData(forceRefresh);
+
+      // Only load the 3 recommended sectors initially
+      const data = {};
+      await Promise.all(
+        recommendedSectorIds.map(async (sectorId) => {
+          try {
+            const sectorData = await fetchSectorData(sectorId);
+            if (sectorData) {
+              data[sectorId] = sectorData;
+            }
+          } catch (err) {
+            console.error(`Error loading sector ${sectorId}:`, err);
+          }
+        })
+      );
+
       setSectorsData(data);
     } catch (err) {
       console.error('Error loading sectors:', err);
@@ -33,6 +59,46 @@ const SectorSelectionScreen = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  // Load sectors for a specific tab on-demand
+  const loadTabSectors = async (tabId) => {
+    if (loadedTabs.includes(tabId)) return;
+
+    const tab = tabs.find(t => t.id === tabId);
+    if (!tab || tab.sectors.length === 0) return;
+
+    setLoadingMore(true);
+
+    try {
+      const data = { ...sectorsData };
+      await Promise.all(
+        tab.sectors.map(async (sectorId) => {
+          if (!data[sectorId]) {
+            try {
+              const sectorData = await fetchSectorData(sectorId);
+              if (sectorData) {
+                data[sectorId] = sectorData;
+              }
+            } catch (err) {
+              console.error(`Error loading sector ${sectorId}:`, err);
+            }
+          }
+        })
+      );
+
+      setSectorsData(data);
+      setLoadedTabs(prev => [...prev, tabId]);
+    } catch (err) {
+      console.error('Error loading tab sectors:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const handleTabChange = async (tabId) => {
+    setActiveTab(tabId);
+    await loadTabSectors(tabId);
   };
 
   const handleSelectSector = (sectorId) => {
@@ -60,30 +126,9 @@ const SectorSelectionScreen = ({
     onNext?.(selectedSectors);
   };
 
-  // Get recommended sectors based on risk style
-  const getRecommendedSectors = () => {
-    const sorted = [...SECTOR_ORDER]
-      .filter(id => sectorsData[id])
-      .sort((a, b) => {
-        const sectorA = sectorsData[a];
-        const sectorB = sectorsData[b];
-
-        if (riskStyle === 'aggressive') {
-          // Sort by volatility/breakout potential
-          return (sectorB.baggerBombStats?.breakouts7d || 0) - (sectorA.baggerBombStats?.breakouts7d || 0);
-        } else if (riskStyle === 'conservative') {
-          // Sort by stability (inverse of avg threshold)
-          return (sectorA.baggerBombStats?.avgThreshold || 5) - (sectorB.baggerBombStats?.avgThreshold || 5);
-        } else {
-          // Balanced - sort by hit rate
-          return (sectorB.baggerBombStats?.hitRate || 0) - (sectorA.baggerBombStats?.hitRate || 0);
-        }
-      });
-
-    return sorted.slice(0, 3);
-  };
-
-  const recommendedSectors = getRecommendedSectors();
+  // Get current tab's sectors
+  const currentTab = tabs.find(t => t.id === activeTab) || tabs[0];
+  const currentSectors = currentTab?.sectors || [];
 
   if (loading) {
     return (
@@ -105,7 +150,7 @@ const SectorSelectionScreen = ({
           animation: 'spin 1s linear infinite',
           marginBottom: '16px'
         }} />
-        <div style={{ color: '#8b949e' }}>Loading sector data...</div>
+        <div style={{ color: '#8b949e' }}>Loading recommended sectors...</div>
         <style>{`
           @keyframes spin {
             to { transform: rotate(360deg); }
@@ -146,7 +191,7 @@ const SectorSelectionScreen = ({
         </div>
 
         <button
-          onClick={() => loadSectorsData(true)}
+          onClick={loadRecommendedSectors}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -158,7 +203,7 @@ const SectorSelectionScreen = ({
             fontSize: '14px'
           }}
         >
-          <RefreshCw size={16} /> Refresh
+          <RefreshCw size={16} />
         </button>
       </div>
 
@@ -172,19 +217,19 @@ const SectorSelectionScreen = ({
       </div>
 
       {/* Title */}
-      <div style={{ textAlign: 'center', padding: '0 20px 24px' }}>
+      <div style={{ textAlign: 'center', padding: '0 20px 16px' }}>
         <h1 style={{ fontSize: '28px', fontWeight: '700', marginBottom: '8px' }}>
           Select Your Sectors
         </h1>
         <p style={{ color: '#8b949e', fontSize: '15px' }}>
-          Choose 1-{maxSelections} sectors you're bullish on. This affects which stocks are recommended.
+          Choose 1-{maxSelections} sectors you're bullish on
         </p>
       </div>
 
       {/* Error Banner */}
       {error && (
         <div style={{
-          margin: '0 20px 20px',
+          margin: '0 20px 16px',
           padding: '12px 16px',
           backgroundColor: 'rgba(239, 68, 68, 0.1)',
           border: '1px solid #ef4444',
@@ -198,47 +243,52 @@ const SectorSelectionScreen = ({
         </div>
       )}
 
-      {/* Recommended Banner */}
-      {recommendedSectors.length > 0 && (
-        <div style={{
-          margin: '0 20px 20px',
-          padding: '14px 16px',
-          backgroundColor: 'rgba(0, 217, 255, 0.1)',
-          border: '1px solid rgba(0, 217, 255, 0.3)',
-          borderRadius: '10px'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-            <span style={{ fontSize: '16px' }}>🎯</span>
-            <span style={{ fontWeight: '600', color: '#00d9ff' }}>
-              Recommended for {riskStyle.charAt(0).toUpperCase() + riskStyle.slice(1)} Strategy
+      {/* Horizontal Tabs */}
+      <div
+        ref={tabsRef}
+        style={{
+          display: 'flex',
+          gap: '8px',
+          padding: '0 20px 16px',
+          overflowX: 'auto',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+          WebkitOverflowScrolling: 'touch'
+        }}
+      >
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => handleTabChange(tab.id)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '10px 16px',
+              backgroundColor: activeTab === tab.id ? '#00d9ff' : '#21262d',
+              border: 'none',
+              borderRadius: '20px',
+              color: activeTab === tab.id ? '#000' : '#fff',
+              fontSize: '13px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <span>{tab.emoji}</span>
+            <span>{tab.label}</span>
+            <span style={{
+              padding: '2px 6px',
+              backgroundColor: activeTab === tab.id ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.1)',
+              borderRadius: '10px',
+              fontSize: '11px'
+            }}>
+              {tab.sectors.length}
             </span>
-          </div>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {recommendedSectors.map(sectorId => (
-              <button
-                key={sectorId}
-                onClick={() => handleSelectSector(sectorId)}
-                style={{
-                  padding: '6px 12px',
-                  backgroundColor: selectedSectors.includes(sectorId) ? sectorsData[sectorId]?.color : '#21262d',
-                  border: 'none',
-                  borderRadius: '16px',
-                  color: selectedSectors.includes(sectorId) ? '#000' : '#fff',
-                  fontSize: '13px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                {sectorsData[sectorId]?.emoji} {sectorsData[sectorId]?.name}
-                {selectedSectors.includes(sectorId) && ' ✓'}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+          </button>
+        ))}
+      </div>
 
       {/* Selection Counter */}
       <div style={{
@@ -251,74 +301,124 @@ const SectorSelectionScreen = ({
         <div style={{ fontSize: '14px', color: '#8b949e' }}>
           {selectedSectors.length} of {maxSelections} selected
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={() => setViewMode('grid')}
-            style={{
-              padding: '6px 12px',
-              backgroundColor: viewMode === 'grid' ? '#21262d' : 'transparent',
-              border: '1px solid #21262d',
-              borderRadius: '6px',
-              color: viewMode === 'grid' ? '#fff' : '#8b949e',
-              fontSize: '12px',
-              cursor: 'pointer'
-            }}
-          >
-            Grid
-          </button>
-          <button
-            onClick={() => setViewMode('list')}
-            style={{
-              padding: '6px 12px',
-              backgroundColor: viewMode === 'list' ? '#21262d' : 'transparent',
-              border: '1px solid #21262d',
-              borderRadius: '6px',
-              color: viewMode === 'list' ? '#fff' : '#8b949e',
-              fontSize: '12px',
-              cursor: 'pointer'
-            }}
-          >
-            List
-          </button>
-        </div>
+        {selectedSectors.length > 0 && (
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {selectedSectors.map(id => (
+              <span
+                key={id}
+                style={{
+                  padding: '4px 10px',
+                  backgroundColor: sectorsData[id]?.color || '#00d9ff',
+                  borderRadius: '12px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  color: '#000'
+                }}
+              >
+                {id}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* Loading More Indicator */}
+      {loadingMore && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          padding: '12px 20px',
+          color: '#8b949e'
+        }}>
+          <div style={{
+            width: '16px',
+            height: '16px',
+            border: '2px solid #21262d',
+            borderTopColor: '#00d9ff',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }} />
+          Loading sectors...
+        </div>
+      )}
 
       {/* Sector Cards */}
       <div style={{ padding: '0 20px 100px' }}>
-        {viewMode === 'grid' ? (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-            gap: '16px'
-          }}>
-            {SECTOR_ORDER.map(sectorId => (
-              sectorsData[sectorId] && (
-                <SectorCard
-                  key={sectorId}
-                  sector={sectorsData[sectorId]}
-                  isSelected={selectedSectors.includes(sectorId)}
-                  onSelect={handleSelectSector}
-                  onViewDetails={handleViewDetails}
-                  compact={true}
-                />
-              )
-            ))}
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {SECTOR_ORDER.map(sectorId => (
-              sectorsData[sectorId] && (
-                <SectorCard
-                  key={sectorId}
-                  sector={sectorsData[sectorId]}
-                  isSelected={selectedSectors.includes(sectorId)}
-                  onSelect={handleSelectSector}
-                  onViewDetails={handleViewDetails}
-                  compact={false}
-                />
-              )
-            ))}
-          </div>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+          gap: '16px'
+        }}>
+          {currentSectors.map(sectorId => (
+            sectorsData[sectorId] ? (
+              <SectorCard
+                key={sectorId}
+                sector={sectorsData[sectorId]}
+                isSelected={selectedSectors.includes(sectorId)}
+                onSelect={handleSelectSector}
+                onViewDetails={handleViewDetails}
+                compact={true}
+              />
+            ) : (
+              <div
+                key={sectorId}
+                style={{
+                  padding: '20px',
+                  backgroundColor: '#161b22',
+                  borderRadius: '12px',
+                  border: '1px solid #21262d',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minHeight: '120px'
+                }}
+              >
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px',
+                  color: '#8b949e'
+                }}>
+                  <div style={{
+                    width: '24px',
+                    height: '24px',
+                    border: '2px solid #21262d',
+                    borderTopColor: '#00d9ff',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite'
+                  }} />
+                  <span style={{ fontSize: '13px' }}>Loading {sectorId}...</span>
+                </div>
+              </div>
+            )
+          ))}
+        </div>
+
+        {/* Show All Sectors Link */}
+        {activeTab === 'recommended' && tabs.length > 1 && (
+          <button
+            onClick={() => handleTabChange(tabs[1]?.id || 'growth')}
+            style={{
+              width: '100%',
+              marginTop: '20px',
+              padding: '14px',
+              backgroundColor: '#21262d',
+              border: '1px solid #30363d',
+              borderRadius: '10px',
+              color: '#8b949e',
+              fontSize: '14px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
+            }}
+          >
+            Explore more sectors <ChevronRight size={16} />
+          </button>
         )}
       </div>
 

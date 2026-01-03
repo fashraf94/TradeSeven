@@ -19,12 +19,45 @@ import { db, auth } from '../firebase/config';
 const COLLECTION_NAME = 'gamePlanNotes';
 
 /**
- * Get user ID from auth or return null
+ * Get user ID with multiple fallback methods
+ * Priority: auth.currentUser > localStorage > null
  */
 const getAuthUserId = () => {
   try {
-    return auth?.currentUser?.uid || null;
+    // Method 1: Firebase auth current user
+    if (auth?.currentUser?.uid) {
+      return auth.currentUser.uid;
+    }
+
+    // Method 2: Check localStorage for user data
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try {
+        const parsed = JSON.parse(storedUser);
+        if (parsed?.odUserId || parsed?.uid || parsed?.username) {
+          return parsed.odUserId || parsed.uid || parsed.username;
+        }
+      } catch (e) {
+        console.warn('[Notes] Failed to parse stored user:', e);
+      }
+    }
+
+    // Method 3: Check sessionStorage
+    const sessionUser = sessionStorage.getItem('user');
+    if (sessionUser) {
+      try {
+        const parsed = JSON.parse(sessionUser);
+        if (parsed?.odUserId || parsed?.uid || parsed?.username) {
+          return parsed.odUserId || parsed.uid || parsed.username;
+        }
+      } catch (e) {
+        console.warn('[Notes] Failed to parse session user:', e);
+      }
+    }
+
+    return null;
   } catch (e) {
+    console.error('[Notes] Error getting auth user ID:', e);
     return null;
   }
 };

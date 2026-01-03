@@ -168,12 +168,8 @@ const GamePlanResultScreen = ({ onBack, onComplete, onGoHome, gamePlanData, user
 
   // Return to dashboard/main screen (exits the entire flow)
   const handleReturnToDashboard = () => {
-    // Use onGoHome to exit the flow completely, fallback to onBack
-    if (onGoHome) {
-      onGoHome();
-    } else {
-      onBack?.();
-    }
+    // Direct navigation to dashboard - most reliable method
+    window.location.href = '/';
   };
 
   const getSectorNames = () => {
