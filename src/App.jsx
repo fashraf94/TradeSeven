@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser, clearUser } from './services/LocalStorage';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
@@ -22,14 +22,17 @@ import {
   BaggerBombScoreboard,
   AssetPerformanceRow,
   SubstitutionPanel,
-  PortfolioBuilderBaggerBomb,
   ThresholdPreview,
   BenchSelector,
   BaggerBombBattleView,
-  BaggerBombBattleViewRedesign
 } from './components/BaggerBomb';
-// BaggerBomb Game Plan Flow
-import { BaggerBombGamePlanFlow, RiskStyleScreen, SectorSelectionScreen } from './components/GamePlan';
+// BaggerBomb Game Plan Flow (non-lazy imports)
+import { RiskStyleScreen, SectorSelectionScreen } from './components/GamePlan';
+
+// Lazy-loaded heavy components (make API calls on mount)
+const PortfolioBuilderBaggerBomb = lazy(() => import('./components/BaggerBomb/PortfolioBuilderBaggerBomb'));
+const BaggerBombBattleViewRedesign = lazy(() => import('./components/BaggerBomb/BaggerBombBattleViewRedesign'));
+const BaggerBombGamePlanFlow = lazy(() => import('./components/GamePlan/BaggerBombGamePlanFlow').then(m => ({ default: m.BaggerBombGamePlanFlow })));
 
 // Legacy aliases for backwards compatibility
 const TDBattleScoreboard = BaggerBombScoreboard;
@@ -48,6 +51,21 @@ import {
   filterBySector,
   getAvailableSectors,
 } from './services/recommendationEngine';
+
+// ============================================
+// LAZY LOADING FALLBACK
+// ============================================
+const LoadingFallback = () => (
+  <div style={{
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: '200px',
+    color: '#888'
+  }}>
+    Loading...
+  </div>
+);
 
 // ============================================
 // ENVIRONMENT-AWARE LOGGING UTILITY
@@ -9475,19 +9493,21 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
     // BaggerBomb has its own dedicated flow
     if (showBaggerBombFlow) {
       return (
-        <BaggerBombGamePlanFlow
-          onComplete={(portfolio) => {
-            // Handle the completed game plan - user can use portfolio for battle
-            onUsePortfolio(portfolio.map(p => p.symbol));
-            setShowBaggerBombFlow(false);
-            resetFlow();
-          }}
-          onBack={() => {
-            setShowBaggerBombFlow(false);
-            setFlowPhase(2); // Go back to battle type selection
-          }}
-          user={user}
-        />
+        <Suspense fallback={<LoadingFallback />}>
+          <BaggerBombGamePlanFlow
+            onComplete={(portfolio) => {
+              // Handle the completed game plan - user can use portfolio for battle
+              onUsePortfolio(portfolio.map(p => p.symbol));
+              setShowBaggerBombFlow(false);
+              resetFlow();
+            }}
+            onBack={() => {
+              setShowBaggerBombFlow(false);
+              setFlowPhase(2); // Go back to battle type selection
+            }}
+            user={user}
+          />
+        </Suspense>
       );
     }
 
@@ -25391,125 +25411,127 @@ export default function PortfolioDuel() {
         <DesktopBackground isDesktop={isDesktop} />
 
         <div style={{ minHeight: '100vh', background: '#0d1117', position: 'relative', zIndex: 1 }}>
-          <PortfolioBuilderBaggerBomb
-            user={user}
-            stockPrices={stocksData.reduce((acc, s) => {
-              acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
-              return acc;
-            }, {})}
-            cryptoPrices={cryptoData.reduce((acc, c) => {
-              acc[c.symbol] = { price: c.price, percentChange: c.percentChange };
-              return acc;
-            }, {})}
-            thresholds={{}} // Will be fetched in component or passed from volatility service
-            onSubmit={async (portfolioData) => {
-              // Create BaggerBomb battle in Firestore using V2 schema
-              const challengeCode = generateChallengeCode();
-              try {
-                console.log('🔥 Creating BaggerBomb Battle in Firestore...', portfolioData);
+          <Suspense fallback={<LoadingFallback />}>
+            <PortfolioBuilderBaggerBomb
+              user={user}
+              stockPrices={stocksData.reduce((acc, s) => {
+                acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
+                return acc;
+              }, {})}
+              cryptoPrices={cryptoData.reduce((acc, c) => {
+                acc[c.symbol] = { price: c.price, percentChange: c.percentChange };
+                return acc;
+              }, {})}
+              thresholds={{}} // Will be fetched in component or passed from volatility service
+              onSubmit={async (portfolioData) => {
+                // Create BaggerBomb battle in Firestore using V2 schema
+                const challengeCode = generateChallengeCode();
+                try {
+                  console.log('🔥 Creating BaggerBomb Battle in Firestore...', portfolioData);
 
-                // Portfolio assets - sanitize with strict type coercion
-                const portfolioAssets = (portfolioData.roster || [])
-                  .filter(asset => asset && asset.symbol)
-                  .map(asset => ({
-                    symbol: String(asset.symbol || '').toUpperCase(),
-                    name: String(asset.name || asset.symbol || ''),
-                    price: Number(asset.price) || 0,
-                    amount: Number(asset.amount) || 0,
-                    position: String(asset.position || 'long')
-                  }));
+                  // Portfolio assets - sanitize with strict type coercion
+                  const portfolioAssets = (portfolioData.roster || [])
+                    .filter(asset => asset && asset.symbol)
+                    .map(asset => ({
+                      symbol: String(asset.symbol || '').toUpperCase(),
+                      name: String(asset.name || asset.symbol || ''),
+                      price: Number(asset.price) || 0,
+                      amount: Number(asset.amount) || 0,
+                      position: String(asset.position || 'long')
+                    }));
 
-                // Bench assets - sanitize with strict type coercion
-                const benchAssets = (portfolioData.bench || [])
-                  .filter(asset => asset && asset.symbol)
-                  .map(asset => ({
-                    symbol: String(asset.symbol || '').toUpperCase(),
-                    name: String(asset.name || asset.symbol || ''),
-                    price: Number(asset.price) || 0,
-                    amount: 0,
-                    position: 'long'
-                  }));
+                  // Bench assets - sanitize with strict type coercion
+                  const benchAssets = (portfolioData.bench || [])
+                    .filter(asset => asset && asset.symbol)
+                    .map(asset => ({
+                      symbol: String(asset.symbol || '').toUpperCase(),
+                      name: String(asset.name || asset.symbol || ''),
+                      price: Number(asset.price) || 0,
+                      amount: 0,
+                      position: 'long'
+                    }));
 
-                // Validate - no empty arrays allowed
-                if (portfolioAssets.length === 0) {
-                  console.error('No portfolio assets provided');
-                  alert('Please add stocks and crypto to your portfolio');
-                  return;
-                }
-
-                // Sanitize thresholds - ensure no undefined values
-                const sanitizedThresholds = {};
-                for (const [symbol, data] of Object.entries(portfolioData.thresholds || {})) {
-                  if (data && typeof data === 'object') {
-                    sanitizedThresholds[symbol] = {
-                      threshold: Number(data.threshold) || 2.0,
-                      rallyThreshold: Number(data.rallyThreshold) || (Number(data.threshold) * 1.5) || 3.0,
-                      moonshotThreshold: Number(data.moonshotThreshold) || (Number(data.threshold) * 2) || 4.0
-                    };
+                  // Validate - no empty arrays allowed
+                  if (portfolioAssets.length === 0) {
+                    console.error('No portfolio assets provided');
+                    alert('Please add stocks and crypto to your portfolio');
+                    return;
                   }
-                }
 
-                console.log('📤 Sanitized data:', { portfolioAssets, benchAssets, sanitizedThresholds });
-
-                // Use createBaggerBombBattle for V2 BaggerBomb Scoring battles
-                const firestoreBattle = await createBaggerBombBattle({
-                  challengeCode,
-                  creator: {
-                    uid: String(user.odUserId || user.username || 'anonymous'),
-                    username: String(user.username || 'Player')
-                  },
-                  portfolioName: String(portfolioData.portfolioName || 'BaggerBomb Portfolio').trim(),
-                  portfolioType: 'stocks',
-                  creatorPortfolio: portfolioAssets,
-                  creatorBench: benchAssets
-                  // Note: thresholds are fetched inside createBaggerBombBattle
-                });
-
-                console.log('✅ BaggerBomb Battle created with ID:', firestoreBattle.id);
-
-                // Create local battle object
-                const newBattle = {
-                  id: firestoreBattle.id,
-                  challengeCode: firestoreBattle.challengeCode || challengeCode,
-                  creator: user.username,
-                  creatorPortfolio: portfolioAssets,
-                  bench: benchAssets,
-                  portfolioName: portfolioData.portfolioName || 'BaggerBomb Portfolio',
-                  portfolioType: 'baggerbomb',
-                  _v: 2,
-                  status: 'waiting',
-                  createdAt: new Date().toISOString(),
-                  firestoreId: firestoreBattle.id // Add firestoreId for merge logic
-                };
-
-                // Update state using functional update to prevent race conditions
-                debugBattles('Before BaggerBomb battle creation', battles);
-                setBattles(prevBattles => {
-                  // Check if battle already exists (prevent duplicates)
-                  const exists = prevBattles.some(b =>
-                    b.id === newBattle.id || b.firestoreId === newBattle.id
-                  );
-                  if (exists) {
-                    console.log('⚠️ BaggerBomb Battle already exists, skipping add');
-                    return prevBattles;
+                  // Sanitize thresholds - ensure no undefined values
+                  const sanitizedThresholds = {};
+                  for (const [symbol, data] of Object.entries(portfolioData.thresholds || {})) {
+                    if (data && typeof data === 'object') {
+                      sanitizedThresholds[symbol] = {
+                        threshold: Number(data.threshold) || 2.0,
+                        rallyThreshold: Number(data.rallyThreshold) || (Number(data.threshold) * 1.5) || 3.0,
+                        moonshotThreshold: Number(data.moonshotThreshold) || (Number(data.threshold) * 2) || 4.0
+                      };
+                    }
                   }
-                  const updatedBattles = [...prevBattles, newBattle];
-                  debugBattles('After BaggerBomb battle creation', updatedBattles);
-                  saveBattlesSafe(updatedBattles);
-                  return updatedBattles;
-                });
-                setActiveBattleId(newBattle.id);
+
+                  console.log('📤 Sanitized data:', { portfolioAssets, benchAssets, sanitizedThresholds });
+
+                  // Use createBaggerBombBattle for V2 BaggerBomb Scoring battles
+                  const firestoreBattle = await createBaggerBombBattle({
+                    challengeCode,
+                    creator: {
+                      uid: String(user.odUserId || user.username || 'anonymous'),
+                      username: String(user.username || 'Player')
+                    },
+                    portfolioName: String(portfolioData.portfolioName || 'BaggerBomb Portfolio').trim(),
+                    portfolioType: 'stocks',
+                    creatorPortfolio: portfolioAssets,
+                    creatorBench: benchAssets
+                    // Note: thresholds are fetched inside createBaggerBombBattle
+                  });
+
+                  console.log('✅ BaggerBomb Battle created with ID:', firestoreBattle.id);
+
+                  // Create local battle object
+                  const newBattle = {
+                    id: firestoreBattle.id,
+                    challengeCode: firestoreBattle.challengeCode || challengeCode,
+                    creator: user.username,
+                    creatorPortfolio: portfolioAssets,
+                    bench: benchAssets,
+                    portfolioName: portfolioData.portfolioName || 'BaggerBomb Portfolio',
+                    portfolioType: 'baggerbomb',
+                    _v: 2,
+                    status: 'waiting',
+                    createdAt: new Date().toISOString(),
+                    firestoreId: firestoreBattle.id // Add firestoreId for merge logic
+                  };
+
+                  // Update state using functional update to prevent race conditions
+                  debugBattles('Before BaggerBomb battle creation', battles);
+                  setBattles(prevBattles => {
+                    // Check if battle already exists (prevent duplicates)
+                    const exists = prevBattles.some(b =>
+                      b.id === newBattle.id || b.firestoreId === newBattle.id
+                    );
+                    if (exists) {
+                      console.log('⚠️ BaggerBomb Battle already exists, skipping add');
+                      return prevBattles;
+                    }
+                    const updatedBattles = [...prevBattles, newBattle];
+                    debugBattles('After BaggerBomb battle creation', updatedBattles);
+                    saveBattlesSafe(updatedBattles);
+                    return updatedBattles;
+                  });
+                  setActiveBattleId(newBattle.id);
+                  setScreen('dashboard');
+                } catch (error) {
+                  console.error('❌ Failed to create BaggerBomb battle:', error);
+                  alert(`Failed to create BaggerBomb battle: ${error.message}`);
+                }
+              }}
+              onBack={() => {
                 setScreen('dashboard');
-              } catch (error) {
-                console.error('❌ Failed to create BaggerBomb battle:', error);
-                alert(`Failed to create BaggerBomb battle: ${error.message}`);
-              }
-            }}
-            onBack={() => {
-              setScreen('dashboard');
-              setBattleScoringMode('classic');
-            }}
-          />
+                setBattleScoringMode('classic');
+              }}
+            />
+          </Suspense>
         </div>
       </div>
     );
@@ -25537,75 +25559,77 @@ export default function PortfolioDuel() {
             </span>
           </div>
 
-          <PortfolioBuilderBaggerBomb
-            user={user}
-            stockPrices={stocksData.reduce((acc, s) => {
-              acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
-              return acc;
-            }, {})}
-            cryptoPrices={cryptoData.reduce((acc, c) => {
-              acc[c.symbol] = { price: c.price, percentChange: c.percentChange };
-              return acc;
-            }, {})}
-            thresholds={{}} // Will be fetched in component
-            onSubmit={async (portfolioData) => {
-              // Join BaggerBomb battle with portfolio
-              try {
-                // PortfolioBuilderBaggerBomb uses 'roster' not 'portfolio'
-                const portfolio = portfolioData.roster || portfolioData.portfolio || [];
-                const bench = portfolioData.bench || [];
+          <Suspense fallback={<LoadingFallback />}>
+            <PortfolioBuilderBaggerBomb
+              user={user}
+              stockPrices={stocksData.reduce((acc, s) => {
+                acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
+                return acc;
+              }, {})}
+              cryptoPrices={cryptoData.reduce((acc, c) => {
+                acc[c.symbol] = { price: c.price, percentChange: c.percentChange };
+                return acc;
+              }, {})}
+              thresholds={{}} // Will be fetched in component
+              onSubmit={async (portfolioData) => {
+                // Join BaggerBomb battle with portfolio
+                try {
+                  // PortfolioBuilderBaggerBomb uses 'roster' not 'portfolio'
+                  const portfolio = portfolioData.roster || portfolioData.portfolio || [];
+                  const bench = portfolioData.bench || [];
 
-                if (!Array.isArray(portfolio) || portfolio.length === 0) {
-                  alert('Please build your portfolio before joining.');
-                  return;
+                  if (!Array.isArray(portfolio) || portfolio.length === 0) {
+                    alert('Please build your portfolio before joining.');
+                    return;
+                  }
+
+                  // CRITICAL: Firebase does NOT allow undefined values
+                  const odUserId = user?.odUserId || user?.uid || user?.email || 'anonymous';
+                  const opponentData = {
+                    odUserId: odUserId,
+                    uid: odUserId, // Also include uid for validation
+                    username: user?.username || user?.email?.split('@')[0] || 'Player',
+                    odUsername: user?.username || user?.email?.split('@')[0] || 'Player',
+                    portfolioName: portfolioData.portfolioName || 'Portfolio',
+                    portfolio: portfolio,
+                    bench: bench,
+                    portfolioType: 'baggerbomb',
+                    allocations: portfolioData.allocations || {}
+                  };
+
+                  console.log('🎮 Join BaggerBomb with data:', {
+                    portfolioLength: portfolio.length,
+                    benchLength: bench.length,
+                    opponentData
+                  });
+
+                  const joinedBattle = await joinBaggerBombBattle(joinCode, opponentData);
+
+                  if (joinedBattle) {
+                    // Add to local battles list
+                    const updatedBattles = [...battles, joinedBattle];
+                    setBattles(updatedBattles);
+                    saveBattlesSafe(updatedBattles);
+
+                    // Navigate to battle view
+                    setCurrentBattle(joinedBattle);
+                    setScreen('battle');
+                    setJoinCode('');
+                    setJoinBattleType('classic');
+                  } else {
+                    alert('Could not find a battle with that code. Make sure the code is correct and the battle hasn\'t started yet.');
+                  }
+                } catch (error) {
+                  console.error('Error joining BaggerBomb battle:', error);
+                  alert('Error joining battle: ' + (error.message || 'Unknown error'));
                 }
-
-                // CRITICAL: Firebase does NOT allow undefined values
-                const odUserId = user?.odUserId || user?.uid || user?.email || 'anonymous';
-                const opponentData = {
-                  odUserId: odUserId,
-                  uid: odUserId, // Also include uid for validation
-                  username: user?.username || user?.email?.split('@')[0] || 'Player',
-                  odUsername: user?.username || user?.email?.split('@')[0] || 'Player',
-                  portfolioName: portfolioData.portfolioName || 'Portfolio',
-                  portfolio: portfolio,
-                  bench: bench,
-                  portfolioType: 'baggerbomb',
-                  allocations: portfolioData.allocations || {}
-                };
-
-                console.log('🎮 Join BaggerBomb with data:', {
-                  portfolioLength: portfolio.length,
-                  benchLength: bench.length,
-                  opponentData
-                });
-
-                const joinedBattle = await joinBaggerBombBattle(joinCode, opponentData);
-
-                if (joinedBattle) {
-                  // Add to local battles list
-                  const updatedBattles = [...battles, joinedBattle];
-                  setBattles(updatedBattles);
-                  saveBattlesSafe(updatedBattles);
-
-                  // Navigate to battle view
-                  setCurrentBattle(joinedBattle);
-                  setScreen('battle');
-                  setJoinCode('');
-                  setJoinBattleType('classic');
-                } else {
-                  alert('Could not find a battle with that code. Make sure the code is correct and the battle hasn\'t started yet.');
-                }
-              } catch (error) {
-                console.error('Error joining BaggerBomb battle:', error);
-                alert('Error joining battle: ' + (error.message || 'Unknown error'));
-              }
-            }}
-            onBack={() => {
-              setScreen('join');
-              setJoinBattleType('classic');
-            }}
-          />
+              }}
+              onBack={() => {
+                setScreen('join');
+                setJoinBattleType('classic');
+              }}
+            />
+          </Suspense>
         </div>
       </div>
     );
@@ -25633,27 +25657,29 @@ export default function PortfolioDuel() {
             </span>
           </div>
 
-          <PortfolioBuilderBaggerBomb
-            user={user}
-            stockPrices={stocksData.reduce((acc, s) => {
-              acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
-              return acc;
-            }, {})}
-            cryptoPrices={cryptoData.reduce((acc, c) => {
-              acc[c.symbol] = { price: c.price, percentChange: c.percentChange };
-              return acc;
-            }, {})}
-            thresholds={{}} // Will be fetched in component
-            onSubmit={async (portfolioData) => {
-              // Create BaggerBomb training battle against CPU
-              await handleCreateBaggerBombTrainingBattle(portfolioData);
-            }}
-            onBack={() => {
-              setScreen('dashboard');
-              setBuilderMode('create');
-              setTrainingBattleType('classic');
-            }}
-          />
+          <Suspense fallback={<LoadingFallback />}>
+            <PortfolioBuilderBaggerBomb
+              user={user}
+              stockPrices={stocksData.reduce((acc, s) => {
+                acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
+                return acc;
+              }, {})}
+              cryptoPrices={cryptoData.reduce((acc, c) => {
+                acc[c.symbol] = { price: c.price, percentChange: c.percentChange };
+                return acc;
+              }, {})}
+              thresholds={{}} // Will be fetched in component
+              onSubmit={async (portfolioData) => {
+                // Create BaggerBomb training battle against CPU
+                await handleCreateBaggerBombTrainingBattle(portfolioData);
+              }}
+              onBack={() => {
+                setScreen('dashboard');
+                setBuilderMode('create');
+                setTrainingBattleType('classic');
+              }}
+            />
+          </Suspense>
         </div>
       </div>
     );
@@ -30128,12 +30154,14 @@ export default function PortfolioDuel() {
     // Check if this is a BaggerBomb (V2) battle - route to redesigned view
     if (currentBattle._v === 2) {
       return (
-        <BaggerBombBattleViewRedesign
-          battle={currentBattle}
-          user={user}
-          onBack={() => setScreen('dashboard')}
-          isTraining={currentBattle.isTraining || false}
-        />
+        <Suspense fallback={<LoadingFallback />}>
+          <BaggerBombBattleViewRedesign
+            battle={currentBattle}
+            user={user}
+            onBack={() => setScreen('dashboard')}
+            isTraining={currentBattle.isTraining || false}
+          />
+        </Suspense>
       );
     }
 
