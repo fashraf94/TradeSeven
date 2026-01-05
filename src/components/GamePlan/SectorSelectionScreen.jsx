@@ -380,7 +380,7 @@ const SectorSelectionScreen = ({
                 <div
                   key={sectorId}
                   style={{
-                    width: '300px',
+                    width: '340px',
                     backgroundColor: '#161b22',
                     border: '1px solid #21262d',
                     borderRadius: '12px',

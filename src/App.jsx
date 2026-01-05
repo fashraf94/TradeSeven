@@ -25388,6 +25388,7 @@ export default function PortfolioDuel() {
 
         <div style={{ minHeight: '100vh', background: '#0d1117', position: 'relative', zIndex: 1 }}>
           <PortfolioBuilderBaggerBomb
+            user={user}
             stockPrices={stocksData.reduce((acc, s) => {
               acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
               return acc;
@@ -25533,6 +25534,7 @@ export default function PortfolioDuel() {
           </div>
 
           <PortfolioBuilderBaggerBomb
+            user={user}
             stockPrices={stocksData.reduce((acc, s) => {
               acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
               return acc;
@@ -25628,6 +25630,7 @@ export default function PortfolioDuel() {
           </div>
 
           <PortfolioBuilderBaggerBomb
+            user={user}
             stockPrices={stocksData.reduce((acc, s) => {
               acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
               return acc;
