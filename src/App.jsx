@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } from './services/LocalStorage';
+import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser, clearUser } from './services/LocalStorage';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
@@ -13895,15 +13895,19 @@ export default function PortfolioDuel() {
 
   const handleLogin = () => {
     if (!username.trim()) return;
-    
-    setUser({
+
+    const userData = {
       username: username.trim(),
       wins: 0,
       losses: 0,
       xp: 0,
       rank: 'Beginner',
-      level: 1
-    });
+      level: 1,
+      joinedAt: new Date().toISOString()
+    };
+
+    setUser(userData);
+    saveUser(userData);  // Persist user to localStorage
     setScreen('dashboard');
   };
 
@@ -19103,7 +19107,7 @@ export default function PortfolioDuel() {
                   </div>
                   <span className="text-sm font-medium" style={{ color: colors.textPrimary }}>{user.username}</span>
                   <button
-                    onClick={() => { setUser(null); setUsername(''); setScreen('home'); }}
+                    onClick={() => { setUser(null); setUsername(''); clearUser(); setScreen('home'); }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-all"
                     style={{ background: 'transparent', border: `1px solid ${colors.borderSubtle}`, color: colors.textSecondary }}
                     onMouseEnter={(e) => { e.currentTarget.style.borderColor = colors.red; e.currentTarget.style.color = colors.red; }}
@@ -21932,8 +21936,8 @@ export default function PortfolioDuel() {
                 <button
                   onClick={() => {
                     setUser(null);
+                    clearUser();
                     setScreen('home');
-                    localStorage.removeItem('user');
                     setSidebarOpen(false);
                   }}
                   style={{
