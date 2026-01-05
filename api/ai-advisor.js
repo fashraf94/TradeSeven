@@ -45,6 +45,22 @@ RULES:
 - Keep responses concise with bullet points`;
 };
 
+const GAMEPLAN_SYSTEM_PROMPT = `You are the BaggerBomb Strategy Advisor for MarketClash, a competitive stock trading game.
+
+Your role is to provide brief, actionable game plan strategies for players. Keep responses:
+- Concise (3-4 sentences max)
+- Conversational and exciting
+- Data-driven but accessible
+- Confident without being arrogant
+
+SCORING RULES TO REFERENCE:
+- BaggerBomb: +15 points when stock crosses volatility threshold
+- Base: +/-10 points per 1% change
+- Session Win: +10 bonus points
+- Busts: -10 to -35 penalty for negative threshold crosses
+
+Always mention specific stock symbols when relevant. Make it feel like a game!`;
+
 const DRAFT_SYSTEM_PROMPT = `You are a tactical draft advisor for MarketClash snake drafts.
 
 CRITICAL RULES FOR MARKETCLASH DRAFTS:
@@ -767,7 +783,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { advisorType, message, action, context, type } = req.body;
+    const { advisorType, message, action, context, type, prompt, maxTokens } = req.body;
 
     // Handle market_summary type for AI Market Summary component
     if (type === 'market_summary') {
@@ -779,8 +795,93 @@ export default async function handler(req, res) {
       return await handleEarningsWebSearch(req, res, API_KEY);
     }
 
-    if (!advisorType || (!message && !action)) {
-      return res.status(400).json({ error: 'Missing advisorType and message/action' });
+    // Use message or prompt, whichever is provided
+    const userInput = message || prompt;
+
+    if (!advisorType || (!userInput && !action)) {
+      console.error('[AI Advisor] Missing required fields:', { advisorType, hasMessage: !!message, hasPrompt: !!prompt, action });
+      return res.status(400).json({ error: 'Missing advisorType and message/prompt/action' });
+    }
+
+    // Handle gameplan advisorType - uses direct prompt from client
+    if (advisorType === 'gameplan') {
+      if (!userInput) {
+        return res.status(400).json({ error: 'Missing prompt for gameplan' });
+      }
+
+      console.log('[AI Advisor] Gameplan request, prompt length:', userInput.length);
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-haiku-20241022',
+          max_tokens: maxTokens || 300,
+          system: GAMEPLAN_SYSTEM_PROMPT,
+          messages: [
+            { role: 'user', content: userInput }
+          ],
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.error || !response.ok) {
+        console.error('[AI Advisor] Gameplan error:', data.error);
+        return res.status(500).json({
+          error: 'AI service error',
+          details: data.error?.message || 'Unknown error'
+        });
+      }
+
+      return res.status(200).json({
+        response: data.content?.[0]?.text || '',
+        message: data.content?.[0]?.text || '', // Also include as 'message' for compatibility
+        usage: data.usage
+      });
+    }
+
+    // Handle research advisorType - used for AI strategy generation
+    if (advisorType === 'research' && userInput && !action) {
+      console.log('[AI Advisor] Research request with direct prompt');
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-haiku-20241022',
+          max_tokens: maxTokens || 500,
+          system: getResearchSystemPrompt(),
+          messages: [
+            { role: 'user', content: userInput }
+          ],
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.error || !response.ok) {
+        console.error('[AI Advisor] Research error:', data.error);
+        return res.status(500).json({
+          error: 'AI service error',
+          details: data.error?.message || 'Unknown error'
+        });
+      }
+
+      return res.status(200).json({
+        response: data.content?.[0]?.text || '',
+        message: data.content?.[0]?.text || '',
+        advisorType,
+        usage: data.usage
+      });
     }
 
     // Determine system prompt based on advisor type

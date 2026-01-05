@@ -3,7 +3,7 @@ import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser } f
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
-import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle } from './firebase/firebaseService';
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, joinBaggerBombBattle } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
 import './firebase/config';
@@ -25,8 +25,11 @@ import {
   PortfolioBuilderBaggerBomb,
   ThresholdPreview,
   BenchSelector,
-  BaggerBombBattleView
+  BaggerBombBattleView,
+  BaggerBombBattleViewRedesign
 } from './components/BaggerBomb';
+// BaggerBomb Game Plan Flow
+import { BaggerBombGamePlanFlow, RiskStyleScreen, SectorSelectionScreen } from './components/GamePlan';
 
 // Legacy aliases for backwards compatibility
 const TDBattleScoreboard = BaggerBombScoreboard;
@@ -8093,6 +8096,7 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
       options: [
         { id: 'head-to-head', label: '⚔️ Head-to-Head', description: '24-hour battle', color: c.cyan },
         { id: 'snake-draft', label: '🐍 Snake Draft', description: 'Week-long competition', color: c.green },
+        { id: 'baggerbomb', label: '💣 BaggerBomb', description: 'Session-based scoring', color: '#f59e0b', badge: 'NEW' },
       ],
       field: 'battleType',
     },
@@ -8131,34 +8135,15 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
     },
     {
       id: 3,
-      title: "Any sector focus?",
-      subtitle: "Select up to 2 sectors, or skip for all",
-      multiSelect: true,
-      maxSelections: 2,
-      options: [
-        { id: 'Technology', label: '💻 Tech', color: c.cyan },
-        { id: 'Financials', label: '🏦 Finance', color: '#10b981' },
-        { id: 'Healthcare', label: '🏥 Healthcare', color: '#f43f5e' },
-        { id: 'Energy', label: '⚡ Energy', color: '#ef4444' },
-        { id: 'Consumer Discretionary', label: '🛍️ Consumer', color: '#f59e0b' },
-        { id: 'Industrials', label: '🏭 Industrial', color: '#6366f1' },
-        { id: 'Layer 1', label: '🔷 L1 Crypto', color: '#8b5cf6' },
-        { id: 'DeFi', label: '🏛️ DeFi', color: '#14b8a6' },
-        { id: 'Meme', label: '🐕 Meme Coins', color: '#ec4899' },
-      ],
-      field: 'sectors',
-      skippable: true,
+      title: "Risk Style",
+      field: 'risk',
+      useNewScreen: 'RiskStyleScreen', // Use new GamePlan screen
     },
     {
       id: 4,
-      title: "Risk tolerance?",
-      subtitle: "How much volatility can you handle?",
-      options: [
-        { id: 'aggressive', label: '🔥 Aggressive', description: 'High risk, high reward', color: c.red },
-        { id: 'balanced', label: '⚖️ Balanced', description: 'Mix of growth and stability', color: '#f59e0b' },
-        { id: 'conservative', label: '🛡️ Conservative', description: 'Protect downside first', color: c.green },
-      ],
-      field: 'risk',
+      title: "Sector Focus",
+      field: 'sectors',
+      useNewScreen: 'SectorSelectionScreen', // Use new GamePlan screen
     },
   ];
 
@@ -8174,11 +8159,18 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
         onUpdate({ ...thesis, [currentQ.field]: [...current, optionId] });
       }
     } else {
-      onUpdate({ ...thesis, [currentQ.field]: optionId });
+      const updatedThesis = { ...thesis, [currentQ.field]: optionId };
+      onUpdate(updatedThesis);
+
       // Auto-advance for single select
       setTimeout(() => {
-        if (isLastQuestion) {
-          onComplete({ ...thesis, [currentQ.field]: optionId });
+        // BaggerBomb has its own flow for risk/sectors - skip questions 3 & 4
+        // Complete after question 2 (stance) for baggerbomb battles
+        if (updatedThesis.battleType === 'baggerbomb' && currentQuestion === 2) {
+          console.log('[ThesisBuilder] BaggerBomb detected - completing early to launch dedicated flow');
+          onComplete(updatedThesis);
+        } else if (isLastQuestion) {
+          onComplete(updatedThesis);
         } else {
           setCurrentQuestion(prev => prev + 1);
         }
@@ -8208,6 +8200,35 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
     }
     return thesis[currentQ.field] === optionId;
   };
+
+  // Render new GamePlan screens for questions 3 and 4
+  if (currentQ.useNewScreen === 'RiskStyleScreen') {
+    return (
+      <RiskStyleScreen
+        onBack={handleBack}
+        onNext={(riskStyle) => {
+          onUpdate({ ...thesis, risk: riskStyle });
+          setTimeout(() => setCurrentQuestion(prev => prev + 1), 100);
+        }}
+        selectedStyle={thesis.risk}
+      />
+    );
+  }
+
+  if (currentQ.useNewScreen === 'SectorSelectionScreen') {
+    return (
+      <SectorSelectionScreen
+        onBack={handleBack}
+        onNext={(selectedSectors) => {
+          const updatedThesis = { ...thesis, sectors: selectedSectors };
+          onUpdate(updatedThesis);
+          onComplete(updatedThesis);
+        }}
+        riskStyle={thesis.risk || 'balanced'}
+        maxSelections={2}
+      />
+    );
+  }
 
   return (
     <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
@@ -8252,7 +8273,7 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
         gap: '12px',
         marginBottom: '24px',
       }}>
-        {currentQ.options.map(option => {
+        {currentQ.options?.map(option => {
           const selected = isSelected(option.id);
 
           // Gradient icon SVGs for market stance
@@ -8401,8 +8422,23 @@ const ThesisBuilder = ({ thesis, onUpdate, onComplete, onBack, colors }) => {
                   fontSize: '18px',
                   fontWeight: '600',
                   marginBottom: option.description ? '4px' : '0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
                 }}>
                   {option.label}
+                  {option.badge && (
+                    <span style={{
+                      background: option.color,
+                      color: '#000',
+                      fontSize: '10px',
+                      fontWeight: '700',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                    }}>
+                      {option.badge}
+                    </span>
+                  )}
                 </div>
                 {option.description && (
                   <div style={{ color: '#8b949e', fontSize: '13px' }}>
@@ -9003,11 +9039,12 @@ const AssetDetailView = ({ asset, thesis, pinnedInsights, onPin, onBack, colors 
 // RESEARCH FLOW - MAIN CONTAINER
 // ============================================
 
-const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors }) => {
+const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors, user }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
 
   // Flow state
   const [flowPhase, setFlowPhase] = useState(1);
+  const [showBaggerBombFlow, setShowBaggerBombFlow] = useState(false);
   const [thesis, setThesis] = useState({
     battleType: null,
     stance: null,
@@ -9053,6 +9090,13 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors 
   // Handle thesis completion (Phase 2 → 3)
   const handleThesisComplete = async (completedThesis) => {
     setThesis(completedThesis);
+
+    // BaggerBomb has its own dedicated flow
+    if (completedThesis.battleType === 'baggerbomb') {
+      setShowBaggerBombFlow(true);
+      return;
+    }
+
     setFlowPhase(3);
 
     // Get all assets
@@ -9428,6 +9472,25 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors 
 
   // Render current phase
   const renderPhase = () => {
+    // BaggerBomb has its own dedicated flow
+    if (showBaggerBombFlow) {
+      return (
+        <BaggerBombGamePlanFlow
+          onComplete={(portfolio) => {
+            // Handle the completed game plan - user can use portfolio for battle
+            onUsePortfolio(portfolio.map(p => p.symbol));
+            setShowBaggerBombFlow(false);
+            resetFlow();
+          }}
+          onBack={() => {
+            setShowBaggerBombFlow(false);
+            setFlowPhase(2); // Go back to battle type selection
+          }}
+          user={user}
+        />
+      );
+    }
+
     // If viewing asset detail, show that instead
     if (selectedAsset) {
       return (
@@ -11323,6 +11386,8 @@ export default function PortfolioDuel() {
   const [battleScoringMode, setBattleScoringMode] = useState('classic'); // 'classic' | 'baggerbomb'
   // Training Mode battle type selection
   const [trainingBattleType, setTrainingBattleType] = useState('classic'); // 'classic' | 'baggerbomb'
+  // Join Battle type selection
+  const [joinBattleType, setJoinBattleType] = useState('classic'); // 'classic' | 'baggerbomb'
 
   // Tutorial modal states
   const [showTutorial, setShowTutorial] = useState(false);
@@ -14524,23 +14589,87 @@ export default function PortfolioDuel() {
     const odUserId = user.odUserId || user.username;
 
     // Create BaggerBomb training battle object (for localStorage compatibility)
+    // Uses V2 structure with creator/opponent objects for BaggerBombBattleViewRedesign compatibility
     const trainingBattle = {
       id: battleId,
       challengeCode: 'TRAINING', // Special code for training battles
-      creator: user.username,
-      opponent: 'CPU Opponent',
+      _v: 2, // BaggerBomb Scoring version marker
+
+      // Creator object (user)
+      creator: {
+        uid: user.odUserId || user.username,
+        odUserId: user.odUserId || user.username,
+        username: user.username,
+        portfolioName: portfolioData.portfolioName.trim(),
+        portfolio: updatedUserPortfolio,
+        bench: userBenchAssets,
+        portfolioType: 'baggerbomb',
+        cryptoAllocation: 10
+      },
+
+      // Opponent object (CPU)
+      opponent: {
+        uid: 'cpu',
+        odUserId: 'cpu',
+        username: 'CPU Opponent',
+        portfolioName: 'CPU BaggerBomb Strategy',
+        portfolio: updatedCPUPortfolio,
+        bench: cpuPortfolioData.bench,
+        portfolioType: 'baggerbomb',
+        cryptoAllocation: 10
+      },
+
+      // Legacy fields for classic view compatibility (in case it falls through)
       creatorPortfolio: updatedUserPortfolio,
       opponentPortfolio: updatedCPUPortfolio,
       creatorBench: userBenchAssets,
       opponentBench: cpuPortfolioData.bench,
       portfolioName: portfolioData.portfolioName.trim(),
       portfolioType: 'baggerbomb',
-      _v: 2, // BaggerBomb Scoring version marker
+
+      // Timeline
+      timeline: {
+        createdAt: now.toISOString(),
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        completedAt: null
+      },
+
+      // State
+      state: {
+        status: 'active',
+        currentSession: '',
+        completedSessions: [],
+        startingPrices: startingPrices
+      },
+
+      // Session prices (empty initially)
+      sessionPrices: {
+        MORNING_BELL: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
+        MIDDAY: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
+        POWER_HOUR: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
+        NIGHT_GAME: { open: {}, close: {}, capturedAt: { open: '', close: '' } }
+      },
+
+      // BaggerBomb specific
+      thresholds: portfolioData.thresholds || {},
+      breakouts: { creator: [], opponent: [] },
+      substitutions: [],
+      sessionScores: {
+        MORNING_BELL: { creator: 0, opponent: 0, winner: '' },
+        MIDDAY: { creator: 0, opponent: 0, winner: '' },
+        POWER_HOUR: { creator: 0, opponent: 0, winner: '' },
+        NIGHT_GAME: { creator: 0, opponent: 0, winner: '' }
+      },
+
+      // Legacy fields
       status: 'active',
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
       startingPrices: startingPrices,
-      thresholds: portfolioData.thresholds || {},
+
+      // Training flags
+      isTraining: true,
       isTrainingBattle: true,
       createdAt: now.toISOString()
     };
@@ -16318,6 +16447,7 @@ export default function PortfolioDuel() {
               setShowResearchMode(false);
             }}
             colors={colors}
+            user={user}
           />
         </div>
       );
@@ -19330,13 +19460,9 @@ export default function PortfolioDuel() {
                     }}
                     onClick={() => {
                       setCurrentBattle(battle);
-                      // Route to BaggerBomb battle view if it's a BaggerBomb battle
-                      if (battle._v === 2) {
-                        setSelectedTDBattle(battle);
-                        setScreen('tdBattleView');
-                      } else {
-                        setScreen('battle');
-                      }
+                      // All battles now go to 'battle' screen
+                      // V2 (BaggerBomb) battles are routed in the battle screen handler
+                      setScreen('battle');
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.borderColor = battle.isTrainingBattle ? colors.purple : colors.cyan;
@@ -19715,19 +19841,57 @@ export default function PortfolioDuel() {
                       key={battle.id}
                       onClick={() => {
                         // Convert Firebase format to localStorage format for battle view
+                        // Check if this is a BaggerBomb (V2) battle
+                        const isBaggerBomb = battle._v === 2 || battle.type === 'baggerbomb';
+
                         const convertedBattle = {
                           id: battle.id,
+                          _v: isBaggerBomb ? 2 : 1, // Preserve version for routing
                           challengeCode: 'TRAINING',
-                          creator: battle.player1?.username || user.username,
-                          opponent: 'CPU Opponent',
+
+                          // V2 format: creator/opponent objects for BaggerBombBattleViewRedesign
+                          creator: isBaggerBomb ? {
+                            uid: battle.player1?.odUserId || user.odUserId,
+                            odUserId: battle.player1?.odUserId || user.odUserId,
+                            username: battle.player1?.username || user.username,
+                            portfolioName: battle.player1?.portfolioName || 'Training Portfolio',
+                            portfolio: battle.player1?.portfolio || [],
+                            bench: battle.player1?.bench || [],
+                            portfolioType: battle.player1?.portfolioType || 'baggerbomb'
+                          } : undefined,
+                          opponent: isBaggerBomb ? {
+                            uid: 'cpu',
+                            odUserId: 'cpu',
+                            username: 'CPU Opponent',
+                            portfolioName: battle.player2?.portfolioName || 'CPU Strategy',
+                            portfolio: battle.player2?.portfolio || [],
+                            bench: battle.player2?.bench || [],
+                            portfolioType: 'baggerbomb'
+                          } : undefined,
+
+                          // Legacy fields for Classic view compatibility
                           creatorPortfolio: battle.player1?.portfolio || [],
                           opponentPortfolio: battle.player2?.portfolio || [],
                           portfolioName: battle.player1?.portfolioName || 'Training Portfolio',
                           portfolioType: battle.player1?.portfolioType || 'stocks',
                           status: 'active',
+
+                          // Timeline
+                          timeline: battle.timeline,
                           startDate: battle.timeline?.startDate,
                           endDate: battle.timeline?.endDate,
+
+                          // State
+                          state: battle.state,
                           startingPrices: battle.state?.startingPrices || {},
+
+                          // BaggerBomb specific
+                          thresholds: battle.thresholds || {},
+                          breakouts: battle.breakouts || { creator: [], opponent: [] },
+                          sessionScores: battle.sessions || {},
+
+                          // Training flags
+                          isTraining: true,
                           isTrainingBattle: true,
                           createdAt: battle.timeline?.createdAt
                         };
@@ -23244,12 +23408,24 @@ export default function PortfolioDuel() {
             setBattleScoringMode('classic'); // Reset to classic when closing
           }}
           onConfirm={() => {
-            // Check PvP battle limit
-            const activePvPBattles = battles.filter(b =>
-              !b.isTrainingBattle &&
-              (b.status === 'waiting' || b.status === 'active')
-            ).length;
-            if (activePvPBattles >= MAX_PVP_BATTLES) {
+            // Check PvP battle limit - MUST filter by current user
+            const userPvPBattles = battles.filter(b => {
+              // Skip training battles
+              if (b.isTrainingBattle) return false;
+
+              // Check if battle is active or waiting
+              const isActiveOrWaiting = b.status === 'waiting' || b.status === 'active';
+              if (!isActiveOrWaiting) return false;
+
+              // Check if current user is involved in this battle
+              // Handle both V1 (string) and V2 (object) formats
+              const creatorUsername = typeof b.creator === 'object' ? b.creator?.username : b.creator;
+              const opponentUsername = typeof b.opponent === 'object' ? b.opponent?.username : b.opponent;
+
+              return creatorUsername === user?.username || opponentUsername === user?.username;
+            });
+
+            if (userPvPBattles.length >= MAX_PVP_BATTLES) {
               alert(`You've reached the maximum of ${MAX_PVP_BATTLES} active PvP battles. Complete or delete a battle first.`);
               setShowCreateBattleConfirm(false);
               return;
@@ -23356,12 +23532,24 @@ export default function PortfolioDuel() {
             setTrainingBattleType('classic'); // Reset on close
           }}
           onConfirm={() => {
-            // Check training battle limit
-            const activeTrainingBattles = battles.filter(b =>
-              b.isTrainingBattle &&
-              (b.status === 'waiting' || b.status === 'active')
-            ).length;
-            if (activeTrainingBattles >= MAX_TRAINING_BATTLES) {
+            // Check training battle limit - MUST filter by current user
+            const userTrainingBattles = battles.filter(b => {
+              // Must be a training battle
+              if (!b.isTrainingBattle && !b.isTraining) return false;
+
+              // Check if battle is active or waiting
+              const isActiveOrWaiting = b.status === 'waiting' || b.status === 'active' ||
+                                        b.state?.status === 'active' || b.state?.status === 'waiting';
+              if (!isActiveOrWaiting) return false;
+
+              // Check if current user is the creator of this training battle
+              // Handle both V1 (string) and V2 (object) formats
+              const creatorUsername = typeof b.creator === 'object' ? b.creator?.username : b.creator;
+
+              return creatorUsername === user?.username;
+            });
+
+            if (userTrainingBattles.length >= MAX_TRAINING_BATTLES) {
               alert(`You've reached the maximum of ${MAX_TRAINING_BATTLES} active training battles. Complete or delete a battle first.`);
               setShowClassicTrainingConfirm(false);
               return;
@@ -25322,6 +25510,101 @@ export default function PortfolioDuel() {
     );
   }
 
+  // BAGGERBOMB SCORING JOIN PORTFOLIO BUILDER SCREEN
+  if (screen === 'joinPortfolioBuilderTD') {
+    return (
+      <div style={containerStyle}>
+        <DesktopBackground isDesktop={isDesktop} />
+
+        <div style={{ minHeight: '100vh', background: '#0d1117', position: 'relative', zIndex: 1 }}>
+          {/* Join Mode Banner */}
+          <div style={{
+            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+            padding: '8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px'
+          }}>
+            <span style={{ fontSize: '16px' }}>💣</span>
+            <span style={{ color: '#fff', fontSize: '13px', fontWeight: '600' }}>
+              Join BaggerBomb Battle • Code: {joinCode}
+            </span>
+          </div>
+
+          <PortfolioBuilderBaggerBomb
+            stockPrices={stocksData.reduce((acc, s) => {
+              acc[s.symbol] = { price: s.price, percentChange: s.percentChange };
+              return acc;
+            }, {})}
+            cryptoPrices={cryptoData.reduce((acc, c) => {
+              acc[c.symbol] = { price: c.price, percentChange: c.percentChange };
+              return acc;
+            }, {})}
+            thresholds={{}} // Will be fetched in component
+            onSubmit={async (portfolioData) => {
+              // Join BaggerBomb battle with portfolio
+              try {
+                // PortfolioBuilderBaggerBomb uses 'roster' not 'portfolio'
+                const portfolio = portfolioData.roster || portfolioData.portfolio || [];
+                const bench = portfolioData.bench || [];
+
+                if (!Array.isArray(portfolio) || portfolio.length === 0) {
+                  alert('Please build your portfolio before joining.');
+                  return;
+                }
+
+                // CRITICAL: Firebase does NOT allow undefined values
+                const odUserId = user?.odUserId || user?.uid || user?.email || 'anonymous';
+                const opponentData = {
+                  odUserId: odUserId,
+                  uid: odUserId, // Also include uid for validation
+                  username: user?.username || user?.email?.split('@')[0] || 'Player',
+                  odUsername: user?.username || user?.email?.split('@')[0] || 'Player',
+                  portfolioName: portfolioData.portfolioName || 'Portfolio',
+                  portfolio: portfolio,
+                  bench: bench,
+                  portfolioType: 'baggerbomb',
+                  allocations: portfolioData.allocations || {}
+                };
+
+                console.log('🎮 Join BaggerBomb with data:', {
+                  portfolioLength: portfolio.length,
+                  benchLength: bench.length,
+                  opponentData
+                });
+
+                const joinedBattle = await joinBaggerBombBattle(joinCode, opponentData);
+
+                if (joinedBattle) {
+                  // Add to local battles list
+                  const updatedBattles = [...battles, joinedBattle];
+                  setBattles(updatedBattles);
+                  saveBattlesSafe(updatedBattles);
+
+                  // Navigate to battle view
+                  setCurrentBattle(joinedBattle);
+                  setScreen('battle');
+                  setJoinCode('');
+                  setJoinBattleType('classic');
+                } else {
+                  alert('Could not find a battle with that code. Make sure the code is correct and the battle hasn\'t started yet.');
+                }
+              } catch (error) {
+                console.error('Error joining BaggerBomb battle:', error);
+                alert('Error joining battle: ' + (error.message || 'Unknown error'));
+              }
+            }}
+            onBack={() => {
+              setScreen('join');
+              setJoinBattleType('classic');
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // BAGGERBOMB SCORING TRAINING PORTFOLIO BUILDER SCREEN
   if (screen === 'trainingPortfolioBuilderTD') {
     return (
@@ -25389,7 +25672,7 @@ export default function PortfolioDuel() {
             zIndex: 50
           }}>
             <button
-              onClick={() => { setJoinCode(''); setBuilderMode('create'); setScreen('dashboard'); }}
+              onClick={() => { setJoinCode(''); setJoinBattleType('classic'); setBuilderMode('create'); setScreen('dashboard'); }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -25474,15 +25757,155 @@ export default function PortfolioDuel() {
                   boxSizing: 'border-box',
                   background: 'rgba(0, 0, 0, 0.3)',
                   color: '#ffffff',
-                  marginBottom: '24px'
+                  marginBottom: '20px'
                 }}
               />
+
+              {/* Battle Type Selection */}
+              <div style={{ marginBottom: '24px' }}>
+                <div style={{
+                  fontSize: '12px',
+                  color: 'rgba(255,255,255,0.5)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  marginBottom: '10px',
+                  textAlign: 'center'
+                }}>
+                  Select Battle Type
+                </div>
+                <div style={{
+                  display: 'flex',
+                  gap: '10px'
+                }}>
+                  {/* Classic Battle Option */}
+                  <button
+                    onClick={() => setJoinBattleType('classic')}
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '14px 12px',
+                      background: joinBattleType === 'classic'
+                        ? 'rgba(6, 182, 212, 0.15)'
+                        : 'rgba(255,255,255,0.03)',
+                      border: joinBattleType === 'classic'
+                        ? '2px solid #06b6d4'
+                        : '2px solid rgba(255,255,255,0.1)',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <div style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '8px',
+                      background: joinBattleType === 'classic'
+                        ? 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)'
+                        : 'rgba(255,255,255,0.05)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '18px'
+                    }}>
+                      📊
+                    </div>
+                    <div style={{
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      color: '#fff'
+                    }}>
+                      Classic
+                    </div>
+                    <div style={{
+                      fontSize: '10px',
+                      color: 'rgba(255,255,255,0.5)',
+                      textAlign: 'center'
+                    }}>
+                      % returns
+                    </div>
+                  </button>
+
+                  {/* BaggerBomb Battle Option */}
+                  <button
+                    onClick={() => setJoinBattleType('baggerbomb')}
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '14px 12px',
+                      background: joinBattleType === 'baggerbomb'
+                        ? 'rgba(16, 185, 129, 0.15)'
+                        : 'rgba(255,255,255,0.03)',
+                      border: joinBattleType === 'baggerbomb'
+                        ? '2px solid #10b981'
+                        : '2px solid rgba(255,255,255,0.1)',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      position: 'relative'
+                    }}
+                  >
+                    <div style={{
+                      position: 'absolute',
+                      top: '-8px',
+                      right: '-8px',
+                      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                      color: '#fff',
+                      fontSize: '8px',
+                      fontWeight: '700',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      textTransform: 'uppercase'
+                    }}>
+                      New
+                    </div>
+                    <div style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '8px',
+                      background: joinBattleType === 'baggerbomb'
+                        ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                        : 'rgba(255,255,255,0.05)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '18px'
+                    }}>
+                      💣
+                    </div>
+                    <div style={{
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      color: '#fff'
+                    }}>
+                      BaggerBomb
+                    </div>
+                    <div style={{
+                      fontSize: '10px',
+                      color: 'rgba(255,255,255,0.5)',
+                      textAlign: 'center'
+                    }}>
+                      Threshold scoring
+                    </div>
+                  </button>
+                </div>
+              </div>
 
               {/* Continue Button */}
               <button
                 onClick={() => {
                   if (joinCode.length === 6) {
-                    setScreen('builder');
+                    // Route based on battle type selection
+                    if (joinBattleType === 'baggerbomb') {
+                      setScreen('joinPortfolioBuilderTD');
+                    } else {
+                      setScreen('builder');
+                    }
                   }
                 }}
                 disabled={joinCode.length !== 6}
@@ -25495,7 +25918,9 @@ export default function PortfolioDuel() {
                   borderRadius: '12px',
                   cursor: joinCode.length === 6 ? 'pointer' : 'not-allowed',
                   background: joinCode.length === 6
-                    ? 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)'
+                    ? joinBattleType === 'baggerbomb'
+                      ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                      : 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)'
                     : '#21262d',
                   color: joinCode.length === 6 ? '#ffffff' : '#6e7681',
                   display: 'flex',
@@ -25503,7 +25928,11 @@ export default function PortfolioDuel() {
                   justifyContent: 'center',
                   gap: '8px',
                   transition: 'all 0.2s',
-                  boxShadow: joinCode.length === 6 ? '0 4px 12px rgba(6, 182, 212, 0.3)' : 'none'
+                  boxShadow: joinCode.length === 6
+                    ? joinBattleType === 'baggerbomb'
+                      ? '0 4px 12px rgba(16, 185, 129, 0.3)'
+                      : '0 4px 12px rgba(6, 182, 212, 0.3)'
+                    : 'none'
                 }}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -29679,6 +30108,29 @@ export default function PortfolioDuel() {
 
   // BATTLE VIEW SCREEN - ESPN STYLE REDESIGN
   if (screen === 'battle' && currentBattle) {
+    // Debug: Log battle routing decision
+    console.log('🎮 BATTLE ROUTING DEBUG:', {
+      screen,
+      hasBattle: !!currentBattle,
+      battleVersion: currentBattle?._v,
+      isTraining: currentBattle?.isTraining,
+      hasCreatorObj: !!currentBattle?.creator,
+      battleType: currentBattle?.portfolioType
+    });
+
+    // Check if this is a BaggerBomb (V2) battle - route to redesigned view
+    if (currentBattle._v === 2) {
+      return (
+        <BaggerBombBattleViewRedesign
+          battle={currentBattle}
+          user={user}
+          onBack={() => setScreen('dashboard')}
+          isTraining={currentBattle.isTraining || false}
+        />
+      );
+    }
+
+    // Classic (V1) battle view continues below...
     const isCreator = currentBattle.creator === user.username;
     const opponent = isCreator ? currentBattle.opponent : currentBattle.creator;
     const myPortfolio = isCreator ? currentBattle.creatorPortfolio : currentBattle.opponentPortfolio;

@@ -6,12 +6,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Monitor, Building2, Heart, ShoppingBag, ShoppingCart,
   Zap, Factory, Lightbulb, Home, Radio,
-  Target, TrendingUp, Rocket, Info, Check
+  Target, TrendingUp, Rocket, Info, Check, FileText, X
 } from 'lucide-react';
 import { STOCKS, CRYPTO } from '../../data/assets';
 import { getVolatilityThresholds } from '../../services/volatilityService';
 import { getMultipleStockPrices, getMultipleCryptoPrices } from '../../services/eodhdAPI';
 import StockDetailModal from './StockDetailModal';
+import { NotesTab } from '../GamePlan';
 
 // Color scheme matching existing app
 const colors = {
@@ -229,6 +230,7 @@ const getDefaultThresholds = () => {
 export default function PortfolioBuilderBaggerBomb({
   onSubmit,
   onBack,
+  user,
   stockPrices: initialStockPrices = {},
   cryptoPrices: initialCryptoPrices = {},
   thresholds: initialThresholds = {}
@@ -244,6 +246,7 @@ export default function PortfolioBuilderBaggerBomb({
   const [activeTab, setActiveTab] = useState('Technology');
   const [searchQuery, setSearchQuery] = useState('');
   const [showCart, setShowCart] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
   const [showBenchModal, setShowBenchModal] = useState(false);
   const [benchModalType, setBenchModalType] = useState('stock');
   const [benchActiveTab, setBenchActiveTab] = useState('Technology'); // Sector tab for bench modal
@@ -588,37 +591,62 @@ export default function PortfolioBuilderBaggerBomb({
           TD Battle
         </h1>
 
-        <button
-          onClick={() => setShowCart(true)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: portfolio.length > 0 ? colors.primary : 'transparent',
-            border: portfolio.length > 0 ? 'none' : `1px solid ${colors.border}`,
-            color: portfolio.length > 0 ? '#000' : colors.textSecondary,
-            fontSize: '14px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            padding: '8px 12px',
-            borderRadius: '8px',
-            transition: 'all 0.2s'
-          }}
-        >
-          🛒 Cart
-          {totalAssets > 0 && (
-            <span style={{
-              backgroundColor: portfolio.length > 0 ? 'rgba(0,0,0,0.3)' : colors.primary,
-              color: portfolio.length > 0 ? '#000' : '#fff',
-              padding: '2px 6px',
-              borderRadius: '10px',
-              fontSize: '12px',
-              fontWeight: '700'
-            }}>
-              {totalAssets}
-            </span>
-          )}
-        </button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {/* Notes Button */}
+          <button
+            onClick={() => setShowNotes(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              background: '#f59e0b',
+              border: 'none',
+              color: '#000',
+              fontSize: '13px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              padding: '8px 10px',
+              borderRadius: '8px',
+              transition: 'all 0.2s'
+            }}
+          >
+            <FileText size={14} />
+            Notes
+          </button>
+
+          {/* Cart Button */}
+          <button
+            onClick={() => setShowCart(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: portfolio.length > 0 ? colors.primary : 'transparent',
+              border: portfolio.length > 0 ? 'none' : `1px solid ${colors.border}`,
+              color: portfolio.length > 0 ? '#000' : colors.textSecondary,
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              transition: 'all 0.2s'
+            }}
+          >
+            🛒 Cart
+            {totalAssets > 0 && (
+              <span style={{
+                backgroundColor: portfolio.length > 0 ? 'rgba(0,0,0,0.3)' : colors.primary,
+                color: portfolio.length > 0 ? '#000' : '#fff',
+                padding: '2px 6px',
+                borderRadius: '10px',
+                fontSize: '12px',
+                fontWeight: '700'
+              }}>
+                {totalAssets}
+              </span>
+            )}
+          </button>
+        </div>
       </header>
 
       {/* Requirements & Progress */}
@@ -986,6 +1014,89 @@ export default function PortfolioBuilderBaggerBomb({
           })}
         </div>
       </div>
+
+      {/* Notes Modal */}
+      <AnimatePresence>
+        {showNotes && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.85)',
+              backdropFilter: 'blur(8px)',
+              zIndex: 200,
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'center',
+              padding: '20px',
+              overflowY: 'auto'
+            }}
+            onClick={() => setShowNotes(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '100%',
+                maxWidth: '500px',
+                backgroundColor: colors.background,
+                borderRadius: '16px',
+                border: `1px solid ${colors.border}`,
+                overflow: 'hidden',
+                marginTop: '20px'
+              }}
+            >
+              {/* Notes Modal Header */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '16px 20px',
+                borderBottom: `1px solid ${colors.border}`
+              }}>
+                <h2 style={{
+                  margin: 0,
+                  fontSize: '18px',
+                  fontWeight: '600',
+                  color: colors.textPrimary,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <FileText size={20} color="#f59e0b" />
+                  Saved Game Plans
+                </h2>
+                <button
+                  onClick={() => setShowNotes(false)}
+                  style={{
+                    backgroundColor: colors.cardBg,
+                    border: 'none',
+                    borderRadius: '8px',
+                    width: '36px',
+                    height: '36px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <X size={20} color={colors.textSecondary} />
+                </button>
+              </div>
+
+              {/* Notes Content */}
+              <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+                <NotesTab user={user} />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Cart Modal */}
       <AnimatePresence>

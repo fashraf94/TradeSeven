@@ -839,6 +839,30 @@ export async function createBaggerBombBattle(battleData) {
  */
 export async function joinBaggerBombBattle(challengeCode, opponentData) {
   try {
+    // Validate input data
+    if (!challengeCode || typeof challengeCode !== 'string') {
+      throw new Error('Invalid challenge code');
+    }
+
+    if (!opponentData) {
+      throw new Error('Opponent data is required');
+    }
+
+    // Ensure portfolio is an array
+    if (!Array.isArray(opponentData.portfolio)) {
+      console.error('Invalid portfolio data:', opponentData);
+      throw new Error('Portfolio must be an array');
+    }
+
+    if (opponentData.portfolio.length === 0) {
+      throw new Error('Portfolio cannot be empty');
+    }
+
+    // Ensure bench is an array (default to empty array if not provided)
+    if (opponentData.bench && !Array.isArray(opponentData.bench)) {
+      opponentData.bench = [];
+    }
+
     // Find V2 battle by challenge code
     const q = query(
       collection(db, 'battles'),
@@ -916,13 +940,15 @@ export async function joinBaggerBombBattle(challengeCode, opponentData) {
     }));
 
     // Update battle with opponent
+    // CRITICAL: Firebase does NOT allow undefined values - use empty string as fallback
     const battleRef = doc(db, 'battles', battleDoc.id);
 
     await updateDoc(battleRef, {
-      'opponent.uid': opponentData.uid,
-      'opponent.username': opponentData.username,
-      'opponent.portfolioName': opponentData.portfolioName,
-      'opponent.portfolioType': opponentData.portfolioType || 'stocks',
+      'opponent.uid': opponentData.uid || opponentData.odUserId || '',
+      'opponent.odUserId': opponentData.odUserId || opponentData.uid || '',
+      'opponent.username': opponentData.username || opponentData.odUsername || '',
+      'opponent.portfolioName': opponentData.portfolioName || 'Portfolio',
+      'opponent.portfolioType': opponentData.portfolioType || 'baggerbomb',
       'opponent.portfolio': formattedPortfolio,
       'opponent.bench': formattedBench,
       'opponent.cryptoAllocation': 10,
