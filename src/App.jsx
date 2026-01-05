@@ -1,5 +1,6 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { loadBattlesSafe, saveBattlesSafe, isSameBattles, loadUser, saveUser, clearUser } from './services/LocalStorage';
+import { loadBattlesSafe, saveBattlesSafe, isSameBattles } from './services/LocalStorage';
+import { useUser } from './contexts/UserContext';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
@@ -11302,9 +11303,12 @@ export default function PortfolioDuel() {
   // ============================================
   // 1. ALL STATE DECLARATIONS
   // ============================================
+
+  // User state from context (single source of truth)
+  const { user, login, logout, updateUser, loading: userLoading } = useUser();
+
   const [screen, setScreen] = useState('home');
   const [historyTab, setHistoryTab] = useState('draft'); // 'classic' or 'draft'
-  const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
   const [portfolioName, setPortfolioName] = useState('');
   const [builderMode, setBuilderMode] = useState('create'); // 'create', 'join', or 'training'
@@ -12297,7 +12301,7 @@ export default function PortfolioDuel() {
       // Update user XP
       if (user) {
         const newXP = (user.xp || 0) + xpReward;
-        setUser({ ...user, xp: newXP });
+        updateUser({ xp: newXP });
       }
 
       saveWeeklyChallenges({
@@ -12313,7 +12317,7 @@ export default function PortfolioDuel() {
         setTimeout(() => {
           const bonusXP = CHALLENGE_XP.weeklyBonus;
           if (user) {
-            setUser({ ...user, xp: (user.xp || 0) + xpReward + bonusXP });
+            updateUser({ xp: (user.xp || 0) + xpReward + bonusXP });
           }
           showChallengeToastMessage(`WEEKLY BONUS! All challenges complete! +${bonusXP} XP`);
         }, 3500);
@@ -12332,21 +12336,12 @@ export default function PortfolioDuel() {
   // 2. ALL USEEFFECTS (AT TOP LEVEL)
   // ============================================
 
-  // Load user from localStorage on mount
+  // Navigate to dashboard when user is loaded from context (on mount)
   useEffect(() => {
-    const savedUser = loadUser();
-    if (savedUser) {
-      setUser(savedUser);
+    if (user && !userLoading && screen === 'home') {
       setScreen('dashboard');
     }
-  }, []);
-
-  // Save user to localStorage whenever it changes
-  useEffect(() => {
-    if (user) {
-      saveUser(user);
-    }
-  }, [user]);
+  }, [user, userLoading]);
 
   // Handle window resize for desktop background
   useEffect(() => {
@@ -12861,12 +12856,7 @@ export default function PortfolioDuel() {
           // Award XP
           const totalXP = newChallenges.reduce((sum, c) => sum + c.xp, 0);
           if (user) {
-            const updatedUser = {
-              ...user,
-              xp: (user.xp || 0) + totalXP
-            };
-            setUser(updatedUser);
-            saveUser(updatedUser);
+            updateUser({ xp: (user.xp || 0) + totalXP });
           }
 
           // Show popup
@@ -13794,33 +13784,31 @@ export default function PortfolioDuel() {
   // Update current user's stats after a battle completes
   function updateUserStatsFromBattle(battle) {
     if (!battle.result) return;
-    
+
     const userXP = battle.result.xpAwarded[user.username];
     const won = battle.result.winner === user.username;
-    
-    // Update user object
-    const updatedUser = {
-      ...user,
+
+    // Build updates object
+    const updates = {
       xp: user.xp + userXP
     };
-    
+
     // ⭐ Only update W/L for non-training battles
     if (!battle.isTrainingBattle) {
-      updatedUser.wins = won ? user.wins + 1 : user.wins;
-      updatedUser.losses = won ? user.losses : user.losses + 1;
+      updates.wins = won ? user.wins + 1 : user.wins;
+      updates.losses = won ? user.losses : user.losses + 1;
     }
     // Training battles still award XP but don't affect W/L record
-    
+
     // Check for rank up
-    const newRank = battleTimer.determineRank(updatedUser.xp);
-    if (newRank !== updatedUser.rank) {
-      updatedUser.rank = newRank;
+    const newRank = battleTimer.determineRank(updates.xp);
+    if (newRank !== user.rank) {
+      updates.rank = newRank;
       console.log(`🎉 Rank up! You are now ${newRank}`);
     }
-    
-    // Update user state and save
-    setUser(updatedUser);
-    saveUser(updatedUser);
+
+    // Update user via context (handles state and persistence)
+    updateUser(updates);
   }
 
   // Archive a completed battle (move from completed to previous battles)
@@ -13913,21 +13901,9 @@ export default function PortfolioDuel() {
   // 4. SCREEN HANDLERS
   // ============================================
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!username.trim()) return;
-
-    const userData = {
-      username: username.trim(),
-      wins: 0,
-      losses: 0,
-      xp: 0,
-      rank: 'Beginner',
-      level: 1,
-      joinedAt: new Date().toISOString()
-    };
-
-    setUser(userData);
-    saveUser(userData);  // Persist user to localStorage
+    await login(username.trim());
     setScreen('dashboard');
   };
 
@@ -19127,7 +19103,7 @@ export default function PortfolioDuel() {
                   </div>
                   <span className="text-sm font-medium" style={{ color: colors.textPrimary }}>{user.username}</span>
                   <button
-                    onClick={() => { setUser(null); setUsername(''); clearUser(); setScreen('home'); }}
+                    onClick={() => { logout(); setUsername(''); setScreen('home'); }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-all"
                     style={{ background: 'transparent', border: `1px solid ${colors.borderSubtle}`, color: colors.textSecondary }}
                     onMouseEnter={(e) => { e.currentTarget.style.borderColor = colors.red; e.currentTarget.style.color = colors.red; }}
@@ -21955,8 +21931,7 @@ export default function PortfolioDuel() {
                 {/* LOGOUT */}
                 <button
                   onClick={() => {
-                    setUser(null);
-                    clearUser();
+                    logout();
                     setScreen('home');
                     setSidebarOpen(false);
                   }}
