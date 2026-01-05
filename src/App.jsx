@@ -483,6 +483,16 @@ const generateAIOpponentPortfolio = (userPortfolio) => {
   return aiPortfolio;
 };
 
+// ============================================
+// HELPER: Normalize username extraction for V1/V2 battle format
+// V1 battles: creator/opponent are strings
+// V2 battles: creator/opponent are objects with username property
+// ============================================
+const getUsername = (creatorOrOpponent) =>
+  typeof creatorOrOpponent === 'object'
+    ? creatorOrOpponent?.username
+    : creatorOrOpponent;
+
 // Create Training Battle - 100% Client-Side (No API)
 const createTrainingBattle = (userPortfolio, battleType = 'head-to-head') => {
   const battleId = `training_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
@@ -13459,7 +13469,7 @@ export default function PortfolioDuel() {
           setBattles(updatedBattles);
           
           // Update current user's stats if they're in this battle
-          if (battle.creator === user.username || battle.opponent === user.username) {
+          if (getUsername(battle.creator) === user.username || getUsername(battle.opponent) === user.username) {
             updateUserStatsFromBattle(processedBattle);
           }
         }
@@ -13838,7 +13848,7 @@ export default function PortfolioDuel() {
       const saved = JSON.parse(localStorage.getItem('tradeseven_previous_battles') || '[]');
       // Filter to only show user's battles and sort by date
       const userPreviousBattles = saved
-        .filter(b => b.creator === user?.username || b.opponent === user?.username)
+        .filter(b => getUsername(b.creator) === user?.username || getUsername(b.opponent) === user?.username)
         .sort((a, b) => new Date(b.completedAt || b.archivedAt) - new Date(a.completedAt || a.archivedAt));
       setPreviousBattles(userPreviousBattles);
     } catch (error) {
@@ -14890,9 +14900,9 @@ export default function PortfolioDuel() {
     asset.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Get battles for current user
-  const userBattles = battles.filter(b => 
-    b.creator === user?.username || b.opponent === user?.username
+  // Get battles for current user (handles both V1 string and V2 object formats)
+  const userBattles = battles.filter(b =>
+    getUsername(b.creator) === user?.username || getUsername(b.opponent) === user?.username
   );
 
   // Separate battles by status
@@ -18853,8 +18863,8 @@ export default function PortfolioDuel() {
     // Helper function to calculate battle preview data for any battle
     const calculateBattlePreviewData = (battle) => {
       if (!battle) return null;
-      const isCreator = battle.creator === user.username;
-      const opponent = isCreator ? battle.opponent : battle.creator;
+      const isCreator = getUsername(battle.creator) === user.username;
+      const opponent = isCreator ? getUsername(battle.opponent) : getUsername(battle.creator);
       const myPortfolio = isCreator ? battle.creatorPortfolio : battle.opponentPortfolio;
       const theirPortfolio = isCreator ? battle.opponentPortfolio : battle.creatorPortfolio;
 
@@ -21463,8 +21473,8 @@ export default function PortfolioDuel() {
                   const result = battle.result;
                   if (!result) return null;
                   const won = result.winner === user.username;
-                  const userReturn = battle.creator === user.username ? result.creatorReturn : result.opponentReturn;
-                  const opponent = battle.creator === user.username ? battle.opponent : battle.creator;
+                  const userReturn = getUsername(battle.creator) === user.username ? result.creatorReturn : result.opponentReturn;
+                  const opponent = getUsername(battle.creator) === user.username ? getUsername(battle.opponent) : getUsername(battle.creator);
 
                   return (
                     <div
@@ -23417,11 +23427,7 @@ export default function PortfolioDuel() {
               if (!isActiveOrWaiting) return false;
 
               // Check if current user is involved in this battle
-              // Handle both V1 (string) and V2 (object) formats
-              const creatorUsername = typeof b.creator === 'object' ? b.creator?.username : b.creator;
-              const opponentUsername = typeof b.opponent === 'object' ? b.opponent?.username : b.opponent;
-
-              return creatorUsername === user?.username || opponentUsername === user?.username;
+              return getUsername(b.creator) === user?.username || getUsername(b.opponent) === user?.username;
             });
 
             if (userPvPBattles.length >= MAX_PVP_BATTLES) {
@@ -23542,10 +23548,7 @@ export default function PortfolioDuel() {
               if (!isActiveOrWaiting) return false;
 
               // Check if current user is the creator of this training battle
-              // Handle both V1 (string) and V2 (object) formats
-              const creatorUsername = typeof b.creator === 'object' ? b.creator?.username : b.creator;
-
-              return creatorUsername === user?.username;
+              return getUsername(b.creator) === user?.username;
             });
 
             if (userTrainingBattles.length >= MAX_TRAINING_BATTLES) {
@@ -30907,15 +30910,15 @@ export default function PortfolioDuel() {
                   if (!result) return null;
                   
                   const won = result.winner === user.username;
-                  const userReturn = battle.creator === user.username 
-                    ? result.creatorReturn 
+                  const userReturn = getUsername(battle.creator) === user.username
+                    ? result.creatorReturn
                     : result.opponentReturn;
-                  const opponentReturn = battle.creator === user.username 
-                    ? result.opponentReturn 
+                  const opponentReturn = getUsername(battle.creator) === user.username
+                    ? result.opponentReturn
                     : result.creatorReturn;
-                  const opponent = battle.creator === user.username 
-                    ? battle.opponent 
-                    : battle.creator;
+                  const opponent = getUsername(battle.creator) === user.username
+                    ? getUsername(battle.opponent)
+                    : getUsername(battle.creator);
                   const xpEarned = result.xpAwarded[user.username] || 0;
                   
                   return (
@@ -31165,9 +31168,9 @@ export default function PortfolioDuel() {
               <div className="space-y-3">
                 {wonBattles.map(battle => {
                   const result = battle.result;
-                  const userReturn = battle.creator === user.username ? result.creatorReturn : result.opponentReturn;
-                  const opponentReturn = battle.creator === user.username ? result.opponentReturn : result.creatorReturn;
-                  const opponent = battle.creator === user.username ? battle.opponent : battle.creator;
+                  const userReturn = getUsername(battle.creator) === user.username ? result.creatorReturn : result.opponentReturn;
+                  const opponentReturn = getUsername(battle.creator) === user.username ? result.opponentReturn : result.creatorReturn;
+                  const opponent = getUsername(battle.creator) === user.username ? getUsername(battle.opponent) : getUsername(battle.creator);
                   const xpEarned = result.xpAwarded[user.username] || 0;
 
                   return (
@@ -31272,9 +31275,9 @@ export default function PortfolioDuel() {
               <div className="space-y-3">
                 {lostBattles.map(battle => {
                   const result = battle.result;
-                  const userReturn = battle.creator === user.username ? result.creatorReturn : result.opponentReturn;
-                  const opponentReturn = battle.creator === user.username ? result.opponentReturn : result.creatorReturn;
-                  const opponent = battle.creator === user.username ? battle.opponent : battle.creator;
+                  const userReturn = getUsername(battle.creator) === user.username ? result.creatorReturn : result.opponentReturn;
+                  const opponentReturn = getUsername(battle.creator) === user.username ? result.opponentReturn : result.creatorReturn;
+                  const opponent = getUsername(battle.creator) === user.username ? getUsername(battle.opponent) : getUsername(battle.creator);
                   const xpEarned = result.xpAwarded[user.username] || 0;
 
                   return (
