@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ArrowLeft, Loader2, Check, RefreshCw } from 'lucide-react';
 import { fetchSectorData } from '../../services/sectorDataService';
 import { SECTORS } from '../../constants/sectors';
@@ -56,9 +56,17 @@ const SectorSelectionScreen = ({
   initialSelections = [],
   maxSelections = 3
 }) => {
-  // Get recommended sectors
-  const recommendedSectorIds = getRecommendedSectors(marketStance, riskStyle);
-  const otherSectorIds = ALL_SECTORS.filter(id => !recommendedSectorIds.includes(id));
+  // Memoize recommended sectors (only recalculates if marketStance or riskStyle changes)
+  const recommendedSectorIds = useMemo(
+    () => getRecommendedSectors(marketStance, riskStyle),
+    [marketStance, riskStyle]
+  );
+
+  // Memoize other sectors list
+  const otherSectorIds = useMemo(
+    () => ALL_SECTORS.filter(id => !recommendedSectorIds.includes(id)),
+    [recommendedSectorIds]
+  );
 
   // State
   const [selectedSectors, setSelectedSectors] = useState(initialSelections);
@@ -70,10 +78,10 @@ const SectorSelectionScreen = ({
   // Load recommended sectors on mount
   useEffect(() => {
     loadSectors(recommendedSectorIds);
-  }, []);
+  }, [recommendedSectorIds]);
 
-  // Load sectors function
-  const loadSectors = async (sectorIds) => {
+  // Memoized load sectors function
+  const loadSectors = useCallback(async (sectorIds) => {
     const sectorsToLoad = sectorIds.filter(id =>
       !loadedSectors.has(id) && !loadingSectors.has(id)
     );
@@ -114,20 +122,20 @@ const SectorSelectionScreen = ({
         return next;
       });
     }
-  };
+  }, [loadedSectors, loadingSectors]);
 
-  // Handle tab click
-  const handleTabClick = (tabId) => {
+  // Memoized handle tab click
+  const handleTabClick = useCallback((tabId) => {
     setActiveTab(tabId);
 
     // If it's an individual sector tab, load it
     if (tabId !== 'recommended' && !loadedSectors.has(tabId)) {
       loadSectors([tabId]);
     }
-  };
+  }, [loadedSectors, loadSectors]);
 
-  // Handle sector selection
-  const handleSectorSelect = (sectorId) => {
+  // Memoized handle sector selection
+  const handleSectorSelect = useCallback((sectorId) => {
     setSelectedSectors(prev => {
       if (prev.includes(sectorId)) {
         return prev.filter(id => id !== sectorId);
@@ -137,17 +145,15 @@ const SectorSelectionScreen = ({
       }
       return [...prev, sectorId];
     });
-  };
+  }, [maxSelections]);
 
-  // Get sectors to display
-  const getDisplayedSectors = () => {
+  // Memoize displayed sectors
+  const displayedSectors = useMemo(() => {
     if (activeTab === 'recommended') {
       return recommendedSectorIds;
     }
     return [activeTab]; // Single sector
-  };
-
-  const displayedSectors = getDisplayedSectors();
+  }, [activeTab, recommendedSectorIds]);
 
   return (
     <div style={{
@@ -380,7 +386,7 @@ const SectorSelectionScreen = ({
                 <div
                   key={sectorId}
                   style={{
-                    width: '300px',
+                    width: '340px',
                     backgroundColor: '#161b22',
                     border: '1px solid #21262d',
                     borderRadius: '12px',

@@ -13,6 +13,7 @@ import { getVolatilityThresholds } from '../../services/volatilityService';
 import { getMultipleStockPrices, getMultipleCryptoPrices } from '../../services/eodhdAPI';
 import StockDetailModal from './StockDetailModal';
 import { NotesTab } from '../GamePlan';
+import { useUser } from '../../contexts';
 
 // Color scheme matching existing app
 const colors = {
@@ -226,15 +227,19 @@ const getDefaultThresholds = () => {
 
 /**
  * PortfolioBuilderBaggerBomb - Main component
+ * Accepts user prop for backwards compatibility, but prefers context
  */
 export default function PortfolioBuilderBaggerBomb({
   onSubmit,
   onBack,
-  user,
+  user: userProp,
   stockPrices: initialStockPrices = {},
   cryptoPrices: initialCryptoPrices = {},
   thresholds: initialThresholds = {}
 }) {
+  // Get user from context, fall back to prop
+  const { user: contextUser } = useUser();
+  const user = userProp || contextUser;
   // Portfolio state
   const [portfolio, setPortfolio] = useState([]);
   const [selectedCrypto, setSelectedCrypto] = useState(null);

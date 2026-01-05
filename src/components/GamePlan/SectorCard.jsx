@@ -57,6 +57,7 @@ const SectorCard = ({
     <div
       onClick={handleCardClick}
       style={{
+        width: '340px',
         backgroundColor: isSelected ? `${color}15` : '#161b22',
         border: isSelected ? `2px solid ${color}` : '1px solid #21262d',
         borderRadius: '12px',

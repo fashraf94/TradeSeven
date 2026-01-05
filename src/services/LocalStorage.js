@@ -70,6 +70,19 @@ export function saveUser(user) {
 }
 
 /**
+ * Clears user data from localStorage
+ */
+export function clearUser() {
+  try {
+    localStorage.removeItem('portfolioDuelUser');
+    return true;
+  } catch (error) {
+    console.error('Error clearing user from localStorage:', error);
+    return false;
+  }
+}
+
+/**
  * Clears all game data from localStorage
  */
 export function clearAllData() {
