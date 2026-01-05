@@ -44,7 +44,7 @@ const getAuthUserId = () => {
     }
 
     // Method 2: Check localStorage for user data
-    const storedUser = localStorage.getItem('user');
+    const storedUser = localStorage.getItem('portfolioDuelUser');
     if (storedUser) {
       try {
         const parsed = JSON.parse(storedUser);
