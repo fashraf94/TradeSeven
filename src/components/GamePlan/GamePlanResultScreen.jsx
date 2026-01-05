@@ -5,8 +5,13 @@ import { generateAIStrategy, generateAIPicks, getCurrentSession } from '../../se
 import { saveTemplate } from '../../services/templateService';
 import { saveGamePlanNote } from '../../services/gamePlanNotesService';
 import { SECTORS } from '../../constants/sectors';
+import { useUser } from '../../contexts';
 
-const GamePlanResultScreen = ({ onBack, onComplete, onGoHome, gamePlanData, user }) => {
+// Accept user prop for backwards compatibility, but prefer context
+const GamePlanResultScreen = ({ onBack, onComplete, onGoHome, gamePlanData, user: userProp }) => {
+  const { user: contextUser, getUserId } = useUser();
+  const user = userProp || contextUser; // Prefer prop if passed, fall back to context
+
   const { riskStyle, selectedSectors, mustHavePicks } = gamePlanData;
 
   const [recommendations, setRecommendations] = useState(null);
@@ -150,8 +155,8 @@ const GamePlanResultScreen = ({ onBack, onComplete, onGoHome, gamePlanData, user
         sessionPicks: aiPicks?.sessionPicks || []
       };
 
-      // Pass user ID directly to avoid auth.currentUser issues
-      const userId = user?.odUserId || user?.uid || user?.username;
+      // Use getUserId from context, fall back to deriving from user object
+      const userId = getUserId() || user?.odUserId || user?.uid || user?.username;
       await saveGamePlanNote(noteData, userId);
       setSavedNote(true);
 

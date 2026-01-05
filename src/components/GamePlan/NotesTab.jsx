@@ -14,6 +14,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { getGamePlanNotes, deleteGamePlanNote } from '../../services/gamePlanNotesService';
+import { useUser } from '../../contexts';
 
 const SECTOR_COLORS = {
   XLK: '#00d9ff',
@@ -35,15 +36,19 @@ const RISK_STYLES = {
   conservative: { label: 'Conservative', color: '#3b82f6', emoji: '🛡️' }
 };
 
-const NotesTab = ({ user }) => {
+// Accept user prop for backwards compatibility, but prefer context
+const NotesTab = ({ user: userProp }) => {
+  const { user: contextUser, getUserId } = useUser();
+  const user = userProp || contextUser; // Prefer prop if passed, fall back to context
+
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedNote, setExpandedNote] = useState(null);
   const [deleting, setDeleting] = useState(null);
 
-  // Get user ID from prop
-  const userId = user?.odUserId || user?.uid || user?.username;
+  // Get user ID - use hook if available, else derive from user object
+  const userId = getUserId() || user?.odUserId || user?.uid || user?.username;
 
   useEffect(() => {
     loadNotes();
