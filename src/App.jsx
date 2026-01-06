@@ -13541,9 +13541,9 @@ export default function PortfolioDuel() {
     return () => clearInterval(interval);
   }, [user]);
 
-  // Load previous battles when user logs in or screen changes to dashboard
+  // Load previous battles when user logs in or screen changes to dashboard/battleHistory
   useEffect(() => {
-    if (user && screen === 'dashboard') {
+    if (user && (screen === 'dashboard' || screen === 'battleHistory')) {
       loadPreviousBattles();
     }
   }, [user, screen]);
@@ -31399,8 +31399,10 @@ export default function PortfolioDuel() {
   // BATTLE HISTORY SCREEN
   if (screen === 'battleHistory') {
     // Get completed battles based on tab
-    const allCompletedClassicBattles = user?.completedBattles || [];
-    const classicBattles = allCompletedClassicBattles.filter(b => b.isDraft !== true);
+    // Use previousBattles state (from tradeseven_previous_battles localStorage)
+    // instead of user.completedBattles which is never populated
+    const allCompletedClassicBattles = previousBattles || [];
+    const classicBattles = allCompletedClassicBattles.filter(b => b.isDraft !== true && b.battleType !== 'baggerbomb_training');
 
     // Select battles based on current tab
     const completedBattles = historyTab === 'draft'
