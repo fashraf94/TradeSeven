@@ -11318,7 +11318,7 @@ export default function PortfolioDuel() {
   const { user, login, logout, updateUser, loading: userLoading } = useUser();
 
   const [screen, setScreen] = useState('home');
-  const [historyTab, setHistoryTab] = useState('draft'); // 'classic' or 'draft'
+  const [historyTab, setHistoryTab] = useState('draft'); // 'classic', 'draft', or 'training'
   const [username, setUsername] = useState('');
   const [portfolioName, setPortfolioName] = useState('');
   const [builderMode, setBuilderMode] = useState('create'); // 'create', 'join', or 'training'
@@ -11335,6 +11335,8 @@ export default function PortfolioDuel() {
   const [activeDraftBattles, setActiveDraftBattles] = useState([]);
   const [completedDraftBattles, setCompletedDraftBattles] = useState([]);
   const [activeTrainingBattles, setActiveTrainingBattles] = useState([]); // Firebase-persisted training battles
+  const [completedTrainingBattles, setCompletedTrainingBattles] = useState([]); // For Battle History training tab
+  const [loadingTrainingBattles, setLoadingTrainingBattles] = useState(false);
 
   // Portfolio builder state
   const [assetType, setAssetType] = useState('stocks');
@@ -13329,6 +13331,64 @@ export default function PortfolioDuel() {
     };
 
     fetchCompletedDraftBattles();
+  }, [screen, historyTab, user]);
+
+  // Fetch completed training battles for history
+  useEffect(() => {
+    if (screen !== 'battleHistory' || historyTab !== 'training' || !user) return;
+
+    const fetchTrainingBattles = async () => {
+      setLoadingTrainingBattles(true);
+      try {
+        const { collection, query, where, orderBy, limit, getDocs } = await import('firebase/firestore');
+        const { db } = await import('./firebase/config');
+
+        const currentUserId = user?.odUserId || user?.username;
+        if (!currentUserId) {
+          setCompletedTrainingBattles([]);
+          return;
+        }
+
+        // Query training battles where user is the creator and battle is completed
+        const q = query(
+          collection(db, 'trainingBattles'),
+          where('creatorId', '==', currentUserId),
+          where('state.status', '==', 'completed'),
+          limit(20)
+        );
+
+        const snapshot = await getDocs(q);
+        const battles = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            isTrainingBattle: true,
+            completedAt: data.timeline?.completedAt || data.completedAt
+          };
+        });
+
+        // Sort client-side to avoid composite index requirement
+        battles.sort((a, b) => {
+          const dateA = new Date(a.completedAt || 0);
+          const dateB = new Date(b.completedAt || 0);
+          return dateB - dateA;
+        });
+
+        setCompletedTrainingBattles(battles);
+      } catch (error) {
+        console.error('Error fetching training battles:', error);
+        // If index error, log helpful message
+        if (error.code === 'failed-precondition') {
+          console.error('Firebase index required. Check console for index creation link.');
+        }
+        setCompletedTrainingBattles([]);
+      } finally {
+        setLoadingTrainingBattles(false);
+      }
+    };
+
+    fetchTrainingBattles();
   }, [screen, historyTab, user]);
 
   // Listen for localStorage changes from other tabs
@@ -31342,14 +31402,20 @@ export default function PortfolioDuel() {
     const allCompletedClassicBattles = user?.completedBattles || [];
     const classicBattles = allCompletedClassicBattles.filter(b => b.isDraft !== true);
 
-    // Use completedDraftBattles state for draft tab (fetched from Firebase)
-    const completedBattles = historyTab === 'draft' ? completedDraftBattles : classicBattles;
+    // Select battles based on current tab
+    const completedBattles = historyTab === 'draft'
+      ? completedDraftBattles
+      : historyTab === 'training'
+        ? completedTrainingBattles
+        : classicBattles;
 
     // Stats for the current tab
-    const tabWins = completedBattles.filter(b => b.won === true).length;
-    const tabLosses = completedBattles.filter(b => b.won === false).length;
+    const tabWins = completedBattles.filter(b => b.won === true || b.result?.winner === user?.username).length;
+    const tabLosses = completedBattles.filter(b => b.won === false || (b.result && b.result.winner !== user?.username)).length;
     // For draft battles, podium (top 3) count can be useful
     const draftPodiums = historyTab === 'draft' ? completedBattles.filter(b => b.myRank && b.myRank <= 3).length : 0;
+    // For training battles, count total completed
+    const trainingCompleted = historyTab === 'training' ? completedBattles.length : 0;
 
     return (
       <div style={containerStyle}>
@@ -31432,6 +31498,23 @@ export default function PortfolioDuel() {
               >
                 Draft Mode
               </button>
+              <button
+                onClick={() => setHistoryTab('training')}
+                style={{
+                  flex: 1,
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: historyTab === 'training' ? '#9333ea' : 'transparent',
+                  color: historyTab === 'training' ? '#ffffff' : '#8b949e',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                Training
+              </button>
             </div>
 
             {/* Stats Summary */}
@@ -31439,16 +31522,20 @@ export default function PortfolioDuel() {
               {/* Total Battles */}
               <div style={{
                 backgroundColor: '#161b22',
-                border: `1px solid ${historyTab === 'draft' ? '#8b5cf6' : '#21262d'}`,
+                border: `1px solid ${historyTab === 'draft' ? '#8b5cf6' : historyTab === 'training' ? '#9333ea' : '#21262d'}`,
                 borderRadius: '12px',
                 padding: '16px',
                 textAlign: 'center'
               }}>
-                <div style={{ fontSize: '28px', marginBottom: '8px' }}>{historyTab === 'draft' ? '🎯' : '⚔️'}</div>
-                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ffffff' }}>
-                  {tabWins + tabLosses}
+                <div style={{ fontSize: '28px', marginBottom: '8px' }}>
+                  {historyTab === 'draft' ? '🎯' : historyTab === 'training' ? '🤖' : '⚔️'}
                 </div>
-                <div style={{ fontSize: '13px', color: '#8b949e' }}>{historyTab === 'draft' ? 'Draft' : 'Classic'} Battles</div>
+                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ffffff' }}>
+                  {historyTab === 'training' ? completedBattles.length : tabWins + tabLosses}
+                </div>
+                <div style={{ fontSize: '13px', color: '#8b949e' }}>
+                  {historyTab === 'draft' ? 'Draft' : historyTab === 'training' ? 'Training' : 'Classic'} Battles
+                </div>
               </div>
 
               {/* Wins */}
@@ -31484,10 +31571,21 @@ export default function PortfolioDuel() {
 
             {/* Battle List */}
             <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff', marginBottom: '16px' }}>
-              {historyTab === 'draft' ? 'Past Draft Battles' : 'Past Classic Battles'}
+              {historyTab === 'draft' ? 'Past Draft Battles' : historyTab === 'training' ? 'Past Training Battles' : 'Past Classic Battles'}
             </h2>
 
-            {completedBattles.length === 0 ? (
+            {loadingTrainingBattles && historyTab === 'training' ? (
+              <div style={{
+                backgroundColor: '#161b22',
+                border: '1px solid #9333ea',
+                borderRadius: '12px',
+                padding: '48px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '48px', marginBottom: '16px', animation: 'pulse 2s infinite' }}>🤖</div>
+                <p style={{ color: '#8b949e', fontSize: '18px' }}>Loading training battles...</p>
+              </div>
+            ) : completedBattles.length === 0 ? (
               <div style={{
                 backgroundColor: '#161b22',
                 border: '1px solid #21262d',
@@ -31495,21 +31593,25 @@ export default function PortfolioDuel() {
                 padding: '48px',
                 textAlign: 'center'
               }}>
-                <div style={{ fontSize: '64px', marginBottom: '16px' }}>{historyTab === 'draft' ? '🎯' : '🎮'}</div>
+                <div style={{ fontSize: '64px', marginBottom: '16px' }}>
+                  {historyTab === 'draft' ? '🎯' : historyTab === 'training' ? '🤖' : '🎮'}
+                </div>
                 <p style={{ color: '#8b949e', fontSize: '18px', marginBottom: '8px' }}>
-                  No {historyTab === 'draft' ? 'draft' : 'classic'} battles yet
+                  No {historyTab === 'draft' ? 'draft' : historyTab === 'training' ? 'training' : 'classic'} battles yet
                 </p>
                 <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '16px' }}>
                   {historyTab === 'draft'
                     ? 'Start a draft battle to build your history!'
+                    : historyTab === 'training'
+                    ? 'Play against AI opponents to practice your strategy!'
                     : 'Create your first classic battle to start your history!'
                   }
                 </p>
                 <button
                   onClick={() => setScreen('dashboard')}
                   style={{
-                    backgroundColor: historyTab === 'draft' ? '#8b5cf6' : '#00d9ff',
-                    color: historyTab === 'draft' ? '#ffffff' : '#000000',
+                    backgroundColor: historyTab === 'draft' ? '#8b5cf6' : historyTab === 'training' ? '#9333ea' : '#00d9ff',
+                    color: (historyTab === 'draft' || historyTab === 'training') ? '#ffffff' : '#000000',
                     fontWeight: 'bold',
                     padding: '12px 24px',
                     borderRadius: '8px',
@@ -31662,6 +31764,107 @@ export default function PortfolioDuel() {
                           <span>{battle.code || 'Draft Battle'}</span>
                           <span>{battle.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'}</span>
                           <span>4-Player Draft</span>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Training battle card (vs AI)
+                  if (historyTab === 'training' && battle.isTrainingBattle) {
+                    const aiOpponent = battle.players?.find(p => p.isAI);
+                    const userPlayer = battle.players?.find(p => !p.isAI);
+                    const userGain = userPlayer?.finalGain ?? userPlayer?.portfolioGain ?? 0;
+                    const aiGain = aiOpponent?.finalGain ?? aiOpponent?.portfolioGain ?? 0;
+                    const won = userGain > aiGain;
+
+                    return (
+                      <div
+                        key={battle.id || index}
+                        style={{
+                          background: '#161b22',
+                          borderLeft: won ? '4px solid #10b981' : '4px solid #ef4444',
+                          borderRadius: '12px',
+                          padding: '16px',
+                          marginBottom: '0'
+                        }}
+                      >
+                        {/* Header */}
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          marginBottom: '12px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              fontWeight: 'bold',
+                              background: won ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                              color: won ? '#10b981' : '#ef4444'
+                            }}>
+                              {won ? '🏆 VICTORY' : '💀 DEFEAT'}
+                            </span>
+                            <span style={{ fontSize: '16px' }}>🤖</span>
+                          </div>
+                          <span style={{ color: '#6e7681', fontSize: '12px' }}>
+                            {battle.completedAt ? new Date(battle.completedAt).toLocaleDateString() : ''}
+                          </span>
+                        </div>
+
+                        {/* Matchup */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          background: '#0d1117',
+                          borderRadius: '8px',
+                          padding: '12px'
+                        }}>
+                          {/* You */}
+                          <div style={{ flex: 1, textAlign: 'center' }}>
+                            <div style={{ color: '#00d9ff', fontWeight: 'bold', fontSize: '14px' }}>You</div>
+                            <div style={{
+                              color: userGain >= 0 ? '#10b981' : '#ef4444',
+                              fontSize: '20px',
+                              fontWeight: 'bold'
+                            }}>
+                              {userGain >= 0 ? '+' : ''}{userGain.toFixed(1)}%
+                            </div>
+                          </div>
+
+                          <div style={{ color: '#6e7681', fontSize: '18px', fontWeight: 'bold' }}>VS</div>
+
+                          {/* AI */}
+                          <div style={{ flex: 1, textAlign: 'center' }}>
+                            <div style={{ color: '#9333ea', fontWeight: 'bold', fontSize: '14px' }}>
+                              {aiOpponent?.displayName || 'AI Opponent'}
+                            </div>
+                            <div style={{
+                              color: aiGain >= 0 ? '#10b981' : '#ef4444',
+                              fontSize: '20px',
+                              fontWeight: 'bold'
+                            }}>
+                              {aiGain >= 0 ? '+' : ''}{aiGain.toFixed(1)}%
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Battle Info */}
+                        <div style={{
+                          marginTop: '12px',
+                          paddingTop: '12px',
+                          borderTop: '1px solid #21262d',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          color: '#6e7681',
+                          fontSize: '11px'
+                        }}>
+                          <span>Training Battle</span>
+                          <span>{battle.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'}</span>
+                          <span>vs AI</span>
                         </div>
                       </div>
                     );
