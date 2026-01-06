@@ -1763,7 +1763,7 @@ const StockMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors 
               </div>
 
               {/* Support/Resistance Levels */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '10px' }}>
                 <div style={{ background: '#161b22', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
                   <div style={{ color: '#ef4444', fontSize: '11px', marginBottom: '4px' }}>Support</div>
                   <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '700' }}>${technicalData.support}</div>
@@ -1970,7 +1970,7 @@ const StockMetricsDisplay = ({ asset, thesis, pinnedNotes, onPinInsight, colors 
             {/* Key Metrics Grid */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))',
               gap: '10px',
               marginBottom: '14px'
             }}>
@@ -10779,13 +10779,15 @@ const getGameModeColor = (gameMode) => {
 
 // Style override to neutralize App.css
 const containerStyle = {
-  maxWidth: 'none',
+  maxWidth: '100vw',
   width: '100%',
   margin: 0,
   padding: 0,
   textAlign: 'left',
   minHeight: '100vh',
-  background: colors.background
+  minHeight: '100dvh',
+  background: colors.background,
+  overflowX: 'hidden'
 };
 
 // Mini Sparkline Chart Component
@@ -21713,7 +21715,7 @@ export default function PortfolioDuel() {
                 top: 0,
                 left: 0,
                 height: '100%',
-                width: '320px',
+                width: 'min(320px, 85vw)',
                 backgroundColor: '#161b22',
                 borderRight: '1px solid rgba(255, 255, 255, 0.1)',
                 zIndex: 110,
@@ -27931,7 +27933,7 @@ export default function PortfolioDuel() {
             {draftStats && (
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
                 gap: '12px',
                 marginBottom: '24px'
               }}>
@@ -29352,7 +29354,7 @@ export default function PortfolioDuel() {
                             {/* Portfolio Grid */}
                             <div style={{
                               display: 'grid',
-                              gridTemplateColumns: 'repeat(3, 1fr)',
+                              gridTemplateColumns: 'repeat(auto-fit, minmax(70px, 1fr))',
                               gap: '8px',
                               marginBottom: '16px'
                             }}>
@@ -29962,7 +29964,7 @@ export default function PortfolioDuel() {
                 {/* Free Agent Grid */}
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
                   gap: '8px',
                   maxHeight: '300px',
                   overflowY: 'auto'
@@ -31520,7 +31522,7 @@ export default function PortfolioDuel() {
             </div>
 
             {/* Stats Summary */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '12px', marginBottom: '24px' }}>
               {/* Total Battles */}
               <div style={{
                 backgroundColor: '#161b22',
@@ -32218,7 +32220,7 @@ export default function PortfolioDuel() {
 
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
               gap: '12px'
             }}>
               {/* First Win */}
