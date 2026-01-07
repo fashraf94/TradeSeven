@@ -34,6 +34,7 @@ import { RiskStyleScreen, SectorSelectionScreen } from './components/GamePlan';
 const PortfolioBuilderBaggerBomb = lazy(() => import('./components/BaggerBomb/PortfolioBuilderBaggerBomb'));
 const BaggerBombBattleViewRedesign = lazy(() => import('./components/BaggerBomb/BaggerBombBattleViewRedesign'));
 const BaggerBombGamePlanFlow = lazy(() => import('./components/GamePlan/BaggerBombGamePlanFlow'));
+const StonkOptionsArenaV2 = lazy(() => import('./components/StonkOptionsArenaV2'));
 
 // Legacy aliases for backwards compatibility
 const TDBattleScoreboard = BaggerBombScoreboard;
@@ -20621,6 +20622,90 @@ export default function PortfolioDuel() {
               }} />
             </motion.div>
 
+            {/* Stonk Options Button */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.38 }}
+              onClick={() => setScreen('stonkOptionsArena')}
+              style={{
+                margin: '16px 16px 0',
+                padding: '16px 20px',
+                borderRadius: '14px',
+                cursor: 'pointer',
+                position: 'relative',
+                overflow: 'hidden',
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(6, 182, 212, 0.1) 100%)',
+                border: '1px solid rgba(16, 185, 129, 0.4)',
+                transition: 'all 0.3s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = '#10b981';
+                e.currentTarget.style.boxShadow = '0 0 25px rgba(16, 185, 129, 0.3)';
+                e.currentTarget.style.transform = 'translateY(-2px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+                e.currentTarget.style.boxShadow = 'none';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 4px 15px rgba(16, 185, 129, 0.4)'
+                  }}>
+                    <TrendingUp size={24} color="#fff" />
+                  </div>
+                  <div>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      marginBottom: '4px'
+                    }}>
+                      <span style={{
+                        fontSize: '17px',
+                        fontWeight: '700',
+                        color: '#fff'
+                      }}>
+                        Stonk Options
+                      </span>
+                      <span style={{
+                        padding: '2px 8px',
+                        background: 'linear-gradient(135deg, #f59e0b, #ef4444)',
+                        borderRadius: '4px',
+                        fontSize: '9px',
+                        fontWeight: '700',
+                        color: '#fff',
+                        textTransform: 'uppercase'
+                      }}>
+                        NEW
+                      </span>
+                    </div>
+                    <span style={{
+                      fontSize: '13px',
+                      color: '#9ca3af'
+                    }}>
+                      Binary options trading game • Pick strikes & win big
+                    </span>
+                  </div>
+                </div>
+                <ArrowRight size={20} color="#10b981" />
+              </div>
+            </motion.div>
+
             {/* Training Mode Section - Different design for draft vs classic */}
             {gameMode === 'draft' ? (
               /* SNAKE DRAFT TRAINING SECTION - Redesigned with circular buttons */
@@ -32349,6 +32434,31 @@ export default function PortfolioDuel() {
           </div>
         </div>
       </div>
+    );
+  }
+
+  // STONK OPTIONS ARENA V2
+  if (screen === 'stonkOptionsArena') {
+    return (
+      <Suspense fallback={
+        <div style={{
+          minHeight: '100vh',
+          background: '#0a0a1a',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#00d9ff'
+        }}>
+          Loading Options Arena...
+        </div>
+      }>
+        <StonkOptionsArenaV2
+          onBack={() => setScreen('dashboard')}
+          stocksData={stocksData}
+          stockAPI={stockAPI}
+          initialCash={10000}
+        />
+      </Suspense>
     );
   }
 
