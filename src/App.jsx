@@ -44,6 +44,23 @@ const TDBattleView = BaggerBombBattleView;
 import { generateGamePlan, enhanceRecommendations, getAssetDeepDive } from './services/researchAdvisor';
 // Snake Draft strategy utilities (consolidated from duplicate code paths)
 import { createSnakeDraftGamePlan } from './utils/draftStrategy';
+// Battle helper utilities for V1/V2 format handling
+import {
+  getUsername as getPlayerUsername,
+  getUserId,
+  isCreator as isPlayerCreator,
+  isOpponent as isPlayerOpponent,
+  isParticipant,
+  getOpponentUsername,
+  getUserPortfolio,
+  getOpponentPortfolio,
+  isBaggerBombBattle,
+  isTrainingBattle as isBattleTraining,
+  getBattleStatus,
+  didUserWin,
+  getUserScore,
+  getOpponentScore
+} from './utils/battleHelpers';
 // Snake Draft asset pools
 import { STEADY_STOCKS, RISKY_STOCKS, DEFENSIVE_STOCKS, STEADY_CRYPTO, RISKY_CRYPTO, DEFENSIVE_CRYPTO } from './services/draftAssets';
 // Recommendation Engine
@@ -488,11 +505,10 @@ const generateAIOpponentPortfolio = (userPortfolio) => {
 // HELPER: Normalize username extraction for V1/V2 battle format
 // V1 battles: creator/opponent are strings
 // V2 battles: creator/opponent are objects with username property
+// Now uses enhanced getUsername from battleHelpers.js that handles both
+// V1 (string) and V2 (object with odUsername/username) formats
 // ============================================
-const getUsername = (creatorOrOpponent) =>
-  typeof creatorOrOpponent === 'object'
-    ? creatorOrOpponent?.username
-    : creatorOrOpponent;
+const getUsername = getPlayerUsername;
 
 // Create Training Battle - 100% Client-Side (No API)
 const createTrainingBattle = (userPortfolio, battleType = 'head-to-head') => {

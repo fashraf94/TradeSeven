@@ -44,16 +44,33 @@ export const login = async (username) => {
     throw new Error('Username is required');
   }
 
+  const trimmedUsername = username.trim();
+  const normalizedId = `local_${trimmedUsername.toLowerCase()}`;
+
+  // Check if user already exists with same username - preserve their stats
+  const existingUser = loadUser();
+  if (existingUser && existingUser.odUserId === normalizedId) {
+    // Same user logging back in - preserve existing data, update lastLoginAt
+    const updatedUser = {
+      ...existingUser,
+      lastLoginAt: new Date().toISOString(),
+    };
+    saveUser(updatedUser);
+    return updatedUser;
+  }
+
+  // New user or different username - create fresh profile
   const userData = {
-    username: username.trim(),
-    odUserId: `local_${username.trim().toLowerCase()}`, // Simulated user ID
+    username: trimmedUsername,
+    odUserId: normalizedId,
     wins: 0,
     losses: 0,
     xp: 0,
     rank: 'Beginner',
     level: 1,
     joinedAt: new Date().toISOString(),
-    authProvider: 'local', // Track auth provider for migration
+    lastLoginAt: new Date().toISOString(),
+    authProvider: 'local',
   };
 
   saveUser(userData);
