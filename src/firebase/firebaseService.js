@@ -12,11 +12,25 @@ import {
   where,
   onSnapshot,
   orderBy,
-  limit
+  limit,
+  Timestamp,
+  serverTimestamp
 } from 'firebase/firestore';
 import { db } from './config';
 import { getVolatilityThresholds } from '../services/volatilityService.js';
 import { isCrypto, SESSION_ORDER } from '../services/sessionScoringService.js';
+import {
+  getTodayDeadline,
+  getNextBattleStart,
+  getBattleEndTime,
+  isWithinCommitmentWindow,
+  getCurrentSession,
+  isTrainingAvailable,
+  getTrainingThreshold,
+  getNextTradingDay,
+  getSnakeDraftEndDate,
+  TRAINING_CONFIG
+} from '../constants/battleTiming.js';
 
 // =====================================================
 // HELPERS
@@ -741,32 +755,56 @@ export async function createBaggerBombBattle(battleData) {
       }
     }
 
+    // Calculate timing windows
+    const commitmentDeadline = getTodayDeadline();
+    const battleStart = getNextBattleStart();
+    const battleEnd = getBattleEndTime(battleStart);
+
     const battle = {
       _v: 2,  // Schema version for BaggerBomb Scoring
 
+      type: 'baggerbomb_pvp',
       challengeCode: String(battleData.challengeCode || ''),
 
       creator: {
         uid: String(battleData.creator?.uid || 'anonymous'),
+        odUserId: String(battleData.creator?.odUserId || battleData.creator?.uid || 'anonymous'),
         username: String(battleData.creator?.username || 'Player'),
         portfolioName: String(battleData.portfolioName || 'BaggerBomb Portfolio'),
         portfolioType: String(battleData.portfolioType || 'stocks'),
         portfolio: sanitizedPortfolio,
         bench: sanitizedBench,
+        sessionScores: {},
+        totalScore: 0,
         cryptoAllocation: 10  // Fixed at 10% for V2
       },
 
       // Opponent starts empty - all fields must be explicit, no undefined
       opponent: {
         uid: '',
+        odUserId: '',
         username: '',
         portfolioName: '',
         portfolioType: '',
         portfolio: [],
         bench: [],
+        sessionScores: {},
+        totalScore: 0,
         cryptoAllocation: 0
       },
 
+      // NEW: Enhanced timing with commitment deadline and baseline lock
+      timing: {
+        createdAt: new Date().toISOString(),
+        commitmentDeadline: commitmentDeadline.toISOString(),
+        baselineLockTime: '',  // Set at 4 PM when both joined
+        scheduledStart: battleStart.toISOString(),
+        scheduledEnd: battleEnd.toISOString(),
+        actualStart: '',
+        actualEnd: ''
+      },
+
+      // Legacy timeline for backward compatibility
       timeline: {
         createdAt: new Date().toISOString(),
         startDate: '',  // Set when opponent joins
@@ -778,25 +816,39 @@ export async function createBaggerBombBattle(battleData) {
         status: 'waiting',
         currentSession: '',    // MORNING_BELL, MIDDAY, POWER_HOUR, NIGHT_GAME
         completedSessions: [],   // Array of completed session IDs
-        startingPrices: {}
+        startingPrices: {},
+        isActive: false
       },
 
-      // Price snapshots per session
+      // NEW: Baseline prices locked at 4 PM market close
+      pricing: {
+        baselinePrices: {},  // Locked at 4 PM ET
+        sessionPrices: initializeSessionPrices()
+      },
+
+      // Legacy sessionPrices for backward compatibility
       sessionPrices: initializeSessionPrices(),
 
       // Volatility thresholds locked at battle creation
       thresholds: sanitizedThresholds,
 
-      // Breakout events log
+      // Breakout events log (NEW FORMAT with thresholdsCrossed)
       breakouts: {
         creator: [],
         opponent: []
       },
 
-      // Substitution history
+      // Substitution history (max 2 per battle)
       substitutions: [],
+      substitutionsRemaining: { creator: 2, opponent: 2 },
 
-      // Per-session scores
+      // NEW: Per-session scoring breakdown
+      scoring: {
+        sessions: initializeSessionScores(),
+        breakouts: { creator: [], opponent: [] }
+      },
+
+      // Legacy sessionScores for backward compatibility
       sessionScores: initializeSessionScores(),
 
       result: {},
@@ -804,7 +856,7 @@ export async function createBaggerBombBattle(battleData) {
       metadata: {
         spectatorCount: 0,
         featured: false,
-        tags: ['baggerbomb-scoring', 'v2']
+        tags: ['baggerbomb-scoring', 'v2', 'linear-scoring']
       },
 
       archived: false,
@@ -1116,6 +1168,298 @@ export async function completeBaggerBombBattle(battleId, resultData) {
 }
 
 // =====================================================
+// TRAINING BATTLES
+// =====================================================
+
+/**
+ * Generate a simple CPU portfolio for training battles
+ * @param {string} assetType - 'stocks' or 'crypto'
+ * @returns {Array} CPU portfolio with 9 random assets
+ */
+function generateCPUPortfolio(assetType) {
+  const stockPool = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'AMD', 'NFLX', 'CRM', 'INTC', 'ORCL'];
+  const cryptoPool = ['BTC', 'ETH', 'SOL', 'ADA', 'DOGE', 'XRP', 'AVAX', 'DOT', 'MATIC', 'LINK'];
+
+  const pool = assetType === 'crypto' ? cryptoPool : stockPool;
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
+  const selected = shuffled.slice(0, 9);
+
+  return selected.map(symbol => ({
+    symbol,
+    name: symbol,
+    price: 0,
+    amount: 11.1,
+    position: 'long'
+  }));
+}
+
+/**
+ * Create a training battle (single session, reduced thresholds)
+ *
+ * @param {Object} battleData - Training battle data
+ * @returns {Promise<Object>} - Created training battle
+ */
+export async function createTrainingBattle(battleData) {
+  try {
+    // Check if training is available
+    if (!isTrainingAvailable()) {
+      throw new Error('Training is only available during market hours (9:30 AM - 8:00 PM ET, Mon-Fri)');
+    }
+
+    const { sessionName, endTime } = getCurrentSession();
+
+    if (!sessionName) {
+      throw new Error('No active session for training');
+    }
+
+    // Validate portfolio
+    if (!battleData.portfolio || battleData.portfolio.length === 0) {
+      throw new Error('Portfolio is required');
+    }
+
+    // Fetch and reduce thresholds by 30%
+    let thresholds = {};
+    try {
+      const rawThresholds = await fetchAllThresholds(battleData.portfolio, []);
+      for (const [symbol, data] of Object.entries(rawThresholds)) {
+        thresholds[symbol] = {
+          ...data,
+          threshold: getTrainingThreshold(data.threshold || 2.5),
+          originalThreshold: data.threshold || 2.5
+        };
+      }
+    } catch (error) {
+      console.warn('Could not fetch thresholds for training:', error.message);
+    }
+
+    // Sanitize portfolio
+    const sanitizedPortfolio = battleData.portfolio
+      .filter(asset => asset && asset.symbol)
+      .map(asset => ({
+        symbol: String(asset.symbol).toUpperCase(),
+        name: String(asset.name || asset.symbol),
+        price: Number(asset.price) || 0,
+        amount: 11.1,
+        position: 'long'
+      }));
+
+    // Generate CPU opponent
+    const cpuPortfolio = generateCPUPortfolio(battleData.assetType || 'stocks');
+
+    const battle = {
+      _v: 2,
+      type: 'baggerbomb_training',
+      status: 'active',
+
+      creator: {
+        uid: String(battleData.userId || 'anonymous'),
+        odUserId: String(battleData.userId || 'anonymous'),
+        username: String(battleData.username || 'Player'),
+        portfolio: sanitizedPortfolio,
+        sessionScores: {},
+        totalScore: 0
+      },
+
+      opponent: {
+        uid: 'cpu',
+        odUserId: 'cpu',
+        username: 'CPU Opponent',
+        portfolio: cpuPortfolio,
+        sessionScores: {},
+        totalScore: 0
+      },
+
+      thresholds,
+
+      timing: {
+        createdAt: new Date().toISOString(),
+        sessionName,
+        startTime: new Date().toISOString(),
+        endTime: endTime.toISOString()
+      },
+
+      pricing: {
+        baselinePrices: battleData.currentPrices || {}
+      },
+
+      scoring: {
+        breakouts: { creator: [], opponent: [] }
+      },
+
+      isTrainingBattle: true,
+      useConviction: TRAINING_CONFIG.USE_CONVICTION,
+      useSessionBonuses: TRAINING_CONFIG.USE_SESSION_BONUSES,
+
+      result: {},
+      archived: false,
+      updatedAt: new Date().toISOString()
+    };
+
+    const cleanedBattle = removeUndefined(battle);
+    const docRef = await addDoc(collection(db, 'trainingBattles'), cleanedBattle);
+
+    console.log('Training battle created:', docRef.id);
+
+    return { id: docRef.id, ...cleanedBattle };
+  } catch (error) {
+    console.error('Error creating training battle:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get user's training battles
+ *
+ * @param {string} userId - User ID
+ * @returns {Promise<Array>} - Training battles
+ */
+export async function getUserTrainingBattles(userId) {
+  try {
+    const q = query(
+      collection(db, 'trainingBattles'),
+      where('creator.odUserId', '==', userId),
+      where('archived', '==', false),
+      orderBy('timing.createdAt', 'desc'),
+      limit(20)
+    );
+
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    console.error('Error fetching training battles:', error);
+    return [];
+  }
+}
+
+// =====================================================
+// SNAKE DRAFT BATTLES
+// =====================================================
+
+/**
+ * Create a Snake Draft BaggerBomb battle after draft completes
+ *
+ * @param {Object} draftData - Draft completion data
+ * @returns {Promise<Object>} - Created Snake Draft battle
+ */
+export async function createSnakeDraftBattle(draftData) {
+  try {
+    // Fetch thresholds for all players' assets
+    const allAssets = draftData.players.flatMap(p => p.picks || []);
+    let thresholds = {};
+    try {
+      thresholds = await fetchAllThresholds(allAssets, []);
+    } catch (error) {
+      console.warn('Could not fetch thresholds for Snake Draft:', error.message);
+    }
+
+    const battleStartDate = getNextTradingDay();
+    const battleEndDate = getSnakeDraftEndDate(draftData.assetType || 'stocks');
+
+    const battle = {
+      _v: 2,
+      type: 'snake_draft_baggerbomb',
+      draftId: draftData.draftId,
+      status: 'active',
+
+      players: draftData.players.map(player => ({
+        odUserId: player.odUserId,
+        username: player.username,
+        portfolio: player.picks.map(asset => ({
+          symbol: String(asset.symbol).toUpperCase(),
+          name: asset.name || asset.symbol,
+          price: asset.price || 0
+        })),
+        dailyScores: {},
+        cumulativeScore: 0,
+        currentRank: 0
+      })),
+
+      thresholds,
+
+      timing: {
+        draftCompletedAt: new Date().toISOString(),
+        battleStartDate: battleStartDate.toISOString(),
+        battleEndDate: battleEndDate.toISOString()
+      },
+
+      dailyResults: {},
+
+      freeAgency: {
+        swapsRemaining: draftData.players.reduce((acc, p) => {
+          acc[p.odUserId] = 2;
+          return acc;
+        }, {}),
+        history: []
+      },
+
+      // Snake Draft specific: no conviction multipliers
+      useConviction: false,
+      useSessionBonuses: false,
+
+      finalResult: {},
+      archived: false,
+      updatedAt: new Date().toISOString()
+    };
+
+    const cleanedBattle = removeUndefined(battle);
+    const docRef = await addDoc(collection(db, 'snakeDraftBattles'), cleanedBattle);
+
+    console.log('Snake Draft battle created:', docRef.id);
+
+    return { id: docRef.id, ...cleanedBattle };
+  } catch (error) {
+    console.error('Error creating Snake Draft battle:', error);
+    throw error;
+  }
+}
+
+/**
+ * Record daily score for a Snake Draft player
+ *
+ * @param {string} battleId - Snake Draft battle ID
+ * @param {string} odUserId - Player's user ID
+ * @param {string} dayKey - Day key (e.g., 'monday', '2026-01-07')
+ * @param {Object} scoreData - Daily score breakdown
+ * @returns {Promise<void>}
+ */
+export async function recordSnakeDraftDailyScore(battleId, odUserId, dayKey, scoreData) {
+  try {
+    const battleRef = doc(db, 'snakeDraftBattles', battleId);
+    const battle = await getDoc(battleRef);
+
+    if (!battle.exists()) {
+      throw new Error('Snake Draft battle not found');
+    }
+
+    const battleData = battle.data();
+    const playerIndex = battleData.players.findIndex(p => p.odUserId === odUserId);
+
+    if (playerIndex === -1) {
+      throw new Error('Player not found in battle');
+    }
+
+    // Update player's daily score
+    const updatedPlayers = [...battleData.players];
+    updatedPlayers[playerIndex].dailyScores[dayKey] = scoreData;
+    updatedPlayers[playerIndex].cumulativeScore += scoreData.totalScore || 0;
+
+    // Recalculate rankings
+    updatedPlayers.sort((a, b) => b.cumulativeScore - a.cumulativeScore);
+    updatedPlayers.forEach((p, i) => { p.currentRank = i + 1; });
+
+    await updateDoc(battleRef, {
+      players: updatedPlayers,
+      updatedAt: new Date().toISOString()
+    });
+
+    console.log(`Snake Draft daily score recorded for ${odUserId} on ${dayKey}`);
+  } catch (error) {
+    console.error('Error recording Snake Draft daily score:', error);
+    throw error;
+  }
+}
+
+// =====================================================
 // EXPORTS
 // =====================================================
 
@@ -1139,6 +1483,14 @@ export default {
   updateCurrentSession,
   addBreakoutEvent,
   completeBaggerBombBattle,
+
+  // Training Battles
+  createTrainingBattle,
+  getUserTrainingBattles,
+
+  // Snake Draft Battles
+  createSnakeDraftBattle,
+  recordSnakeDraftDailyScore,
 
   // Challenges
   createChallenge,

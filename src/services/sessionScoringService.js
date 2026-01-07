@@ -68,22 +68,33 @@ export const SESSION_ORDER = ['MORNING_BELL', 'MIDDAY', 'POWER_HOUR', 'NIGHT_GAM
 /** Points earned per 1% price change */
 const POINTS_PER_PERCENT = 10;
 
-/** Conviction multipliers based on portfolio allocation */
+/** BaggerBomb scoring constants (NEW LINEAR SYSTEM)
+ * +15 points per threshold crossed (positive)
+ * -7.5 points per threshold crossed (negative)
+ */
+const BAGGERBOMB_POINTS = 15;
+const BUST_POINTS = -7.5;
+
+/** Conviction multipliers based on portfolio allocation (PvP 1v1 only) */
 const CONVICTION_TIERS = [
   { minAllocation: 15.1, maxAllocation: 100, multiplier: 1.3 },
   { minAllocation: 10.1, maxAllocation: 15, multiplier: 1.15 },
   { minAllocation: 0, maxAllocation: 10, multiplier: 1.0 }
 ];
 
-/** Breakout bonus points (positive threshold breaches) */
-const BREAKOUT_BONUSES = {
+/** @deprecated - OLD tiered system, kept for reference only
+ * Use calculateBaggerBombs() for new linear scoring
+ */
+const BREAKOUT_BONUSES_LEGACY = {
   BREAKOUT: { multiplier: 1.0, points: 15, name: 'Breakout' },
   RALLY: { multiplier: 1.5, points: 30, name: 'Rally' },
   MOONSHOT: { multiplier: 2.0, points: 50, name: 'Moonshot' }
 };
 
-/** Bust penalty points (negative threshold breaches) */
-const BUST_PENALTIES = {
+/** @deprecated - OLD tiered system, kept for reference only
+ * Use calculateBaggerBombs() for new linear scoring
+ */
+const BUST_PENALTIES_LEGACY = {
   BUST: { multiplier: 1.0, points: -10, name: 'Bust' },
   CRASH: { multiplier: 1.5, points: -20, name: 'Crash' },
   MELTDOWN: { multiplier: 2.0, points: -35, name: 'Meltdown' }
@@ -245,6 +256,82 @@ export function getConvictionMultiplier(allocationPercent) {
 }
 
 // ============================================
+// BAGGERBOMB SCORING (NEW LINEAR SYSTEM)
+// ============================================
+
+/**
+ * Calculate BaggerBomb count for an asset's performance
+ * NEW LINEAR SYSTEM: +15 per threshold crossed, -7.5 per negative threshold
+ *
+ * @param {number} percentChange - The asset's % change
+ * @param {number} threshold - The asset's volatility threshold
+ * @returns {object} { baggerBombs: number, busts: number, points: number }
+ */
+export function calculateBaggerBombs(percentChange, threshold) {
+  if (!threshold || threshold <= 0) {
+    return { baggerBombs: 0, busts: 0, points: 0 };
+  }
+
+  if (percentChange >= 0) {
+    // Positive: count how many thresholds crossed
+    const baggerBombs = Math.floor(percentChange / threshold);
+    return {
+      baggerBombs,
+      busts: 0,
+      points: baggerBombs * BAGGERBOMB_POINTS
+    };
+  } else {
+    // Negative: count how many negative thresholds crossed
+    const busts = Math.floor(Math.abs(percentChange) / threshold);
+    return {
+      baggerBombs: 0,
+      busts,
+      points: busts * BUST_POINTS
+    };
+  }
+}
+
+/**
+ * Calculate total score for an asset in a session/day
+ * NEW UNIFIED SCORING FUNCTION
+ *
+ * @param {number} percentChange - The asset's % change for the period
+ * @param {number} threshold - The asset's volatility threshold
+ * @param {number} allocation - The asset's allocation % (for conviction multiplier, PvP only)
+ * @param {boolean} useConviction - Whether to apply conviction multipliers
+ * @returns {object} Full scoring breakdown
+ */
+export function calculateAssetScore(percentChange, threshold, allocation = 11.1, useConviction = false) {
+  // Base points from % return
+  const basePoints = percentChange * POINTS_PER_PERCENT;
+
+  // BaggerBomb/Bust points
+  const { baggerBombs, busts, points: breakoutPoints } = calculateBaggerBombs(percentChange, threshold);
+
+  // Conviction multiplier (PvP 1v1 only)
+  let convictionMultiplier = 1.0;
+  if (useConviction) {
+    if (allocation > 15) convictionMultiplier = 1.3;
+    else if (allocation > 10) convictionMultiplier = 1.15;
+  }
+
+  // Total score
+  const rawScore = basePoints + breakoutPoints;
+  const finalScore = rawScore * convictionMultiplier;
+
+  return {
+    percentChange: Number(percentChange.toFixed(2)),
+    basePoints: Number(basePoints.toFixed(2)),
+    baggerBombs,
+    busts,
+    breakoutPoints,
+    convictionMultiplier,
+    rawScore: Number(rawScore.toFixed(2)),
+    finalScore: Number(finalScore.toFixed(2))
+  };
+}
+
+// ============================================
 // BASE POINTS CALCULATION
 // ============================================
 
@@ -264,16 +351,21 @@ export function calculateBasePoints(percentChange, allocationPercent) {
 }
 
 // ============================================
-// BREAKOUT BONUSES
+// BREAKOUT BONUSES (NEW LINEAR SYSTEM)
 // ============================================
 
 /**
  * Calculate breakout bonuses for positive threshold breaches
- * Bonuses stack: a Moonshot earns Breakout + Rally + Moonshot points
+ * NEW LINEAR SYSTEM: Each threshold crossed = +15 points (stacking)
+ *
+ * Example: Asset threshold = 2.8%
+ * +2.8% = 1 BaggerBomb = +15 pts
+ * +5.6% = 2 BaggerBombs = +30 pts
+ * +8.4% = 3 BaggerBombs = +45 pts
  *
  * @param {number} percentChange - Price change percentage
  * @param {Object} thresholds - Threshold data from volatilityService
- * @returns {{ bonuses: Array, totalBonus: number }}
+ * @returns {{ bonuses: Array, totalBonus: number, baggerBombs: number }}
  */
 export function calculateBreakoutBonuses(percentChange, thresholds) {
   const bonuses = [];
@@ -281,61 +373,48 @@ export function calculateBreakoutBonuses(percentChange, thresholds) {
 
   // Only positive moves can earn breakout bonuses
   if (percentChange <= 0) {
-    return { bonuses, totalBonus };
+    return { bonuses, totalBonus, baggerBombs: 0 };
   }
 
   const threshold = thresholds?.threshold || 2.5;
-  const rallyThreshold = thresholds?.rallyThreshold || threshold * 1.5;
-  const moonshotThreshold = thresholds?.moonshotThreshold || threshold * 2.0;
 
-  // Check each tier (they stack)
-  if (percentChange >= threshold) {
+  // NEW LINEAR: Count how many thresholds crossed
+  const baggerBombs = Math.floor(percentChange / threshold);
+
+  if (baggerBombs > 0) {
+    // Calculate points using linear system
+    totalBonus = baggerBombs * BAGGERBOMB_POINTS;
+
+    // Create a single bonus entry showing total BaggerBombs
     bonuses.push({
-      type: 'BREAKOUT',
-      name: BREAKOUT_BONUSES.BREAKOUT.name,
-      points: BREAKOUT_BONUSES.BREAKOUT.points,
+      type: 'BAGGERBOMB',
+      name: baggerBombs === 1 ? 'BaggerBomb' : `${baggerBombs}x BaggerBomb`,
+      points: totalBonus,
       thresholdHit: threshold,
+      thresholdsCrossed: baggerBombs,
       actualChange: percentChange
     });
-    totalBonus += BREAKOUT_BONUSES.BREAKOUT.points;
   }
 
-  if (percentChange >= rallyThreshold) {
-    bonuses.push({
-      type: 'RALLY',
-      name: BREAKOUT_BONUSES.RALLY.name,
-      points: BREAKOUT_BONUSES.RALLY.points,
-      thresholdHit: rallyThreshold,
-      actualChange: percentChange
-    });
-    totalBonus += BREAKOUT_BONUSES.RALLY.points;
-  }
-
-  if (percentChange >= moonshotThreshold) {
-    bonuses.push({
-      type: 'MOONSHOT',
-      name: BREAKOUT_BONUSES.MOONSHOT.name,
-      points: BREAKOUT_BONUSES.MOONSHOT.points,
-      thresholdHit: moonshotThreshold,
-      actualChange: percentChange
-    });
-    totalBonus += BREAKOUT_BONUSES.MOONSHOT.points;
-  }
-
-  return { bonuses, totalBonus };
+  return { bonuses, totalBonus, baggerBombs };
 }
 
 // ============================================
-// BUST PENALTIES
+// BUST PENALTIES (NEW LINEAR SYSTEM)
 // ============================================
 
 /**
  * Calculate bust penalties for negative threshold breaches
- * Penalties stack: a Meltdown incurs Bust + Crash + Meltdown penalties
+ * NEW LINEAR SYSTEM: Each threshold crossed = -7.5 points (stacking)
+ *
+ * Example: Asset threshold = 2.8%
+ * -2.8% = 1 Bust = -7.5 pts
+ * -5.6% = 2 Busts = -15 pts
+ * -8.4% = 3 Busts = -22.5 pts
  *
  * @param {number} percentChange - Price change percentage (negative)
  * @param {Object} thresholds - Threshold data from volatilityService
- * @returns {{ penalties: Array, totalPenalty: number }}
+ * @returns {{ penalties: Array, totalPenalty: number, busts: number }}
  */
 export function calculateBustPenalties(percentChange, thresholds) {
   const penalties = [];
@@ -343,51 +422,32 @@ export function calculateBustPenalties(percentChange, thresholds) {
 
   // Only negative moves incur bust penalties
   if (percentChange >= 0) {
-    return { penalties, totalPenalty };
+    return { penalties, totalPenalty, busts: 0 };
   }
 
   // Use absolute value for comparison
   const absChange = Math.abs(percentChange);
+  const threshold = thresholds?.bustThreshold || thresholds?.threshold || 2.5;
 
-  const bustThreshold = thresholds?.bustThreshold || thresholds?.threshold || 2.5;
-  const crashThreshold = thresholds?.crashThreshold || bustThreshold * 1.5;
-  const meltdownThreshold = thresholds?.meltdownThreshold || bustThreshold * 2.0;
+  // NEW LINEAR: Count how many thresholds crossed
+  const busts = Math.floor(absChange / threshold);
 
-  // Check each tier (they stack)
-  if (absChange >= bustThreshold) {
+  if (busts > 0) {
+    // Calculate points using linear system
+    totalPenalty = busts * BUST_POINTS;
+
+    // Create a single penalty entry showing total Busts
     penalties.push({
       type: 'BUST',
-      name: BUST_PENALTIES.BUST.name,
-      points: BUST_PENALTIES.BUST.points,
-      thresholdHit: bustThreshold,
+      name: busts === 1 ? 'Bust' : `${busts}x Bust`,
+      points: totalPenalty,
+      thresholdHit: threshold,
+      thresholdsCrossed: busts,
       actualChange: percentChange
     });
-    totalPenalty += BUST_PENALTIES.BUST.points;
   }
 
-  if (absChange >= crashThreshold) {
-    penalties.push({
-      type: 'CRASH',
-      name: BUST_PENALTIES.CRASH.name,
-      points: BUST_PENALTIES.CRASH.points,
-      thresholdHit: crashThreshold,
-      actualChange: percentChange
-    });
-    totalPenalty += BUST_PENALTIES.CRASH.points;
-  }
-
-  if (absChange >= meltdownThreshold) {
-    penalties.push({
-      type: 'MELTDOWN',
-      name: BUST_PENALTIES.MELTDOWN.name,
-      points: BUST_PENALTIES.MELTDOWN.points,
-      thresholdHit: meltdownThreshold,
-      actualChange: percentChange
-    });
-    totalPenalty += BUST_PENALTIES.MELTDOWN.points;
-  }
-
-  return { penalties, totalPenalty };
+  return { penalties, totalPenalty, busts };
 }
 
 // ============================================
@@ -613,9 +673,9 @@ export function calculateCleanSweepBonus(sessionResults) {
 export function getScoringConstants() {
   return {
     POINTS_PER_PERCENT,
+    BAGGERBOMB_POINTS,
+    BUST_POINTS,
     CONVICTION_TIERS,
-    BREAKOUT_BONUSES,
-    BUST_PENALTIES,
     SESSION_BONUSES
   };
 }
@@ -653,6 +713,10 @@ export default {
   SESSIONS,
   SESSION_ORDER,
 
+  // NEW BaggerBomb scoring functions
+  calculateBaggerBombs,
+  calculateAssetScore,
+
   // Core scoring functions
   getConvictionMultiplier,
   calculateBasePoints,
@@ -674,5 +738,7 @@ export default {
   getPortfolioThresholds,
 
   // Constants
-  CRYPTO_SYMBOLS
+  CRYPTO_SYMBOLS,
+  BAGGERBOMB_POINTS,
+  BUST_POINTS
 };

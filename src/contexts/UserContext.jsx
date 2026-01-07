@@ -48,19 +48,30 @@ export const UserProvider = ({ children }) => {
       }
 
       // If full userData object provided (backwards compatibility)
-      const userWithDefaults = {
+      // First get any existing user data from auth service
+      const user = await authLogin(userData.username);
+
+      // Merge: existing user data takes precedence for stats,
+      // but passed userData can override specific fields
+      const mergedUser = {
+        // Base defaults
         wins: 0,
         losses: 0,
         xp: 0,
         rank: 'Beginner',
         level: 1,
-        joinedAt: new Date().toISOString(),
         authProvider: 'local',
-        ...userData
+        // Existing persisted data (preserves stats)
+        ...user,
+        // Explicitly passed data (can override non-stat fields)
+        ...userData,
+        // Always use persisted stats if they exist (don't let defaults overwrite)
+        wins: user.wins ?? userData.wins ?? 0,
+        losses: user.losses ?? userData.losses ?? 0,
+        xp: user.xp ?? userData.xp ?? 0,
+        rank: user.rank ?? userData.rank ?? 'Beginner',
+        level: user.level ?? userData.level ?? 1,
       };
-      const user = await authLogin(userWithDefaults.username);
-      // Merge any extra data
-      const mergedUser = { ...user, ...userWithDefaults };
       setUser(mergedUser);
       return mergedUser;
     } catch (error) {
