@@ -10706,9 +10706,6 @@ const isNewWeek = (lastWeekStart) => {
   return getWeekStartDate() !== lastWeekStart;
 };
 
-// Helper to check if battle is BaggerBomb (V2) format
-const isBaggerBombBattle = (battle) => battle?._v === 2;
-
 // ============================================
 // CHALLENGE MODAL COMPONENT (Placeholder)
 // ============================================
