@@ -1,41 +1,13 @@
-// /src/screens/DraftResultsScreen.jsx
-
 import React from 'react';
 
-/**
- * DraftResultsScreen - Shows completed draft results and battle options
- *
- * @param {Object} props
- * @param {Object} props.currentDraft - The completed draft data
- * @param {Object} props.user - Current user object
- * @param {Function} props.setScreen - Handler to change screen
- * @param {Function} props.setCurrentDraft - Handler to clear/update draft
- * @param {Function} props.setPortfolio - Handler to set portfolio for battle
- * @param {Function} props.setPortfolioType - Handler to set portfolio type
- * @param {Function} props.setPortfolioName - Handler to set portfolio name
- * @param {Function} props.setDraftBattleOpponent - Handler to set draft battle opponent
- * @param {Object} props.battleTimer - Battle timer utilities
- * @param {Array} props.battles - Current battles array
- * @param {Function} props.setBattles - Handler to update battles
- * @param {Function} props.saveBattlesSafe - Handler to safely save battles
- * @param {Function} props.debugBattles - Debug utility for battles
- * @param {Object} props.containerStyle - Container style from App
- */
 const DraftResultsScreen = ({
+  containerStyle,
   currentDraft,
   user,
-  setScreen,
-  setCurrentDraft,
-  setPortfolio,
-  setPortfolioType,
-  setPortfolioName,
-  setDraftBattleOpponent,
-  battleTimer,
-  battles,
-  setBattles,
-  saveBattlesSafe,
-  debugBattles,
-  containerStyle
+  onBack,
+  onNavigate,
+  onCreateBattle,
+  onChallengeDraftOpponent,
 }) => {
   // Safety check - if no draft data, show fallback
   if (!currentDraft) {
@@ -54,7 +26,7 @@ const DraftResultsScreen = ({
           <div style={{ fontSize: '48px', marginBottom: '16px' }}>⏳</div>
           <p style={{ color: '#ffffff', fontSize: '18px', marginBottom: '16px' }}>Loading draft results...</p>
           <button
-            onClick={() => setScreen('dashboard')}
+            onClick={onBack}
             style={{
               padding: '12px 24px',
               background: '#00d9ff',
@@ -76,103 +48,7 @@ const DraftResultsScreen = ({
   const currentUserId = user?.odUserId || user?.username;
   const myPlayer = draftData?.players?.find(p => p.odUserId === currentUserId);
 
-  const handleCreateBattle = async () => {
-    if (!myPlayer || !myPlayer.picks || myPlayer.picks.length !== 9) {
-      alert('Invalid portfolio from draft');
-      return;
-    }
-
-    const equalWeight = 100 / 9;
-
-    const battlePortfolio = myPlayer.picks.map(symbol => {
-      const allAssets = [
-        ...draftData.availableAssets?.steady || [],
-        ...draftData.availableAssets?.risky || [],
-        ...draftData.availableAssets?.defensive || []
-      ];
-      const assetData = allAssets.find(a => a.symbol === symbol) || { symbol, name: symbol };
-
-      return {
-        symbol: assetData.symbol,
-        name: assetData.name || assetData.symbol,
-        percentage: equalWeight
-      };
-    });
-
-    setPortfolio(battlePortfolio);
-    setPortfolioType(draftData.type);
-    setPortfolioName(`Draft Portfolio - ${new Date().toLocaleDateString()}`);
-    setScreen('createBattle');
-
-    setTimeout(() => {
-      alert('Your draft portfolio has been loaded! You can now create a battle or make adjustments.');
-    }, 100);
-  };
-
-  const handleChallengeDraftOpponent = (opponent) => {
-    if (opponent.isCPU) {
-      alert('Cannot challenge CPU opponents to multiplayer battles. Start a Training battle instead!');
-      return;
-    }
-
-    setDraftBattleOpponent(opponent);
-
-    const equalWeight = 100 / 9;
-
-    const myPortfolio = myPlayer.picks.map(symbol => ({
-      symbol,
-      percentage: equalWeight,
-      amount: (equalWeight / 100) * 1000000
-    }));
-
-    const opponentPortfolio = opponent.picks.map(symbol => ({
-      symbol,
-      percentage: equalWeight,
-      amount: (equalWeight / 100) * 1000000
-    }));
-
-    const battleId = Date.now().toString();
-    const now = new Date();
-    const BATTLE_DURATION = battleTimer.TEST_MODE
-      ? 5 * 60 * 1000
-      : 24 * 60 * 60 * 1000;
-
-    const newBattle = {
-      id: battleId,
-      challengeCode: `DRAFT-${battleId.slice(-4)}`,
-      creator: currentUserId,
-      opponent: opponent.odUserId,
-      creatorPortfolio: myPortfolio,
-      opponentPortfolio: opponentPortfolio,
-      portfolioName: `Draft Battle - ${draftData.code}`,
-      portfolioType: draftData.type,
-      status: 'active',
-      startDate: now.toISOString(),
-      endDate: new Date(now.getTime() + BATTLE_DURATION).toISOString(),
-      isDraftBattle: true,
-      draftId: draftData.id,
-      draftCode: draftData.code,
-      createdAt: now.toISOString()
-    };
-
-    debugBattles?.('Before draft battle creation', battles);
-    setBattles(prevBattles => {
-      const exists = prevBattles.some(b => b.id === newBattle.id);
-      if (exists) {
-        console.log('⚠️ Draft battle already exists, skipping add');
-        return prevBattles;
-      }
-      const updatedBattles = [...prevBattles, newBattle];
-      debugBattles?.('After draft battle creation', updatedBattles);
-      saveBattlesSafe?.(updatedBattles);
-      return updatedBattles;
-    });
-
-    setScreen('dashboard');
-    setCurrentDraft(null);
-  };
-
-  // Static confetti data
+  // Static confetti data (no hooks needed)
   const confettiColors = ['#10b981', '#8b5cf6', '#00d9ff', '#f59e0b', '#ffffff'];
   const confettiPieces = Array.from({ length: 30 }, (_, i) => ({
     id: i,
@@ -186,7 +62,7 @@ const DraftResultsScreen = ({
   return (
     <div style={containerStyle}>
       <div style={{ minHeight: '100vh', background: '#0d1117' }}>
-        {/* Celebration Animation Header */}
+        {/* Celebration Animation Header - CSS Only */}
         <style>{`
           @keyframes confettiFall {
             0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
@@ -218,7 +94,7 @@ const DraftResultsScreen = ({
           textAlign: 'center',
           boxSizing: 'border-box'
         }}>
-          {/* Confetti pieces */}
+          {/* Confetti pieces - CSS animation only */}
           {confettiPieces.map(piece => (
             <div
               key={piece.id}
@@ -242,7 +118,7 @@ const DraftResultsScreen = ({
           <span style={{ position: 'absolute', left: '70%', top: '30px', fontSize: '18px', animation: 'sparkle 1.5s ease-in-out infinite 0.6s', pointerEvents: 'none' }}>✨</span>
           <span style={{ position: 'absolute', left: '90%', top: '50px', fontSize: '14px', animation: 'sparkle 1.5s ease-in-out infinite 0.9s', pointerEvents: 'none' }}>⭐</span>
 
-          {/* Rocket emojis */}
+          {/* Rocket emojis with bounce */}
           <div style={{
             fontSize: '40px',
             marginBottom: '16px',
@@ -256,7 +132,7 @@ const DraftResultsScreen = ({
             🚀 🎉 🚀
           </div>
 
-          {/* Title */}
+          {/* Title - Centered with flexbox */}
           <h1 style={{
             fontSize: '28px',
             fontWeight: '800',
@@ -315,7 +191,7 @@ const DraftResultsScreen = ({
             </div>
           </div>
 
-          {/* Challenge an Opponent */}
+          {/* Challenge an Opponent - Phase 4 */}
           {!draftData?.isTraining && (
             <div style={{
               background: '#161b22',
@@ -332,51 +208,53 @@ const DraftResultsScreen = ({
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {draftData?.players?.filter(p => p.odUserId !== currentUserId).map((player) => (
-                  <div
-                    key={player.odUserId}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '12px',
-                      background: '#0d1117',
-                      borderRadius: '8px',
-                      border: '1px solid #21262d'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '20px' }}>{player.isCPU ? '🤖' : '👤'}</span>
-                      <div>
-                        <div style={{ color: '#ffffff', fontWeight: '600' }}>
-                          {player.displayName}
-                        </div>
-                        <div style={{ color: '#8b949e', fontSize: '12px' }}>
-                          {player.picks?.length || 0} assets drafted
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => handleChallengeDraftOpponent(player)}
-                      disabled={player.isCPU}
+                {draftData?.players?.filter(p => p.odUserId !== currentUserId).map((player) => {
+                  return (
+                    <div
+                      key={player.odUserId}
                       style={{
-                        padding: '8px 16px',
-                        background: player.isCPU
-                          ? '#21262d'
-                          : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                        color: player.isCPU ? '#6e7681' : '#ffffff',
-                        fontWeight: '600',
-                        fontSize: '13px',
-                        border: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '12px',
+                        background: '#0d1117',
                         borderRadius: '8px',
-                        cursor: player.isCPU ? 'not-allowed' : 'pointer'
+                        border: '1px solid #21262d'
                       }}
                     >
-                      {player.isCPU ? '🤖 CPU' : 'Challenge'}
-                    </button>
-                  </div>
-                ))}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '20px' }}>{player.isCPU ? '🤖' : '👤'}</span>
+                        <div>
+                          <div style={{ color: '#ffffff', fontWeight: '600' }}>
+                            {player.displayName}
+                          </div>
+                          <div style={{ color: '#8b949e', fontSize: '12px' }}>
+                            {player.picks?.length || 0} assets drafted
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => onChallengeDraftOpponent(player)}
+                        disabled={player.isCPU}
+                        style={{
+                          padding: '8px 16px',
+                          background: player.isCPU
+                            ? '#21262d'
+                            : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                          color: player.isCPU ? '#6e7681' : '#ffffff',
+                          fontWeight: '600',
+                          fontSize: '13px',
+                          border: 'none',
+                          borderRadius: '8px',
+                          cursor: player.isCPU ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        {player.isCPU ? '🤖 CPU' : 'Challenge'}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -423,7 +301,7 @@ const DraftResultsScreen = ({
             </div>
           </div>
 
-          {/* Battle Status Banner */}
+          {/* Battle Status Banner - show when draft is in battle mode */}
           {draftData?.status === 'battle' && (
             <div style={{
               background: 'transparent',
@@ -461,11 +339,12 @@ const DraftResultsScreen = ({
 
           {/* Action Buttons */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* Battle Mode Buttons */}
+            {/* Battle Mode Buttons - show when in battle mode */}
             {draftData?.status === 'battle' && (
               <>
+                {/* View Battle Standings - Primary CTA */}
                 <button
-                  onClick={() => setScreen('draftBattle')}
+                  onClick={() => onNavigate('draftBattle')}
                   style={{
                     width: '100%',
                     padding: '18px',
@@ -486,8 +365,9 @@ const DraftResultsScreen = ({
                   <span>📊</span> View Battle Standings
                 </button>
 
+                {/* Free Agency Button */}
                 <button
-                  onClick={() => setScreen('freeAgency')}
+                  onClick={() => onNavigate('freeAgency')}
                   style={{
                     width: '100%',
                     padding: '16px',
@@ -504,6 +384,12 @@ const DraftResultsScreen = ({
                     gap: '8px',
                     transition: 'all 0.2s ease'
                   }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.background = 'rgba(139, 92, 246, 0.1)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
                 >
                   <span>🔄</span> Free Agency
                 </button>
@@ -512,7 +398,7 @@ const DraftResultsScreen = ({
 
             {!draftData?.isTraining && draftData?.status !== 'battle' && (
               <button
-                onClick={handleCreateBattle}
+                onClick={onCreateBattle}
                 style={{
                   width: '100%',
                   padding: '18px',
@@ -530,10 +416,7 @@ const DraftResultsScreen = ({
             )}
 
             <button
-              onClick={() => {
-                setCurrentDraft(null);
-                setScreen('dashboard');
-              }}
+              onClick={onBack}
               style={{
                 width: '100%',
                 padding: '14px',

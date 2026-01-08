@@ -1,39 +1,30 @@
-// /src/screens/JoinScreen.jsx
-
 import React, { useState } from 'react';
-import { useUser } from '../contexts/UserContext';
+import DesktopBackground from '../components/DesktopBackground';
 
-/**
- * JoinScreen - Join an existing battle with a code
- * Extracted from App.jsx Phase 6
- */
+// Style override to neutralize App.css
+const containerStyle = {
+  maxWidth: '100vw',
+  width: '100%',
+  margin: 0,
+  padding: 0,
+  textAlign: 'left',
+  minHeight: '100vh',
+  background: '#0d1117',
+  overflowX: 'hidden'
+};
+
 const JoinScreen = ({
+  isDesktop,
+  joinCode,
+  setJoinCode,
+  joinBattleType,
+  setJoinBattleType,
   onBack,
-  onContinueToBuilder,
-  onContinueToBaggerBomb,
-  colors,
-  containerStyle,
-  DesktopBackground,
-  isDesktop
+  onContinue
 }) => {
-  const { user } = useUser();
-
-  const [joinCode, setJoinCode] = useState('');
-  const [joinBattleType, setJoinBattleType] = useState('classic');
-
-  const handleContinue = () => {
-    if (joinCode.length === 6) {
-      if (joinBattleType === 'baggerbomb') {
-        onContinueToBaggerBomb?.(joinCode);
-      } else {
-        onContinueToBuilder?.(joinCode);
-      }
-    }
-  };
-
   return (
     <div style={containerStyle}>
-      {isDesktop && DesktopBackground && <DesktopBackground isDesktop={isDesktop} />}
+      <DesktopBackground isDesktop={isDesktop} />
 
       <div style={{ minHeight: '100vh', background: '#0d1117', position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* HEADER */}
@@ -275,7 +266,11 @@ const JoinScreen = ({
 
             {/* Continue Button */}
             <button
-              onClick={handleContinue}
+              onClick={() => {
+                if (joinCode.length === 6) {
+                  onContinue(joinBattleType);
+                }
+              }}
               disabled={joinCode.length !== 6}
               style={{
                 width: '100%',

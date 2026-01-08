@@ -1,44 +1,24 @@
-// /src/screens/DraftSetupScreen.jsx
-
 import React from 'react';
 
-/**
- * DraftSetupScreen - Create a new draft lobby
- *
- * @param {Object} props
- * @param {Function} props.onBack - Handler to go back to dashboard
- * @param {string} props.assetType - Selected asset type ('stocks' or 'crypto')
- * @param {Function} props.setAssetType - Handler to change asset type
- * @param {Object} props.user - Current user object
- * @param {Function} props.setCurrentDraft - Handler to set the current draft
- * @param {Function} props.setScreen - Handler to change screen
- * @param {Object} props.containerStyle - Container style from App
- */
+// Style override to neutralize App.css
+const containerStyle = {
+  maxWidth: '100vw',
+  width: '100%',
+  margin: 0,
+  padding: 0,
+  textAlign: 'left',
+  minHeight: '100vh',
+  background: '#0d1117',
+  overflowX: 'hidden'
+};
+
 const DraftSetupScreen = ({
-  onBack,
+  user,
   assetType,
   setAssetType,
-  user,
-  setCurrentDraft,
-  setScreen,
-  containerStyle
+  onBack,
+  onCreateDraft
 }) => {
-  const handleCreateDraft = async () => {
-    try {
-      const draftService = await import('../services/draftService');
-      const draft = await draftService.createMultiplayerDraft(
-        user.odUserId || user.username,
-        user.username,
-        assetType
-      );
-      setCurrentDraft(draft);
-      setScreen('draftLobby');
-    } catch (error) {
-      console.error('Failed to create draft:', error);
-      alert('Failed to create draft. Please try again.');
-    }
-  };
-
   return (
     <div style={containerStyle}>
       <div style={{ minHeight: '100vh', background: '#0d1117' }}>
@@ -196,7 +176,20 @@ const DraftSetupScreen = ({
 
           {/* Create Button */}
           <button
-            onClick={handleCreateDraft}
+            onClick={async () => {
+              try {
+                const draftService = await import('../services/draftService');
+                const draft = await draftService.createMultiplayerDraft(
+                  user.odUserId || user.username,
+                  user.username,
+                  assetType
+                );
+                onCreateDraft(draft);
+              } catch (error) {
+                console.error('Failed to create draft:', error);
+                alert('Failed to create draft. Please try again.');
+              }
+            }}
             style={{
               width: '100%',
               padding: '18px',

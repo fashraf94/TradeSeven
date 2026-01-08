@@ -1,25 +1,24 @@
-// /src/screens/DraftLobbyScreen.jsx
-
 import React, { useState } from 'react';
 
-/**
- * DraftLobbyScreen - Waiting room for draft players
- *
- * @param {Object} props
- * @param {Function} props.onBack - Handler to go back to dashboard
- * @param {Object} props.draftState - Current draft state from subscription
- * @param {Object} props.currentDraft - Current draft object
- * @param {Object} props.user - Current user object
- * @param {Function} props.setScreen - Handler to change screen
- * @param {Object} props.containerStyle - Container style from App
- */
+// Style override to neutralize App.css
+const containerStyle = {
+  maxWidth: '100vw',
+  width: '100%',
+  margin: 0,
+  padding: 0,
+  textAlign: 'left',
+  minHeight: '100vh',
+  background: '#0d1117',
+  overflowX: 'hidden'
+};
+
 const DraftLobbyScreen = ({
-  onBack,
-  draftState,
-  currentDraft,
   user,
-  setScreen,
-  containerStyle
+  currentDraft,
+  draftState,
+  onBack,
+  onStartDraft,
+  onLeaveLobby
 }) => {
   const [draftCopied, setDraftCopied] = useState(false);
 
@@ -43,6 +42,7 @@ const DraftLobbyScreen = ({
     try {
       const draftService = await import('../services/draftService');
       await draftService.startDraft(lobbyDraft.id);
+      if (onStartDraft) onStartDraft();
     } catch (error) {
       console.error('Failed to start draft:', error);
       alert('Failed to start draft');
@@ -57,7 +57,7 @@ const DraftLobbyScreen = ({
       } else {
         await draftService.leaveDraft(lobbyDraft.id, user.odUserId || user.username);
       }
-      setScreen('dashboard');
+      onLeaveLobby();
     } catch (error) {
       console.error('Failed to leave:', error);
     }

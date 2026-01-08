@@ -1,51 +1,27 @@
-// /src/screens/HomeScreen.jsx
-
 import React, { useState } from 'react';
 import { ArrowRight } from 'lucide-react';
-import { useUser } from '../contexts/UserContext';
+import DesktopBackground from '../components/DesktopBackground';
+import MarketClashLogo from '../components/MarketClashLogo';
 
-/**
- * HomeScreen - Login/Registration screen
- * Extracted from App.jsx Phase 6
- */
 const HomeScreen = ({
-  onLoginSuccess,
-  colors,
-  isDesktop,
   containerStyle,
-  DesktopBackground,
-  MarketClashLogo
+  isDesktop,
+  login,
+  setScreen,
 }) => {
-  const { login } = useUser();
-
+  // Local state for login form
   const [username, setUsername] = useState('');
-  const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
     if (!username.trim()) return;
-
-    setLoading(true);
-
-    try {
-      // Simple username-only login for beta
-      const user = {
-        username: username.trim(),
-        odUserId: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-      };
-
-      await login(user);
-      onLoginSuccess?.();
-    } catch (err) {
-      console.error('Login failed:', err);
-    } finally {
-      setLoading(false);
-    }
+    await login(username.trim());
+    setScreen('dashboard');
   };
 
   return (
     <div style={containerStyle}>
       {/* Animated Desktop Background */}
-      {isDesktop && DesktopBackground && <DesktopBackground isDesktop={isDesktop} />}
+      <DesktopBackground isDesktop={isDesktop} />
 
       <div style={{
         minHeight: '100vh',
@@ -64,7 +40,7 @@ const HomeScreen = ({
           marginBottom: '40px',
           textAlign: 'center'
         }}>
-          {MarketClashLogo && <MarketClashLogo size="large" />}
+          <MarketClashLogo size="large" />
         </div>
 
         {/* LOGIN FORM */}
@@ -113,7 +89,7 @@ const HomeScreen = ({
           {/* Enter Arena Button */}
           <button
             onClick={handleLogin}
-            disabled={!username.trim() || loading}
+            disabled={!username.trim()}
             style={{
               width: '100%',
               padding: '14px',
@@ -134,40 +110,9 @@ const HomeScreen = ({
               gap: '8px'
             }}
           >
-            {loading ? 'Entering Arena...' : 'Enter Arena'}
-            {!loading && <ArrowRight style={{ width: '20px', height: '20px' }} />}
+            Enter Arena
+            <ArrowRight style={{ width: '20px', height: '20px' }} />
           </button>
-        </div>
-
-        {/* Beta Notice */}
-        <div style={{
-          marginTop: '24px',
-          padding: '12px 20px',
-          borderRadius: '8px',
-          background: 'rgba(245, 158, 11, 0.1)',
-          border: '1px solid rgba(245, 158, 11, 0.2)',
-          maxWidth: '400px'
-        }}>
-          <p style={{
-            color: '#f59e0b',
-            fontSize: '12px',
-            textAlign: 'center',
-            margin: 0
-          }}>
-            🚀 Beta Version - Username-only login for testing
-          </p>
-        </div>
-
-        {/* Footer */}
-        <div style={{
-          marginTop: '24px',
-          color: colors?.textMuted || '#6e7681',
-          fontSize: '12px',
-          textAlign: 'center',
-          position: 'relative',
-          zIndex: 10
-        }}>
-          © 2026 MarketClash. Not financial advice.
         </div>
       </div>
     </div>

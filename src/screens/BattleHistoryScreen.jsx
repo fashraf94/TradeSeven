@@ -1,27 +1,22 @@
-// /src/screens/BattleHistoryScreen.jsx
+import React from 'react';
 
-import React, { useState } from 'react';
-import { useUser } from '../contexts/UserContext';
-
-/**
- * BattleHistoryScreen - View all battle history
- * Extracted from App.jsx Phase 6
- */
 const BattleHistoryScreen = ({
-  onBack,
-  onNavigate,
-  colors,
   containerStyle,
-  // Battle data
-  previousBattles = [],
-  completedDraftBattles = [],
-  completedTrainingBattles = [],
-  loadingTrainingBattles = false
+  colors,
+  previousBattles,
+  completedDraftBattles,
+  completedTrainingBattles,
+  historyTab,
+  setHistoryTab,
+  loadingTrainingBattles,
+  user,
+  onBack,
+  sendRematchRequest,
+  BattleHistoryCard,
 }) => {
-  const { user } = useUser();
-  const [historyTab, setHistoryTab] = useState('classic');
-
   // Get completed battles based on tab
+  // Use previousBattles state (from tradeseven_previous_battles localStorage)
+  // instead of user.completedBattles which is never populated
   const allCompletedClassicBattles = previousBattles || [];
   const classicBattles = allCompletedClassicBattles.filter(b => b.isDraft !== true && b.battleType !== 'baggerbomb_training');
 
@@ -35,10 +30,14 @@ const BattleHistoryScreen = ({
   // Stats for the current tab
   const tabWins = completedBattles.filter(b => b.won === true || b.result?.winner === user?.username).length;
   const tabLosses = completedBattles.filter(b => b.won === false || (b.result && b.result.winner !== user?.username)).length;
+  // For draft battles, podium (top 3) count can be useful
+  const draftPodiums = historyTab === 'draft' ? completedBattles.filter(b => b.myRank && b.myRank <= 3).length : 0;
+  // For training battles, count total completed
+  const trainingCompleted = historyTab === 'training' ? completedBattles.length : 0;
 
   return (
     <div style={containerStyle}>
-      <div style={{ minHeight: '100vh', background: colors?.background || '#0d1117' }}>
+      <div className="min-h-screen" style={{ background: colors.background }}>
         {/* Header */}
         <div style={{
           backgroundColor: '#161b22',
@@ -222,8 +221,8 @@ const BattleHistoryScreen = ({
                 {historyTab === 'draft'
                   ? 'Start a draft battle to build your history!'
                   : historyTab === 'training'
-                    ? 'Play against AI opponents to practice your strategy!'
-                    : 'Create your first classic battle to start your history!'
+                  ? 'Play against AI opponents to practice your strategy!'
+                  : 'Create your first classic battle to start your history!'
                 }
               </p>
               <button
@@ -248,7 +247,9 @@ const BattleHistoryScreen = ({
                 // Draft battle card (4 players)
                 if (historyTab === 'draft' && battle.finalStandings) {
                   const currentUserId = user?.odUserId || user?.username;
-                  const myResult = battle.finalStandings?.find(p => p.odUserId === currentUserId);
+                  const myResult = battle.finalStandings?.find(p =>
+                    p.odUserId === currentUserId
+                  );
                   const won = myResult?.finalRank === 1;
                   const podium = myResult?.finalRank <= 3;
 
@@ -258,12 +259,14 @@ const BattleHistoryScreen = ({
                       style={{
                         background: '#161b22',
                         borderLeft: won ? '4px solid #10b981' :
-                          podium ? '4px solid #f59e0b' :
-                            '4px solid #ef4444',
+                                   podium ? '4px solid #f59e0b' :
+                                   '4px solid #ef4444',
                         borderRadius: '12px',
-                        padding: '16px'
+                        padding: '16px',
+                        marginBottom: '0'
                       }}
                     >
+                      {/* Header */}
                       <div style={{
                         display: 'flex',
                         justifyContent: 'space-between',
@@ -277,16 +280,16 @@ const BattleHistoryScreen = ({
                             fontSize: '12px',
                             fontWeight: 'bold',
                             background: won ? 'rgba(16, 185, 129, 0.2)' :
-                              podium ? 'rgba(245, 158, 11, 0.2)' :
-                                'rgba(239, 68, 68, 0.2)',
+                                       podium ? 'rgba(245, 158, 11, 0.2)' :
+                                       'rgba(239, 68, 68, 0.2)',
                             color: won ? '#10b981' :
-                              podium ? '#f59e0b' :
-                                '#ef4444'
+                                  podium ? '#f59e0b' :
+                                  '#ef4444'
                           }}>
                             {won ? '🏆 1ST PLACE' :
-                              myResult?.finalRank === 2 ? '🥈 2ND PLACE' :
-                                myResult?.finalRank === 3 ? '🥉 3RD PLACE' :
-                                  `${myResult?.finalRank || '?'}TH PLACE`}
+                             myResult?.finalRank === 2 ? '🥈 2ND PLACE' :
+                             myResult?.finalRank === 3 ? '🥉 3RD PLACE' :
+                             `${myResult?.finalRank || '?'}TH PLACE`}
                           </span>
                           <span style={{ fontSize: '16px' }}>🐍</span>
                         </div>
@@ -295,19 +298,21 @@ const BattleHistoryScreen = ({
                         </span>
                       </div>
 
+                      {/* Your Performance */}
                       <div style={{
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'space-between'
+                        justifyContent: 'space-between',
+                        marginBottom: '12px'
                       }}>
                         <div>
                           <div style={{ color: '#8b949e', fontSize: '11px' }}>YOUR GAIN</div>
                           <div style={{
                             fontSize: '24px',
                             fontWeight: 'bold',
-                            color: (myResult?.finalGain || 0) >= 0 ? '#10b981' : '#ef4444'
+                            color: myResult?.finalGain >= 0 ? '#10b981' : '#ef4444'
                           }}>
-                            {(myResult?.finalGain || 0) >= 0 ? '+' : ''}{(myResult?.finalGain || 0).toFixed(2)}%
+                            {myResult?.finalGain >= 0 ? '+' : ''}{myResult?.finalGain?.toFixed(2)}%
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
@@ -315,68 +320,182 @@ const BattleHistoryScreen = ({
                           <div style={{ color: '#ffffff', fontWeight: 'bold' }}>
                             {battle.winner?.displayName || 'Unknown'}
                           </div>
+                          <div style={{ color: '#10b981', fontSize: '12px' }}>
+                            +{battle.winner?.finalGain?.toFixed(2)}%
+                          </div>
                         </div>
+                      </div>
+
+                      {/* All Players Summary */}
+                      <div style={{
+                        display: 'flex',
+                        gap: '8px',
+                        flexWrap: 'wrap'
+                      }}>
+                        {battle.finalStandings?.map((player, idx) => (
+                          <div
+                            key={idx}
+                            style={{
+                              background: player.finalRank === 1 ? 'rgba(16, 185, 129, 0.1)' : '#0d1117',
+                              border: player.odUserId === currentUserId
+                                ? '1px solid #00d9ff'
+                                : '1px solid #21262d',
+                              borderRadius: '6px',
+                              padding: '6px 10px',
+                              fontSize: '11px',
+                              flex: '1',
+                              minWidth: '70px',
+                              textAlign: 'center'
+                            }}
+                          >
+                            <div style={{ color: '#8b949e' }}>
+                              {player.finalRank === 1 ? '🥇' :
+                               player.finalRank === 2 ? '🥈' :
+                               player.finalRank === 3 ? '🥉' : `#${player.finalRank}`}
+                            </div>
+                            <div style={{
+                              color: player.odUserId === currentUserId ? '#00d9ff' : '#ffffff',
+                              fontWeight: 'bold'
+                            }}>
+                              {player.odUserId === currentUserId ? 'You' : (player.displayName?.slice(0, 6) || 'Player')}
+                            </div>
+                            <div style={{
+                              color: player.finalGain >= 0 ? '#10b981' : '#ef4444',
+                              fontSize: '10px'
+                            }}>
+                              {player.finalGain >= 0 ? '+' : ''}{player.finalGain?.toFixed(1)}%
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Battle Info */}
+                      <div style={{
+                        marginTop: '12px',
+                        paddingTop: '12px',
+                        borderTop: '1px solid #21262d',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        color: '#6e7681',
+                        fontSize: '11px'
+                      }}>
+                        <span>{battle.code || 'Draft Battle'}</span>
+                        <span>{battle.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'}</span>
+                        <span>4-Player Draft</span>
                       </div>
                     </div>
                   );
                 }
 
-                // Training/Classic battle card
-                const battleWon = battle.won === true || battle.result?.winner === user?.username;
+                // Training battle card (vs AI)
+                if (historyTab === 'training' && battle.isTrainingBattle) {
+                  const aiOpponent = battle.players?.find(p => p.isAI);
+                  const userPlayer = battle.players?.find(p => !p.isAI);
+                  const userGain = userPlayer?.finalGain ?? userPlayer?.portfolioGain ?? 0;
+                  const aiGain = aiOpponent?.finalGain ?? aiOpponent?.portfolioGain ?? 0;
+                  const won = userGain > aiGain;
 
-                return (
-                  <div
-                    key={battle.id || index}
-                    style={{
-                      background: '#161b22',
-                      borderLeft: battleWon ? '4px solid #10b981' : '4px solid #ef4444',
-                      borderRadius: '12px',
-                      padding: '16px'
-                    }}
-                  >
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginBottom: '12px'
-                    }}>
-                      <span style={{
-                        padding: '4px 10px',
-                        borderRadius: '6px',
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                        background: battleWon ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                        color: battleWon ? '#10b981' : '#ef4444'
-                      }}>
-                        {battleWon ? '🏆 WIN' : '💀 LOSS'}
-                      </span>
-                      <span style={{ color: '#6e7681', fontSize: '12px' }}>
-                        {battle.completedAt ? new Date(battle.completedAt).toLocaleDateString() : ''}
-                      </span>
-                    </div>
-
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center'
-                    }}>
-                      <div>
-                        <div style={{ color: '#ffffff', fontWeight: '600' }}>
-                          vs {battle.opponent || battle.creator || 'Unknown'}
-                        </div>
-                        <div style={{ color: '#8b949e', fontSize: '12px' }}>
-                          {battle.portfolioName || 'Portfolio Battle'}
-                        </div>
-                      </div>
+                  return (
+                    <div
+                      key={battle.id || index}
+                      style={{
+                        background: '#161b22',
+                        borderLeft: won ? '4px solid #10b981' : '4px solid #ef4444',
+                        borderRadius: '12px',
+                        padding: '16px',
+                        marginBottom: '0'
+                      }}
+                    >
+                      {/* Header */}
                       <div style={{
-                        color: (battle.myGain || 0) >= 0 ? '#10b981' : '#ef4444',
-                        fontWeight: 'bold',
-                        fontSize: '18px'
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '12px'
                       }}>
-                        {(battle.myGain || 0) >= 0 ? '+' : ''}{(battle.myGain || 0).toFixed(2)}%
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                            background: won ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                            color: won ? '#10b981' : '#ef4444'
+                          }}>
+                            {won ? '🏆 VICTORY' : '💀 DEFEAT'}
+                          </span>
+                          <span style={{ fontSize: '16px' }}>🤖</span>
+                        </div>
+                        <span style={{ color: '#6e7681', fontSize: '12px' }}>
+                          {battle.completedAt ? new Date(battle.completedAt).toLocaleDateString() : ''}
+                        </span>
+                      </div>
+
+                      {/* Matchup */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '8px',
+                        background: '#0d1117',
+                        borderRadius: '8px',
+                        padding: '12px'
+                      }}>
+                        {/* You */}
+                        <div style={{ flex: 1, textAlign: 'center' }}>
+                          <div style={{ color: '#00d9ff', fontWeight: 'bold', fontSize: '14px' }}>You</div>
+                          <div style={{
+                            color: userGain >= 0 ? '#10b981' : '#ef4444',
+                            fontSize: '20px',
+                            fontWeight: 'bold'
+                          }}>
+                            {userGain >= 0 ? '+' : ''}{userGain.toFixed(1)}%
+                          </div>
+                        </div>
+
+                        <div style={{ color: '#6e7681', fontSize: '18px', fontWeight: 'bold' }}>VS</div>
+
+                        {/* AI */}
+                        <div style={{ flex: 1, textAlign: 'center' }}>
+                          <div style={{ color: '#9333ea', fontWeight: 'bold', fontSize: '14px' }}>
+                            {aiOpponent?.displayName || 'AI Opponent'}
+                          </div>
+                          <div style={{
+                            color: aiGain >= 0 ? '#10b981' : '#ef4444',
+                            fontSize: '20px',
+                            fontWeight: 'bold'
+                          }}>
+                            {aiGain >= 0 ? '+' : ''}{aiGain.toFixed(1)}%
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Battle Info */}
+                      <div style={{
+                        marginTop: '12px',
+                        paddingTop: '12px',
+                        borderTop: '1px solid #21262d',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        color: '#6e7681',
+                        fontSize: '11px'
+                      }}>
+                        <span>Training Battle</span>
+                        <span>{battle.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'}</span>
+                        <span>vs AI</span>
                       </div>
                     </div>
-                  </div>
+                  );
+                }
+
+                // Classic battle card (2 players)
+                return (
+                  <BattleHistoryCard
+                    key={battle.battleId || index}
+                    battle={battle}
+                    userId={user?.odUserId}
+                    onRematch={sendRematchRequest}
+                  />
                 );
               })}
             </div>

@@ -1,32 +1,19 @@
-// /src/screens/DraftBattleScreen.jsx
-
 import React, { useState, useEffect } from 'react';
 
-/**
- * DraftBattleScreen - ESPN-style 4-player battle standings
- *
- * @param {Object} props
- * @param {Object} props.currentDraft - Current draft data
- * @param {Function} props.setCurrentDraft - Handler to update draft
- * @param {Object} props.user - Current user object
- * @param {Function} props.setScreen - Handler to change screen
- * @param {Object} props.containerStyle - Container style from App
- * @param {Function} props.logger - Logger utility
- */
 const DraftBattleScreen = ({
+  containerStyle,
+  user,
   currentDraft,
   setCurrentDraft,
-  user,
   setScreen,
-  containerStyle,
-  logger = console
+  logger = console,
 }) => {
   const [standings, setStandings] = useState([]);
   const [expandedCards, setExpandedCards] = useState({});
   const [loading, setLoading] = useState(true);
   const [timeRemaining, setTimeRemaining] = useState('');
   const [assetComparison, setAssetComparison] = useState(null);
-  const [repairStatus, setRepairStatus] = useState(null);
+  const [repairStatus, setRepairStatus] = useState(null); // 'repairing', 'success', 'error'
 
   const currentUserId = user?.odUserId || user?.username;
   const battleType = currentDraft?.type || 'stocks';
@@ -45,6 +32,7 @@ const DraftBattleScreen = ({
 
     setRepairStatus('repairing');
     logger.log('[ForceRepair] Starting forced price repair for:', currentDraft.code || currentDraft.id);
+    logger.log('[ForceRepair] Current locked prices:', currentDraft.lockedPrices);
 
     try {
       const stockAPIModule = await import('../services/eodhdAPI');
@@ -57,12 +45,15 @@ const DraftBattleScreen = ({
         player.picks?.forEach(symbol => allSymbols.add(symbol));
       });
       const symbolList = Array.from(allSymbols);
+      logger.log('[ForceRepair] Assets to fix:', symbolList);
 
-      // Fetch real prices
+      // Fetch real prices using batch API
       let newLockedPrices = {};
 
       if (battleType === 'crypto') {
+        logger.log('[ForceRepair] Fetching crypto prices...');
         const priceData = await stockAPIModule.getAllCryptoPrices(symbolList);
+        logger.log('[ForceRepair] Price data received:', priceData);
 
         for (const symbol of symbolList) {
           const coinGeckoId = stockAPIModule.symbolToCoinGeckoId(symbol);
@@ -70,12 +61,16 @@ const DraftBattleScreen = ({
 
           if (data?.price && data.price > 0) {
             newLockedPrices[symbol] = data.price;
+            logger.log(`[ForceRepair] ${symbol} (${coinGeckoId}): $${data.price}`);
           } else {
+            // Use fallback
             const fallback = stockAPIModule.FALLBACK_CRYPTO_PRICES[coinGeckoId] || 1;
             newLockedPrices[symbol] = fallback;
+            logger.log(`[ForceRepair] ${symbol} (${coinGeckoId}): $${fallback} (fallback)`);
           }
         }
       } else {
+        logger.log('[ForceRepair] Fetching stock prices...');
         const priceData = await stockAPIModule.getAllStockPrices(symbolList);
 
         for (const symbol of symbolList) {
@@ -84,14 +79,18 @@ const DraftBattleScreen = ({
         }
       }
 
+      logger.log('[ForceRepair] New locked prices:', newLockedPrices);
+
       // Direct Firebase update
       if (currentDraft.id) {
+        logger.log('[ForceRepair] Updating Firebase document:', currentDraft.id);
         const draftRef = doc(db, 'drafts', currentDraft.id);
         await updateDoc(draftRef, {
           lockedPrices: newLockedPrices,
           lockedPricesRepairedAt: serverTimestamp(),
           pricesRepaired: true
         });
+        logger.log('[ForceRepair] ✅ Firebase updated successfully!');
       }
 
       // Update local state
@@ -103,6 +102,9 @@ const DraftBattleScreen = ({
       setCurrentDraft(repairedDraft);
 
       setRepairStatus('success');
+      logger.log('[ForceRepair] ✅ Repair complete! Prices are now correct.');
+
+      // Auto-dismiss success message after 3 seconds
       setTimeout(() => setRepairStatus(null), 3000);
 
     } catch (error) {
@@ -117,6 +119,7 @@ const DraftBattleScreen = ({
     const repairLockedPrices = async () => {
       if (!currentDraft?.lockedPrices || !currentDraft?.players) return;
 
+      // Check if locked prices look wrong (all exactly $100)
       const prices = Object.values(currentDraft.lockedPrices);
       const allSamePrice = prices.length > 0 && prices.every(p => p === 100);
 
@@ -131,12 +134,14 @@ const DraftBattleScreen = ({
         const stockAPIModule = await import('../services/eodhdAPI');
         const draftServiceModule = await import('../services/draftService');
 
+        // Collect all symbols
         const allSymbols = new Set();
         currentDraft.players.forEach(player => {
           (player.picks || []).forEach(symbol => allSymbols.add(symbol));
         });
         const symbolList = Array.from(allSymbols);
 
+        // Fetch real prices
         let newLockedPrices = {};
 
         if (battleType === 'crypto') {
@@ -160,6 +165,7 @@ const DraftBattleScreen = ({
 
         console.log('[DraftBattle] Repaired locked prices:', newLockedPrices);
 
+        // Update the local draft state
         const repairedDraft = {
           ...currentDraft,
           lockedPrices: newLockedPrices,
@@ -167,6 +173,7 @@ const DraftBattleScreen = ({
         };
         setCurrentDraft(repairedDraft);
 
+        // Try to persist the fix to Firebase (best effort)
         try {
           if (draftServiceModule.storeDraftLockedPrices && currentDraft.id) {
             await draftServiceModule.storeDraftLockedPrices(currentDraft.id);
@@ -181,7 +188,7 @@ const DraftBattleScreen = ({
     };
 
     repairLockedPrices();
-  }, [currentDraft?.id]);
+  }, [currentDraft?.id]); // Only run when draft changes
 
   // Calculate standings from draft data - BATCH FETCHING VERSION
   useEffect(() => {
@@ -196,10 +203,11 @@ const DraftBattleScreen = ({
       try {
         const stockAPIModule = await import('../services/eodhdAPI');
 
-        // Collect ALL unique symbols from ALL players
+        // STEP 1: Collect ALL unique symbols from ALL players (ONE batch call)
         const allSymbols = new Set();
         currentDraft.players.forEach(player => {
           (player.picks || []).forEach(symbol => {
+            // For crypto, we need lowercase IDs (or symbols that will be converted)
             allSymbols.add(battleType === 'crypto' ? symbol.toLowerCase() : symbol.toUpperCase());
           });
         });
@@ -207,10 +215,14 @@ const DraftBattleScreen = ({
         const symbolList = Array.from(allSymbols);
         console.log(`[DraftBattle] Fetching ${symbolList.length} unique assets in 1 batch call`);
 
+        // STEP 2: Clear cache to ensure we get FRESH prices (not cached from when battle started)
         if (stockAPIModule.clearCache) {
           stockAPIModule.clearCache();
+          console.log('[DraftBattle] Cache cleared to fetch fresh prices');
         }
 
+        // Batch fetch ALL prices at once (1 API call instead of 36!)
+        // getAllCryptoPrices now handles symbol→CoinGecko ID conversion automatically
         let allPrices = {};
         if (battleType === 'crypto') {
           allPrices = await stockAPIModule.getAllCryptoPrices(symbolList);
@@ -218,12 +230,14 @@ const DraftBattleScreen = ({
           allPrices = await stockAPIModule.getAllStockPrices(symbolList);
         }
 
-        // Calculate each player's performance
+        // STEP 3: Calculate each player's performance using cached prices
         const playerPerformances = currentDraft.players.map((player) => {
           let totalGain = 0;
           const portfolioWithGains = [];
 
           for (const symbol of player.picks || []) {
+            // Normalize symbol for lookup
+            // For crypto, convert symbol to CoinGecko ID (BTC → bitcoin)
             let lookupKey;
             if (battleType === 'crypto') {
               lookupKey = stockAPIModule.symbolToCoinGeckoId
@@ -233,20 +247,24 @@ const DraftBattleScreen = ({
               lookupKey = symbol.toUpperCase();
             }
 
+            // Get current price from batch result
             const priceData = allPrices[lookupKey];
             const currentPrice = priceData?.price || 0;
 
+            // Get locked price (from draft completion)
             const lockedPrice = Number(currentDraft.lockedPrices?.[symbol] ||
                              currentDraft.lockedPrices?.[lookupKey] ||
                              currentPrice) || 0;
 
+            // Calculate gain with sanity checks
             let gain = 0;
             if (lockedPrice > 0 && currentPrice > 0) {
               gain = ((currentPrice - lockedPrice) / lockedPrice) * 100;
 
+              // Sanity check - gains over 500% or under -90% are likely data errors
               if (gain > 500 || gain < -90) {
-                console.warn(`[DraftBattle] Suspicious gain for ${symbol}: ${(Number(gain) || 0).toFixed(2)}%`);
-                gain = 0;
+                console.warn(`[DraftBattle] Suspicious gain for ${symbol}: ${(Number(gain) || 0).toFixed(2)}% (locked: $${lockedPrice}, current: $${currentPrice})`);
+                gain = 0; // Reset to 0 for display
               }
             }
 
@@ -257,9 +275,11 @@ const DraftBattleScreen = ({
               currentPrice
             });
 
+            // Equal weight (11.1% each for 9 assets)
             totalGain += gain / 9;
           }
 
+          // Find best and worst assets
           const sorted = [...portfolioWithGains].sort((a, b) => b.gain - a.gain);
 
           return {
@@ -275,8 +295,10 @@ const DraftBattleScreen = ({
           };
         });
 
+        // Sort by total gain (descending)
         const sorted = playerPerformances.sort((a, b) => b.totalGain - a.totalGain);
 
+        // Assign ranks
         sorted.forEach((player, index) => {
           player.currentRank = index + 1;
         });
@@ -308,6 +330,7 @@ const DraftBattleScreen = ({
 
     calculateStandings();
 
+    // Refresh every 60 seconds (was 30s - EODHD has 100k calls/day limit)
     const refreshInterval = setInterval(calculateStandings, 60000);
     return () => clearInterval(refreshInterval);
   }, [currentDraft, currentUserId, battleType]);
@@ -344,6 +367,7 @@ const DraftBattleScreen = ({
     return () => clearInterval(timerInterval);
   }, [currentDraft?.battleEndTime]);
 
+  // Toggle card expansion
   const toggleExpand = (odUserId) => {
     setExpandedCards(prev => ({
       ...prev,
@@ -351,6 +375,7 @@ const DraftBattleScreen = ({
     }));
   };
 
+  // Get movement indicator
   const getMovementIndicator = (player) => {
     if (!player.previousRank || player.previousRank === player.currentRank) {
       return { icon: '─', color: '#8b949e' };
@@ -361,6 +386,7 @@ const DraftBattleScreen = ({
     return { icon: '↓', color: '#ef4444' };
   };
 
+  // Get rank badge style
   const getRankBadge = (rank) => {
     switch (rank) {
       case 1: return { bg: 'linear-gradient(135deg, #ffd700 0%, #ffb800 100%)', text: '🥇 1ST' };
@@ -476,7 +502,7 @@ const DraftBattleScreen = ({
           </div>
         </div>
 
-        {/* Price Repair Warning Banner */}
+        {/* Price Repair Warning Banner - Shows when all prices are $100 */}
         {needsPriceRepair && (
           <div style={{
             background: '#7f1d1d',
@@ -516,7 +542,7 @@ const DraftBattleScreen = ({
           </div>
         )}
 
-        {/* Success message */}
+        {/* Success message when repair is done but prices still show repair button */}
         {repairStatus === 'success' && !needsPriceRepair && (
           <div style={{
             background: '#064e3b',
@@ -545,21 +571,350 @@ const DraftBattleScreen = ({
                 const rankBadge = getRankBadge(player.currentRank);
 
                 return (
-                  <StandingsCard
+                  <div
                     key={player.odUserId}
-                    player={player}
-                    isExpanded={isExpanded}
-                    movement={movement}
-                    rankBadge={rankBadge}
-                    toggleExpand={toggleExpand}
-                    setScreen={setScreen}
-                  />
+                    onClick={() => !player.isMe && toggleExpand(player.odUserId)}
+                    style={{
+                      background: player.isMe
+                        ? 'linear-gradient(135deg, rgba(0, 217, 255, 0.1) 0%, rgba(16, 185, 129, 0.1) 100%)'
+                        : '#161b22',
+                      border: player.isMe
+                        ? '2px solid #00d9ff'
+                        : '1px solid #21262d',
+                      borderRadius: '16px',
+                      padding: '16px',
+                      marginBottom: '12px',
+                      cursor: player.isMe ? 'default' : 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    {/* Card Header */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: isExpanded ? '16px' : '0'
+                    }}>
+                      {/* Left: Player Info */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        {/* Rank Badge */}
+                        <div style={{
+                          background: rankBadge.bg,
+                          padding: '4px 10px',
+                          borderRadius: '8px',
+                          fontSize: '11px',
+                          fontWeight: 'bold',
+                          color: player.currentRank <= 3 ? '#000' : '#fff'
+                        }}>
+                          {rankBadge.text}
+                        </div>
+
+                        {/* Player Name */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {player.isCPU && <span style={{ fontSize: '14px' }}>🤖</span>}
+                          {player.isMe && <span style={{ fontSize: '14px' }}>👤</span>}
+                          <span style={{
+                            color: player.isMe ? '#00d9ff' : '#ffffff',
+                            fontWeight: player.isMe ? 'bold' : '600',
+                            fontSize: '15px'
+                          }}>
+                            {player.isMe ? 'YOU' : player.displayName}
+                          </span>
+                        </div>
+
+                        {/* Movement Indicator */}
+                        <span style={{
+                          color: movement.color,
+                          fontWeight: 'bold',
+                          fontSize: '16px'
+                        }}>
+                          {movement.icon}
+                        </span>
+                      </div>
+
+                      {/* Right: Gain + Expand */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{
+                          color: (Number(player.totalGain) || 0) >= 0 ? '#10b981' : '#ef4444',
+                          fontWeight: 'bold',
+                          fontSize: '18px'
+                        }}>
+                          {(Number(player.totalGain) || 0) >= 0 ? '+' : ''}{(Number(player.totalGain) || 0).toFixed(2)}%
+                        </span>
+
+                        {!player.isMe && (
+                          <span style={{
+                            color: '#8b949e',
+                            fontSize: '18px',
+                            transition: 'transform 0.2s',
+                            transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)'
+                          }}>
+                            ▼
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Expanded Content */}
+                    {isExpanded && (
+                      <div>
+                        {/* Divider */}
+                        <div style={{
+                          height: '1px',
+                          background: player.isMe ? 'rgba(0, 217, 255, 0.2)' : '#21262d',
+                          marginBottom: '16px'
+                        }} />
+
+                        {/* Portfolio Grid */}
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(70px, 1fr))',
+                          gap: '8px',
+                          marginBottom: '16px'
+                        }}>
+                          {player.portfolio.map((asset, assetIdx) => (
+                            <div
+                              key={assetIdx}
+                              style={{
+                                background: '#0d1117',
+                                border: '1px solid #21262d',
+                                borderRadius: '8px',
+                                padding: '10px 8px',
+                                textAlign: 'center'
+                              }}
+                            >
+                              <div style={{
+                                color: '#ffffff',
+                                fontWeight: 'bold',
+                                fontSize: '13px',
+                                marginBottom: '4px'
+                              }}>
+                                {asset.symbol}
+                              </div>
+                              <div style={{
+                                color: (Number(asset.gain) || 0) >= 0 ? '#10b981' : '#ef4444',
+                                fontSize: '12px',
+                                fontWeight: '600'
+                              }}>
+                                {(Number(asset.gain) || 0) >= 0 ? '+' : ''}{(Number(asset.gain) || 0).toFixed(2)}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Best/Worst Assets */}
+                        <div style={{
+                          display: 'flex',
+                          gap: '12px',
+                          marginBottom: player.isMe ? '16px' : '0'
+                        }}>
+                          <div style={{
+                            flex: 1,
+                            background: 'rgba(16, 185, 129, 0.1)',
+                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                            borderRadius: '8px',
+                            padding: '10px',
+                            textAlign: 'center'
+                          }}>
+                            <div style={{ color: '#8b949e', fontSize: '10px', marginBottom: '4px' }}>
+                              🔥 BEST
+                            </div>
+                            <div style={{ color: '#10b981', fontWeight: 'bold', fontSize: '14px' }}>
+                              {player.bestAsset?.symbol} {(Number(player.bestAsset?.gain) || 0) >= 0 ? '+' : ''}{(Number(player.bestAsset?.gain) || 0).toFixed(2)}%
+                            </div>
+                          </div>
+                          <div style={{
+                            flex: 1,
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            borderRadius: '8px',
+                            padding: '10px',
+                            textAlign: 'center'
+                          }}>
+                            <div style={{ color: '#8b949e', fontSize: '10px', marginBottom: '4px' }}>
+                              ❄️ WORST
+                            </div>
+                            <div style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '14px' }}>
+                              {player.worstAsset?.symbol} {(Number(player.worstAsset?.gain) || 0) >= 0 ? '+' : ''}{(Number(player.worstAsset?.gain) || 0).toFixed(2)}%
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action Buttons (only for your card) */}
+                        {player.isMe && (
+                          <div style={{ display: 'flex', gap: '12px' }}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setScreen('freeAgency');
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: '12px',
+                                background: 'transparent',
+                                border: '2px solid #8b5cf6',
+                                borderRadius: '8px',
+                                color: '#8b5cf6',
+                                fontWeight: 'bold',
+                                fontSize: '14px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px'
+                              }}
+                            >
+                              🔄 Free Agency
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setScreen('draftResults');
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: '12px',
+                                background: 'transparent',
+                                border: '1px solid #21262d',
+                                borderRadius: '8px',
+                                color: '#8b949e',
+                                fontWeight: '600',
+                                fontSize: '14px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              📋 All Picks
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
 
               {/* Asset Comparison Section */}
               {assetComparison && (
-                <AssetComparisonCard assetComparison={assetComparison} />
+                <div style={{
+                  background: '#161b22',
+                  border: '1px solid #21262d',
+                  borderRadius: '16px',
+                  padding: '16px',
+                  marginTop: '8px'
+                }}>
+                  <h3 style={{
+                    color: '#ffffff',
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    marginBottom: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    ⚔️ ASSET SHOWDOWN
+                  </h3>
+
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px'
+                  }}>
+                    {/* Your Best */}
+                    <div style={{
+                      flex: 1,
+                      background: assetComparison.iWin
+                        ? 'rgba(16, 185, 129, 0.1)'
+                        : 'rgba(239, 68, 68, 0.1)',
+                      border: assetComparison.iWin
+                        ? '1px solid rgba(16, 185, 129, 0.3)'
+                        : '1px solid rgba(239, 68, 68, 0.3)',
+                      borderRadius: '10px',
+                      padding: '12px',
+                      textAlign: 'center'
+                    }}>
+                      <div style={{ color: '#8b949e', fontSize: '10px', marginBottom: '4px' }}>
+                        YOUR BEST
+                      </div>
+                      <div style={{
+                        color: '#ffffff',
+                        fontWeight: 'bold',
+                        fontSize: '16px',
+                        marginBottom: '2px'
+                      }}>
+                        {assetComparison.myBest?.symbol}
+                      </div>
+                      <div style={{
+                        color: '#10b981',
+                        fontWeight: 'bold',
+                        fontSize: '14px'
+                      }}>
+                        +{(Number(assetComparison.myBest?.gain) || 0).toFixed(2)}%
+                      </div>
+                      {assetComparison.iWin && (
+                        <div style={{
+                          color: '#10b981',
+                          fontSize: '11px',
+                          marginTop: '4px'
+                        }}>
+                          🏆 WINNING
+                        </div>
+                      )}
+                    </div>
+
+                    {/* VS */}
+                    <div style={{
+                      color: '#6e7681',
+                      fontWeight: 'bold',
+                      fontSize: '12px'
+                    }}>
+                      VS
+                    </div>
+
+                    {/* Opponent Best */}
+                    <div style={{
+                      flex: 1,
+                      background: !assetComparison.iWin
+                        ? 'rgba(16, 185, 129, 0.1)'
+                        : 'rgba(239, 68, 68, 0.1)',
+                      border: !assetComparison.iWin
+                        ? '1px solid rgba(16, 185, 129, 0.3)'
+                        : '1px solid rgba(239, 68, 68, 0.3)',
+                      borderRadius: '10px',
+                      padding: '12px',
+                      textAlign: 'center'
+                    }}>
+                      <div style={{ color: '#8b949e', fontSize: '10px', marginBottom: '4px' }}>
+                        THEIR BEST
+                      </div>
+                      <div style={{
+                        color: '#ffffff',
+                        fontWeight: 'bold',
+                        fontSize: '16px',
+                        marginBottom: '2px'
+                      }}>
+                        {assetComparison.opponentBest?.symbol || '-'}
+                      </div>
+                      <div style={{
+                        color: (Number(assetComparison.opponentBest?.gain) || 0) >= 0 ? '#10b981' : '#ef4444',
+                        fontWeight: 'bold',
+                        fontSize: '14px'
+                      }}>
+                        {(Number(assetComparison.opponentBest?.gain) || 0) >= 0 ? '+' : ''}
+                        {(Number(assetComparison.opponentBest?.gain) || 0).toFixed(2)}%
+                      </div>
+                      {!assetComparison.iWin && (
+                        <div style={{
+                          color: '#f59e0b',
+                          fontSize: '11px',
+                          marginTop: '4px'
+                        }}>
+                          ⚠️ WATCH OUT
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               )}
 
               {/* Refresh Indicator */}
@@ -573,360 +928,6 @@ const DraftBattleScreen = ({
                 Prices update every minute
               </div>
             </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/**
- * StandingsCard - Individual player standings card
- */
-const StandingsCard = ({ player, isExpanded, movement, rankBadge, toggleExpand, setScreen }) => {
-  return (
-    <div
-      onClick={() => !player.isMe && toggleExpand(player.odUserId)}
-      style={{
-        background: player.isMe
-          ? 'linear-gradient(135deg, rgba(0, 217, 255, 0.1) 0%, rgba(16, 185, 129, 0.1) 100%)'
-          : '#161b22',
-        border: player.isMe
-          ? '2px solid #00d9ff'
-          : '1px solid #21262d',
-        borderRadius: '16px',
-        padding: '16px',
-        marginBottom: '12px',
-        cursor: player.isMe ? 'default' : 'pointer',
-        transition: 'all 0.2s ease'
-      }}
-    >
-      {/* Card Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: isExpanded ? '16px' : '0'
-      }}>
-        {/* Left: Player Info */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {/* Rank Badge */}
-          <div style={{
-            background: rankBadge.bg,
-            padding: '4px 10px',
-            borderRadius: '8px',
-            fontSize: '11px',
-            fontWeight: 'bold',
-            color: player.currentRank <= 3 ? '#000' : '#fff'
-          }}>
-            {rankBadge.text}
-          </div>
-
-          {/* Player Name */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            {player.isCPU && <span style={{ fontSize: '14px' }}>🤖</span>}
-            {player.isMe && <span style={{ fontSize: '14px' }}>👤</span>}
-            <span style={{
-              color: player.isMe ? '#00d9ff' : '#ffffff',
-              fontWeight: player.isMe ? 'bold' : '600',
-              fontSize: '15px'
-            }}>
-              {player.isMe ? 'YOU' : player.displayName}
-            </span>
-          </div>
-
-          {/* Movement Indicator */}
-          <span style={{
-            color: movement.color,
-            fontWeight: 'bold',
-            fontSize: '16px'
-          }}>
-            {movement.icon}
-          </span>
-        </div>
-
-        {/* Right: Gain + Expand */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{
-            color: (Number(player.totalGain) || 0) >= 0 ? '#10b981' : '#ef4444',
-            fontWeight: 'bold',
-            fontSize: '18px'
-          }}>
-            {(Number(player.totalGain) || 0) >= 0 ? '+' : ''}{(Number(player.totalGain) || 0).toFixed(2)}%
-          </span>
-
-          {!player.isMe && (
-            <span style={{
-              color: '#8b949e',
-              fontSize: '18px',
-              transition: 'transform 0.2s',
-              transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)'
-            }}>
-              ▼
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Expanded Content */}
-      {isExpanded && (
-        <div>
-          {/* Divider */}
-          <div style={{
-            height: '1px',
-            background: player.isMe ? 'rgba(0, 217, 255, 0.2)' : '#21262d',
-            marginBottom: '16px'
-          }} />
-
-          {/* Portfolio Grid */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(70px, 1fr))',
-            gap: '8px',
-            marginBottom: '16px'
-          }}>
-            {player.portfolio.map((asset, assetIdx) => (
-              <div
-                key={assetIdx}
-                style={{
-                  background: '#0d1117',
-                  border: '1px solid #21262d',
-                  borderRadius: '8px',
-                  padding: '10px 8px',
-                  textAlign: 'center'
-                }}
-              >
-                <div style={{
-                  color: '#ffffff',
-                  fontWeight: 'bold',
-                  fontSize: '13px',
-                  marginBottom: '4px'
-                }}>
-                  {asset.symbol}
-                </div>
-                <div style={{
-                  color: (Number(asset.gain) || 0) >= 0 ? '#10b981' : '#ef4444',
-                  fontSize: '12px',
-                  fontWeight: '600'
-                }}>
-                  {(Number(asset.gain) || 0) >= 0 ? '+' : ''}{(Number(asset.gain) || 0).toFixed(2)}%
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Best/Worst Assets */}
-          <div style={{
-            display: 'flex',
-            gap: '12px',
-            marginBottom: player.isMe ? '16px' : '0'
-          }}>
-            <div style={{
-              flex: 1,
-              background: 'rgba(16, 185, 129, 0.1)',
-              border: '1px solid rgba(16, 185, 129, 0.3)',
-              borderRadius: '8px',
-              padding: '10px',
-              textAlign: 'center'
-            }}>
-              <div style={{ color: '#8b949e', fontSize: '10px', marginBottom: '4px' }}>
-                🔥 BEST
-              </div>
-              <div style={{ color: '#10b981', fontWeight: 'bold', fontSize: '14px' }}>
-                {player.bestAsset?.symbol} {(Number(player.bestAsset?.gain) || 0) >= 0 ? '+' : ''}{(Number(player.bestAsset?.gain) || 0).toFixed(2)}%
-              </div>
-            </div>
-            <div style={{
-              flex: 1,
-              background: 'rgba(239, 68, 68, 0.1)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              borderRadius: '8px',
-              padding: '10px',
-              textAlign: 'center'
-            }}>
-              <div style={{ color: '#8b949e', fontSize: '10px', marginBottom: '4px' }}>
-                ❄️ WORST
-              </div>
-              <div style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '14px' }}>
-                {player.worstAsset?.symbol} {(Number(player.worstAsset?.gain) || 0) >= 0 ? '+' : ''}{(Number(player.worstAsset?.gain) || 0).toFixed(2)}%
-              </div>
-            </div>
-          </div>
-
-          {/* Action Buttons (only for your card) */}
-          {player.isMe && (
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setScreen('freeAgency');
-                }}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  background: 'transparent',
-                  border: '2px solid #8b5cf6',
-                  borderRadius: '8px',
-                  color: '#8b5cf6',
-                  fontWeight: 'bold',
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px'
-                }}
-              >
-                🔄 Free Agency
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setScreen('draftResults');
-                }}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  background: 'transparent',
-                  border: '1px solid #21262d',
-                  borderRadius: '8px',
-                  color: '#8b949e',
-                  fontWeight: '600',
-                  fontSize: '14px',
-                  cursor: 'pointer'
-                }}
-              >
-                📋 All Picks
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-/**
- * AssetComparisonCard - Your best asset vs opponent's best
- */
-const AssetComparisonCard = ({ assetComparison }) => {
-  return (
-    <div style={{
-      background: '#161b22',
-      border: '1px solid #21262d',
-      borderRadius: '16px',
-      padding: '16px',
-      marginTop: '8px'
-    }}>
-      <h3 style={{
-        color: '#ffffff',
-        fontSize: '14px',
-        fontWeight: 'bold',
-        marginBottom: '12px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px'
-      }}>
-        ⚔️ ASSET SHOWDOWN
-      </h3>
-
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '12px'
-      }}>
-        {/* Your Best */}
-        <div style={{
-          flex: 1,
-          background: assetComparison.iWin
-            ? 'rgba(16, 185, 129, 0.1)'
-            : 'rgba(239, 68, 68, 0.1)',
-          border: assetComparison.iWin
-            ? '1px solid rgba(16, 185, 129, 0.3)'
-            : '1px solid rgba(239, 68, 68, 0.3)',
-          borderRadius: '10px',
-          padding: '12px',
-          textAlign: 'center'
-        }}>
-          <div style={{ color: '#8b949e', fontSize: '10px', marginBottom: '4px' }}>
-            YOUR BEST
-          </div>
-          <div style={{
-            color: '#ffffff',
-            fontWeight: 'bold',
-            fontSize: '16px',
-            marginBottom: '2px'
-          }}>
-            {assetComparison.myBest?.symbol}
-          </div>
-          <div style={{
-            color: '#10b981',
-            fontWeight: 'bold',
-            fontSize: '14px'
-          }}>
-            +{(Number(assetComparison.myBest?.gain) || 0).toFixed(2)}%
-          </div>
-          {assetComparison.iWin && (
-            <div style={{
-              color: '#10b981',
-              fontSize: '11px',
-              marginTop: '4px'
-            }}>
-              🏆 WINNING
-            </div>
-          )}
-        </div>
-
-        {/* VS */}
-        <div style={{
-          color: '#6e7681',
-          fontWeight: 'bold',
-          fontSize: '12px'
-        }}>
-          VS
-        </div>
-
-        {/* Opponent Best */}
-        <div style={{
-          flex: 1,
-          background: !assetComparison.iWin
-            ? 'rgba(16, 185, 129, 0.1)'
-            : 'rgba(239, 68, 68, 0.1)',
-          border: !assetComparison.iWin
-            ? '1px solid rgba(16, 185, 129, 0.3)'
-            : '1px solid rgba(239, 68, 68, 0.3)',
-          borderRadius: '10px',
-          padding: '12px',
-          textAlign: 'center'
-        }}>
-          <div style={{ color: '#8b949e', fontSize: '10px', marginBottom: '4px' }}>
-            THEIR BEST
-          </div>
-          <div style={{
-            color: '#ffffff',
-            fontWeight: 'bold',
-            fontSize: '16px',
-            marginBottom: '2px'
-          }}>
-            {assetComparison.opponentBest?.symbol || '-'}
-          </div>
-          <div style={{
-            color: (Number(assetComparison.opponentBest?.gain) || 0) >= 0 ? '#10b981' : '#ef4444',
-            fontWeight: 'bold',
-            fontSize: '14px'
-          }}>
-            {(Number(assetComparison.opponentBest?.gain) || 0) >= 0 ? '+' : ''}
-            {(Number(assetComparison.opponentBest?.gain) || 0).toFixed(2)}%
-          </div>
-          {!assetComparison.iWin && (
-            <div style={{
-              color: '#f59e0b',
-              fontSize: '11px',
-              marginTop: '4px'
-            }}>
-              ⚠️ WATCH OUT
-            </div>
           )}
         </div>
       </div>

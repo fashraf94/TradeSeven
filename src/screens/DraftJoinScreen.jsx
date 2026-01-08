@@ -1,48 +1,24 @@
-// /src/screens/DraftJoinScreen.jsx
-
 import React from 'react';
 
-/**
- * DraftJoinScreen - Join an existing draft by code
- *
- * @param {Object} props
- * @param {Function} props.onBack - Handler to go back to dashboard
- * @param {string} props.draftJoinCode - Current join code value
- * @param {Function} props.setDraftJoinCode - Handler to update join code
- * @param {Object} props.user - Current user object
- * @param {Function} props.setCurrentDraft - Handler to set the current draft
- * @param {Function} props.setScreen - Handler to change screen
- * @param {Object} props.containerStyle - Container style from App
- */
+// Style override to neutralize App.css
+const containerStyle = {
+  maxWidth: '100vw',
+  width: '100%',
+  margin: 0,
+  padding: 0,
+  textAlign: 'left',
+  minHeight: '100vh',
+  background: '#0d1117',
+  overflowX: 'hidden'
+};
+
 const DraftJoinScreen = ({
-  onBack,
+  user,
   draftJoinCode,
   setDraftJoinCode,
-  user,
-  setCurrentDraft,
-  setScreen,
-  containerStyle
+  onBack,
+  onJoinDraft
 }) => {
-  const handleJoinDraft = async () => {
-    if (!draftJoinCode.trim()) {
-      alert('Please enter a draft code');
-      return;
-    }
-    try {
-      const draftService = await import('../services/draftService');
-      const draft = await draftService.joinDraftByCode(
-        draftJoinCode.trim(),
-        user.odUserId || user.username,
-        user.username
-      );
-      setCurrentDraft(draft);
-      setScreen('draftLobby');
-    } catch (error) {
-      console.error('Failed to join draft:', error);
-      alert(error.message || 'Failed to join draft');
-    }
-  };
-
   return (
     <div style={containerStyle}>
       <div style={{ minHeight: '100vh', background: '#0d1117' }}>
@@ -118,7 +94,24 @@ const DraftJoinScreen = ({
           />
 
           <button
-            onClick={handleJoinDraft}
+            onClick={async () => {
+              if (!draftJoinCode.trim()) {
+                alert('Please enter a draft code');
+                return;
+              }
+              try {
+                const draftService = await import('../services/draftService');
+                const draft = await draftService.joinDraftByCode(
+                  draftJoinCode.trim(),
+                  user.odUserId || user.username,
+                  user.username
+                );
+                onJoinDraft(draft);
+              } catch (error) {
+                console.error('Failed to join draft:', error);
+                alert(error.message || 'Failed to join draft');
+              }
+            }}
             disabled={!draftJoinCode.trim()}
             style={{
               width: '100%',

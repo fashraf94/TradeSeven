@@ -1,21 +1,10 @@
-// /src/screens/FreeAgencyScreen.jsx
-
 import React, { useState, useEffect } from 'react';
 
-/**
- * FreeAgencyScreen - Swap assets during the battle phase
- *
- * @param {Object} props
- * @param {Object} props.currentDraft - Current draft data
- * @param {Object} props.user - Current user object
- * @param {Function} props.setScreen - Handler to change screen
- * @param {Object} props.containerStyle - Container style from App
- */
 const FreeAgencyScreen = ({
+  containerStyle,
   currentDraft,
   user,
-  setScreen,
-  containerStyle
+  onBack,
 }) => {
   const [freeAgents, setFreeAgents] = useState({ steady: [], risky: [], defensive: [] });
   const [playerRoster, setPlayerRoster] = useState({ steady: [], risky: [], defensive: [] });
@@ -167,12 +156,6 @@ const FreeAgencyScreen = ({
             }} />
             <div style={{ color: '#8b949e' }}>Loading free agency...</div>
           </div>
-          <style>{`
-            @keyframes spin {
-              0% { transform: rotate(0deg); }
-              100% { transform: rotate(360deg); }
-            }
-          `}</style>
         </div>
       </div>
     );
@@ -195,7 +178,7 @@ const FreeAgencyScreen = ({
             justifyContent: 'space-between'
           }}>
             <button
-              onClick={() => setScreen('draftResults')}
+              onClick={onBack}
               style={{
                 color: '#00d9ff',
                 background: 'transparent',

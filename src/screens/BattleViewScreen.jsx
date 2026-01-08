@@ -1,48 +1,32 @@
-// /src/screens/BattleViewScreen.jsx
+import React, { Suspense } from 'react';
+import DesktopBackground from '../components/DesktopBackground';
 
-import React, { useState, Suspense } from 'react';
-import { useUser } from '../contexts/UserContext';
-
-/**
- * BattleViewScreen - View active battle progress
- * Extracted from App.jsx Phase 6
- *
- * Handles both Classic (V1) and BaggerBomb (V2) battle views
- */
 const BattleViewScreen = ({
-  onBack,
-  currentBattle,
-  battlePrices = {},
-  battleTimer,
-  colors,
   containerStyle,
   isDesktop,
-  DesktopBackground,
-  BaggerBombBattleViewRedesign,
+  currentBattle,
+  user,
+  battlePrices,
+  battleTimer,
+  onBack,
   ActiveRiskChallengeIndicator,
-  LoadingFallback
+  LoadingFallback,
+  BaggerBombBattleViewRedesign,
 }) => {
-  const { user } = useUser();
-  const [activeTab, setActiveTab] = useState('yours');
-
-  if (!currentBattle) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: colors?.background || '#0d1117',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        <p style={{ color: colors?.textMuted || '#8b949e' }}>No battle selected</p>
-      </div>
-    );
-  }
+  // Debug: Log battle routing decision
+  console.log('🎮 BATTLE ROUTING DEBUG:', {
+    screen: 'battle',
+    hasBattle: !!currentBattle,
+    battleVersion: currentBattle?._v,
+    isTraining: currentBattle?.isTraining,
+    hasCreatorObj: !!currentBattle?.creator,
+    battleType: currentBattle?.portfolioType
+  });
 
   // Check if this is a BaggerBomb (V2) battle - route to redesigned view
-  if (currentBattle._v === 2 && BaggerBombBattleViewRedesign) {
+  if (currentBattle._v === 2) {
     return (
-      <Suspense fallback={LoadingFallback ? <LoadingFallback /> : <div>Loading...</div>}>
+      <Suspense fallback={<LoadingFallback />}>
         <BaggerBombBattleViewRedesign
           battle={currentBattle}
           user={user}
@@ -53,22 +37,22 @@ const BattleViewScreen = ({
     );
   }
 
-  // Classic (V1) battle view
-  const isCreator = currentBattle.creator === user?.username;
+  // Classic (V1) battle view continues below...
+  const isCreator = currentBattle.creator === user.username;
   const opponent = isCreator ? currentBattle.opponent : currentBattle.creator;
   const myPortfolio = isCreator ? currentBattle.creatorPortfolio : currentBattle.opponentPortfolio;
   const theirPortfolio = isCreator ? currentBattle.opponentPortfolio : currentBattle.creatorPortfolio;
 
   // Calculate current values and gains
   let myValue = 0;
-  (myPortfolio || []).forEach(asset => {
+  myPortfolio.forEach(asset => {
     const shares = asset.amount / asset.price;
     const currentPrice = battlePrices[asset.symbol] || asset.price;
     myValue += shares * currentPrice;
   });
 
   let theirValue = 0;
-  (theirPortfolio || []).forEach(asset => {
+  theirPortfolio.forEach(asset => {
     const shares = asset.amount / asset.price;
     const currentPrice = battlePrices[asset.symbol] || asset.price;
     theirValue += shares * currentPrice;
@@ -80,26 +64,79 @@ const BattleViewScreen = ({
   const difference = Math.abs(myGain - theirGain);
   const valueDifference = Math.abs(myValue - theirValue);
 
-  // Pre-calculate gain percentages for portfolio assets
-  const myPortfolioWithGains = (myPortfolio || []).map(asset => {
+  // Pre-calculate gain percentages for highlighting
+  const myPortfolioWithGains = myPortfolio.map(asset => {
     const startingPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
     const currentPrice = battlePrices[asset.symbol] || startingPrice;
     const gainPercent = ((currentPrice - startingPrice) / startingPrice) * 100;
     return { ...asset, gainPercent };
   });
 
-  const theirPortfolioWithGains = (theirPortfolio || []).map(asset => {
+  const theirPortfolioWithGains = theirPortfolio.map(asset => {
     const startingPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
     const currentPrice = battlePrices[asset.symbol] || startingPrice;
     const gainPercent = ((currentPrice - startingPrice) / startingPrice) * 100;
     return { ...asset, gainPercent };
   });
 
-  const displayPortfolio = activeTab === 'yours' ? myPortfolioWithGains : theirPortfolioWithGains;
+  // Helper function to determine border highlighting for portfolio assets
+  const getAssetBorderStyle = (portfolio, currentAsset) => {
+    // Sort portfolio by gain percentage (descending)
+    const sortedByGain = [...portfolio].sort((a, b) => {
+      const gainA = a.gainPercent || 0;
+      const gainB = b.gainPercent || 0;
+      return gainB - gainA;
+    });
+
+    const currentGainPercent = currentAsset.gainPercent || 0;
+    const currentIndex = sortedByGain.findIndex(a => a.symbol === currentAsset.symbol);
+
+    // Separate positive and negative performers
+    const positivePerformers = sortedByGain.filter(a => (a.gainPercent || 0) > 0);
+    const negativePerformers = sortedByGain.filter(a => (a.gainPercent || 0) < 0);
+
+    // TOP 3 WINNERS (Green) - Must be positive
+    if (currentGainPercent > 0 && currentIndex < 3) {
+      return {
+        border: '3px solid #22c55e',
+        boxShadow: '0 0 12px rgba(34, 197, 94, 0.3)',
+        backgroundColor: 'rgba(34, 197, 94, 0.05)'
+      };
+    }
+
+    // TOP 3 LOSERS (Red) - Must be negative
+    if (currentGainPercent < 0 && currentIndex >= sortedByGain.length - 3) {
+      return {
+        border: '3px solid #ef4444',
+        boxShadow: '0 0 12px rgba(239, 68, 68, 0.3)',
+        backgroundColor: 'rgba(239, 68, 68, 0.05)'
+      };
+    }
+
+    // BIGGEST LAGGARD (Orange) - Lowest positive gain
+    if (positivePerformers.length > 0 && negativePerformers.length > 0) {
+      const smallestPositiveGain = positivePerformers[positivePerformers.length - 1];
+      if (currentAsset.symbol === smallestPositiveGain.symbol && currentGainPercent > 0) {
+        return {
+          border: '3px solid #ff8c00',
+          boxShadow: '0 0 12px rgba(255, 140, 0, 0.3)',
+          backgroundColor: 'rgba(255, 140, 0, 0.05)'
+        };
+      }
+    }
+
+    // DEFAULT - No highlighting
+    return {
+      border: '2px solid #21262d',
+      boxShadow: 'none',
+      backgroundColor: 'transparent'
+    };
+  };
 
   return (
     <div style={containerStyle}>
-      {isDesktop && DesktopBackground && <DesktopBackground isDesktop={isDesktop} />}
+      {/* Animated Desktop Background */}
+      <DesktopBackground isDesktop={isDesktop} />
 
       <div style={{
         minHeight: '100vh',
@@ -177,7 +214,7 @@ const BattleViewScreen = ({
             color: '#8b949e',
             fontWeight: '500'
           }}>
-            {battleTimer?.formatTimeRemaining?.(currentBattle) || 'Battle in progress'} remaining
+            {battleTimer.formatTimeRemaining(currentBattle)} remaining
           </div>
         </div>
 
@@ -199,12 +236,10 @@ const BattleViewScreen = ({
           </div>
         )}
 
-        {/* Active Risk Challenge Indicator */}
-        {ActiveRiskChallengeIndicator && (
-          <div style={{ padding: '16px 16px 0 16px' }}>
-            <ActiveRiskChallengeIndicator />
-          </div>
-        )}
+        {/* ⭐ ACTIVE RISK CHALLENGE INDICATOR */}
+        <div style={{ padding: '16px 16px 0 16px' }}>
+          <ActiveRiskChallengeIndicator />
+        </div>
 
         {/* COMPARISON CARD */}
         <div style={{ padding: '16px', backgroundColor: '#0d1117' }}>
@@ -376,93 +411,243 @@ const BattleViewScreen = ({
               justifyContent: 'space-between',
               alignItems: 'center'
             }}>
-              <div style={{ textAlign: 'center', flex: 1 }}>
-                <div style={{ color: '#8b949e', fontSize: '11px' }}>Portfolio Value</div>
-                <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600' }}>
-                  ${myValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </div>
+              <div style={{
+                fontSize: '14px',
+                color: '#8b949e',
+                flex: 1,
+                textAlign: 'center'
+              }}>
+                ${myValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
-              <div style={{ textAlign: 'center', flex: 1 }}>
-                <div style={{ color: '#8b949e', fontSize: '11px' }}>Portfolio Value</div>
-                <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600' }}>
-                  ${theirValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </div>
+
+              <div style={{
+                fontSize: '14px',
+                color: '#8b949e',
+                flex: 1,
+                textAlign: 'center'
+              }}>
+                ${theirValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>
           </div>
         </div>
 
-        {/* PORTFOLIO TABS */}
-        <div style={{ padding: '0 16px 16px' }}>
+        {/* SIDE-BY-SIDE PORTFOLIOS */}
+        <div style={{
+          display: 'flex',
+          gap: '12px',
+          padding: '0 16px 24px 16px',
+          flex: 1,
+          overflow: 'hidden'
+        }}>
+          {/* YOUR PORTFOLIO */}
           <div style={{
+            flex: 1,
             display: 'flex',
-            gap: '8px',
-            marginBottom: '16px'
+            flexDirection: 'column',
+            minWidth: 0
           }}>
-            <button
-              onClick={() => setActiveTab('yours')}
-              style={{
-                flex: 1,
-                padding: '12px',
-                borderRadius: '8px',
-                border: 'none',
-                background: activeTab === 'yours' ? '#00d9ff' : '#161b22',
-                color: activeTab === 'yours' ? '#0d1117' : '#8b949e',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
-            >
-              Your Portfolio
-            </button>
-            <button
-              onClick={() => setActiveTab('opponent')}
-              style={{
-                flex: 1,
-                padding: '12px',
-                borderRadius: '8px',
-                border: 'none',
-                background: activeTab === 'opponent' ? '#ef4444' : '#161b22',
-                color: activeTab === 'opponent' ? '#ffffff' : '#8b949e',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
-            >
-              {currentBattle.isTrainingBattle ? 'CPU' : 'Opponent'}
-            </button>
+            {/* Header */}
+            <div style={{
+              backgroundColor: '#00d9ff',
+              padding: '10px 12px',
+              borderTopLeftRadius: '12px',
+              borderTopRightRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px'
+            }}>
+              <span style={{ fontSize: '16px' }}>👤</span>
+              <span style={{
+                fontSize: '13px',
+                fontWeight: 'bold',
+                color: '#0d1117'
+              }}>
+                YOU
+              </span>
+            </div>
+
+            {/* Portfolio List */}
+            <div style={{
+              backgroundColor: '#161b22',
+              border: '2px solid #21262d',
+              borderTop: 'none',
+              borderBottomLeftRadius: '12px',
+              borderBottomRightRadius: '12px',
+              overflow: 'auto',
+              flex: 1,
+              padding: '4px'
+            }}>
+              {myPortfolioWithGains.map((asset, index) => {
+                const currentPrice = battlePrices[asset.symbol] || asset.price;
+                const gainPercent = asset.gainPercent;
+                const weight = (asset.amount / 1000000) * 100;
+                const borderStyle = getAssetBorderStyle(myPortfolioWithGains, asset);
+
+                return (
+                  <div
+                    key={index}
+                    style={{
+                      padding: '12px',
+                      marginBottom: '4px',
+                      borderRadius: '8px',
+                      transition: 'all 0.3s ease',
+                      ...borderStyle
+                    }}
+                  >
+                    {/* Symbol and Gain */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '4px'
+                    }}>
+                      <span style={{
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#ffffff'
+                      }}>
+                        {asset.symbol}
+                      </span>
+                      <span style={{
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: gainPercent >= 0 ? '#22c55e' : '#ef4444'
+                      }}>
+                        {gainPercent >= 0 ? '+' : ''}{gainPercent.toFixed(2)}%
+                      </span>
+                    </div>
+
+                    {/* Allocation and Price */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span style={{
+                        fontSize: '12px',
+                        color: '#8b949e'
+                      }}>
+                        {weight.toFixed(1)}%
+                      </span>
+                      <span style={{
+                        fontSize: '12px',
+                        color: '#8b949e'
+                      }}>
+                        ${currentPrice.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Portfolio List */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {displayPortfolio.map((asset, index) => (
-              <div
-                key={asset.symbol || index}
-                style={{
-                  background: '#161b22',
-                  border: '1px solid #21262d',
-                  borderRadius: '12px',
-                  padding: '12px 16px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}
-              >
-                <div>
-                  <div style={{ color: '#ffffff', fontWeight: '600', fontSize: '14px' }}>
-                    {asset.symbol}
+          {/* OPPONENT PORTFOLIO */}
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            minWidth: 0
+          }}>
+            {/* Header */}
+            <div style={{
+              backgroundColor: currentBattle.isTrainingBattle ? '#8b5cf6' : '#ef4444',
+              padding: '10px 12px',
+              borderTopLeftRadius: '12px',
+              borderTopRightRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px'
+            }}>
+              <span style={{ fontSize: '16px' }}>
+                {currentBattle.isTrainingBattle ? '🤖' : '👤'}
+              </span>
+              <span style={{
+                fontSize: '13px',
+                fontWeight: 'bold',
+                color: '#ffffff'
+              }}>
+                {currentBattle.isTrainingBattle ? 'CPU' : 'OPP'}
+              </span>
+            </div>
+
+            {/* Portfolio List */}
+            <div style={{
+              backgroundColor: '#161b22',
+              border: '2px solid #21262d',
+              borderTop: 'none',
+              borderBottomLeftRadius: '12px',
+              borderBottomRightRadius: '12px',
+              overflow: 'auto',
+              flex: 1,
+              padding: '4px'
+            }}>
+              {theirPortfolioWithGains.map((asset, index) => {
+                const currentPrice = battlePrices[asset.symbol] || asset.price;
+                const gainPercent = asset.gainPercent;
+                const weight = (asset.amount / 1000000) * 100;
+                const borderStyle = getAssetBorderStyle(theirPortfolioWithGains, asset);
+
+                return (
+                  <div
+                    key={index}
+                    style={{
+                      padding: '12px',
+                      marginBottom: '4px',
+                      borderRadius: '8px',
+                      transition: 'all 0.3s ease',
+                      ...borderStyle
+                    }}
+                  >
+                    {/* Symbol and Gain */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '4px'
+                    }}>
+                      <span style={{
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#ffffff'
+                      }}>
+                        {asset.symbol}
+                      </span>
+                      <span style={{
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: gainPercent >= 0 ? '#22c55e' : '#ef4444'
+                      }}>
+                        {gainPercent >= 0 ? '+' : ''}{gainPercent.toFixed(2)}%
+                      </span>
+                    </div>
+
+                    {/* Allocation and Price */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span style={{
+                        fontSize: '12px',
+                        color: '#8b949e'
+                      }}>
+                        {weight.toFixed(1)}%
+                      </span>
+                      <span style={{
+                        fontSize: '12px',
+                        color: '#8b949e'
+                      }}>
+                        ${currentPrice.toFixed(2)}
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ color: '#8b949e', fontSize: '12px' }}>
-                    ${(asset.amount || 0).toLocaleString()}
-                  </div>
-                </div>
-                <div style={{
-                  color: (asset.gainPercent || 0) >= 0 ? '#22c55e' : '#ef4444',
-                  fontWeight: 'bold',
-                  fontSize: '16px'
-                }}>
-                  {(asset.gainPercent || 0) >= 0 ? '+' : ''}{(asset.gainPercent || 0).toFixed(2)}%
-                </div>
-              </div>
-            ))}
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
