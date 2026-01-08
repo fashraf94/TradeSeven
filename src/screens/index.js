@@ -10,3 +10,10 @@ export { default as DraftSetupScreen } from './DraftSetupScreen';
 export { default as DraftJoinScreen } from './DraftJoinScreen';
 export { default as DraftTrainingScreen } from './DraftTrainingScreen';
 export { default as DraftLobbyScreen } from './DraftLobbyScreen';
+
+// Screen exports - Batch 3
+export { default as PreviousBattlesScreen } from './PreviousBattlesScreen';
+export { default as BattleHistoryScreen } from './BattleHistoryScreen';
+export { default as FreeAgencyScreen } from './FreeAgencyScreen';
+export { default as DraftResultsScreen } from './DraftResultsScreen';
+export { default as BattleViewScreen } from './BattleViewScreen';
