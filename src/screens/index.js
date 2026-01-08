@@ -17,3 +17,7 @@ export { default as BattleHistoryScreen } from './BattleHistoryScreen';
 export { default as FreeAgencyScreen } from './FreeAgencyScreen';
 export { default as DraftResultsScreen } from './DraftResultsScreen';
 export { default as BattleViewScreen } from './BattleViewScreen';
+
+// Screen exports - Batch 4
+export { default as DraftBattleScreen } from './DraftBattleScreen';
+export { default as DraftRoomScreen } from './DraftRoomScreen';

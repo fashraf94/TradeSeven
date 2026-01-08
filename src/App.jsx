@@ -71,7 +71,7 @@ import {
   getAvailableSectors,
 } from './services/recommendationEngine';
 // Extracted Screens - Batch 1
-import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, DraftResultsScreen, BattleViewScreen } from './screens';
+import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftRoomScreen } from './screens';
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 
@@ -25709,8 +25709,30 @@ export default function PortfolioDuel() {
     );
   }
 
-  // DRAFT ROOM SCREEN - Phase 3
+  // DRAFT ROOM SCREEN - Extracted to DraftRoomScreen component
   if (screen === 'draftRoom') {
+    return (
+      <DraftRoomScreen
+        containerStyle={containerStyle}
+        draftState={draftState}
+        currentDraft={currentDraft}
+        user={user}
+        selectedDraftCategory={selectedDraftCategory}
+        setSelectedDraftCategory={setSelectedDraftCategory}
+        draftTimeRemaining={draftTimeRemaining}
+        autopickCountdown={autopickCountdown}
+        userNotes={userNotes}
+        colors={colors}
+        stocksData={stocksData}
+        setScreen={setScreen}
+        getStockSector={getStockSector}
+        getSectorColor={getSectorColor}
+      />
+    );
+  }
+
+  // DRAFT ROOM SCREEN - OLD CODE DISABLED
+  if (false && 'DraftRoomScreen_OLD_DELETED') {
     const roomDraft = draftState || currentDraft;
 
     // Loading state - Phase 4
@@ -27491,9 +27513,23 @@ export default function PortfolioDuel() {
     );
   }
 
-  // DRAFT BATTLE VIEW SCREEN - ESPN-style 4-player layout
+  // DRAFT BATTLE VIEW SCREEN - Extracted to DraftBattleScreen component
   if (screen === 'draftBattle') {
-    const DraftBattleScreen = () => {
+    return (
+      <DraftBattleScreen
+        containerStyle={containerStyle}
+        user={user}
+        currentDraft={currentDraft}
+        setCurrentDraft={setCurrentDraft}
+        setScreen={setScreen}
+        logger={logger}
+      />
+    );
+  }
+
+  // DRAFT BATTLE VIEW SCREEN - OLD CODE DISABLED
+  if (false && 'DraftBattleScreen_OLD_DELETED') {
+    const DraftBattleScreenOld = () => {
       const [standings, setStandings] = useState([]);
       const [expandedCards, setExpandedCards] = useState({});
       const [loading, setLoading] = useState(true);
@@ -28421,7 +28457,7 @@ export default function PortfolioDuel() {
       );
     };
 
-    return <DraftBattleScreen />;
+    return <DraftBattleScreenOld />;
   }
 
   // FREE AGENCY SCREEN - Extracted to FreeAgencyScreen component
