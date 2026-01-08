@@ -22,6 +22,17 @@ export { default as FreeAgencyScreen } from './FreeAgencyScreen';
 export { default as ResearchScreen } from './ResearchScreen';
 export { default as DashboardScreen } from './DashboardScreen';
 
-// Future screens (Phase 6+)
-// export { default as BattleScreen } from './BattleScreen';
-// export { default as PortfolioBuilderScreen } from './PortfolioBuilderScreen';
+// Phase 6 - Final screen extractions
+// Auth
+export { default as HomeScreen } from './HomeScreen';
+
+// Classic Mode
+export { default as BuilderScreen } from './BuilderScreen';
+export { default as JoinScreen } from './JoinScreen';
+export { default as BattleViewScreen } from './BattleViewScreen';
+export { default as BattleHistoryScreen } from './BattleHistoryScreen';
+
+// BaggerBomb / TD Mode
+export { default as TDBuilderScreen } from './TDBuilderScreen';
+export { default as JoinTDScreen } from './JoinTDScreen';
+export { default as TrainingTDScreen } from './TrainingTDScreen';
