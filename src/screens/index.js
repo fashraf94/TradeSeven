@@ -24,3 +24,6 @@ export { default as DraftRoomScreen } from './DraftRoomScreen';
 
 // Screen exports - Batch 5
 export { default as HomeScreen } from './HomeScreen';
+
+// Screen exports - Batch 6
+export { default as EarningsGameScreen } from './EarningsGameScreen';
