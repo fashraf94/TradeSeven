@@ -18,7 +18,10 @@ export { default as DraftResultsScreen } from './DraftResultsScreen';
 export { default as DraftBattleScreen } from './DraftBattleScreen';
 export { default as FreeAgencyScreen } from './FreeAgencyScreen';
 
-// Future screens (Phase 5+)
-// export { default as DashboardScreen } from './DashboardScreen';
-// export { default as ResearchScreen } from './ResearchScreen';
+// Phase 5 - Research & Dashboard screens
+export { default as ResearchScreen } from './ResearchScreen';
+export { default as DashboardScreen } from './DashboardScreen';
+
+// Future screens (Phase 6+)
 // export { default as BattleScreen } from './BattleScreen';
+// export { default as PortfolioBuilderScreen } from './PortfolioBuilderScreen';
