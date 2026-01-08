@@ -1,40 +1,35 @@
-// /src/screens/ProfileScreen.jsx
-
 import React from 'react';
-import { useUser } from '../contexts/UserContext';
+import DesktopBackground from '../components/DesktopBackground';
 
-/**
- * ProfileScreen - User profile, stats, achievements, and battle record
- *
- * @param {Object} props
- * @param {Function} props.onBack - Handler to go back to dashboard
- * @param {Object} props.colors - Design tokens
- * @param {boolean} props.isDesktop - Whether on desktop view
- * @param {Object} props.containerStyle - Container style from App
- * @param {React.Component} props.DesktopBackground - Desktop background component
- */
+// Style override to neutralize App.css
+const containerStyle = {
+  maxWidth: '100vw',
+  width: '100%',
+  margin: 0,
+  padding: 0,
+  textAlign: 'left',
+  minHeight: '100vh',
+  background: '#0d1117',
+  overflowX: 'hidden'
+};
+
 const ProfileScreen = ({
-  onBack,
-  colors,
+  user,
   isDesktop,
-  containerStyle,
-  DesktopBackground
+  onBack
 }) => {
-  const { user } = useUser();
-
-  // Calculate user stats
   const userStats = {
-    xp: user?.xp || 0,
-    wins: user?.wins || 0,
-    losses: user?.losses || 0,
-    totalBattles: (user?.wins || 0) + (user?.losses || 0),
-    rank: (user?.xp || 0) >= 5000 ? 'Master' : (user?.xp || 0) >= 2000 ? 'Expert' : (user?.xp || 0) >= 500 ? 'Veteran' : 'Beginner'
+    xp: user.xp || 0,
+    wins: user.wins || 0,
+    losses: user.losses || 0,
+    totalBattles: (user.wins || 0) + (user.losses || 0),
+    rank: (user.xp || 0) >= 5000 ? 'Master' : (user.xp || 0) >= 2000 ? 'Expert' : (user.xp || 0) >= 500 ? 'Veteran' : 'Beginner'
   };
 
   return (
     <div style={containerStyle}>
       {/* Animated Desktop Background */}
-      {DesktopBackground && <DesktopBackground isDesktop={isDesktop} />}
+      <DesktopBackground isDesktop={isDesktop} />
 
       <div style={{ minHeight: '100vh', backgroundColor: '#0d1117', position: 'relative', zIndex: 1 }}>
 

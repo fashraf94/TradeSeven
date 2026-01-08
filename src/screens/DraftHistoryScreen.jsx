@@ -1,54 +1,46 @@
-// /src/screens/DraftHistoryScreen.jsx
-
 import React, { useState, useEffect } from 'react';
-import { useUser } from '../contexts/UserContext';
 
-/**
- * DraftHistoryScreen - History of snake draft battles
- *
- * @param {Object} props
- * @param {Function} props.onBack - Handler to go back to dashboard
- * @param {Object} props.containerStyle - Container style from App
- */
+// Style override to neutralize App.css
+const containerStyle = {
+  maxWidth: '100vw',
+  width: '100%',
+  margin: 0,
+  padding: 0,
+  textAlign: 'left',
+  minHeight: '100vh',
+  background: '#0d1117',
+  overflowX: 'hidden'
+};
+
 const DraftHistoryScreen = ({
-  onBack,
-  containerStyle
+  user,
+  onBack
 }) => {
-  const { user } = useUser();
-
   const [draftHistory, setDraftHistory] = useState([]);
   const [draftStats, setDraftStats] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [selectedHistoryDraft, setSelectedHistoryDraft] = useState(null);
 
-  const currentUserId = user?.odUserId || user?.username;
-
   useEffect(() => {
     const loadHistory = async () => {
       setHistoryLoading(true);
-      try {
-        const draftService = await import('../services/draftService');
-        const userId = user?.odUserId || user?.username;
+      const draftService = await import('../services/draftService');
+      const userId = user.odUserId || user.username;
 
-        const [history, stats] = await Promise.all([
-          draftService.getUserDraftHistory(userId),
-          draftService.getUserDraftStats(userId)
-        ]);
+      const [history, stats] = await Promise.all([
+        draftService.getUserDraftHistory(userId),
+        draftService.getUserDraftStats(userId)
+      ]);
 
-        setDraftHistory(history || []);
-        setDraftStats(stats);
-      } catch (err) {
-        console.error('[DraftHistoryScreen] Error loading history:', err);
-        setDraftHistory([]);
-      } finally {
-        setHistoryLoading(false);
-      }
+      setDraftHistory(history);
+      setDraftStats(stats);
+      setHistoryLoading(false);
     };
 
-    if (user) {
-      loadHistory();
-    }
+    loadHistory();
   }, [user]);
+
+  const currentUserId = user.odUserId || user.username;
 
   return (
     <div style={containerStyle}>
@@ -103,7 +95,7 @@ const DraftHistoryScreen = ({
                 textAlign: 'center'
               }}>
                 <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#8b5cf6' }}>
-                  {draftStats.totalDrafts || 0}
+                  {draftStats.totalDrafts}
                 </div>
                 <div style={{ color: '#8b949e', fontSize: '12px' }}>Total Drafts</div>
               </div>
@@ -115,7 +107,7 @@ const DraftHistoryScreen = ({
                 textAlign: 'center'
               }}>
                 <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#10b981' }}>
-                  {draftStats.multiplayerDrafts || 0}
+                  {draftStats.multiplayerDrafts}
                 </div>
                 <div style={{ color: '#8b949e', fontSize: '12px' }}>Multiplayer</div>
               </div>
@@ -127,7 +119,7 @@ const DraftHistoryScreen = ({
                 textAlign: 'center'
               }}>
                 <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#f59e0b' }}>
-                  {draftStats.trainingDrafts || 0}
+                  {draftStats.trainingDrafts}
                 </div>
                 <div style={{ color: '#8b949e', fontSize: '12px' }}>Training</div>
               </div>
