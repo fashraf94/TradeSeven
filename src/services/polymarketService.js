@@ -5,6 +5,8 @@
  * No authentication required.
  */
 
+import { enhanceEventWithParlays } from './earningsReactionsService';
+
 const GAMMA_API_BASE = 'https://gamma-api.polymarket.com';
 
 // Cache for 5 minutes
@@ -546,19 +548,24 @@ export async function fetchEarningsMarkets(useCache = true) {
     // If no real data found, use test data
     if (earnings.length === 0) {
       console.log('[Polymarket] No earnings found from API, using test data');
-      earningsCache = { data: TEST_EARNINGS_DATA, lastFetched: Date.now() };
-      return TEST_EARNINGS_DATA;
+      const enhancedTestData = TEST_EARNINGS_DATA.map(event => enhanceEventWithParlays(event));
+      earningsCache = { data: enhancedTestData, lastFetched: Date.now() };
+      return enhancedTestData;
     }
 
+    // Enhance with parlay data
+    const enhancedEarnings = earnings.map(event => enhanceEventWithParlays(event));
+
     // Update cache
-    earningsCache = { data: earnings, lastFetched: Date.now() };
-    return earnings;
+    earningsCache = { data: enhancedEarnings, lastFetched: Date.now() };
+    return enhancedEarnings;
   } catch (error) {
     console.error('[Polymarket] Fetch error:', error);
     // Return test data on error
     if (!earningsCache.data) {
       console.log('[Polymarket] Using test data due to error');
-      return TEST_EARNINGS_DATA;
+      const enhancedTestData = TEST_EARNINGS_DATA.map(event => enhanceEventWithParlays(event));
+      return enhancedTestData;
     }
     return earningsCache.data;
   }

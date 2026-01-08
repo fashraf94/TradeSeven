@@ -2,7 +2,7 @@
  * useEarningsGame.js
  *
  * Custom hook for EarningsGame state management.
- * Follows the same pattern as useDraft.js
+ * Updated for parlay system (outcome + magnitude).
  */
 
 import { useState, useCallback, useMemo } from 'react';
@@ -11,25 +11,22 @@ export const BUDGET = 10000;
 export const MIN_PREDICTIONS = 3;
 export const MAX_PREDICTIONS = 10;
 
-function getMultiplier(odds) {
-  if (odds >= 0.90) return 1.1;
-  if (odds >= 0.70) return 1.3;
-  if (odds >= 0.50) return 1.5;
-  if (odds >= 0.30) return 2.0;
-  return 3.0;
-}
-
 export function useEarningsGame() {
   const [predictions, setPredictions] = useState([]);
   const [isLocked, setIsLocked] = useState(false);
   const [error, setError] = useState(null);
 
   const totalSpent = useMemo(() =>
-    predictions.reduce((sum, p) => sum + p.cost, 0),
+    predictions.reduce((sum, p) => sum + p.price, 0),
     [predictions]
   );
 
   const budgetRemaining = useMemo(() => BUDGET - totalSpent, [totalSpent]);
+
+  const totalPotentialPoints = useMemo(() =>
+    predictions.reduce((sum, p) => sum + p.potentialPoints, 0),
+    [predictions]
+  );
 
   const isValid = useMemo(() =>
     predictions.length >= MIN_PREDICTIONS &&
@@ -38,28 +35,71 @@ export function useEarningsGame() {
     [predictions, totalSpent]
   );
 
-  const addPrediction = useCallback((event, type) => {
-    if (isLocked) return false;
-    if (predictions.find(p => p.eventId === event.id)) return false;
-    if (predictions.length >= MAX_PREDICTIONS) return false;
+  const validationMessage = useMemo(() => {
+    if (predictions.length < MIN_PREDICTIONS) {
+      return `Need ${MIN_PREDICTIONS - predictions.length} more prediction${MIN_PREDICTIONS - predictions.length > 1 ? 's' : ''}`;
+    }
+    if (predictions.length >= MAX_PREDICTIONS) {
+      return 'Maximum predictions reached';
+    }
+    if (totalSpent > BUDGET) {
+      return 'Over budget';
+    }
+    return null;
+  }, [predictions, totalSpent]);
 
-    const cost = type === 'beat' ? event.yesCost : event.noCost;
-    const odds = type === 'beat' ? event.yesOdds : event.noOdds;
+  /**
+   * Add a parlay prediction
+   * @param {Object} event - The earnings event
+   * @param {Object} parlay - The selected parlay (from event.parlays)
+   */
+  const addPrediction = useCallback((event, parlay) => {
+    if (isLocked) {
+      setError('Portfolio is locked');
+      return false;
+    }
 
-    if (cost > budgetRemaining) return false;
+    if (predictions.find(p => p.eventId === event.id)) {
+      setError('Already have a prediction for this event');
+      return false;
+    }
 
-    const multiplier = getMultiplier(odds);
+    if (predictions.length >= MAX_PREDICTIONS) {
+      setError('Maximum predictions reached');
+      return false;
+    }
+
+    if (parlay.price > budgetRemaining) {
+      setError('Insufficient budget');
+      return false;
+    }
 
     setPredictions(prev => [...prev, {
       eventId: event.id,
       symbol: event.symbol,
       companyName: event.companyName,
       reportDate: event.reportDate,
-      prediction: type,
-      cost,
-      odds,
-      multiplier,
-      potentialPoints: Math.round(cost * multiplier)
+
+      // Parlay details
+      parlayId: parlay.id,
+      outcome: parlay.outcome,
+      magnitude: parlay.magnitude,
+      label: parlay.label,
+      emoji: parlay.emoji,
+      range: parlay.range,
+
+      // Pricing
+      price: parlay.price,
+      combinedProb: parlay.combinedProb,
+      multiplier: parlay.multiplier,
+      potentialPoints: parlay.potentialPoints,
+      risk: parlay.risk,
+
+      // Polymarket odds at time of prediction
+      beatOdds: event.yesOdds,
+      missOdds: event.noOdds,
+
+      addedAt: new Date()
     }]);
 
     setError(null);
@@ -67,16 +107,24 @@ export function useEarningsGame() {
   }, [predictions, isLocked, budgetRemaining]);
 
   const removePrediction = useCallback((eventId) => {
-    if (isLocked) return false;
+    if (isLocked) {
+      setError('Portfolio is locked');
+      return false;
+    }
     setPredictions(prev => prev.filter(p => p.eventId !== eventId));
+    setError(null);
     return true;
   }, [isLocked]);
 
   const lockPortfolio = useCallback(() => {
-    if (!isValid) return false;
+    if (!isValid) {
+      setError(validationMessage);
+      return false;
+    }
     setIsLocked(true);
+    setError(null);
     return true;
-  }, [isValid]);
+  }, [isValid, validationMessage]);
 
   const reset = useCallback(() => {
     setPredictions([]);
@@ -84,17 +132,82 @@ export function useEarningsGame() {
     setError(null);
   }, []);
 
+  /**
+   * Calculate score given results
+   * @param {Object} results - Map of eventId -> { outcome: 'beat'|'miss', move: number }
+   */
+  const calculateScore = useCallback((results) => {
+    let totalPoints = 0;
+    let correct = 0;
+    let incorrect = 0;
+    let pending = 0;
+
+    const scored = predictions.map(pred => {
+      const result = results[pred.eventId];
+
+      if (!result) {
+        pending++;
+        return { ...pred, status: 'pending', pointsEarned: null };
+      }
+
+      // Check outcome (beat/miss)
+      const outcomeCorrect = pred.outcome === result.outcome;
+
+      // Check magnitude
+      let magnitudeCorrect = false;
+      const move = result.move;
+
+      if (pred.magnitude === 'upBig' && move > 5) magnitudeCorrect = true;
+      else if (pred.magnitude === 'up' && move >= 2 && move <= 5) magnitudeCorrect = true;
+      else if (pred.magnitude === 'flat' && move > -2 && move < 2) magnitudeCorrect = true;
+      else if (pred.magnitude === 'down' && move <= -2 && move > -5) magnitudeCorrect = true;
+      else if (pred.magnitude === 'downBig' && move <= -5) magnitudeCorrect = true;
+
+      // Both must be correct for parlay
+      const isCorrect = outcomeCorrect && magnitudeCorrect;
+
+      if (isCorrect) {
+        correct++;
+        totalPoints += pred.potentialPoints;
+        return { ...pred, status: 'correct', pointsEarned: pred.potentialPoints };
+      } else {
+        incorrect++;
+        return {
+          ...pred,
+          status: 'incorrect',
+          pointsEarned: 0,
+          outcomeCorrect,
+          magnitudeCorrect
+        };
+      }
+    });
+
+    return {
+      totalPoints,
+      correct,
+      incorrect,
+      pending,
+      predictions: scored,
+      accuracy: correct + incorrect > 0
+        ? Math.round((correct / (correct + incorrect)) * 100)
+        : 0
+    };
+  }, [predictions]);
+
   return {
     predictions,
     totalSpent,
     budgetRemaining,
+    totalPotentialPoints,
     isLocked,
     isValid,
+    validationMessage,
     error,
     addPrediction,
     removePrediction,
     lockPortfolio,
     reset,
+    calculateScore,
     BUDGET,
     MIN_PREDICTIONS,
     MAX_PREDICTIONS
