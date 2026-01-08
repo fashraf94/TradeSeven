@@ -22,6 +22,7 @@ const EarningsGameScreen = ({
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('calendar');
   const [expandedEvent, setExpandedEvent] = useState(null);
+  const [expandedWeek, setExpandedWeek] = useState(null);
 
   // Constants
   const BUDGET = 10000;
@@ -33,12 +34,12 @@ const EarningsGameScreen = ({
   const budgetRemaining = BUDGET - totalSpent;
   const isValid = predictions.length >= MIN_PREDICTIONS && totalSpent <= BUDGET;
 
-  // Load data
+  // Load data - fetch through Feb 9, 2026 (approximately 45 days)
   useEffect(() => {
     const loadData = async () => {
       try {
         const service = await import('../services/polymarketService');
-        const data = await service.getUpcomingEarnings(14);
+        const data = await service.getUpcomingEarnings(45);
         setEvents(data);
       } catch (err) {
         setError(err.message);
@@ -58,6 +59,42 @@ const EarningsGameScreen = ({
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push(event);
     });
+    return grouped;
+  }, [events]);
+
+  // Group events by week
+  const eventsByWeek = useMemo(() => {
+    const grouped = {};
+
+    events.forEach(event => {
+      if (!event.reportDate) return;
+      const date = new Date(event.reportDate);
+
+      // Get the Monday of the week
+      const day = date.getDay();
+      const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(date);
+      monday.setDate(diff);
+      monday.setHours(0, 0, 0, 0);
+
+      const weekKey = monday.toISOString().split('T')[0];
+
+      if (!grouped[weekKey]) {
+        grouped[weekKey] = {
+          weekStart: new Date(monday),
+          weekEnd: new Date(monday.getTime() + 6 * 24 * 60 * 60 * 1000),
+          events: []
+        };
+      }
+
+      grouped[weekKey].events.push(event);
+    });
+
+    // Sort events within each week by date
+    Object.values(grouped).forEach(week => {
+      week.events.sort((a, b) => new Date(a.reportDate) - new Date(b.reportDate));
+    });
+
     return grouped;
   }, [events]);
 
@@ -162,34 +199,202 @@ const EarningsGameScreen = ({
         {/* Calendar Tab */}
         {activeTab === 'calendar' && (
           <div>
-            <h2 style={{ color: defaultColors.cyan, marginBottom: '16px' }}>Upcoming Earnings</h2>
+            <h2 style={{ color: defaultColors.cyan, marginBottom: '16px' }}>
+              Earnings Season Calendar
+            </h2>
+            <p style={{ color: '#a0a0a0', marginBottom: '24px', fontSize: '14px' }}>
+              Q4 2025 earnings season: January - February 2026
+            </p>
+
             {events.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '60px', color: '#a0a0a0' }}>
                 <p>No upcoming earnings markets found</p>
-                <p style={{ fontSize: '14px' }}>Check back during earnings season (Jan, Apr, Jul, Oct)</p>
+                <p style={{ fontSize: '14px' }}>Check back during earnings season</p>
                 <a href="https://polymarket.com/earnings" target="_blank" rel="noopener noreferrer" style={{ color: defaultColors.cyan }}>View Polymarket</a>
               </div>
             ) : (
-              Object.entries(eventsByDate).map(([date, dayEvents]) => (
-                <div key={date} style={{ marginBottom: '24px' }}>
-                  <div style={{ color: '#a0a0a0', marginBottom: '12px', fontWeight: '600' }}>{date}</div>
-                  {dayEvents.map(event => (
-                    <div key={event.id} style={{ padding: '16px', background: defaultColors.cardBg, border: `1px solid ${defaultColors.border}`, borderRadius: '12px', marginBottom: '8px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <div><strong>{event.symbol}</strong> <span style={{ color: '#a0a0a0' }}>{event.companyName}</span></div>
-                        <div style={{ color: '#a0a0a0' }}>{event.beatProbability}% Beat</div>
+              <div>
+                {Object.entries(eventsByWeek)
+                  .sort(([a], [b]) => new Date(a) - new Date(b))
+                  .map(([weekKey, weekData]) => {
+                    const isExpanded = expandedWeek === weekKey;
+                    const weekStart = new Date(weekData.weekStart);
+                    const weekEnd = new Date(weekData.weekEnd);
+
+                    const formatWeekDate = (date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+                    return (
+                      <div key={weekKey} style={{ marginBottom: '12px' }}>
+                        {/* Week Header */}
+                        <button
+                          onClick={() => setExpandedWeek(isExpanded ? null : weekKey)}
+                          style={{
+                            width: '100%',
+                            padding: '16px 20px',
+                            background: defaultColors.cardBg,
+                            border: `1px solid ${defaultColors.border}`,
+                            borderRadius: isExpanded ? '12px 12px 0 0' : '12px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            textAlign: 'left'
+                          }}
+                        >
+                          <div>
+                            <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '16px' }}>
+                              Week of {formatWeekDate(weekStart)}
+                            </div>
+                            <div style={{ color: '#a0a0a0', fontSize: '14px', marginTop: '4px' }}>
+                              {formatWeekDate(weekStart)} - {formatWeekDate(weekEnd)}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{
+                              padding: '4px 12px',
+                              background: 'rgba(0, 217, 255, 0.1)',
+                              borderRadius: '20px',
+                              color: defaultColors.cyan,
+                              fontSize: '14px',
+                              fontWeight: 'bold'
+                            }}>
+                              {weekData.events.length} earnings
+                            </div>
+                            <span style={{ color: '#a0a0a0', fontSize: '20px' }}>
+                              {isExpanded ? '▼' : '▶'}
+                            </span>
+                          </div>
+                        </button>
+
+                        {/* Week Events */}
+                        {isExpanded && (
+                          <div style={{
+                            background: 'rgba(18, 18, 26, 0.5)',
+                            border: `1px solid ${defaultColors.border}`,
+                            borderTop: 'none',
+                            borderRadius: '0 0 12px 12px',
+                            padding: '12px'
+                          }}>
+                            {weekData.events.map(event => {
+                              const eventDate = new Date(event.reportDate);
+                              const dayName = eventDate.toLocaleDateString('en-US', { weekday: 'short' });
+                              const hasPrediction = predictions.find(p => p.eventId === event.id);
+
+                              return (
+                                <div
+                                  key={event.id}
+                                  style={{
+                                    padding: '12px 16px',
+                                    background: hasPrediction
+                                      ? 'rgba(0, 217, 255, 0.1)'
+                                      : defaultColors.cardBg,
+                                    border: `1px solid ${hasPrediction ? defaultColors.cyan : defaultColors.border}`,
+                                    borderRadius: '8px',
+                                    marginBottom: '8px'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                      <span style={{
+                                        padding: '4px 8px',
+                                        background: defaultColors.border,
+                                        borderRadius: '4px',
+                                        fontSize: '12px',
+                                        color: '#a0a0a0'
+                                      }}>
+                                        {dayName}
+                                      </span>
+                                      <span style={{ fontWeight: 'bold', fontSize: '16px' }}>{event.symbol}</span>
+                                      {hasPrediction && (
+                                        <span style={{
+                                          padding: '2px 8px',
+                                          background: hasPrediction.prediction === 'beat' ? '#10b981' : '#ef4444',
+                                          borderRadius: '4px',
+                                          fontSize: '11px',
+                                          color: '#fff'
+                                        }}>
+                                          {hasPrediction.prediction.toUpperCase()}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                      <span style={{ color: '#a0a0a0', fontSize: '14px' }}>
+                                        {event.beatProbability}% Beat
+                                      </span>
+                                      <span style={{ fontFamily: 'monospace', fontSize: '14px' }}>
+                                        <span style={{ color: '#10b981' }}>${event.yesCost.toLocaleString()}</span>
+                                        <span style={{ color: '#a0a0a0' }}> / </span>
+                                        <span style={{ color: '#ef4444' }}>${event.noCost.toLocaleString()}</span>
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Quick add buttons */}
+                                  {!hasPrediction && !isLocked && expandedEvent === event.id && (
+                                    <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleAdd(event, 'beat'); }}
+                                        style={{ padding: '10px', background: 'rgba(16,185,129,0.1)', border: '1px solid #10b981', borderRadius: '8px', cursor: 'pointer' }}
+                                      >
+                                        <div style={{ color: '#10b981', fontWeight: 'bold' }}>BEAT ${event.yesCost.toLocaleString()}</div>
+                                      </button>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleAdd(event, 'miss'); }}
+                                        style={{ padding: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: '8px', cursor: 'pointer' }}
+                                      >
+                                        <div style={{ color: '#ef4444', fontWeight: 'bold' }}>MISS ${event.noCost.toLocaleString()}</div>
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  {/* Click to expand */}
+                                  {!hasPrediction && !isLocked && expandedEvent !== event.id && (
+                                    <button
+                                      onClick={() => setExpandedEvent(event.id)}
+                                      style={{
+                                        marginTop: '8px',
+                                        padding: '8px',
+                                        width: '100%',
+                                        background: 'transparent',
+                                        border: `1px dashed ${defaultColors.border}`,
+                                        borderRadius: '6px',
+                                        color: '#a0a0a0',
+                                        cursor: 'pointer',
+                                        fontSize: '13px'
+                                      }}
+                                    >
+                                      + Add Prediction
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
-                      <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
-                        <span style={{ color: '#10b981' }}>${event.yesCost.toLocaleString()}</span>
-                        <span style={{ color: '#a0a0a0' }}>/</span>
-                        <span style={{ color: '#ef4444' }}>${event.noCost.toLocaleString()}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))
+                    );
+                  })}
+              </div>
             )}
-            <button onClick={() => setActiveTab('builder')} style={{ width: '100%', padding: '16px', background: defaultColors.cyan, border: 'none', borderRadius: '12px', color: '#000', fontWeight: 'bold', cursor: 'pointer' }}>Build Portfolio</button>
+
+            {events.length > 0 && (
+              <button
+                onClick={() => setActiveTab('builder')}
+                style={{
+                  width: '100%',
+                  padding: '16px',
+                  marginTop: '24px',
+                  background: defaultColors.cyan,
+                  border: 'none',
+                  borderRadius: '12px',
+                  color: '#000',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+              >
+                Build Portfolio →
+              </button>
+            )}
           </div>
         )}
 

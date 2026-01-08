@@ -163,9 +163,9 @@ export async function fetchEarningsMarkets(useCache = true) {
 }
 
 /**
- * Get upcoming earnings (next N days)
+ * Get upcoming earnings (default to 45 days for full earnings season)
  */
-export async function getUpcomingEarnings(days = 14) {
+export async function getUpcomingEarnings(days = 45) {
   const all = await fetchEarningsMarkets();
   const now = new Date();
   const cutoff = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
