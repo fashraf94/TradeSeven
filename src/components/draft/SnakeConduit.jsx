@@ -1,67 +1,59 @@
 import React from 'react';
 
 /**
- * SnakeConduit - Animated Slithering Snake Connecting Players
+ * SnakeConduit - Animated Snake Wave Connecting Players
  *
- * SVG-based animated snake with glowing green neon effect that connects
- * player panels in an arc formation. Features slithering animation,
- * scale pattern, and tongue flick. Desktop only.
+ * SVG-based animated snake with glowing green neon effect that flows
+ * in a wave pattern AROUND player panels (not through them).
+ * The wave peaks occur BETWEEN cards, troughs are where cards ARE.
+ * Desktop only.
  */
 
 const SnakeConduit = ({
-  width = 800,
-  height = 80,
+  width = 900,
+  height = 200,
   playerCount = 3,
-  activeIndex = -1, // Which player is current picker (head points toward them)
-  currentPickerPosition = 'center', // 'left', 'center', 'right'
 }) => {
-  // Generate main snake path based on player count
-  const generateSnakePath = () => {
-    if (playerCount === 3) {
-      // Curved arc connecting 3 players with wave effect built into path
-      return `M 60,${height / 2}
-              C 150,${height * 0.3} 250,${height * 0.7} 350,${height / 2}
-              C 450,${height * 0.3} 550,${height * 0.7} ${width - 60},${height / 2}`;
-    }
-    if (playerCount === 4) {
-      const segment = width / 4;
-      return `M 50,${height / 2}
-              C ${segment},${height * 0.25} ${segment * 1.5},${height * 0.75} ${segment * 2},${height / 2}
-              C ${segment * 2.5},${height * 0.25} ${segment * 3},${height * 0.75} ${width - 50},${height / 2}`;
-    }
-    // Default: single wave
-    return `M 60,${height / 2}
-            C ${width * 0.3},${height * 0.2} ${width * 0.7},${height * 0.8} ${width - 60},${height / 2}`;
+  // Generate wave path that flows AROUND player positions
+  // Cards are roughly at: left (150), center (450), right (750) in a 900-width viewBox
+  // Wave troughs (lowest points) should be BETWEEN cards
+  // Wave peaks (highest points) should align with card positions (so snake goes behind/below)
+  const generateWavePath = () => {
+    // The wave goes: low -> high -> low -> high -> low -> high -> low
+    // Low points at edges and between cards, high points at card positions
+    return `M -50,120
+            Q 75,180 150,120
+            Q 225,60 300,120
+            Q 375,180 450,120
+            Q 525,60 600,120
+            Q 675,180 750,120
+            Q 825,60 950,120`;
   };
 
-  // Calculate head position based on current picker
-  const getHeadPosition = () => {
-    switch (currentPickerPosition) {
-      case 'left':
-        return { x: 60, y: height / 2, rotation: 180 };
-      case 'right':
-        return { x: width - 60, y: height / 2, rotation: 0 };
-      case 'center':
-      default:
-        return { x: width / 2, y: height / 2, rotation: activeIndex === 0 ? 180 : 0 };
-    }
+  // Alternate wave for animation
+  const generateWavePathAlt = () => {
+    return `M -50,120
+            Q 75,160 150,120
+            Q 225,80 300,120
+            Q 375,160 450,120
+            Q 525,80 600,120
+            Q 675,160 750,120
+            Q 825,80 950,120`;
   };
-
-  const headPos = getHeadPosition();
 
   return (
     <div
       className="snake-conduit-container"
       style={{
         position: 'absolute',
-        top: '50%',
+        top: '-30px',
         left: '50%',
-        transform: 'translate(-50%, -50%)',
+        transform: 'translateX(-50%)',
         width: '100%',
         maxWidth: `${width}px`,
         height: `${height}px`,
         pointerEvents: 'none',
-        zIndex: 0,
+        zIndex: 1, // Below player cards (cards should be z-index: 5+)
       }}
     >
       <svg
@@ -71,6 +63,7 @@ const SnakeConduit = ({
           height: '100%',
           overflow: 'visible',
         }}
+        preserveAspectRatio="xMidYMid meet"
       >
         <defs>
           {/* Snake glow filter */}
@@ -84,29 +77,13 @@ const SnakeConduit = ({
             </feMerge>
           </filter>
 
-          {/* Stronger glow for head */}
-          <filter id="snake-glow-strong" x="-100%" y="-100%" width="300%" height="300%">
-            <feGaussianBlur stdDeviation="4" result="blur1" />
-            <feGaussianBlur stdDeviation="8" result="blur2" />
-            <feMerge>
-              <feMergeNode in="blur2" />
-              <feMergeNode in="blur2" />
-              <feMergeNode in="blur1" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-
-          {/* Scale pattern */}
-          <pattern id="snake-scales" patternUnits="userSpaceOnUse" width="12" height="8">
-            <ellipse cx="6" cy="4" rx="5" ry="3" fill="none" stroke="#00ff88" strokeWidth="0.5" opacity="0.6" />
-          </pattern>
-
           {/* Gradient along snake body */}
           <linearGradient id="snake-body-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#00ff88" stopOpacity="0.6" />
-            <stop offset="30%" stopColor="#00ff88" stopOpacity="1" />
-            <stop offset="70%" stopColor="#00ff88" stopOpacity="1" />
-            <stop offset="100%" stopColor="#00ff88" stopOpacity="0.6" />
+            <stop offset="0%" stopColor="#00ff88" stopOpacity="0.2" />
+            <stop offset="20%" stopColor="#00ff88" stopOpacity="0.8" />
+            <stop offset="50%" stopColor="#00ff88" stopOpacity="1" />
+            <stop offset="80%" stopColor="#00ff88" stopOpacity="0.8" />
+            <stop offset="100%" stopColor="#00ff88" stopOpacity="0.2" />
           </linearGradient>
 
           {/* Animated shimmer gradient */}
@@ -114,32 +91,37 @@ const SnakeConduit = ({
             <stop offset="0%" stopColor="transparent">
               <animate attributeName="offset" values="-0.3;1" dur="2s" repeatCount="indefinite" />
             </stop>
-            <stop offset="15%" stopColor="rgba(0, 255, 255, 0.6)">
+            <stop offset="15%" stopColor="rgba(0, 255, 255, 0.5)">
               <animate attributeName="offset" values="-0.15;1.15" dur="2s" repeatCount="indefinite" />
             </stop>
             <stop offset="30%" stopColor="transparent">
               <animate attributeName="offset" values="0;1.3" dur="2s" repeatCount="indefinite" />
             </stop>
           </linearGradient>
+
+          {/* Scale pattern for snake texture */}
+          <pattern id="snake-scales-pattern" patternUnits="userSpaceOnUse" width="20" height="12">
+            <ellipse cx="10" cy="6" rx="8" ry="4" fill="none" stroke="#00ff88" strokeWidth="0.5" opacity="0.4" />
+          </pattern>
         </defs>
 
         {/* Snake body - outer glow layer */}
         <path
-          d={generateSnakePath()}
+          d={generateWavePath()}
           stroke="#00ff88"
-          strokeWidth="18"
+          strokeWidth="16"
           fill="none"
           strokeLinecap="round"
           filter="url(#snake-glow)"
-          opacity="0.3"
+          opacity="0.25"
           className="snake-body-glow"
         />
 
-        {/* Snake body - main */}
+        {/* Snake body - main stroke */}
         <path
-          d={generateSnakePath()}
+          d={generateWavePath()}
           stroke="url(#snake-body-gradient)"
-          strokeWidth="10"
+          strokeWidth="8"
           fill="none"
           strokeLinecap="round"
           filter="url(#snake-glow)"
@@ -148,112 +130,47 @@ const SnakeConduit = ({
 
         {/* Snake body - scale pattern overlay */}
         <path
-          d={generateSnakePath()}
-          stroke="url(#snake-scales)"
-          strokeWidth="8"
+          d={generateWavePath()}
+          stroke="url(#snake-scales-pattern)"
+          strokeWidth="6"
           fill="none"
           strokeLinecap="round"
           className="snake-scales"
-          opacity="0.7"
+          opacity="0.5"
         />
 
-        {/* Snake body - center highlight */}
+        {/* Snake body - center highlight line */}
         <path
-          d={generateSnakePath()}
+          d={generateWavePath()}
           stroke="#88ffcc"
-          strokeWidth="2"
+          strokeWidth="1.5"
           fill="none"
           strokeLinecap="round"
-          opacity="0.5"
+          opacity="0.4"
           className="snake-highlight"
         />
 
-        {/* Animated shimmer traveling along snake */}
+        {/* Animated dash pattern for slithering effect */}
         <path
-          d={generateSnakePath()}
+          d={generateWavePath()}
+          stroke="#00ff88"
+          strokeWidth="8"
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray="40 25"
+          className="snake-slither-dash"
+          opacity="0.6"
+        />
+
+        {/* Shimmer overlay */}
+        <path
+          d={generateWavePath()}
           stroke="url(#snake-shimmer)"
-          strokeWidth="12"
+          strokeWidth="10"
           fill="none"
           strokeLinecap="round"
           className="snake-shimmer"
         />
-
-        {/* Snake head */}
-        <g
-          className="snake-head"
-          transform={`translate(${headPos.x}, ${headPos.y}) rotate(${headPos.rotation})`}
-        >
-          {/* Head shape - pointed oval */}
-          <ellipse
-            cx="12"
-            cy="0"
-            rx="16"
-            ry="10"
-            fill="#00ff88"
-            filter="url(#snake-glow-strong)"
-          />
-
-          {/* Head gradient overlay */}
-          <ellipse
-            cx="12"
-            cy="0"
-            rx="15"
-            ry="9"
-            fill="url(#snake-body-gradient)"
-          />
-
-          {/* Snout */}
-          <ellipse
-            cx="24"
-            cy="0"
-            rx="8"
-            ry="6"
-            fill="#00ff88"
-          />
-
-          {/* Eyes */}
-          <g className="snake-eyes">
-            {/* Left eye */}
-            <circle cx="8" cy="-4" r="3" fill="#0a0e14" />
-            <circle cx="9" cy="-4.5" r="1.5" fill="#ffff00" className="eye-glow" />
-            <circle cx="9.5" cy="-5" r="0.5" fill="#ffffff" />
-
-            {/* Right eye */}
-            <circle cx="8" cy="4" r="3" fill="#0a0e14" />
-            <circle cx="9" cy="4.5" r="1.5" fill="#ffff00" className="eye-glow" />
-            <circle cx="9.5" cy="5" r="0.5" fill="#ffffff" />
-          </g>
-
-          {/* Nostrils */}
-          <circle cx="26" cy="-2" r="1" fill="#006644" />
-          <circle cx="26" cy="2" r="1" fill="#006644" />
-
-          {/* Forked tongue */}
-          <g className="snake-tongue">
-            <path
-              d="M 30,0 L 45,0 L 52,-4 M 45,0 L 52,4"
-              stroke="#ff3366"
-              strokeWidth="2"
-              fill="none"
-              strokeLinecap="round"
-              filter="url(#snake-glow)"
-            />
-          </g>
-        </g>
-
-        {/* Connection node indicators at player positions */}
-        <g className="player-nodes">
-          {/* Left node */}
-          <circle cx="60" cy={height / 2} r="4" fill="#00ff88" filter="url(#snake-glow)" opacity="0.6" />
-
-          {/* Center node (if 3 players) */}
-          {playerCount >= 3 && (
-            <circle cx={width / 2} cy={height / 2} r="4" fill="#00ff88" filter="url(#snake-glow)" opacity="0.6" />
-          )}
-
-          {/* Right node */}
-          <circle cx={width - 60} cy={height / 2} r="4" fill="#00ff88" filter="url(#snake-glow)" opacity="0.6" />
-        </g>
       </svg>
 
       {/* CSS for animations */}
@@ -268,133 +185,82 @@ const SnakeConduit = ({
           }
         }
 
-        /* Slithering wave animation for snake body */
-        @keyframes snake-slither {
-          0%, 100% {
-            d: path("M 60,40 C 150,24 250,56 350,40 C 450,24 550,56 740,40");
+        /* Slithering dash animation - dashes move along the path */
+        @keyframes slither-dash {
+          0% {
+            stroke-dashoffset: 0;
           }
-          25% {
-            d: path("M 60,40 C 150,48 250,32 350,40 C 450,48 550,32 740,40");
+          100% {
+            stroke-dashoffset: -130;
+          }
+        }
+
+        .snake-slither-dash {
+          animation: slither-dash 2s linear infinite;
+        }
+
+        /* Wave undulation animation */
+        @keyframes snake-wave {
+          0%, 100% {
+            d: path('M -50,120 Q 75,180 150,120 Q 225,60 300,120 Q 375,180 450,120 Q 525,60 600,120 Q 675,180 750,120 Q 825,60 950,120');
           }
           50% {
-            d: path("M 60,40 C 150,56 250,24 350,40 C 450,56 550,24 740,40");
+            d: path('M -50,120 Q 75,160 150,120 Q 225,80 300,120 Q 375,160 450,120 Q 525,80 600,120 Q 675,160 750,120 Q 825,80 950,120');
           }
-          75% {
-            d: path("M 60,40 C 150,32 250,48 350,40 C 450,32 550,48 740,40");
-          }
+        }
+
+        .snake-body-main,
+        .snake-body-glow,
+        .snake-scales,
+        .snake-highlight,
+        .snake-slither-dash {
+          animation: snake-wave 4s ease-in-out infinite;
+        }
+
+        /* Stagger the dash animation */
+        .snake-slither-dash {
+          animation: slither-dash 2s linear infinite, snake-wave 4s ease-in-out infinite;
         }
 
         /* Body glow pulse */
         @keyframes body-pulse {
           0%, 100% {
-            opacity: 0.3;
-            stroke-width: 18px;
+            opacity: 0.25;
+            stroke-width: 16px;
           }
           50% {
-            opacity: 0.5;
-            stroke-width: 22px;
+            opacity: 0.4;
+            stroke-width: 20px;
           }
         }
 
         .snake-body-glow {
-          animation: body-pulse 3s ease-in-out infinite;
-        }
-
-        /* Tongue flick animation */
-        @keyframes tongue-flick {
-          0%, 70%, 100% {
-            transform: scaleX(0);
-            opacity: 0;
-          }
-          75%, 85% {
-            transform: scaleX(1);
-            opacity: 1;
-          }
-          80% {
-            transform: scaleX(1.2);
-            opacity: 1;
-          }
-        }
-
-        .snake-tongue {
-          transform-origin: 30px 0;
-          animation: tongue-flick 3s ease-in-out infinite;
-        }
-
-        /* Eye glow pulse */
-        @keyframes eye-glow {
-          0%, 100% {
-            fill: #ffff00;
-            filter: none;
-          }
-          50% {
-            fill: #ffff88;
-            filter: drop-shadow(0 0 3px #ffff00);
-          }
-        }
-
-        .eye-glow {
-          animation: eye-glow 2s ease-in-out infinite;
-        }
-
-        /* Subtle head bob */
-        @keyframes head-bob {
-          0%, 100% {
-            transform: translate(var(--head-x, 400px), var(--head-y, 40px)) rotate(var(--head-rot, 0deg));
-          }
-          50% {
-            transform: translate(var(--head-x, 400px), calc(var(--head-y, 40px) + 2px)) rotate(var(--head-rot, 0deg));
-          }
+          animation: body-pulse 3s ease-in-out infinite, snake-wave 4s ease-in-out infinite;
         }
 
         /* Scale shimmer */
         @keyframes scale-shimmer {
-          0% {
-            opacity: 0.5;
+          0%, 100% {
+            opacity: 0.4;
           }
           50% {
-            opacity: 0.8;
-          }
-          100% {
-            opacity: 0.5;
+            opacity: 0.7;
           }
         }
 
         .snake-scales {
-          animation: scale-shimmer 4s ease-in-out infinite;
-        }
-
-        /* Draw-in animation on mount */
-        .snake-body-main {
-          stroke-dasharray: 2000;
-          stroke-dashoffset: 2000;
-          animation: snake-draw 1.5s ease-out forwards;
-        }
-
-        @keyframes snake-draw {
-          to {
-            stroke-dashoffset: 0;
-          }
+          animation: scale-shimmer 3s ease-in-out infinite, snake-wave 4s ease-in-out infinite;
         }
 
         /* Reduced motion support */
         @media (prefers-reduced-motion: reduce) {
           .snake-body-glow,
-          .snake-tongue,
-          .eye-glow,
+          .snake-body-main,
           .snake-scales,
-          .snake-body-main {
+          .snake-highlight,
+          .snake-slither-dash,
+          .snake-shimmer {
             animation: none !important;
-          }
-
-          .snake-tongue {
-            transform: scaleX(0.8);
-            opacity: 0.7;
-          }
-
-          .snake-body-main {
-            stroke-dasharray: none;
-            stroke-dashoffset: 0;
           }
         }
       `}</style>

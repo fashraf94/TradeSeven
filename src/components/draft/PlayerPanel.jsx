@@ -95,6 +95,7 @@ const PlayerPanel = ({
           textAlign: 'center',
           minWidth: '100px',
           transition: 'all 0.3s ease',
+          zIndex: 5, // Above snake conduit (z-index: 1)
           ...currentStyle,
         }}
       >
@@ -180,6 +181,7 @@ const PlayerPanel = ({
         textAlign: 'center',
         minWidth: '120px',
         transition: 'all 0.3s ease',
+        zIndex: 5, // Above snake conduit (z-index: 1)
         ...currentStyle,
       }}
     >

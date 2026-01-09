@@ -483,23 +483,8 @@ const DraftRoomScreen = ({
               padding: '20px 0',
             }}
           >
-            {/* SnakeConduit - Animated slithering snake connection behind players */}
-            <SnakeConduit
-              width={900}
-              height={80}
-              playerCount={3}
-              activeIndex={
-                otherPlayers[0]?.odUserId === roomDraft?.currentPlayerId ? 0
-                : roomDraft?.currentPlayerId === currentUserId ? 1
-                : otherPlayers[1]?.odUserId === roomDraft?.currentPlayerId ? 2
-                : -1
-              }
-              currentPickerPosition={
-                otherPlayers[0]?.odUserId === roomDraft?.currentPlayerId ? 'left'
-                : otherPlayers[1]?.odUserId === roomDraft?.currentPlayerId ? 'right'
-                : 'center'
-              }
-            />
+            {/* SnakeConduit - Animated wave snake flowing around players */}
+            <SnakeConduit />
 
             {/* Left opponent */}
             <PlayerPanel
