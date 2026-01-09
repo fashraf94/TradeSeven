@@ -187,6 +187,17 @@ const DraftRoomScreen = ({
   // Get other players for the opponent arc
   const otherPlayers = roomDraft?.players?.filter(p => p.odUserId !== currentUserId) || [];
 
+  // Determine the next picker ID from pick order
+  const getNextPickerId = () => {
+    const pickOrder = roomDraft?.pickOrder;
+    const currentPickIndex = roomDraft?.currentPickIndex || 0;
+    if (pickOrder && currentPickIndex < pickOrder.length - 1) {
+      return pickOrder[currentPickIndex + 1];
+    }
+    return null;
+  };
+  const nextPickerId = getNextPickerId();
+
   // Timer formatting and states
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -430,6 +441,7 @@ const DraftRoomScreen = ({
             <PlayerPanel
               username={otherPlayers[0]?.displayName || 'Player 2'}
               isCurrentPicker={otherPlayers[0]?.odUserId === roomDraft?.currentPlayerId}
+              isNextPicker={otherPlayers[0]?.odUserId === nextPickerId}
               isYou={false}
               isCPU={otherPlayers[0]?.isCPU || false}
               stats={{
@@ -451,6 +463,7 @@ const DraftRoomScreen = ({
                 <PlayerPanel
                   username={isCurrentUserPicking ? 'YOU' : currentPicker?.displayName || 'Unknown'}
                   isCurrentPicker={true}
+                  isNextPicker={false}
                   isYou={isCurrentUserPicking}
                   isCPU={currentPicker?.isCPU || false}
                   stats={{
@@ -470,6 +483,7 @@ const DraftRoomScreen = ({
             <PlayerPanel
               username={otherPlayers[1]?.displayName || 'Player 3'}
               isCurrentPicker={otherPlayers[1]?.odUserId === roomDraft?.currentPlayerId}
+              isNextPicker={otherPlayers[1]?.odUserId === nextPickerId}
               isYou={false}
               isCPU={otherPlayers[1]?.isCPU || false}
               stats={{
@@ -495,6 +509,7 @@ const DraftRoomScreen = ({
             <PlayerPanel
               username={otherPlayers[0]?.displayName || 'Player 2'}
               isCurrentPicker={otherPlayers[0]?.odUserId === roomDraft?.currentPlayerId}
+              isNextPicker={otherPlayers[0]?.odUserId === nextPickerId}
               isYou={false}
               isCPU={otherPlayers[0]?.isCPU || false}
               stats={{
@@ -516,6 +531,7 @@ const DraftRoomScreen = ({
                 <PlayerPanel
                   username={isCurrentUserPicking ? 'YOU' : currentPicker?.displayName || 'Unknown'}
                   isCurrentPicker={true}
+                  isNextPicker={false}
                   isYou={isCurrentUserPicking}
                   isCPU={currentPicker?.isCPU || false}
                   stats={{
@@ -535,6 +551,7 @@ const DraftRoomScreen = ({
             <PlayerPanel
               username={otherPlayers[1]?.displayName || 'Player 3'}
               isCurrentPicker={otherPlayers[1]?.odUserId === roomDraft?.currentPlayerId}
+              isNextPicker={otherPlayers[1]?.odUserId === nextPickerId}
               isYou={false}
               isCPU={otherPlayers[1]?.isCPU || false}
               stats={{

@@ -3,15 +3,17 @@ import React, { useState, useEffect } from 'react';
 /**
  * PlayerPanel - Opponent/Player Panel for Zone B
  *
- * Shows player information with three visual states:
- * 1. Normal (waiting) - dark background, subtle glow
- * 2. Active/Picking - bright cyan border, pulsing glow, progress bar
- * 3. Just Picked - green flash, checkmark animation
+ * Shows player information with visual states using border glows:
+ * 1. Picking (green glow) - current picker with pulsing animation
+ * 2. Next (orange glow) - next player to pick
+ * 3. Waiting (subtle) - all other players
+ * 4. Picked (green flash) - just made a pick
  */
 
 const PlayerPanel = ({
   username = 'Player',
   isCurrentPicker = false,
+  isNextPicker = false,
   isYou = false,
   isCPU = false,
   stats = {
@@ -43,30 +45,39 @@ const PlayerPanel = ({
   const getState = () => {
     if (showPickFlash) return 'picked';
     if (isCurrentPicker) return 'picking';
+    if (isNextPicker) return 'next';
     return 'waiting';
   };
 
   const state = getState();
 
-  // State-based styling
+  // State-based styling with new border glow colors
   const stateStyles = {
     waiting: {
       background: 'var(--holo-bg-card, rgba(10, 20, 30, 0.85))',
-      border: '1px solid var(--holo-border, rgba(0, 255, 255, 0.3))',
-      boxShadow: '0 0 10px rgba(0, 255, 255, 0.1)',
+      border: '1px solid rgba(255, 255, 255, 0.1)',
+      boxShadow: 'none',
+    },
+    next: {
+      background: 'rgba(255, 149, 0, 0.08)',
+      border: '2px solid #ff9500',
+      boxShadow: `
+        0 0 12px rgba(255, 149, 0, 0.5),
+        0 0 25px rgba(255, 149, 0, 0.25)
+      `,
     },
     picking: {
-      background: 'rgba(0, 255, 255, 0.1)',
-      border: '2px solid var(--neon-cyan, #00ffff)',
+      background: 'rgba(0, 255, 136, 0.1)',
+      border: '2px solid #00ff88',
       boxShadow: `
-        0 0 20px rgba(0, 255, 255, 0.5),
-        0 0 40px rgba(0, 255, 255, 0.3),
-        inset 0 0 20px rgba(0, 255, 255, 0.1)
+        0 0 15px rgba(0, 255, 136, 0.6),
+        0 0 30px rgba(0, 255, 136, 0.3),
+        inset 0 0 15px rgba(0, 255, 136, 0.1)
       `,
     },
     picked: {
       background: 'rgba(0, 255, 136, 0.15)',
-      border: '2px solid var(--neon-green, #00ff88)',
+      border: '2px solid #00ff88',
       boxShadow: '0 0 30px rgba(0, 255, 136, 0.5)',
     },
   };
@@ -76,7 +87,7 @@ const PlayerPanel = ({
   if (compact) {
     return (
       <div
-        className={state === 'picking' ? 'picker-pulse' : ''}
+        className={state === 'picking' ? 'picker-pulse-green' : ''}
         style={{
           position: 'relative',
           padding: '8px 16px',
@@ -87,7 +98,7 @@ const PlayerPanel = ({
           ...currentStyle,
         }}
       >
-        {/* Picking badge */}
+        {/* Picking badge - green */}
         {state === 'picking' && (
           <div
             style={{
@@ -96,7 +107,30 @@ const PlayerPanel = ({
               left: '50%',
               transform: 'translateX(-50%)',
               padding: '2px 10px',
-              background: 'var(--neon-cyan, #00ffff)',
+              background: '#00ff88',
+              color: '#0a0e14',
+              fontSize: '8px',
+              fontWeight: '800',
+              letterSpacing: '1px',
+              borderRadius: '2px',
+              textTransform: 'uppercase',
+              boxShadow: '0 0 10px rgba(0, 255, 136, 0.5)',
+            }}
+          >
+            Picking
+          </div>
+        )}
+
+        {/* Next badge - orange */}
+        {state === 'next' && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '-10px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              padding: '2px 10px',
+              background: '#ff9500',
               color: '#0a0e14',
               fontSize: '8px',
               fontWeight: '800',
@@ -105,7 +139,7 @@ const PlayerPanel = ({
               textTransform: 'uppercase',
             }}
           >
-            Picking
+            Next
           </div>
         )}
 
@@ -121,14 +155,16 @@ const PlayerPanel = ({
           {isCPU && <span style={{ fontSize: '10px' }}>🤖</span>}
           <span
             style={{
-              color: state === 'picking' ? 'var(--neon-cyan)' : '#e6edf3',
+              color: state === 'picking' ? '#00ff88'
+                   : state === 'next' ? '#ff9500'
+                   : '#e6edf3',
               fontWeight: '600',
               fontSize: '13px',
             }}
           >
             {isYou ? 'YOU' : username}
           </span>
-          {isYou && <span style={{ color: 'var(--neon-cyan)', fontSize: '10px' }}>★</span>}
+          {isYou && <span style={{ color: '#00ff88', fontSize: '10px' }}>★</span>}
         </div>
       </div>
     );
@@ -136,7 +172,7 @@ const PlayerPanel = ({
 
   return (
     <div
-      className={state === 'picking' ? 'picker-pulse' : ''}
+      className={state === 'picking' ? 'picker-pulse-green' : ''}
       style={{
         position: 'relative',
         padding: '12px 20px',
@@ -147,7 +183,7 @@ const PlayerPanel = ({
         ...currentStyle,
       }}
     >
-      {/* Picking badge */}
+      {/* Picking badge - green */}
       {state === 'picking' && (
         <div
           style={{
@@ -156,17 +192,40 @@ const PlayerPanel = ({
             left: '50%',
             transform: 'translateX(-50%)',
             padding: '3px 14px',
-            background: 'var(--neon-cyan, #00ffff)',
+            background: '#00ff88',
             color: '#0a0e14',
             fontSize: '9px',
             fontWeight: '800',
             letterSpacing: '1.5px',
             borderRadius: '2px',
             textTransform: 'uppercase',
-            boxShadow: '0 0 15px rgba(0, 255, 255, 0.5)',
+            boxShadow: '0 0 15px rgba(0, 255, 136, 0.5)',
           }}
         >
           Picking
+        </div>
+      )}
+
+      {/* Next badge - orange */}
+      {state === 'next' && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '-12px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            padding: '3px 14px',
+            background: '#ff9500',
+            color: '#0a0e14',
+            fontSize: '9px',
+            fontWeight: '800',
+            letterSpacing: '1.5px',
+            borderRadius: '2px',
+            textTransform: 'uppercase',
+            boxShadow: '0 0 10px rgba(255, 149, 0, 0.5)',
+          }}
+        >
+          Next
         </div>
       )}
 
@@ -181,7 +240,7 @@ const PlayerPanel = ({
             width: '24px',
             height: '24px',
             borderRadius: '50%',
-            background: 'var(--neon-green, #00ff88)',
+            background: '#00ff88',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -206,16 +265,17 @@ const PlayerPanel = ({
         {isCPU && <span style={{ fontSize: '12px' }}>🤖</span>}
         <span
           style={{
-            color: state === 'picking'
-              ? 'var(--neon-cyan)'
-              : state === 'picked'
-                ? 'var(--neon-green)'
-                : '#ffffff',
+            color: state === 'picking' ? '#00ff88'
+              : state === 'next' ? '#ff9500'
+              : state === 'picked' ? '#00ff88'
+              : '#ffffff',
             fontWeight: '700',
             fontSize: '14px',
             textShadow: state === 'picking'
-              ? '0 0 10px rgba(0, 255, 255, 0.5)'
-              : 'none',
+              ? '0 0 10px rgba(0, 255, 136, 0.5)'
+              : state === 'next'
+                ? '0 0 8px rgba(255, 149, 0, 0.4)'
+                : 'none',
           }}
         >
           {isYou ? 'YOU' : username}
@@ -223,9 +283,9 @@ const PlayerPanel = ({
         {isYou && (
           <span
             style={{
-              color: 'var(--neon-cyan)',
+              color: '#00ff88',
               fontSize: '12px',
-              textShadow: '0 0 8px rgba(0, 255, 255, 0.6)',
+              textShadow: '0 0 8px rgba(0, 255, 136, 0.6)',
             }}
           >
             ★
@@ -291,23 +351,24 @@ const PlayerPanel = ({
 
       {/* CSS Animations */}
       <style>{`
-        @keyframes picker-pulse {
+        /* Green pulse animation for current picker */
+        @keyframes picker-pulse-green {
           0%, 100% {
             box-shadow:
-              0 0 20px rgba(0, 255, 255, 0.5),
-              0 0 40px rgba(0, 255, 255, 0.3),
-              inset 0 0 20px rgba(0, 255, 255, 0.1);
+              0 0 15px rgba(0, 255, 136, 0.6),
+              0 0 30px rgba(0, 255, 136, 0.3),
+              inset 0 0 15px rgba(0, 255, 136, 0.1);
           }
           50% {
             box-shadow:
-              0 0 30px rgba(0, 255, 255, 0.7),
-              0 0 50px rgba(0, 255, 255, 0.4),
-              inset 0 0 25px rgba(0, 255, 255, 0.15);
+              0 0 25px rgba(0, 255, 136, 0.8),
+              0 0 45px rgba(0, 255, 136, 0.4),
+              inset 0 0 20px rgba(0, 255, 136, 0.15);
           }
         }
 
-        .picker-pulse {
-          animation: picker-pulse 2s ease-in-out infinite;
+        .picker-pulse-green {
+          animation: picker-pulse-green 2s ease-in-out infinite;
         }
 
         @keyframes pick-check-pop {
@@ -326,6 +387,14 @@ const PlayerPanel = ({
 
         .pick-check-animation {
           animation: pick-check-pop 0.4s ease-out forwards;
+        }
+
+        /* Reduced motion support */
+        @media (prefers-reduced-motion: reduce) {
+          .picker-pulse-green,
+          .pick-check-animation {
+            animation: none !important;
+          }
         }
       `}</style>
     </div>
