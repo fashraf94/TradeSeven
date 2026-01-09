@@ -112,15 +112,16 @@ const SnakeConduit = ({
         top: '-30px',
         left: '50%',
         transform: 'translateX(-50%)',
-        width: '100%',
-        maxWidth: `${width}px`,
+        width: '110%', // Extra width for snake heads
+        maxWidth: `${width + 100}px`, // Extra space for heads (50px each side)
         height: `${height}px`,
         pointerEvents: 'none',
         zIndex: 1, // Below player cards (cards should be z-index: 5+)
+        overflow: 'visible', // Allow heads to overflow
       }}
     >
       <svg
-        viewBox={`0 0 ${width} ${height}`}
+        viewBox={`-50 0 ${width + 100} ${height}`}
         style={{
           width: '100%',
           height: '100%',

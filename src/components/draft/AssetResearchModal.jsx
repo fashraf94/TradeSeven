@@ -68,16 +68,25 @@ const getMockFundamentals = (symbol) => {
   return { ...defaults, ...(stockData[symbol] || {}) };
 };
 
+// Helper function for safe number formatting
+const safeToFixed = (value, decimals = 2) => {
+  if (value === undefined || value === null || isNaN(value)) {
+    return decimals === 0 ? '0' : '0.' + '0'.repeat(decimals);
+  }
+  return Number(value).toFixed(decimals);
+};
+
 // Mock technical data (in production, fetch from API)
 const getMockTechnicalData = (symbol, price) => {
+  const safePrice = price || 100; // Default to 100 if price is undefined
   const defaults = {
     rsi: 50,
     macdSignal: 'neutral',
     vs50DayMA: 0,
     volumeRatio: 1.0,
-    support: price * 0.95,
-    resistance: price * 1.05,
-    currentPrice: price,
+    support: safePrice * 0.95,
+    resistance: safePrice * 1.05,
+    currentPrice: safePrice,
     trend7Day: 0,
     todayChange: 0,
     momentum: 'neutral',
@@ -168,7 +177,7 @@ const TechnicalAnalysisTab = ({ asset, fundamentals }) => {
           fontSize: '13px',
           fontWeight: '600'
         }}>
-          Today: {tech.todayChange >= 0 ? '+' : ''}{tech.todayChange.toFixed(2)}%
+          Today: {tech.todayChange >= 0 ? '+' : ''}{safeToFixed(tech.todayChange, 2)}%
         </span>
       </div>
 
@@ -229,7 +238,7 @@ const TechnicalAnalysisTab = ({ asset, fundamentals }) => {
             fontSize: '13px',
             fontWeight: '600'
           }}>
-            {tech.vs50DayMA >= 0 ? 'Above' : 'Below'} ({tech.vs50DayMA >= 0 ? '+' : ''}{tech.vs50DayMA.toFixed(1)}%)
+            {tech.vs50DayMA >= 0 ? 'Above' : 'Below'} ({tech.vs50DayMA >= 0 ? '+' : ''}{safeToFixed(tech.vs50DayMA, 1)}%)
           </span>
         </div>
 
@@ -237,7 +246,7 @@ const TechnicalAnalysisTab = ({ asset, fundamentals }) => {
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: 'rgba(255, 255, 255, 0.02)' }}>
           <span style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '13px' }}>Volume</span>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: '600' }}>
-            {tech.volumeRatio.toFixed(1)}x avg
+            {safeToFixed(tech.volumeRatio, 1)}x avg
           </span>
         </div>
 
@@ -254,15 +263,15 @@ const TechnicalAnalysisTab = ({ asset, fundamentals }) => {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '16px' }}>
         <div style={{ background: 'rgba(239, 68, 68, 0.1)', borderRadius: '10px', padding: '12px', textAlign: 'center', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
           <div style={{ color: '#ef4444', fontSize: '10px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Support</div>
-          <div style={{ color: '#fff', fontSize: '16px', fontWeight: '700', fontFamily: 'monospace' }}>${tech.support.toFixed(2)}</div>
+          <div style={{ color: '#fff', fontSize: '16px', fontWeight: '700', fontFamily: 'monospace' }}>${safeToFixed(tech.support, 2)}</div>
         </div>
         <div style={{ background: 'rgba(0, 217, 255, 0.1)', borderRadius: '10px', padding: '12px', textAlign: 'center', border: '1px solid rgba(0, 217, 255, 0.2)' }}>
           <div style={{ color: '#00d9ff', fontSize: '10px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Current</div>
-          <div style={{ color: '#fff', fontSize: '16px', fontWeight: '700', fontFamily: 'monospace' }}>${tech.currentPrice.toFixed(2)}</div>
+          <div style={{ color: '#fff', fontSize: '16px', fontWeight: '700', fontFamily: 'monospace' }}>${safeToFixed(tech.currentPrice, 2)}</div>
         </div>
         <div style={{ background: 'rgba(34, 197, 94, 0.1)', borderRadius: '10px', padding: '12px', textAlign: 'center', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
           <div style={{ color: '#22c55e', fontSize: '10px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Resistance</div>
-          <div style={{ color: '#fff', fontSize: '16px', fontWeight: '700', fontFamily: 'monospace' }}>${tech.resistance.toFixed(2)}</div>
+          <div style={{ color: '#fff', fontSize: '16px', fontWeight: '700', fontFamily: 'monospace' }}>${safeToFixed(tech.resistance, 2)}</div>
         </div>
       </div>
 
@@ -292,7 +301,7 @@ const TechnicalAnalysisTab = ({ asset, fundamentals }) => {
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
             <span style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '12px' }}>7-Day Trend</span>
             <span style={{ color: tech.trend7Day >= 0 ? '#22c55e' : '#ef4444', fontWeight: '700', fontSize: '13px' }}>
-              {tech.trend7Day >= 0 ? '+' : ''}{tech.trend7Day.toFixed(2)}%
+              {tech.trend7Day >= 0 ? '+' : ''}{safeToFixed(tech.trend7Day, 2)}%
             </span>
           </div>
           {/* Mini sparkline chart */}
@@ -323,12 +332,12 @@ const TechnicalAnalysisTab = ({ asset, fundamentals }) => {
           <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
             <div style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '10px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>TODAY</div>
             <div style={{ color: tech.todayChange >= 0 ? '#22c55e' : '#ef4444', fontSize: '15px', fontWeight: '700' }}>
-              {tech.todayChange >= 0 ? '+' : ''}{tech.todayChange.toFixed(2)}%
+              {tech.todayChange >= 0 ? '+' : ''}{safeToFixed(tech.todayChange, 2)}%
             </div>
           </div>
           <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
             <div style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '10px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>VOLUME</div>
-            <div style={{ color: '#fff', fontSize: '15px', fontWeight: '700' }}>{tech.volumeRatio.toFixed(1)}x</div>
+            <div style={{ color: '#fff', fontSize: '15px', fontWeight: '700' }}>{safeToFixed(tech.volumeRatio, 1)}x</div>
             <div style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '10px' }}>
               {tech.volumeRatio > 1.3 ? 'High' : tech.volumeRatio < 0.7 ? 'Low' : 'Normal'}
             </div>
