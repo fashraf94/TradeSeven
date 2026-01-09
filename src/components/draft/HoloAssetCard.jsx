@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 
 /**
  * HoloAssetCard - Holographic Asset Module Card
@@ -6,6 +6,8 @@ import React, { useState } from 'react';
  * A cyberpunk-styled card for displaying draft assets with two states:
  * - available: Cyan-themed, interactive, with ACQUIRE button
  * - locked: Red-themed, dimmed, with diagonal "SYSTEM LOCKED" stripe
+ *
+ * Features pick confirmation animation with particles effect.
  */
 
 const HoloAssetCard = ({
@@ -23,6 +25,27 @@ const HoloAssetCard = ({
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
+  const [isPicking, setIsPicking] = useState(false);
+  const [showParticles, setShowParticles] = useState(false);
+
+  // Handle pick with animation
+  const handleAcquire = useCallback(() => {
+    if (isPicking) return;
+
+    setIsPicking(true);
+    setShowParticles(true);
+
+    // Trigger actual pick after animation starts
+    setTimeout(() => {
+      onAcquire?.();
+    }, 150);
+
+    // Clean up animation states
+    setTimeout(() => {
+      setShowParticles(false);
+      setIsPicking(false);
+    }, 600);
+  }, [onAcquire, isPicking]);
 
   const isAvailable = status === 'available';
   const isLocked = status === 'locked';
@@ -55,7 +78,7 @@ const HoloAssetCard = ({
 
   return (
     <div
-      className={`holo-asset-card ${isAvailable ? 'holo-card-hover' : ''}`}
+      className={`holo-asset-card ${isAvailable ? 'holo-card-hover' : ''} ${isPicking ? 'pick-confirming' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => {
         setIsHovered(false);
@@ -68,26 +91,32 @@ const HoloAssetCard = ({
         maxWidth: '180px',
         background: isLocked
           ? 'rgba(20, 15, 20, 0.9)'
-          : 'rgba(10, 20, 30, 0.9)',
+          : isPicking
+            ? 'rgba(0, 255, 255, 0.15)'
+            : 'rgba(10, 20, 30, 0.9)',
         border: isLocked
           ? '1px solid rgba(255, 51, 102, 0.4)'
-          : isHovered
-            ? '1px solid rgba(0, 255, 255, 0.6)'
-            : '1px solid rgba(0, 255, 255, 0.3)',
+          : isPicking
+            ? '1px solid rgba(0, 255, 255, 0.9)'
+            : isHovered
+              ? '1px solid rgba(0, 255, 255, 0.6)'
+              : '1px solid rgba(0, 255, 255, 0.3)',
         borderRadius: '4px',
         clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%)',
         padding: '0',
         overflow: 'hidden',
         opacity: isLocked ? 0.85 : 1,
-        filter: isLocked ? 'saturate(0.6)' : 'none',
+        filter: isLocked ? 'saturate(0.6)' : isPicking ? 'brightness(1.3)' : 'none',
         boxShadow: isLocked
           ? '0 0 15px rgba(255, 51, 102, 0.2)'
-          : isHovered
-            ? '0 0 20px rgba(0, 255, 255, 0.4), 0 0 40px rgba(0, 255, 255, 0.2)'
-            : '0 0 15px rgba(0, 255, 255, 0.15)',
-        transition: 'all 0.2s ease',
-        transform: isHovered && isAvailable ? 'translateY(-2px)' : 'none',
-        cursor: isLocked || disabled ? 'not-allowed' : 'pointer',
+          : isPicking
+            ? '0 0 30px rgba(0, 255, 255, 0.8), 0 0 60px rgba(0, 255, 255, 0.4), inset 0 0 30px rgba(0, 255, 255, 0.2)'
+            : isHovered
+              ? '0 0 20px rgba(0, 255, 255, 0.4), 0 0 40px rgba(0, 255, 255, 0.2)'
+              : '0 0 15px rgba(0, 255, 255, 0.15)',
+        transition: 'all 0.15s ease',
+        transform: isPicking ? 'scale(1.05)' : isHovered && isAvailable ? 'translateY(-2px)' : 'none',
+        cursor: isLocked || disabled || isPicking ? 'not-allowed' : 'pointer',
       }}
     >
       {/* Scanline Overlay */}
@@ -255,19 +284,22 @@ const HoloAssetCard = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onAcquire?.();
+              handleAcquire();
             }}
             onMouseDown={() => setIsPressed(true)}
             onMouseUp={() => setIsPressed(false)}
             onMouseLeave={() => setIsPressed(false)}
+            disabled={isPicking}
             style={{
               width: '100%',
               padding: '10px 12px',
-              background: isPressed
-                ? 'linear-gradient(180deg, rgba(0, 255, 255, 0.4) 0%, rgba(0, 255, 255, 0.25) 100%)'
-                : isHovered
-                  ? 'linear-gradient(180deg, rgba(0, 255, 255, 0.3) 0%, rgba(0, 255, 255, 0.15) 100%)'
-                  : 'linear-gradient(180deg, rgba(0, 255, 255, 0.2) 0%, rgba(0, 255, 255, 0.1) 100%)',
+              background: isPicking
+                ? 'linear-gradient(180deg, rgba(0, 255, 255, 0.6) 0%, rgba(0, 255, 255, 0.4) 100%)'
+                : isPressed
+                  ? 'linear-gradient(180deg, rgba(0, 255, 255, 0.4) 0%, rgba(0, 255, 255, 0.25) 100%)'
+                  : isHovered
+                    ? 'linear-gradient(180deg, rgba(0, 255, 255, 0.3) 0%, rgba(0, 255, 255, 0.15) 100%)'
+                    : 'linear-gradient(180deg, rgba(0, 255, 255, 0.2) 0%, rgba(0, 255, 255, 0.1) 100%)',
               border: '1px solid var(--neon-cyan, #00ffff)',
               borderRadius: '2px',
               clipPath: 'polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px)',
@@ -276,15 +308,17 @@ const HoloAssetCard = ({
               fontWeight: '700',
               letterSpacing: '1.5px',
               textTransform: 'uppercase',
-              cursor: 'pointer',
+              cursor: isPicking ? 'wait' : 'pointer',
               transition: 'all 0.15s ease',
-              boxShadow: isHovered
-                ? '0 0 15px rgba(0, 255, 255, 0.4), inset 0 0 20px rgba(0, 255, 255, 0.1)'
-                : 'inset 0 0 15px rgba(0, 255, 255, 0.05)',
+              boxShadow: isPicking
+                ? '0 0 20px rgba(0, 255, 255, 0.6), inset 0 0 30px rgba(0, 255, 255, 0.2)'
+                : isHovered
+                  ? '0 0 15px rgba(0, 255, 255, 0.4), inset 0 0 20px rgba(0, 255, 255, 0.1)'
+                  : 'inset 0 0 15px rgba(0, 255, 255, 0.05)',
               transform: isPressed ? 'scale(0.98)' : 'none',
             }}
           >
-            ACQUIRE
+            {isPicking ? 'ACQUIRING...' : 'ACQUIRE'}
           </button>
         )}
 
@@ -379,6 +413,76 @@ const HoloAssetCard = ({
           pointerEvents: 'none',
         }}
       />
+
+      {/* Particles Effect on Pick */}
+      {showParticles && (
+        <div className="pick-particles" style={{
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          zIndex: 20,
+          overflow: 'visible',
+        }}>
+          {/* Burst particles */}
+          {[...Array(12)].map((_, i) => (
+            <div
+              key={i}
+              className="particle"
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                width: '4px',
+                height: '4px',
+                background: '#00ffff',
+                borderRadius: '50%',
+                boxShadow: '0 0 6px #00ffff, 0 0 12px #00ffff',
+                animation: `particle-burst-${i % 4} 0.6s ease-out forwards`,
+                opacity: 0,
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* CSS Animations */}
+      <style>{`
+        .pick-confirming {
+          animation: pick-confirm 0.4s ease-out;
+        }
+
+        @keyframes pick-confirm {
+          0% { transform: scale(1); filter: brightness(1); }
+          30% { transform: scale(1.08); filter: brightness(1.5); }
+          60% { transform: scale(1.03); filter: brightness(1.2); }
+          100% { transform: scale(1.05); filter: brightness(1.3); }
+        }
+
+        @keyframes particle-burst-0 {
+          0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+          100% { opacity: 0; transform: translate(calc(-50% + 40px), calc(-50% - 30px)) scale(0.5); }
+        }
+        @keyframes particle-burst-1 {
+          0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+          100% { opacity: 0; transform: translate(calc(-50% - 35px), calc(-50% - 25px)) scale(0.5); }
+        }
+        @keyframes particle-burst-2 {
+          0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+          100% { opacity: 0; transform: translate(calc(-50% + 45px), calc(-50% + 20px)) scale(0.5); }
+        }
+        @keyframes particle-burst-3 {
+          0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+          100% { opacity: 0; transform: translate(calc(-50% - 40px), calc(-50% + 25px)) scale(0.5); }
+        }
+
+        /* Reduced motion support */
+        @media (prefers-reduced-motion: reduce) {
+          .pick-confirming,
+          .particle {
+            animation: none !important;
+          }
+        }
+      `}</style>
     </div>
   );
 };

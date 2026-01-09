@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 /**
  * DraftRoomScreen - Holographic War Room Redesign
@@ -8,6 +8,8 @@ import React, { useState, useEffect } from 'react';
  * - Zone B: Opponent Arc (player positions, turn indicator)
  * - Zone C: Asset Grid (category tabs + scrollable asset cards)
  * - Zone D: Command Deck (roster summary, user info, tools)
+ *
+ * Features Phase 6 animations: turn notifications, pick banners, timer warnings
  */
 
 // Import DraftAdvisor - will be passed or imported
@@ -52,6 +54,18 @@ const DraftRoomScreen = ({
   const [showDraftAdvisor, setShowDraftAdvisor] = useState(false);
   const [draftAdvisorAction, setDraftAdvisorAction] = useState('analyze');
 
+  // Animation states
+  const [showYourTurnFlash, setShowYourTurnFlash] = useState(false);
+  const [showLastPickBanner, setShowLastPickBanner] = useState(false);
+  const [categoryTransition, setCategoryTransition] = useState(false);
+  const prevPickerRef = useRef(null);
+  const prevLastPickRef = useRef(null);
+  const prevCategoryRef = useRef(selectedDraftCategory);
+
+  // Mobile roster drawer state
+  const [drawerDragY, setDrawerDragY] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+
   const roomDraft = draftState || currentDraft;
 
   // Handle draft completion - navigate to results
@@ -61,6 +75,68 @@ const DraftRoomScreen = ({
       setScreen('draftResults');
     }
   }, [roomDraft?.status, setScreen]);
+
+  // Detect when it becomes YOUR TURN - flash notification
+  useEffect(() => {
+    const currentUserId = user?.odUserId || user?.username;
+    const currentPicker = roomDraft?.currentPlayerId;
+
+    if (currentPicker && prevPickerRef.current !== currentPicker) {
+      if (currentPicker === currentUserId && prevPickerRef.current !== null) {
+        // It just became your turn!
+        setShowYourTurnFlash(true);
+        setTimeout(() => setShowYourTurnFlash(false), 2000);
+      }
+      prevPickerRef.current = currentPicker;
+    }
+  }, [roomDraft?.currentPlayerId, user]);
+
+  // Detect new last pick - show animated banner
+  useEffect(() => {
+    const lastPick = draftState?.lastPick;
+    if (lastPick && lastPick !== prevLastPickRef.current) {
+      if (prevLastPickRef.current !== null) {
+        setShowLastPickBanner(true);
+        // Auto-hide after 5 seconds
+        const timer = setTimeout(() => setShowLastPickBanner(false), 5000);
+        return () => clearTimeout(timer);
+      }
+      prevLastPickRef.current = lastPick;
+    }
+  }, [draftState?.lastPick]);
+
+  // Category tab transition effect
+  useEffect(() => {
+    if (selectedDraftCategory !== prevCategoryRef.current) {
+      setCategoryTransition(true);
+      setTimeout(() => setCategoryTransition(false), 300);
+      prevCategoryRef.current = selectedDraftCategory;
+    }
+  }, [selectedDraftCategory]);
+
+  // Mobile drawer swipe handlers
+  const handleDrawerTouchStart = useCallback((e) => {
+    setIsDragging(true);
+    setRosterTouchStart(e.touches[0].clientY);
+  }, []);
+
+  const handleDrawerTouchMove = useCallback((e) => {
+    if (!isDragging || rosterTouchStart === null) return;
+    const currentY = e.touches[0].clientY;
+    const diff = rosterTouchStart - currentY;
+    setDrawerDragY(Math.max(0, Math.min(diff, 200)));
+  }, [isDragging, rosterTouchStart]);
+
+  const handleDrawerTouchEnd = useCallback(() => {
+    setIsDragging(false);
+    if (drawerDragY > 80) {
+      setIsRosterExpanded?.(true);
+    } else if (drawerDragY < -30) {
+      setIsRosterExpanded?.(false);
+    }
+    setDrawerDragY(0);
+    setRosterTouchStart(null);
+  }, [drawerDragY, setIsRosterExpanded]);
 
   // Loading state
   if (!roomDraft) {
@@ -169,8 +245,65 @@ const DraftRoomScreen = ({
 
   const pickedAssets = getPickedAssets();
 
+  // Determine timer warning level for screen effects
+  const timerWarningLevel = draftTimeRemaining <= 5 ? 'critical-5' : draftTimeRemaining <= 10 ? 'critical-10' : draftTimeRemaining <= 30 ? 'warning' : 'safe';
+
   return (
     <div style={containerStyle}>
+      {/* Screen Edge Warning Glow - Shows when timer is low */}
+      {isMyTurn && timerWarningLevel !== 'safe' && (
+        <div
+          className={`screen-edge-glow ${timerWarningLevel}`}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            pointerEvents: 'none',
+            zIndex: 50,
+            boxShadow: timerWarningLevel === 'critical-5'
+              ? 'inset 0 0 100px rgba(255, 51, 102, 0.4), inset 0 0 200px rgba(255, 51, 102, 0.2)'
+              : timerWarningLevel === 'critical-10'
+                ? 'inset 0 0 60px rgba(255, 51, 102, 0.3), inset 0 0 120px rgba(255, 51, 102, 0.15)'
+                : 'inset 0 0 40px rgba(255, 170, 0, 0.2), inset 0 0 80px rgba(255, 170, 0, 0.1)',
+            animation: timerWarningLevel === 'critical-5'
+              ? 'screen-edge-pulse 0.5s ease-in-out infinite'
+              : timerWarningLevel === 'critical-10'
+                ? 'screen-edge-pulse 1s ease-in-out infinite'
+                : 'none',
+          }}
+        />
+      )}
+
+      {/* YOUR TURN Flash Overlay */}
+      {showYourTurnFlash && (
+        <div
+          className="your-turn-flash"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 255, 255, 0.15)',
+            pointerEvents: 'none',
+            zIndex: 200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            animation: 'your-turn-flash-anim 2s ease-out forwards',
+          }}
+        >
+          <div
+            style={{
+              fontSize: '48px',
+              fontWeight: '800',
+              color: '#00ffff',
+              textShadow: '0 0 30px rgba(0, 255, 255, 0.8), 0 0 60px rgba(0, 255, 255, 0.4)',
+              letterSpacing: '8px',
+              animation: 'your-turn-text-anim 2s ease-out forwards',
+            }}
+          >
+            YOUR PICK
+          </div>
+        </div>
+      )}
+
       {/* Main War Room Container */}
       <div
         className="scanlines"
@@ -413,24 +546,34 @@ const DraftRoomScreen = ({
             />
           </div>
 
-          {/* Last Pick Info */}
+          {/* Last Pick Info - Animated Banner */}
           {lastPick && (
-            <div style={{
-              textAlign: 'center',
-              marginTop: '16px',
-              padding: '8px 16px',
-              background: 'rgba(0, 255, 255, 0.05)',
-              borderRadius: '4px',
-              fontSize: '13px',
-              color: '#8b949e',
-            }}>
+            <div
+              className={showLastPickBanner ? 'last-pick-banner-animate' : ''}
+              style={{
+                textAlign: 'center',
+                marginTop: '16px',
+                padding: '10px 20px',
+                background: showLastPickBanner
+                  ? 'linear-gradient(90deg, transparent, rgba(0, 255, 255, 0.15), transparent)'
+                  : 'rgba(0, 255, 255, 0.05)',
+                border: showLastPickBanner ? '1px solid rgba(0, 255, 255, 0.4)' : '1px solid transparent',
+                borderRadius: '6px',
+                fontSize: '13px',
+                color: '#8b949e',
+                transform: showLastPickBanner ? 'translateY(0)' : 'none',
+                opacity: 1,
+                transition: 'all 0.3s ease',
+              }}
+            >
               Last Pick: <span style={{ color: '#e6edf3', fontWeight: '600' }}>{lastPick.displayName}</span>
               {' picked '}
               <span style={{
                 color: lastPick.category === 'steady' ? '#10b981'
                      : lastPick.category === 'risky' ? '#f59e0b'
                      : '#3b82f6',
-                fontWeight: '700'
+                fontWeight: '700',
+                textShadow: showLastPickBanner ? `0 0 10px ${lastPick.category === 'steady' ? '#10b981' : lastPick.category === 'risky' ? '#f59e0b' : '#3b82f6'}` : 'none',
               }}>
                 {lastPick.symbol}
               </span>
@@ -501,20 +644,26 @@ const DraftRoomScreen = ({
             })}
           </div>
 
-          {/* Asset Cards Grid - Scrollable */}
+          {/* Asset Cards Grid - Scrollable with transition */}
           <div style={{
             flex: 1,
             overflow: 'auto',
             padding: '16px',
           }}>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-              gap: '16px',
-              maxWidth: '1200px',
-              margin: '0 auto',
-              justifyItems: 'center',
-            }}>
+            <div
+              className={categoryTransition ? 'category-transition' : ''}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+                gap: '16px',
+                maxWidth: '1200px',
+                margin: '0 auto',
+                justifyItems: 'center',
+                opacity: categoryTransition ? 0.5 : 1,
+                transform: categoryTransition ? 'translateY(10px)' : 'translateY(0)',
+                transition: 'opacity 0.2s ease, transform 0.2s ease',
+              }}
+            >
               {availableAssets.map((asset) => {
                 // Check if this asset was picked by another player
                 const pickedInfo = pickedAssets.get(asset.symbol);
@@ -716,7 +865,7 @@ const DraftRoomScreen = ({
           </div>
         )}
 
-        {/* Responsive Styles */}
+        {/* Responsive Styles & Animations */}
         <style>{`
           /* Desktop: Show horizontal arc, hide vertical */
           @media (min-width: 1024px) {
@@ -747,6 +896,111 @@ const DraftRoomScreen = ({
             50% {
               opacity: 0.85;
               transform: translateX(-50%) scale(1.02);
+            }
+          }
+
+          /* Screen edge warning glow pulse */
+          @keyframes screen-edge-pulse {
+            0%, 100% {
+              opacity: 1;
+            }
+            50% {
+              opacity: 0.6;
+            }
+          }
+
+          /* YOUR TURN flash animations */
+          @keyframes your-turn-flash-anim {
+            0% {
+              opacity: 0;
+              background: rgba(0, 255, 255, 0.3);
+            }
+            15% {
+              opacity: 1;
+              background: rgba(0, 255, 255, 0.25);
+            }
+            85% {
+              opacity: 1;
+              background: rgba(0, 255, 255, 0.1);
+            }
+            100% {
+              opacity: 0;
+              background: transparent;
+            }
+          }
+
+          @keyframes your-turn-text-anim {
+            0% {
+              opacity: 0;
+              transform: scale(0.8);
+            }
+            20% {
+              opacity: 1;
+              transform: scale(1.1);
+            }
+            40% {
+              transform: scale(1);
+            }
+            80% {
+              opacity: 1;
+              transform: scale(1);
+            }
+            100% {
+              opacity: 0;
+              transform: scale(0.9);
+            }
+          }
+
+          /* Last pick banner slide-in animation */
+          .last-pick-banner-animate {
+            animation: last-pick-slide-in 0.4s ease-out;
+          }
+
+          @keyframes last-pick-slide-in {
+            0% {
+              opacity: 0;
+              transform: translateY(-20px);
+            }
+            100% {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+
+          /* Category transition animation */
+          .category-transition {
+            animation: category-fade 0.3s ease-out;
+          }
+
+          @keyframes category-fade {
+            0% {
+              opacity: 0.3;
+              transform: translateY(15px);
+            }
+            100% {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+
+          /* Mobile roster drawer animations */
+          .roster-drawer {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          }
+
+          .roster-drawer-backdrop {
+            transition: opacity 0.3s ease, backdrop-filter 0.3s ease;
+          }
+
+          /* Reduced motion support */
+          @media (prefers-reduced-motion: reduce) {
+            .screen-edge-glow,
+            .your-turn-flash,
+            .last-pick-banner-animate,
+            .category-transition,
+            .roster-drawer {
+              animation: none !important;
+              transition: none !important;
             }
           }
         `}</style>

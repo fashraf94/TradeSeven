@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 /**
  * RosterGauges - Circular "Roster Power Cores" Gauges
  *
  * Three circular progress gauges showing pick progress for each category.
  * Features progress rings that fill as picks are made with glow effects.
+ * Includes animated fill transitions and celebration effects.
  */
 
 const RosterGauges = ({
@@ -13,6 +14,33 @@ const RosterGauges = ({
   defensive = { picked: 0, required: 3 },
   onGaugeClick,
 }) => {
+  // Track previous values for animation triggers
+  const prevValuesRef = useRef({ steady: 0, risky: 0, defensive: 0 });
+  const [flashingGauge, setFlashingGauge] = useState(null);
+  const [celebratingGauge, setCelebratingGauge] = useState(null);
+
+  // Detect value changes and trigger animations
+  useEffect(() => {
+    const checkChange = (key, currentPicked, required) => {
+      const prev = prevValuesRef.current[key];
+      if (currentPicked > prev) {
+        // Value increased - trigger flash
+        setFlashingGauge(key);
+        setTimeout(() => setFlashingGauge(null), 400);
+
+        // Check for completion celebration
+        if (currentPicked >= required && prev < required) {
+          setCelebratingGauge(key);
+          setTimeout(() => setCelebratingGauge(null), 1000);
+        }
+      }
+      prevValuesRef.current[key] = currentPicked;
+    };
+
+    checkChange('steady', steady.picked, steady.required);
+    checkChange('risky', risky.picked, risky.required);
+    checkChange('defensive', defensive.picked, defensive.required);
+  }, [steady.picked, risky.picked, defensive.picked, steady.required, risky.required, defensive.required]);
   // Category configurations
   const categories = [
     {
@@ -56,11 +84,14 @@ const RosterGauges = ({
         const progress = data.required > 0 ? data.picked / data.required : 0;
         const isComplete = data.picked >= data.required;
         const progressDegrees = progress * 360;
+        const isFlashing = flashingGauge === key;
+        const isCelebrating = celebratingGauge === key;
 
         return (
           <div
             key={key}
             onClick={() => onGaugeClick?.(key)}
+            className={`gauge-container ${isFlashing ? 'gauge-flash' : ''} ${isCelebrating ? 'gauge-celebrate' : ''}`}
             style={{
               display: 'flex',
               flexDirection: 'column',
@@ -74,7 +105,9 @@ const RosterGauges = ({
               }
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
+              if (!isCelebrating) {
+                e.currentTarget.style.transform = 'scale(1)';
+              }
             }}
             title={`${label}: ${data.picked}/${data.required}`}
           >
@@ -115,8 +148,9 @@ const RosterGauges = ({
                 }}
               />
 
-              {/* Progress ring (filled portion) */}
+              {/* Progress ring (filled portion) - Animated fill */}
               <div
+                className="gauge-progress-ring"
                 style={{
                   position: 'absolute',
                   inset: 0,
@@ -129,7 +163,8 @@ const RosterGauges = ({
                   )`,
                   mask: 'radial-gradient(farthest-side, transparent calc(100% - 4px), black calc(100% - 4px))',
                   WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 4px), black calc(100% - 4px))',
-                  transition: 'all 0.3s ease',
+                  transition: 'background 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                  filter: isFlashing ? 'brightness(1.5)' : 'none',
                 }}
               />
 
@@ -243,6 +278,41 @@ const RosterGauges = ({
       >
         ROSTER CORES
       </div>
+
+      {/* CSS Animations */}
+      <style>{`
+        .gauge-flash {
+          animation: gauge-flash-anim 0.4s ease-out;
+        }
+
+        .gauge-celebrate {
+          animation: gauge-celebrate-anim 1s ease-out;
+        }
+
+        @keyframes gauge-flash-anim {
+          0% { filter: brightness(1); }
+          30% { filter: brightness(1.5) drop-shadow(0 0 10px currentColor); }
+          100% { filter: brightness(1); }
+        }
+
+        @keyframes gauge-celebrate-anim {
+          0% { transform: scale(1); }
+          15% { transform: scale(1.2); }
+          30% { transform: scale(1.1); }
+          45% { transform: scale(1.15); }
+          60% { transform: scale(1.08); }
+          75% { transform: scale(1.1); }
+          100% { transform: scale(1); }
+        }
+
+        /* Reduced motion support */
+        @media (prefers-reduced-motion: reduce) {
+          .gauge-flash,
+          .gauge-celebrate {
+            animation: none !important;
+          }
+        }
+      `}</style>
     </div>
   );
 };
