@@ -3,12 +3,58 @@ import React, { useState, useCallback } from 'react';
 /**
  * HoloAssetCard - Holographic Asset Module Card
  *
- * A cyberpunk-styled card for displaying draft assets with two states:
- * - available: Cyan-themed, interactive, with ACQUIRE button
+ * A cyberpunk-styled card for displaying draft assets with sector-specific colors.
+ * States:
+ * - available: Sector-themed, interactive, with ACQUIRE button
  * - locked: Red-themed, dimmed, with diagonal "SYSTEM LOCKED" stripe
  *
- * Features pick confirmation animation with particles effect.
+ * Features:
+ * - Sector-specific color theming
+ * - Selection state with glow effect
+ * - Pick confirmation animation with particles effect
+ * - Separate "Get Info" button for research modal
  */
+
+// Sector color definitions - matches App.jsx SECTOR_COLORS
+const SECTOR_COLORS = {
+  // Technology - Blue
+  'Technology': { primary: '#3b82f6', glow: 'rgba(59, 130, 246, 0.4)' },
+  'Information Technology': { primary: '#3b82f6', glow: 'rgba(59, 130, 246, 0.4)' },
+  // Energy - Red/Orange
+  'Energy': { primary: '#ef4444', glow: 'rgba(239, 68, 68, 0.4)' },
+  // Healthcare - Teal
+  'Healthcare': { primary: '#14b8a6', glow: 'rgba(20, 184, 166, 0.4)' },
+  'Health Care': { primary: '#14b8a6', glow: 'rgba(20, 184, 166, 0.4)' },
+  // Financials - Green
+  'Financials': { primary: '#22c55e', glow: 'rgba(34, 197, 94, 0.4)' },
+  'Financial Services': { primary: '#22c55e', glow: 'rgba(34, 197, 94, 0.4)' },
+  // Consumer Discretionary - Purple
+  'Consumer Cyclical': { primary: '#a855f7', glow: 'rgba(168, 85, 247, 0.4)' },
+  'Consumer Discretionary': { primary: '#a855f7', glow: 'rgba(168, 85, 247, 0.4)' },
+  // Consumer Staples - Pink
+  'Consumer Defensive': { primary: '#ec4899', glow: 'rgba(236, 72, 153, 0.4)' },
+  'Consumer Staples': { primary: '#ec4899', glow: 'rgba(236, 72, 153, 0.4)' },
+  // Industrials - Amber
+  'Industrials': { primary: '#f59e0b', glow: 'rgba(245, 158, 11, 0.4)' },
+  // Materials - Orange
+  'Basic Materials': { primary: '#f97316', glow: 'rgba(249, 115, 22, 0.4)' },
+  'Materials': { primary: '#f97316', glow: 'rgba(249, 115, 22, 0.4)' },
+  // Real Estate - Indigo
+  'Real Estate': { primary: '#6366f1', glow: 'rgba(99, 102, 241, 0.4)' },
+  // Utilities - Slate
+  'Utilities': { primary: '#64748b', glow: 'rgba(100, 116, 139, 0.4)' },
+  // Communication - Cyan
+  'Communication Services': { primary: '#06b6d4', glow: 'rgba(6, 182, 212, 0.4)' },
+  // Cryptocurrency - Gold
+  'Cryptocurrency': { primary: '#fbbf24', glow: 'rgba(251, 191, 36, 0.4)' },
+  'Crypto': { primary: '#fbbf24', glow: 'rgba(251, 191, 36, 0.4)' },
+  // DeFi - Ethereum blue
+  'DeFi': { primary: '#627eea', glow: 'rgba(98, 126, 234, 0.4)' },
+  // Layer1 - Cyan
+  'Layer1': { primary: '#00d9ff', glow: 'rgba(0, 217, 255, 0.4)' },
+  // Default - Cyan (brand color)
+  'default': { primary: '#00d9ff', glow: 'rgba(0, 217, 255, 0.4)' }
+};
 
 const HoloAssetCard = ({
   symbol,
@@ -17,9 +63,13 @@ const HoloAssetCard = ({
   change = 0,
   dataChange,
   volumeChange,
+  sector,                    // NEW: Sector for color theming
   status = 'available',
   lockedBy,
-  onAcquire,
+  isSelected = false,        // NEW: Selection state
+  onSelect,                  // NEW: Called when card body is clicked
+  onGetInfo,                 // NEW: Called when "Get Info" button is clicked
+  onAcquire,                 // Keep for backward compatibility
   category = 'steady',
   disabled = false,
 }) => {
@@ -27,6 +77,11 @@ const HoloAssetCard = ({
   const [isPressed, setIsPressed] = useState(false);
   const [isPicking, setIsPicking] = useState(false);
   const [showParticles, setShowParticles] = useState(false);
+
+  // Get sector colors
+  const sectorColor = SECTOR_COLORS[sector] || SECTOR_COLORS.default;
+  const accentColor = sectorColor.primary;
+  const accentGlow = sectorColor.glow;
 
   // Handle pick with animation
   const handleAcquire = useCallback(() => {
@@ -46,6 +101,14 @@ const HoloAssetCard = ({
       setIsPicking(false);
     }, 600);
   }, [onAcquire, isPicking]);
+
+  // Handle card body click for selection
+  const handleCardClick = useCallback((e) => {
+    if (status !== 'available' || disabled) return;
+    // Don't trigger selection if clicking a button
+    if (e.target.tagName === 'BUTTON') return;
+    onSelect?.();
+  }, [status, disabled, onSelect]);
 
   const isAvailable = status === 'available';
   const isLocked = status === 'locked';
@@ -76,9 +139,27 @@ const HoloAssetCard = ({
   const displayDataChange = dataChange !== undefined ? dataChange : change;
   const displayVolumeChange = volumeChange !== undefined ? volumeChange : change;
 
+  // Determine border and shadow based on state
+  const getBorderStyle = () => {
+    if (isLocked) return '1px solid rgba(255, 51, 102, 0.4)';
+    if (isPicking) return `2px solid ${accentColor}`;
+    if (isSelected) return `2px solid ${accentColor}`;
+    if (isHovered) return `1px solid ${accentColor}90`;
+    return `1px solid ${accentColor}40`;
+  };
+
+  const getBoxShadow = () => {
+    if (isLocked) return '0 0 15px rgba(255, 51, 102, 0.2)';
+    if (isPicking) return `0 0 30px ${accentGlow}, 0 0 60px ${accentGlow}, inset 0 0 30px ${accentGlow}`;
+    if (isSelected) return `0 0 20px ${accentGlow}, 0 0 40px ${accentGlow}`;
+    if (isHovered) return `0 0 20px ${accentGlow}, 0 0 40px ${accentGlow}`;
+    return `0 0 10px ${accentGlow}`;
+  };
+
   return (
     <div
-      className={`holo-asset-card ${isAvailable ? 'holo-card-hover' : ''} ${isPicking ? 'pick-confirming' : ''}`}
+      className={`holo-asset-card ${isAvailable ? 'holo-card-hover' : ''} ${isPicking ? 'pick-confirming' : ''} ${isSelected ? 'card-selected' : ''}`}
+      onClick={handleCardClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => {
         setIsHovered(false);
@@ -92,33 +173,32 @@ const HoloAssetCard = ({
         background: isLocked
           ? 'rgba(20, 15, 20, 0.9)'
           : isPicking
-            ? 'rgba(0, 255, 255, 0.15)'
-            : 'rgba(10, 20, 30, 0.9)',
-        border: isLocked
-          ? '1px solid rgba(255, 51, 102, 0.4)'
-          : isPicking
-            ? '1px solid rgba(0, 255, 255, 0.9)'
-            : isHovered
-              ? '1px solid rgba(0, 255, 255, 0.6)'
-              : '1px solid rgba(0, 255, 255, 0.3)',
+            ? `${accentColor}20`
+            : isSelected
+              ? `${accentColor}15`
+              : 'rgba(10, 20, 30, 0.9)',
+        border: getBorderStyle(),
         borderRadius: '4px',
         clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%)',
         padding: '0',
         overflow: 'hidden',
         opacity: isLocked ? 0.85 : 1,
         filter: isLocked ? 'saturate(0.6)' : isPicking ? 'brightness(1.3)' : 'none',
-        boxShadow: isLocked
-          ? '0 0 15px rgba(255, 51, 102, 0.2)'
-          : isPicking
-            ? '0 0 30px rgba(0, 255, 255, 0.8), 0 0 60px rgba(0, 255, 255, 0.4), inset 0 0 30px rgba(0, 255, 255, 0.2)'
-            : isHovered
-              ? '0 0 20px rgba(0, 255, 255, 0.4), 0 0 40px rgba(0, 255, 255, 0.2)'
-              : '0 0 15px rgba(0, 255, 255, 0.15)',
+        boxShadow: getBoxShadow(),
         transition: 'all 0.15s ease',
         transform: isPicking ? 'scale(1.05)' : isHovered && isAvailable ? 'translateY(-2px)' : 'none',
         cursor: isLocked || disabled || isPicking ? 'not-allowed' : 'pointer',
       }}
     >
+      {/* Sector Color Accent Bar at Top */}
+      <div
+        style={{
+          height: '3px',
+          background: isLocked ? 'rgba(255, 51, 102, 0.6)' : accentColor,
+          boxShadow: isLocked ? '0 0 10px rgba(255, 51, 102, 0.4)' : `0 0 10px ${accentGlow}`,
+        }}
+      />
+
       {/* Scanline Overlay */}
       <div
         style={{
@@ -128,8 +208,8 @@ const HoloAssetCard = ({
             0deg,
             transparent,
             transparent 2px,
-            rgba(0, 255, 255, 0.02) 2px,
-            rgba(0, 255, 255, 0.02) 4px
+            ${accentColor}05 2px,
+            ${accentColor}05 4px
           )`,
           pointerEvents: 'none',
           zIndex: 1,
@@ -146,7 +226,7 @@ const HoloAssetCard = ({
           height: '60px',
           background: isLocked
             ? 'linear-gradient(180deg, rgba(255, 51, 102, 0.08) 0%, transparent 100%)'
-            : 'linear-gradient(180deg, rgba(0, 255, 255, 0.08) 0%, transparent 100%)',
+            : `linear-gradient(180deg, ${accentColor}15 0%, transparent 100%)`,
           pointerEvents: 'none',
         }}
       />
@@ -155,11 +235,12 @@ const HoloAssetCard = ({
       <div
         style={{
           position: 'absolute',
-          top: '8px',
+          top: '11px',
           right: '8px',
           padding: '2px 8px',
-          background: isLocked ? 'rgba(255, 51, 102, 0.9)' : 'rgba(0, 255, 255, 0.9)',
-          color: '#000',
+          background: isLocked ? 'rgba(255, 51, 102, 0.9)' : `${accentColor}22`,
+          color: isLocked ? '#fff' : accentColor,
+          border: isLocked ? 'none' : `1px solid ${accentColor}44`,
           fontSize: '9px',
           fontWeight: '700',
           letterSpacing: '1px',
@@ -175,7 +256,7 @@ const HoloAssetCard = ({
       <div
         style={{
           position: 'absolute',
-          top: '8px',
+          top: '11px',
           left: '8px',
           width: '22px',
           height: '22px',
@@ -195,6 +276,28 @@ const HoloAssetCard = ({
         {catConfig.letter}
       </div>
 
+      {/* Selection Indicator */}
+      {isSelected && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '11px',
+            left: '36px',
+            width: '18px',
+            height: '18px',
+            background: accentColor,
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2,
+            boxShadow: `0 0 10px ${accentGlow}`,
+          }}
+        >
+          <span style={{ color: '#000', fontSize: '12px', fontWeight: 'bold' }}>✓</span>
+        </div>
+      )}
+
       {/* Card Content */}
       <div style={{ padding: '16px 12px', paddingTop: '36px', position: 'relative', zIndex: 2 }}>
         {/* Symbol */}
@@ -205,7 +308,7 @@ const HoloAssetCard = ({
             color: isLocked ? '#8b949e' : '#ffffff',
             letterSpacing: '0.5px',
             marginBottom: '2px',
-            textShadow: isLocked ? 'none' : '0 0 10px rgba(255, 255, 255, 0.3)',
+            textShadow: isLocked ? 'none' : `0 0 10px ${accentGlow}`,
           }}
         >
           {symbol}
@@ -224,6 +327,25 @@ const HoloAssetCard = ({
         >
           {name}
         </div>
+
+        {/* Sector Badge */}
+        {sector && (
+          <div
+            style={{
+              fontSize: '9px',
+              color: accentColor,
+              background: `${accentColor}15`,
+              border: `1px solid ${accentColor}30`,
+              padding: '2px 6px',
+              borderRadius: '3px',
+              display: 'inline-block',
+              marginBottom: '8px',
+              letterSpacing: '0.5px',
+            }}
+          >
+            {sector}
+          </div>
+        )}
 
         {/* Price */}
         <div
@@ -254,7 +376,7 @@ const HoloAssetCard = ({
                 color: isLocked
                   ? '#6e7681'
                   : displayDataChange >= 0
-                    ? 'var(--neon-cyan, #00ffff)'
+                    ? accentColor
                     : 'var(--neon-red, #ff3366)',
                 fontWeight: '600',
               }}
@@ -263,13 +385,13 @@ const HoloAssetCard = ({
             </span>
           </div>
           <div>
-            <span style={{ color: '#6e7681' }}>Volume </span>
+            <span style={{ color: '#6e7681' }}>Vol </span>
             <span
               style={{
                 color: isLocked
                   ? '#6e7681'
                   : displayVolumeChange >= 0
-                    ? 'var(--neon-cyan, #00ffff)'
+                    ? accentColor
                     : 'var(--neon-red, #ff3366)',
                 fontWeight: '600',
               }}
@@ -279,47 +401,82 @@ const HoloAssetCard = ({
           </div>
         </div>
 
-        {/* ACQUIRE Button (Available state) */}
+        {/* Action Buttons (Available state) */}
         {isAvailable && !disabled && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleAcquire();
-            }}
-            onMouseDown={() => setIsPressed(true)}
-            onMouseUp={() => setIsPressed(false)}
-            onMouseLeave={() => setIsPressed(false)}
-            disabled={isPicking}
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              background: isPicking
-                ? 'linear-gradient(180deg, rgba(0, 255, 255, 0.6) 0%, rgba(0, 255, 255, 0.4) 100%)'
-                : isPressed
-                  ? 'linear-gradient(180deg, rgba(0, 255, 255, 0.4) 0%, rgba(0, 255, 255, 0.25) 100%)'
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {/* Get Info Button */}
+            {onGetInfo && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onGetInfo?.();
+                }}
+                style={{
+                  flex: '0 0 auto',
+                  padding: '8px 10px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '2px',
+                  color: '#8b949e',
+                  fontSize: '10px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                  e.currentTarget.style.color = '#e6edf3';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                  e.currentTarget.style.color = '#8b949e';
+                }}
+              >
+                INFO
+              </button>
+            )}
+
+            {/* ACQUIRE Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAcquire();
+              }}
+              onMouseDown={() => setIsPressed(true)}
+              onMouseUp={() => setIsPressed(false)}
+              onMouseLeave={() => setIsPressed(false)}
+              disabled={isPicking}
+              style={{
+                flex: 1,
+                padding: '10px 12px',
+                background: isPicking
+                  ? `linear-gradient(180deg, ${accentColor}99 0%, ${accentColor}66 100%)`
+                  : isPressed
+                    ? `linear-gradient(180deg, ${accentColor}66 0%, ${accentColor}40 100%)`
+                    : isHovered
+                      ? `linear-gradient(180deg, ${accentColor}4D 0%, ${accentColor}26 100%)`
+                      : `linear-gradient(180deg, ${accentColor}33 0%, ${accentColor}1A 100%)`,
+                border: `1px solid ${accentColor}`,
+                borderRadius: '2px',
+                clipPath: 'polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px)',
+                color: accentColor,
+                fontSize: '11px',
+                fontWeight: '700',
+                letterSpacing: '1.5px',
+                textTransform: 'uppercase',
+                cursor: isPicking ? 'wait' : 'pointer',
+                transition: 'all 0.15s ease',
+                boxShadow: isPicking
+                  ? `0 0 20px ${accentGlow}, inset 0 0 30px ${accentGlow}`
                   : isHovered
-                    ? 'linear-gradient(180deg, rgba(0, 255, 255, 0.3) 0%, rgba(0, 255, 255, 0.15) 100%)'
-                    : 'linear-gradient(180deg, rgba(0, 255, 255, 0.2) 0%, rgba(0, 255, 255, 0.1) 100%)',
-              border: '1px solid var(--neon-cyan, #00ffff)',
-              borderRadius: '2px',
-              clipPath: 'polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px)',
-              color: 'var(--neon-cyan, #00ffff)',
-              fontSize: '11px',
-              fontWeight: '700',
-              letterSpacing: '1.5px',
-              textTransform: 'uppercase',
-              cursor: isPicking ? 'wait' : 'pointer',
-              transition: 'all 0.15s ease',
-              boxShadow: isPicking
-                ? '0 0 20px rgba(0, 255, 255, 0.6), inset 0 0 30px rgba(0, 255, 255, 0.2)'
-                : isHovered
-                  ? '0 0 15px rgba(0, 255, 255, 0.4), inset 0 0 20px rgba(0, 255, 255, 0.1)'
-                  : 'inset 0 0 15px rgba(0, 255, 255, 0.05)',
-              transform: isPressed ? 'scale(0.98)' : 'none',
-            }}
-          >
-            {isPicking ? 'ACQUIRING...' : 'ACQUIRE'}
-          </button>
+                    ? `0 0 15px ${accentGlow}, inset 0 0 20px ${accentColor}1A`
+                    : `inset 0 0 15px ${accentColor}0D`,
+                transform: isPressed ? 'scale(0.98)' : 'none',
+              }}
+            >
+              {isPicking ? 'ACQUIRING...' : 'ACQUIRE'}
+            </button>
+          </div>
         )}
 
         {/* LOCKED Button (Locked state) */}
@@ -409,7 +566,7 @@ const HoloAssetCard = ({
           height: '16px',
           background: isLocked
             ? 'linear-gradient(135deg, transparent 50%, rgba(255, 51, 102, 0.3) 50%)'
-            : 'linear-gradient(135deg, transparent 50%, rgba(0, 255, 255, 0.3) 50%)',
+            : `linear-gradient(135deg, transparent 50%, ${accentColor}4D 50%)`,
           pointerEvents: 'none',
         }}
       />
@@ -434,9 +591,9 @@ const HoloAssetCard = ({
                 top: '50%',
                 width: '4px',
                 height: '4px',
-                background: '#00ffff',
+                background: accentColor,
                 borderRadius: '50%',
-                boxShadow: '0 0 6px #00ffff, 0 0 12px #00ffff',
+                boxShadow: `0 0 6px ${accentColor}, 0 0 12px ${accentColor}`,
                 animation: `particle-burst-${i % 4} 0.6s ease-out forwards`,
                 opacity: 0,
               }}
@@ -451,11 +608,20 @@ const HoloAssetCard = ({
           animation: pick-confirm 0.4s ease-out;
         }
 
+        .card-selected {
+          animation: card-select-pulse 2s ease-in-out infinite;
+        }
+
         @keyframes pick-confirm {
           0% { transform: scale(1); filter: brightness(1); }
           30% { transform: scale(1.08); filter: brightness(1.5); }
           60% { transform: scale(1.03); filter: brightness(1.2); }
           100% { transform: scale(1.05); filter: brightness(1.3); }
+        }
+
+        @keyframes card-select-pulse {
+          0%, 100% { box-shadow: 0 0 20px ${accentGlow}, 0 0 40px ${accentGlow}; }
+          50% { box-shadow: 0 0 25px ${accentGlow}, 0 0 50px ${accentGlow}; }
         }
 
         @keyframes particle-burst-0 {
@@ -478,6 +644,7 @@ const HoloAssetCard = ({
         /* Reduced motion support */
         @media (prefers-reduced-motion: reduce) {
           .pick-confirming,
+          .card-selected,
           .particle {
             animation: none !important;
           }
