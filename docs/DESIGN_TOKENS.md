@@ -13,6 +13,7 @@ This document contains all design tokens used in the MarketClash app including c
 - [Border Radius](#border-radius)
 - [Shadows & Glows](#shadows--glows)
 - [Copy-Paste Snippets](#copy-paste-snippets)
+- [Holographic War Room Theme](#holographic-war-room-theme-snake-draft)
 
 ---
 
@@ -494,4 +495,84 @@ style={{
   alignItems: 'center',
   justifyContent: 'center'
 }}
+```
+
+---
+
+## Holographic War Room Theme (Snake Draft)
+
+**CSS File:** `src/styles/holographic.css`
+
+The holographic theme is used for the Snake Draft "War Room" interface, featuring cyberpunk aesthetics with neon glows, scanlines, and slanted UI elements.
+
+### Holographic Color Tokens
+
+```css
+/* Neon Glows */
+--neon-cyan: #00ffff;
+--neon-cyan-glow: 0 0 20px rgba(0, 255, 255, 0.6), 0 0 40px rgba(0, 255, 255, 0.3);
+--neon-green: #00ff88;
+--neon-green-glow: 0 0 15px rgba(0, 255, 136, 0.6), 0 0 30px rgba(0, 255, 136, 0.3);
+--neon-red: #ff3366;
+--neon-red-glow: 0 0 15px rgba(255, 51, 102, 0.6);
+
+/* Holographic Surfaces */
+--holo-bg-dark: #0a0e14;
+--holo-bg-card: rgba(10, 20, 30, 0.85);
+--holo-border: rgba(0, 255, 255, 0.3);
+--holo-border-bright: rgba(0, 255, 255, 0.6);
+
+/* Scanline Overlay */
+--scanline-color: rgba(0, 255, 255, 0.03);
+
+/* Timer States */
+--timer-safe: #00ffff;
+--timer-warning: #ffaa00;
+--timer-critical: #ff3366;
+```
+
+### Holographic Utility Classes
+
+| Class | Description |
+|-------|-------------|
+| `.scanlines` | Adds CRT scanline overlay effect |
+| `.clip-slant-br` | Slants bottom-right corner of element |
+| `.clip-slant-btn` | Slants top-left corner for buttons |
+| `.text-glow-cyan` | Cyan neon text glow |
+| `.text-glow-green` | Green neon text glow |
+| `.text-glow-red` | Red neon text glow |
+| `.pulse-glow` | Pulsing glow animation (2s) |
+| `.pulse-glow-fast` | Fast pulsing glow (1s) |
+| `.pulse-critical` | Critical red pulse (0.5s) |
+| `.holo-card` | Basic holographic card style |
+| `.holo-card-glow` | Holographic card with glow |
+| `.circuit-pattern` | Circuit board background pattern |
+| `.timer-safe` | Timer in safe state (cyan) |
+| `.timer-warning` | Timer in warning state (gold) |
+| `.timer-critical` | Timer in critical state (red) |
+| `.holo-locked` | Locked/unavailable state overlay |
+| `.btn-acquire` | Acquire button style |
+| `.category-tab` | Category tab base style |
+| `.category-tab-active` | Active category tab |
+
+### Usage Examples
+
+```jsx
+// Holographic card with scanlines
+<div className="holo-card scanlines clip-slant-br">
+  <h3 className="text-glow-cyan">AAPL</h3>
+</div>
+
+// Pulsing timer
+<div className={`text-5xl ${timeLeft < 10 ? 'timer-critical' : 'timer-safe'}`}>
+  {timeLeft}
+</div>
+
+// Acquire button
+<button className="btn-acquire clip-slant-btn">
+  ACQUIRE
+</button>
+
+// Category tabs
+<div className="category-tab category-tab-active">Steady (25)</div>
 ```
