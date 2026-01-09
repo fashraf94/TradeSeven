@@ -20,6 +20,7 @@ import {
   DraftToolButtons,
   HoloTimerInline,
   PlayerPanel,
+  SnakeConduit,
   SnakeConnector,
   SnakeConnectorVertical
 } from '../components/draft';
@@ -257,7 +258,7 @@ const DraftRoomScreen = ({
             background: 'rgba(10, 14, 20, 0.5)',
           }}
         >
-          {/* Desktop: Horizontal arc layout */}
+          {/* Desktop: Horizontal arc layout with SnakeConduit */}
           <div
             className="opponent-arc-desktop"
             style={{
@@ -265,8 +266,24 @@ const DraftRoomScreen = ({
               justifyContent: 'center',
               alignItems: 'center',
               gap: '16px',
+              position: 'relative',
+              minHeight: '140px',
+              padding: '20px 0',
             }}
           >
+            {/* SnakeConduit - Curved neon connection behind players */}
+            <SnakeConduit
+              width={900}
+              height={80}
+              playerCount={3}
+              activeIndex={
+                otherPlayers[0]?.odUserId === roomDraft?.currentPlayerId ? 0
+                : roomDraft?.currentPlayerId === currentUserId ? 1
+                : otherPlayers[1]?.odUserId === roomDraft?.currentPlayerId ? 2
+                : -1
+              }
+            />
+
             {/* Left opponent */}
             <PlayerPanel
               username={otherPlayers[0]?.displayName || 'Player 2'}
