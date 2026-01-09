@@ -13,7 +13,16 @@ import React, { useState } from 'react';
 // Import DraftAdvisor - will be passed or imported
 import DraftAdvisor from '../components/DraftAdvisor';
 // Import Holographic components
-import { HoloAssetCard, CommandDeckYouPanel, RosterGauges, DraftToolButtons, HoloTimerInline } from '../components/draft';
+import {
+  HoloAssetCard,
+  CommandDeckYouPanel,
+  RosterGauges,
+  DraftToolButtons,
+  HoloTimerInline,
+  PlayerPanel,
+  SnakeConnector,
+  SnakeConnectorVertical
+} from '../components/draft';
 
 const DraftRoomScreen = ({
   containerStyle,
@@ -255,92 +264,62 @@ const DraftRoomScreen = ({
               display: 'none', // Will show on desktop via media query
               justifyContent: 'center',
               alignItems: 'center',
-              gap: '24px',
+              gap: '16px',
             }}
           >
             {/* Left opponent */}
-            <div style={{
-              padding: '12px 20px',
-              background: 'var(--holo-bg-card)',
-              border: '1px solid var(--holo-border)',
-              borderRadius: '8px',
-              textAlign: 'center',
-              minWidth: '120px',
-            }}>
-              <div style={{ color: '#e6edf3', fontWeight: '600', fontSize: '14px' }}>
-                {otherPlayers[0]?.displayName || 'Player 2'}
-              </div>
-              <div style={{ color: '#6e7681', fontSize: '12px', marginTop: '4px' }}>
-                $0 R0 D0
-              </div>
-            </div>
-
-            {/* Connection line */}
-            <div style={{
-              width: '60px',
-              height: '2px',
-              background: 'linear-gradient(90deg, var(--neon-green) 0%, var(--neon-cyan) 100%)',
-              boxShadow: 'var(--neon-green-glow)',
-            }} />
-
-            {/* Current Picker (Center) */}
-            <div
-              className="pulse-glow"
-              style={{
-                padding: '16px 32px',
-                background: 'rgba(0, 255, 255, 0.1)',
-                border: '2px solid var(--neon-cyan)',
-                borderRadius: '8px',
-                textAlign: 'center',
-                boxShadow: 'var(--neon-cyan-glow)',
+            <PlayerPanel
+              username={otherPlayers[0]?.displayName || 'Player 2'}
+              isCurrentPicker={otherPlayers[0]?.odUserId === roomDraft?.currentPlayerId}
+              isYou={false}
+              isCPU={otherPlayers[0]?.isCPU || false}
+              stats={{
+                steadyPicked: otherPlayers[0]?.categories?.steady || 0,
+                riskyPicked: otherPlayers[0]?.categories?.risky || 0,
+                defensivePicked: otherPlayers[0]?.categories?.defensive || 0,
               }}
-            >
-              <div style={{
-                color: 'var(--neon-cyan)',
-                fontSize: '10px',
-                fontWeight: '700',
-                letterSpacing: '2px',
-                marginBottom: '4px',
-              }}>
-                PICKING
-              </div>
-              <div style={{
-                color: '#fff',
-                fontWeight: '700',
-                fontSize: '16px',
-              }}>
-                {roomDraft?.players?.find(p => p.odUserId === roomDraft?.currentPlayerId)?.displayName || 'Unknown'}
-                <span style={{ marginLeft: '8px' }}>★</span>
-              </div>
-              <div style={{ color: '#6e7681', fontSize: '12px', marginTop: '4px' }}>
-                $0 R0 D0
-              </div>
-            </div>
+              lastPick={lastPick?.playerId === otherPlayers[0]?.odUserId ? lastPick?.symbol : null}
+            />
 
             {/* Connection line */}
-            <div style={{
-              width: '60px',
-              height: '2px',
-              background: 'linear-gradient(90deg, var(--neon-cyan) 0%, var(--neon-green) 100%)',
-              boxShadow: 'var(--neon-green-glow)',
-            }} />
+            <SnakeConnector glowing={otherPlayers[0]?.odUserId === roomDraft?.currentPlayerId} />
+
+            {/* Current Picker (Center) - shows whoever is currently picking */}
+            {(() => {
+              const currentPicker = roomDraft?.players?.find(p => p.odUserId === roomDraft?.currentPlayerId);
+              const isCurrentUserPicking = currentPicker?.odUserId === currentUserId;
+              return (
+                <PlayerPanel
+                  username={isCurrentUserPicking ? 'YOU' : currentPicker?.displayName || 'Unknown'}
+                  isCurrentPicker={true}
+                  isYou={isCurrentUserPicking}
+                  isCPU={currentPicker?.isCPU || false}
+                  stats={{
+                    steadyPicked: currentPicker?.categories?.steady || 0,
+                    riskyPicked: currentPicker?.categories?.risky || 0,
+                    defensivePicked: currentPicker?.categories?.defensive || 0,
+                  }}
+                  pickProgress={draftTimeRemaining > 0 ? 1 - (draftTimeRemaining / 120) : 0}
+                />
+              );
+            })()}
+
+            {/* Connection line */}
+            <SnakeConnector glowing={otherPlayers[1]?.odUserId === roomDraft?.currentPlayerId} />
 
             {/* Right opponent */}
-            <div style={{
-              padding: '12px 20px',
-              background: 'var(--holo-bg-card)',
-              border: '1px solid var(--holo-border)',
-              borderRadius: '8px',
-              textAlign: 'center',
-              minWidth: '120px',
-            }}>
-              <div style={{ color: '#e6edf3', fontWeight: '600', fontSize: '14px' }}>
-                {otherPlayers[1]?.displayName || 'Player 3'}
-              </div>
-              <div style={{ color: '#6e7681', fontSize: '12px', marginTop: '4px' }}>
-                $0 R0 D0
-              </div>
-            </div>
+            <PlayerPanel
+              username={otherPlayers[1]?.displayName || 'Player 3'}
+              isCurrentPicker={otherPlayers[1]?.odUserId === roomDraft?.currentPlayerId}
+              isYou={false}
+              isCPU={otherPlayers[1]?.isCPU || false}
+              stats={{
+                steadyPicked: otherPlayers[1]?.categories?.steady || 0,
+                riskyPicked: otherPlayers[1]?.categories?.risky || 0,
+                defensivePicked: otherPlayers[1]?.categories?.defensive || 0,
+              }}
+              lastPick={lastPick?.playerId === otherPlayers[1]?.odUserId ? lastPick?.symbol : null}
+            />
           </div>
 
           {/* Mobile: Vertical stack layout */}
@@ -350,83 +329,62 @@ const DraftRoomScreen = ({
               display: 'flex', // Will hide on desktop via media query
               flexDirection: 'column',
               alignItems: 'center',
-              gap: '8px',
+              gap: '6px',
             }}
           >
             {/* Top opponent */}
-            <div style={{
-              padding: '8px 16px',
-              background: 'var(--holo-bg-card)',
-              border: '1px solid var(--holo-border)',
-              borderRadius: '6px',
-              textAlign: 'center',
-              minWidth: '100px',
-            }}>
-              <div style={{ color: '#e6edf3', fontWeight: '600', fontSize: '13px' }}>
-                {otherPlayers[0]?.displayName || 'Player 2'}
-              </div>
-            </div>
+            <PlayerPanel
+              username={otherPlayers[0]?.displayName || 'Player 2'}
+              isCurrentPicker={otherPlayers[0]?.odUserId === roomDraft?.currentPlayerId}
+              isYou={false}
+              isCPU={otherPlayers[0]?.isCPU || false}
+              stats={{
+                steadyPicked: otherPlayers[0]?.categories?.steady || 0,
+                riskyPicked: otherPlayers[0]?.categories?.risky || 0,
+                defensivePicked: otherPlayers[0]?.categories?.defensive || 0,
+              }}
+              compact={true}
+            />
 
             {/* Vertical connector */}
-            <div style={{
-              width: '2px',
-              height: '16px',
-              background: 'var(--neon-green)',
-              boxShadow: 'var(--neon-green-glow)',
-            }} />
+            <SnakeConnectorVertical glowing={otherPlayers[0]?.odUserId === roomDraft?.currentPlayerId} />
 
             {/* Current Picker (Center) */}
-            <div
-              className="pulse-glow"
-              style={{
-                padding: '12px 24px',
-                background: 'rgba(0, 255, 255, 0.1)',
-                border: '2px solid var(--neon-cyan)',
-                borderRadius: '6px',
-                textAlign: 'center',
-                boxShadow: 'var(--neon-cyan-glow)',
-              }}
-            >
-              <div style={{
-                color: 'var(--neon-cyan)',
-                fontSize: '9px',
-                fontWeight: '700',
-                letterSpacing: '2px',
-              }}>
-                PICKING
-              </div>
-              <div style={{
-                color: '#fff',
-                fontWeight: '700',
-                fontSize: '14px',
-                marginTop: '2px',
-              }}>
-                {roomDraft?.players?.find(p => p.odUserId === roomDraft?.currentPlayerId)?.displayName || 'Unknown'}
-                <span style={{ marginLeft: '6px' }}>★</span>
-              </div>
-            </div>
+            {(() => {
+              const currentPicker = roomDraft?.players?.find(p => p.odUserId === roomDraft?.currentPlayerId);
+              const isCurrentUserPicking = currentPicker?.odUserId === currentUserId;
+              return (
+                <PlayerPanel
+                  username={isCurrentUserPicking ? 'YOU' : currentPicker?.displayName || 'Unknown'}
+                  isCurrentPicker={true}
+                  isYou={isCurrentUserPicking}
+                  isCPU={currentPicker?.isCPU || false}
+                  stats={{
+                    steadyPicked: currentPicker?.categories?.steady || 0,
+                    riskyPicked: currentPicker?.categories?.risky || 0,
+                    defensivePicked: currentPicker?.categories?.defensive || 0,
+                  }}
+                  compact={true}
+                />
+              );
+            })()}
 
             {/* Vertical connector */}
-            <div style={{
-              width: '2px',
-              height: '16px',
-              background: 'var(--neon-green)',
-              boxShadow: 'var(--neon-green-glow)',
-            }} />
+            <SnakeConnectorVertical glowing={otherPlayers[1]?.odUserId === roomDraft?.currentPlayerId} />
 
             {/* Bottom opponent */}
-            <div style={{
-              padding: '8px 16px',
-              background: 'var(--holo-bg-card)',
-              border: '1px solid var(--holo-border)',
-              borderRadius: '6px',
-              textAlign: 'center',
-              minWidth: '100px',
-            }}>
-              <div style={{ color: '#e6edf3', fontWeight: '600', fontSize: '13px' }}>
-                {otherPlayers[1]?.displayName || 'Player 3'}
-              </div>
-            </div>
+            <PlayerPanel
+              username={otherPlayers[1]?.displayName || 'Player 3'}
+              isCurrentPicker={otherPlayers[1]?.odUserId === roomDraft?.currentPlayerId}
+              isYou={false}
+              isCPU={otherPlayers[1]?.isCPU || false}
+              stats={{
+                steadyPicked: otherPlayers[1]?.categories?.steady || 0,
+                riskyPicked: otherPlayers[1]?.categories?.risky || 0,
+                defensivePicked: otherPlayers[1]?.categories?.defensive || 0,
+              }}
+              compact={true}
+            />
           </div>
 
           {/* Last Pick Info */}
