@@ -13,7 +13,7 @@ import React, { useState } from 'react';
 // Import DraftAdvisor - will be passed or imported
 import DraftAdvisor from '../components/DraftAdvisor';
 // Import Holographic components
-import { HoloAssetCard, CommandDeckYouPanel } from '../components/draft';
+import { HoloAssetCard, CommandDeckYouPanel, RosterGauges } from '../components/draft';
 
 const DraftRoomScreen = ({
   containerStyle,
@@ -600,47 +600,26 @@ const DraftRoomScreen = ({
           }}
         >
           {/* Left: Roster Power Cores */}
-          <div style={{
-            display: 'flex',
-            gap: '8px',
-          }}>
-            {['S', 'R', 'D'].map((cat, idx) => {
-              const colors = ['#10b981', '#f59e0b', '#3b82f6'];
-              const fullCat = ['steady', 'risky', 'defensive'][idx];
-              const count = myPlayer?.categories?.[fullCat] || 0;
-
-              return (
-                <div
-                  key={cat}
-                  style={{
-                    width: '44px',
-                    height: '44px',
-                    borderRadius: '8px',
-                    background: `${colors[idx]}15`,
-                    border: `1px solid ${colors[idx]}50`,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '11px',
-                    fontWeight: '600',
-                    color: colors[idx],
-                  }}
-                >
-                  <span>{cat}:</span>
-                  <span>{count}/3</span>
-                </div>
-              );
-            })}
-            <div style={{
-              fontSize: '10px',
-              color: '#6e7681',
-              alignSelf: 'flex-end',
-              marginLeft: '4px',
-            }}>
-              Roster Power Cores [cite: 4]
-            </div>
-          </div>
+          <RosterGauges
+            steady={{
+              picked: myPlayer?.categories?.steady || 0,
+              required: 3,
+            }}
+            risky={{
+              picked: myPlayer?.categories?.risky || 0,
+              required: 3,
+            }}
+            defensive={{
+              picked: myPlayer?.categories?.defensive || 0,
+              required: 3,
+            }}
+            onGaugeClick={(category) => {
+              // Switch to that category tab
+              if (canPickFromCategory(category)) {
+                setSelectedDraftCategory(category);
+              }
+            }}
+          />
 
           {/* Center: YOU Info */}
           <div style={{
