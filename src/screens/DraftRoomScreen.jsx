@@ -17,7 +17,7 @@ import DraftAdvisor from '../components/DraftAdvisor';
 // Import Holographic components
 import {
   HoloAssetCard,
-  CommandDeckYouPanel,
+  CommandDeckConfirmButton,
   RosterGauges,
   DraftToolButtons,
   HoloTimerInline,
@@ -54,6 +54,10 @@ const DraftRoomScreen = ({
   // Tool panel states - DraftAdvisor integration
   const [showDraftAdvisor, setShowDraftAdvisor] = useState(false);
   const [draftAdvisorAction, setDraftAdvisorAction] = useState('analyze');
+
+  // Selection state for two-step pick flow
+  const [selectedAsset, setSelectedAsset] = useState(null);
+  const [isConfirming, setIsConfirming] = useState(false);
 
   // Animation states
   const [showYourTurnFlash, setShowYourTurnFlash] = useState(false);
@@ -113,6 +117,19 @@ const DraftRoomScreen = ({
       setTimeout(() => setCategoryTransition(false), 300);
       prevCategoryRef.current = selectedDraftCategory;
     }
+  }, [selectedDraftCategory]);
+
+  // Clear selection when turn changes (no longer your turn) or category changes
+  useEffect(() => {
+    const currentUserId = user?.odUserId || user?.username;
+    if (roomDraft?.currentPlayerId !== currentUserId) {
+      setSelectedAsset(null);
+    }
+  }, [roomDraft?.currentPlayerId, user]);
+
+  // Also clear selection when category changes
+  useEffect(() => {
+    setSelectedAsset(null);
   }, [selectedDraftCategory]);
 
   // Mobile drawer swipe handlers
@@ -224,7 +241,48 @@ const DraftRoomScreen = ({
   // Check if user can pick from a category (not full)
   const canPickFromCategory = (cat) => (myPlayer?.categories?.[cat] || 0) < 3;
 
-  // Handle making a pick
+  // Handle selecting an asset (first step of two-step flow)
+  const handleSelectAsset = (asset) => {
+    // Can only select if it's your turn and asset is available
+    if (!isMyTurn) return;
+
+    // Check if asset is locked
+    const pickedInfo = pickedAssets.get(asset.symbol);
+    if (pickedInfo) return;
+
+    // Toggle selection (click again to deselect)
+    if (selectedAsset?.symbol === asset.symbol) {
+      setSelectedAsset(null);
+    } else {
+      setSelectedAsset(asset);
+    }
+  };
+
+  // Handle confirming the pick (second step of two-step flow)
+  const handleConfirmPick = async (asset) => {
+    if (!asset || isConfirming || !isMyTurn) return;
+    if (!canPickFromCategory(selectedDraftCategory)) return;
+
+    setIsConfirming(true);
+
+    try {
+      const draftService = await import('../services/draftService');
+      await draftService.makePick(roomDraft.id, currentUserId, {
+        ...asset,
+        category: selectedDraftCategory
+      });
+
+      // Clear selection after successful pick
+      setSelectedAsset(null);
+    } catch (error) {
+      console.error('Pick failed:', error);
+      alert(error.message || 'Failed to make pick');
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
+  // Legacy handlePick for direct picks (backward compatibility)
   const handlePick = async (asset) => {
     if (!isMyTurn || !canPickFromCategory(selectedDraftCategory)) return;
     try {
@@ -692,6 +750,7 @@ const DraftRoomScreen = ({
                 const pickedInfo = pickedAssets.get(asset.symbol);
                 const isLocked = !!pickedInfo;
                 const canPick = isMyTurn && canPickFromCategory(selectedDraftCategory);
+                const isAssetSelected = selectedAsset?.symbol === asset.symbol;
 
                 // Get sector for color theming
                 const assetSector = asset.sector || getStockSector?.(asset.symbol) || 'Technology';
@@ -710,6 +769,8 @@ const DraftRoomScreen = ({
                     lockedBy={pickedInfo?.pickedBy}
                     category={selectedDraftCategory}
                     disabled={!canPick}
+                    isSelected={isAssetSelected}
+                    onSelect={() => handleSelectAsset(asset)}
                     onAcquire={() => handlePick(asset)}
                     onGetInfo={() => setDraftAssetInfoModal(asset)}
                   />
@@ -776,21 +837,20 @@ const DraftRoomScreen = ({
             }}
           />
 
-          {/* Center: YOU Info */}
+          {/* Center: Confirm Pick Button */}
           <div style={{
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
           }}>
-            <CommandDeckYouPanel
-              username="YOU"
-              stats={{
-                steadyPicked: myPlayer?.categories?.steady || 0,
-                riskyPicked: myPlayer?.categories?.risky || 0,
-                defensivePicked: myPlayer?.categories?.defensive || 0,
-              }}
+            <CommandDeckConfirmButton
+              selectedAsset={selectedAsset}
+              onConfirm={handleConfirmPick}
               isYourTurn={isMyTurn}
-              totalValue={0}
+              isLoading={isConfirming}
+              currentPickerName={
+                roomDraft?.players?.find(p => p.odUserId === roomDraft?.currentPlayerId)?.displayName || 'opponent'
+              }
             />
           </div>
 

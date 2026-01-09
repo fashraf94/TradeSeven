@@ -1,6 +1,7 @@
 // Draft components for Snake Draft Holographic War Room
 export { default as HoloAssetCard } from './HoloAssetCard';
 export { default as CommandDeckYouPanel } from './CommandDeckYouPanel';
+export { default as CommandDeckConfirmButton } from './CommandDeckConfirmButton';
 export { default as RosterGauges, RosterGaugesCompact } from './RosterGauges';
 export { default as DraftToolButtons, DraftToolButtonsCompact } from './DraftToolButtons';
 export { default as HoloTimer, HoloTimerCompact, HoloTimerInline } from './HoloTimer';
