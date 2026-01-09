@@ -401,117 +401,117 @@ const HoloAssetCard = ({
           </div>
         </div>
 
-        {/* Action Buttons (Available state) */}
-        {isAvailable && (
-          <div style={{ display: 'flex', gap: '6px' }}>
-            {/* Get Info Button - Always visible for available assets */}
-            {onGetInfo && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onGetInfo?.();
-                }}
-                style={{
-                  flex: disabled ? 1 : '0 0 auto', // Full width when ACQUIRE hidden
-                  padding: '8px 12px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.15)',
-                  borderRadius: '6px',
-                  color: '#ffffff',
-                  fontSize: '11px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: disabled ? 'center' : 'flex-start',
-                  gap: '5px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
-                }}
-              >
-                {/* Magnifying glass icon */}
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="11" cy="11" r="8"/>
-                  <path d="M21 21l-4.35-4.35"/>
-                </svg>
-                GET INFO
-              </button>
-            )}
+        {/* Action Buttons - GET INFO always visible, ACQUIRE only on your turn */}
+        <div style={{ display: 'flex', gap: '6px', flexDirection: isLocked ? 'column' : 'row' }}>
+          {/* GET INFO Button - ALWAYS visible and clickable for ALL assets */}
+          {onGetInfo && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onGetInfo?.();
+              }}
+              style={{
+                flex: (isLocked || disabled) ? 1 : '0 0 auto',
+                padding: '8px 12px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                borderRadius: '6px',
+                color: '#ffffff',
+                fontSize: '11px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '5px',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.35)';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              {/* Magnifying glass icon */}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="M21 21l-4.35-4.35"/>
+              </svg>
+              GET INFO
+            </button>
+          )}
 
-            {/* ACQUIRE Button - Only when it's your turn */}
-            {!disabled && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleAcquire();
-                }}
-                onMouseDown={() => setIsPressed(true)}
-                onMouseUp={() => setIsPressed(false)}
-                onMouseLeave={() => setIsPressed(false)}
-                disabled={isPicking}
-                style={{
-                  flex: 1,
-                  padding: '10px 12px',
-                  background: isPicking
-                    ? `linear-gradient(180deg, ${accentColor}99 0%, ${accentColor}66 100%)`
-                    : isPressed
-                      ? `linear-gradient(180deg, ${accentColor}66 0%, ${accentColor}40 100%)`
-                      : isHovered
-                        ? `linear-gradient(180deg, ${accentColor}4D 0%, ${accentColor}26 100%)`
-                        : `linear-gradient(180deg, ${accentColor}33 0%, ${accentColor}1A 100%)`,
-                  border: `1px solid ${accentColor}`,
-                  borderRadius: '2px',
-                  clipPath: 'polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px)',
-                  color: accentColor,
-                  fontSize: '11px',
-                  fontWeight: '700',
-                  letterSpacing: '1.5px',
-                  textTransform: 'uppercase',
-                  cursor: isPicking ? 'wait' : 'pointer',
-                  transition: 'all 0.15s ease',
-                  boxShadow: isPicking
-                    ? `0 0 20px ${accentGlow}, inset 0 0 30px ${accentGlow}`
+          {/* ACQUIRE Button - Only for available assets when it's your turn */}
+          {isAvailable && !disabled && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAcquire();
+              }}
+              onMouseDown={() => setIsPressed(true)}
+              onMouseUp={() => setIsPressed(false)}
+              onMouseLeave={() => setIsPressed(false)}
+              disabled={isPicking}
+              style={{
+                flex: 1,
+                padding: '10px 12px',
+                background: isPicking
+                  ? `linear-gradient(180deg, ${accentColor}99 0%, ${accentColor}66 100%)`
+                  : isPressed
+                    ? `linear-gradient(180deg, ${accentColor}66 0%, ${accentColor}40 100%)`
                     : isHovered
-                      ? `0 0 15px ${accentGlow}, inset 0 0 20px ${accentColor}1A`
-                      : `inset 0 0 15px ${accentColor}0D`,
-                  transform: isPressed ? 'scale(0.98)' : 'none',
-                }}
-              >
-                {isPicking ? 'ACQUIRING...' : 'ACQUIRE'}
-              </button>
-            )}
-          </div>
-        )}
+                      ? `linear-gradient(180deg, ${accentColor}4D 0%, ${accentColor}26 100%)`
+                      : `linear-gradient(180deg, ${accentColor}33 0%, ${accentColor}1A 100%)`,
+                border: `1px solid ${accentColor}`,
+                borderRadius: '2px',
+                clipPath: 'polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px)',
+                color: accentColor,
+                fontSize: '11px',
+                fontWeight: '700',
+                letterSpacing: '1.5px',
+                textTransform: 'uppercase',
+                cursor: isPicking ? 'wait' : 'pointer',
+                transition: 'all 0.15s ease',
+                boxShadow: isPicking
+                  ? `0 0 20px ${accentGlow}, inset 0 0 30px ${accentGlow}`
+                  : isHovered
+                    ? `0 0 15px ${accentGlow}, inset 0 0 20px ${accentColor}1A`
+                    : `inset 0 0 15px ${accentColor}0D`,
+                transform: isPressed ? 'scale(0.98)' : 'none',
+              }}
+            >
+              {isPicking ? 'ACQUIRING...' : 'ACQUIRE'}
+            </button>
+          )}
 
-        {/* LOCKED Button (Locked state) */}
-        {isLocked && (
-          <div
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              background: 'rgba(255, 51, 102, 0.1)',
-              border: '1px solid rgba(255, 51, 102, 0.4)',
-              borderRadius: '2px',
-              clipPath: 'polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px)',
-              color: 'var(--neon-red, #ff3366)',
-              fontSize: '11px',
-              fontWeight: '700',
-              letterSpacing: '1.5px',
-              textTransform: 'uppercase',
-              textAlign: 'center',
-              opacity: 0.7,
-            }}
-          >
-            LOCKED
-          </div>
-        )}
+          {/* LOCKED indicator - shown below GET INFO for locked assets */}
+          {isLocked && (
+            <div
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                background: 'rgba(255, 51, 102, 0.1)',
+                border: '1px solid rgba(255, 51, 102, 0.4)',
+                borderRadius: '2px',
+                clipPath: 'polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px)',
+                color: 'var(--neon-red, #ff3366)',
+                fontSize: '10px',
+                fontWeight: '700',
+                letterSpacing: '1.5px',
+                textTransform: 'uppercase',
+                textAlign: 'center',
+                opacity: 0.7,
+              }}
+            >
+              LOCKED BY {lockedBy?.toUpperCase() || 'OPPONENT'}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* LOCKED Diagonal Stripe Overlay */}
