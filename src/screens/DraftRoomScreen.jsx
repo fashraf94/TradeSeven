@@ -209,14 +209,23 @@ const DraftRoomScreen = ({
   // The center position shows the current picker, so we don't want duplicates on the sides
   const sideOpponents = otherPlayers.filter(p => p.odUserId !== roomDraft?.currentPlayerId);
 
-  // Determine the next picker ID from pick order
+  // Determine the next picker ID from draft order
+  // IMPORTANT: draftOrder contains player INDICES (0,1,2,3), not player IDs
+  // We must convert the index to a player ID via the players array
   const getNextPickerId = () => {
-    const pickOrder = roomDraft?.pickOrder;
-    const currentPickIndex = roomDraft?.currentPickIndex || 0;
-    if (pickOrder && currentPickIndex < pickOrder.length - 1) {
-      return pickOrder[currentPickIndex + 1];
+    const draftOrder = roomDraft?.draftOrder;
+    const players = roomDraft?.players;
+    const currentPickIndex = roomDraft?.currentPickIndex ?? 0;
+
+    if (!draftOrder || !players || currentPickIndex >= draftOrder.length - 1) {
+      return null;
     }
-    return null;
+
+    const nextPickIndex = currentPickIndex + 1;
+    const nextPlayerIndex = draftOrder[nextPickIndex];  // This is 0, 1, 2, or 3
+    const nextPlayer = players[nextPlayerIndex];
+
+    return nextPlayer?.odUserId || null;
   };
   const nextPickerId = getNextPickerId();
 
