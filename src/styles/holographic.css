@@ -1,0 +1,367 @@
+/**
+ * Holographic War Room Theme
+ * Design tokens and utilities for the Snake Draft cyberpunk/holographic aesthetic
+ */
+
+/* ============================================
+   HOLOGRAPHIC COLOR TOKENS
+   ============================================ */
+:root {
+  /* Neon Glows */
+  --neon-cyan: #00ffff;
+  --neon-cyan-glow: 0 0 20px rgba(0, 255, 255, 0.6), 0 0 40px rgba(0, 255, 255, 0.3);
+  --neon-green: #00ff88;
+  --neon-green-glow: 0 0 15px rgba(0, 255, 136, 0.6), 0 0 30px rgba(0, 255, 136, 0.3);
+  --neon-red: #ff3366;
+  --neon-red-glow: 0 0 15px rgba(255, 51, 102, 0.6);
+
+  /* Holographic Surfaces */
+  --holo-bg-dark: #0a0e14;
+  --holo-bg-card: rgba(10, 20, 30, 0.85);
+  --holo-border: rgba(0, 255, 255, 0.3);
+  --holo-border-bright: rgba(0, 255, 255, 0.6);
+
+  /* Scanline Overlay */
+  --scanline-color: rgba(0, 255, 255, 0.03);
+
+  /* Timer States */
+  --timer-safe: #00ffff;
+  --timer-warning: #ffaa00;
+  --timer-critical: #ff3366;
+}
+
+
+/* ============================================
+   SCANLINE TEXTURE OVERLAY
+   ============================================ */
+.scanlines {
+  position: relative;
+}
+
+.scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    var(--scanline-color) 2px,
+    var(--scanline-color) 4px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+
+/* ============================================
+   CLIP-PATH UTILITIES
+   ============================================ */
+
+/* Slanted card - bottom right corner cut */
+.clip-slant-br {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%);
+}
+
+/* Slanted button - top left corner cut */
+.clip-slant-btn {
+  clip-path: polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px);
+}
+
+/* Hexagonal clip for badges/icons */
+.clip-hexagon {
+  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+}
+
+/* Diamond clip for status indicators */
+.clip-diamond {
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+}
+
+
+/* ============================================
+   NEON TEXT EFFECTS
+   ============================================ */
+
+/* Cyan neon text glow */
+.text-glow-cyan {
+  text-shadow: 0 0 10px rgba(0, 255, 255, 0.8), 0 0 20px rgba(0, 255, 255, 0.4);
+}
+
+/* Green neon text glow */
+.text-glow-green {
+  text-shadow: 0 0 10px rgba(0, 255, 136, 0.8), 0 0 20px rgba(0, 255, 136, 0.4);
+}
+
+/* Red neon text glow */
+.text-glow-red {
+  text-shadow: 0 0 10px rgba(255, 51, 102, 0.8), 0 0 20px rgba(255, 51, 102, 0.4);
+}
+
+/* Gold/warning text glow */
+.text-glow-gold {
+  text-shadow: 0 0 10px rgba(255, 170, 0, 0.8), 0 0 20px rgba(255, 170, 0, 0.4);
+}
+
+
+/* ============================================
+   GLOW ANIMATIONS
+   ============================================ */
+
+/* Pulsing glow animation */
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 0.8;
+    filter: brightness(1.2);
+  }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Faster pulse for urgency */
+@keyframes pulse-glow-fast {
+  0%, 100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 0.7;
+    filter: brightness(1.3);
+  }
+}
+
+.pulse-glow-fast {
+  animation: pulse-glow-fast 1s ease-in-out infinite;
+}
+
+/* Critical pulse (red) for timer warnings */
+@keyframes pulse-critical {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 15px rgba(255, 51, 102, 0.6);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 30px rgba(255, 51, 102, 0.9);
+  }
+}
+
+.pulse-critical {
+  animation: pulse-critical 0.5s ease-in-out infinite;
+}
+
+
+/* ============================================
+   BORDER GLOW EFFECTS
+   ============================================ */
+
+/* Cyan border glow */
+.border-glow-cyan {
+  border: 1px solid var(--holo-border-bright);
+  box-shadow: var(--neon-cyan-glow);
+}
+
+/* Green border glow */
+.border-glow-green {
+  border: 1px solid rgba(0, 255, 136, 0.6);
+  box-shadow: var(--neon-green-glow);
+}
+
+/* Red border glow */
+.border-glow-red {
+  border: 1px solid rgba(255, 51, 102, 0.6);
+  box-shadow: var(--neon-red-glow);
+}
+
+
+/* ============================================
+   HOLOGRAPHIC CARD STYLES
+   ============================================ */
+
+.holo-card {
+  background: var(--holo-bg-card);
+  border: 1px solid var(--holo-border);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.holo-card-glow {
+  background: var(--holo-bg-card);
+  border: 1px solid var(--holo-border-bright);
+  box-shadow: var(--neon-cyan-glow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+
+/* ============================================
+   CIRCUIT BOARD PATTERN (for backgrounds)
+   ============================================ */
+
+.circuit-pattern {
+  background-image:
+    linear-gradient(rgba(0, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+
+/* ============================================
+   SNAKE DRAFT SPECIFIC ANIMATIONS
+   ============================================ */
+
+/* Snake path flowing animation */
+@keyframes snake-flow {
+  0% {
+    stroke-dashoffset: 1000;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.snake-path-animated {
+  stroke-dasharray: 1000;
+  animation: snake-flow 3s linear infinite;
+}
+
+/* Card hover lift effect */
+@keyframes card-hover-lift {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+.holo-card-hover:hover {
+  animation: card-hover-lift 0.3s ease-out forwards;
+  box-shadow: var(--neon-cyan-glow);
+}
+
+
+/* ============================================
+   TIMER SPECIFIC STYLES
+   ============================================ */
+
+.timer-safe {
+  color: var(--timer-safe);
+  text-shadow: 0 0 20px rgba(0, 255, 255, 0.8);
+}
+
+.timer-warning {
+  color: var(--timer-warning);
+  text-shadow: 0 0 20px rgba(255, 170, 0, 0.8);
+}
+
+.timer-critical {
+  color: var(--timer-critical);
+  text-shadow: 0 0 20px rgba(255, 51, 102, 0.8);
+  animation: pulse-glow-fast 0.5s ease-in-out infinite;
+}
+
+
+/* ============================================
+   LOCKED/DISABLED STATE
+   ============================================ */
+
+.holo-locked {
+  position: relative;
+  overflow: hidden;
+}
+
+.holo-locked::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(255, 51, 102, 0.1),
+    rgba(255, 51, 102, 0.1) 10px,
+    rgba(255, 51, 102, 0.05) 10px,
+    rgba(255, 51, 102, 0.05) 20px
+  );
+  pointer-events: none;
+}
+
+.holo-locked-text {
+  color: var(--neon-red);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-weight: bold;
+}
+
+
+/* ============================================
+   PLAYER INDICATOR STYLES
+   ============================================ */
+
+/* Active player picking indicator */
+.player-active {
+  border: 2px solid var(--neon-cyan);
+  box-shadow: var(--neon-cyan-glow);
+}
+
+/* Player waiting state */
+.player-waiting {
+  border: 1px solid var(--holo-border);
+  opacity: 0.7;
+}
+
+
+/* ============================================
+   CATEGORY TAB STYLES
+   ============================================ */
+
+.category-tab {
+  background: transparent;
+  border: 1px solid var(--holo-border);
+  color: #8b949e;
+  transition: all 0.2s ease;
+}
+
+.category-tab:hover {
+  border-color: var(--holo-border-bright);
+  color: var(--neon-cyan);
+}
+
+.category-tab-active {
+  background: rgba(0, 255, 255, 0.1);
+  border: 1px solid var(--neon-cyan);
+  color: var(--neon-cyan);
+  box-shadow: inset 0 0 20px rgba(0, 255, 255, 0.1);
+}
+
+
+/* ============================================
+   ACQUIRE/ACTION BUTTON STYLES
+   ============================================ */
+
+.btn-acquire {
+  background: linear-gradient(180deg, rgba(0, 255, 255, 0.2) 0%, rgba(0, 255, 255, 0.1) 100%);
+  border: 1px solid var(--neon-cyan);
+  color: var(--neon-cyan);
+  text-transform: uppercase;
+  font-weight: bold;
+  letter-spacing: 1px;
+  transition: all 0.2s ease;
+}
+
+.btn-acquire:hover {
+  background: linear-gradient(180deg, rgba(0, 255, 255, 0.3) 0%, rgba(0, 255, 255, 0.2) 100%);
+  box-shadow: var(--neon-cyan-glow);
+}
+
+.btn-acquire:disabled {
+  background: rgba(255, 51, 102, 0.1);
+  border-color: var(--neon-red);
+  color: var(--neon-red);
+  cursor: not-allowed;
+}

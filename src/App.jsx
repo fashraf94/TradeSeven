@@ -25703,7 +25703,7 @@ export default function PortfolioDuel() {
     );
   }
 
-  // DRAFT ROOM SCREEN - Extracted to DraftRoomScreen component
+  // DRAFT ROOM SCREEN - Holographic War Room (Phase 5 Integration)
   if (screen === 'draftRoom') {
     return (
       <DraftRoomScreen
@@ -25715,12 +25715,15 @@ export default function PortfolioDuel() {
         setSelectedDraftCategory={setSelectedDraftCategory}
         draftTimeRemaining={draftTimeRemaining}
         autopickCountdown={autopickCountdown}
+        isRosterExpanded={isRosterExpanded}
+        setIsRosterExpanded={setIsRosterExpanded}
         userNotes={userNotes}
         colors={colors}
         stocksData={stocksData}
         setScreen={setScreen}
         getStockSector={getStockSector}
         getSectorColor={getSectorColor}
+        setCurrentDraft={setCurrentDraft}
       />
     );
   }
