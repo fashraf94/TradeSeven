@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 /**
  * DraftRoomScreen - Holographic War Room Redesign
@@ -34,24 +34,33 @@ const DraftRoomScreen = ({
   setSelectedDraftCategory,
   draftTimeRemaining,
   autopickCountdown,
+  isRosterExpanded,
+  setIsRosterExpanded,
   userNotes,
   colors,
   stocksData,
   setScreen,
   getStockSector,
   getSectorColor,
+  setCurrentDraft,
 }) => {
   // Local state for this screen only
   const [draftAssetInfoModal, setDraftAssetInfoModal] = useState(null);
   const [rosterTouchStart, setRosterTouchStart] = useState(null);
   const [rosterTouchEnd, setRosterTouchEnd] = useState(null);
-  const [isRosterExpanded, setIsRosterExpanded] = useState(false);
-  // Tool panel states
-  const [showAnalyzePanel, setShowAnalyzePanel] = useState(false);
-  const [showComparePanel, setShowComparePanel] = useState(false);
-  const [showNotesPanel, setShowNotesPanel] = useState(false);
+  // Tool panel states - DraftAdvisor integration
+  const [showDraftAdvisor, setShowDraftAdvisor] = useState(false);
+  const [draftAdvisorAction, setDraftAdvisorAction] = useState('analyze');
 
   const roomDraft = draftState || currentDraft;
+
+  // Handle draft completion - navigate to results
+  useEffect(() => {
+    if (roomDraft?.status === 'completed' || roomDraft?.status === 'battle') {
+      // Draft is complete, navigate to results
+      setScreen('draftResults');
+    }
+  }, [roomDraft?.status, setScreen]);
 
   // Loading state
   if (!roomDraft) {
@@ -610,12 +619,102 @@ const DraftRoomScreen = ({
 
           {/* Right: Integrated Tool Buttons */}
           <DraftToolButtons
-            onAnalyze={() => setShowAnalyzePanel(true)}
-            onCompare={() => setShowComparePanel(true)}
-            onNotes={() => setShowNotesPanel(true)}
+            onAnalyze={() => {
+              setDraftAdvisorAction('analyze');
+              setShowDraftAdvisor(true);
+            }}
+            onCompare={() => {
+              setDraftAdvisorAction('compare');
+              setShowDraftAdvisor(true);
+            }}
+            onNotes={() => {
+              setDraftAdvisorAction('notes');
+              setShowDraftAdvisor(true);
+            }}
             disabled={false}
           />
         </footer>
+
+        {/* Autopick Warning Banner */}
+        {autopickCountdown > 0 && autopickCountdown <= 10 && isMyTurn && (
+          <div
+            style={{
+              position: 'fixed',
+              top: '80px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'rgba(255, 51, 102, 0.95)',
+              border: '1px solid var(--neon-red)',
+              borderRadius: '8px',
+              padding: '12px 24px',
+              zIndex: 200,
+              textAlign: 'center',
+              animation: 'pulse-warning 0.5s ease-in-out infinite',
+              boxShadow: '0 0 30px rgba(255, 51, 102, 0.5)',
+            }}
+          >
+            <div style={{
+              fontSize: '14px',
+              fontWeight: '700',
+              color: '#ffffff',
+              textTransform: 'uppercase',
+              letterSpacing: '1px',
+            }}>
+              Auto-pick in {autopickCountdown}s
+            </div>
+            <div style={{
+              fontSize: '11px',
+              color: 'rgba(255, 255, 255, 0.8)',
+              marginTop: '4px',
+            }}>
+              Select an asset now or one will be chosen for you
+            </div>
+          </div>
+        )}
+
+        {/* DraftAdvisor Modal */}
+        {showDraftAdvisor && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.8)',
+              backdropFilter: 'blur(4px)',
+              zIndex: 1000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px',
+            }}
+            onClick={() => setShowDraftAdvisor(false)}
+          >
+            <div
+              style={{
+                background: 'var(--holo-bg-dark, #0a0e14)',
+                border: '1px solid var(--holo-border)',
+                borderRadius: '12px',
+                maxWidth: '600px',
+                width: '100%',
+                maxHeight: '80vh',
+                overflow: 'auto',
+                boxShadow: '0 0 40px rgba(0, 255, 255, 0.2)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <DraftAdvisor
+                draftState={roomDraft}
+                user={user}
+                selectedCategory={selectedDraftCategory}
+                action={draftAdvisorAction}
+                onClose={() => setShowDraftAdvisor(false)}
+                userNotes={userNotes}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Responsive Styles */}
         <style>{`
@@ -636,6 +735,18 @@ const DraftRoomScreen = ({
             }
             .opponent-arc-mobile {
               display: flex !important;
+            }
+          }
+
+          /* Autopick warning pulse animation */
+          @keyframes pulse-warning {
+            0%, 100% {
+              opacity: 1;
+              transform: translateX(-50%) scale(1);
+            }
+            50% {
+              opacity: 0.85;
+              transform: translateX(-50%) scale(1.02);
             }
           }
         `}</style>
