@@ -9,6 +9,70 @@ import React from 'react';
  * Desktop only.
  */
 
+/**
+ * SnakeHead - Reusable snake head component with eyes and forked tongue
+ */
+const SnakeHead = ({ x, y, rotation = 0, color = '#00ff88', side = 'left' }) => (
+  <g
+    transform={`translate(${x}, ${y}) rotate(${rotation})`}
+    className={`snake-head snake-head-${side}`}
+  >
+    {/* Head shape - pointed oval */}
+    <ellipse
+      cx="0"
+      cy="0"
+      rx="14"
+      ry="9"
+      fill={color}
+      filter="url(#snake-glow)"
+    />
+    {/* Darker top for 3D effect */}
+    <ellipse
+      cx="0"
+      cy="-2"
+      rx="12"
+      ry="6"
+      fill="#00cc66"
+      opacity="0.5"
+    />
+    {/* Snout point */}
+    <ellipse
+      cx="16"
+      cy="0"
+      rx="6"
+      ry="5"
+      fill={color}
+      filter="url(#snake-glow)"
+    />
+    {/* Left eye socket */}
+    <circle cx="-3" cy="-3" r="4" fill="#0a0e14" />
+    {/* Left eye pupil */}
+    <circle cx="-2" cy="-3" r="2" fill="#ffcc00" />
+    {/* Left eye highlight */}
+    <circle cx="-3" cy="-4" r="1" fill="#ffffff" opacity="0.9" />
+    {/* Right eye socket */}
+    <circle cx="7" cy="-3" r="4" fill="#0a0e14" />
+    {/* Right eye pupil */}
+    <circle cx="8" cy="-3" r="2" fill="#ffcc00" />
+    {/* Right eye highlight */}
+    <circle cx="7" cy="-4" r="1" fill="#ffffff" opacity="0.9" />
+    {/* Nostril dots */}
+    <circle cx="14" cy="-2" r="1" fill="#0a0e14" opacity="0.6" />
+    <circle cx="14" cy="2" r="1" fill="#0a0e14" opacity="0.6" />
+    {/* Forked tongue */}
+    <g className={`snake-tongue snake-tongue-${side}`}>
+      <path
+        d="M 20,0 L 34,0 L 42,-6 M 34,0 L 42,6"
+        stroke="#ff4466"
+        strokeWidth="2.5"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </g>
+  </g>
+);
+
 const SnakeConduit = ({
   width = 900,
   height = 200,
@@ -171,6 +235,12 @@ const SnakeConduit = ({
           strokeLinecap="round"
           className="snake-shimmer"
         />
+
+        {/* Left snake head - entering from left, pointing right */}
+        <SnakeHead x={-30} y={120} rotation={0} color="#00ff88" side="left" />
+
+        {/* Right snake head - exiting to right, pointing right */}
+        <SnakeHead x={930} y={120} rotation={0} color="#00ff88" side="right" />
       </svg>
 
       {/* CSS for animations */}
@@ -252,6 +322,60 @@ const SnakeConduit = ({
           animation: scale-shimmer 3s ease-in-out infinite, snake-wave 4s ease-in-out infinite;
         }
 
+        /* Snake head bobbing animation */
+        @keyframes head-bob {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-3px);
+          }
+        }
+
+        .snake-head {
+          animation: head-bob 2s ease-in-out infinite;
+        }
+
+        .snake-head-right {
+          animation-delay: 1s;
+        }
+
+        /* Tongue flick animation */
+        @keyframes tongue-flick {
+          0%, 80%, 100% {
+            opacity: 0;
+            transform: scaleX(0);
+          }
+          85%, 95% {
+            opacity: 1;
+            transform: scaleX(1);
+          }
+        }
+
+        .snake-tongue {
+          transform-origin: left center;
+          animation: tongue-flick 3s ease-in-out infinite;
+        }
+
+        /* Offset the animations so they don't flick at the same time */
+        .snake-tongue-left {
+          animation-delay: 0s;
+        }
+
+        .snake-tongue-right {
+          animation-delay: 1.5s;
+        }
+
+        /* Eye glow effect */
+        @keyframes eye-glow {
+          0%, 100% {
+            filter: drop-shadow(0 0 2px #ffcc00);
+          }
+          50% {
+            filter: drop-shadow(0 0 6px #ffcc00);
+          }
+        }
+
         /* Reduced motion support */
         @media (prefers-reduced-motion: reduce) {
           .snake-body-glow,
@@ -259,8 +383,13 @@ const SnakeConduit = ({
           .snake-scales,
           .snake-highlight,
           .snake-slither-dash,
-          .snake-shimmer {
+          .snake-shimmer,
+          .snake-head,
+          .snake-tongue {
             animation: none !important;
+          }
+          .snake-tongue {
+            opacity: 0;
           }
         }
       `}</style>
