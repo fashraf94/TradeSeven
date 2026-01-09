@@ -404,7 +404,7 @@ const HoloAssetCard = ({
         {/* Action Buttons (Available state) */}
         {isAvailable && !disabled && (
           <div style={{ display: 'flex', gap: '6px' }}>
-            {/* Get Info Button */}
+            {/* Get Info Button - Subtle secondary action */}
             {onGetInfo && (
               <button
                 onClick={(e) => {
@@ -413,26 +413,34 @@ const HoloAssetCard = ({
                 }}
                 style={{
                   flex: '0 0 auto',
-                  padding: '8px 10px',
+                  padding: '8px 12px',
                   background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '2px',
-                  color: '#8b949e',
-                  fontSize: '10px',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  borderRadius: '6px',
+                  color: '#ffffff',
+                  fontSize: '11px',
                   fontWeight: '600',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
+                  transition: 'all 0.2s ease',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.color = '#e6edf3';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                  e.currentTarget.style.color = '#8b949e';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
                 }}
               >
-                INFO
+                {/* Magnifying glass icon */}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"/>
+                  <path d="M21 21l-4.35-4.35"/>
+                </svg>
+                GET INFO
               </button>
             )}
 

@@ -24,7 +24,8 @@ import {
   PlayerPanel,
   SnakeConduit,
   SnakeConnector,
-  SnakeConnectorVertical
+  SnakeConnectorVertical,
+  AssetResearchModal
 } from '../components/draft';
 
 const DraftRoomScreen = ({
@@ -892,160 +893,17 @@ const DraftRoomScreen = ({
           </div>
         )}
 
-        {/* Asset Info Modal */}
+        {/* Asset Research Modal - Comprehensive asset info with AI Analysis */}
         {draftAssetInfoModal && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0, 0, 0, 0.8)',
-              backdropFilter: 'blur(4px)',
-              zIndex: 1000,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '20px',
-            }}
-            onClick={() => setDraftAssetInfoModal(null)}
-          >
-            <div
-              style={{
-                background: 'var(--holo-bg-dark, #0a0e14)',
-                border: '1px solid var(--holo-border)',
-                borderRadius: '12px',
-                maxWidth: '400px',
-                width: '100%',
-                maxHeight: '80vh',
-                overflow: 'auto',
-                boxShadow: '0 0 40px rgba(0, 255, 255, 0.2)',
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Modal Header */}
-              <div
-                style={{
-                  padding: '16px 20px',
-                  borderBottom: '1px solid var(--holo-border)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '20px', fontWeight: '700', color: '#ffffff' }}>
-                    {draftAssetInfoModal.symbol}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#6e7681' }}>
-                    {draftAssetInfoModal.name}
-                  </div>
-                </div>
-                <button
-                  onClick={() => setDraftAssetInfoModal(null)}
-                  style={{
-                    background: 'transparent',
-                    border: '1px solid var(--holo-border)',
-                    color: '#8b949e',
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '16px',
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* Modal Content */}
-              <div style={{ padding: '20px' }}>
-                {/* Sector */}
-                {(draftAssetInfoModal.sector || getStockSector?.(draftAssetInfoModal.symbol)) && (
-                  <div style={{ marginBottom: '16px' }}>
-                    <div style={{ fontSize: '10px', color: '#6e7681', marginBottom: '4px' }}>SECTOR</div>
-                    <div style={{ fontSize: '14px', color: '#00ffff' }}>
-                      {draftAssetInfoModal.sector || getStockSector?.(draftAssetInfoModal.symbol)}
-                    </div>
-                  </div>
-                )}
-
-                {/* Price */}
-                <div style={{ marginBottom: '16px' }}>
-                  <div style={{ fontSize: '10px', color: '#6e7681', marginBottom: '4px' }}>PRICE</div>
-                  <div style={{ fontSize: '24px', fontWeight: '700', color: '#ffffff', fontFamily: 'monospace' }}>
-                    ${draftAssetInfoModal.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
-                  </div>
-                </div>
-
-                {/* Change */}
-                <div style={{ marginBottom: '16px' }}>
-                  <div style={{ fontSize: '10px', color: '#6e7681', marginBottom: '4px' }}>CHANGE</div>
-                  <div style={{
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    color: (draftAssetInfoModal.percentChange || draftAssetInfoModal.change || 0) >= 0 ? '#00ff88' : '#ff3366'
-                  }}>
-                    {(draftAssetInfoModal.percentChange || draftAssetInfoModal.change || 0) >= 0 ? '+' : ''}
-                    {(draftAssetInfoModal.percentChange || draftAssetInfoModal.change || 0).toFixed(2)}%
-                  </div>
-                </div>
-
-                {/* Category */}
-                <div style={{ marginBottom: '20px' }}>
-                  <div style={{ fontSize: '10px', color: '#6e7681', marginBottom: '4px' }}>DRAFT CATEGORY</div>
-                  <div style={{
-                    display: 'inline-block',
-                    padding: '4px 12px',
-                    borderRadius: '4px',
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    textTransform: 'uppercase',
-                    background: selectedDraftCategory === 'steady' ? 'rgba(16, 185, 129, 0.2)'
-                      : selectedDraftCategory === 'risky' ? 'rgba(245, 158, 11, 0.2)'
-                      : 'rgba(59, 130, 246, 0.2)',
-                    color: selectedDraftCategory === 'steady' ? '#10b981'
-                      : selectedDraftCategory === 'risky' ? '#f59e0b'
-                      : '#3b82f6',
-                    border: `1px solid ${
-                      selectedDraftCategory === 'steady' ? 'rgba(16, 185, 129, 0.4)'
-                      : selectedDraftCategory === 'risky' ? 'rgba(245, 158, 11, 0.4)'
-                      : 'rgba(59, 130, 246, 0.4)'
-                    }`,
-                  }}>
-                    {selectedDraftCategory}
-                  </div>
-                </div>
-
-                {/* Acquire Button */}
-                {isMyTurn && canPickFromCategory(selectedDraftCategory) && (
-                  <button
-                    onClick={() => {
-                      handlePick(draftAssetInfoModal);
-                      setDraftAssetInfoModal(null);
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '14px 20px',
-                      background: 'linear-gradient(180deg, rgba(0, 255, 255, 0.3) 0%, rgba(0, 255, 255, 0.15) 100%)',
-                      border: '1px solid var(--neon-cyan, #00ffff)',
-                      borderRadius: '4px',
-                      color: 'var(--neon-cyan, #00ffff)',
-                      fontSize: '14px',
-                      fontWeight: '700',
-                      letterSpacing: '1.5px',
-                      textTransform: 'uppercase',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                    }}
-                  >
-                    ACQUIRE {draftAssetInfoModal.symbol}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+          <AssetResearchModal
+            asset={draftAssetInfoModal}
+            sector={draftAssetInfoModal.sector || getStockSector?.(draftAssetInfoModal.symbol)}
+            category={selectedDraftCategory}
+            isMyTurn={isMyTurn}
+            canPick={canPickFromCategory(selectedDraftCategory)}
+            onAcquire={(asset) => handlePick(asset)}
+            onClose={() => setDraftAssetInfoModal(null)}
+          />
         )}
 
         {/* Responsive Styles & Animations */}
