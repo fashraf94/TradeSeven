@@ -12,6 +12,8 @@ import React, { useState } from 'react';
 
 // Import DraftAdvisor - will be passed or imported
 import DraftAdvisor from '../components/DraftAdvisor';
+// Import Holographic components
+import { HoloAssetCard } from '../components/draft';
 
 const DraftRoomScreen = ({
   containerStyle,
@@ -107,6 +109,42 @@ const DraftRoomScreen = ({
 
   // Category counts
   const getCategoryCount = (cat) => roomDraft?.availableAssets?.[cat]?.length || 0;
+
+  // Check if user can pick from a category (not full)
+  const canPickFromCategory = (cat) => (myPlayer?.categories?.[cat] || 0) < 3;
+
+  // Handle making a pick
+  const handlePick = async (asset) => {
+    if (!isMyTurn || !canPickFromCategory(selectedDraftCategory)) return;
+    try {
+      const draftService = await import('../services/draftService');
+      await draftService.makePick(roomDraft.id, currentUserId, {
+        ...asset,
+        category: selectedDraftCategory
+      });
+    } catch (error) {
+      console.error('Pick failed:', error);
+      alert(error.message || 'Failed to make pick');
+    }
+  };
+
+  // Get picked assets to determine locked status
+  const getPickedAssets = () => {
+    const picked = new Map();
+    roomDraft?.players?.forEach(player => {
+      if (player.odUserId !== currentUserId && player.picks) {
+        player.picks.forEach((symbol, idx) => {
+          picked.set(symbol, {
+            pickedBy: player.displayName || 'Opponent',
+            category: player.pickCategories?.[idx] || 'unknown'
+          });
+        });
+      }
+    });
+    return picked;
+  };
+
+  const pickedAssets = getPickedAssets();
 
   return (
     <div style={containerStyle}>
@@ -493,130 +531,52 @@ const DraftRoomScreen = ({
           }}>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-              gap: '12px',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+              gap: '16px',
               maxWidth: '1200px',
               margin: '0 auto',
+              justifyItems: 'center',
             }}>
-              {/* Placeholder Asset Cards */}
-              {availableAssets.slice(0, 10).map((asset, idx) => {
-                const isLocked = idx === 2; // Demo: 3rd card is locked
+              {availableAssets.map((asset) => {
+                // Check if this asset was picked by another player
+                const pickedInfo = pickedAssets.get(asset.symbol);
+                const isLocked = !!pickedInfo;
+                const canPick = isMyTurn && canPickFromCategory(selectedDraftCategory);
 
                 return (
-                  <div
+                  <HoloAssetCard
                     key={asset.symbol}
-                    className={`holo-card ${isLocked ? 'holo-locked' : 'holo-card-hover'}`}
-                    style={{
-                      padding: '16px',
-                      borderRadius: '8px',
-                      background: isLocked ? 'rgba(255, 51, 102, 0.05)' : 'var(--holo-bg-card)',
-                      border: isLocked
-                        ? '1px solid rgba(255, 51, 102, 0.4)'
-                        : '1px solid var(--holo-border)',
-                      position: 'relative',
-                      cursor: isLocked ? 'not-allowed' : 'pointer',
-                      transition: 'all 0.2s',
-                    }}
-                  >
-                    {/* Status Badge */}
-                    <div style={{
-                      position: 'absolute',
-                      top: '-8px',
-                      left: '12px',
-                      padding: '2px 8px',
-                      background: isLocked ? 'var(--neon-red)' : 'var(--neon-cyan)',
-                      color: '#000',
-                      fontSize: '9px',
-                      fontWeight: '700',
-                      letterSpacing: '1px',
-                      borderRadius: '2px',
-                    }}>
-                      {isLocked ? 'LOCKED' : 'AVAILABLE'}
-                    </div>
-
-                    {/* Symbol */}
-                    <div style={{
-                      fontSize: '18px',
-                      fontWeight: '700',
-                      color: '#ffffff',
-                      marginTop: '8px',
-                    }}>
-                      {asset.symbol}
-                    </div>
-
-                    {/* Company Name */}
-                    <div style={{
-                      fontSize: '11px',
-                      color: '#6e7681',
-                      marginTop: '2px',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}>
-                      {asset.name}
-                    </div>
-
-                    {/* Price */}
-                    <div style={{
-                      fontSize: '16px',
-                      fontWeight: '600',
-                      color: '#e6edf3',
-                      marginTop: '8px',
-                    }}>
-                      ${asset.price?.toFixed(2) || '0.00'}
-                    </div>
-
-                    {/* Data/Volume (placeholder) */}
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      marginTop: '8px',
-                      fontSize: '10px',
-                      color: '#6e7681',
-                    }}>
-                      <span>Data <span style={{ color: '#10b981' }}>+1.2%</span></span>
-                      <span>Volume <span style={{ color: '#10b981' }}>+1.2%</span></span>
-                    </div>
-
-                    {/* Acquire Button */}
-                    {!isLocked && (
-                      <button
-                        className="btn-acquire"
-                        style={{
-                          width: '100%',
-                          marginTop: '12px',
-                          padding: '8px',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          fontWeight: '700',
-                          letterSpacing: '1px',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        ACQUIRE
-                      </button>
-                    )}
-
-                    {/* Locked Overlay */}
-                    {isLocked && (
-                      <div style={{
-                        marginTop: '12px',
-                        padding: '8px',
-                        background: 'rgba(255, 51, 102, 0.1)',
-                        border: '1px solid rgba(255, 51, 102, 0.3)',
-                        borderRadius: '4px',
-                        textAlign: 'center',
-                        fontSize: '10px',
-                        color: 'var(--neon-red)',
-                        fontWeight: '600',
-                        letterSpacing: '1px',
-                      }}>
-                        SYSTEM LOCKED<br/>BY BEARHUNTER
-                      </div>
-                    )}
-                  </div>
+                    symbol={asset.symbol}
+                    name={asset.name}
+                    price={asset.price}
+                    change={asset.percentChange || asset.change || 0}
+                    dataChange={asset.percentChange || 1.2}
+                    volumeChange={asset.volumeChange || 1.2}
+                    status={isLocked ? 'locked' : 'available'}
+                    lockedBy={pickedInfo?.pickedBy}
+                    category={selectedDraftCategory}
+                    disabled={!canPick}
+                    onAcquire={() => handlePick(asset)}
+                  />
                 );
               })}
+
+              {/* Empty state when no assets */}
+              {availableAssets.length === 0 && (
+                <div style={{
+                  gridColumn: '1 / -1',
+                  textAlign: 'center',
+                  padding: '40px',
+                  color: '#6e7681',
+                }}>
+                  <div style={{ fontSize: '24px', marginBottom: '8px' }}>
+                    No assets available in this category
+                  </div>
+                  <div style={{ fontSize: '14px' }}>
+                    Try selecting a different category
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </section>
