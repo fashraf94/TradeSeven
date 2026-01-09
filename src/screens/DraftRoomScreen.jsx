@@ -13,7 +13,7 @@ import React, { useState } from 'react';
 // Import DraftAdvisor - will be passed or imported
 import DraftAdvisor from '../components/DraftAdvisor';
 // Import Holographic components
-import { HoloAssetCard, CommandDeckYouPanel, RosterGauges } from '../components/draft';
+import { HoloAssetCard, CommandDeckYouPanel, RosterGauges, DraftToolButtons } from '../components/draft';
 
 const DraftRoomScreen = ({
   containerStyle,
@@ -36,6 +36,10 @@ const DraftRoomScreen = ({
   const [rosterTouchStart, setRosterTouchStart] = useState(null);
   const [rosterTouchEnd, setRosterTouchEnd] = useState(null);
   const [isRosterExpanded, setIsRosterExpanded] = useState(false);
+  // Tool panel states
+  const [showAnalyzePanel, setShowAnalyzePanel] = useState(false);
+  const [showComparePanel, setShowComparePanel] = useState(false);
+  const [showNotesPanel, setShowNotesPanel] = useState(false);
 
   const roomDraft = draftState || currentDraft;
 
@@ -640,44 +644,12 @@ const DraftRoomScreen = ({
           </div>
 
           {/* Right: Integrated Tool Buttons */}
-          <div style={{
-            display: 'flex',
-            gap: '8px',
-          }}>
-            {[
-              { icon: '🔍', label: 'Analyze Draft' },
-              { icon: '⚖️', label: 'Compare Picks' },
-              { icon: '📝', label: 'My Notes' },
-            ].map(({ icon, label }) => (
-              <button
-                key={label}
-                style={{
-                  padding: '8px 12px',
-                  background: 'var(--holo-bg-card)',
-                  border: '1px solid var(--holo-border)',
-                  borderRadius: '6px',
-                  color: '#8b949e',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '4px',
-                  transition: 'all 0.2s',
-                }}
-              >
-                <span style={{ fontSize: '16px' }}>{icon}</span>
-                <span>{label}</span>
-              </button>
-            ))}
-            <div style={{
-              fontSize: '10px',
-              color: '#6e7681',
-              alignSelf: 'flex-end',
-            }}>
-              Integrated Tool Button [cite: 4]
-            </div>
-          </div>
+          <DraftToolButtons
+            onAnalyze={() => setShowAnalyzePanel(true)}
+            onCompare={() => setShowComparePanel(true)}
+            onNotes={() => setShowNotesPanel(true)}
+            disabled={false}
+          />
         </footer>
 
         {/* Responsive Styles */}
