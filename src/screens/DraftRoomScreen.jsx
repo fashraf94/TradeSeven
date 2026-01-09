@@ -13,7 +13,7 @@ import React, { useState } from 'react';
 // Import DraftAdvisor - will be passed or imported
 import DraftAdvisor from '../components/DraftAdvisor';
 // Import Holographic components
-import { HoloAssetCard, CommandDeckYouPanel, RosterGauges, DraftToolButtons } from '../components/draft';
+import { HoloAssetCard, CommandDeckYouPanel, RosterGauges, DraftToolButtons, HoloTimerInline } from '../components/draft';
 
 const DraftRoomScreen = ({
   containerStyle,
@@ -233,17 +233,7 @@ const DraftRoomScreen = ({
           </div>
 
           {/* Right: Timer */}
-          <div
-            className={`timer-${getTimerState()}`}
-            style={{
-              fontSize: '32px',
-              fontWeight: '700',
-              fontFamily: "'SF Mono', 'Monaco', monospace",
-              letterSpacing: '2px',
-            }}
-          >
-            {formatTime(draftTimeRemaining)}
-          </div>
+          <HoloTimerInline seconds={draftTimeRemaining} />
         </header>
 
         {/* ============================================

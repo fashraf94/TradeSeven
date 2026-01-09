@@ -3,3 +3,4 @@ export { default as HoloAssetCard } from './HoloAssetCard';
 export { default as CommandDeckYouPanel } from './CommandDeckYouPanel';
 export { default as RosterGauges, RosterGaugesCompact } from './RosterGauges';
 export { default as DraftToolButtons, DraftToolButtonsCompact } from './DraftToolButtons';
+export { default as HoloTimer, HoloTimerCompact, HoloTimerInline } from './HoloTimer';
