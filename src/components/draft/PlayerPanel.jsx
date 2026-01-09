@@ -88,7 +88,7 @@ const PlayerPanel = ({
   if (compact) {
     return (
       <div
-        className={state === 'picking' ? 'picker-pulse-green' : ''}
+        className={state === 'picking' ? 'picker-pulse-green' : state === 'next' ? 'next-pulse-orange' : ''}
         style={{
           position: 'relative',
           padding: '8px 16px',
@@ -139,9 +139,10 @@ const PlayerPanel = ({
               letterSpacing: '1px',
               borderRadius: '2px',
               textTransform: 'uppercase',
+              boxShadow: '0 0 10px rgba(255, 149, 0, 0.6)',
             }}
           >
-            Next
+            Up Next
           </div>
         )}
 
@@ -174,7 +175,7 @@ const PlayerPanel = ({
 
   return (
     <div
-      className={state === 'picking' ? 'picker-pulse-green' : ''}
+      className={state === 'picking' ? 'picker-pulse-green' : state === 'next' ? 'next-pulse-orange' : ''}
       style={{
         position: 'relative',
         padding: '12px 20px',
@@ -225,10 +226,10 @@ const PlayerPanel = ({
             letterSpacing: '1.5px',
             borderRadius: '2px',
             textTransform: 'uppercase',
-            boxShadow: '0 0 10px rgba(255, 149, 0, 0.5)',
+            boxShadow: '0 0 12px rgba(255, 149, 0, 0.6)',
           }}
         >
-          Next
+          Up Next
         </div>
       )}
 
@@ -374,6 +375,25 @@ const PlayerPanel = ({
           animation: picker-pulse-green 2s ease-in-out infinite;
         }
 
+        /* Orange pulse animation for next picker */
+        @keyframes next-pulse-orange {
+          0%, 100% {
+            box-shadow:
+              0 0 12px rgba(255, 149, 0, 0.5),
+              0 0 25px rgba(255, 149, 0, 0.25);
+          }
+          50% {
+            box-shadow:
+              0 0 20px rgba(255, 149, 0, 0.7),
+              0 0 40px rgba(255, 149, 0, 0.35),
+              inset 0 0 10px rgba(255, 149, 0, 0.1);
+          }
+        }
+
+        .next-pulse-orange {
+          animation: next-pulse-orange 2.5s ease-in-out infinite;
+        }
+
         @keyframes pick-check-pop {
           0% {
             transform: scale(0);
@@ -395,6 +415,7 @@ const PlayerPanel = ({
         /* Reduced motion support */
         @media (prefers-reduced-motion: reduce) {
           .picker-pulse-green,
+          .next-pulse-orange,
           .pick-check-animation {
             animation: none !important;
           }
