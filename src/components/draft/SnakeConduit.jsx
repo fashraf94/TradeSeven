@@ -24,16 +24,15 @@ const SnakeHead = ({ x, y, rotation = 0, color = '#00ff88', side = 'left' }) => 
       rx="14"
       ry="9"
       fill={color}
-      filter="url(#snake-glow)"
+      filter="url(#rainbow-glow)"
     />
-    {/* Darker top for 3D effect */}
+    {/* Darker top for 3D effect - uses transparent overlay */}
     <ellipse
       cx="0"
       cy="-2"
       rx="12"
       ry="6"
-      fill="#00cc66"
-      opacity="0.5"
+      fill="rgba(255, 255, 255, 0.3)"
     />
     {/* Snout point */}
     <ellipse
@@ -42,7 +41,7 @@ const SnakeHead = ({ x, y, rotation = 0, color = '#00ff88', side = 'left' }) => 
       rx="6"
       ry="5"
       fill={color}
-      filter="url(#snake-glow)"
+      filter="url(#rainbow-glow)"
     />
     {/* Left eye socket */}
     <circle cx="-3" cy="-3" r="4" fill="#0a0e14" />
@@ -141,7 +140,61 @@ const SnakeConduit = ({
             </feMerge>
           </filter>
 
-          {/* Gradient along snake body */}
+          {/* Rainbow glow filter for sector colors */}
+          <filter id="rainbow-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+
+          {/* Static multi-sector gradient */}
+          <linearGradient id="sector-snake-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#00d9ff" />
+            <stop offset="16%" stopColor="#10b981" />
+            <stop offset="32%" stopColor="#f59e0b" />
+            <stop offset="48%" stopColor="#ec4899" />
+            <stop offset="64%" stopColor="#ef4444" />
+            <stop offset="80%" stopColor="#8b5cf6" />
+            <stop offset="100%" stopColor="#00d9ff" />
+          </linearGradient>
+
+          {/* Animated sector gradient - flowing rainbow effect */}
+          <linearGradient id="animated-sector-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#00d9ff">
+              <animate attributeName="stop-color"
+                values="#00d9ff;#10b981;#f59e0b;#ec4899;#ef4444;#8b5cf6;#00d9ff"
+                dur="12s"
+                repeatCount="indefinite" />
+            </stop>
+            <stop offset="25%" stopColor="#10b981">
+              <animate attributeName="stop-color"
+                values="#10b981;#f59e0b;#ec4899;#ef4444;#8b5cf6;#00d9ff;#10b981"
+                dur="12s"
+                repeatCount="indefinite" />
+            </stop>
+            <stop offset="50%" stopColor="#f59e0b">
+              <animate attributeName="stop-color"
+                values="#f59e0b;#ec4899;#ef4444;#8b5cf6;#00d9ff;#10b981;#f59e0b"
+                dur="12s"
+                repeatCount="indefinite" />
+            </stop>
+            <stop offset="75%" stopColor="#ec4899">
+              <animate attributeName="stop-color"
+                values="#ec4899;#ef4444;#8b5cf6;#00d9ff;#10b981;#f59e0b;#ec4899"
+                dur="12s"
+                repeatCount="indefinite" />
+            </stop>
+            <stop offset="100%" stopColor="#ef4444">
+              <animate attributeName="stop-color"
+                values="#ef4444;#8b5cf6;#00d9ff;#10b981;#f59e0b;#ec4899;#ef4444"
+                dur="12s"
+                repeatCount="indefinite" />
+            </stop>
+          </linearGradient>
+
+          {/* Gradient along snake body with opacity fade */}
           <linearGradient id="snake-body-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="#00ff88" stopOpacity="0.2" />
             <stop offset="20%" stopColor="#00ff88" stopOpacity="0.8" />
@@ -155,7 +208,7 @@ const SnakeConduit = ({
             <stop offset="0%" stopColor="transparent">
               <animate attributeName="offset" values="-0.3;1" dur="2s" repeatCount="indefinite" />
             </stop>
-            <stop offset="15%" stopColor="rgba(0, 255, 255, 0.5)">
+            <stop offset="15%" stopColor="rgba(255, 255, 255, 0.4)">
               <animate attributeName="offset" values="-0.15;1.15" dur="2s" repeatCount="indefinite" />
             </stop>
             <stop offset="30%" stopColor="transparent">
@@ -163,32 +216,32 @@ const SnakeConduit = ({
             </stop>
           </linearGradient>
 
-          {/* Scale pattern for snake texture */}
+          {/* Scale pattern for snake texture - now rainbow */}
           <pattern id="snake-scales-pattern" patternUnits="userSpaceOnUse" width="20" height="12">
-            <ellipse cx="10" cy="6" rx="8" ry="4" fill="none" stroke="#00ff88" strokeWidth="0.5" opacity="0.4" />
+            <ellipse cx="10" cy="6" rx="8" ry="4" fill="none" stroke="url(#sector-snake-gradient)" strokeWidth="0.5" opacity="0.5" />
           </pattern>
         </defs>
 
-        {/* Snake body - outer glow layer */}
+        {/* Snake body - outer glow layer with sector colors */}
         <path
           d={generateWavePath()}
-          stroke="#00ff88"
-          strokeWidth="16"
+          stroke="url(#animated-sector-gradient)"
+          strokeWidth="18"
           fill="none"
           strokeLinecap="round"
-          filter="url(#snake-glow)"
-          opacity="0.25"
+          filter="url(#rainbow-glow)"
+          opacity="0.35"
           className="snake-body-glow"
         />
 
-        {/* Snake body - main stroke */}
+        {/* Snake body - main stroke with animated sector gradient */}
         <path
           d={generateWavePath()}
-          stroke="url(#snake-body-gradient)"
-          strokeWidth="8"
+          stroke="url(#animated-sector-gradient)"
+          strokeWidth="10"
           fill="none"
           strokeLinecap="round"
-          filter="url(#snake-glow)"
+          filter="url(#rainbow-glow)"
           className="snake-body-main"
         />
 
@@ -196,34 +249,34 @@ const SnakeConduit = ({
         <path
           d={generateWavePath()}
           stroke="url(#snake-scales-pattern)"
-          strokeWidth="6"
+          strokeWidth="8"
           fill="none"
           strokeLinecap="round"
           className="snake-scales"
-          opacity="0.5"
+          opacity="0.6"
         />
 
         {/* Snake body - center highlight line */}
         <path
           d={generateWavePath()}
-          stroke="#88ffcc"
-          strokeWidth="1.5"
+          stroke="rgba(255, 255, 255, 0.6)"
+          strokeWidth="2"
           fill="none"
           strokeLinecap="round"
-          opacity="0.4"
+          opacity="0.5"
           className="snake-highlight"
         />
 
-        {/* Animated dash pattern for slithering effect */}
+        {/* Animated dash pattern for slithering effect - using static gradient */}
         <path
           d={generateWavePath()}
-          stroke="#00ff88"
-          strokeWidth="8"
+          stroke="url(#sector-snake-gradient)"
+          strokeWidth="10"
           fill="none"
           strokeLinecap="round"
-          strokeDasharray="40 25"
+          strokeDasharray="50 30"
           className="snake-slither-dash"
-          opacity="0.6"
+          opacity="0.5"
         />
 
         {/* Shimmer overlay */}
@@ -236,11 +289,11 @@ const SnakeConduit = ({
           className="snake-shimmer"
         />
 
-        {/* Left snake head - entering from left, pointing right */}
-        <SnakeHead x={-30} y={120} rotation={0} color="#00ff88" side="left" />
+        {/* Left snake head - entering from left, pointing right (Cyan - Technology) */}
+        <SnakeHead x={-30} y={120} rotation={0} color="#00d9ff" side="left" />
 
-        {/* Right snake head - exiting to right, pointing right */}
-        <SnakeHead x={930} y={120} rotation={0} color="#00ff88" side="right" />
+        {/* Right snake head - exiting to right, pointing right (Purple - Industrial) */}
+        <SnakeHead x={930} y={120} rotation={0} color="#8b5cf6" side="right" />
       </svg>
 
       {/* CSS for animations */}
