@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import FundamentalNews from '../Research/FundamentalNews';
+import LatestEarningsReport from '../Research/LatestEarningsReport';
 
 /**
  * AssetResearchModal - Detailed asset research view for draft room
@@ -312,52 +313,77 @@ const AssetResearchModal = ({
             </div>
 
             {/* Tabs */}
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
               <button
                 onClick={() => setActiveTab('fundamental')}
                 style={{
                   flex: 1,
-                  padding: '10px 8px',
+                  padding: '10px 6px',
                   borderRadius: '8px',
                   border: 'none',
                   background: activeTab === 'fundamental' ? '#00d9ff' : 'rgba(255, 255, 255, 0.05)',
                   color: activeTab === 'fundamental' ? '#000' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '12px',
+                  fontSize: '11px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '4px',
+                  gap: '3px',
                   transition: 'all 0.2s',
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <rect x="3" y="3" width="18" height="18" rx="2" />
                   <path d="M9 9h6v6H9z" />
                 </svg>
                 Analysis
               </button>
               <button
+                onClick={() => setActiveTab('earnings')}
+                style={{
+                  flex: 1,
+                  padding: '10px 6px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: activeTab === 'earnings' ? '#8b5cf6' : 'rgba(255, 255, 255, 0.05)',
+                  color: activeTab === 'earnings' ? '#fff' : 'rgba(255, 255, 255, 0.6)',
+                  fontWeight: '600',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '3px',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                  <polyline points="14,2 14,8 20,8"/>
+                </svg>
+                Earnings
+              </button>
+              <button
                 onClick={() => setActiveTab('technical')}
                 style={{
                   flex: 1,
-                  padding: '10px 8px',
+                  padding: '10px 6px',
                   borderRadius: '8px',
                   border: 'none',
                   background: activeTab === 'technical' ? '#00d9ff' : 'rgba(255, 255, 255, 0.05)',
                   color: activeTab === 'technical' ? '#000' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '12px',
+                  fontSize: '11px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '4px',
+                  gap: '3px',
                   transition: 'all 0.2s',
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
                 </svg>
                 Technical
@@ -366,22 +392,22 @@ const AssetResearchModal = ({
                 onClick={() => setActiveTab('news')}
                 style={{
                   flex: 1,
-                  padding: '10px 8px',
+                  padding: '10px 6px',
                   borderRadius: '8px',
                   border: 'none',
                   background: activeTab === 'news' ? '#00d9ff' : 'rgba(255, 255, 255, 0.05)',
                   color: activeTab === 'news' ? '#000' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '12px',
+                  fontSize: '11px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '4px',
+                  gap: '3px',
                   transition: 'all 0.2s',
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2" />
                 </svg>
                 News
@@ -674,6 +700,12 @@ const AssetResearchModal = ({
                     </span>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {activeTab === 'earnings' && (
+              <div style={{ marginTop: '-10px' }}>
+                <LatestEarningsReport symbol={asset.symbol} />
               </div>
             )}
 
