@@ -13,7 +13,7 @@ import React, { useState } from 'react';
 // Import DraftAdvisor - will be passed or imported
 import DraftAdvisor from '../components/DraftAdvisor';
 // Import Holographic components
-import { HoloAssetCard } from '../components/draft';
+import { HoloAssetCard, CommandDeckYouPanel } from '../components/draft';
 
 const DraftRoomScreen = ({
   containerStyle,
@@ -645,43 +645,19 @@ const DraftRoomScreen = ({
           {/* Center: YOU Info */}
           <div style={{
             display: 'flex',
-            flexDirection: 'column',
+            justifyContent: 'center',
             alignItems: 'center',
-            padding: '8px 24px',
-            background: 'rgba(0, 255, 255, 0.1)',
-            border: '1px solid var(--holo-border-bright)',
-            borderRadius: '8px',
           }}>
-            <div style={{
-              fontSize: '10px',
-              color: 'var(--neon-cyan)',
-              fontWeight: '700',
-              letterSpacing: '1px',
-              marginBottom: '2px',
-            }}>
-              D
-            </div>
-            <div style={{
-              fontSize: '18px',
-              fontWeight: '700',
-              color: '#ffffff',
-            }}>
-              YOU
-            </div>
-            <div style={{
-              fontSize: '12px',
-              color: '#8b949e',
-              marginTop: '2px',
-            }}>
-              $0 R0 D0
-            </div>
-            <div style={{
-              fontSize: '10px',
-              color: '#6e7681',
-              marginTop: '4px',
-            }}>
-              Command Deck [cite: 4]
-            </div>
+            <CommandDeckYouPanel
+              username="YOU"
+              stats={{
+                steadyPicked: myPlayer?.categories?.steady || 0,
+                riskyPicked: myPlayer?.categories?.risky || 0,
+                defensivePicked: myPlayer?.categories?.defensive || 0,
+              }}
+              isYourTurn={isMyTurn}
+              totalValue={0}
+            />
           </div>
 
           {/* Right: Integrated Tool Buttons */}
