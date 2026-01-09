@@ -401,8 +401,8 @@ const HoloAssetCard = ({
           </div>
         </div>
 
-        {/* Action Buttons - GET INFO always visible, ACQUIRE only on your turn */}
-        <div style={{ display: 'flex', gap: '6px', flexDirection: isLocked ? 'column' : 'row' }}>
+        {/* Action Button - GET INFO only (picking is done by clicking card + Command Deck confirmation) */}
+        <div style={{ display: 'flex', gap: '6px', flexDirection: 'column' }}>
           {/* GET INFO Button - ALWAYS visible and clickable for ALL assets */}
           {onGetInfo && (
             <button
@@ -411,7 +411,7 @@ const HoloAssetCard = ({
                 onGetInfo?.();
               }}
               style={{
-                flex: (isLocked || disabled) ? 1 : '0 0 auto',
+                width: '100%',
                 padding: '8px 12px',
                 background: 'rgba(255, 255, 255, 0.05)',
                 border: '1px solid rgba(255, 255, 255, 0.15)',
@@ -443,49 +443,6 @@ const HoloAssetCard = ({
                 <path d="M21 21l-4.35-4.35"/>
               </svg>
               GET INFO
-            </button>
-          )}
-
-          {/* ACQUIRE Button - Only for available assets when it's your turn */}
-          {isAvailable && !disabled && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleAcquire();
-              }}
-              onMouseDown={() => setIsPressed(true)}
-              onMouseUp={() => setIsPressed(false)}
-              onMouseLeave={() => setIsPressed(false)}
-              disabled={isPicking}
-              style={{
-                flex: 1,
-                padding: '10px 12px',
-                background: isPicking
-                  ? `linear-gradient(180deg, ${accentColor}99 0%, ${accentColor}66 100%)`
-                  : isPressed
-                    ? `linear-gradient(180deg, ${accentColor}66 0%, ${accentColor}40 100%)`
-                    : isHovered
-                      ? `linear-gradient(180deg, ${accentColor}4D 0%, ${accentColor}26 100%)`
-                      : `linear-gradient(180deg, ${accentColor}33 0%, ${accentColor}1A 100%)`,
-                border: `1px solid ${accentColor}`,
-                borderRadius: '2px',
-                clipPath: 'polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px)',
-                color: accentColor,
-                fontSize: '11px',
-                fontWeight: '700',
-                letterSpacing: '1.5px',
-                textTransform: 'uppercase',
-                cursor: isPicking ? 'wait' : 'pointer',
-                transition: 'all 0.15s ease',
-                boxShadow: isPicking
-                  ? `0 0 20px ${accentGlow}, inset 0 0 30px ${accentGlow}`
-                  : isHovered
-                    ? `0 0 15px ${accentGlow}, inset 0 0 20px ${accentColor}1A`
-                    : `inset 0 0 15px ${accentColor}0D`,
-                transform: isPressed ? 'scale(0.98)' : 'none',
-              }}
-            >
-              {isPicking ? 'ACQUIRING...' : 'ACQUIRE'}
             </button>
           )}
 

@@ -383,6 +383,7 @@ const AssetResearchModal = ({
   sector,
   category,
   isMyTurn = false,
+  timeRemaining = 0,
   canPick = false,
   onAcquire,
   onClose,
@@ -439,6 +440,93 @@ const AssetResearchModal = ({
           flexDirection: 'column',
         }}
       >
+        {/* ON THE CLOCK Alert - Shows when it's user's turn */}
+        {isMyTurn && (
+          <div
+            className={timeRemaining <= 15 ? 'on-the-clock-urgent' : 'on-the-clock-alert'}
+            style={{
+              background: timeRemaining <= 15
+                ? 'linear-gradient(90deg, #ef4444, #dc2626)'
+                : 'linear-gradient(90deg, #ff9500, #ff6b00)',
+              padding: '12px 20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '20px' }}>{timeRemaining <= 15 ? '🚨' : '⏰'}</span>
+              <div>
+                <div style={{
+                  fontWeight: 'bold',
+                  color: timeRemaining <= 15 ? '#fff' : '#000',
+                  fontSize: '14px',
+                }}>
+                  {timeRemaining <= 15 ? 'HURRY! TIME ALMOST UP!' : "YOU'RE ON THE CLOCK!"}
+                </div>
+                <div style={{
+                  color: timeRemaining <= 15 ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)',
+                  fontSize: '12px',
+                }}>
+                  Make your pick before time runs out
+                </div>
+              </div>
+            </div>
+
+            {/* Time remaining */}
+            <div style={{
+              background: timeRemaining <= 15 ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.2)',
+              padding: '8px 16px',
+              borderRadius: '8px',
+              fontWeight: 'bold',
+              color: timeRemaining <= 15 ? '#fff' : '#000',
+              fontSize: '18px',
+              fontFamily: 'monospace',
+              minWidth: '60px',
+              textAlign: 'center',
+            }}>
+              {Math.floor(timeRemaining / 60)}:{String(timeRemaining % 60).padStart(2, '0')}
+            </div>
+          </div>
+        )}
+
+        {/* CSS for ON THE CLOCK animations */}
+        <style>{`
+          @keyframes pulse-alert {
+            0%, 100% {
+              box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.7);
+            }
+            50% {
+              box-shadow: 0 0 0 8px rgba(255, 149, 0, 0);
+            }
+          }
+
+          @keyframes pulse-urgent {
+            0%, 100% {
+              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);
+            }
+            50% {
+              box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+            }
+          }
+
+          .on-the-clock-alert {
+            animation: pulse-alert 1.5s ease-in-out infinite;
+          }
+
+          .on-the-clock-urgent {
+            animation: pulse-urgent 0.5s ease-in-out infinite;
+          }
+
+          @media (prefers-reduced-motion: reduce) {
+            .on-the-clock-alert,
+            .on-the-clock-urgent {
+              animation: none !important;
+            }
+          }
+        `}</style>
+
         {/* Header */}
         <div
           style={{
