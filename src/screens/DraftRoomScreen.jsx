@@ -202,8 +202,12 @@ const DraftRoomScreen = ({
   const currentRound = Math.floor((roomDraft?.currentPickIndex || 0) / 4) + 1;
   const totalRounds = 9;
 
-  // Get other players for the opponent arc
+  // Get other players for the opponent arc (excluding current user)
   const otherPlayers = roomDraft?.players?.filter(p => p.odUserId !== currentUserId) || [];
+
+  // Get players for the SIDE positions (excluding BOTH current user AND current picker)
+  // The center position shows the current picker, so we don't want duplicates on the sides
+  const sideOpponents = otherPlayers.filter(p => p.odUserId !== roomDraft?.currentPlayerId);
 
   // Determine the next picker ID from pick order
   const getNextPickerId = () => {
@@ -486,23 +490,23 @@ const DraftRoomScreen = ({
             {/* SnakeConduit - Animated wave snake flowing around players */}
             <SnakeConduit />
 
-            {/* Left opponent */}
+            {/* Left opponent - uses sideOpponents to avoid duplicate with center */}
             <PlayerPanel
-              username={otherPlayers[0]?.displayName || 'Player 2'}
-              isCurrentPicker={otherPlayers[0]?.odUserId === roomDraft?.currentPlayerId}
-              isNextPicker={otherPlayers[0]?.odUserId === nextPickerId}
+              username={sideOpponents[0]?.displayName || 'Waiting...'}
+              isCurrentPicker={false}
+              isNextPicker={sideOpponents[0]?.odUserId === nextPickerId}
               isYou={false}
-              isCPU={otherPlayers[0]?.isCPU || false}
+              isCPU={sideOpponents[0]?.isCPU || false}
               stats={{
-                steadyPicked: otherPlayers[0]?.categories?.steady || 0,
-                riskyPicked: otherPlayers[0]?.categories?.risky || 0,
-                defensivePicked: otherPlayers[0]?.categories?.defensive || 0,
+                steadyPicked: sideOpponents[0]?.categories?.steady || 0,
+                riskyPicked: sideOpponents[0]?.categories?.risky || 0,
+                defensivePicked: sideOpponents[0]?.categories?.defensive || 0,
               }}
-              lastPick={lastPick?.playerId === otherPlayers[0]?.odUserId ? lastPick?.symbol : null}
+              lastPick={lastPick?.playerId === sideOpponents[0]?.odUserId ? lastPick?.symbol : null}
             />
 
             {/* Connection line */}
-            <SnakeConnector glowing={otherPlayers[0]?.odUserId === roomDraft?.currentPlayerId} />
+            <SnakeConnector glowing={false} />
 
             {/* Current Picker (Center) - shows whoever is currently picking */}
             {(() => {
@@ -526,21 +530,21 @@ const DraftRoomScreen = ({
             })()}
 
             {/* Connection line */}
-            <SnakeConnector glowing={otherPlayers[1]?.odUserId === roomDraft?.currentPlayerId} />
+            <SnakeConnector glowing={false} />
 
-            {/* Right opponent */}
+            {/* Right opponent - uses sideOpponents to avoid duplicate with center */}
             <PlayerPanel
-              username={otherPlayers[1]?.displayName || 'Player 3'}
-              isCurrentPicker={otherPlayers[1]?.odUserId === roomDraft?.currentPlayerId}
-              isNextPicker={otherPlayers[1]?.odUserId === nextPickerId}
+              username={sideOpponents[1]?.displayName || 'Waiting...'}
+              isCurrentPicker={false}
+              isNextPicker={sideOpponents[1]?.odUserId === nextPickerId}
               isYou={false}
-              isCPU={otherPlayers[1]?.isCPU || false}
+              isCPU={sideOpponents[1]?.isCPU || false}
               stats={{
-                steadyPicked: otherPlayers[1]?.categories?.steady || 0,
-                riskyPicked: otherPlayers[1]?.categories?.risky || 0,
-                defensivePicked: otherPlayers[1]?.categories?.defensive || 0,
+                steadyPicked: sideOpponents[1]?.categories?.steady || 0,
+                riskyPicked: sideOpponents[1]?.categories?.risky || 0,
+                defensivePicked: sideOpponents[1]?.categories?.defensive || 0,
               }}
-              lastPick={lastPick?.playerId === otherPlayers[1]?.odUserId ? lastPick?.symbol : null}
+              lastPick={lastPick?.playerId === sideOpponents[1]?.odUserId ? lastPick?.symbol : null}
             />
           </div>
 
@@ -554,23 +558,23 @@ const DraftRoomScreen = ({
               gap: '6px',
             }}
           >
-            {/* Top opponent */}
+            {/* Top opponent - uses sideOpponents to avoid duplicate with center */}
             <PlayerPanel
-              username={otherPlayers[0]?.displayName || 'Player 2'}
-              isCurrentPicker={otherPlayers[0]?.odUserId === roomDraft?.currentPlayerId}
-              isNextPicker={otherPlayers[0]?.odUserId === nextPickerId}
+              username={sideOpponents[0]?.displayName || 'Waiting...'}
+              isCurrentPicker={false}
+              isNextPicker={sideOpponents[0]?.odUserId === nextPickerId}
               isYou={false}
-              isCPU={otherPlayers[0]?.isCPU || false}
+              isCPU={sideOpponents[0]?.isCPU || false}
               stats={{
-                steadyPicked: otherPlayers[0]?.categories?.steady || 0,
-                riskyPicked: otherPlayers[0]?.categories?.risky || 0,
-                defensivePicked: otherPlayers[0]?.categories?.defensive || 0,
+                steadyPicked: sideOpponents[0]?.categories?.steady || 0,
+                riskyPicked: sideOpponents[0]?.categories?.risky || 0,
+                defensivePicked: sideOpponents[0]?.categories?.defensive || 0,
               }}
               compact={true}
             />
 
             {/* Vertical connector */}
-            <SnakeConnectorVertical glowing={otherPlayers[0]?.odUserId === roomDraft?.currentPlayerId} />
+            <SnakeConnectorVertical glowing={false} />
 
             {/* Current Picker (Center) */}
             {(() => {
@@ -594,19 +598,19 @@ const DraftRoomScreen = ({
             })()}
 
             {/* Vertical connector */}
-            <SnakeConnectorVertical glowing={otherPlayers[1]?.odUserId === roomDraft?.currentPlayerId} />
+            <SnakeConnectorVertical glowing={false} />
 
-            {/* Bottom opponent */}
+            {/* Bottom opponent - uses sideOpponents to avoid duplicate with center */}
             <PlayerPanel
-              username={otherPlayers[1]?.displayName || 'Player 3'}
-              isCurrentPicker={otherPlayers[1]?.odUserId === roomDraft?.currentPlayerId}
-              isNextPicker={otherPlayers[1]?.odUserId === nextPickerId}
+              username={sideOpponents[1]?.displayName || 'Waiting...'}
+              isCurrentPicker={false}
+              isNextPicker={sideOpponents[1]?.odUserId === nextPickerId}
               isYou={false}
-              isCPU={otherPlayers[1]?.isCPU || false}
+              isCPU={sideOpponents[1]?.isCPU || false}
               stats={{
-                steadyPicked: otherPlayers[1]?.categories?.steady || 0,
-                riskyPicked: otherPlayers[1]?.categories?.risky || 0,
-                defensivePicked: otherPlayers[1]?.categories?.defensive || 0,
+                steadyPicked: sideOpponents[1]?.categories?.steady || 0,
+                riskyPicked: sideOpponents[1]?.categories?.risky || 0,
+                defensivePicked: sideOpponents[1]?.categories?.defensive || 0,
               }}
               compact={true}
             />
@@ -945,6 +949,7 @@ const DraftRoomScreen = ({
             sector={draftAssetInfoModal.sector || getStockSector?.(draftAssetInfoModal.symbol)}
             category={selectedDraftCategory}
             isMyTurn={isMyTurn}
+            timeRemaining={draftTimeRemaining}
             canPick={canPickFromCategory(selectedDraftCategory)}
             onAcquire={(asset) => handlePick(asset)}
             onClose={() => setDraftAssetInfoModal(null)}
