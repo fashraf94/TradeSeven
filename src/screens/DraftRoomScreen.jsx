@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
 
+/**
+ * DraftRoomScreen - Holographic War Room Redesign
+ *
+ * A cyberpunk-themed draft room with 4 responsive zones:
+ * - Zone A: Header Bar (round info, timer, code)
+ * - Zone B: Opponent Arc (player positions, turn indicator)
+ * - Zone C: Asset Grid (category tabs + scrollable asset cards)
+ * - Zone D: Command Deck (roster summary, user info, tools)
+ */
+
 // Import DraftAdvisor - will be passed or imported
 import DraftAdvisor from '../components/DraftAdvisor';
 
@@ -27,13 +37,13 @@ const DraftRoomScreen = ({
 
   const roomDraft = draftState || currentDraft;
 
-  // Loading state - Phase 4
+  // Loading state
   if (!roomDraft) {
     return (
       <div style={containerStyle}>
         <div style={{
           minHeight: '100vh',
-          background: '#0d1117',
+          background: 'var(--holo-bg-dark, #0a0e14)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center'
@@ -43,12 +53,18 @@ const DraftRoomScreen = ({
               width: '48px',
               height: '48px',
               border: '4px solid #21262d',
-              borderTop: '4px solid #8b5cf6',
+              borderTop: '4px solid var(--neon-cyan, #00ffff)',
               borderRadius: '50%',
               animation: 'spin 1s linear infinite',
-              margin: '0 auto 16px'
+              margin: '0 auto 16px',
+              boxShadow: 'var(--neon-cyan-glow)'
             }} />
-            <div style={{ color: '#8b949e' }}>Loading draft...</div>
+            <div style={{
+              color: 'var(--neon-cyan, #00ffff)',
+              textShadow: '0 0 10px rgba(0, 255, 255, 0.5)'
+            }}>
+              Initializing War Room...
+            </div>
           </div>
           <style>{`
             @keyframes spin {
@@ -65,294 +81,379 @@ const DraftRoomScreen = ({
   const isMyTurn = roomDraft?.currentPlayerId === currentUserId;
   const myPlayer = roomDraft?.players?.find(p => p.odUserId === currentUserId);
   const currentRound = Math.floor((roomDraft?.currentPickIndex || 0) / 4) + 1;
+  const totalRounds = 9;
 
-  const handlePick = async (asset) => {
-    if (!isMyTurn) return;
-    try {
-      const draftService = await import('../services/draftService');
-      await draftService.makePick(roomDraft.id, currentUserId, {
-        ...asset,
-        category: selectedDraftCategory
-      });
-    } catch (error) {
-      console.error('Pick failed:', error);
-      alert(error.message || 'Failed to make pick');
-    }
-  };
+  // Get other players for the opponent arc
+  const otherPlayers = roomDraft?.players?.filter(p => p.odUserId !== currentUserId) || [];
 
-  const handleAutopick = async () => {
-    try {
-      const draftService = await import('../services/draftService');
-      await draftService.handleAutopick(roomDraft.id, currentUserId);
-    } catch (error) {
-      console.error('Autopick failed:', error);
-    }
-  };
-
-  const getTimerColor = () => {
-    if (draftTimeRemaining > 60) return '#10b981';
-    if (draftTimeRemaining > 30) return '#f59e0b';
-    return '#ef4444';
-  };
-
+  // Timer formatting and states
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const availableAssets = roomDraft?.availableAssets?.[selectedDraftCategory] || [];
-  const canPickFromCategory = (cat) => (myPlayer?.categories?.[cat] || 0) < 3;
+  const getTimerState = () => {
+    if (draftTimeRemaining > 60) return 'safe';
+    if (draftTimeRemaining > 30) return 'warning';
+    return 'critical';
+  };
 
-  // Handle autopick when timer hits 0
-  if (draftTimeRemaining === 0 && isMyTurn) {
-    handleAutopick();
-  }
+  // Last pick info
+  const lastPick = draftState?.lastPick;
+
+  // Available assets for current category
+  const availableAssets = roomDraft?.availableAssets?.[selectedDraftCategory] || [];
+
+  // Category counts
+  const getCategoryCount = (cat) => roomDraft?.availableAssets?.[cat]?.length || 0;
 
   return (
     <div style={containerStyle}>
-      <div style={{ minHeight: '100vh', background: '#0d1117', display: 'flex', flexDirection: 'column' }}>
-        {/* Header - Phase 4: Mobile Polish */}
-        <div style={{
-          background: '#161b22',
-          borderBottom: '2px solid #21262d',
-          padding: '12px 16px',
-          paddingTop: 'max(12px, env(safe-area-inset-top))',
-          position: 'sticky',
-          top: 0,
-          zIndex: 100
-        }}>
-          <div style={{
-            maxWidth: '900px',
-            margin: '0 auto',
+      {/* Main War Room Container */}
+      <div
+        className="scanlines"
+        style={{
+          minHeight: '100vh',
+          background: `
+            radial-gradient(ellipse at 50% 0%, rgba(0, 255, 255, 0.08) 0%, transparent 50%),
+            radial-gradient(ellipse at 80% 20%, rgba(0, 255, 136, 0.05) 0%, transparent 40%),
+            radial-gradient(ellipse at 20% 80%, rgba(0, 255, 255, 0.03) 0%, transparent 40%),
+            var(--holo-bg-dark, #0a0e14)
+          `,
+          display: 'grid',
+          gridTemplateRows: 'auto auto 1fr auto',
+          gridTemplateAreas: `
+            "header"
+            "opponents"
+            "assets"
+            "command"
+          `,
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        {/* ============================================
+            ZONE A: Header Bar
+            Round info, draft code, timer
+            ============================================ */}
+        <header
+          style={{
+            gridArea: 'header',
+            padding: '12px 16px',
+            paddingTop: 'max(12px, env(safe-area-inset-top))',
+            borderBottom: '1px solid var(--holo-border, rgba(0, 255, 255, 0.3))',
+            background: 'rgba(10, 14, 20, 0.9)',
+            backdropFilter: 'blur(10px)',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between'
-          }}>
-            {/* EXIT BUTTON - Left side */}
+            justifyContent: 'space-between',
+            position: 'sticky',
+            top: 0,
+            zIndex: 100,
+          }}
+        >
+          {/* Left: Exit + Round Info */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <button
               onClick={() => {
-                if (window.confirm('Leave draft? Your turns will be auto-picked while you\'re away. You can rejoin anytime.')) {
+                if (window.confirm('Leave draft? Your turns will be auto-picked while you\'re away.')) {
                   setScreen('dashboard');
                 }
               }}
               style={{
-                color: '#8b949e',
                 background: 'transparent',
-                border: 'none',
+                border: '1px solid var(--holo-border)',
+                color: '#8b949e',
+                padding: '6px 12px',
+                borderRadius: '4px',
                 cursor: 'pointer',
-                fontSize: '14px',
-                padding: '8px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
+                fontSize: '12px',
+                transition: 'all 0.2s',
               }}
             >
-              ← Exit
+              ← EXIT
             </button>
-
-            {/* Round info - Center */}
-            <div style={{ color: '#8b949e', fontSize: '14px' }}>
-              Round {currentRound}/9
-            </div>
-
-            {/* Timer - Right */}
             <div style={{
-              fontSize: '20px',
-              fontWeight: 'bold',
-              color: getTimerColor(),
-              fontFamily: "'SF Mono', monospace"
+              color: '#e6edf3',
+              fontSize: '14px',
+              fontWeight: '500',
             }}>
-              ⏱️ {formatTime(draftTimeRemaining)}
+              Round {currentRound}/{totalRounds}
+              <span style={{
+                color: '#6e7681',
+                marginLeft: '12px',
+                fontSize: '12px'
+              }}>
+                Code: {roomDraft?.code}
+              </span>
             </div>
           </div>
 
-          {/* Draft Code */}
-          <div style={{
-            textAlign: 'center',
-            marginTop: '4px',
-            color: '#6e7681',
-            fontSize: '12px'
-          }}>
-            Code: {roomDraft?.code}
+          {/* Right: Timer */}
+          <div
+            className={`timer-${getTimerState()}`}
+            style={{
+              fontSize: '32px',
+              fontWeight: '700',
+              fontFamily: "'SF Mono', 'Monaco', monospace",
+              letterSpacing: '2px',
+            }}
+          >
+            {formatTime(draftTimeRemaining)}
           </div>
+        </header>
 
-          {/* Turn Indicator - Shows last pick OR your turn */}
-          <div style={{
-            textAlign: 'center',
-            marginTop: '8px',
-            padding: '8px',
-            background: isMyTurn ? 'rgba(0, 217, 255, 0.2)' : 'rgba(139, 92, 246, 0.1)',
-            borderRadius: '8px'
-          }}>
-            {isMyTurn ? (
-              <span style={{
-                color: '#00d9ff',
-                fontWeight: 'bold',
-                fontSize: '14px'
-              }}>
-                🎯 YOUR TURN - Pick an asset!
-              </span>
-            ) : draftState?.lastPick ? (
-              <div>
-                <span style={{ color: '#8b949e', fontSize: '13px' }}>
-                  {draftState.lastPick.isCPU ? '🤖' : '👤'} {draftState.lastPick.displayName} picked
-                </span>
-                <span style={{
-                  color: draftState.lastPick.category === 'steady' ? '#10b981'
-                       : draftState.lastPick.category === 'risky' ? '#f59e0b'
-                       : '#3b82f6',
-                  fontWeight: 'bold',
-                  fontSize: '16px',
-                  marginLeft: '8px'
-                }}>
-                  {draftState.lastPick.symbol}
-                </span>
-                <span style={{
-                  color: '#6e7681',
-                  fontSize: '12px',
-                  marginLeft: '8px',
-                  textTransform: 'capitalize'
-                }}>
-                  ({draftState.lastPick.category})
-                </span>
+        {/* ============================================
+            ZONE B: Opponent Arc
+            Shows all players in arc formation with picking indicator
+            ============================================ */}
+        <section
+          style={{
+            gridArea: 'opponents',
+            padding: '20px 16px',
+            borderBottom: '1px solid var(--holo-border)',
+            background: 'rgba(10, 14, 20, 0.5)',
+          }}
+        >
+          {/* Desktop: Horizontal arc layout */}
+          <div
+            className="opponent-arc-desktop"
+            style={{
+              display: 'none', // Will show on desktop via media query
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: '24px',
+            }}
+          >
+            {/* Left opponent */}
+            <div style={{
+              padding: '12px 20px',
+              background: 'var(--holo-bg-card)',
+              border: '1px solid var(--holo-border)',
+              borderRadius: '8px',
+              textAlign: 'center',
+              minWidth: '120px',
+            }}>
+              <div style={{ color: '#e6edf3', fontWeight: '600', fontSize: '14px' }}>
+                {otherPlayers[0]?.displayName || 'Player 2'}
               </div>
-            ) : (
-              <span style={{ color: '#8b949e', fontSize: '14px' }}>
-                Waiting for {roomDraft?.players?.find(p => p.odUserId === roomDraft?.currentPlayerId)?.displayName || 'opponent'}...
-              </span>
-            )}
+              <div style={{ color: '#6e7681', fontSize: '12px', marginTop: '4px' }}>
+                $0 R0 D0
+              </div>
+            </div>
+
+            {/* Connection line */}
+            <div style={{
+              width: '60px',
+              height: '2px',
+              background: 'linear-gradient(90deg, var(--neon-green) 0%, var(--neon-cyan) 100%)',
+              boxShadow: 'var(--neon-green-glow)',
+            }} />
+
+            {/* Current Picker (Center) */}
+            <div
+              className="pulse-glow"
+              style={{
+                padding: '16px 32px',
+                background: 'rgba(0, 255, 255, 0.1)',
+                border: '2px solid var(--neon-cyan)',
+                borderRadius: '8px',
+                textAlign: 'center',
+                boxShadow: 'var(--neon-cyan-glow)',
+              }}
+            >
+              <div style={{
+                color: 'var(--neon-cyan)',
+                fontSize: '10px',
+                fontWeight: '700',
+                letterSpacing: '2px',
+                marginBottom: '4px',
+              }}>
+                PICKING
+              </div>
+              <div style={{
+                color: '#fff',
+                fontWeight: '700',
+                fontSize: '16px',
+              }}>
+                {roomDraft?.players?.find(p => p.odUserId === roomDraft?.currentPlayerId)?.displayName || 'Unknown'}
+                <span style={{ marginLeft: '8px' }}>★</span>
+              </div>
+              <div style={{ color: '#6e7681', fontSize: '12px', marginTop: '4px' }}>
+                $0 R0 D0
+              </div>
+            </div>
+
+            {/* Connection line */}
+            <div style={{
+              width: '60px',
+              height: '2px',
+              background: 'linear-gradient(90deg, var(--neon-cyan) 0%, var(--neon-green) 100%)',
+              boxShadow: 'var(--neon-green-glow)',
+            }} />
+
+            {/* Right opponent */}
+            <div style={{
+              padding: '12px 20px',
+              background: 'var(--holo-bg-card)',
+              border: '1px solid var(--holo-border)',
+              borderRadius: '8px',
+              textAlign: 'center',
+              minWidth: '120px',
+            }}>
+              <div style={{ color: '#e6edf3', fontWeight: '600', fontSize: '14px' }}>
+                {otherPlayers[1]?.displayName || 'Player 3'}
+              </div>
+              <div style={{ color: '#6e7681', fontSize: '12px', marginTop: '4px' }}>
+                $0 R0 D0
+              </div>
+            </div>
           </div>
 
-          {/* Autopick Countdown - Draft Fixes */}
-          {autopickCountdown !== null && (
+          {/* Mobile: Vertical stack layout */}
+          <div
+            className="opponent-arc-mobile"
+            style={{
+              display: 'flex', // Will hide on desktop via media query
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            {/* Top opponent */}
+            <div style={{
+              padding: '8px 16px',
+              background: 'var(--holo-bg-card)',
+              border: '1px solid var(--holo-border)',
+              borderRadius: '6px',
+              textAlign: 'center',
+              minWidth: '100px',
+            }}>
+              <div style={{ color: '#e6edf3', fontWeight: '600', fontSize: '13px' }}>
+                {otherPlayers[0]?.displayName || 'Player 2'}
+              </div>
+            </div>
+
+            {/* Vertical connector */}
+            <div style={{
+              width: '2px',
+              height: '16px',
+              background: 'var(--neon-green)',
+              boxShadow: 'var(--neon-green-glow)',
+            }} />
+
+            {/* Current Picker (Center) */}
+            <div
+              className="pulse-glow"
+              style={{
+                padding: '12px 24px',
+                background: 'rgba(0, 255, 255, 0.1)',
+                border: '2px solid var(--neon-cyan)',
+                borderRadius: '6px',
+                textAlign: 'center',
+                boxShadow: 'var(--neon-cyan-glow)',
+              }}
+            >
+              <div style={{
+                color: 'var(--neon-cyan)',
+                fontSize: '9px',
+                fontWeight: '700',
+                letterSpacing: '2px',
+              }}>
+                PICKING
+              </div>
+              <div style={{
+                color: '#fff',
+                fontWeight: '700',
+                fontSize: '14px',
+                marginTop: '2px',
+              }}>
+                {roomDraft?.players?.find(p => p.odUserId === roomDraft?.currentPlayerId)?.displayName || 'Unknown'}
+                <span style={{ marginLeft: '6px' }}>★</span>
+              </div>
+            </div>
+
+            {/* Vertical connector */}
+            <div style={{
+              width: '2px',
+              height: '16px',
+              background: 'var(--neon-green)',
+              boxShadow: 'var(--neon-green-glow)',
+            }} />
+
+            {/* Bottom opponent */}
+            <div style={{
+              padding: '8px 16px',
+              background: 'var(--holo-bg-card)',
+              border: '1px solid var(--holo-border)',
+              borderRadius: '6px',
+              textAlign: 'center',
+              minWidth: '100px',
+            }}>
+              <div style={{ color: '#e6edf3', fontWeight: '600', fontSize: '13px' }}>
+                {otherPlayers[1]?.displayName || 'Player 3'}
+              </div>
+            </div>
+          </div>
+
+          {/* Last Pick Info */}
+          {lastPick && (
             <div style={{
               textAlign: 'center',
-              marginTop: '8px',
+              marginTop: '16px',
               padding: '8px 16px',
-              background: 'rgba(245, 158, 11, 0.2)',
-              borderRadius: '8px',
-              color: '#f59e0b',
-              fontSize: '14px',
-              fontWeight: '600'
+              background: 'rgba(0, 255, 255, 0.05)',
+              borderRadius: '4px',
+              fontSize: '13px',
+              color: '#8b949e',
             }}>
-              🤖 Auto-picking in {autopickCountdown}...
+              Last Pick: <span style={{ color: '#e6edf3', fontWeight: '600' }}>{lastPick.displayName}</span>
+              {' picked '}
+              <span style={{
+                color: lastPick.category === 'steady' ? '#10b981'
+                     : lastPick.category === 'risky' ? '#f59e0b'
+                     : '#3b82f6',
+                fontWeight: '700'
+              }}>
+                {lastPick.symbol}
+              </span>
+              <span style={{ color: '#6e7681', marginLeft: '4px' }}>
+                ({lastPick.category})
+              </span>
             </div>
           )}
-        </div>
+        </section>
 
-        {/* Player Status Cards - 2x2 Grid for mobile */}
-        <div style={{
-          background: '#161b22',
-          padding: '12px 16px',
-          borderBottom: '1px solid #21262d'
-        }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, 1fr)',
-            gap: '8px',
-            marginBottom: '0',
-            maxWidth: '400px',
-            margin: '0 auto'
-          }}>
-            {roomDraft?.players?.map((player, idx) => {
-              const isCurrentPicker = player.odUserId === roomDraft.currentPlayerId;
-              const isMe = player.odUserId === currentUserId;
-
-              return (
-                <div
-                  key={player.odUserId || idx}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: '10px',
-                    background: isMe ? 'rgba(0, 217, 255, 0.1)' : '#0d1117',
-                    border: isCurrentPicker
-                      ? '2px solid #00d9ff'
-                      : isMe
-                        ? '1px solid rgba(0, 217, 255, 0.3)'
-                        : '1px solid #21262d',
-                    textAlign: 'center',
-                    position: 'relative',
-                    boxShadow: isCurrentPicker ? '0 0 12px rgba(0, 217, 255, 0.3)' : 'none'
-                  }}
-                >
-                  {/* Current picker indicator */}
-                  {isCurrentPicker && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '-8px',
-                      left: '50%',
-                      transform: 'translateX(-50%)',
-                      background: '#00d9ff',
-                      color: '#000',
-                      fontSize: '9px',
-                      fontWeight: 'bold',
-                      padding: '2px 6px',
-                      borderRadius: '4px'
-                    }}>
-                      PICKING
-                    </div>
-                  )}
-
-                  {/* Player name row */}
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '4px',
-                    marginBottom: '4px'
-                  }}>
-                    {player.isCPU && <span style={{ fontSize: '12px' }}>🤖</span>}
-                    <span style={{
-                      color: isMe ? '#00d9ff' : '#ffffff',
-                      fontWeight: isMe ? 'bold' : '600',
-                      fontSize: '13px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      maxWidth: '100px'
-                    }}>
-                      {isMe ? 'YOU' : player.displayName?.slice(0, 10) || `Player ${idx + 1}`}
-                    </span>
-                    {isCurrentPicker && <span style={{ fontSize: '10px' }}>⭐</span>}
-                  </div>
-
-                  {/* Category counts */}
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    fontSize: '11px'
-                  }}>
-                    <span style={{ color: '#10b981' }}>S:{player.categories?.steady || 0}</span>
-                    <span style={{ color: '#f59e0b' }}>R:{player.categories?.risky || 0}</span>
-                    <span style={{ color: '#3b82f6' }}>D:{player.categories?.defensive || 0}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Category Tabs */}
-        <div style={{
-          background: '#0d1117',
-          padding: '12px 16px',
-          borderBottom: '1px solid #21262d'
-        }}>
-          <div style={{
-            maxWidth: '900px',
-            margin: '0 auto',
+        {/* ============================================
+            ZONE C: Asset Grid
+            Category tabs + scrollable asset cards
+            ============================================ */}
+        <section
+          style={{
+            gridArea: 'assets',
             display: 'flex',
-            gap: '8px'
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Category Tabs */}
+          <div style={{
+            display: 'flex',
+            gap: '8px',
+            padding: '12px 16px',
+            background: 'rgba(10, 14, 20, 0.7)',
+            borderBottom: '1px solid var(--holo-border)',
           }}>
             {['steady', 'risky', 'defensive'].map(cat => {
+              const isActive = selectedDraftCategory === cat;
+              const count = getCategoryCount(cat);
               const catColors = {
-                steady: '#10b981',
-                risky: '#f59e0b',
-                defensive: '#3b82f6'
+                steady: { color: '#10b981', label: 'Steady' },
+                risky: { color: '#f59e0b', label: 'Risky' },
+                defensive: { color: '#3b82f6', label: 'Defensive' },
               };
-              const count = roomDraft?.availableAssets?.[cat]?.length || 0;
+              const { color, label } = catColors[cat];
               const userCount = myPlayer?.categories?.[cat] || 0;
               const isFull = userCount >= 3;
 
@@ -361,775 +462,331 @@ const DraftRoomScreen = ({
                   key={cat}
                   onClick={() => !isFull && setSelectedDraftCategory(cat)}
                   disabled={isFull}
+                  className={isActive ? 'category-tab-active' : 'category-tab'}
                   style={{
                     flex: 1,
-                    padding: '12px',
-                    borderRadius: '10px',
-                    border: selectedDraftCategory === cat ? `2px solid ${catColors[cat]}` : '2px solid #21262d',
-                    background: selectedDraftCategory === cat ? `${catColors[cat]}20` : 'transparent',
-                    color: isFull ? '#6e7681' : selectedDraftCategory === cat ? catColors[cat] : '#8b949e',
+                    padding: '10px 12px',
+                    borderRadius: '6px',
+                    border: isActive ? `1px solid ${color}` : '1px solid var(--holo-border)',
+                    background: isActive ? `${color}15` : 'transparent',
+                    color: isFull ? '#6e7681' : isActive ? color : '#8b949e',
                     fontWeight: '600',
                     fontSize: '13px',
                     cursor: isFull ? 'not-allowed' : 'pointer',
                     opacity: isFull ? 0.5 : 1,
-                    textTransform: 'capitalize'
+                    transition: 'all 0.2s',
+                    boxShadow: isActive ? `inset 0 0 20px ${color}15` : 'none',
                   }}
                 >
-                  {cat} ({count})
+                  {label} ({count})
                   {isFull && ' ✓'}
                 </button>
               );
             })}
           </div>
-        </div>
 
-        {/* Ripple animation keyframes */}
-        <style>
-          {`
-            @keyframes pickRipple {
-              0% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; }
-              100% { transform: translate(-50%, -50%) scale(15); opacity: 0; }
-            }
-          `}
-        </style>
-
-        {/* Asset Grid - Phase 4: Enhanced with Glossy PICK buttons */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
+          {/* Asset Cards Grid - Scrollable */}
           <div style={{
-            maxWidth: '900px',
-            margin: '0 auto',
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
-            gap: '10px'
-          }}>
-            {availableAssets.map(asset => (
-              <div
-                key={asset.symbol}
-                onClick={() => setDraftAssetInfoModal(asset)}
-                style={{
-                  background: '#161b22',
-                  border: '1px solid #21262d',
-                  borderRadius: '12px',
-                  padding: '12px 10px',
-                  minHeight: '90px',
-                  textAlign: 'center',
-                  cursor: 'pointer',
-                  opacity: isMyTurn && canPickFromCategory(selectedDraftCategory) ? 1 : 0.6,
-                  transition: 'all 0.2s ease',
-                  position: 'relative',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
-                  e.currentTarget.style.borderColor = 'rgba(0, 217, 255, 0.3)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = 'none';
-                  e.currentTarget.style.borderColor = '#21262d';
-                }}
-              >
-                <div style={{
-                  fontSize: '15px',
-                  fontWeight: 'bold',
-                  color: '#ffffff',
-                  marginBottom: '2px'
-                }}>
-                  {asset.symbol}
-                </div>
-                <div style={{
-                  fontSize: '10px',
-                  color: '#8b949e',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  marginBottom: '8px'
-                }}>
-                  {asset.name}
-                </div>
-
-                {/* Subtle PICK Button */}
-                {isMyTurn && canPickFromCategory(selectedDraftCategory) && (
-                  <button
-                    className="pick-button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handlePick(asset);
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      minWidth: '70px',
-                      background: 'rgba(255, 255, 255, 0.08)',
-                      border: '1px solid rgba(255, 255, 255, 0.15)',
-                      borderRadius: '6px',
-                      color: 'rgba(255, 255, 255, 0.9)',
-                      fontWeight: '600',
-                      fontSize: '12px',
-                      letterSpacing: '0.5px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      userSelect: 'none',
-                      WebkitTapHighlightColor: 'transparent',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(0, 217, 255, 0.15)';
-                      e.currentTarget.style.borderColor = 'rgba(0, 217, 255, 0.4)';
-                      e.currentTarget.style.color = '#00d9ff';
-                      e.currentTarget.style.boxShadow = '0 0 12px rgba(0, 217, 255, 0.2)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
-                      e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)';
-                      e.currentTarget.style.boxShadow = 'none';
-                    }}
-                    onMouseDown={(e) => {
-                      e.currentTarget.style.transform = 'scale(0.97)';
-                      e.currentTarget.style.background = 'rgba(0, 217, 255, 0.25)';
-                    }}
-                    onMouseUp={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)';
-                      e.currentTarget.style.background = 'rgba(0, 217, 255, 0.15)';
-                    }}
-                  >
-                    PICK
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Draft Advisor Panel - Centered on Desktop */}
-          <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            width: '100%',
-            marginTop: '16px'
-          }}>
-            <div style={{ width: '100%', maxWidth: '450px' }}>
-              <DraftAdvisor
-                myPicks={myPlayer?.picks || []}
-                availableStocks={availableAssets}
-                availableSteady={roomDraft?.availableAssets?.steady || []}
-                availableRisky={roomDraft?.availableAssets?.risky || []}
-                availableDefensive={roomDraft?.availableAssets?.defensive || []}
-                categoryRequirements={{
-                  steadyPicked: myPlayer?.categories?.steady || 0,
-                  steadyRequired: 3,
-                  riskyPicked: myPlayer?.categories?.risky || 0,
-                  riskyRequired: 3,
-                  defensivePicked: myPlayer?.categories?.defensive || 0,
-                  defensiveRequired: 3
-                }}
-                draftPosition={roomDraft?.players?.findIndex(p => p.odUserId === currentUserId) + 1}
-                round={currentRound}
-                compareStocks={[]}
-                colors={colors}
-                notes={userNotes.map(n => ({ header: n.header || n.symbol, content: n.content || n.note }))}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Full Stock Details Modal - Shows when clicking asset card */}
-        {draftAssetInfoModal && (() => {
-          // Get additional stock data from stocksData
-          const stockData = stocksData?.find(s => s.symbol === draftAssetInfoModal.symbol) || draftAssetInfoModal;
-          const sector = stockData.sector || getStockSector(draftAssetInfoModal.symbol) || 'Technology';
-          const sectorColor = getSectorColor(sector);
-
-          // Calculate analyst sentiment
-          const analystRating = stockData.analystRating || {};
-          const totalAnalysts = (analystRating.buy || 0) + (analystRating.hold || 0) + (analystRating.sell || 0);
-          const buyPercent = totalAnalysts > 0 ? ((analystRating.buy || 0) / totalAnalysts * 100) : null;
-          const sentiment = buyPercent !== null
-            ? buyPercent >= 60 ? 'Buy' : buyPercent >= 40 ? 'Hold' : 'Sell'
-            : null;
-          const sentimentColor = sentiment === 'Buy' ? '#10b981' : sentiment === 'Sell' ? '#ef4444' : '#f59e0b';
-
-          return (
-          <div
-            onClick={() => setDraftAssetInfoModal(null)}
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0, 0, 0, 0.9)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 1000,
-              padding: '16px'
-            }}
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                background: '#0d1117',
-                border: `1px solid ${sectorColor}`,
-                borderRadius: '16px',
-                width: '100%',
-                maxWidth: '420px',
-                maxHeight: '85vh',
-                overflow: 'auto',
-                position: 'relative',
-                boxShadow: `0 0 40px ${sectorColor}40`
-              }}
-            >
-              {/* Header with Sector Color Accent */}
-              <div style={{
-                padding: '20px',
-                background: `linear-gradient(180deg, ${sectorColor}15 0%, #0d1117 100%)`,
-                borderBottom: '1px solid #21262d',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <div style={{
-                      fontSize: '28px',
-                      fontWeight: '800',
-                      color: '#ffffff',
-                      letterSpacing: '1px',
-                      textShadow: `0 0 20px ${sectorColor}60`
-                    }}>
-                      {draftAssetInfoModal.symbol}
-                    </div>
-                    <div style={{ fontSize: '14px', color: '#8b949e', marginTop: '2px' }}>
-                      {draftAssetInfoModal.name}
-                    </div>
-                    <div style={{
-                      display: 'inline-block',
-                      marginTop: '8px',
-                      padding: '4px 10px',
-                      background: `${sectorColor}20`,
-                      border: `1px solid ${sectorColor}40`,
-                      borderRadius: '12px',
-                      fontSize: '11px',
-                      color: sectorColor,
-                      fontWeight: '600'
-                    }}>
-                      {sector}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setDraftAssetInfoModal(null)}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: 'none',
-                      color: '#8b949e',
-                      fontSize: '18px',
-                      cursor: 'pointer',
-                      padding: '8px',
-                      borderRadius: '8px',
-                      lineHeight: 1
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                {/* Large Price Display */}
-                <div style={{ marginTop: '16px' }}>
-                  <div style={{ fontSize: '36px', fontWeight: '700', color: '#ffffff' }}>
-                    ${(stockData.price || draftAssetInfoModal.price)?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                  {(stockData.percentChange !== undefined || draftAssetInfoModal.percentChange !== undefined) && (
-                    <div style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      marginTop: '4px',
-                      padding: '4px 10px',
-                      background: (stockData.percentChange || draftAssetInfoModal.percentChange) >= 0
-                        ? 'rgba(16, 185, 129, 0.15)'
-                        : 'rgba(239, 68, 68, 0.15)',
-                      borderRadius: '6px',
-                      fontSize: '15px',
-                      fontWeight: '600',
-                      color: (stockData.percentChange || draftAssetInfoModal.percentChange) >= 0 ? '#10b981' : '#ef4444',
-                    }}>
-                      {(stockData.percentChange || draftAssetInfoModal.percentChange) >= 0 ? '▲' : '▼'}
-                      {Math.abs(stockData.percentChange || draftAssetInfoModal.percentChange).toFixed(2)}% today
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Analyst Sentiment */}
-              {sentiment && (
-                <div style={{
-                  padding: '16px 20px',
-                  borderBottom: '1px solid #21262d',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between'
-                }}>
-                  <div>
-                    <div style={{ fontSize: '11px', color: '#8b949e', textTransform: 'uppercase', marginBottom: '4px' }}>
-                      Analyst Rating
-                    </div>
-                    <div style={{
-                      fontSize: '20px',
-                      fontWeight: '700',
-                      color: sentimentColor
-                    }}>
-                      {sentiment}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '4px' }}>
-                      {totalAnalysts} Analysts
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', fontSize: '12px' }}>
-                      <span style={{ color: '#10b981' }}>{analystRating.buy || 0} Buy</span>
-                      <span style={{ color: '#f59e0b' }}>{analystRating.hold || 0} Hold</span>
-                      <span style={{ color: '#ef4444' }}>{analystRating.sell || 0} Sell</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Key Metrics Grid */}
-              <div style={{
-                padding: '16px 20px',
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: '12px',
-                borderBottom: '1px solid #21262d'
-              }}>
-                <div style={{
-                  background: '#161b22',
-                  borderRadius: '10px',
-                  padding: '14px'
-                }}>
-                  <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase' }}>Market Cap</div>
-                  <div style={{ fontSize: '16px', fontWeight: '700', color: '#e6edf3' }}>
-                    {stockData.marketCap
-                      ? stockData.marketCap >= 1e12
-                        ? `$${(stockData.marketCap / 1e12).toFixed(2)}T`
-                        : `$${(stockData.marketCap / 1e9).toFixed(1)}B`
-                      : 'N/A'}
-                  </div>
-                </div>
-                <div style={{
-                  background: '#161b22',
-                  borderRadius: '10px',
-                  padding: '14px'
-                }}>
-                  <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase' }}>P/E Ratio</div>
-                  <div style={{ fontSize: '16px', fontWeight: '700', color: '#e6edf3' }}>
-                    {stockData.pe ? stockData.pe.toFixed(1) : stockData.peRatio ? stockData.peRatio.toFixed(1) : 'N/A'}
-                  </div>
-                </div>
-                <div style={{
-                  background: '#161b22',
-                  borderRadius: '10px',
-                  padding: '14px'
-                }}>
-                  <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase' }}>Revenue Growth</div>
-                  <div style={{
-                    fontSize: '16px',
-                    fontWeight: '700',
-                    color: (stockData.revenueGrowth || 0) >= 0 ? '#10b981' : '#ef4444'
-                  }}>
-                    {stockData.revenueGrowth
-                      ? `${stockData.revenueGrowth >= 0 ? '+' : ''}${stockData.revenueGrowth.toFixed(1)}%`
-                      : 'N/A'}
-                  </div>
-                </div>
-                <div style={{
-                  background: '#161b22',
-                  borderRadius: '10px',
-                  padding: '14px'
-                }}>
-                  <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase' }}>Profit Margin</div>
-                  <div style={{
-                    fontSize: '16px',
-                    fontWeight: '700',
-                    color: (stockData.profitMargin || 0) >= 0 ? '#10b981' : '#ef4444'
-                  }}>
-                    {stockData.profitMargin
-                      ? `${stockData.profitMargin.toFixed(1)}%`
-                      : 'N/A'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Additional Stats Row */}
-              <div style={{
-                padding: '12px 20px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                borderBottom: '1px solid #21262d',
-                fontSize: '12px'
-              }}>
-                <div>
-                  <span style={{ color: '#8b949e' }}>52W High: </span>
-                  <span style={{ color: '#e6edf3', fontWeight: '600' }}>
-                    ${stockData.high52 ? stockData.high52.toFixed(2) : 'N/A'}
-                  </span>
-                </div>
-                <div>
-                  <span style={{ color: '#8b949e' }}>52W Low: </span>
-                  <span style={{ color: '#e6edf3', fontWeight: '600' }}>
-                    ${stockData.low52 ? stockData.low52.toFixed(2) : 'N/A'}
-                  </span>
-                </div>
-                <div>
-                  <span style={{ color: '#8b949e' }}>Vol: </span>
-                  <span style={{ color: '#e6edf3', fontWeight: '600' }}>
-                    {stockData.volume
-                      ? stockData.volume >= 1e6
-                        ? `${(stockData.volume / 1e6).toFixed(1)}M`
-                        : `${(stockData.volume / 1e3).toFixed(0)}K`
-                      : 'N/A'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Category Badge */}
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid #21262d' }}>
-                <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '8px', textTransform: 'uppercase' }}>
-                  Draft Category
-                </div>
-                <span style={{
-                  display: 'inline-block',
-                  padding: '8px 14px',
-                  borderRadius: '20px',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  background: selectedDraftCategory === 'steady' ? 'rgba(16, 185, 129, 0.2)' :
-                              selectedDraftCategory === 'risky' ? 'rgba(245, 158, 11, 0.2)' :
-                              'rgba(59, 130, 246, 0.2)',
-                  color: selectedDraftCategory === 'steady' ? '#10b981' :
-                         selectedDraftCategory === 'risky' ? '#f59e0b' : '#3b82f6',
-                  textTransform: 'uppercase'
-                }}>
-                  {selectedDraftCategory === 'steady' ? '🛡️ Steady' : selectedDraftCategory === 'risky' ? '⚡ Risky' : '🏛️ Defensive'}
-                </span>
-                <div style={{ marginTop: '10px', fontSize: '12px', color: '#8b949e', lineHeight: '1.5' }}>
-                  {selectedDraftCategory === 'steady'
-                    ? 'Steady picks provide reliable, consistent performance with lower volatility. Great foundation for your portfolio.'
-                    : selectedDraftCategory === 'risky'
-                    ? 'Risky picks have higher volatility and potential for big swings. High risk, high reward plays.'
-                    : 'Defensive picks offer protection during market downturns. Helps balance aggressive positions.'}
-                </div>
-              </div>
-
-              {/* PICK Button - Subtle Style */}
-              {isMyTurn && canPickFromCategory(selectedDraftCategory) && (
-                <div style={{ padding: '20px' }}>
-                  <button
-                    onClick={() => {
-                      handlePick(draftAssetInfoModal);
-                      setDraftAssetInfoModal(null);
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '16px 24px',
-                      background: 'rgba(0, 217, 255, 0.15)',
-                      border: '1px solid rgba(0, 217, 255, 0.4)',
-                      borderRadius: '12px',
-                      color: '#00d9ff',
-                      fontWeight: '700',
-                      fontSize: '15px',
-                      letterSpacing: '0.5px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(0, 217, 255, 0.25)';
-                      e.currentTarget.style.boxShadow = '0 0 20px rgba(0, 217, 255, 0.3)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(0, 217, 255, 0.15)';
-                      e.currentTarget.style.boxShadow = 'none';
-                    }}
-                  >
-                    PICK {draftAssetInfoModal.symbol}
-                  </button>
-                </div>
-              )}
-
-              {/* Disabled state message */}
-              {(!isMyTurn || !canPickFromCategory(selectedDraftCategory)) && (
-                <div style={{
-                  padding: '20px',
-                  textAlign: 'center',
-                  color: '#8b949e',
-                  fontSize: '13px'
-                }}>
-                  {!isMyTurn ? "Wait for your turn to pick" : `You've already filled your ${selectedDraftCategory} category`}
-                </div>
-              )}
-            </div>
-          </div>
-          );
-        })()}
-
-        {/* Swipeable Portfolio Drawer - Draft Fixes */}
-        <div
-          onTouchStart={(e) => {
-            setRosterTouchEnd(null);
-            setRosterTouchStart(e.targetTouches[0].clientY);
-          }}
-          onTouchMove={(e) => {
-            setRosterTouchEnd(e.targetTouches[0].clientY);
-          }}
-          onTouchEnd={() => {
-            if (!rosterTouchStart || !rosterTouchEnd) return;
-            const distance = rosterTouchStart - rosterTouchEnd;
-            const minSwipeDistance = 50;
-            if (distance > minSwipeDistance && !isRosterExpanded) {
-              setIsRosterExpanded(true);
-            } else if (distance < -minSwipeDistance && isRosterExpanded) {
-              setIsRosterExpanded(false);
-            }
-          }}
-          onClick={() => setIsRosterExpanded(!isRosterExpanded)}
-          style={{
-            background: '#161b22',
-            borderTop: '2px solid #21262d',
-            position: 'sticky',
-            bottom: 0,
-            transition: 'all 0.3s ease-out',
-            maxHeight: isRosterExpanded ? '70vh' : '80px',
-            overflow: 'hidden',
-            cursor: 'pointer'
-          }}
-        >
-          {/* Drag Handle */}
-          <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            padding: '8px 0 4px 0'
+            flex: 1,
+            overflow: 'auto',
+            padding: '16px',
           }}>
             <div style={{
-              width: '40px',
-              height: '4px',
-              background: '#6e7681',
-              borderRadius: '2px'
-            }} />
-          </div>
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+              gap: '12px',
+              maxWidth: '1200px',
+              margin: '0 auto',
+            }}>
+              {/* Placeholder Asset Cards */}
+              {availableAssets.slice(0, 10).map((asset, idx) => {
+                const isLocked = idx === 2; // Demo: 3rd card is locked
 
-          {/* Collapsed Header */}
-          <div style={{
-            padding: '8px 16px 12px 16px',
-            display: 'flex',
+                return (
+                  <div
+                    key={asset.symbol}
+                    className={`holo-card ${isLocked ? 'holo-locked' : 'holo-card-hover'}`}
+                    style={{
+                      padding: '16px',
+                      borderRadius: '8px',
+                      background: isLocked ? 'rgba(255, 51, 102, 0.05)' : 'var(--holo-bg-card)',
+                      border: isLocked
+                        ? '1px solid rgba(255, 51, 102, 0.4)'
+                        : '1px solid var(--holo-border)',
+                      position: 'relative',
+                      cursor: isLocked ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {/* Status Badge */}
+                    <div style={{
+                      position: 'absolute',
+                      top: '-8px',
+                      left: '12px',
+                      padding: '2px 8px',
+                      background: isLocked ? 'var(--neon-red)' : 'var(--neon-cyan)',
+                      color: '#000',
+                      fontSize: '9px',
+                      fontWeight: '700',
+                      letterSpacing: '1px',
+                      borderRadius: '2px',
+                    }}>
+                      {isLocked ? 'LOCKED' : 'AVAILABLE'}
+                    </div>
+
+                    {/* Symbol */}
+                    <div style={{
+                      fontSize: '18px',
+                      fontWeight: '700',
+                      color: '#ffffff',
+                      marginTop: '8px',
+                    }}>
+                      {asset.symbol}
+                    </div>
+
+                    {/* Company Name */}
+                    <div style={{
+                      fontSize: '11px',
+                      color: '#6e7681',
+                      marginTop: '2px',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}>
+                      {asset.name}
+                    </div>
+
+                    {/* Price */}
+                    <div style={{
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      color: '#e6edf3',
+                      marginTop: '8px',
+                    }}>
+                      ${asset.price?.toFixed(2) || '0.00'}
+                    </div>
+
+                    {/* Data/Volume (placeholder) */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      marginTop: '8px',
+                      fontSize: '10px',
+                      color: '#6e7681',
+                    }}>
+                      <span>Data <span style={{ color: '#10b981' }}>+1.2%</span></span>
+                      <span>Volume <span style={{ color: '#10b981' }}>+1.2%</span></span>
+                    </div>
+
+                    {/* Acquire Button */}
+                    {!isLocked && (
+                      <button
+                        className="btn-acquire"
+                        style={{
+                          width: '100%',
+                          marginTop: '12px',
+                          padding: '8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          letterSpacing: '1px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        ACQUIRE
+                      </button>
+                    )}
+
+                    {/* Locked Overlay */}
+                    {isLocked && (
+                      <div style={{
+                        marginTop: '12px',
+                        padding: '8px',
+                        background: 'rgba(255, 51, 102, 0.1)',
+                        border: '1px solid rgba(255, 51, 102, 0.3)',
+                        borderRadius: '4px',
+                        textAlign: 'center',
+                        fontSize: '10px',
+                        color: 'var(--neon-red)',
+                        fontWeight: '600',
+                        letterSpacing: '1px',
+                      }}>
+                        SYSTEM LOCKED<br/>BY BEARHUNTER
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        {/* ============================================
+            ZONE D: Command Deck
+            Roster power cores, user info, tools
+            ============================================ */}
+        <footer
+          style={{
+            gridArea: 'command',
+            padding: '12px 16px',
+            paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+            borderTop: '1px solid var(--holo-border-bright)',
+            background: 'rgba(10, 14, 20, 0.95)',
+            backdropFilter: 'blur(10px)',
+            display: 'grid',
+            gridTemplateColumns: 'auto 1fr auto',
+            gap: '16px',
             alignItems: 'center',
-            justifyContent: 'space-between'
+          }}
+        >
+          {/* Left: Roster Power Cores */}
+          <div style={{
+            display: 'flex',
+            gap: '8px',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '18px' }}>📊</span>
-              <span style={{ color: '#ffffff', fontWeight: '600' }}>
-                YOUR ROSTER ({myPlayer?.picks?.length || 0}/9)
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ color: '#8b949e', fontSize: '13px' }}>
-                {3 - (myPlayer?.categories?.steady || 0)}S, {3 - (myPlayer?.categories?.risky || 0)}R, {3 - (myPlayer?.categories?.defensive || 0)}D needed
-              </span>
-              <span style={{
-                color: '#8b949e',
-                transform: isRosterExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                transition: 'transform 0.3s'
-              }}>
-                ▲
-              </span>
+            {['S', 'R', 'D'].map((cat, idx) => {
+              const colors = ['#10b981', '#f59e0b', '#3b82f6'];
+              const fullCat = ['steady', 'risky', 'defensive'][idx];
+              const count = myPlayer?.categories?.[fullCat] || 0;
+
+              return (
+                <div
+                  key={cat}
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '8px',
+                    background: `${colors[idx]}15`,
+                    border: `1px solid ${colors[idx]}50`,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    color: colors[idx],
+                  }}
+                >
+                  <span>{cat}:</span>
+                  <span>{count}/3</span>
+                </div>
+              );
+            })}
+            <div style={{
+              fontSize: '10px',
+              color: '#6e7681',
+              alignSelf: 'flex-end',
+              marginLeft: '4px',
+            }}>
+              Roster Power Cores [cite: 4]
             </div>
           </div>
 
-          {/* Expanded Roster View */}
-          {isRosterExpanded && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                padding: '0 16px 24px 16px',
-                maxWidth: '600px',
-                margin: '0 auto'
-              }}
-            >
-              {/* STEADY Section */}
-              <div style={{ marginBottom: '20px' }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  marginBottom: '12px'
-                }}>
-                  <div style={{
-                    width: '12px',
-                    height: '12px',
-                    borderRadius: '50%',
-                    background: '#10b981'
-                  }} />
-                  <span style={{ color: '#10b981', fontWeight: '600', fontSize: '14px' }}>
-                    STEADY ({myPlayer?.categories?.steady || 0}/3)
-                  </span>
-                  {(myPlayer?.categories?.steady || 0) >= 3 && (
-                    <span style={{ color: '#10b981' }}>✓</span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {[0, 1, 2].map(slot => {
-                    const steadyPicks = myPlayer?.picks?.filter((symbol, idx) =>
-                      myPlayer?.pickCategories?.[idx] === 'steady'
-                    ) || [];
-                    const symbol = steadyPicks[slot];
-                    return (
-                      <div
-                        key={`steady-${slot}`}
-                        style={{
-                          flex: 1,
-                          padding: '12px 8px',
-                          background: symbol ? 'rgba(16, 185, 129, 0.1)' : '#0d1117',
-                          border: symbol ? '2px solid #10b981' : '2px dashed #21262d',
-                          borderRadius: '8px',
-                          textAlign: 'center',
-                          minHeight: '50px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        {symbol ? (
-                          <span style={{ color: '#ffffff', fontWeight: '600', fontSize: '14px' }}>
-                            {symbol}
-                          </span>
-                        ) : (
-                          <span style={{ color: '#6e7681', fontSize: '20px' }}>—</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* RISKY Section */}
-              <div style={{ marginBottom: '20px' }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  marginBottom: '12px'
-                }}>
-                  <div style={{
-                    width: '12px',
-                    height: '12px',
-                    borderRadius: '50%',
-                    background: '#f59e0b'
-                  }} />
-                  <span style={{ color: '#f59e0b', fontWeight: '600', fontSize: '14px' }}>
-                    RISKY ({myPlayer?.categories?.risky || 0}/3)
-                  </span>
-                  {(myPlayer?.categories?.risky || 0) >= 3 && (
-                    <span style={{ color: '#f59e0b' }}>✓</span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {[0, 1, 2].map(slot => {
-                    const riskyPicks = myPlayer?.picks?.filter((symbol, idx) =>
-                      myPlayer?.pickCategories?.[idx] === 'risky'
-                    ) || [];
-                    const symbol = riskyPicks[slot];
-                    return (
-                      <div
-                        key={`risky-${slot}`}
-                        style={{
-                          flex: 1,
-                          padding: '12px 8px',
-                          background: symbol ? 'rgba(245, 158, 11, 0.1)' : '#0d1117',
-                          border: symbol ? '2px solid #f59e0b' : '2px dashed #21262d',
-                          borderRadius: '8px',
-                          textAlign: 'center',
-                          minHeight: '50px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        {symbol ? (
-                          <span style={{ color: '#ffffff', fontWeight: '600', fontSize: '14px' }}>
-                            {symbol}
-                          </span>
-                        ) : (
-                          <span style={{ color: '#6e7681', fontSize: '20px' }}>—</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* DEFENSIVE Section */}
-              <div>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  marginBottom: '12px'
-                }}>
-                  <div style={{
-                    width: '12px',
-                    height: '12px',
-                    borderRadius: '50%',
-                    background: '#3b82f6'
-                  }} />
-                  <span style={{ color: '#3b82f6', fontWeight: '600', fontSize: '14px' }}>
-                    DEFENSIVE ({myPlayer?.categories?.defensive || 0}/3)
-                  </span>
-                  {(myPlayer?.categories?.defensive || 0) >= 3 && (
-                    <span style={{ color: '#3b82f6' }}>✓</span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {[0, 1, 2].map(slot => {
-                    const defensivePicks = myPlayer?.picks?.filter((symbol, idx) =>
-                      myPlayer?.pickCategories?.[idx] === 'defensive'
-                    ) || [];
-                    const symbol = defensivePicks[slot];
-                    return (
-                      <div
-                        key={`defensive-${slot}`}
-                        style={{
-                          flex: 1,
-                          padding: '12px 8px',
-                          background: symbol ? 'rgba(59, 130, 246, 0.1)' : '#0d1117',
-                          border: symbol ? '2px solid #3b82f6' : '2px dashed #21262d',
-                          borderRadius: '8px',
-                          textAlign: 'center',
-                          minHeight: '50px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        {symbol ? (
-                          <span style={{ color: '#ffffff', fontWeight: '600', fontSize: '14px' }}>
-                            {symbol}
-                          </span>
-                        ) : (
-                          <span style={{ color: '#6e7681', fontSize: '20px' }}>—</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Tap to collapse hint */}
-              <div style={{
-                textAlign: 'center',
-                marginTop: '16px',
-                color: '#6e7681',
-                fontSize: '12px'
-              }}>
-                Tap or swipe down to collapse
-              </div>
+          {/* Center: YOU Info */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '8px 24px',
+            background: 'rgba(0, 255, 255, 0.1)',
+            border: '1px solid var(--holo-border-bright)',
+            borderRadius: '8px',
+          }}>
+            <div style={{
+              fontSize: '10px',
+              color: 'var(--neon-cyan)',
+              fontWeight: '700',
+              letterSpacing: '1px',
+              marginBottom: '2px',
+            }}>
+              D
             </div>
-          )}
-        </div>
+            <div style={{
+              fontSize: '18px',
+              fontWeight: '700',
+              color: '#ffffff',
+            }}>
+              YOU
+            </div>
+            <div style={{
+              fontSize: '12px',
+              color: '#8b949e',
+              marginTop: '2px',
+            }}>
+              $0 R0 D0
+            </div>
+            <div style={{
+              fontSize: '10px',
+              color: '#6e7681',
+              marginTop: '4px',
+            }}>
+              Command Deck [cite: 4]
+            </div>
+          </div>
+
+          {/* Right: Integrated Tool Buttons */}
+          <div style={{
+            display: 'flex',
+            gap: '8px',
+          }}>
+            {[
+              { icon: '🔍', label: 'Analyze Draft' },
+              { icon: '⚖️', label: 'Compare Picks' },
+              { icon: '📝', label: 'My Notes' },
+            ].map(({ icon, label }) => (
+              <button
+                key={label}
+                style={{
+                  padding: '8px 12px',
+                  background: 'var(--holo-bg-card)',
+                  border: '1px solid var(--holo-border)',
+                  borderRadius: '6px',
+                  color: '#8b949e',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '4px',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <span style={{ fontSize: '16px' }}>{icon}</span>
+                <span>{label}</span>
+              </button>
+            ))}
+            <div style={{
+              fontSize: '10px',
+              color: '#6e7681',
+              alignSelf: 'flex-end',
+            }}>
+              Integrated Tool Button [cite: 4]
+            </div>
+          </div>
+        </footer>
+
+        {/* Responsive Styles */}
+        <style>{`
+          /* Desktop: Show horizontal arc, hide vertical */
+          @media (min-width: 1024px) {
+            .opponent-arc-desktop {
+              display: flex !important;
+            }
+            .opponent-arc-mobile {
+              display: none !important;
+            }
+          }
+
+          /* Mobile: Show vertical stack, hide horizontal */
+          @media (max-width: 1023px) {
+            .opponent-arc-desktop {
+              display: none !important;
+            }
+            .opponent-arc-mobile {
+              display: flex !important;
+            }
+          }
+        `}</style>
       </div>
     </div>
   );
