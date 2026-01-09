@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
+import FundamentalNews from '../Research/FundamentalNews';
 
 /**
  * AssetResearchModal - Detailed asset research view for draft room
  *
  * Shows comprehensive asset information with AI Analysis:
  * - Stock hero section (symbol, name, price, change)
- * - AI Analysis with Fundamental/Technical tabs
+ * - AI Analysis with Fundamental/Technical/News tabs
  * - Key metrics: Market Cap, P/E Ratio, Revenue Growth, Profit Margin
  * - Strengths & Weaknesses
+ * - Real-time news from EODHD API
  * - Draft-specific acquire action
  */
 
@@ -310,55 +312,79 @@ const AssetResearchModal = ({
             </div>
 
             {/* Tabs */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
               <button
                 onClick={() => setActiveTab('fundamental')}
                 style={{
                   flex: 1,
-                  padding: '10px',
+                  padding: '10px 8px',
                   borderRadius: '8px',
                   border: 'none',
                   background: activeTab === 'fundamental' ? '#00d9ff' : 'rgba(255, 255, 255, 0.05)',
                   color: activeTab === 'fundamental' ? '#000' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '13px',
+                  fontSize: '12px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '6px',
+                  gap: '4px',
                   transition: 'all 0.2s',
                 }}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <rect x="3" y="3" width="18" height="18" rx="2" />
                   <path d="M9 9h6v6H9z" />
                 </svg>
-                Fundamental
+                Analysis
               </button>
               <button
                 onClick={() => setActiveTab('technical')}
                 style={{
                   flex: 1,
-                  padding: '10px',
+                  padding: '10px 8px',
                   borderRadius: '8px',
                   border: 'none',
                   background: activeTab === 'technical' ? '#00d9ff' : 'rgba(255, 255, 255, 0.05)',
                   color: activeTab === 'technical' ? '#000' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '13px',
+                  fontSize: '12px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '6px',
+                  gap: '4px',
                   transition: 'all 0.2s',
                 }}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
                 </svg>
                 Technical
+              </button>
+              <button
+                onClick={() => setActiveTab('news')}
+                style={{
+                  flex: 1,
+                  padding: '10px 8px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: activeTab === 'news' ? '#00d9ff' : 'rgba(255, 255, 255, 0.05)',
+                  color: activeTab === 'news' ? '#000' : 'rgba(255, 255, 255, 0.6)',
+                  fontWeight: '600',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2" />
+                </svg>
+                News
               </button>
             </div>
 
@@ -648,6 +674,12 @@ const AssetResearchModal = ({
                     </span>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {activeTab === 'news' && (
+              <div style={{ marginTop: '-10px' }}>
+                <FundamentalNews symbol={asset.symbol} />
               </div>
             )}
           </div>

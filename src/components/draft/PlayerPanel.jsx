@@ -51,15 +51,16 @@ const PlayerPanel = ({
 
   const state = getState();
 
-  // State-based styling with new border glow colors
+  // State-based styling with SOLID backgrounds to cover snake
+  // Using solid dark base with colored accents via border/glow only
   const stateStyles = {
     waiting: {
-      background: 'var(--holo-bg-card, rgba(10, 20, 30, 0.85))',
+      background: '#0d1117', // SOLID dark background
       border: '1px solid rgba(255, 255, 255, 0.1)',
       boxShadow: 'none',
     },
     next: {
-      background: 'rgba(255, 149, 0, 0.08)',
+      background: '#1a1510', // SOLID dark with warm tint
       border: '2px solid #ff9500',
       boxShadow: `
         0 0 12px rgba(255, 149, 0, 0.5),
@@ -67,7 +68,7 @@ const PlayerPanel = ({
       `,
     },
     picking: {
-      background: 'rgba(0, 255, 136, 0.1)',
+      background: '#0d1a14', // SOLID dark with green tint
       border: '2px solid #00ff88',
       boxShadow: `
         0 0 15px rgba(0, 255, 136, 0.6),
@@ -76,7 +77,7 @@ const PlayerPanel = ({
       `,
     },
     picked: {
-      background: 'rgba(0, 255, 136, 0.15)',
+      background: '#0d1a14', // SOLID dark with green tint
       border: '2px solid #00ff88',
       boxShadow: '0 0 30px rgba(0, 255, 136, 0.5)',
     },
@@ -95,7 +96,7 @@ const PlayerPanel = ({
           textAlign: 'center',
           minWidth: '100px',
           transition: 'all 0.3s ease',
-          zIndex: 5, // Above snake conduit (z-index: 1)
+          zIndex: 10, // Above snake conduit (z-index: 1)
           ...currentStyle,
         }}
       >
@@ -181,7 +182,7 @@ const PlayerPanel = ({
         textAlign: 'center',
         minWidth: '120px',
         transition: 'all 0.3s ease',
-        zIndex: 5, // Above snake conduit (z-index: 1)
+        zIndex: 10, // Above snake conduit (z-index: 1)
         ...currentStyle,
       }}
     >
