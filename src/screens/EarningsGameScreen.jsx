@@ -6,6 +6,7 @@
  *
  * Phase 1 Refactor: Integrated useEarningsGame hook, Framer Motion, and new shared components
  * Phase 2 Refactor: Integrated EarningsCalendar component for calendar view
+ * Phase 3 Refactor: Integrated ParlayArchitectModal with BeatMissToggle, MagnitudePillars, PredictionSummary
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -18,7 +19,8 @@ import {
   BUDGET,
   MIN_PREDICTIONS,
   MAX_PREDICTIONS,
-  EarningsCalendar
+  EarningsCalendar,
+  ParlayArchitectModal
 } from '../components/earningsGame';
 
 const EarningsGameScreen = ({
@@ -100,11 +102,13 @@ const EarningsGameScreen = ({
     setSelectedOutcome(outcome);
   };
 
-  const handleAddParlay = (parlay) => {
-    if (!selectedEvent) return;
-
+  const handleAddParlay = (prediction) => {
     // Use hook's addPrediction - it handles all validation
-    const success = addPrediction(selectedEvent, parlay);
+    // The prediction object comes from ParlayArchitectModal with all required fields
+    const success = addPrediction(
+      { id: prediction.eventId, symbol: prediction.symbol, companyName: prediction.companyName },
+      prediction
+    );
 
     if (success) {
       setSelectedEvent(null);
@@ -163,200 +167,15 @@ const EarningsGameScreen = ({
           isDesktop={isDesktop}
         />
 
-        {/* Parlay Selection Modal - kept from Phase 1 until Phase 3 replaces it */}
-        <AnimatePresence>
-          {selectedEvent && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                background: 'rgba(0,0,0,0.8)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                zIndex: 1000,
-                padding: '20px'
-              }}
-              onClick={closeModal}
-            >
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                style={{
-                  background: designColors.bgCard,
-                  borderRadius: '16px',
-                  maxWidth: '500px',
-                  width: '100%',
-                  maxHeight: '90vh',
-                  overflowY: 'auto',
-                  border: `1px solid ${designColors.borderDefault}`
-                }}
-                onClick={e => e.stopPropagation()}
-              >
-                {/* Modal Header */}
-                <div style={{
-                  padding: '20px',
-                  borderBottom: `1px solid ${designColors.borderDefault}`,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <div>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold' }}>{selectedEvent.symbol}</div>
-                    <div style={{ fontSize: '14px', color: designColors.textSecondary }}>
-                      {formatDate(selectedEvent.reportDate)} - {selectedEvent.beatProbability}% Beat Odds
-                    </div>
-                  </div>
-                  <motion.button
-                    onClick={closeModal}
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    style={{ background: 'none', border: 'none', color: designColors.textSecondary, fontSize: '24px', cursor: 'pointer' }}
-                  >
-                    ✕
-                  </motion.button>
-                </div>
-
-                {/* Step 1: Select Outcome */}
-                <div style={{ padding: '20px', borderBottom: `1px solid ${designColors.borderDefault}` }}>
-                  <div style={{ fontSize: '14px', color: designColors.textSecondary, marginBottom: '12px' }}>
-                    Step 1: Will {selectedEvent.symbol} beat earnings?
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <motion.button
-                      onClick={() => handleSelectOutcome('beat')}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      style={{
-                        padding: '16px',
-                        background: selectedOutcome === 'beat' ? 'rgba(16,185,129,0.2)' : 'transparent',
-                        border: `2px solid ${selectedOutcome === 'beat' ? designColors.green : designColors.borderDefault}`,
-                        borderRadius: '12px',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      <div style={{ fontSize: '20px', fontWeight: 'bold', color: designColors.green }}>BEAT</div>
-                      <div style={{ fontSize: '14px', color: designColors.textSecondary, fontFamily: fontMono }}>
-                        {selectedEvent.beatProbability}% odds
-                      </div>
-                    </motion.button>
-                    <motion.button
-                      onClick={() => handleSelectOutcome('miss')}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      style={{
-                        padding: '16px',
-                        background: selectedOutcome === 'miss' ? 'rgba(239,68,68,0.2)' : 'transparent',
-                        border: `2px solid ${selectedOutcome === 'miss' ? designColors.red : designColors.borderDefault}`,
-                        borderRadius: '12px',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      <div style={{ fontSize: '20px', fontWeight: 'bold', color: designColors.red }}>MISS</div>
-                      <div style={{ fontSize: '14px', color: designColors.textSecondary, fontFamily: fontMono }}>
-                        {100 - selectedEvent.beatProbability}% odds
-                      </div>
-                    </motion.button>
-                  </div>
-                </div>
-
-                {/* Step 2: Select Magnitude */}
-                <AnimatePresence>
-                  {selectedOutcome && selectedEvent.parlays && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      style={{ padding: '20px', overflow: 'hidden' }}
-                    >
-                      <div style={{ fontSize: '14px', color: designColors.textSecondary, marginBottom: '8px' }}>
-                        Step 2: How will the stock react after {selectedOutcome}ing?
-                      </div>
-                      {selectedEvent.reactionSummary && (
-                        <div style={{ fontSize: '12px', color: designColors.textMuted, marginBottom: '16px' }}>
-                          Historical: {selectedOutcome === 'beat'
-                            ? `${selectedEvent.reactionSummary.upAfterBeat}% up, ${selectedEvent.reactionSummary.flatAfterBeat}% flat, ${selectedEvent.reactionSummary.downAfterBeat}% down`
-                            : `${selectedEvent.reactionSummary.upAfterMiss}% up, ${selectedEvent.reactionSummary.flatAfterMiss}% flat, ${selectedEvent.reactionSummary.downAfterMiss}% down`
-                          }
-                        </div>
-                      )}
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {selectedEvent.parlays
-                          .filter(p => p.outcome === selectedOutcome)
-                          .map((parlay, index) => {
-                            const canAfford = parlay.price <= budgetRemaining;
-
-                            return (
-                              <motion.button
-                                key={parlay.id}
-                                initial={{ opacity: 0, x: -10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: index * 0.05 }}
-                                onClick={() => canAfford && handleAddParlay(parlay)}
-                                disabled={!canAfford}
-                                whileHover={canAfford ? { scale: 1.01, backgroundColor: 'rgba(255,255,255,0.05)' } : {}}
-                                whileTap={canAfford ? { scale: 0.99 } : {}}
-                                style={{
-                                  display: 'flex',
-                                  justifyContent: 'space-between',
-                                  alignItems: 'center',
-                                  padding: '14px 16px',
-                                  background: canAfford ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.3)',
-                                  border: `1px solid ${designColors.borderDefault}`,
-                                  borderRadius: '10px',
-                                  cursor: canAfford ? 'pointer' : 'not-allowed',
-                                  opacity: canAfford ? 1 : 0.5,
-                                  transition: 'all 0.2s'
-                                }}
-                              >
-                                <div style={{ textAlign: 'left' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ fontSize: '20px' }}>{parlay.emoji}</span>
-                                    <span style={{ fontWeight: 'bold', color: designColors.textPrimary }}>{parlay.range}</span>
-                                    <span style={{
-                                      padding: '2px 8px',
-                                      background: parlay.risk.color + '22',
-                                      color: parlay.risk.color,
-                                      borderRadius: '10px',
-                                      fontSize: '11px'
-                                    }}>
-                                      {parlay.risk.label}
-                                    </span>
-                                  </div>
-                                  <div style={{ fontSize: '12px', color: designColors.textMuted, marginTop: '4px' }}>
-                                    {Math.round(parlay.combinedProb * 100)}% combined, {parlay.multiplier}x multiplier
-                                  </div>
-                                </div>
-                                <div style={{ textAlign: 'right' }}>
-                                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: designColors.textPrimary, fontFamily: fontMono }}>
-                                    ${parlay.price.toLocaleString()}
-                                  </div>
-                                  <div style={{ fontSize: '13px', color: designColors.cyan, fontFamily: fontMono }}>
-                                    {parlay.potentialPoints.toLocaleString()} pts
-                                  </div>
-                                </div>
-                              </motion.button>
-                            );
-                          })}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Parlay Architect Modal - Phase 3 */}
+        <ParlayArchitectModal
+          event={selectedEvent}
+          isOpen={!!selectedEvent}
+          onClose={closeModal}
+          onAddPrediction={handleAddParlay}
+          currentBudget={budgetRemaining}
+          isDesktop={isDesktop}
+        />
       </>
     );
   }
