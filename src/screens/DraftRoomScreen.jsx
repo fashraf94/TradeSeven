@@ -1158,6 +1158,7 @@ const DraftRoomScreen = ({
 
           /* ===== PHONE STYLES (< 768px) ===== */
           @media (max-width: 767px) {
+            /* Hide desktop/tablet arcs, show phone arc */
             .opponent-arc-desktop {
               display: none !important;
             }
@@ -1166,17 +1167,56 @@ const DraftRoomScreen = ({
             }
             .opponent-arc-phone {
               display: flex !important;
+              width: 100% !important;
+              max-width: 100vw !important;
+              overflow-x: hidden !important;
+              box-sizing: border-box !important;
+              justify-content: center !important;
+              gap: 6px !important;
+              padding: 8px 8px !important;
             }
 
-            /* Compact header */
+            /* Main container - prevent horizontal overflow */
+            .scanlines {
+              width: 100vw !important;
+              max-width: 100vw !important;
+              overflow-x: hidden !important;
+              box-sizing: border-box !important;
+            }
+
+            /* Compact header - ensure timer fits */
             header {
-              padding: 8px 12px !important;
+              padding: 8px 10px !important;
+              width: 100% !important;
+              max-width: 100vw !important;
+              box-sizing: border-box !important;
+              gap: 8px !important;
+            }
+
+            /* Mini player panels - fit 4 across */
+            .mini-player-panel {
+              min-width: 65px !important;
+              max-width: 80px !important;
+              flex-shrink: 1 !important;
+              padding: 6px 6px !important;
             }
 
             /* Compact category tabs */
             .category-tab {
-              padding: 8px 10px !important;
-              font-size: 12px !important;
+              padding: 8px 8px !important;
+              font-size: 11px !important;
+              flex: 1 !important;
+            }
+
+            /* Asset grid - add bottom padding for fixed footer */
+            .asset-grid-container {
+              padding-bottom: 90px !important;
+            }
+
+            .asset-grid {
+              grid-template-columns: repeat(auto-fill, minmax(85px, 1fr)) !important;
+              gap: 8px !important;
+              padding: 8px !important;
             }
 
             /* Compact last pick banner */
@@ -1186,10 +1226,20 @@ const DraftRoomScreen = ({
               margin-top: 8px !important;
             }
 
-            /* Compact command deck */
+            /* Command deck footer - FIXED at bottom */
             footer {
-              padding: 8px 12px !important;
-              gap: 8px !important;
+              position: fixed !important;
+              bottom: 0 !important;
+              left: 0 !important;
+              right: 0 !important;
+              z-index: 100 !important;
+              padding: 8px 10px !important;
+              padding-bottom: max(8px, env(safe-area-inset-bottom, 8px)) !important;
+              gap: 6px !important;
+              background: rgba(10, 14, 20, 0.98) !important;
+              border-top: 1px solid rgba(0, 255, 255, 0.2) !important;
+              box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5) !important;
+              backdrop-filter: blur(10px) !important;
             }
           }
 
@@ -1197,18 +1247,33 @@ const DraftRoomScreen = ({
           @media (max-width: 374px) {
             .opponent-arc-phone {
               gap: 4px !important;
-              padding: 6px 8px !important;
+              padding: 6px 6px !important;
             }
 
             .mini-player-panel {
-              min-width: 58px !important;
-              max-width: 70px !important;
-              padding: 4px 6px !important;
+              min-width: 55px !important;
+              max-width: 68px !important;
+              padding: 4px 4px !important;
+            }
+
+            .asset-grid {
+              grid-template-columns: repeat(3, 1fr) !important;
+              gap: 6px !important;
+            }
+
+            .asset-grid-container {
+              padding-bottom: 85px !important;
             }
 
             footer {
-              grid-template-columns: auto 1fr !important;
-              gap: 6px !important;
+              grid-template-columns: auto 1fr auto !important;
+              gap: 4px !important;
+              padding: 6px 8px !important;
+            }
+
+            .category-tab {
+              padding: 6px 4px !important;
+              font-size: 10px !important;
             }
           }
 
