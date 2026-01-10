@@ -11,63 +11,66 @@ import React from 'react';
 
 /**
  * SnakeHead - Reusable snake head component with eyes and forked tongue
+ * Uses wrapper group for CSS animations to avoid conflict with SVG transform
  */
 const SnakeHead = ({ x, y, rotation = 0, color = '#00ff88', side = 'left' }) => (
-  <g
-    transform={`translate(${x}, ${y}) rotate(${rotation})`}
-    className={`snake-head snake-head-${side}`}
-  >
-    {/* Head shape - pointed oval */}
-    <ellipse
-      cx="0"
-      cy="0"
-      rx="14"
-      ry="9"
-      fill={color}
-      filter="url(#rainbow-glow)"
-    />
-    {/* Darker top for 3D effect - uses transparent overlay */}
-    <ellipse
-      cx="0"
-      cy="-2"
-      rx="12"
-      ry="6"
-      fill="rgba(255, 255, 255, 0.3)"
-    />
-    {/* Snout point */}
-    <ellipse
-      cx="16"
-      cy="0"
-      rx="6"
-      ry="5"
-      fill={color}
-      filter="url(#rainbow-glow)"
-    />
-    {/* Left eye socket */}
-    <circle cx="-3" cy="-3" r="4" fill="#0a0e14" />
-    {/* Left eye pupil */}
-    <circle cx="-2" cy="-3" r="2" fill="#ffcc00" />
-    {/* Left eye highlight */}
-    <circle cx="-3" cy="-4" r="1" fill="#ffffff" opacity="0.9" />
-    {/* Right eye socket */}
-    <circle cx="7" cy="-3" r="4" fill="#0a0e14" />
-    {/* Right eye pupil */}
-    <circle cx="8" cy="-3" r="2" fill="#ffcc00" />
-    {/* Right eye highlight */}
-    <circle cx="7" cy="-4" r="1" fill="#ffffff" opacity="0.9" />
-    {/* Nostril dots */}
-    <circle cx="14" cy="-2" r="1" fill="#0a0e14" opacity="0.6" />
-    <circle cx="14" cy="2" r="1" fill="#0a0e14" opacity="0.6" />
-    {/* Forked tongue */}
-    <g className={`snake-tongue snake-tongue-${side}`}>
-      <path
-        d="M 20,0 L 34,0 L 42,-6 M 34,0 L 42,6"
-        stroke="#ff4466"
-        strokeWidth="2.5"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+  <g transform={`translate(${x}, ${y})`}>
+    {/* Wrapper for CSS animation - separate from positioning transform */}
+    <g className={`snake-head snake-head-${side}`}>
+      <g transform={`rotate(${rotation})`}>
+        {/* Head shape - pointed oval */}
+        <ellipse
+          cx="0"
+          cy="0"
+          rx="16"
+          ry="11"
+          fill={color}
+          filter="url(#rainbow-glow)"
+        />
+        {/* Darker top for 3D effect - uses transparent overlay */}
+        <ellipse
+          cx="0"
+          cy="-2"
+          rx="14"
+          ry="7"
+          fill="rgba(255, 255, 255, 0.3)"
+        />
+        {/* Snout point */}
+        <ellipse
+          cx="18"
+          cy="0"
+          rx="8"
+          ry="6"
+          fill={color}
+          filter="url(#rainbow-glow)"
+        />
+        {/* Left eye socket */}
+        <circle cx="-4" cy="-4" r="5" fill="#0a0e14" />
+        {/* Left eye pupil */}
+        <circle cx="-3" cy="-4" r="3" fill="#ffcc00" />
+        {/* Left eye highlight */}
+        <circle cx="-4" cy="-5" r="1.5" fill="#ffffff" opacity="0.9" />
+        {/* Right eye socket */}
+        <circle cx="8" cy="-4" r="5" fill="#0a0e14" />
+        {/* Right eye pupil */}
+        <circle cx="9" cy="-4" r="3" fill="#ffcc00" />
+        {/* Right eye highlight */}
+        <circle cx="8" cy="-5" r="1.5" fill="#ffffff" opacity="0.9" />
+        {/* Nostril dots */}
+        <circle cx="16" cy="-3" r="1.5" fill="#0a0e14" opacity="0.7" />
+        <circle cx="16" cy="3" r="1.5" fill="#0a0e14" opacity="0.7" />
+        {/* Forked tongue */}
+        <g className={`snake-tongue snake-tongue-${side}`}>
+          <path
+            d="M 24,0 L 40,0 L 50,-8 M 40,0 L 50,8"
+            stroke="#ff4466"
+            strokeWidth="3"
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </g>
+      </g>
     </g>
   </g>
 );
@@ -109,19 +112,19 @@ const SnakeConduit = ({
       className="snake-conduit-container"
       style={{
         position: 'absolute',
-        top: '-30px',
+        top: '-50px',
         left: '50%',
         transform: 'translateX(-50%)',
-        width: '110%', // Extra width for snake heads
-        maxWidth: `${width + 100}px`, // Extra space for heads (50px each side)
-        height: `${height}px`,
+        width: '120%', // Extra width for snake heads
+        maxWidth: `${width + 200}px`, // Extra space for heads (100px each side)
+        height: `${height + 60}px`,
         pointerEvents: 'none',
         zIndex: 1, // Below player cards (cards should be z-index: 5+)
         overflow: 'visible', // Allow heads to overflow
       }}
     >
       <svg
-        viewBox={`-50 0 ${width + 100} ${height}`}
+        viewBox={`-100 -30 ${width + 200} ${height + 60}`}
         style={{
           width: '100%',
           height: '100%',
@@ -290,11 +293,11 @@ const SnakeConduit = ({
           className="snake-shimmer"
         />
 
-        {/* Left snake head - entering from left, pointing right (Cyan - Technology) */}
-        <SnakeHead x={-30} y={120} rotation={0} color="#00d9ff" side="left" />
+        {/* Left snake head - at start of wave, pointing left (Cyan - Technology) */}
+        <SnakeHead x={-50} y={120} rotation={180} color="#00d9ff" side="left" />
 
-        {/* Right snake head - exiting to right, pointing right (Purple - Industrial) */}
-        <SnakeHead x={930} y={120} rotation={0} color="#8b5cf6" side="right" />
+        {/* Right snake head - at end of wave, pointing right (Purple - Industrial) */}
+        <SnakeHead x={950} y={120} rotation={0} color="#8b5cf6" side="right" />
       </svg>
 
       {/* CSS for animations */}

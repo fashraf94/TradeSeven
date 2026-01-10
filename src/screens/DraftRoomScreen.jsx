@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 /**
  * DraftRoomScreen - Holographic War Room Redesign
@@ -14,6 +14,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 // Import DraftAdvisor - will be passed or imported
 import DraftAdvisor from '../components/DraftAdvisor';
+// Import EODHD API for real-time prices
+import { getMultipleStockPrices } from '../services/eodhdAPI';
 // Import Holographic components
 import {
   HoloAssetCard,
@@ -71,6 +73,10 @@ const DraftRoomScreen = ({
   const [drawerDragY, setDrawerDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
 
+  // Real-time price data from EODHD API
+  const [livePrices, setLivePrices] = useState({});
+  const [pricesLoading, setPricesLoading] = useState(true);
+
   const roomDraft = draftState || currentDraft;
 
   // Handle draft completion - navigate to results
@@ -80,6 +86,45 @@ const DraftRoomScreen = ({
       setScreen('draftResults');
     }
   }, [roomDraft?.status, setScreen]);
+
+  // Fetch real-time prices from EODHD API
+  useEffect(() => {
+    if (!roomDraft?.availableAssets) return;
+
+    const fetchPrices = async () => {
+      try {
+        // Collect all unique symbols from all categories
+        const allSymbols = new Set();
+        Object.values(roomDraft.availableAssets).forEach(categoryAssets => {
+          categoryAssets.forEach(asset => {
+            if (asset.symbol) {
+              allSymbols.add(asset.symbol.toUpperCase());
+            }
+          });
+        });
+
+        if (allSymbols.size === 0) return;
+
+        const symbolsArray = Array.from(allSymbols);
+        console.log('[DraftRoom] Fetching prices for', symbolsArray.length, 'symbols');
+
+        const prices = await getMultipleStockPrices(symbolsArray);
+        setLivePrices(prices);
+        setPricesLoading(false);
+      } catch (error) {
+        console.error('[DraftRoom] Failed to fetch prices:', error);
+        setPricesLoading(false);
+      }
+    };
+
+    // Initial fetch
+    fetchPrices();
+
+    // Refresh prices every 60 seconds
+    const intervalId = setInterval(fetchPrices, 60000);
+
+    return () => clearInterval(intervalId);
+  }, [roomDraft?.availableAssets]);
 
   // Detect when it becomes YOUR TURN - flash notification
   useEffect(() => {
@@ -332,7 +377,7 @@ const DraftRoomScreen = ({
   const timerWarningLevel = draftTimeRemaining <= 5 ? 'critical-5' : draftTimeRemaining <= 10 ? 'critical-10' : draftTimeRemaining <= 30 ? 'warning' : 'safe';
 
   return (
-    <div style={containerStyle}>
+    <div style={{ ...containerStyle, height: '100vh', overflow: 'hidden' }}>
       {/* Screen Edge Warning Glow - Shows when timer is low */}
       {isMyTurn && timerWarningLevel !== 'safe' && (
         <div
@@ -387,11 +432,12 @@ const DraftRoomScreen = ({
         </div>
       )}
 
-      {/* Main War Room Container */}
+      {/* Main War Room Container - height: 100vh for sticky footer */}
       <div
         className="scanlines"
         style={{
-          minHeight: '100vh',
+          height: '100vh',
+          maxHeight: '100vh',
           background: `
             radial-gradient(ellipse at 50% 0%, rgba(0, 255, 255, 0.08) 0%, transparent 50%),
             radial-gradient(ellipse at 80% 20%, rgba(0, 255, 136, 0.05) 0%, transparent 40%),
@@ -753,15 +799,21 @@ const DraftRoomScreen = ({
                 // Get sector for color theming
                 const assetSector = asset.sector || getStockSector?.(asset.symbol) || 'Technology';
 
+                // Get real-time price from EODHD API (fallback to asset data)
+                const upperSymbol = asset.symbol?.toUpperCase();
+                const livePrice = livePrices[upperSymbol];
+                const displayPrice = livePrice?.price ?? asset.price ?? 0;
+                const displayChange = livePrice?.percentChange ?? asset.percentChange ?? asset.change ?? 0;
+
                 return (
                   <HoloAssetCard
                     key={asset.symbol}
                     symbol={asset.symbol}
                     name={asset.name}
-                    price={asset.price}
-                    change={asset.percentChange || asset.change || 0}
-                    dataChange={asset.percentChange || 1.2}
-                    volumeChange={asset.volumeChange || 1.2}
+                    price={displayPrice}
+                    change={displayChange}
+                    dataChange={displayChange}
+                    volumeChange={displayChange}
                     sector={assetSector}
                     status={isLocked ? 'locked' : 'available'}
                     lockedBy={pickedInfo?.pickedBy}
@@ -770,7 +822,11 @@ const DraftRoomScreen = ({
                     isSelected={isAssetSelected}
                     onSelect={() => handleSelectAsset(asset)}
                     onAcquire={() => handlePick(asset)}
-                    onGetInfo={() => setDraftAssetInfoModal(asset)}
+                    onGetInfo={() => setDraftAssetInfoModal({
+                      ...asset,
+                      price: displayPrice,
+                      percentChange: displayChange,
+                    })}
                   />
                 );
               })}
@@ -802,15 +858,18 @@ const DraftRoomScreen = ({
         <footer
           style={{
             gridArea: 'command',
+            flexShrink: 0,
             padding: '12px 16px',
             paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
             borderTop: '1px solid var(--holo-border-bright)',
-            background: 'rgba(10, 14, 20, 0.95)',
+            background: 'rgba(10, 14, 20, 0.98)',
             backdropFilter: 'blur(10px)',
             display: 'grid',
             gridTemplateColumns: 'auto 1fr auto',
             gap: '16px',
             alignItems: 'center',
+            boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.5)',
+            zIndex: 10,
           }}
         >
           {/* Left: Roster Power Cores */}
