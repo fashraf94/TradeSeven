@@ -20,6 +20,182 @@ export default function PortfolioWarRoom({
 }) {
   const canLock = isValid && predictions.length >= MIN_PREDICTIONS;
 
+  // Desktop layout - Enhanced 2-column grid
+  if (isDesktop) {
+    return (
+      <div style={{
+        backgroundColor: designColors.bgPrimary,
+        minHeight: '100vh',
+      }}>
+        {/* Header with inline lock button */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '16px 24px',
+          borderBottom: `1px solid ${designColors.borderDefault}`,
+          backgroundColor: designColors.bgCard,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <motion.button
+              onClick={onBack}
+              whileTap={{ scale: 0.95 }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: designColors.textSecondary,
+                fontSize: '18px',
+                cursor: 'pointer',
+                padding: '4px 8px',
+              }}
+            >
+              ←
+            </motion.button>
+            <span style={{
+              fontSize: '18px',
+              fontWeight: 'bold',
+              color: designColors.textPrimary,
+            }}>
+              PORTFOLIO
+            </span>
+          </div>
+
+          {!isLocked ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              {!canLock && predictions.length > 0 && (
+                <span style={{
+                  fontSize: '13px',
+                  color: designColors.orange,
+                }}>
+                  {predictions.length < MIN_PREDICTIONS
+                    ? `Add ${MIN_PREDICTIONS - predictions.length} more to lock`
+                    : validationMessage
+                  }
+                </span>
+              )}
+              <motion.button
+                onClick={onLock}
+                disabled={!canLock}
+                whileHover={canLock ? { scale: 1.02 } : {}}
+                whileTap={canLock ? { scale: 0.98 } : {}}
+                style={{
+                  padding: '10px 24px',
+                  backgroundColor: canLock ? designColors.cyan : designColors.bgCardInner,
+                  border: canLock ? 'none' : `1px solid ${designColors.borderDefault}`,
+                  borderRadius: '8px',
+                  color: canLock ? designColors.bgPrimary : designColors.textMuted,
+                  fontWeight: 'bold',
+                  fontSize: '13px',
+                  cursor: canLock ? 'pointer' : 'not-allowed',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: canLock ? glowEffects.cyan : 'none',
+                }}
+              >
+                LOCK PORTFOLIO
+              </motion.button>
+            </div>
+          ) : (
+            <div style={{
+              padding: '8px 16px',
+              backgroundColor: 'rgba(16, 185, 129, 0.1)',
+              borderRadius: '6px',
+              border: `1px solid ${designColors.green}`,
+            }}>
+              <span style={{
+                color: designColors.green,
+                fontWeight: 'bold',
+                fontSize: '13px',
+              }}>
+                Portfolio Locked
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+          {/* Metrics row - side by side */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '20px',
+            marginBottom: '24px',
+          }}>
+            <PowerMeter spent={totalSpent} predictions={predictions} />
+            <RiskProfile predictions={predictions} />
+          </div>
+
+          {/* Predictions header with total */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '16px',
+          }}>
+            <span style={{
+              fontSize: '12px',
+              fontWeight: 'bold',
+              color: designColors.textSecondary,
+              letterSpacing: '0.5px',
+            }}>
+              YOUR PREDICTIONS ({predictions.length}/{MAX_PREDICTIONS})
+            </span>
+            <span style={{
+              fontSize: '14px',
+              color: designColors.textSecondary,
+            }}>
+              Total: <span style={{
+                color: designColors.cyan,
+                fontFamily: fontMono,
+                fontWeight: 'bold',
+              }}>
+                {totalPotentialPoints?.toLocaleString()}
+              </span> potential pts
+            </span>
+          </div>
+
+          {/* 2-column prediction grid */}
+          {predictions.length === 0 ? (
+            <div style={{
+              padding: '60px 20px',
+              textAlign: 'center',
+              color: designColors.textMuted,
+              backgroundColor: designColors.bgCard,
+              borderRadius: '12px',
+              border: `1px solid ${designColors.borderDefault}`,
+            }}>
+              <div style={{ fontSize: '40px', marginBottom: '16px' }}>📋</div>
+              <div style={{ fontSize: '16px', marginBottom: '8px' }}>No predictions yet</div>
+              <div style={{ fontSize: '13px' }}>
+                Add at least {MIN_PREDICTIONS} predictions to lock your portfolio
+              </div>
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: '16px',
+            }}>
+              <AnimatePresence>
+                {predictions.map((prediction, index) => (
+                  <PredictionCard
+                    key={prediction.eventId}
+                    prediction={prediction}
+                    onRemove={onRemove}
+                    isLocked={isLocked}
+                    index={index}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Mobile layout
   return (
     <motion.div
       initial={{ opacity: 0 }}

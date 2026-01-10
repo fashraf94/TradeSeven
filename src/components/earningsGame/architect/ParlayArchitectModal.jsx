@@ -263,9 +263,10 @@ export default function ParlayArchitectModal({
     );
   }
 
-  // Desktop side panel
+  // Desktop side panel - Enhanced with shadow and better positioning
   return (
-    <AnimatePresence>
+    <>
+      {/* Semi-transparent backdrop */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -277,27 +278,34 @@ export default function ParlayArchitectModal({
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          zIndex: 1000,
+          backgroundColor: 'rgba(0, 0, 0, 0.4)',
+          zIndex: 999,
+        }}
+      />
+
+      {/* Side panel */}
+      <motion.div
+        initial={{ x: '100%' }}
+        animate={{ x: 0 }}
+        exit={{ x: '100%' }}
+        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: '420px',
+          backgroundColor: designColors.bgPrimary,
+          borderLeft: `1px solid ${designColors.borderDefault}`,
           display: 'flex',
-          justifyContent: 'flex-end',
+          flexDirection: 'column',
+          zIndex: 1000,
+          boxShadow: '-8px 0 32px rgba(0, 0, 0, 0.5)',
+          overflowY: 'auto',
+          padding: '24px',
         }}
       >
-        <motion.div
-          initial={{ x: '100%' }}
-          animate={{ x: 0 }}
-          exit={{ x: '100%' }}
-          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            width: '400px',
-            height: '100%',
-            backgroundColor: designColors.bgCard,
-            borderLeft: `1px solid ${designColors.borderDefault}`,
-            padding: '24px',
-            overflowY: 'auto',
-          }}
-        >
           {/* Header */}
           <div style={{
             display: 'flex',
@@ -446,7 +454,6 @@ export default function ParlayArchitectModal({
             )}
           </div>
         </motion.div>
-      </motion.div>
-    </AnimatePresence>
+    </>
   );
 }

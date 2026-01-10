@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { designColors } from '../designConstants';
-import { EarningsHeader } from '../shared';
+import { designColors, fontMono } from '../designConstants';
+import { EarningsHeader, CountdownTimer } from '../shared';
 import TournamentBanner from './TournamentBanner';
 import DaySelector from './DaySelector';
 import CompanyCard from './CompanyCard';
@@ -92,53 +92,177 @@ export default function EarningsCalendar({
     );
   }
 
-  // Desktop layout
+  // Calculate total spent for display
+  const totalSpent = predictions.reduce((sum, p) => sum + (p.price || 0), 0);
+
+  // Get week date range for sidebar
+  const getWeekRange = () => {
+    if (dayGroups.length === 0) return '';
+    const firstDay = dayGroups[0]?.fullDate;
+    const lastDay = dayGroups[dayGroups.length - 1]?.fullDate;
+    if (!firstDay || !lastDay) return '';
+    const month = firstDay.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+    return `${month} ${firstDay.getDate()}-${lastDay.getDate()}`;
+  };
+
+  // Desktop layout - Enhanced 3-column design
   if (isDesktop) {
     return (
       <div style={{
         backgroundColor: designColors.bgPrimary,
         minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
       }}>
-        <EarningsHeader
-          title="EARNINGSGAME"
-          onBack={onBack}
-        />
+        {/* Header with inline tournament info */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 24px',
+          borderBottom: `1px solid ${designColors.borderDefault}`,
+          backgroundColor: designColors.bgCard,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <motion.button
+              onClick={onBack}
+              whileTap={{ scale: 0.95 }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: designColors.textSecondary,
+                fontSize: '18px',
+                cursor: 'pointer',
+                padding: '4px 8px',
+              }}
+            >
+              ←
+            </motion.button>
+            <span style={{
+              fontSize: '18px',
+              fontWeight: 'bold',
+              color: designColors.textPrimary,
+            }}>
+              EARNINGSGAME
+            </span>
+          </div>
 
-        <TournamentBanner
-          week={tournament.week}
-          lockDeadline={tournament.lockDeadline}
-          picksCount={predictions.length}
-          totalSpent={predictions.reduce((sum, p) => sum + p.price, 0)}
-          onViewPortfolio={onViewPortfolio}
-        />
+          {/* Inline tournament info */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '16px' }}>🏆</span>
+              <span style={{
+                fontWeight: 'bold',
+                color: designColors.textPrimary,
+              }}>
+                WEEK {tournament.week}
+              </span>
+            </div>
 
-        <div style={{ display: 'flex' }}>
-          {/* Left: Day selector (vertical) */}
-          <DaySelector
-            days={dayGroups.map(d => ({
-              dayName: d.dayName,
-              date: d.date,
-              count: d.events.length
-            }))}
-            selectedIndex={selectedDayIndex}
-            onSelect={setSelectedDayIndex}
-            isDesktop={true}
-          />
+            <CountdownTimer deadline={tournament.lockDeadline} size="small" />
 
-          {/* Right: Company cards grid */}
-          <div style={{ flex: 1, padding: '20px' }}>
-            <h2 style={{
+            <span style={{
+              color: designColors.textSecondary,
+              fontSize: '13px',
+            }}>
+              {predictions.length} picks · <span style={{ fontFamily: fontMono }}>${totalSpent.toLocaleString()}</span>
+            </span>
+
+            <motion.button
+              onClick={onViewPortfolio}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              style={{
+                padding: '8px 20px',
+                backgroundColor: designColors.cyan,
+                border: 'none',
+                borderRadius: '6px',
+                color: designColors.bgPrimary,
+                fontWeight: 'bold',
+                fontSize: '13px',
+                cursor: 'pointer',
+              }}
+            >
+              VIEW PORTFOLIO
+            </motion.button>
+          </div>
+        </div>
+
+        {/* Main content: Sidebar + Grid */}
+        <div style={{ display: 'flex', flex: 1 }}>
+          {/* Left sidebar: Day selector */}
+          <div style={{
+            width: '200px',
+            borderRight: `1px solid ${designColors.borderDefault}`,
+            backgroundColor: designColors.bgCard,
+            padding: '16px 0',
+          }}>
+            <div style={{
+              padding: '0 16px 16px',
+              fontSize: '11px',
+              fontWeight: 'bold',
+              color: designColors.textMuted,
+              letterSpacing: '1px',
+            }}>
+              WEEK OF {getWeekRange()}
+            </div>
+
+            {dayGroups.map((day, index) => (
+              <motion.button
+                key={index}
+                onClick={() => setSelectedDayIndex(index)}
+                whileHover={{ backgroundColor: designColors.bgCardInner }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '12px 16px',
+                  backgroundColor: index === selectedDayIndex ? designColors.bgCardInner : 'transparent',
+                  border: 'none',
+                  borderLeft: index === selectedDayIndex
+                    ? `3px solid ${designColors.cyan}`
+                    : '3px solid transparent',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <span style={{
+                  color: index === selectedDayIndex
+                    ? designColors.textPrimary
+                    : designColors.textSecondary,
+                  fontWeight: index === selectedDayIndex ? 'bold' : 'normal',
+                  fontSize: '13px',
+                }}>
+                  {day.dayName} {day.date}
+                </span>
+                <span style={{
+                  fontFamily: fontMono,
+                  fontSize: '12px',
+                  color: index === selectedDayIndex
+                    ? designColors.cyan
+                    : designColors.textMuted,
+                }}>
+                  {day.events.length}
+                </span>
+              </motion.button>
+            ))}
+          </div>
+
+          {/* Right content: Company cards grid */}
+          <div style={{ flex: 1, padding: '24px', overflowY: 'auto' }}>
+            <div style={{
               fontSize: '14px',
               color: designColors.textSecondary,
-              marginBottom: '16px',
+              marginBottom: '20px',
             }}>
               {formatDayHeader()} · {dayEvents.length} companies
-            </h2>
+            </div>
 
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-              gap: '12px',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+              gap: '16px',
             }}>
               {dayEvents.map((event, index) => (
                 <motion.div

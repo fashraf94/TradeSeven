@@ -16,17 +16,45 @@ export default function LiveMatchArena({
   tournament,
   isDesktop = false,
 }) {
-  // Desktop: 2-column with inline leaderboard
+  // Desktop: Enhanced 2-column with position banner spanning full width
   if (isDesktop && leaderboard) {
     return (
-      <div style={{ backgroundColor: designColors.bgPrimary, minHeight: '100vh' }}>
+      <div style={{
+        backgroundColor: designColors.bgPrimary,
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
         <EarningsHeader title="LIVE ARENA" onBack={onBack} showLive={true} />
 
-        <div style={{ display: 'flex' }}>
-          <div style={{ flex: 1, padding: '0 16px' }}>
-            <PositionBanner {...userPosition} totalPlayers={tournament?.participantCount} />
+        {/* Position banner spans full width */}
+        <div style={{ padding: '0 24px' }}>
+          <PositionBanner {...userPosition} totalPlayers={tournament?.participantCount} />
+        </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '20px' }}>
+        {/* Main content: Predictions + Leaderboard */}
+        <div style={{ display: 'flex', flex: 1 }}>
+          {/* Left: Prediction cards */}
+          <div style={{
+            flex: 1,
+            padding: '8px 24px 24px',
+            overflowY: 'auto',
+          }}>
+            <div style={{
+              fontSize: '12px',
+              fontWeight: 'bold',
+              color: designColors.textSecondary,
+              marginBottom: '16px',
+              letterSpacing: '0.5px',
+            }}>
+              YOUR PREDICTIONS
+            </div>
+
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}>
               {predictions.map((prediction, index) => (
                 <MagnitudeGaugeCard
                   key={prediction.eventId}
@@ -39,17 +67,47 @@ export default function LiveMatchArena({
             </div>
           </div>
 
+          {/* Right: Leaderboard sidebar */}
           <div style={{
             width: '320px',
             borderLeft: `1px solid ${designColors.borderDefault}`,
             backgroundColor: designColors.bgCard,
+            display: 'flex',
+            flexDirection: 'column',
           }}>
-            <div style={{ padding: '16px', borderBottom: `1px solid ${designColors.borderDefault}` }}>
-              <span style={{ fontSize: '12px', fontWeight: 'bold', color: designColors.textSecondary }}>
-                LEADERBOARD
-              </span>
+            {/* Sticky header */}
+            <div style={{
+              padding: '16px',
+              borderBottom: `1px solid ${designColors.borderDefault}`,
+              backgroundColor: designColors.bgCard,
+              position: 'sticky',
+              top: 0,
+              zIndex: 10,
+            }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}>
+                <span style={{
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  color: designColors.textSecondary,
+                  letterSpacing: '0.5px',
+                }}>
+                  LEADERBOARD
+                </span>
+                <span style={{
+                  fontSize: '11px',
+                  color: designColors.textMuted,
+                }}>
+                  WEEK {tournament?.week}
+                </span>
+              </div>
             </div>
-            <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+
+            {/* Scrollable leaderboard */}
+            <div style={{ flex: 1, overflowY: 'auto' }}>
               {leaderboard.slice(0, 15).map((entry, index) => (
                 <LeaderboardRow
                   key={entry.odId || index}
@@ -58,6 +116,17 @@ export default function LiveMatchArena({
                   index={index}
                 />
               ))}
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              padding: '12px 16px',
+              borderTop: `1px solid ${designColors.borderDefault}`,
+              textAlign: 'center',
+              fontSize: '12px',
+              color: designColors.textMuted,
+            }}>
+              {tournament?.participantCount || leaderboard.length} players total
             </div>
           </div>
         </div>

@@ -34,6 +34,160 @@ export default function TournamentResults({
 
   const nextBracket = getPointsToNextBracket();
 
+  // Desktop layout - wider hero, 2-column results
+  if (isDesktop) {
+    return (
+      <div style={{
+        backgroundColor: designColors.bgPrimary,
+        minHeight: '100vh',
+      }}>
+        <EarningsHeader
+          title={`WEEK ${tournament?.week} RESULTS`}
+          onBack={onPlayNext}
+        />
+
+        <div style={{ maxWidth: '900px', margin: '0 auto', padding: '0 24px' }}>
+          {/* Hero Section - Wider */}
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            style={{
+              textAlign: 'center',
+              padding: '48px 20px',
+              borderBottom: `1px solid ${designColors.borderDefault}`,
+              marginBottom: '32px',
+            }}
+          >
+            <BracketBadge
+              bracket={userPosition.bracket}
+              size="large"
+              showGlow={true}
+            />
+
+            <div style={{
+              fontSize: '24px',
+              color: designColors.textSecondary,
+              marginTop: '20px',
+            }}>
+              #{userPosition.rank} of {tournament?.participantCount || 147}
+            </div>
+
+            <div style={{
+              fontSize: '48px',
+              fontWeight: 'bold',
+              fontFamily: fontMono,
+              color: designColors.cyan,
+              marginTop: '8px',
+            }}>
+              {userPosition.points?.toLocaleString()} PTS
+            </div>
+
+            {nextBracket && (
+              <div style={{
+                fontSize: '14px',
+                color: designColors.textMuted,
+                marginTop: '16px',
+                padding: '10px 20px',
+                backgroundColor: designColors.bgCard,
+                borderRadius: '20px',
+                display: 'inline-block',
+              }}>
+                {nextBracket.points.toLocaleString()} pts from {nextBracket.bracket}
+              </div>
+            )}
+          </motion.div>
+
+          {/* Results section with 2-column grid */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '20px',
+          }}>
+            <span style={{
+              fontSize: '12px',
+              fontWeight: 'bold',
+              color: designColors.textSecondary,
+              letterSpacing: '0.5px',
+            }}>
+              YOUR PREDICTIONS
+            </span>
+            <span style={{
+              fontSize: '14px',
+              color: designColors.textSecondary,
+            }}>
+              {correctCount}/{totalCount} correct · {accuracy}% accuracy
+            </span>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, 1fr)',
+            gap: '12px',
+            marginBottom: '32px',
+          }}>
+            {results.map((result, index) => (
+              <ResultCard
+                key={result.eventId}
+                prediction={result}
+                isCorrect={result.isCorrect}
+                pointsEarned={result.pointsEarned}
+                index={index}
+              />
+            ))}
+          </div>
+
+          {/* CTAs - Inline for desktop */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: '16px',
+            paddingBottom: '40px',
+          }}>
+            <motion.button
+              onClick={onPlayNext}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              style={{
+                padding: '16px 48px',
+                backgroundColor: designColors.cyan,
+                border: 'none',
+                borderRadius: '10px',
+                color: designColors.bgPrimary,
+                fontSize: '14px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                boxShadow: glowEffects.cyanIntense,
+              }}
+            >
+              PLAY WEEK {(tournament?.week || 3) + 1} →
+            </motion.button>
+
+            <motion.button
+              onClick={onViewLeaderboard}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              style={{
+                padding: '16px 32px',
+                backgroundColor: 'transparent',
+                border: `1px solid ${designColors.borderDefault}`,
+                borderRadius: '10px',
+                color: designColors.textSecondary,
+                fontSize: '14px',
+                cursor: 'pointer',
+              }}
+            >
+              View Leaderboard
+            </motion.button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Mobile layout
   return (
     <motion.div
       initial={{ opacity: 0 }}
