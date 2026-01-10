@@ -10593,7 +10593,6 @@ const containerStyle = {
   margin: 0,
   padding: 0,
   textAlign: 'left',
-  minHeight: '100vh',
   minHeight: '100dvh',
   background: colors.background,
   overflowX: 'hidden'

@@ -55,22 +55,17 @@ export const UserProvider = ({ children }) => {
       // but passed userData can override specific fields
       const mergedUser = {
         // Base defaults
-        wins: 0,
-        losses: 0,
-        xp: 0,
-        rank: 'Beginner',
-        level: 1,
         authProvider: 'local',
         // Existing persisted data (preserves stats)
         ...user,
         // Explicitly passed data (can override non-stat fields)
         ...userData,
         // Always use persisted stats if they exist (don't let defaults overwrite)
-        wins: user.wins ?? userData.wins ?? 0,
-        losses: user.losses ?? userData.losses ?? 0,
-        xp: user.xp ?? userData.xp ?? 0,
-        rank: user.rank ?? userData.rank ?? 'Beginner',
-        level: user.level ?? userData.level ?? 1,
+        wins: user?.wins ?? userData?.wins ?? 0,
+        losses: user?.losses ?? userData?.losses ?? 0,
+        xp: user?.xp ?? userData?.xp ?? 0,
+        rank: user?.rank ?? userData?.rank ?? 'Beginner',
+        level: user?.level ?? userData?.level ?? 1,
       };
       setUser(mergedUser);
       return mergedUser;
