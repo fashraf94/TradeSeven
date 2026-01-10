@@ -8,6 +8,7 @@
  * Phase 2 Refactor: Integrated EarningsCalendar component for calendar view
  * Phase 3 Refactor: Integrated ParlayArchitectModal with BeatMissToggle, MagnitudePillars, PredictionSummary
  * Phase 4 Refactor: Integrated PortfolioWarRoom with PowerMeter, RiskProfile, PredictionCard
+ * Phase 5 Refactor: Integrated LiveMatchArena with MagnitudeGauge, PositionBanner, LeaderboardModal
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -22,7 +23,9 @@ import {
   MAX_PREDICTIONS,
   EarningsCalendar,
   ParlayArchitectModal,
-  PortfolioWarRoom
+  PortfolioWarRoom,
+  LiveMatchArena,
+  LeaderboardModal
 } from '../components/earningsGame';
 
 const EarningsGameScreen = ({
@@ -58,6 +61,25 @@ const EarningsGameScreen = ({
   // Modal state
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [selectedOutcome, setSelectedOutcome] = useState(null);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+
+  // Mock data for arena (to be replaced with real data later)
+  const mockUserPosition = {
+    rank: 42,
+    points: totalPotentialPoints,
+    bracket: 'gold',
+    movement: 3,
+  };
+
+  const mockLeaderboard = [
+    { odId: '1', rank: 1, bracket: 'diamond', username: 'TradeMaster', points: 15420 },
+    { odId: '2', rank: 2, bracket: 'diamond', username: 'EarningsKing', points: 14890 },
+    { odId: '3', rank: 3, bracket: 'gold', username: 'BullRunner', points: 12350 },
+    { odId: user?.odId || 'current', rank: 42, bracket: 'gold', username: 'You', points: totalPotentialPoints },
+    { odId: '5', rank: 43, bracket: 'silver', username: 'StockPicker', points: 8200 },
+  ];
+
+  const mockResultsData = {};
 
   // Load earnings data
   useEffect(() => {
@@ -207,140 +229,41 @@ const EarningsGameScreen = ({
   }
 
   // ========================================
-  // VIEW: ARENA (To be replaced in Phase 5)
+  // VIEW: ARENA (Phase 5 - LiveMatchArena)
   // ========================================
   if (view === 'arena') {
     return (
-      <div style={{ minHeight: '100vh', background: designColors.bgPrimary, color: designColors.textPrimary }}>
-        {/* Header */}
-        <motion.div
-          initial={{ y: -20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          style={{
-            background: designColors.bgCard,
-            borderBottom: `1px solid ${designColors.borderDefault}`,
-            padding: '16px 20px'
+      <>
+        <LiveMatchArena
+          predictions={predictions}
+          userPosition={mockUserPosition}
+          resultsData={mockResultsData}
+          onBack={() => setView('portfolio')}
+          onViewLeaderboard={() => setShowLeaderboard(true)}
+          leaderboard={isDesktop ? mockLeaderboard : null}
+          currentUserId={user?.odId || 'current'}
+          tournament={{
+            week: getTournamentWeek(),
+            participantCount: 1247,
           }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: '1200px', margin: '0 auto' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <motion.button
-                onClick={() => setView('portfolio')}
-                whileTap={{ scale: 0.95 }}
-                style={{ background: 'none', border: 'none', color: designColors.textSecondary, cursor: 'pointer', fontSize: '16px' }}
-              >
-                ←
-              </motion.button>
-              <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: designColors.cyan, margin: 0 }}>LIVE ARENA</h1>
-            </div>
-          </div>
-        </motion.div>
+          isDesktop={isDesktop}
+        />
 
-        {/* Content */}
-        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
-          {!isLocked ? (
-            <div style={{ textAlign: 'center', padding: '60px', color: designColors.textSecondary }}>
-              <p style={{ fontSize: '18px', marginBottom: '8px' }}>Build and lock your portfolio first</p>
-              <motion.button
-                onClick={() => setView('portfolio')}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                style={{
-                  marginTop: '16px',
-                  padding: '12px 24px',
-                  background: designColors.cyan,
-                  border: 'none',
-                  borderRadius: '8px',
-                  color: '#000',
-                  fontWeight: 'bold',
-                  cursor: 'pointer'
-                }}
-              >
-                View Portfolio
-              </motion.button>
-            </div>
-          ) : (
-            <div>
-              {/* Score Card */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                style={{
-                  background: `linear-gradient(135deg, ${designColors.bgCard} 0%, rgba(0,217,255,0.1) 100%)`,
-                  borderRadius: '16px',
-                  padding: '32px',
-                  textAlign: 'center',
-                  marginBottom: '24px',
-                  border: `1px solid ${designColors.cyan}33`
-                }}
-              >
-                <div style={{ fontSize: '14px', color: designColors.textSecondary, marginBottom: '8px' }}>POTENTIAL POINTS</div>
-                <motion.div
-                  initial={{ scale: 0.5 }}
-                  animate={{ scale: 1 }}
-                  transition={{ type: 'spring', stiffness: 200 }}
-                  style={{ fontSize: '48px', fontWeight: 'bold', color: designColors.cyan, fontFamily: fontMono }}
-                >
-                  {totalPotentialPoints.toLocaleString()}
-                </motion.div>
-                <div style={{ fontSize: '14px', color: designColors.textSecondary, marginTop: '8px' }}>
-                  {predictions.length} predictions, ${totalSpent.toLocaleString()} invested
-                </div>
-              </motion.div>
-
-              {/* Predictions Summary */}
-              <h3 style={{ color: designColors.textSecondary, fontSize: '14px', marginBottom: '12px' }}>Your Locked Predictions</h3>
-              {predictions.map((pred, index) => (
-                <motion.div
-                  key={pred.eventId}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '14px 16px',
-                    background: designColors.bgCard,
-                    borderRadius: '10px',
-                    marginBottom: '8px'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontWeight: 'bold' }}>{pred.symbol}</span>
-                    <span style={{ color: pred.outcome === 'beat' ? designColors.green : designColors.red, fontSize: '13px' }}>
-                      {pred.outcome.toUpperCase()}
-                    </span>
-                    <span style={{ fontSize: '13px' }}>{pred.emoji} {pred.range}</span>
-                  </div>
-                  <div style={{ color: designColors.textSecondary, fontSize: '14px', fontFamily: fontMono }}>
-                    {pred.potentialPoints.toLocaleString()} pts
-                  </div>
-                </motion.div>
-              ))}
-
-              {/* Reset */}
-              <motion.button
-                onClick={handleReset}
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  marginTop: '24px',
-                  background: 'transparent',
-                  border: `1px solid ${designColors.borderDefault}`,
-                  borderRadius: '10px',
-                  color: designColors.textSecondary,
-                  cursor: 'pointer'
-                }}
-              >
-                Reset & Start Over
-              </motion.button>
-            </div>
+        {/* Leaderboard Modal (mobile) */}
+        <AnimatePresence>
+          {showLeaderboard && (
+            <LeaderboardModal
+              leaderboard={mockLeaderboard}
+              currentUserId={user?.odId || 'current'}
+              tournament={{
+                week: getTournamentWeek(),
+                participantCount: 1247,
+              }}
+              onClose={() => setShowLeaderboard(false)}
+            />
           )}
-        </div>
-      </div>
+        </AnimatePresence>
+      </>
     );
   }
 
