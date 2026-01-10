@@ -21,9 +21,12 @@ import {
   HoloAssetCard,
   CommandDeckConfirmButton,
   RosterGauges,
+  RosterGaugesCompact,
   DraftToolButtons,
+  DraftToolButtonsCompact,
   HoloTimerInline,
   PlayerPanel,
+  MiniPlayerPanel,
   SnakeConduit,
   SnakeConnector,
   SnakeConnectorVertical,
@@ -76,6 +79,18 @@ const DraftRoomScreen = ({
   // Real-time price data from EODHD API
   const [livePrices, setLivePrices] = useState({});
   const [pricesLoading, setPricesLoading] = useState(true);
+
+  // Phone detection for mobile-optimized layout (< 768px)
+  const [isPhone, setIsPhone] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+
+  // Phone detection resize listener
+  useEffect(() => {
+    const handleResize = () => {
+      setIsPhone(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const roomDraft = draftState || currentDraft;
 
@@ -671,6 +686,52 @@ const DraftRoomScreen = ({
             />
           </div>
 
+          {/* Phone: Horizontal mini-arc layout (< 768px) */}
+          <div
+            className="opponent-arc-phone"
+            style={{
+              display: 'none', // Shown via CSS media query for phones
+              flexDirection: 'row',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 12px',
+              position: 'relative',
+              minHeight: '70px',
+              overflowX: 'auto',
+            }}
+          >
+            {/* Mini Snake Line - horizontal gradient */}
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '10%',
+              right: '10%',
+              height: '4px',
+              background: 'linear-gradient(90deg, #00d9ff, #00ff88, #f59e0b, #ec4899, #8b5cf6)',
+              borderRadius: '2px',
+              zIndex: 0,
+              opacity: 0.5,
+              transform: 'translateY(-50%)',
+            }} />
+
+            {/* All players in horizontal row */}
+            {roomDraft?.players?.map((player, index) => {
+              const isCurrentPicker = player.odUserId === roomDraft?.currentPlayerId;
+              const isNext = player.odUserId === nextPickerId;
+              const isYou = player.odUserId === currentUserId;
+              return (
+                <MiniPlayerPanel
+                  key={player.odUserId || index}
+                  player={player}
+                  isCurrentPicker={isCurrentPicker}
+                  isNextPicker={isNext}
+                  isYou={isYou}
+                />
+              );
+            })}
+          </div>
+
           {/* Last Pick Info - Animated Banner */}
           {lastPick && (
             <div
@@ -770,17 +831,22 @@ const DraftRoomScreen = ({
           </div>
 
           {/* Asset Cards Grid - Scrollable with transition */}
-          <div style={{
-            flex: 1,
-            overflow: 'auto',
-            padding: '16px',
-          }}>
+          <div
+            className="asset-grid-container"
+            style={{
+              flex: 1,
+              overflow: 'auto',
+              padding: isPhone ? '8px' : '16px',
+            }}
+          >
             <div
-              className={categoryTransition ? 'category-transition' : ''}
+              className={`asset-grid ${categoryTransition ? 'category-transition' : ''}`}
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-                gap: '16px',
+                gridTemplateColumns: isPhone
+                  ? 'repeat(auto-fill, minmax(95px, 1fr))'
+                  : 'repeat(auto-fill, minmax(150px, 1fr))',
+                gap: isPhone ? '8px' : '16px',
                 maxWidth: '1200px',
                 margin: '0 auto',
                 justifyItems: 'center',
@@ -827,6 +893,7 @@ const DraftRoomScreen = ({
                       price: displayPrice,
                       percentChange: displayChange,
                     })}
+                    compact={isPhone}
                   />
                 );
               })}
@@ -872,27 +939,48 @@ const DraftRoomScreen = ({
             zIndex: 10,
           }}
         >
-          {/* Left: Roster Power Cores */}
-          <RosterGauges
-            steady={{
-              picked: myPlayer?.categories?.steady || 0,
-              required: 3,
-            }}
-            risky={{
-              picked: myPlayer?.categories?.risky || 0,
-              required: 3,
-            }}
-            defensive={{
-              picked: myPlayer?.categories?.defensive || 0,
-              required: 3,
-            }}
-            onGaugeClick={(category) => {
-              // Switch to that category tab
-              if (canPickFromCategory(category)) {
-                setSelectedDraftCategory(category);
-              }
-            }}
-          />
+          {/* Left: Roster Power Cores - Use compact on phone */}
+          {isPhone ? (
+            <RosterGaugesCompact
+              steady={{
+                picked: myPlayer?.categories?.steady || 0,
+                required: 3,
+              }}
+              risky={{
+                picked: myPlayer?.categories?.risky || 0,
+                required: 3,
+              }}
+              defensive={{
+                picked: myPlayer?.categories?.defensive || 0,
+                required: 3,
+              }}
+              onGaugeClick={(category) => {
+                if (canPickFromCategory(category)) {
+                  setSelectedDraftCategory(category);
+                }
+              }}
+            />
+          ) : (
+            <RosterGauges
+              steady={{
+                picked: myPlayer?.categories?.steady || 0,
+                required: 3,
+              }}
+              risky={{
+                picked: myPlayer?.categories?.risky || 0,
+                required: 3,
+              }}
+              defensive={{
+                picked: myPlayer?.categories?.defensive || 0,
+                required: 3,
+              }}
+              onGaugeClick={(category) => {
+                if (canPickFromCategory(category)) {
+                  setSelectedDraftCategory(category);
+                }
+              }}
+            />
+          )}
 
           {/* Center: Confirm Pick Button */}
           <div style={{
@@ -908,25 +996,44 @@ const DraftRoomScreen = ({
               currentPickerName={
                 roomDraft?.players?.find(p => p.odUserId === roomDraft?.currentPlayerId)?.displayName || 'opponent'
               }
+              compact={isPhone}
             />
           </div>
 
-          {/* Right: Integrated Tool Buttons */}
-          <DraftToolButtons
-            onAnalyze={() => {
-              setDraftAdvisorAction('analyze');
-              setShowDraftAdvisor(true);
-            }}
-            onCompare={() => {
-              setDraftAdvisorAction('compare');
-              setShowDraftAdvisor(true);
-            }}
-            onNotes={() => {
-              setDraftAdvisorAction('notes');
-              setShowDraftAdvisor(true);
-            }}
-            disabled={false}
-          />
+          {/* Right: Integrated Tool Buttons - Use compact on phone */}
+          {isPhone ? (
+            <DraftToolButtonsCompact
+              onAnalyze={() => {
+                setDraftAdvisorAction('analyze');
+                setShowDraftAdvisor(true);
+              }}
+              onCompare={() => {
+                setDraftAdvisorAction('compare');
+                setShowDraftAdvisor(true);
+              }}
+              onNotes={() => {
+                setDraftAdvisorAction('notes');
+                setShowDraftAdvisor(true);
+              }}
+              disabled={false}
+            />
+          ) : (
+            <DraftToolButtons
+              onAnalyze={() => {
+                setDraftAdvisorAction('analyze');
+                setShowDraftAdvisor(true);
+              }}
+              onCompare={() => {
+                setDraftAdvisorAction('compare');
+                setShowDraftAdvisor(true);
+              }}
+              onNotes={() => {
+                setDraftAdvisorAction('notes');
+                setShowDraftAdvisor(true);
+              }}
+              disabled={false}
+            />
+          )}
         </footer>
 
         {/* Autopick Warning Banner */}
@@ -1036,13 +1143,72 @@ const DraftRoomScreen = ({
             }
           }
 
-          /* Mobile: Show vertical stack, hide horizontal */
-          @media (max-width: 1023px) {
+          /* Tablet: Show vertical stack, hide horizontal and phone */
+          @media (max-width: 1023px) and (min-width: 768px) {
             .opponent-arc-desktop {
               display: none !important;
             }
             .opponent-arc-mobile {
               display: flex !important;
+            }
+            .opponent-arc-phone {
+              display: none !important;
+            }
+          }
+
+          /* ===== PHONE STYLES (< 768px) ===== */
+          @media (max-width: 767px) {
+            .opponent-arc-desktop {
+              display: none !important;
+            }
+            .opponent-arc-mobile {
+              display: none !important;
+            }
+            .opponent-arc-phone {
+              display: flex !important;
+            }
+
+            /* Compact header */
+            header {
+              padding: 8px 12px !important;
+            }
+
+            /* Compact category tabs */
+            .category-tab {
+              padding: 8px 10px !important;
+              font-size: 12px !important;
+            }
+
+            /* Compact last pick banner */
+            .last-pick-banner-animate {
+              font-size: 11px !important;
+              padding: 6px 12px !important;
+              margin-top: 8px !important;
+            }
+
+            /* Compact command deck */
+            footer {
+              padding: 8px 12px !important;
+              gap: 8px !important;
+            }
+          }
+
+          /* ===== VERY SMALL PHONES (< 375px) ===== */
+          @media (max-width: 374px) {
+            .opponent-arc-phone {
+              gap: 4px !important;
+              padding: 6px 8px !important;
+            }
+
+            .mini-player-panel {
+              min-width: 58px !important;
+              max-width: 70px !important;
+              padding: 4px 6px !important;
+            }
+
+            footer {
+              grid-template-columns: auto 1fr !important;
+              gap: 6px !important;
             }
           }
 
