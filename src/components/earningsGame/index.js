@@ -19,5 +19,5 @@ export * from './arena';
 // Leaderboard components (Phase 5)
 export * from './leaderboard';
 
-// Screen components will be added in later phases
-// export * from './results';
+// Results components (Phase 6)
+export * from './results';

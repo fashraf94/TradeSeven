@@ -9,6 +9,7 @@
  * Phase 3 Refactor: Integrated ParlayArchitectModal with BeatMissToggle, MagnitudePillars, PredictionSummary
  * Phase 4 Refactor: Integrated PortfolioWarRoom with PowerMeter, RiskProfile, PredictionCard
  * Phase 5 Refactor: Integrated LiveMatchArena with MagnitudeGauge, PositionBanner, LeaderboardModal
+ * Phase 6 Refactor: Integrated TournamentResults with ResultCard for end-of-week results display
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -25,7 +26,8 @@ import {
   ParlayArchitectModal,
   PortfolioWarRoom,
   LiveMatchArena,
-  LeaderboardModal
+  LeaderboardModal,
+  TournamentResults
 } from '../components/earningsGame';
 
 const EarningsGameScreen = ({
@@ -79,7 +81,21 @@ const EarningsGameScreen = ({
     { odId: '5', rank: 43, bracket: 'silver', username: 'StockPicker', points: 8200 },
   ];
 
-  const mockResultsData = {};
+  // Mock results data - simulates completed predictions
+  const mockResultsData = useMemo(() => {
+    const results = {};
+    predictions.forEach((pred, index) => {
+      // Simulate some wins and losses for demo
+      const isCorrect = index % 3 !== 2; // 2/3 correct rate
+      results[pred.eventId] = {
+        isCorrect,
+        pointsEarned: isCorrect ? pred.potentialPoints : 0,
+        actualMove: isCorrect ? 3.5 : -1.2,
+        outcomeCorrect: isCorrect,
+      };
+    });
+    return results;
+  }, [predictions]);
 
   // Load earnings data
   useEffect(() => {
@@ -155,6 +171,14 @@ const EarningsGameScreen = ({
     reset();
     setSelectedEvent(null);
     setSelectedOutcome(null);
+    setView('calendar');
+  };
+
+  const handlePlayNext = () => {
+    reset();
+    setSelectedEvent(null);
+    setSelectedOutcome(null);
+    setShowLeaderboard(false);
     setView('calendar');
   };
 
@@ -250,6 +274,43 @@ const EarningsGameScreen = ({
         />
 
         {/* Leaderboard Modal (mobile) */}
+        <AnimatePresence>
+          {showLeaderboard && (
+            <LeaderboardModal
+              leaderboard={mockLeaderboard}
+              currentUserId={user?.odId || 'current'}
+              tournament={{
+                week: getTournamentWeek(),
+                participantCount: 1247,
+              }}
+              onClose={() => setShowLeaderboard(false)}
+            />
+          )}
+        </AnimatePresence>
+      </>
+    );
+  }
+
+  // ========================================
+  // VIEW: RESULTS (Phase 6 - TournamentResults)
+  // ========================================
+  if (view === 'results') {
+    return (
+      <>
+        <TournamentResults
+          predictions={predictions}
+          resultsData={mockResultsData}
+          userPosition={mockUserPosition}
+          tournament={{
+            week: getTournamentWeek(),
+            participantCount: 1247,
+          }}
+          onPlayNext={handlePlayNext}
+          onViewLeaderboard={() => setShowLeaderboard(true)}
+          isDesktop={isDesktop}
+        />
+
+        {/* Leaderboard Modal */}
         <AnimatePresence>
           {showLeaderboard && (
             <LeaderboardModal
