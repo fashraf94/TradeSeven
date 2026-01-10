@@ -1,0 +1,211 @@
+import { motion, AnimatePresence } from 'framer-motion';
+import { designColors, fontMono, MIN_PREDICTIONS, MAX_PREDICTIONS, glowEffects } from '../designConstants';
+import { EarningsHeader } from '../shared';
+import PowerMeter from './PowerMeter';
+import RiskProfile from './RiskProfile';
+import PredictionCard from './PredictionCard';
+
+export default function PortfolioWarRoom({
+  predictions,
+  totalSpent,
+  budgetRemaining,
+  totalPotentialPoints,
+  isLocked,
+  isValid,
+  validationMessage,
+  onBack,
+  onRemove,
+  onLock,
+  isDesktop = false,
+}) {
+  const canLock = isValid && predictions.length >= MIN_PREDICTIONS;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      style={{
+        backgroundColor: designColors.bgPrimary,
+        minHeight: '100vh',
+        paddingBottom: isLocked ? '20px' : '100px', // Space for lock button
+      }}
+    >
+      <EarningsHeader
+        title="PORTFOLIO"
+        onBack={onBack}
+      />
+
+      <div style={{
+        padding: '16px',
+        display: 'flex',
+        flexDirection: isDesktop ? 'row' : 'column',
+        gap: '12px',
+      }}>
+        {/* Power Meter */}
+        <div style={{ flex: isDesktop ? 1 : 'auto' }}>
+          <PowerMeter spent={totalSpent} predictions={predictions} />
+        </div>
+
+        {/* Risk Profile */}
+        <div style={{ flex: isDesktop ? 1 : 'auto' }}>
+          <RiskProfile predictions={predictions} />
+        </div>
+      </div>
+
+      {/* Predictions List */}
+      <div style={{ padding: '0 16px' }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '12px',
+        }}>
+          <span style={{
+            fontSize: '12px',
+            fontWeight: 'bold',
+            color: designColors.textSecondary,
+            letterSpacing: '0.5px',
+          }}>
+            YOUR PREDICTIONS ({predictions.length}/{MAX_PREDICTIONS})
+          </span>
+        </div>
+
+        {predictions.length === 0 ? (
+          <div style={{
+            padding: '40px 20px',
+            textAlign: 'center',
+            color: designColors.textMuted,
+          }}>
+            <div style={{ fontSize: '32px', marginBottom: '12px' }}>📋</div>
+            <div>No predictions yet</div>
+            <div style={{ fontSize: '13px', marginTop: '8px' }}>
+              Add at least {MIN_PREDICTIONS} predictions to lock your portfolio
+            </div>
+          </div>
+        ) : (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}>
+            <AnimatePresence>
+              {predictions.map((prediction, index) => (
+                <PredictionCard
+                  key={prediction.eventId}
+                  prediction={prediction}
+                  onRemove={onRemove}
+                  isLocked={isLocked}
+                  index={index}
+                />
+              ))}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {/* Total Points */}
+        {predictions.length > 0 && (
+          <div style={{
+            marginTop: '16px',
+            padding: '12px',
+            backgroundColor: designColors.bgCard,
+            borderRadius: '8px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}>
+            <span style={{
+              fontSize: '13px',
+              color: designColors.textSecondary,
+            }}>
+              Total Potential Points
+            </span>
+            <span style={{
+              fontSize: '18px',
+              fontWeight: 'bold',
+              fontFamily: fontMono,
+              color: designColors.cyan,
+            }}>
+              {totalPotentialPoints?.toLocaleString()}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Lock Button */}
+      {!isLocked && (
+        <div style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          padding: '16px',
+          backgroundColor: designColors.bgPrimary,
+          borderTop: `1px solid ${designColors.borderDefault}`,
+        }}>
+          {/* Validation message */}
+          {!canLock && predictions.length > 0 && (
+            <div style={{
+              marginBottom: '12px',
+              fontSize: '12px',
+              color: designColors.orange,
+              textAlign: 'center',
+            }}>
+              {predictions.length < MIN_PREDICTIONS
+                ? `Add ${MIN_PREDICTIONS - predictions.length} more prediction${MIN_PREDICTIONS - predictions.length > 1 ? 's' : ''} to lock`
+                : validationMessage
+              }
+            </div>
+          )}
+
+          <motion.button
+            onClick={onLock}
+            disabled={!canLock}
+            whileTap={canLock ? { scale: 0.98 } : {}}
+            style={{
+              width: '100%',
+              padding: '16px',
+              backgroundColor: canLock ? designColors.cyan : designColors.bgCard,
+              border: canLock ? 'none' : `1px solid ${designColors.borderDefault}`,
+              borderRadius: '10px',
+              color: canLock ? designColors.bgPrimary : designColors.textMuted,
+              fontSize: '14px',
+              fontWeight: 'bold',
+              cursor: canLock ? 'pointer' : 'not-allowed',
+              boxShadow: canLock ? glowEffects.cyanIntense : 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+            }}
+          >
+            LOCK PORTFOLIO
+          </motion.button>
+        </div>
+      )}
+
+      {/* Locked state banner */}
+      {isLocked && (
+        <div style={{
+          margin: '16px',
+          padding: '16px',
+          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+          borderRadius: '10px',
+          border: `1px solid ${designColors.green}`,
+          textAlign: 'center',
+        }}>
+          <span style={{
+            color: designColors.green,
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+          }}>
+            Portfolio Locked
+          </span>
+        </div>
+      )}
+    </motion.div>
+  );
+}

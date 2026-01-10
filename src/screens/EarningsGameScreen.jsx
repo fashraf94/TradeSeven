@@ -7,6 +7,7 @@
  * Phase 1 Refactor: Integrated useEarningsGame hook, Framer Motion, and new shared components
  * Phase 2 Refactor: Integrated EarningsCalendar component for calendar view
  * Phase 3 Refactor: Integrated ParlayArchitectModal with BeatMissToggle, MagnitudePillars, PredictionSummary
+ * Phase 4 Refactor: Integrated PortfolioWarRoom with PowerMeter, RiskProfile, PredictionCard
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -20,7 +21,8 @@ import {
   MIN_PREDICTIONS,
   MAX_PREDICTIONS,
   EarningsCalendar,
-  ParlayArchitectModal
+  ParlayArchitectModal,
+  PortfolioWarRoom
 } from '../components/earningsGame';
 
 const EarningsGameScreen = ({
@@ -181,238 +183,26 @@ const EarningsGameScreen = ({
   }
 
   // ========================================
-  // VIEW: PORTFOLIO (To be replaced in Phase 4)
+  // VIEW: PORTFOLIO (Phase 4 - PortfolioWarRoom)
   // ========================================
   if (view === 'portfolio') {
     return (
-      <div style={{ minHeight: '100vh', background: designColors.bgPrimary, color: designColors.textPrimary }}>
-        {/* Header */}
-        <motion.div
-          initial={{ y: -20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          style={{
-            background: designColors.bgCard,
-            borderBottom: `1px solid ${designColors.borderDefault}`,
-            padding: '16px 20px'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: '1200px', margin: '0 auto' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <motion.button
-                onClick={() => setView('calendar')}
-                whileTap={{ scale: 0.95 }}
-                style={{ background: 'none', border: 'none', color: designColors.textSecondary, cursor: 'pointer', fontSize: '16px' }}
-              >
-                ←
-              </motion.button>
-              <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: designColors.cyan, margin: 0 }}>PORTFOLIO</h1>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', fontFamily: fontMono }}>
-                ${budgetRemaining.toLocaleString()}
-              </div>
-              <div style={{ fontSize: '12px', color: designColors.textSecondary }}>remaining</div>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Content */}
-        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
-          {/* Budget Summary */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            style={{
-              background: designColors.bgCard,
-              borderRadius: '12px',
-              padding: '20px',
-              marginBottom: '24px'
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <div>
-                <div style={{ fontSize: '14px', color: designColors.textSecondary }}>Budget Remaining</div>
-                <div style={{ fontSize: '28px', fontWeight: 'bold', fontFamily: fontMono }}>
-                  ${budgetRemaining.toLocaleString()}
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '14px', color: designColors.textSecondary }}>Potential Points</div>
-                <div style={{ fontSize: '28px', fontWeight: 'bold', color: designColors.cyan, fontFamily: fontMono }}>
-                  {totalPotentialPoints.toLocaleString()}
-                </div>
-              </div>
-            </div>
-
-            {/* Budget Bar */}
-            <div style={{ height: '8px', background: designColors.borderDefault, borderRadius: '4px', overflow: 'hidden' }}>
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${(totalSpent / BUDGET) * 100}%` }}
-                transition={{ duration: 0.5, ease: 'easeOut' }}
-                style={{
-                  height: '100%',
-                  background: budgetRemaining < 0 ? designColors.red : designColors.cyan,
-                  borderRadius: '4px'
-                }}
-              />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '13px', color: designColors.textSecondary }}>
-              <span>{predictions.length} / {MAX_PREDICTIONS} predictions</span>
-              <span style={{ fontFamily: fontMono }}>${totalSpent.toLocaleString()} / $10,000 spent</span>
-            </div>
-          </motion.div>
-
-          {/* Predictions List */}
-          {predictions.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              style={{ textAlign: 'center', padding: '60px', color: designColors.textSecondary }}
-            >
-              <p style={{ fontSize: '18px', marginBottom: '8px' }}>No predictions yet</p>
-              <p style={{ fontSize: '14px' }}>Go to Calendar to add predictions</p>
-              <motion.button
-                onClick={() => setView('calendar')}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                style={{
-                  marginTop: '16px',
-                  padding: '12px 24px',
-                  background: designColors.cyan,
-                  border: 'none',
-                  borderRadius: '8px',
-                  color: '#000',
-                  fontWeight: 'bold',
-                  cursor: 'pointer'
-                }}
-              >
-                Browse Calendar
-              </motion.button>
-            </motion.div>
-          ) : (
-            <div>
-              <h3 style={{ color: designColors.textSecondary, fontSize: '14px', marginBottom: '12px', fontWeight: '600' }}>
-                Your Predictions
-              </h3>
-              {predictions.map((pred, index) => (
-                <motion.div
-                  key={pred.eventId}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  style={{
-                    padding: '16px',
-                    background: designColors.bgCard,
-                    border: `1px solid ${designColors.borderDefault}`,
-                    borderRadius: '10px',
-                    marginBottom: '10px'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                        <span style={{ fontWeight: 'bold', fontSize: '18px' }}>{pred.symbol}</span>
-                        <span style={{
-                          padding: '4px 12px',
-                          background: pred.outcome === 'beat' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
-                          border: `1px solid ${pred.outcome === 'beat' ? designColors.green : designColors.red}`,
-                          borderRadius: '20px',
-                          fontSize: '12px',
-                          color: pred.outcome === 'beat' ? designColors.green : designColors.red,
-                          fontWeight: '600'
-                        }}>
-                          {pred.outcome.toUpperCase()}
-                        </span>
-                        <span style={{
-                          padding: '4px 12px',
-                          background: 'rgba(255,255,255,0.05)',
-                          borderRadius: '20px',
-                          fontSize: '12px'
-                        }}>
-                          {pred.emoji} {pred.range}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '13px', color: designColors.textMuted }}>
-                        {Math.round(pred.combinedProb * 100)}% probability, {pred.multiplier}x multiplier
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '18px', fontWeight: 'bold', fontFamily: fontMono }}>
-                        ${pred.price.toLocaleString()}
-                      </div>
-                      <div style={{ fontSize: '13px', color: designColors.cyan, fontFamily: fontMono }}>
-                        {pred.potentialPoints.toLocaleString()} pts
-                      </div>
-                      {!isLocked && (
-                        <motion.button
-                          onClick={() => handleRemove(pred.eventId)}
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          style={{
-                            marginTop: '8px',
-                            padding: '4px 12px',
-                            background: 'transparent',
-                            border: `1px solid ${designColors.red}`,
-                            borderRadius: '6px',
-                            color: designColors.red,
-                            fontSize: '12px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Remove
-                        </motion.button>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-
-              {/* Lock Button */}
-              {!isLocked && (
-                <motion.button
-                  onClick={handleLock}
-                  disabled={!isValid}
-                  whileHover={isValid ? { scale: 1.01 } : {}}
-                  whileTap={isValid ? { scale: 0.99 } : {}}
-                  style={{
-                    width: '100%',
-                    padding: '16px',
-                    marginTop: '16px',
-                    background: isValid ? designColors.cyan : designColors.borderDefault,
-                    border: 'none',
-                    borderRadius: '12px',
-                    color: isValid ? '#000' : designColors.textMuted,
-                    fontSize: '16px',
-                    fontWeight: 'bold',
-                    cursor: isValid ? 'pointer' : 'not-allowed'
-                  }}
-                >
-                  {validationMessage || 'LOCK PORTFOLIO'}
-                </motion.button>
-              )}
-
-              {isLocked && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  style={{
-                    padding: '16px',
-                    background: 'rgba(16,185,129,0.1)',
-                    border: `1px solid ${designColors.green}`,
-                    borderRadius: '12px',
-                    textAlign: 'center',
-                    color: designColors.green,
-                    marginTop: '16px'
-                  }}
-                >
-                  Portfolio Locked - Good luck!
-                </motion.div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+      <PortfolioWarRoom
+        predictions={predictions}
+        totalSpent={totalSpent}
+        budgetRemaining={budgetRemaining}
+        totalPotentialPoints={totalPotentialPoints}
+        isLocked={isLocked}
+        isValid={isValid}
+        validationMessage={validationMessage}
+        onBack={() => setView('calendar')}
+        onRemove={removePrediction}
+        onLock={() => {
+          lockPortfolio();
+          setView('arena');
+        }}
+        isDesktop={isDesktop}
+      />
     );
   }
 
