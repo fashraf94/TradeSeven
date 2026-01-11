@@ -1,5 +1,40 @@
 import { motion } from 'framer-motion';
+import {
+  TrendingDown,
+  ArrowDownRight,
+  Minus,
+  ArrowUpRight,
+  Rocket
+} from 'lucide-react';
 import { designColors, glowEffects, fontMono, MAGNITUDES } from '../designConstants';
+
+const MAGNITUDE_ICONS = {
+  downBig: {
+    Icon: TrendingDown,
+    color: '#ef4444',
+    bgColor: 'rgba(239, 68, 68, 0.15)'
+  },
+  down: {
+    Icon: ArrowDownRight,
+    color: '#f97316',
+    bgColor: 'rgba(249, 115, 22, 0.15)'
+  },
+  flat: {
+    Icon: Minus,
+    color: '#00d9ff',
+    bgColor: 'rgba(0, 217, 255, 0.15)'
+  },
+  up: {
+    Icon: ArrowUpRight,
+    color: '#10b981',
+    bgColor: 'rgba(16, 185, 129, 0.15)'
+  },
+  upBig: {
+    Icon: Rocket,
+    color: '#22c55e',
+    bgColor: 'rgba(34, 197, 94, 0.15)'
+  },
+};
 
 export default function MagnitudePillars({
   selected,          // magnitude id or null
@@ -37,8 +72,7 @@ export default function MagnitudePillars({
       <div style={{
         display: 'flex',
         justifyContent: 'center',
-        gap: '10px',
-        padding: '0 4px',
+        gap: '8px',
       }}>
         {MAGNITUDES.map((mag, index) => {
           const parlay = getParlay(mag.id);
@@ -48,6 +82,13 @@ export default function MagnitudePillars({
           const isSelected = selected === mag.id;
           const isAffordable = price <= budgetRemaining && price > 0;
           const canSelect = !disabled && isAffordable && outcome;
+
+          const iconConfig = MAGNITUDE_ICONS[mag.id];
+          const IconComponent = iconConfig?.Icon || Minus;
+          const iconColor = isSelected ? '#ffffff' : iconConfig?.color;
+          const iconBgColor = isSelected
+            ? 'rgba(0, 217, 255, 0.25)'
+            : iconConfig?.bgColor;
 
           return (
             <motion.button
@@ -88,29 +129,24 @@ export default function MagnitudePillars({
                 filter: canSelect ? 'none' : 'grayscale(80%)',
               }}
             >
-              {/* Emoji Container - Polished styling */}
+              {/* Icon Container - MarketClash Standard Style */}
               <div style={{
-                width: '52px',
-                height: '52px',
+                width: '48px',
+                height: '48px',
+                borderRadius: '12px',
+                background: iconBgColor,
+                border: `1px solid ${isSelected ? 'rgba(0, 217, 255, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                background: isSelected
-                  ? 'linear-gradient(135deg, rgba(0, 217, 255, 0.2) 0%, rgba(0, 217, 255, 0.05) 100%)'
-                  : 'linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%)',
-                borderRadius: '14px',
-                border: `1px solid ${isSelected ? 'rgba(0, 217, 255, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
-                boxShadow: isSelected
-                  ? '0 4px 12px rgba(0, 217, 255, 0.2), inset 0 1px 1px rgba(255, 255, 255, 0.1)'
-                  : 'inset 0 1px 1px rgba(255, 255, 255, 0.05)',
                 marginBottom: '4px',
+                transition: 'all 0.2s ease',
               }}>
-                <span style={{
-                  fontSize: '26px',
-                  filter: canSelect ? 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3))' : 'grayscale(100%)',
-                }}>
-                  {mag.emoji}
-                </span>
+                <IconComponent
+                  size={24}
+                  color={iconColor}
+                  strokeWidth={2.5}
+                />
               </div>
 
               {/* Label */}
