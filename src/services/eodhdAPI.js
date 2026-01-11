@@ -16,6 +16,9 @@ import {
 // Import the multi-tier cache service
 import cacheService from './cacheService.js';
 
+// Import API monitor for tracking
+import { apiMonitor } from './apiMonitor.js';
+
 const IS_DEV = import.meta.env.DEV;
 
 // Use relative URLs - works in both dev and production on Vercel
@@ -109,6 +112,9 @@ export async function getMultipleStockPrices(symbols) {
     const data = await response.json();
 
     if (data.success && data.prices) {
+      // Track API call
+      apiMonitor.track('/api/stocks/prices', { symbols: symbolsToFetch }, 'eodhdAPI.getMultipleStockPrices');
+
       // Cache each result and add to result object
       Object.entries(data.prices).forEach(([symbol, priceData]) => {
         const normalized = {
@@ -249,6 +255,9 @@ export async function getMultipleCryptoPrices(symbols) {
     const data = await response.json();
 
     if (data.success && data.prices) {
+      // Track API call
+      apiMonitor.track('/api/crypto/prices', { symbols: symbolsToFetch }, 'eodhdAPI.getMultipleCryptoPrices');
+
       const missing = [];
 
       // Cache each result and add to result object
@@ -397,6 +406,9 @@ export async function getMarketNews(limit = 10) {
     const data = await response.json();
 
     if (data.success && data.news) {
+      // Track API call
+      apiMonitor.track('/api/news/market', { limit }, 'eodhdAPI.getMarketNews');
+
       // Cache with MODERATE tier (1 hour)
       cacheService.set('news', cacheKey, data.news);
 
@@ -443,6 +455,9 @@ export async function getStockNews(symbol, limit = 5) {
     const data = await response.json();
 
     if (data.success && data.news) {
+      // Track API call
+      apiMonitor.track('/api/news/stock', { symbol: upperSymbol, limit }, 'eodhdAPI.getStockNews');
+
       // Cache with MODERATE tier (1 hour)
       cacheService.set('news', cacheKey, data.news);
 
@@ -643,6 +658,9 @@ export async function fetchLatestEarnings(symbol) {
     const result = await response.json();
 
     if (result.success && result.data) {
+      // Track API call
+      apiMonitor.track('/api/stocks/earnings', { symbol: upperSymbol }, 'eodhdAPI.fetchLatestEarnings');
+
       // Cache with AGGRESSIVE tier (24 hours)
       cacheService.set('earnings', upperSymbol, result.data);
 
