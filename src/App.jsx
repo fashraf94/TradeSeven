@@ -1,4 +1,4 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { loadBattlesSafe, saveBattlesSafe, isSameBattles } from './services/LocalStorage';
 import { useUser } from './contexts/UserContext';
 import * as battleTimer from './services/battleTimer';
@@ -11120,6 +11120,196 @@ const AssetWeightCard = ({ asset, onWeightChange, onRemove }) => {
   );
 };
 
+// Memoized Slot Machine component to prevent animation restarts
+const SlotMachineContent = React.memo(({ challenges, onClose }) => {
+  const [animationStarted, setAnimationStarted] = useState(false);
+  const [displayedChallenges, setDisplayedChallenges] = useState([]);
+
+  useEffect(() => {
+    if (!animationStarted && challenges.length >= 4) {
+      setAnimationStarted(true);
+      setDisplayedChallenges([...challenges]); // Freeze the challenges
+    }
+  }, [challenges, animationStarted]);
+
+  const challengesToShow = displayedChallenges.length > 0 ? displayedChallenges : challenges;
+
+  const getGameModeColor = (gameMode) => {
+    switch (gameMode) {
+      case 'classic': return '#00D9FF';
+      case 'snake': return '#10B981';
+      case 'universal': return '#A855F7';
+      default: return '#A855F7';
+    }
+  };
+
+  const getDifficultyColor = (difficulty) => {
+    switch (difficulty) {
+      case 'easy': return '#10B981';
+      case 'medium': return '#FBBF24';
+      case 'hard': return '#EF4444';
+      default: return '#A855F7';
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      style={{
+        position: 'fixed',
+        top: 0, left: 0, right: 0, bottom: 0,
+        background: 'rgba(0, 0, 0, 0.95)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 2000,
+        padding: '20px',
+        overflow: 'auto'
+      }}
+    >
+      <motion.h2
+        initial={{ y: -50, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.2 }}
+        style={{
+          color: '#fff',
+          fontSize: '24px',
+          fontWeight: '700',
+          marginBottom: '8px',
+          textAlign: 'center'
+        }}
+      >
+        NEW WEEKLY CHALLENGES
+      </motion.h2>
+
+      <motion.p
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.4 }}
+        style={{
+          color: 'rgba(255,255,255,0.6)',
+          fontSize: '14px',
+          marginBottom: '24px',
+          textAlign: 'center'
+        }}
+      >
+        Your challenges for this week are...
+      </motion.p>
+
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        width: '100%',
+        maxWidth: '350px'
+      }}>
+        {challengesToShow.map((challenge, index) => (
+          <motion.div
+            key={`slot-challenge-${challenge.id}`}
+            initial={{ x: -300, opacity: 0, rotateY: 90 }}
+            animate={{ x: 0, opacity: 1, rotateY: 0 }}
+            transition={{
+              delay: 0.8 + (index * 0.4),
+              type: 'spring',
+              stiffness: 100,
+              damping: 15
+            }}
+            style={{
+              background: `linear-gradient(135deg, ${getGameModeColor(challenge.gameMode)}15, rgba(13, 17, 23, 0.95))`,
+              border: `2px solid ${getGameModeColor(challenge.gameMode)}`,
+              borderRadius: '16px',
+              padding: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}
+          >
+            <div style={{
+              width: '50px',
+              height: '50px',
+              borderRadius: '12px',
+              background: `${getGameModeColor(challenge.gameMode)}33`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '24px',
+              flexShrink: 0
+            }}>
+              {challenge.icon}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginBottom: '4px',
+                flexWrap: 'wrap'
+              }}>
+                <span style={{
+                  color: '#fff',
+                  fontWeight: '700',
+                  fontSize: '14px'
+                }}>
+                  {challenge.name}
+                </span>
+                <span style={{
+                  background: getDifficultyColor(challenge.difficulty),
+                  color: challenge.difficulty === 'easy' ? '#000' : '#fff',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  textTransform: 'uppercase'
+                }}>
+                  {challenge.difficulty}
+                </span>
+              </div>
+              <div style={{
+                color: 'rgba(255,255,255,0.5)',
+                fontSize: '12px'
+              }}>
+                {challenge.slotLabel || challenge.gameMode}
+              </div>
+            </div>
+            <div style={{
+              color: '#FBBF24',
+              fontWeight: '700',
+              fontSize: '14px',
+              flexShrink: 0
+            }}>
+              +{challenge.xp} XP
+            </div>
+          </motion.div>
+        ))}
+      </div>
+
+      <motion.button
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 2.8 }}
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+        onClick={onClose}
+        style={{
+          marginTop: '24px',
+          padding: '14px 48px',
+          background: 'linear-gradient(135deg, #A855F7, #7C3AED)',
+          border: 'none',
+          borderRadius: '12px',
+          color: '#fff',
+          fontSize: '16px',
+          fontWeight: '700',
+          cursor: 'pointer'
+        }}
+      >
+        LET'S GO!
+      </motion.button>
+    </motion.div>
+  );
+});
+
 export default function PortfolioDuel() {
   // ============================================
   // 1. ALL STATE DECLARATIONS
@@ -11309,6 +11499,7 @@ export default function PortfolioDuel() {
   const [completedWeeklyChallenges, setCompletedWeeklyChallenges] = useState([]);
   const [showSlotMachine, setShowSlotMachine] = useState(false);
   const [slotMachineRevealed, setSlotMachineRevealed] = useState(false);
+  const slotMachineTriggeredRef = useRef(false); // Session-level guard to prevent multiple triggers
   const [expandedChallengeId, setExpandedChallengeId] = useState(null);
   const [showChallengeToast, setShowChallengeToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -12002,10 +12193,17 @@ export default function PortfolioDuel() {
       }
 
       // Show slot machine with a delay to ensure app is fully rendered
-      if (shouldShowSlotMachine) {
+      // Bulletproof guard using sessionStorage (survives component remounts)
+      const sessionKey = `slotMachineShown_${user?.odM || user?.username}_session`;
+      const alreadyShownThisSession = sessionStorage.getItem(sessionKey);
+
+      if (shouldShowSlotMachine && !slotMachineTriggeredRef.current && !alreadyShownThisSession) {
+        slotMachineTriggeredRef.current = true; // Mark as triggered
+        sessionStorage.setItem(sessionKey, 'true');
+
         setTimeout(() => {
           setShowSlotMachine(true);
-        }, 500);
+        }, 800); // Slightly longer delay for app to settle
       }
     } catch (error) {
       console.error('Error loading weekly challenges:', error);
@@ -12185,19 +12383,23 @@ export default function PortfolioDuel() {
 
   // Load weekly challenges when user logs in - RUNS ONCE PER SESSION
   useEffect(() => {
+    // Use stable string values instead of object reference
+    const userId = user?.odM || user?.username;
+
     // Only run if user is logged in AND we haven't checked this session
-    if (user && !weeklyChallengesChecked) {
+    if (userId && !weeklyChallengesChecked) {
       setWeeklyChallengesChecked(true); // Mark as checked for this session
       loadWeeklyChallenges();
 
       // Also load challenge history
-      const historyKey = `challengeHistory_${user?.odM || user?.username}`;
+      const historyKey = `challengeHistory_${userId}`;
       const savedHistory = localStorage.getItem(historyKey);
       if (savedHistory) {
         setChallengeHistory(JSON.parse(savedHistory));
       }
     }
-  }, [user, weeklyChallengesChecked]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.odM, user?.username, weeklyChallengesChecked]);
 
   // Load notifications and portfolio templates when user logs in
   useEffect(() => {
@@ -15503,168 +15705,6 @@ export default function PortfolioDuel() {
     );
   };
 
-  // Slot Machine Reveal - New Week Animation
-  const SlotMachineOverlay = () => (
-    showSlotMachine && (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.95)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 2000,
-          padding: '20px'
-        }}
-      >
-        <motion.h2
-          initial={{ y: -50, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          style={{
-            color: '#fff',
-            fontSize: '24px',
-            fontWeight: '700',
-            marginBottom: '8px',
-            textAlign: 'center'
-          }}
-        >
-          NEW WEEKLY CHALLENGES
-        </motion.h2>
-
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.4 }}
-          style={{
-            color: 'rgba(255,255,255,0.6)',
-            fontSize: '14px',
-            marginBottom: '32px'
-          }}
-        >
-          Your challenges for this week are...
-        </motion.p>
-
-        {/* Slot Reels */}
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '16px',
-          width: '100%',
-          maxWidth: '350px'
-        }}>
-          {weeklyChallenges.map((challenge, index) => (
-            <motion.div
-              key={challenge.id}
-              initial={{ x: -300, opacity: 0, rotateY: 90 }}
-              animate={{ x: 0, opacity: 1, rotateY: 0 }}
-              transition={{
-                delay: 0.8 + (index * 0.4),
-                type: 'spring',
-                stiffness: 100,
-                damping: 15
-              }}
-              style={{
-                background: `linear-gradient(135deg, ${getGameModeColor(challenge.gameMode)}22, ${colors.cardBg})`,
-                border: `2px solid ${getGameModeColor(challenge.gameMode)}`,
-                borderRadius: '16px',
-                padding: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px'
-              }}
-            >
-              <div style={{
-                width: '50px',
-                height: '50px',
-                borderRadius: '12px',
-                background: `${getGameModeColor(challenge.gameMode)}33`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '24px'
-              }}>
-                {challenge.icon}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  marginBottom: '4px'
-                }}>
-                  <span style={{
-                    color: '#fff',
-                    fontWeight: '700',
-                    fontSize: '14px'
-                  }}>
-                    {challenge.name}
-                  </span>
-                  <span style={{
-                    background: getDifficultyColor(challenge.difficulty),
-                    color: '#000',
-                    fontSize: '10px',
-                    fontWeight: '700',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    textTransform: 'uppercase'
-                  }}>
-                    {challenge.difficulty}
-                  </span>
-                </div>
-                <p style={{
-                  color: 'rgba(255,255,255,0.6)',
-                  fontSize: '12px',
-                  margin: 0
-                }}>
-                  {challenge.slotLabel}
-                </p>
-              </div>
-              <div style={{
-                color: getGameModeColor(challenge.gameMode),
-                fontWeight: '700',
-                fontSize: '14px'
-              }}>
-                +{challenge.xp} XP
-              </div>
-            </motion.div>
-          ))}
-        </div>
-
-        <motion.button
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 2.8 }}
-          onClick={() => {
-            setShowSlotMachine(false);
-            setSlotMachineRevealed(true);
-            markSlotMachineShown();
-          }}
-          style={{
-            marginTop: '32px',
-            background: 'linear-gradient(135deg, #A855F7, #7C3AED)',
-            color: '#fff',
-            border: 'none',
-            padding: '16px 48px',
-            borderRadius: '12px',
-            fontSize: '16px',
-            fontWeight: '700',
-            cursor: 'pointer'
-          }}
-        >
-          LET'S GO!
-        </motion.button>
-      </motion.div>
-    )
-  );
-
   // ============================================
   // CONFIRMATION POPUP COMPONENT
   // ============================================
@@ -18703,7 +18743,16 @@ export default function PortfolioDuel() {
         <MidGameChallengePopup />
         <RiskChallengePopup />
         <RiskChallengeResultPopup />
-        <SlotMachineOverlay />
+        {showSlotMachine && weeklyChallenges.length >= 4 && (
+          <SlotMachineContent
+            challenges={weeklyChallenges}
+            onClose={() => {
+              setShowSlotMachine(false);
+              setSlotMachineRevealed(true);
+              markSlotMachineShown();
+            }}
+          />
+        )}
 
         <div style={{
           minHeight: '100vh',

@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { designColors, glowEffects, fontMono, MAGNITUDES } from '../designConstants';
+import { cardTap } from '../animationPresets';
 
 export default function PredictionSummary({
   symbol,
@@ -21,9 +22,9 @@ export default function PredictionSummary({
   const riskColors = {
     low: designColors.green,
     medium: designColors.orange,
-    high: '#f97316',
+    high: designColors.orangeRed,
     veryHigh: designColors.red,
-    extreme: '#dc2626',
+    extreme: designColors.redDark,
   };
 
   const riskLabels = {
@@ -234,7 +235,7 @@ export default function PredictionSummary({
         onClick={onConfirm}
         disabled={disabled}
         whileHover={disabled ? {} : { scale: 1.02 }}
-        whileTap={disabled ? {} : { scale: 0.98 }}
+        whileTap={disabled ? {} : cardTap}
         style={{
           width: '100%',
           padding: '14px',

@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { designColors, fontMono, glowEffects } from '../designConstants';
+import { cardTap } from '../animationPresets';
 import { EarningsHeader, BracketBadge } from '../shared';
 import ResultCard from './ResultCard';
 
@@ -149,7 +150,7 @@ export default function TournamentResults({
             <motion.button
               onClick={onPlayNext}
               whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileTap={cardTap}
               style={{
                 padding: '16px 48px',
                 backgroundColor: designColors.cyan,
@@ -168,7 +169,7 @@ export default function TournamentResults({
             <motion.button
               onClick={onViewLeaderboard}
               whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileTap={cardTap}
               style={{
                 padding: '16px 32px',
                 backgroundColor: 'transparent',
@@ -308,7 +309,7 @@ export default function TournamentResults({
       }}>
         <motion.button
           onClick={onPlayNext}
-          whileTap={{ scale: 0.98 }}
+          whileTap={cardTap}
           style={{
             width: '100%',
             padding: '16px',
@@ -328,7 +329,7 @@ export default function TournamentResults({
 
         <motion.button
           onClick={onViewLeaderboard}
-          whileTap={{ scale: 0.98 }}
+          whileTap={cardTap}
           style={{
             width: '100%',
             padding: '12px',

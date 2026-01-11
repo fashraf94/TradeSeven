@@ -78,8 +78,8 @@ export default function MagnitudeGaugeCard({
               fontWeight: 'bold',
               padding: '2px 8px',
               borderRadius: '10px',
-              background: 'linear-gradient(135deg, #9333ea, #f59e0b)',
-              color: '#ffffff',
+              background: `linear-gradient(135deg, ${designColors.purple}, ${designColors.orange})`,
+              color: designColors.textPrimary,
             }}>
               CLUTCH
             </span>

@@ -13,9 +13,14 @@ export const designColors = {
   // Accents
   cyan: '#00d9ff',
   green: '#10b981',
+  greenBright: '#22c55e',
   orange: '#f59e0b',
   orangeRed: '#f97316',
   red: '#ef4444',
+  redDark: '#dc2626',
+  purple: '#9333ea',
+  violet: '#a78bfa',
+  gold: '#fbbf24',
 
   // Text
   textPrimary: '#ffffff',
@@ -34,6 +39,9 @@ export const bgTints = {
   cyan: 'rgba(0, 217, 255, 0.1)',
   green: 'rgba(16, 185, 129, 0.1)',
   red: 'rgba(239, 68, 68, 0.1)',
+  orange: 'rgba(249, 115, 22, 0.1)',
+  gold: 'rgba(251, 191, 36, 0.2)',
+  violet: 'rgba(139, 92, 246, 0.2)',
 };
 
 export const fontMono = "'SF Mono', 'Monaco', 'Consolas', monospace";

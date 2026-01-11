@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { designColors, fontMono, BRACKETS } from '../designConstants';
+import { staggerChild } from '../animationPresets';
 
 export default function LeaderboardRow({
   rank,
@@ -13,9 +14,7 @@ export default function LeaderboardRow({
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: -10 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: index * 0.03 }}
+      {...staggerChild(index, 0.03)}
       style={{
         display: 'flex',
         alignItems: 'center',

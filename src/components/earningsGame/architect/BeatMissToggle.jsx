@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { designColors, glowEffects, fontMono } from '../designConstants';
+import { cardTap } from '../animationPresets';
 
 export default function BeatMissToggle({
   selected,        // 'beat' | 'miss' | null
@@ -37,7 +38,7 @@ export default function BeatMissToggle({
             key={option.id}
             onClick={() => onSelect(option.id)}
             whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+            whileTap={cardTap}
             animate={{
               borderColor: isSelected ? option.selectedColor : designColors.borderDefault,
               boxShadow: isSelected ? option.selectedGlow : 'none',

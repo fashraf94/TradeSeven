@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { designColors, fontMono } from '../designConstants';
+import { buttonTap } from '../animationPresets';
 
 export default function DaySelector({
   days,           // [{ dayName: 'MON', date: 13, count: 4 }, ...]
@@ -95,7 +96,7 @@ export default function DaySelector({
             key={index}
             ref={isSelected ? selectedRef : null}
             onClick={() => onSelect(index)}
-            whileTap={{ scale: 0.95 }}
+            whileTap={buttonTap}
             style={{
               display: 'flex',
               flexDirection: 'column',
