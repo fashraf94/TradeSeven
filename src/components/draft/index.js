@@ -29,3 +29,6 @@ export { default as BattleErrorState } from './BattleErrorState';
 
 // Layout refinement components (Phase 5.5)
 export { default as TopPerformersModal } from './TopPerformersModal';
+
+// Styled icons (Phase 5.6)
+export * from './HoloIcons';

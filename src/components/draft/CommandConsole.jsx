@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
 import AssetTile from './AssetTile';
+import { UserIcon, TrophyIcon, SwapIcon, ScoutIcon, FireIcon, SnowflakeIcon, HoloIconAnimations } from './HoloIcons';
 
 /**
  * CommandConsole - Fixed bottom HUD for Draft Battle
@@ -120,13 +121,13 @@ const CommandConsole = ({
         }}>
           {isScoutMode ? (
             <>
-              <span style={{ animation: 'pulse 1s ease-in-out infinite' }}>📡</span>
-              SCOUTING: {scoutedPlayer?.displayName}
+              <ScoutIcon size={16} animated />
+              <span style={{ marginLeft: '2px' }}>SCOUTING: {scoutedPlayer?.displayName}</span>
             </>
           ) : (
             <>
-              <span>👤</span>
-              YOUR SQUAD
+              <UserIcon size={14} />
+              <span style={{ marginLeft: '2px' }}>YOUR SQUAD</span>
             </>
           )}
         </div>
@@ -157,16 +158,19 @@ const CommandConsole = ({
             display: 'flex',
             gap: '10px',
             fontSize: '10px',
+            alignItems: 'center',
           }}>
-            <span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <FireIcon size={12} />
               <span style={{ color: HOLO_COLORS.textMuted }}>BEST:</span>
-              <span style={{ color: HOLO_COLORS.green, marginLeft: '3px', fontWeight: 600 }}>
+              <span style={{ color: HOLO_COLORS.green, marginLeft: '2px', fontWeight: 600 }}>
                 {bestAsset.symbol} +{bestAsset.gain?.toFixed(1)}%
               </span>
             </span>
-            <span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <SnowflakeIcon size={12} />
               <span style={{ color: HOLO_COLORS.textMuted }}>WORST:</span>
-              <span style={{ color: HOLO_COLORS.red, marginLeft: '3px', fontWeight: 600 }}>
+              <span style={{ color: HOLO_COLORS.red, marginLeft: '2px', fontWeight: 600 }}>
                 {worstAsset?.symbol} {worstAsset?.gain?.toFixed(1)}%
               </span>
             </span>
@@ -299,7 +303,8 @@ const CommandConsole = ({
                 transition: 'all 0.2s ease',
               }}
             >
-              🔄 Free Agency
+              <SwapIcon size={16} />
+              <span>Free Agency</span>
             </button>
             <button
               onClick={onTopPerformers}
@@ -320,18 +325,20 @@ const CommandConsole = ({
                 transition: 'all 0.2s ease',
               }}
             >
-              🏆 Top Performers
+              <TrophyIcon size={16} />
+              <span>Top Performers</span>
             </button>
           </>
         )}
       </div>
 
-      {/* Pulse animation */}
+      {/* Pulse animation and HoloIcon animations */}
       <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
         }
+        ${HoloIconAnimations}
       `}</style>
     </div>
   );

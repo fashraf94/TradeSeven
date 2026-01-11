@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { HOLO_COLORS, GLOW_EFFECTS, RANK_CONFIG } from '../../constants/holoTheme';
+import { BotIcon, StarIcon } from './HoloIcons';
 
 /**
  * TacticalPod - Hexagonal player marker for the Altitude Map
@@ -26,12 +27,13 @@ const TacticalPod = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Responsive dimensions
-  const podWidth = isMobile ? 100 : 120;
-  const podHeight = isMobile ? 110 : 130;
-  const nameFontSize = isMobile ? '10px' : '12px';
-  const gainFontSize = isMobile ? '16px' : '20px';
-  const rankFontSize = isMobile ? '8px' : '10px';
+  // Responsive dimensions - Phase 5.6: Reduced mobile sizes to prevent overlap
+  const podWidth = isMobile ? 75 : 110;
+  const podHeight = isMobile ? 85 : 120;
+  const rankFontSize = isMobile ? '8px' : '9px';
+  const nameFontSize = isMobile ? '9px' : '11px';
+  const gainFontSize = isMobile ? '14px' : '18px';
+  const youFontSize = isMobile ? '8px' : '9px';
 
   // Determine pod colors based on rank and user status
   const getPodColors = () => {
@@ -130,21 +132,21 @@ const TacticalPod = ({
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '12px 8px',
+          padding: isMobile ? '8px 4px' : '12px 8px',
           backdropFilter: 'blur(8px)',
           position: 'relative',
         }}>
           {/* Rank Badge - positioned at top of hexagon */}
           <div style={{
             position: 'absolute',
-            top: '10px',
+            top: isMobile ? '6px' : '8px',
             left: '50%',
             transform: 'translateX(-50%)',
             background: colors.labelBg,
             color: colors.labelColor,
             fontSize: rankFontSize,
             fontWeight: 800,
-            padding: '3px 10px',
+            padding: isMobile ? '2px 6px' : '2px 8px',
             borderRadius: '4px',
             letterSpacing: '0.5px',
             boxShadow: colors.glow !== 'none' ? `0 0 8px ${colors.border}` : 'none',
@@ -157,45 +159,34 @@ const TacticalPod = ({
             fontSize: nameFontSize,
             fontWeight: 600,
             color: HOLO_COLORS.textPrimary,
-            marginTop: '18px',
+            marginTop: isMobile ? '14px' : '16px',
             textAlign: 'center',
-            maxWidth: `${podWidth - 20}px`,
+            maxWidth: isMobile ? '65px' : '90px',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
             display: 'flex',
             alignItems: 'center',
-            gap: '4px',
+            justifyContent: 'center',
+            gap: '3px',
           }}>
+            {player.isCPU && <BotIcon size={isMobile ? 10 : 12} />}
             {player.displayName}
-            {player.isCPU && <span style={{ opacity: 0.7 }}>BOT</span>}
-          </div>
-
-          {/* Color label (matching design mockup) */}
-          <div style={{
-            fontSize: '8px',
-            color: colors.border,
-            marginTop: '2px',
-            opacity: 0.8,
-          }}>
-            {isUser ? 'Cyan #00ffff' :
-             rank === 1 ? 'Gold #ffd700' :
-             rank === 3 ? 'Bronze #cd7f32' :
-             rank === 4 ? 'Red tint' : ''}
           </div>
 
           {/* YOU indicator */}
           {isUser && (
             <div style={{
-              fontSize: '9px',
+              fontSize: youFontSize,
               color: HOLO_COLORS.cyan,
               fontWeight: 700,
-              marginTop: '2px',
+              marginTop: '1px',
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: '3px',
             }}>
-              YOU<span style={{ color: HOLO_COLORS.gold }}>★</span>
+              YOU <StarIcon size={isMobile ? 10 : 12} color={HOLO_COLORS.gold} />
             </div>
           )}
 
@@ -205,9 +196,9 @@ const TacticalPod = ({
             fontWeight: 700,
             color: player.totalGain >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
             textShadow: player.totalGain >= 0
-              ? '0 0 12px rgba(0, 255, 136, 0.7)'
-              : '0 0 12px rgba(255, 51, 102, 0.7)',
-            marginTop: isUser ? '2px' : '8px',
+              ? '0 0 8px rgba(0, 255, 136, 0.6)'
+              : '0 0 8px rgba(255, 51, 102, 0.6)',
+            marginTop: isMobile ? '2px' : '4px',
             fontFamily: 'monospace',
           }}>
             {player.totalGain >= 0 ? '+' : ''}{player.totalGain.toFixed(2)}%
@@ -217,9 +208,9 @@ const TacticalPod = ({
           {movement && (
             <div style={{
               position: 'absolute',
-              bottom: '12px',
-              right: '16px',
-              fontSize: '14px',
+              bottom: isMobile ? '8px' : '12px',
+              right: isMobile ? '10px' : '16px',
+              fontSize: isMobile ? '10px' : '14px',
               fontWeight: 700,
               color: movement === '↑' ? HOLO_COLORS.green : HOLO_COLORS.red,
             }}>
@@ -232,12 +223,12 @@ const TacticalPod = ({
       {/* "Tap to Scout" hint for opponents */}
       {!isUser && (
         <div style={{
-          fontSize: '8px',
+          fontSize: isMobile ? '7px' : '8px',
           color: HOLO_COLORS.textMuted,
           textAlign: 'center',
-          marginTop: '6px',
+          marginTop: isMobile ? '2px' : '6px',
           textTransform: 'uppercase',
-          letterSpacing: '1px',
+          letterSpacing: '0.5px',
           opacity: 0.7,
         }}>
           Tap to Scout

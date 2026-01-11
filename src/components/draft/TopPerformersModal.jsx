@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { HOLO_COLORS, CATEGORY_CONFIG, GLOW_EFFECTS } from '../../constants/holoTheme';
+import { TrophyIcon, UserIcon } from './HoloIcons';
 
 /**
  * TopPerformersModal - Shows top 5 performing assets across all portfolios
@@ -8,6 +9,7 @@ import { HOLO_COLORS, CATEGORY_CONFIG, GLOW_EFFECTS } from '../../constants/holo
  * the top performers with their owners.
  *
  * Phase 5.5: Replaces "All Picks" button functionality
+ * Phase 5.6: Updated to use styled HoloIcons
  */
 const TopPerformersModal = ({
   isOpen,
@@ -101,7 +103,7 @@ const TopPerformersModal = ({
             alignItems: 'center',
             gap: '8px',
           }}>
-            <span style={{ fontSize: '18px' }}>🏆</span>
+            <TrophyIcon size={20} color={HOLO_COLORS.gold} />
             <span style={{
               fontSize: '14px',
               fontWeight: 700,
