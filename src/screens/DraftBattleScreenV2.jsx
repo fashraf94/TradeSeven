@@ -506,7 +506,7 @@ const DraftBattleScreenV2 = ({
   // NAVIGATION HANDLERS
   // ============================================
   const handleBack = () => setScreen('dashboard');
-  const handleFreeAgency = () => setScreen('freeAgency');
+  const handleFreeAgency = () => setScreen('freeAgencyV2');
   const handleTopPerformers = () => setShowTopPerformers(true);
 
   // Retry handler for error state

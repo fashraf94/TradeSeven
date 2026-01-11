@@ -15,6 +15,7 @@ export { default as DraftLobbyScreen } from './DraftLobbyScreen';
 export { default as PreviousBattlesScreen } from './PreviousBattlesScreen';
 export { default as BattleHistoryScreen } from './BattleHistoryScreen';
 export { default as FreeAgencyScreen } from './FreeAgencyScreen';
+export { default as FreeAgencyScreenV2 } from './FreeAgencyScreenV2';
 export { default as DraftResultsScreen } from './DraftResultsScreen';
 export { default as BattleViewScreen } from './BattleViewScreen';
 
