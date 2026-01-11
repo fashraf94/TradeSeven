@@ -72,6 +72,7 @@ const HoloAssetCard = ({
   onAcquire,                 // Keep for backward compatibility
   category = 'steady',
   disabled = false,
+  compact = false,           // Phone-optimized compact mode
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
@@ -138,6 +139,166 @@ const HoloAssetCard = ({
   // Use provided data/volume changes or fallback to price change
   const displayDataChange = dataChange !== undefined ? dataChange : change;
   const displayVolumeChange = volumeChange !== undefined ? volumeChange : change;
+
+  // ========== COMPACT MODE RENDER (Phone <768px) ==========
+  if (compact) {
+    const compactBorder = isLocked
+      ? '1px solid rgba(255, 51, 102, 0.4)'
+      : isSelected
+        ? `2px solid ${accentColor}`
+        : `1px solid ${accentColor}50`;
+
+    const compactShadow = isSelected
+      ? `0 0 12px ${accentGlow}`
+      : isLocked
+        ? '0 0 8px rgba(255, 51, 102, 0.2)'
+        : `0 0 6px ${accentGlow}`;
+
+    return (
+      <div
+        className={`holo-asset-card-compact ${isSelected ? 'selected' : ''}`}
+        onClick={handleCardClick}
+        style={{
+          position: 'relative',
+          width: '100%',
+          minWidth: '85px',
+          maxWidth: '120px',
+          background: isLocked
+            ? 'rgba(20, 15, 20, 0.9)'
+            : isSelected
+              ? `${accentColor}15`
+              : 'rgba(10, 20, 30, 0.9)',
+          border: compactBorder,
+          borderRadius: '8px',
+          padding: '8px',
+          opacity: isLocked ? 0.7 : 1,
+          filter: isLocked ? 'saturate(0.5)' : 'none',
+          boxShadow: compactShadow,
+          cursor: isLocked || disabled ? 'not-allowed' : 'pointer',
+          transition: 'all 0.15s ease',
+        }}
+      >
+        {/* Top Row: Category Badge + Status */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '4px',
+        }}>
+          {/* Category Badge */}
+          <span style={{
+            width: '18px',
+            height: '18px',
+            borderRadius: '4px',
+            background: `${catConfig.color}25`,
+            border: `1px solid ${catConfig.color}50`,
+            color: catConfig.color,
+            fontSize: '10px',
+            fontWeight: '700',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            {catConfig.letter}
+          </span>
+
+          {/* Status Badge */}
+          <span style={{
+            fontSize: '7px',
+            fontWeight: '700',
+            padding: '2px 4px',
+            borderRadius: '3px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.3px',
+            background: isLocked ? 'rgba(255,51,102,0.2)' : `${accentColor}22`,
+            color: isLocked ? '#ff3366' : accentColor,
+          }}>
+            {isLocked ? 'LOCKED' : 'AVAIL'}
+          </span>
+        </div>
+
+        {/* Symbol */}
+        <div style={{
+          fontSize: '14px',
+          fontWeight: '700',
+          color: isLocked ? '#6e7681' : '#fff',
+          marginBottom: '2px',
+        }}>
+          {symbol}
+        </div>
+
+        {/* Price */}
+        <div style={{
+          fontSize: '13px',
+          fontWeight: '600',
+          color: isLocked ? '#6e7681' : '#e6edf3',
+          fontFamily: 'monospace',
+        }}>
+          {formatPrice(price)}
+        </div>
+
+        {/* Change */}
+        <div style={{
+          fontSize: '10px',
+          fontWeight: '500',
+          color: displayDataChange >= 0 ? '#00ff88' : '#ff4444',
+          marginTop: '2px',
+        }}>
+          {formatChange(displayDataChange)}
+        </div>
+
+        {/* GET INFO Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onGetInfo?.();
+          }}
+          style={{
+            width: '100%',
+            marginTop: '6px',
+            padding: '6px 4px',
+            fontSize: '9px',
+            fontWeight: '600',
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.15)',
+            borderRadius: '4px',
+            color: '#8b949e',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '4px',
+          }}
+        >
+          <span style={{ fontSize: '10px' }}>🔍</span>
+          INFO
+        </button>
+
+        {/* Selection Indicator */}
+        {isSelected && (
+          <div style={{
+            position: 'absolute',
+            top: '-6px',
+            right: '-6px',
+            width: '18px',
+            height: '18px',
+            borderRadius: '50%',
+            background: accentColor,
+            border: '2px solid #0a0e14',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: `0 0 10px ${accentGlow}`,
+          }}>
+            <span style={{ color: '#000', fontSize: '10px', fontWeight: 'bold' }}>✓</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ========== FULL SIZE MODE RENDER (Desktop/Tablet) ==========
 
   // Determine border and shadow based on state
   const getBorderStyle = () => {

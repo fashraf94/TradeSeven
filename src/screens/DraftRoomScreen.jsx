@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 /**
  * DraftRoomScreen - Holographic War Room Redesign
@@ -14,14 +14,19 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 // Import DraftAdvisor - will be passed or imported
 import DraftAdvisor from '../components/DraftAdvisor';
+// Import EODHD API for real-time prices
+import { getMultipleStockPrices } from '../services/eodhdAPI';
 // Import Holographic components
 import {
   HoloAssetCard,
   CommandDeckConfirmButton,
   RosterGauges,
+  RosterGaugesCompact,
   DraftToolButtons,
+  DraftToolButtonsCompact,
   HoloTimerInline,
   PlayerPanel,
+  MiniPlayerPanel,
   SnakeConduit,
   SnakeConnector,
   SnakeConnectorVertical,
@@ -71,6 +76,22 @@ const DraftRoomScreen = ({
   const [drawerDragY, setDrawerDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
 
+  // Real-time price data from EODHD API
+  const [livePrices, setLivePrices] = useState({});
+  const [pricesLoading, setPricesLoading] = useState(true);
+
+  // Phone detection for mobile-optimized layout (< 768px)
+  const [isPhone, setIsPhone] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+
+  // Phone detection resize listener
+  useEffect(() => {
+    const handleResize = () => {
+      setIsPhone(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const roomDraft = draftState || currentDraft;
 
   // Handle draft completion - navigate to results
@@ -80,6 +101,45 @@ const DraftRoomScreen = ({
       setScreen('draftResults');
     }
   }, [roomDraft?.status, setScreen]);
+
+  // Fetch real-time prices from EODHD API
+  useEffect(() => {
+    if (!roomDraft?.availableAssets) return;
+
+    const fetchPrices = async () => {
+      try {
+        // Collect all unique symbols from all categories
+        const allSymbols = new Set();
+        Object.values(roomDraft.availableAssets).forEach(categoryAssets => {
+          categoryAssets.forEach(asset => {
+            if (asset.symbol) {
+              allSymbols.add(asset.symbol.toUpperCase());
+            }
+          });
+        });
+
+        if (allSymbols.size === 0) return;
+
+        const symbolsArray = Array.from(allSymbols);
+        console.log('[DraftRoom] Fetching prices for', symbolsArray.length, 'symbols');
+
+        const prices = await getMultipleStockPrices(symbolsArray);
+        setLivePrices(prices);
+        setPricesLoading(false);
+      } catch (error) {
+        console.error('[DraftRoom] Failed to fetch prices:', error);
+        setPricesLoading(false);
+      }
+    };
+
+    // Initial fetch
+    fetchPrices();
+
+    // Refresh prices every 60 seconds
+    const intervalId = setInterval(fetchPrices, 60000);
+
+    return () => clearInterval(intervalId);
+  }, [roomDraft?.availableAssets]);
 
   // Detect when it becomes YOUR TURN - flash notification
   useEffect(() => {
@@ -332,7 +392,7 @@ const DraftRoomScreen = ({
   const timerWarningLevel = draftTimeRemaining <= 5 ? 'critical-5' : draftTimeRemaining <= 10 ? 'critical-10' : draftTimeRemaining <= 30 ? 'warning' : 'safe';
 
   return (
-    <div style={containerStyle}>
+    <div style={{ ...containerStyle, height: '100vh', overflow: 'hidden' }}>
       {/* Screen Edge Warning Glow - Shows when timer is low */}
       {isMyTurn && timerWarningLevel !== 'safe' && (
         <div
@@ -387,11 +447,12 @@ const DraftRoomScreen = ({
         </div>
       )}
 
-      {/* Main War Room Container */}
+      {/* Main War Room Container - height: 100vh for sticky footer */}
       <div
         className="scanlines"
         style={{
-          minHeight: '100vh',
+          height: '100vh',
+          maxHeight: '100vh',
           background: `
             radial-gradient(ellipse at 50% 0%, rgba(0, 255, 255, 0.08) 0%, transparent 50%),
             radial-gradient(ellipse at 80% 20%, rgba(0, 255, 136, 0.05) 0%, transparent 40%),
@@ -625,6 +686,52 @@ const DraftRoomScreen = ({
             />
           </div>
 
+          {/* Phone: Horizontal mini-arc layout (< 768px) */}
+          <div
+            className="opponent-arc-phone"
+            style={{
+              display: 'none', // Shown via CSS media query for phones
+              flexDirection: 'row',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 12px',
+              position: 'relative',
+              minHeight: '70px',
+              overflowX: 'auto',
+            }}
+          >
+            {/* Mini Snake Line - horizontal gradient */}
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '10%',
+              right: '10%',
+              height: '4px',
+              background: 'linear-gradient(90deg, #00d9ff, #00ff88, #f59e0b, #ec4899, #8b5cf6)',
+              borderRadius: '2px',
+              zIndex: 0,
+              opacity: 0.5,
+              transform: 'translateY(-50%)',
+            }} />
+
+            {/* All players in horizontal row */}
+            {roomDraft?.players?.map((player, index) => {
+              const isCurrentPicker = player.odUserId === roomDraft?.currentPlayerId;
+              const isNext = player.odUserId === nextPickerId;
+              const isYou = player.odUserId === currentUserId;
+              return (
+                <MiniPlayerPanel
+                  key={player.odUserId || index}
+                  player={player}
+                  isCurrentPicker={isCurrentPicker}
+                  isNextPicker={isNext}
+                  isYou={isYou}
+                />
+              );
+            })}
+          </div>
+
           {/* Last Pick Info - Animated Banner */}
           {lastPick && (
             <div
@@ -724,17 +831,22 @@ const DraftRoomScreen = ({
           </div>
 
           {/* Asset Cards Grid - Scrollable with transition */}
-          <div style={{
-            flex: 1,
-            overflow: 'auto',
-            padding: '16px',
-          }}>
+          <div
+            className="asset-grid-container"
+            style={{
+              flex: 1,
+              overflow: 'auto',
+              padding: isPhone ? '8px' : '16px',
+            }}
+          >
             <div
-              className={categoryTransition ? 'category-transition' : ''}
+              className={`asset-grid ${categoryTransition ? 'category-transition' : ''}`}
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-                gap: '16px',
+                gridTemplateColumns: isPhone
+                  ? 'repeat(auto-fill, minmax(95px, 1fr))'
+                  : 'repeat(auto-fill, minmax(150px, 1fr))',
+                gap: isPhone ? '8px' : '16px',
                 maxWidth: '1200px',
                 margin: '0 auto',
                 justifyItems: 'center',
@@ -753,15 +865,21 @@ const DraftRoomScreen = ({
                 // Get sector for color theming
                 const assetSector = asset.sector || getStockSector?.(asset.symbol) || 'Technology';
 
+                // Get real-time price from EODHD API (fallback to asset data)
+                const upperSymbol = asset.symbol?.toUpperCase();
+                const livePrice = livePrices[upperSymbol];
+                const displayPrice = livePrice?.price ?? asset.price ?? 0;
+                const displayChange = livePrice?.percentChange ?? asset.percentChange ?? asset.change ?? 0;
+
                 return (
                   <HoloAssetCard
                     key={asset.symbol}
                     symbol={asset.symbol}
                     name={asset.name}
-                    price={asset.price}
-                    change={asset.percentChange || asset.change || 0}
-                    dataChange={asset.percentChange || 1.2}
-                    volumeChange={asset.volumeChange || 1.2}
+                    price={displayPrice}
+                    change={displayChange}
+                    dataChange={displayChange}
+                    volumeChange={displayChange}
                     sector={assetSector}
                     status={isLocked ? 'locked' : 'available'}
                     lockedBy={pickedInfo?.pickedBy}
@@ -770,7 +888,12 @@ const DraftRoomScreen = ({
                     isSelected={isAssetSelected}
                     onSelect={() => handleSelectAsset(asset)}
                     onAcquire={() => handlePick(asset)}
-                    onGetInfo={() => setDraftAssetInfoModal(asset)}
+                    onGetInfo={() => setDraftAssetInfoModal({
+                      ...asset,
+                      price: displayPrice,
+                      percentChange: displayChange,
+                    })}
+                    compact={isPhone}
                   />
                 );
               })}
@@ -802,38 +925,62 @@ const DraftRoomScreen = ({
         <footer
           style={{
             gridArea: 'command',
+            flexShrink: 0,
             padding: '12px 16px',
             paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
             borderTop: '1px solid var(--holo-border-bright)',
-            background: 'rgba(10, 14, 20, 0.95)',
+            background: 'rgba(10, 14, 20, 0.98)',
             backdropFilter: 'blur(10px)',
             display: 'grid',
             gridTemplateColumns: 'auto 1fr auto',
             gap: '16px',
             alignItems: 'center',
+            boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.5)',
+            zIndex: 10,
           }}
         >
-          {/* Left: Roster Power Cores */}
-          <RosterGauges
-            steady={{
-              picked: myPlayer?.categories?.steady || 0,
-              required: 3,
-            }}
-            risky={{
-              picked: myPlayer?.categories?.risky || 0,
-              required: 3,
-            }}
-            defensive={{
-              picked: myPlayer?.categories?.defensive || 0,
-              required: 3,
-            }}
-            onGaugeClick={(category) => {
-              // Switch to that category tab
-              if (canPickFromCategory(category)) {
-                setSelectedDraftCategory(category);
-              }
-            }}
-          />
+          {/* Left: Roster Power Cores - Use compact on phone */}
+          {isPhone ? (
+            <RosterGaugesCompact
+              steady={{
+                picked: myPlayer?.categories?.steady || 0,
+                required: 3,
+              }}
+              risky={{
+                picked: myPlayer?.categories?.risky || 0,
+                required: 3,
+              }}
+              defensive={{
+                picked: myPlayer?.categories?.defensive || 0,
+                required: 3,
+              }}
+              onGaugeClick={(category) => {
+                if (canPickFromCategory(category)) {
+                  setSelectedDraftCategory(category);
+                }
+              }}
+            />
+          ) : (
+            <RosterGauges
+              steady={{
+                picked: myPlayer?.categories?.steady || 0,
+                required: 3,
+              }}
+              risky={{
+                picked: myPlayer?.categories?.risky || 0,
+                required: 3,
+              }}
+              defensive={{
+                picked: myPlayer?.categories?.defensive || 0,
+                required: 3,
+              }}
+              onGaugeClick={(category) => {
+                if (canPickFromCategory(category)) {
+                  setSelectedDraftCategory(category);
+                }
+              }}
+            />
+          )}
 
           {/* Center: Confirm Pick Button */}
           <div style={{
@@ -849,25 +996,44 @@ const DraftRoomScreen = ({
               currentPickerName={
                 roomDraft?.players?.find(p => p.odUserId === roomDraft?.currentPlayerId)?.displayName || 'opponent'
               }
+              compact={isPhone}
             />
           </div>
 
-          {/* Right: Integrated Tool Buttons */}
-          <DraftToolButtons
-            onAnalyze={() => {
-              setDraftAdvisorAction('analyze');
-              setShowDraftAdvisor(true);
-            }}
-            onCompare={() => {
-              setDraftAdvisorAction('compare');
-              setShowDraftAdvisor(true);
-            }}
-            onNotes={() => {
-              setDraftAdvisorAction('notes');
-              setShowDraftAdvisor(true);
-            }}
-            disabled={false}
-          />
+          {/* Right: Integrated Tool Buttons - Use compact on phone */}
+          {isPhone ? (
+            <DraftToolButtonsCompact
+              onAnalyze={() => {
+                setDraftAdvisorAction('analyze');
+                setShowDraftAdvisor(true);
+              }}
+              onCompare={() => {
+                setDraftAdvisorAction('compare');
+                setShowDraftAdvisor(true);
+              }}
+              onNotes={() => {
+                setDraftAdvisorAction('notes');
+                setShowDraftAdvisor(true);
+              }}
+              disabled={false}
+            />
+          ) : (
+            <DraftToolButtons
+              onAnalyze={() => {
+                setDraftAdvisorAction('analyze');
+                setShowDraftAdvisor(true);
+              }}
+              onCompare={() => {
+                setDraftAdvisorAction('compare');
+                setShowDraftAdvisor(true);
+              }}
+              onNotes={() => {
+                setDraftAdvisorAction('notes');
+                setShowDraftAdvisor(true);
+              }}
+              disabled={false}
+            />
+          )}
         </footer>
 
         {/* Autopick Warning Banner */}
@@ -977,13 +1143,137 @@ const DraftRoomScreen = ({
             }
           }
 
-          /* Mobile: Show vertical stack, hide horizontal */
-          @media (max-width: 1023px) {
+          /* Tablet: Show vertical stack, hide horizontal and phone */
+          @media (max-width: 1023px) and (min-width: 768px) {
             .opponent-arc-desktop {
               display: none !important;
             }
             .opponent-arc-mobile {
               display: flex !important;
+            }
+            .opponent-arc-phone {
+              display: none !important;
+            }
+          }
+
+          /* ===== PHONE STYLES (< 768px) ===== */
+          @media (max-width: 767px) {
+            /* Hide desktop/tablet arcs, show phone arc */
+            .opponent-arc-desktop {
+              display: none !important;
+            }
+            .opponent-arc-mobile {
+              display: none !important;
+            }
+            .opponent-arc-phone {
+              display: flex !important;
+              width: 100% !important;
+              max-width: 100vw !important;
+              overflow-x: hidden !important;
+              box-sizing: border-box !important;
+              justify-content: center !important;
+              gap: 6px !important;
+              padding: 8px 8px !important;
+            }
+
+            /* Main container - prevent horizontal overflow */
+            .scanlines {
+              width: 100vw !important;
+              max-width: 100vw !important;
+              overflow-x: hidden !important;
+              box-sizing: border-box !important;
+            }
+
+            /* Compact header - ensure timer fits */
+            header {
+              padding: 8px 10px !important;
+              width: 100% !important;
+              max-width: 100vw !important;
+              box-sizing: border-box !important;
+              gap: 8px !important;
+            }
+
+            /* Mini player panels - fit 4 across */
+            .mini-player-panel {
+              min-width: 65px !important;
+              max-width: 80px !important;
+              flex-shrink: 1 !important;
+              padding: 6px 6px !important;
+            }
+
+            /* Compact category tabs */
+            .category-tab {
+              padding: 8px 8px !important;
+              font-size: 11px !important;
+              flex: 1 !important;
+            }
+
+            /* Asset grid - add bottom padding for fixed footer */
+            .asset-grid-container {
+              padding-bottom: 90px !important;
+            }
+
+            .asset-grid {
+              grid-template-columns: repeat(auto-fill, minmax(85px, 1fr)) !important;
+              gap: 8px !important;
+              padding: 8px !important;
+            }
+
+            /* Compact last pick banner */
+            .last-pick-banner-animate {
+              font-size: 11px !important;
+              padding: 6px 12px !important;
+              margin-top: 8px !important;
+            }
+
+            /* Command deck footer - FIXED at bottom */
+            footer {
+              position: fixed !important;
+              bottom: 0 !important;
+              left: 0 !important;
+              right: 0 !important;
+              z-index: 100 !important;
+              padding: 8px 10px !important;
+              padding-bottom: max(8px, env(safe-area-inset-bottom, 8px)) !important;
+              gap: 6px !important;
+              background: rgba(10, 14, 20, 0.98) !important;
+              border-top: 1px solid rgba(0, 255, 255, 0.2) !important;
+              box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5) !important;
+              backdrop-filter: blur(10px) !important;
+            }
+          }
+
+          /* ===== VERY SMALL PHONES (< 375px) ===== */
+          @media (max-width: 374px) {
+            .opponent-arc-phone {
+              gap: 4px !important;
+              padding: 6px 6px !important;
+            }
+
+            .mini-player-panel {
+              min-width: 55px !important;
+              max-width: 68px !important;
+              padding: 4px 4px !important;
+            }
+
+            .asset-grid {
+              grid-template-columns: repeat(3, 1fr) !important;
+              gap: 6px !important;
+            }
+
+            .asset-grid-container {
+              padding-bottom: 85px !important;
+            }
+
+            footer {
+              grid-template-columns: auto 1fr auto !important;
+              gap: 4px !important;
+              padding: 6px 8px !important;
+            }
+
+            .category-tab {
+              padding: 6px 4px !important;
+              font-size: 10px !important;
             }
           }
 

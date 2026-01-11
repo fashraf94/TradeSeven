@@ -6,5 +6,6 @@ export { default as RosterGauges, RosterGaugesCompact } from './RosterGauges';
 export { default as DraftToolButtons, DraftToolButtonsCompact } from './DraftToolButtons';
 export { default as HoloTimer, HoloTimerCompact, HoloTimerInline } from './HoloTimer';
 export { default as PlayerPanel } from './PlayerPanel';
+export { default as MiniPlayerPanel } from './MiniPlayerPanel';
 export { default as SnakeConduit, SnakeConnector, SnakeConnectorVertical } from './SnakeConduit';
 export { default as AssetResearchModal } from './AssetResearchModal';
