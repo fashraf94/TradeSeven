@@ -9,9 +9,13 @@ import { Analytics } from '@vercel/analytics/react';
 import { UserProvider } from './contexts';
 
 // Initialize Firebase on app startup
-console.log('🔄 Loading Firebase...');
+console.log('Loading Firebase...');
 import './firebase/config';
-console.log('✅ Firebase config loaded');
+console.log('Firebase config loaded');
+
+// Initialize debug utilities (available via window.mcDebug)
+import './utils/debug';
+console.log('Debug utilities loaded');
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

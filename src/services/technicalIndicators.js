@@ -1,0 +1,511 @@
+/**
+ * Technical Indicators Service for MarketClash
+ *
+ * Calculates and caches technical indicators with AGGRESSIVE (24h) caching.
+ * Uses historical price data to derive:
+ * - Moving Averages (SMA, EMA)
+ * - RSI (Relative Strength Index)
+ * - MACD
+ * - Bollinger Bands
+ * - Volatility metrics
+ */
+
+import cacheService from './cacheService.js';
+
+// ============================================
+// CONFIGURATION
+// ============================================
+
+const DEFAULT_PERIODS = {
+  RSI: 14,
+  SMA_SHORT: 20,
+  SMA_LONG: 50,
+  EMA_SHORT: 12,
+  EMA_LONG: 26,
+  MACD_SIGNAL: 9,
+  BOLLINGER: 20,
+  BOLLINGER_STD: 2,
+  ATR: 14
+};
+
+// ============================================
+// MOVING AVERAGES
+// ============================================
+
+/**
+ * Calculate Simple Moving Average
+ * @param {number[]} prices - Array of prices (newest first)
+ * @param {number} period - Number of periods
+ * @returns {number|null}
+ */
+export function calculateSMA(prices, period = DEFAULT_PERIODS.SMA_SHORT) {
+  if (!prices || prices.length < period) return null;
+
+  const slice = prices.slice(0, period);
+  const sum = slice.reduce((acc, val) => acc + val, 0);
+  return sum / period;
+}
+
+/**
+ * Calculate Exponential Moving Average
+ * @param {number[]} prices - Array of prices (newest first)
+ * @param {number} period - Number of periods
+ * @returns {number|null}
+ */
+export function calculateEMA(prices, period = DEFAULT_PERIODS.EMA_SHORT) {
+  if (!prices || prices.length < period) return null;
+
+  // Reverse to get oldest first for EMA calculation
+  const reversed = [...prices].reverse();
+  const multiplier = 2 / (period + 1);
+
+  // Start with SMA for first EMA value
+  let ema = reversed.slice(0, period).reduce((a, b) => a + b, 0) / period;
+
+  // Calculate EMA for remaining values
+  for (let i = period; i < reversed.length; i++) {
+    ema = (reversed[i] - ema) * multiplier + ema;
+  }
+
+  return ema;
+}
+
+/**
+ * Calculate all moving averages for a symbol
+ */
+export function calculateMovingAverages(prices) {
+  return {
+    sma20: calculateSMA(prices, 20),
+    sma50: calculateSMA(prices, 50),
+    sma200: calculateSMA(prices, 200),
+    ema12: calculateEMA(prices, 12),
+    ema26: calculateEMA(prices, 26),
+    ema50: calculateEMA(prices, 50)
+  };
+}
+
+// ============================================
+// RSI (Relative Strength Index)
+// ============================================
+
+/**
+ * Calculate RSI
+ * @param {number[]} prices - Array of prices (newest first)
+ * @param {number} period - Number of periods (default 14)
+ * @returns {number|null} RSI value (0-100)
+ */
+export function calculateRSI(prices, period = DEFAULT_PERIODS.RSI) {
+  if (!prices || prices.length < period + 1) return null;
+
+  // Reverse to get oldest first
+  const reversed = [...prices].reverse();
+
+  // Calculate price changes
+  const changes = [];
+  for (let i = 1; i < reversed.length; i++) {
+    changes.push(reversed[i] - reversed[i - 1]);
+  }
+
+  if (changes.length < period) return null;
+
+  // Separate gains and losses
+  const gains = changes.map(c => c > 0 ? c : 0);
+  const losses = changes.map(c => c < 0 ? Math.abs(c) : 0);
+
+  // Calculate average gain/loss for first period
+  let avgGain = gains.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  let avgLoss = losses.slice(0, period).reduce((a, b) => a + b, 0) / period;
+
+  // Smooth the averages
+  for (let i = period; i < changes.length; i++) {
+    avgGain = (avgGain * (period - 1) + gains[i]) / period;
+    avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
+  }
+
+  if (avgLoss === 0) return 100;
+
+  const rs = avgGain / avgLoss;
+  const rsi = 100 - (100 / (1 + rs));
+
+  return Number(rsi.toFixed(2));
+}
+
+/**
+ * Get RSI interpretation
+ */
+export function getRSISignal(rsi) {
+  if (rsi === null) return { signal: 'unknown', strength: 0 };
+
+  if (rsi >= 70) {
+    return { signal: 'overbought', strength: Math.min((rsi - 70) / 30, 1) };
+  } else if (rsi <= 30) {
+    return { signal: 'oversold', strength: Math.min((30 - rsi) / 30, 1) };
+  } else {
+    return { signal: 'neutral', strength: 0 };
+  }
+}
+
+// ============================================
+// MACD
+// ============================================
+
+/**
+ * Calculate MACD (Moving Average Convergence Divergence)
+ * @param {number[]} prices - Array of prices (newest first)
+ * @returns {object|null} MACD data { macd, signal, histogram }
+ */
+export function calculateMACD(prices) {
+  if (!prices || prices.length < 26) return null;
+
+  const ema12 = calculateEMA(prices, 12);
+  const ema26 = calculateEMA(prices, 26);
+
+  if (ema12 === null || ema26 === null) return null;
+
+  const macd = ema12 - ema26;
+
+  // For signal line, we need MACD history
+  // Simplified: use current MACD value
+  // In production, you'd calculate EMA of MACD values
+  const signal = macd * 0.9; // Approximation
+
+  return {
+    macd: Number(macd.toFixed(4)),
+    signal: Number(signal.toFixed(4)),
+    histogram: Number((macd - signal).toFixed(4))
+  };
+}
+
+/**
+ * Get MACD signal interpretation
+ */
+export function getMACDSignal(macdData) {
+  if (!macdData) return { signal: 'unknown', strength: 0 };
+
+  const { histogram } = macdData;
+
+  if (histogram > 0) {
+    return { signal: 'bullish', strength: Math.min(Math.abs(histogram) * 10, 1) };
+  } else if (histogram < 0) {
+    return { signal: 'bearish', strength: Math.min(Math.abs(histogram) * 10, 1) };
+  } else {
+    return { signal: 'neutral', strength: 0 };
+  }
+}
+
+// ============================================
+// BOLLINGER BANDS
+// ============================================
+
+/**
+ * Calculate Bollinger Bands
+ * @param {number[]} prices - Array of prices (newest first)
+ * @param {number} period - Number of periods (default 20)
+ * @param {number} stdMultiplier - Standard deviation multiplier (default 2)
+ * @returns {object|null} { upper, middle, lower, bandwidth, percentB }
+ */
+export function calculateBollingerBands(prices, period = DEFAULT_PERIODS.BOLLINGER, stdMultiplier = DEFAULT_PERIODS.BOLLINGER_STD) {
+  if (!prices || prices.length < period) return null;
+
+  const slice = prices.slice(0, period);
+  const middle = slice.reduce((a, b) => a + b, 0) / period;
+
+  // Calculate standard deviation
+  const squaredDiffs = slice.map(price => Math.pow(price - middle, 2));
+  const avgSquaredDiff = squaredDiffs.reduce((a, b) => a + b, 0) / period;
+  const stdDev = Math.sqrt(avgSquaredDiff);
+
+  const upper = middle + (stdDev * stdMultiplier);
+  const lower = middle - (stdDev * stdMultiplier);
+
+  const currentPrice = prices[0];
+  const bandwidth = ((upper - lower) / middle) * 100;
+  const percentB = (currentPrice - lower) / (upper - lower);
+
+  return {
+    upper: Number(upper.toFixed(2)),
+    middle: Number(middle.toFixed(2)),
+    lower: Number(lower.toFixed(2)),
+    bandwidth: Number(bandwidth.toFixed(2)),
+    percentB: Number(percentB.toFixed(4))
+  };
+}
+
+/**
+ * Get Bollinger Band signal
+ */
+export function getBollingerSignal(bbData, currentPrice) {
+  if (!bbData) return { signal: 'unknown', strength: 0 };
+
+  const { upper, lower, percentB } = bbData;
+
+  if (currentPrice >= upper) {
+    return { signal: 'overbought', strength: Math.min((percentB - 1) + 0.5, 1) };
+  } else if (currentPrice <= lower) {
+    return { signal: 'oversold', strength: Math.min(Math.abs(percentB) + 0.5, 1) };
+  } else {
+    return { signal: 'neutral', strength: 0 };
+  }
+}
+
+// ============================================
+// VOLATILITY METRICS
+// ============================================
+
+/**
+ * Calculate Average True Range (ATR)
+ * @param {object[]} ohlcData - Array of {high, low, close} (newest first)
+ * @param {number} period - Number of periods (default 14)
+ * @returns {number|null} ATR value
+ */
+export function calculateATR(ohlcData, period = DEFAULT_PERIODS.ATR) {
+  if (!ohlcData || ohlcData.length < period + 1) return null;
+
+  // Reverse to get oldest first
+  const reversed = [...ohlcData].reverse();
+
+  const trueRanges = [];
+  for (let i = 1; i < reversed.length; i++) {
+    const current = reversed[i];
+    const prev = reversed[i - 1];
+
+    const tr = Math.max(
+      current.high - current.low,
+      Math.abs(current.high - prev.close),
+      Math.abs(current.low - prev.close)
+    );
+    trueRanges.push(tr);
+  }
+
+  if (trueRanges.length < period) return null;
+
+  // Simple average of last N true ranges
+  const recentTR = trueRanges.slice(-period);
+  const atr = recentTR.reduce((a, b) => a + b, 0) / period;
+
+  return Number(atr.toFixed(4));
+}
+
+/**
+ * Calculate ATR as percentage of price
+ */
+export function calculateATRPercent(ohlcData, period = DEFAULT_PERIODS.ATR) {
+  if (!ohlcData || ohlcData.length < period + 1) return null;
+
+  const atr = calculateATR(ohlcData, period);
+  if (atr === null) return null;
+
+  const currentPrice = ohlcData[0].close;
+  if (currentPrice <= 0) return null;
+
+  return Number(((atr / currentPrice) * 100).toFixed(2));
+}
+
+/**
+ * Calculate historical volatility (standard deviation of returns)
+ */
+export function calculateVolatility(prices, period = 20) {
+  if (!prices || prices.length < period + 1) return null;
+
+  // Calculate daily returns
+  const returns = [];
+  for (let i = 0; i < period; i++) {
+    if (prices[i + 1] && prices[i + 1] > 0) {
+      returns.push((prices[i] - prices[i + 1]) / prices[i + 1]);
+    }
+  }
+
+  if (returns.length < period - 1) return null;
+
+  // Calculate mean return
+  const meanReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+
+  // Calculate variance
+  const variance = returns.reduce((acc, r) => acc + Math.pow(r - meanReturn, 2), 0) / returns.length;
+
+  // Standard deviation (daily volatility)
+  const dailyVol = Math.sqrt(variance);
+
+  // Annualized volatility (assuming 252 trading days)
+  const annualizedVol = dailyVol * Math.sqrt(252);
+
+  return Number((annualizedVol * 100).toFixed(2));
+}
+
+// ============================================
+// COMPREHENSIVE ANALYSIS
+// ============================================
+
+/**
+ * Calculate all technical indicators for a symbol
+ * @param {string} symbol - Stock/crypto symbol
+ * @param {number[]} prices - Array of closing prices (newest first)
+ * @param {object[]} ohlcData - Optional OHLC data for ATR
+ * @returns {object} All technical indicators
+ */
+export function calculateAllIndicators(symbol, prices, ohlcData = null) {
+  // Check cache first
+  const cached = cacheService.get('technicals', symbol);
+  if (cached) {
+    console.log(`[TechnicalIndicators] Cache hit for ${symbol}`);
+    return cached;
+  }
+
+  console.log(`[TechnicalIndicators] Calculating indicators for ${symbol}`);
+
+  const currentPrice = prices && prices.length > 0 ? prices[0] : null;
+
+  const result = {
+    symbol,
+    currentPrice,
+    calculatedAt: new Date().toISOString(),
+
+    // Moving Averages
+    movingAverages: calculateMovingAverages(prices),
+
+    // RSI
+    rsi: calculateRSI(prices),
+    rsiSignal: getRSISignal(calculateRSI(prices)),
+
+    // MACD
+    macd: calculateMACD(prices),
+    macdSignal: getMACDSignal(calculateMACD(prices)),
+
+    // Bollinger Bands
+    bollingerBands: calculateBollingerBands(prices),
+    bollingerSignal: getBollingerSignal(calculateBollingerBands(prices), currentPrice),
+
+    // Volatility
+    volatility: calculateVolatility(prices),
+    atr: ohlcData ? calculateATR(ohlcData) : null,
+    atrPercent: ohlcData ? calculateATRPercent(ohlcData) : null,
+
+    // Trend detection
+    trend: detectTrend(prices)
+  };
+
+  // Cache with AGGRESSIVE tier (24 hours)
+  cacheService.set('technicals', symbol, result);
+
+  return result;
+}
+
+/**
+ * Simple trend detection based on moving averages
+ */
+export function detectTrend(prices) {
+  if (!prices || prices.length < 50) {
+    return { direction: 'unknown', strength: 0 };
+  }
+
+  const sma20 = calculateSMA(prices, 20);
+  const sma50 = calculateSMA(prices, 50);
+  const currentPrice = prices[0];
+
+  if (sma20 === null || sma50 === null) {
+    return { direction: 'unknown', strength: 0 };
+  }
+
+  // Bullish: price > SMA20 > SMA50
+  // Bearish: price < SMA20 < SMA50
+  if (currentPrice > sma20 && sma20 > sma50) {
+    const strength = (currentPrice - sma50) / sma50;
+    return { direction: 'bullish', strength: Math.min(strength, 1) };
+  } else if (currentPrice < sma20 && sma20 < sma50) {
+    const strength = (sma50 - currentPrice) / sma50;
+    return { direction: 'bearish', strength: Math.min(strength, 1) };
+  } else {
+    return { direction: 'sideways', strength: 0.5 };
+  }
+}
+
+/**
+ * Get a simple bull/bear score (-100 to +100)
+ */
+export function getBullBearScore(indicators) {
+  if (!indicators) return 0;
+
+  let score = 0;
+  let factors = 0;
+
+  // RSI contribution (-20 to +20)
+  if (indicators.rsi !== null) {
+    if (indicators.rsi > 70) score -= 20;
+    else if (indicators.rsi < 30) score += 20;
+    else score += (50 - indicators.rsi) * 0.4; // Scale 30-70 to -8 to +8
+    factors++;
+  }
+
+  // MACD contribution (-20 to +20)
+  if (indicators.macd) {
+    score += indicators.macd.histogram > 0 ? 20 : -20;
+    factors++;
+  }
+
+  // Bollinger contribution (-20 to +20)
+  if (indicators.bollingerBands) {
+    const { percentB } = indicators.bollingerBands;
+    if (percentB < 0.2) score += 20;
+    else if (percentB > 0.8) score -= 20;
+    else score += (0.5 - percentB) * 40;
+    factors++;
+  }
+
+  // Trend contribution (-40 to +40)
+  if (indicators.trend) {
+    if (indicators.trend.direction === 'bullish') {
+      score += 40 * indicators.trend.strength;
+    } else if (indicators.trend.direction === 'bearish') {
+      score -= 40 * indicators.trend.strength;
+    }
+    factors++;
+  }
+
+  // Normalize to -100 to +100
+  return factors > 0 ? Math.round(score) : 0;
+}
+
+// ============================================
+// BATCH PROCESSING
+// ============================================
+
+/**
+ * Calculate indicators for multiple symbols
+ */
+export async function calculateIndicatorsBatch(symbolsWithPrices) {
+  const results = {};
+
+  for (const { symbol, prices, ohlcData } of symbolsWithPrices) {
+    results[symbol] = calculateAllIndicators(symbol, prices, ohlcData);
+  }
+
+  return results;
+}
+
+/**
+ * Clear all cached technical indicators
+ */
+export function clearTechnicalsCache() {
+  cacheService.clearType('technicals');
+  console.log('[TechnicalIndicators] Cache cleared');
+}
+
+export default {
+  calculateSMA,
+  calculateEMA,
+  calculateMovingAverages,
+  calculateRSI,
+  getRSISignal,
+  calculateMACD,
+  getMACDSignal,
+  calculateBollingerBands,
+  getBollingerSignal,
+  calculateATR,
+  calculateATRPercent,
+  calculateVolatility,
+  calculateAllIndicators,
+  detectTrend,
+  getBullBearScore,
+  calculateIndicatorsBatch,
+  clearTechnicalsCache
+};

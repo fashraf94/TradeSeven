@@ -2,24 +2,36 @@
  * Sector Data Service
  * Fetches and calculates sector-level metrics for Game Plan Generator
  * Uses consolidated /api/stocks/prices endpoint to avoid CORS issues
+ *
+ * CACHING: Uses cacheService.js for multi-tier caching:
+ * - Historical prices: 24-hour cache (AGGRESSIVE tier)
+ * - Technical indicators: 24-hour cache (AGGRESSIVE tier)
+ * - Sector data: 1-hour cache (MODERATE tier via 'metrics' type)
  */
 
 import { SECTORS, CRYPTO_SECTOR, SECTOR_ORDER } from '../constants/sectors';
-
-// Cache for sector data (refresh every 15 minutes)
-let sectorCache = {};
-let cacheTimestamp = null;
-const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
+import cacheService from './cacheService.js';
+import { apiMonitor } from './apiMonitor.js';
 
 /**
  * Fetch historical prices for a symbol via consolidated proxy
  * Uses: /api/stocks/prices?symbols=XLK&type=historical&days=180
+ * Cached for 24 hours (AGGRESSIVE tier via 'historical' type)
  */
 const fetchHistoricalPrices = async (symbol, days = 180) => {
+  const cacheKey = `${symbol}_${days}d`;
+
+  // Check cache first (24-hour TTL)
+  const cached = cacheService.get('historical', cacheKey);
+  if (cached !== null) {
+    console.log(`[SectorData] Cache HIT for ${symbol} historical (${days}d)`);
+    return cached;
+  }
+
   try {
     const url = `/api/stocks/prices?symbols=${encodeURIComponent(symbol)}&type=historical&days=${days}`;
 
-    console.log(`[SectorData] Fetching ${symbol} historical via proxy`);
+    console.log(`[SectorData] Cache MISS - Fetching ${symbol} historical via proxy`);
 
     const response = await fetch(url);
 
@@ -36,10 +48,14 @@ const fetchHistoricalPrices = async (symbol, days = 180) => {
     }
 
     const data = result.data || [];
-    console.log(`[SectorData] ${symbol} returned ${data.length} data points`);
 
+    // Track API call
+    apiMonitor.track('/api/stocks/prices', { symbol, type: 'historical', days }, 'sectorDataService.fetchHistoricalPrices');
+
+    // Cache the result (24-hour TTL)
     if (data.length > 0) {
-      console.log(`[SectorData] ${symbol} latest price: ${data[data.length - 1]?.adjusted_close || data[data.length - 1]?.close}`);
+      cacheService.set('historical', cacheKey, data);
+      console.log(`[SectorData] Cached ${symbol} with ${data.length} data points`);
     }
 
     return data;
@@ -52,10 +68,22 @@ const fetchHistoricalPrices = async (symbol, days = 180) => {
 /**
  * Fetch technical indicator (SMA) for a symbol via consolidated proxy
  * Uses: /api/stocks/prices?symbols=XLK&type=sma&period=50
+ * Cached for 24 hours (AGGRESSIVE tier via 'technicals' type)
  */
 const fetchSMA = async (symbol, period = 50) => {
+  const cacheKey = `${symbol}_sma${period}`;
+
+  // Check cache first (24-hour TTL)
+  const cached = cacheService.get('technicals', cacheKey);
+  if (cached !== null) {
+    console.log(`[SectorData] Cache HIT for ${symbol} SMA${period}`);
+    return cached;
+  }
+
   try {
     const url = `/api/stocks/prices?symbols=${encodeURIComponent(symbol)}&type=sma&period=${period}`;
+
+    console.log(`[SectorData] Cache MISS - Fetching SMA${period} for ${symbol}`);
 
     const response = await fetch(url);
 
@@ -71,7 +99,17 @@ const fetchSMA = async (symbol, period = 50) => {
       return null;
     }
 
-    return result.value;
+    const value = result.value;
+
+    // Track API call
+    apiMonitor.track('/api/stocks/prices', { symbol, type: 'sma', period }, 'sectorDataService.fetchSMA');
+
+    // Cache the result (24-hour TTL)
+    if (value !== null && value !== undefined) {
+      cacheService.set('technicals', cacheKey, value);
+    }
+
+    return value;
   } catch (error) {
     console.error(`Error fetching SMA for ${symbol}:`, error);
     return null;
@@ -391,15 +429,21 @@ export const fetchSectorData = async (sectorId) => {
 
 /**
  * Fetch all sectors data with caching
+ * Uses cacheService 'metrics' type (1-hour TTL)
  */
 export const fetchAllSectorsData = async (forceRefresh = false) => {
-  // Check cache
-  if (!forceRefresh && cacheTimestamp && Date.now() - cacheTimestamp < CACHE_DURATION) {
-    if (Object.keys(sectorCache).length > 0) {
-      return sectorCache;
+  const cacheKey = 'all_sectors';
+
+  // Check cache (1-hour TTL via 'metrics' type)
+  if (!forceRefresh) {
+    const cached = cacheService.get('metrics', cacheKey);
+    if (cached !== null) {
+      console.log('[SectorData] All sectors data from cache');
+      return cached;
     }
   }
 
+  console.log('[SectorData] Fetching all sectors data...');
   const sectorsData = {};
 
   // Fetch sectors in parallel (but limit concurrency)
@@ -420,9 +464,11 @@ export const fetchAllSectorsData = async (forceRefresh = false) => {
     });
   }
 
-  // Update cache
-  sectorCache = sectorsData;
-  cacheTimestamp = Date.now();
+  // Cache the result (1-hour TTL via 'metrics' type)
+  if (Object.keys(sectorsData).length > 0) {
+    cacheService.set('metrics', cacheKey, sectorsData);
+    console.log(`[SectorData] Cached ${Object.keys(sectorsData).length} sectors`);
+  }
 
   return sectorsData;
 };

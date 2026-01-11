@@ -1,6 +1,8 @@
 // api/ai-advisor.js
 // AI Advisor endpoint using Claude API for Research and Draft advisors
 
+import { applySecurityMiddleware } from './_utils/security.js';
+
 // Dynamic system prompt with current date
 const getResearchSystemPrompt = () => {
   const today = new Date().toLocaleDateString('en-US', {
@@ -759,13 +761,10 @@ If web search returns no results, respond with exactly: "NO_RECENT_DATA"`;
 }
 
 export default async function handler(req, res) {
-  // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  // Apply security middleware (CORS, security headers, rate limiting, preflight)
+  // Lower rate limit for AI endpoint (20/min) - this costs money!
+  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 20, windowMs: 60000 } })) {
+    return;
   }
 
   if (req.method !== 'POST') {

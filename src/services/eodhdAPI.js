@@ -1,6 +1,39 @@
-// EODHD API Service for MarketClash
-// Uses Vercel serverless proxy to avoid CORS issues
-// Endpoints: /api/crypto/prices, /api/stocks/prices
+/**
+ * EODHD API Service for MarketClash
+ *
+ * This service handles all communication with the EODHD market data API
+ * through Vercel serverless proxy functions to avoid CORS issues.
+ *
+ * ENDPOINTS:
+ * - /api/stocks/prices - Stock price quotes
+ * - /api/crypto/prices - Crypto price quotes
+ * - /api/news/market - General market news
+ * - /api/news/stock - Stock-specific news
+ * - /api/stocks/earnings - Earnings data
+ *
+ * CACHING STRATEGY (via cacheService.js):
+ * - Stock/Crypto prices: 5-minute cache (LIGHT tier)
+ * - News: 1-hour cache (MODERATE tier)
+ * - Earnings: 24-hour cache (AGGRESSIVE tier)
+ * - Technical indicators: See technicalIndicators.js (24-hour cache)
+ * - Historical data: See historicalData.js (24-hour cache)
+ *
+ * All fetch functions:
+ * 1. Check cache first (cacheService.get)
+ * 2. Return cached data if valid
+ * 3. Fetch from API if cache miss
+ * 4. Store result in cache (cacheService.set)
+ * 5. Track call for monitoring (apiMonitor.track)
+ *
+ * DEBUGGING:
+ * - window.mcCache.report() - View cache statistics
+ * - window.apiMonitor.report() - View API usage
+ * - window.mcDebug.audit() - Full system audit
+ *
+ * @see /src/services/cacheService.js - Cache implementation
+ * @see /src/services/apiMonitor.js - Usage tracking
+ * @see /src/utils/debug.js - Debug utilities
+ */
 
 import {
   STOCKS,
@@ -12,6 +45,12 @@ import {
   getStockNameMap,
   getCryptoNameMap,
 } from '../data/assets';
+
+// Import the multi-tier cache service
+import cacheService from './cacheService.js';
+
+// Import API monitor for tracking
+import { apiMonitor } from './apiMonitor.js';
 
 const IS_DEV = import.meta.env.DEV;
 
@@ -33,28 +72,13 @@ const logWarn = (message, ...args) => {
 };
 
 // ============================================
-// PRICE CACHE (reduces API calls)
+// CACHE SERVICE INTEGRATION
 // ============================================
-
-const priceCache = {
-  stocks: {},
-  crypto: {},
-  lastFetch: {
-    stocks: 0,
-    crypto: 0
-  },
-  CACHE_DURATION: 60000, // 1 minute cache
-};
-
-// ============================================
-// NEWS CACHE (reduces API calls)
-// ============================================
-
-const newsCache = {
-  market: { data: null, timestamp: 0 },
-  stocks: {}, // keyed by symbol
-  CACHE_DURATION: 300000, // 5 minute cache for news
-};
+// All caching now handled by cacheService.js with multi-tier TTLs:
+// - 'prices' (stocks): 5 min cache (LIGHT tier)
+// - 'crypto': 5 min cache (LIGHT tier)
+// - 'news': 1 hour cache (MODERATE tier)
+// - 'earnings': 24 hour cache (AGGRESSIVE tier)
 
 // ============================================
 // FETCH WITH TIMEOUT
@@ -87,25 +111,31 @@ const fetchWithTimeout = async (url, timeout = 15000) => {
  * @returns {Promise<Object>} - { AAPL: {price, change}, MSFT: {price, change}, ... }
  */
 export async function getMultipleStockPrices(symbols) {
-  const now = Date.now();
   const upperSymbols = symbols.map(s => s.toUpperCase());
+  const result = {};
+  const symbolsToFetch = [];
 
-  // Check cache
-  if (now - priceCache.lastFetch.stocks < priceCache.CACHE_DURATION) {
-    const allCached = upperSymbols.every(s => priceCache.stocks[s]);
-    if (allCached) {
-      console.log('[EODHD] Using cached stock prices');
-      const result = {};
-      upperSymbols.forEach(s => result[s] = priceCache.stocks[s]);
-      return result;
+  // Check cache for each symbol individually
+  for (const symbol of upperSymbols) {
+    const cached = cacheService.get('prices', symbol);
+    if (cached !== null) {
+      result[symbol] = cached;
+    } else {
+      symbolsToFetch.push(symbol);
     }
   }
 
-  console.log(`[EODHD] Fetching ${symbols.length} stock prices via proxy...`);
+  // If all symbols were cached, return early
+  if (symbolsToFetch.length === 0) {
+    console.log(`[EODHD] All ${upperSymbols.length} stock prices from cache`);
+    return result;
+  }
+
+  console.log(`[EODHD] Fetching ${symbolsToFetch.length} stock prices (${upperSymbols.length - symbolsToFetch.length} cached)`);
 
   try {
     const response = await fetchWithTimeout(
-      `${API_BASE}/stocks/prices?symbols=${upperSymbols.join(',')}`
+      `${API_BASE}/stocks/prices?symbols=${symbolsToFetch.join(',')}`
     );
 
     if (!response.ok) {
@@ -115,35 +145,34 @@ export async function getMultipleStockPrices(symbols) {
     const data = await response.json();
 
     if (data.success && data.prices) {
-      // Update cache (ensure all values are numbers)
+      // Track API call
+      apiMonitor.track('/api/stocks/prices', { symbols: symbolsToFetch }, 'eodhdAPI.getMultipleStockPrices');
+
+      // Cache each result and add to result object
       Object.entries(data.prices).forEach(([symbol, priceData]) => {
-        priceCache.stocks[symbol] = {
+        const normalized = {
           price: parseFloat(priceData.price) || 0,
           change: parseFloat(priceData.change) || 0,
           percentChange: parseFloat(priceData.changePercent) || 0
         };
+
+        // Cache with LIGHT tier (5-minute TTL)
+        cacheService.set('prices', symbol, normalized);
+        result[symbol] = normalized;
       });
-      priceCache.lastFetch.stocks = now;
 
       console.log(`[EODHD] Got ${data.count} stock prices via proxy`);
 
-      // Return in expected format, with fallbacks for missing (ensure all values are numbers)
-      const result = {};
-      upperSymbols.forEach(s => {
-        if (data.prices[s]) {
-          result[s] = {
-            price: parseFloat(data.prices[s].price) || FALLBACK_STOCK_PRICES[s] || 100,
-            change: parseFloat(data.prices[s].change) || 0,
-            percentChange: parseFloat(data.prices[s].changePercent) || 0
-          };
-        } else {
-          result[s] = {
-            price: FALLBACK_STOCK_PRICES[s] || 100,
+      // Fill in any missing symbols with fallbacks
+      for (const symbol of symbolsToFetch) {
+        if (!result[symbol]) {
+          result[symbol] = {
+            price: FALLBACK_STOCK_PRICES[symbol] || 100,
             change: 0,
             percentChange: 0
           };
         }
-      });
+      }
 
       return result;
     }
@@ -153,15 +182,14 @@ export async function getMultipleStockPrices(symbols) {
   } catch (error) {
     console.warn('[EODHD] Stock proxy fetch failed:', error.message);
 
-    // Return fallback prices
-    const result = {};
-    upperSymbols.forEach(s => {
-      result[s] = {
-        price: FALLBACK_STOCK_PRICES[s] || 100,
+    // Return fallbacks for symbols we couldn't fetch
+    for (const symbol of symbolsToFetch) {
+      result[symbol] = {
+        price: FALLBACK_STOCK_PRICES[symbol] || 100,
         change: 0,
         percentChange: 0
       };
-    });
+    }
     return result;
   }
 }
@@ -226,27 +254,31 @@ export async function getPopularStocks() {
  * @returns {Promise<Object>} - Keyed by symbol: { BTC: {price, change24h}, ETH: {...} }
  */
 export async function getMultipleCryptoPrices(symbols) {
-  const now = Date.now();
   const upperSymbols = symbols.map(s => s.toUpperCase());
+  const result = {};
+  const symbolsToFetch = [];
 
-  console.log(`[EODHD] Requesting crypto prices for:`, upperSymbols);
-
-  // Check cache
-  if (now - priceCache.lastFetch.crypto < priceCache.CACHE_DURATION) {
-    const allCached = upperSymbols.every(s => priceCache.crypto[s]);
-    if (allCached) {
-      console.log('[EODHD] Using cached crypto prices');
-      const result = {};
-      upperSymbols.forEach(s => result[s] = priceCache.crypto[s]);
-      return result;
+  // Check cache for each symbol individually
+  for (const symbol of upperSymbols) {
+    const cached = cacheService.get('crypto', symbol);
+    if (cached !== null) {
+      result[symbol] = cached;
+    } else {
+      symbolsToFetch.push(symbol);
     }
   }
 
-  console.log(`[EODHD] Fetching ${symbols.length} crypto prices via proxy...`);
+  // If all symbols were cached, return early
+  if (symbolsToFetch.length === 0) {
+    console.log(`[EODHD] All ${upperSymbols.length} crypto prices from cache`);
+    return result;
+  }
+
+  console.log(`[EODHD] Fetching ${symbolsToFetch.length} crypto prices (${upperSymbols.length - symbolsToFetch.length} cached)`);
 
   try {
     const response = await fetchWithTimeout(
-      `${API_BASE}/crypto/prices?symbols=${upperSymbols.join(',')}`
+      `${API_BASE}/crypto/prices?symbols=${symbolsToFetch.join(',')}`
     );
 
     if (!response.ok) {
@@ -254,40 +286,41 @@ export async function getMultipleCryptoPrices(symbols) {
     }
 
     const data = await response.json();
-    console.log(`[EODHD] Proxy response:`, data);
 
     if (data.success && data.prices) {
-      // Update cache (ensure all values are numbers)
+      // Track API call
+      apiMonitor.track('/api/crypto/prices', { symbols: symbolsToFetch }, 'eodhdAPI.getMultipleCryptoPrices');
+
+      const missing = [];
+
+      // Cache each result and add to result object
       Object.entries(data.prices).forEach(([symbol, priceData]) => {
-        priceCache.crypto[symbol] = {
-          price: parseFloat(priceData.price) || 0,
-          change24h: parseFloat(priceData.changePercent) || 0
-        };
+        const price = parseFloat(priceData.price);
+        if (price > 0) {
+          const normalized = {
+            price: price,
+            change24h: parseFloat(priceData.changePercent) || 0
+          };
+
+          // Cache with LIGHT tier (5-minute TTL)
+          cacheService.set('crypto', symbol, normalized);
+          result[symbol] = normalized;
+        }
       });
-      priceCache.lastFetch.crypto = now;
 
       console.log(`[EODHD] Got ${data.count} crypto prices via proxy`);
 
-      // Return in expected format, with fallbacks for missing (ensure all values are numbers)
-      const result = {};
-      const missing = [];
-
-      upperSymbols.forEach(s => {
-        const price = parseFloat(data.prices[s]?.price);
-        if (data.prices[s] && price > 0) {
-          result[s] = {
-            price: price,
-            change24h: parseFloat(data.prices[s].changePercent) || 0
-          };
-        } else {
-          missing.push(s);
-          result[s] = {
-            price: FALLBACK_CRYPTO_PRICES[s] || 1,
+      // Fill in missing with fallbacks
+      for (const symbol of symbolsToFetch) {
+        if (!result[symbol]) {
+          missing.push(symbol);
+          result[symbol] = {
+            price: FALLBACK_CRYPTO_PRICES[symbol] || 1,
             change24h: 0,
             isFallback: true
           };
         }
-      });
+      }
 
       if (missing.length > 0) {
         console.warn(`[EODHD] Using fallbacks for:`, missing);
@@ -301,16 +334,15 @@ export async function getMultipleCryptoPrices(symbols) {
   } catch (error) {
     console.warn('[EODHD] Crypto proxy fetch failed:', error.message);
 
-    // Return fallback prices
-    const result = {};
-    upperSymbols.forEach(s => {
-      result[s] = {
-        price: FALLBACK_CRYPTO_PRICES[s] || 1,
+    // Return fallbacks for symbols we couldn't fetch
+    for (const symbol of symbolsToFetch) {
+      result[symbol] = {
+        price: FALLBACK_CRYPTO_PRICES[symbol] || 1,
         change24h: 0,
         isFallback: true
       };
-    });
-    console.warn(`[EODHD] All ${upperSymbols.length} prices using fallbacks due to error`);
+    }
+    console.warn(`[EODHD] ${symbolsToFetch.length} prices using fallbacks due to error`);
     return result;
   }
 }
@@ -384,12 +416,13 @@ export async function getCryptoExtendedData(cryptoId) {
  * @returns {Promise<Array>} - Array of news items
  */
 export async function getMarketNews(limit = 10) {
-  const now = Date.now();
+  const cacheKey = `market_${limit}`;
 
-  // Check cache
-  if (now - newsCache.market.timestamp < newsCache.CACHE_DURATION && newsCache.market.data) {
+  // Check cache (MODERATE tier - 1 hour TTL)
+  const cached = cacheService.get('news', cacheKey);
+  if (cached !== null) {
     console.log('[EODHD] Using cached market news');
-    return newsCache.market.data.slice(0, limit);
+    return cached;
   }
 
   console.log(`[EODHD] Fetching market news (limit: ${limit})...`);
@@ -406,11 +439,11 @@ export async function getMarketNews(limit = 10) {
     const data = await response.json();
 
     if (data.success && data.news) {
-      // Update cache
-      newsCache.market = {
-        data: data.news,
-        timestamp: now
-      };
+      // Track API call
+      apiMonitor.track('/api/news/market', { limit }, 'eodhdAPI.getMarketNews');
+
+      // Cache with MODERATE tier (1 hour)
+      cacheService.set('news', cacheKey, data.news);
 
       console.log(`[EODHD] Got ${data.news.length} market news items`);
       return data.news;
@@ -431,14 +464,14 @@ export async function getMarketNews(limit = 10) {
  * @returns {Promise<Array>} - Array of news items
  */
 export async function getStockNews(symbol, limit = 5) {
-  const now = Date.now();
   const upperSymbol = symbol.toUpperCase();
+  const cacheKey = `${upperSymbol}_${limit}`;
 
-  // Check cache
-  const cached = newsCache.stocks[upperSymbol];
-  if (cached && now - cached.timestamp < newsCache.CACHE_DURATION) {
+  // Check cache (MODERATE tier - 1 hour TTL)
+  const cached = cacheService.get('news', cacheKey);
+  if (cached !== null) {
     console.log(`[EODHD] Using cached news for ${upperSymbol}`);
-    return cached.data.slice(0, limit);
+    return cached;
   }
 
   console.log(`[EODHD] Fetching news for ${upperSymbol}...`);
@@ -455,11 +488,11 @@ export async function getStockNews(symbol, limit = 5) {
     const data = await response.json();
 
     if (data.success && data.news) {
-      // Update cache
-      newsCache.stocks[upperSymbol] = {
-        data: data.news,
-        timestamp: now
-      };
+      // Track API call
+      apiMonitor.track('/api/news/stock', { symbol: upperSymbol, limit }, 'eodhdAPI.getStockNews');
+
+      // Cache with MODERATE tier (1 hour)
+      cacheService.set('news', cacheKey, data.news);
 
       console.log(`[EODHD] Got ${data.news.length} news items for ${upperSymbol}`);
       return data.news;
@@ -621,20 +654,13 @@ function getFallbackMarketNews() {
  * Clear news cache
  */
 export function clearNewsCache() {
-  newsCache.market = { data: null, timestamp: 0 };
-  newsCache.stocks = {};
+  cacheService.clearType('news');
   logDebug('News cache cleared');
 }
 
 // ============================================
 // EARNINGS DATA
 // ============================================
-
-// Cache for earnings data (24 hours)
-const earningsCache = {
-  data: {}, // keyed by symbol
-  CACHE_DURATION: 24 * 60 * 60 * 1000 // 24 hours
-};
 
 /**
  * Fetch latest earnings data for a stock
@@ -643,13 +669,12 @@ const earningsCache = {
  */
 export async function fetchLatestEarnings(symbol) {
   const upperSymbol = symbol.toUpperCase();
-  const now = Date.now();
 
-  // Check cache first
-  const cached = earningsCache.data[upperSymbol];
-  if (cached && now - cached.timestamp < earningsCache.CACHE_DURATION) {
+  // Check cache (AGGRESSIVE tier - 24 hour TTL)
+  const cached = cacheService.get('earnings', upperSymbol);
+  if (cached !== null) {
     console.log(`[EODHD] Using cached earnings for ${upperSymbol}`);
-    return cached.data;
+    return cached;
   }
 
   console.log(`[EODHD] Fetching earnings for ${upperSymbol}...`);
@@ -666,11 +691,11 @@ export async function fetchLatestEarnings(symbol) {
     const result = await response.json();
 
     if (result.success && result.data) {
-      // Update cache
-      earningsCache.data[upperSymbol] = {
-        data: result.data,
-        timestamp: now
-      };
+      // Track API call
+      apiMonitor.track('/api/stocks/earnings', { symbol: upperSymbol }, 'eodhdAPI.fetchLatestEarnings');
+
+      // Cache with AGGRESSIVE tier (24 hours)
+      cacheService.set('earnings', upperSymbol, result.data);
 
       console.log(`[EODHD] Got earnings for ${upperSymbol}:`, result.data.quarter);
       return result.data;
@@ -689,7 +714,7 @@ export async function fetchLatestEarnings(symbol) {
  * Clear earnings cache
  */
 export function clearEarningsCache() {
-  earningsCache.data = {};
+  cacheService.clearType('earnings');
   logDebug('Earnings cache cleared');
 }
 
@@ -729,7 +754,17 @@ function generateCommunityData(symbol, price, percentChange) {
 }
 
 /**
- * Symbol conversion helper (for backward compatibility)
+ * Symbol conversion helpers (legacy compatibility stubs)
+ *
+ * These functions originally converted between MarketClash symbols (BTC)
+ * and CoinGecko IDs (bitcoin). Since EODHD uses symbols directly,
+ * these are now identity functions that just return the uppercase symbol.
+ *
+ * Kept for backward compatibility with existing code in:
+ * - DraftBattleScreen.jsx
+ * - draftService.js
+ *
+ * @deprecated Use the symbol directly instead of calling these functions
  */
 export function symbolToCoinGeckoId(symbol) {
   return symbol.toUpperCase();
@@ -743,10 +778,9 @@ export function coinGeckoIdToSymbol(id) {
  * Clear all cached prices
  */
 export function clearCache() {
-  priceCache.stocks = {};
-  priceCache.crypto = {};
-  priceCache.lastFetch = { stocks: 0, crypto: 0 };
-  logDebug('Cache cleared');
+  cacheService.clearType('prices');
+  cacheService.clearType('crypto');
+  logDebug('Price caches cleared');
 }
 
 // Alias for backward compatibility
@@ -804,9 +838,50 @@ export const POPULAR_CRYPTO = CRYPTO.map(crypto => ({
 
 export { FALLBACK_CRYPTO_PRICES, FALLBACK_STOCK_PRICES };
 
-// Empty symbol mapping (EODHD uses symbols directly)
+/**
+ * Legacy symbol mappings (empty - EODHD uses symbols directly)
+ * @deprecated These are kept for backward compatibility only
+ */
 export const SYMBOL_TO_COINGECKO_ID = {};
 export const COINGECKO_ID_TO_SYMBOL = {};
+
+// ============================================
+// CACHE DEBUGGING UTILITIES
+// ============================================
+
+/**
+ * Get cache statistics
+ * @returns {object} Cache stats including hit rate, sizes, etc.
+ */
+export function getCacheStats() {
+  return cacheService.getStats();
+}
+
+/**
+ * Print cache report to console
+ */
+export function printCacheReport() {
+  cacheService.report();
+}
+
+/**
+ * Clear all caches (prices, crypto, news, earnings)
+ */
+export function clearAllCaches() {
+  cacheService.clearAll();
+  logDebug('All caches cleared');
+}
+
+// Expose cache service to window for browser debugging
+if (typeof window !== 'undefined') {
+  window.mcCache = {
+    get: (type, key) => cacheService.get(type, key),
+    stats: () => cacheService.getStats(),
+    report: () => cacheService.report(),
+    clearAll: () => cacheService.clearAll(),
+    clearType: (type) => cacheService.clearType(type)
+  };
+}
 
 // ============================================
 // BACKWARD COMPATIBLE EXPORTS
@@ -839,6 +914,10 @@ export const stockAPI = {
   // Earnings functions
   fetchLatestEarnings,
   clearEarningsCache,
+  // Cache utilities
+  getCacheStats,
+  printCacheReport,
+  clearAllCaches,
   // Constants
   POPULAR_STOCKS,
   POPULAR_CRYPTO,

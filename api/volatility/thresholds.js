@@ -5,6 +5,8 @@
 // Uses the "DraftKings Model" - assets that have been volatile recently
 // get HIGHER thresholds (harder to score touchdowns)
 
+import { applySecurityMiddleware } from '../_utils/security.js';
+
 // ============================================
 // DEFAULT THRESHOLDS (fallback when API fails)
 // ============================================
@@ -265,14 +267,9 @@ async function processSymbol(symbol, type, apiKey) {
 // ============================================
 
 export default async function handler(req, res) {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  // Handle preflight
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  // Apply security middleware (CORS, security headers, rate limiting, preflight)
+  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 30, windowMs: 60000 } })) {
+    return;
   }
 
   // Only allow GET

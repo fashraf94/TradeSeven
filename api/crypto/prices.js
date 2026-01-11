@@ -1,15 +1,12 @@
 // Vercel Serverless Function - Crypto Prices
 // Endpoint: /api/crypto/prices?symbols=BTC,ETH,SOL
 
-export default async function handler(req, res) {
-  // Enable CORS for your frontend
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+import { applySecurityMiddleware } from '../_utils/security.js';
 
-  // Handle preflight
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+export default async function handler(req, res) {
+  // Apply security middleware (CORS, security headers, rate limiting, preflight)
+  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 60, windowMs: 60000 } })) {
+    return;
   }
 
   const { symbols } = req.query;
