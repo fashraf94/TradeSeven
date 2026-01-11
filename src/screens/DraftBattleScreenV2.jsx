@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { HOLO_COLORS, GLOW_EFFECTS, RANK_CONFIG, CATEGORY_CONFIG, HOLO_BACKGROUND, HOLO_ANIMATIONS } from '../constants/holoTheme';
+import { AltitudeMap } from '../components/draft';
 
 /**
  * DraftBattleScreenV2 - Altitude Map Redesign
- * Phase 1: Foundation & Scaffolding
+ * Phase 2: Altitude Map Core Visualization
  *
  * This is a redesigned version of DraftBattleScreen with a new "Altitude Map" visual concept.
  * Core business logic is preserved exactly from the original.
@@ -626,8 +627,9 @@ const DraftBattleScreenV2 = ({
       <main style={{
         flex: 1,
         padding: '16px',
-        paddingBottom: '220px', // Space for Command Console
+        paddingBottom: '240px', // Space for Command Console
         overflowY: 'auto',
+        minHeight: 'calc(100vh - 180px)',
       }}>
         {loading ? (
           <div style={{
@@ -652,148 +654,37 @@ const DraftBattleScreenV2 = ({
           </div>
         ) : (
           <div>
-            {/* PHASE 1 SCAFFOLD: Temporary standings list */}
-            {/* This will be replaced with Altitude Map in Phase 2 */}
-            <div style={{
-              background: HOLO_COLORS.bgCard,
-              borderRadius: '12px',
-              padding: '16px',
-              border: `1px solid ${HOLO_COLORS.borderSubtle}`,
-              marginBottom: '16px',
-            }}>
-              <h3 style={{
-                margin: '0 0 16px 0',
-                color: HOLO_COLORS.cyan,
-                fontSize: '12px',
-                textTransform: 'uppercase',
-                letterSpacing: '2px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}>
-                <span style={{
-                  width: '8px',
-                  height: '8px',
-                  background: HOLO_COLORS.cyan,
-                  borderRadius: '50%',
-                  boxShadow: GLOW_EFFECTS.cyan,
-                }} />
-                ALTITUDE MAP (Phase 2)
-              </h3>
-
-              {standings.map((player, idx) => {
-                const rankConfig = RANK_CONFIG[player.currentRank] || RANK_CONFIG[4];
-                const movement = getMovementIndicator(player);
-
-                return (
-                  <div
-                    key={player.odUserId}
-                    onClick={() => !player.isMe && handleScoutPlayer(player)}
-                    style={{
-                      padding: '12px',
-                      marginBottom: '8px',
-                      background: player.isMe
-                        ? `linear-gradient(135deg, ${HOLO_COLORS.cyan}15 0%, ${HOLO_COLORS.green}15 100%)`
-                        : HOLO_COLORS.bgElevated,
-                      borderRadius: '8px',
-                      border: player.isMe
-                        ? `1px solid ${HOLO_COLORS.cyan}50`
-                        : `1px solid ${HOLO_COLORS.borderSubtle}`,
-                      borderLeft: `3px solid ${rankConfig.color}`,
-                      cursor: player.isMe ? 'default' : 'pointer',
-                      transition: 'all 0.2s ease',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      {/* Rank Badge */}
-                      <div style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '50%',
-                        background: player.currentRank === 1
-                          ? `linear-gradient(135deg, ${HOLO_COLORS.gold} 0%, #ffb800 100%)`
-                          : HOLO_COLORS.bgCard,
-                        border: `2px solid ${rankConfig.color}`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                        color: player.currentRank === 1 ? '#000' : rankConfig.color,
-                        boxShadow: rankConfig.glow,
-                      }}>
-                        {player.currentRank}
-                      </div>
-
-                      {/* Player Name */}
-                      <div>
-                        <div style={{
-                          color: player.isMe ? HOLO_COLORS.cyan : HOLO_COLORS.textPrimary,
-                          fontWeight: player.isMe ? 700 : 600,
-                          fontSize: '14px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                        }}>
-                          {player.isMe ? 'YOU' : player.displayName}
-                          {player.isCPU && (
-                            <span style={{ fontSize: '12px', opacity: 0.7 }}>BOT</span>
-                          )}
-                        </div>
-                        <div style={{
-                          color: HOLO_COLORS.textMuted,
-                          fontSize: '11px',
-                        }}>
-                          {player.portfolio?.length || 0} assets
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Gain */}
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                    }}>
-                      <span style={{
-                        color: movement.color,
-                        fontSize: '14px',
-                      }}>
-                        {movement.icon}
-                      </span>
-                      <span style={{
-                        color: player.totalGain >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
-                        fontWeight: 700,
-                        fontSize: '16px',
-                        fontFamily: 'monospace',
-                      }}>
-                        {player.totalGain >= 0 ? '+' : ''}{player.totalGain?.toFixed(2) || '0.00'}%
-                      </span>
-                      {!player.isMe && (
-                        <span style={{
-                          color: HOLO_COLORS.textMuted,
-                          fontSize: '12px',
-                        }}>
-                          TAP
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            {/* ALTITUDE MAP - Phase 2 Implementation */}
+            <AltitudeMap
+              standings={standings}
+              currentUserId={currentUserId}
+              onScoutPlayer={handleScoutPlayer}
+              containerHeight={Math.max(450, standings.length * 140)}
+            />
 
             {/* Refresh indicator */}
             <div style={{
               textAlign: 'center',
               color: HOLO_COLORS.textMuted,
               fontSize: '11px',
-              marginTop: '16px',
+              marginTop: '24px',
+              padding: '8px',
+              borderTop: `1px solid ${HOLO_COLORS.borderSubtle}`,
             }}>
-              Prices update every minute
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}>
+                <span style={{
+                  width: '6px',
+                  height: '6px',
+                  background: HOLO_COLORS.green,
+                  borderRadius: '50%',
+                  animation: 'holoPulse 2s ease-in-out infinite',
+                }} />
+                Prices update every minute
+              </span>
             </div>
           </div>
         )}

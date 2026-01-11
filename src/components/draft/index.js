@@ -9,3 +9,8 @@ export { default as PlayerPanel } from './PlayerPanel';
 export { default as MiniPlayerPanel } from './MiniPlayerPanel';
 export { default as SnakeConduit, SnakeConnector, SnakeConnectorVertical } from './SnakeConduit';
 export { default as AssetResearchModal } from './AssetResearchModal';
+
+// Altitude Map components for Draft Battle V2
+export { default as TacticalPod } from './TacticalPod';
+export { default as OvertakeCallout } from './OvertakeCallout';
+export { default as AltitudeMap } from './AltitudeMap';
