@@ -7,6 +7,7 @@ import {
   Rocket
 } from 'lucide-react';
 import { designColors, bgTints, glowEffects, fontMono, MAGNITUDES } from '../designConstants';
+import { buttonTap } from '../animationPresets';
 
 const MAGNITUDE_ICONS = {
   downBig: {
@@ -106,7 +107,7 @@ export default function MagnitudePillars({
                 stiffness: 300,
                 damping: 20,
               }}
-              whileTap={canSelect ? { scale: 0.95 } : {}}
+              whileTap={canSelect ? buttonTap : {}}
               disabled={!canSelect}
               style={{
                 flex: 1,

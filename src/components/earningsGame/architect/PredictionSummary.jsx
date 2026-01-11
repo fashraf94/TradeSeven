@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { designColors, glowEffects, fontMono, MAGNITUDES } from '../designConstants';
+import { cardTap } from '../animationPresets';
 
 export default function PredictionSummary({
   symbol,
@@ -234,7 +235,7 @@ export default function PredictionSummary({
         onClick={onConfirm}
         disabled={disabled}
         whileHover={disabled ? {} : { scale: 1.02 }}
-        whileTap={disabled ? {} : { scale: 0.98 }}
+        whileTap={disabled ? {} : cardTap}
         style={{
           width: '100%',
           padding: '14px',

@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { designColors, fontMono, MIN_PREDICTIONS, MAX_PREDICTIONS, glowEffects } from '../designConstants';
 import { screenContainer, sectionHeader, fixedBottomContainer, buttonPrimary, buttonDisabled, flexBetween } from '../styleUtils';
+import { buttonTap, cardTap } from '../animationPresets';
 import { EarningsHeader } from '../shared';
 import PowerMeter from './PowerMeter';
 import RiskProfile from './RiskProfile';
@@ -37,7 +38,7 @@ export default function PortfolioWarRoom({
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <motion.button
               onClick={onBack}
-              whileTap={{ scale: 0.95 }}
+              whileTap={buttonTap}
               style={{
                 background: 'none',
                 border: 'none',
@@ -75,7 +76,7 @@ export default function PortfolioWarRoom({
                 onClick={onLock}
                 disabled={!canLock}
                 whileHover={canLock ? { scale: 1.02 } : {}}
-                whileTap={canLock ? { scale: 0.98 } : {}}
+                whileTap={canLock ? cardTap : {}}
                 style={{
                   padding: '10px 24px',
                   backgroundColor: canLock ? designColors.cyan : designColors.bgCardInner,
@@ -319,7 +320,7 @@ export default function PortfolioWarRoom({
           <motion.button
             onClick={onLock}
             disabled={!canLock}
-            whileTap={canLock ? { scale: 0.98 } : {}}
+            whileTap={canLock ? cardTap : {}}
             style={{
               ...buttonPrimary,
               ...(!canLock && {

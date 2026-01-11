@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { designColors, bgTints, fontMono } from '../designConstants';
+import { cardTap } from '../animationPresets';
 
 export default function CompanyCard({
   symbol,
@@ -27,6 +28,7 @@ export default function CompanyCard({
         backgroundColor: designColors.bgCardInner,
         borderColor: isPicked ? designColors.green : designColors.cyan,
       }}
+      whileTap={cardTap}
       onClick={handleClick}
       style={{
         padding: '12px',

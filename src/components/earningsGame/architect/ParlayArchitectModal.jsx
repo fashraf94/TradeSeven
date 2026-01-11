@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { designColors, fontMono, MAGNITUDES, BUDGET } from '../designConstants';
+import { fadeIn, slideUp, slideInRight, springSmooth, springBouncy } from '../animationPresets';
 import { calculateParlayPrices } from '../../../services/earningsReactionsService';
 import BeatMissToggle from './BeatMissToggle';
 import MagnitudePillars from './MagnitudePillars';
@@ -74,9 +75,7 @@ export default function ParlayArchitectModal({
     return (
       <AnimatePresence>
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+          {...fadeIn}
           onClick={onClose}
           style={{
             position: 'fixed',
@@ -89,10 +88,8 @@ export default function ParlayArchitectModal({
           }}
         >
           <motion.div
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            {...slideUp}
+            transition={springBouncy}
             onClick={(e) => e.stopPropagation()}
             style={{
               position: 'absolute',
@@ -258,9 +255,7 @@ export default function ParlayArchitectModal({
     <>
       {/* Semi-transparent backdrop */}
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+        {...fadeIn}
         onClick={onClose}
         style={{
           position: 'fixed',
@@ -275,10 +270,8 @@ export default function ParlayArchitectModal({
 
       {/* Side panel */}
       <motion.div
-        initial={{ x: '100%' }}
-        animate={{ x: 0 }}
-        exit={{ x: '100%' }}
-        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+        {...slideInRight}
+        transition={springSmooth}
         onClick={(e) => e.stopPropagation()}
         style={{
           position: 'fixed',

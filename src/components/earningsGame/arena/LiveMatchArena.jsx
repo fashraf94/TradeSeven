@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { designColors } from '../designConstants';
+import { cardTap } from '../animationPresets';
 import { EarningsHeader } from '../shared';
 import PositionBanner from './PositionBanner';
 import MagnitudeGaugeCard from './MagnitudeGaugeCard';
@@ -168,7 +169,7 @@ export default function LiveMatchArena({
       }}>
         <motion.button
           onClick={onViewLeaderboard}
-          whileTap={{ scale: 0.98 }}
+          whileTap={cardTap}
           style={{
             width: '100%',
             padding: '14px',

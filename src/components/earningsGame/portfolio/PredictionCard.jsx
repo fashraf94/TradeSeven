@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { designColors, fontMono, MAGNITUDES } from '../designConstants';
+import { buttonTap } from '../animationPresets';
 
 export default function PredictionCard({
   prediction,
@@ -96,7 +97,7 @@ export default function PredictionCard({
         {!isLocked && (
           <motion.button
             onClick={() => onRemove(prediction.eventId)}
-            whileTap={{ scale: 0.95 }}
+            whileTap={buttonTap}
             style={{
               background: 'none',
               border: 'none',

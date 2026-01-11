@@ -7,6 +7,9 @@ export * from './designConstants';
 // Style utilities
 export * from './styleUtils';
 
+// Animation presets
+export * from './animationPresets';
+
 // Calendar components (Phase 2)
 export * from './calendar';
 

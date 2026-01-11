@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { designColors } from '../designConstants';
+import { buttonTap } from '../animationPresets';
 
 export default function EarningsHeader({
   title,
@@ -23,7 +24,7 @@ export default function EarningsHeader({
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <motion.button
           onClick={onBack}
-          whileTap={{ scale: 0.95 }}
+          whileTap={buttonTap}
           style={{
             background: 'none',
             border: 'none',

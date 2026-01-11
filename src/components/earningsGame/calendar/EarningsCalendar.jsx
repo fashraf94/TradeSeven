@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { designColors, fontMono } from '../designConstants';
 import { screenContainer, fixedBottomContainer, flexCenter } from '../styleUtils';
+import { buttonTap, cardTap } from '../animationPresets';
 import { EarningsHeader, CountdownTimer } from '../shared';
 import TournamentBanner from './TournamentBanner';
 import DaySelector from './DaySelector';
@@ -122,7 +123,7 @@ export default function EarningsCalendar({
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <motion.button
               onClick={onBack}
-              whileTap={{ scale: 0.95 }}
+              whileTap={buttonTap}
               style={{
                 background: 'none',
                 border: 'none',
@@ -167,7 +168,7 @@ export default function EarningsCalendar({
             <motion.button
               onClick={onViewPortfolio}
               whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileTap={cardTap}
               style={{
                 padding: '8px 20px',
                 backgroundColor: designColors.cyan,
@@ -361,7 +362,7 @@ export default function EarningsCalendar({
       <div style={fixedBottomContainer}>
         <motion.button
           onClick={onViewPortfolio}
-          whileTap={{ scale: 0.98 }}
+          whileTap={cardTap}
           style={{
             width: '100%',
             padding: '14px',

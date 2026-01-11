@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { designColors } from '../designConstants';
 import { cardBase, flexBetween, monoNumber } from '../styleUtils';
+import { buttonTap } from '../animationPresets';
 import { CountdownTimer } from '../shared';
 
 export default function TournamentBanner({
@@ -57,7 +58,7 @@ export default function TournamentBanner({
 
         <motion.button
           onClick={onViewPortfolio}
-          whileTap={{ scale: 0.95 }}
+          whileTap={buttonTap}
           style={{
             background: 'none',
             border: 'none',
