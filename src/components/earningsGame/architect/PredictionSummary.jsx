@@ -21,9 +21,9 @@ export default function PredictionSummary({
   const riskColors = {
     low: designColors.green,
     medium: designColors.orange,
-    high: '#f97316',
+    high: designColors.orangeRed,
     veryHigh: designColors.red,
-    extreme: '#dc2626',
+    extreme: designColors.redDark,
   };
 
   const riskLabels = {

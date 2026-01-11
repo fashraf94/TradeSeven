@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { designColors, fontMono } from '../designConstants';
+import { designColors, bgTints, fontMono } from '../designConstants';
 
 export default function MagnitudeGauge({
   targetMin,        // Predicted range start (e.g., 2 for +2%)
@@ -49,7 +49,7 @@ export default function MagnitudeGauge({
           right: 0,
           height: '8px',
           marginTop: '-4px',
-          backgroundColor: '#1c1c24',
+          backgroundColor: designColors.bgCardInner,
           borderRadius: '4px',
         }} />
 
@@ -66,7 +66,7 @@ export default function MagnitudeGauge({
                 width: '1px',
                 height: '16px',
                 marginTop: '-8px',
-                backgroundColor: val === 0 ? '#444' : '#2a2a2a',
+                backgroundColor: val === 0 ? designColors.borderSubtle : designColors.borderDefault,
               }}
             />
           );
@@ -83,7 +83,7 @@ export default function MagnitudeGauge({
             width: `${targetWidthPct}%`,
             height: '20px',
             marginTop: '-10px',
-            backgroundColor: 'rgba(0, 217, 255, 0.15)',
+            backgroundColor: bgTints.cyan,
             borderLeft: `2px solid ${designColors.cyan}`,
             borderRight: `2px solid ${designColors.cyan}`,
             borderRadius: '3px',
@@ -124,7 +124,7 @@ export default function MagnitudeGauge({
                 width: '16px',
                 height: '16px',
                 borderRadius: '50%',
-                backgroundColor: '#ffffff',
+                backgroundColor: designColors.textPrimary,
                 border: `2px solid ${activeColor}`,
                 boxShadow: `0 0 10px ${activeColor}`,
               }}

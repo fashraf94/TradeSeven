@@ -6,33 +6,33 @@ import {
   ArrowUpRight,
   Rocket
 } from 'lucide-react';
-import { designColors, glowEffects, fontMono, MAGNITUDES } from '../designConstants';
+import { designColors, bgTints, glowEffects, fontMono, MAGNITUDES } from '../designConstants';
 
 const MAGNITUDE_ICONS = {
   downBig: {
     Icon: TrendingDown,
-    color: '#ef4444',
-    bgColor: 'rgba(239, 68, 68, 0.15)'
+    color: designColors.red,
+    bgColor: bgTints.red
   },
   down: {
     Icon: ArrowDownRight,
-    color: '#f97316',
-    bgColor: 'rgba(249, 115, 22, 0.15)'
+    color: designColors.orangeRed,
+    bgColor: bgTints.orange
   },
   flat: {
     Icon: Minus,
-    color: '#00d9ff',
-    bgColor: 'rgba(0, 217, 255, 0.15)'
+    color: designColors.cyan,
+    bgColor: bgTints.cyan
   },
   up: {
     Icon: ArrowUpRight,
-    color: '#10b981',
-    bgColor: 'rgba(16, 185, 129, 0.15)'
+    color: designColors.green,
+    bgColor: bgTints.green
   },
   upBig: {
     Icon: Rocket,
-    color: '#22c55e',
-    bgColor: 'rgba(34, 197, 94, 0.15)'
+    color: designColors.greenBright,
+    bgColor: bgTints.green
   },
 };
 
@@ -85,7 +85,7 @@ export default function MagnitudePillars({
 
           const iconConfig = MAGNITUDE_ICONS[mag.id];
           const IconComponent = iconConfig?.Icon || Minus;
-          const iconColor = isSelected ? '#ffffff' : iconConfig?.color;
+          const iconColor = isSelected ? designColors.textPrimary : iconConfig?.color;
           const iconBgColor = isSelected
             ? 'rgba(0, 217, 255, 0.25)'
             : iconConfig?.bgColor;

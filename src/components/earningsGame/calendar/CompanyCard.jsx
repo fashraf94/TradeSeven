@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { designColors, fontMono } from '../designConstants';
+import { designColors, bgTints, fontMono } from '../designConstants';
 
 export default function CompanyCard({
   symbol,
@@ -58,8 +58,8 @@ export default function CompanyCard({
           fontWeight: 'bold',
           padding: '2px 6px',
           borderRadius: '4px',
-          backgroundColor: reportTime === 'BMO' ? 'rgba(251, 191, 36, 0.2)' : 'rgba(139, 92, 246, 0.2)',
-          color: reportTime === 'BMO' ? '#fbbf24' : '#a78bfa',
+          backgroundColor: reportTime === 'BMO' ? bgTints.gold : bgTints.violet,
+          color: reportTime === 'BMO' ? designColors.gold : designColors.violet,
         }}>
           {reportTime}
         </span>
