@@ -1,18 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { useSwapLogic, FreeAgencyMobile } from '../components/freeAgency';
-// import FreeAgencyDesktop from '../components/freeAgency/FreeAgencyDesktop';
+import { useSwapLogic, FreeAgencyMobile, FreeAgencyDesktop } from '../components/freeAgency';
 import { HOLO_COLORS, HOLO_BACKGROUND, HOLO_ANIMATIONS } from '../constants/holoTheme';
 
 /**
  * FreeAgencyScreenV2 - Entry point for redesigned Free Agency
  *
- * Phase F2: Mobile Layout Complete
+ * Phase F3: Mobile + Desktop Layouts Complete
  * - Responsive layout detection (mobile vs desktop)
- * - Shared business logic hook
- * - Full mobile layout with all swap functionality
- *
- * Phase F3 will add:
- * - FreeAgencyDesktop layout
+ * - Shared business logic hook powers both layouts
+ * - Mobile layout for screens < 768px
+ * - Desktop layout for screens >= 768px
  */
 const FreeAgencyScreenV2 = ({
   containerStyle,
@@ -21,7 +18,7 @@ const FreeAgencyScreenV2 = ({
   setScreen,
   logger = console,
 }) => {
-  // Detect mobile vs desktop
+  // Breakpoint: 768px for mobile/desktop switch
   const [isMobile, setIsMobile] = useState(
     typeof window !== 'undefined' && window.innerWidth < 768
   );
@@ -37,7 +34,7 @@ const FreeAgencyScreenV2 = ({
     setScreen('draftBattle');
   };
 
-  // Initialize shared logic hook
+  // Shared logic hook - powers both layouts
   const swapLogic = useSwapLogic({
     currentDraft,
     user,
@@ -112,7 +109,7 @@ const FreeAgencyScreenV2 = ({
     );
   }
 
-  // Layout props to pass to layout components
+  // Props for layout components
   const layoutProps = {
     containerStyle,
     currentDraft,
@@ -120,10 +117,10 @@ const FreeAgencyScreenV2 = ({
     ...swapLogic,
   };
 
-  // For now, use Mobile layout for both (Desktop coming in F3)
-  // Once F3 is complete: return isMobile ? <FreeAgencyMobile {...layoutProps} /> : <FreeAgencyDesktop {...layoutProps} />;
-
-  return <FreeAgencyMobile {...layoutProps} />;
+  // Route to appropriate layout based on screen width
+  return isMobile
+    ? <FreeAgencyMobile {...layoutProps} />
+    : <FreeAgencyDesktop {...layoutProps} />;
 };
 
 export default FreeAgencyScreenV2;

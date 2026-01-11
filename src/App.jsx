@@ -25942,20 +25942,8 @@ export default function PortfolioDuel() {
 
   // DRAFT BATTLE VIEW OLD CODE REMOVED - See src/screens/DraftBattleScreen.jsx
 
-  // FREE AGENCY SCREEN - Extracted to FreeAgencyScreen component
+  // FREE AGENCY SCREEN - V2 with Holographic War Room theme (Mobile + Desktop)
   if (screen === 'freeAgency') {
-    return (
-      <FreeAgencyScreen
-        containerStyle={containerStyle}
-        currentDraft={currentDraft}
-        user={user}
-        onBack={() => setScreen('draftResults')}
-      />
-    );
-  }
-
-  // FREE AGENCY SCREEN V2 - Redesigned with Holographic War Room theme
-  if (screen === 'freeAgencyV2') {
     return (
       <FreeAgencyScreenV2
         containerStyle={containerStyle}
@@ -25963,6 +25951,18 @@ export default function PortfolioDuel() {
         user={user}
         setScreen={setScreen}
         logger={logger}
+      />
+    );
+  }
+
+  // Legacy Free Agency Screen (kept for backwards compatibility)
+  if (screen === 'freeAgencyLegacy') {
+    return (
+      <FreeAgencyScreen
+        containerStyle={containerStyle}
+        currentDraft={currentDraft}
+        user={user}
+        onBack={() => setScreen('draftResults')}
       />
     );
   }
