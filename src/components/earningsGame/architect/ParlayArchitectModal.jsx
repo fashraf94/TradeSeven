@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { designColors, fontMono, MAGNITUDES, BUDGET } from '../designConstants';
+import { calculateParlayPrices } from '../../../services/earningsReactionsService';
 import BeatMissToggle from './BeatMissToggle';
 import MagnitudePillars from './MagnitudePillars';
 import PredictionSummary from './PredictionSummary';
@@ -24,45 +25,27 @@ export default function ParlayArchitectModal({
     }
   }, [isOpen, event?.id]);
 
-  // Calculate magnitude prices based on odds
-  const magnitudePrices = useMemo(() => {
-    if (!event) return {};
-
-    // Base price calculation - harder predictions cost more
-    const basePrice = 150;
-    return {
-      downBig: Math.round(basePrice * 1.4),  // 210
-      down: Math.round(basePrice * 1.2),     // 180
-      flat: Math.round(basePrice * 1.0),     // 150
-      up: Math.round(basePrice * 1.2),       // 180
-      upBig: Math.round(basePrice * 1.4),    // 210
-    };
+  // Calculate all parlay prices from the service
+  const parlayPrices = useMemo(() => {
+    if (!event) return [];
+    return calculateParlayPrices(event, BUDGET);
   }, [event]);
 
-  // Calculate price and points for current selection
-  const predictionDetails = useMemo(() => {
-    if (!selectedOutcome || !selectedMagnitude || !event) {
-      return { price: 0, points: 0, riskLevel: 'low' };
-    }
+  // Get the selected parlay details
+  const selectedParlay = useMemo(() => {
+    if (!selectedOutcome || !selectedMagnitude) return null;
+    return parlayPrices.find(p =>
+      p.outcome === selectedOutcome && p.magnitude === selectedMagnitude
+    );
+  }, [parlayPrices, selectedOutcome, selectedMagnitude]);
 
-    const magPrice = magnitudePrices[selectedMagnitude] || 150;
-    const outcomeMultiplier = selectedOutcome === 'beat'
-      ? (1 - event.yesOdds) * 2 + 1
-      : (1 - event.noOdds) * 2 + 1;
-
-    const price = Math.round(magPrice * outcomeMultiplier);
-    const points = Math.round(price * 1.5); // Points are 1.5x the cost
-
-    // Calculate risk level
-    let riskLevel = 'low';
-    if (price > 300) riskLevel = 'high';
-    else if (price > 200) riskLevel = 'medium';
-
-    return { price, points, riskLevel };
-  }, [selectedOutcome, selectedMagnitude, event, magnitudePrices]);
+  // Budget after this pick
+  const budgetAfterPick = selectedParlay
+    ? currentBudget - selectedParlay.price
+    : currentBudget;
 
   const handleConfirm = () => {
-    if (!selectedOutcome || !selectedMagnitude || !event) return;
+    if (!selectedOutcome || !selectedMagnitude || !event || !selectedParlay) return;
 
     const prediction = {
       eventId: event.id,
@@ -70,8 +53,10 @@ export default function ParlayArchitectModal({
       companyName: event.companyName,
       outcome: selectedOutcome,
       magnitude: selectedMagnitude,
-      price: predictionDetails.price,
-      potentialPoints: predictionDetails.points,
+      price: selectedParlay.price,
+      potentialPoints: selectedParlay.potentialPoints,
+      multiplier: selectedParlay.multiplier,
+      risk: selectedParlay.risk,
       createdAt: new Date().toISOString(),
     };
 
@@ -79,8 +64,8 @@ export default function ParlayArchitectModal({
     onClose();
   };
 
-  const isComplete = selectedOutcome && selectedMagnitude;
-  const canAfford = predictionDetails.price <= currentBudget;
+  const isComplete = selectedOutcome && selectedMagnitude && selectedParlay;
+  const canAfford = selectedParlay ? selectedParlay.price <= currentBudget : true;
 
   if (!isOpen || !event) return null;
 
@@ -217,7 +202,9 @@ export default function ParlayArchitectModal({
             <div style={{ marginBottom: '24px' }}>
               <MagnitudePillars
                 selected={selectedMagnitude}
-                magnitudePrices={magnitudePrices}
+                parlayPrices={parlayPrices}
+                outcome={selectedOutcome}
+                budgetRemaining={currentBudget}
                 onSelect={setSelectedMagnitude}
                 disabled={!selectedOutcome}
               />
@@ -228,15 +215,18 @@ export default function ParlayArchitectModal({
               symbol={event.symbol}
               outcome={selectedOutcome}
               magnitude={selectedMagnitude}
-              price={predictionDetails.price}
-              potentialPoints={predictionDetails.points}
-              riskLevel={predictionDetails.riskLevel}
+              price={selectedParlay?.price || 0}
+              potentialPoints={selectedParlay?.potentialPoints || 0}
+              multiplier={selectedParlay?.multiplier || 0}
+              riskLevel={selectedParlay?.risk?.level || 'low'}
+              budgetRemaining={currentBudget}
+              budgetAfterPick={budgetAfterPick}
               onConfirm={handleConfirm}
               disabled={!isComplete || !canAfford}
             />
 
             {/* Budget warning */}
-            {isComplete && !canAfford && (
+            {isComplete && !canAfford && selectedParlay && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -253,7 +243,7 @@ export default function ParlayArchitectModal({
                   fontSize: '12px',
                   color: designColors.red,
                 }}>
-                  Insufficient budget. Need ${predictionDetails.price - currentBudget} more.
+                  Insufficient budget. Need ${selectedParlay.price - currentBudget} more.
                 </span>
               </motion.div>
             )}
@@ -411,7 +401,9 @@ export default function ParlayArchitectModal({
             </div>
             <MagnitudePillars
               selected={selectedMagnitude}
-              magnitudePrices={magnitudePrices}
+              parlayPrices={parlayPrices}
+              outcome={selectedOutcome}
+              budgetRemaining={currentBudget}
               onSelect={setSelectedMagnitude}
               disabled={!selectedOutcome}
             />
@@ -423,15 +415,18 @@ export default function ParlayArchitectModal({
               symbol={event.symbol}
               outcome={selectedOutcome}
               magnitude={selectedMagnitude}
-              price={predictionDetails.price}
-              potentialPoints={predictionDetails.points}
-              riskLevel={predictionDetails.riskLevel}
+              price={selectedParlay?.price || 0}
+              potentialPoints={selectedParlay?.potentialPoints || 0}
+              multiplier={selectedParlay?.multiplier || 0}
+              riskLevel={selectedParlay?.risk?.level || 'low'}
+              budgetRemaining={currentBudget}
+              budgetAfterPick={budgetAfterPick}
               onConfirm={handleConfirm}
               disabled={!isComplete || !canAfford}
             />
 
             {/* Budget warning */}
-            {isComplete && !canAfford && (
+            {isComplete && !canAfford && selectedParlay && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -448,7 +443,7 @@ export default function ParlayArchitectModal({
                   fontSize: '13px',
                   color: designColors.red,
                 }}>
-                  Insufficient budget. Need ${predictionDetails.price - currentBudget} more.
+                  Insufficient budget. Need ${selectedParlay.price - currentBudget} more.
                 </span>
               </motion.div>
             )}

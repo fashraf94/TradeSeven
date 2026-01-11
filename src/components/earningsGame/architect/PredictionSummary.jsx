@@ -7,7 +7,10 @@ export default function PredictionSummary({
   magnitude,         // magnitude id
   price,             // number
   potentialPoints,   // number
-  riskLevel,         // 'low' | 'medium' | 'high'
+  multiplier,        // number (e.g., 2.2)
+  riskLevel,         // 'low' | 'medium' | 'high' | 'veryHigh' | 'extreme'
+  budgetRemaining,   // Current budget
+  budgetAfterPick,   // Budget after this pick
   onConfirm,         // () => void
   disabled = false,  // True if selection incomplete
 }) {
@@ -18,10 +21,21 @@ export default function PredictionSummary({
   const riskColors = {
     low: designColors.green,
     medium: designColors.orange,
-    high: designColors.red,
+    high: '#f97316',
+    veryHigh: designColors.red,
+    extreme: '#dc2626',
+  };
+
+  const riskLabels = {
+    low: 'Low',
+    medium: 'Med',
+    high: 'High',
+    veryHigh: 'V.High',
+    extreme: 'Extreme',
   };
 
   const riskColor = riskColors[riskLevel] || designColors.textMuted;
+  const riskLabel = riskLabels[riskLevel] || riskLevel;
 
   return (
     <motion.div
@@ -35,6 +49,66 @@ export default function PredictionSummary({
         boxShadow: disabled ? 'none' : glowEffects.cyan,
       }}
     >
+      {/* Budget Preview */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '16px',
+        padding: '12px',
+        backgroundColor: designColors.bgCard,
+        borderRadius: '8px',
+        border: `1px solid ${designColors.borderDefault}`,
+      }}>
+        <div>
+          <div style={{
+            fontSize: '11px',
+            color: designColors.textMuted,
+            marginBottom: '4px',
+            letterSpacing: '0.5px',
+          }}>
+            CURRENT BUDGET
+          </div>
+          <div style={{
+            fontSize: '18px',
+            fontWeight: 'bold',
+            fontFamily: fontMono,
+            color: designColors.textPrimary,
+          }}>
+            ${budgetRemaining?.toLocaleString() || '—'}
+          </div>
+        </div>
+
+        {price > 0 && (
+          <>
+            <div style={{
+              fontSize: '20px',
+              color: designColors.textMuted,
+            }}>
+              →
+            </div>
+            <div>
+              <div style={{
+                fontSize: '11px',
+                color: designColors.textMuted,
+                marginBottom: '4px',
+                letterSpacing: '0.5px',
+              }}>
+                AFTER THIS PICK
+              </div>
+              <div style={{
+                fontSize: '18px',
+                fontWeight: 'bold',
+                fontFamily: fontMono,
+                color: budgetAfterPick >= 0 ? designColors.cyan : designColors.red,
+              }}>
+                ${budgetAfterPick?.toLocaleString() || '—'}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
       {/* Prediction text */}
       <div style={{
         fontSize: '14px',
@@ -58,7 +132,7 @@ export default function PredictionSummary({
               {magnitudeInfo?.label || '...'}
             </span>
             {' '}
-            <span style={{ fontSize: '16px' }}>
+            <span style={{ fontSize: '18px' }}>
               {magnitudeInfo?.emoji}
             </span>
           </>
@@ -90,7 +164,7 @@ export default function PredictionSummary({
             fontWeight: 'bold',
             color: designColors.textPrimary,
           }}>
-            ${disabled ? '—' : price}
+            ${disabled ? '—' : price.toLocaleString()}
           </div>
         </div>
 
@@ -110,7 +184,27 @@ export default function PredictionSummary({
             fontWeight: 'bold',
             color: designColors.cyan,
           }}>
-            {disabled ? '—' : `+${potentialPoints}`}
+            {disabled ? '—' : `+${potentialPoints.toLocaleString()}`}
+          </div>
+        </div>
+
+        {/* Multiplier */}
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            fontSize: '10px',
+            color: designColors.textMuted,
+            marginBottom: '4px',
+            letterSpacing: '1px',
+          }}>
+            MULT
+          </div>
+          <div style={{
+            fontFamily: fontMono,
+            fontSize: '18px',
+            fontWeight: 'bold',
+            color: designColors.orange,
+          }}>
+            {disabled ? '—' : `${multiplier}x`}
           </div>
         </div>
 
@@ -130,7 +224,7 @@ export default function PredictionSummary({
             color: riskColor,
             textTransform: 'uppercase',
           }}>
-            {disabled ? '—' : riskLevel}
+            {disabled ? '—' : riskLabel}
           </div>
         </div>
       </div>
