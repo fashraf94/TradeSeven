@@ -54,6 +54,7 @@ export const DATA_TYPE_TIERS = {
 
   // LIGHT - 5 minute cache
   'prices': CACHE_TIERS.LIGHT,
+  'crypto': CACHE_TIERS.LIGHT,
   'quotes': CACHE_TIERS.LIGHT,
 
   // NONE - no cache
