@@ -71,7 +71,7 @@ import {
   getAvailableSectors,
 } from './services/recommendationEngine';
 // Extracted Screens - Batch 1
-import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftRoomScreen, HomeScreen, EarningsGameScreen } from './screens';
+import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen } from './screens';
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 
@@ -25914,6 +25914,21 @@ export default function PortfolioDuel() {
   if (screen === 'draftBattle') {
     return (
       <DraftBattleScreen
+        containerStyle={containerStyle}
+        user={user}
+        currentDraft={currentDraft}
+        setCurrentDraft={setCurrentDraft}
+        setScreen={setScreen}
+        logger={logger}
+      />
+    );
+  }
+
+  // DRAFT BATTLE V2 - Altitude Map Redesign (TEST ROUTE)
+  // To test: set screen to 'draftBattleV2' from console or temporarily change above condition
+  if (screen === 'draftBattleV2') {
+    return (
+      <DraftBattleScreenV2
         containerStyle={containerStyle}
         user={user}
         currentDraft={currentDraft}
