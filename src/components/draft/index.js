@@ -14,3 +14,7 @@ export { default as AssetResearchModal } from './AssetResearchModal';
 export { default as TacticalPod } from './TacticalPod';
 export { default as OvertakeCallout } from './OvertakeCallout';
 export { default as AltitudeMap } from './AltitudeMap';
+
+// Command Console components for Draft Battle V2
+export { default as AssetTile } from './AssetTile';
+export { default as CommandConsole } from './CommandConsole';

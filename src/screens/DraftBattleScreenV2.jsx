@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { HOLO_COLORS, GLOW_EFFECTS, RANK_CONFIG, CATEGORY_CONFIG, HOLO_BACKGROUND, HOLO_ANIMATIONS } from '../constants/holoTheme';
-import { AltitudeMap } from '../components/draft';
+import { AltitudeMap, CommandConsole } from '../components/draft';
 
 /**
  * DraftBattleScreenV2 - Altitude Map Redesign
- * Phase 2: Altitude Map Core Visualization
+ * Phase 3: Command Console & Integration
  *
  * This is a redesigned version of DraftBattleScreen with a new "Altitude Map" visual concept.
  * Core business logic is preserved exactly from the original.
@@ -266,7 +266,11 @@ const DraftBattleScreenV2 = ({
           let totalGain = 0;
           const portfolioWithGains = [];
 
-          for (const symbol of player.picks || []) {
+          for (let pickIndex = 0; pickIndex < (player.picks || []).length; pickIndex++) {
+            const symbol = player.picks[pickIndex];
+            // Get category for this asset from player's pickCategories
+            const category = player.pickCategories?.[pickIndex] || 'steady';
+
             // Normalize symbol for lookup
             let lookupKey;
             if (battleType === 'crypto') {
@@ -302,7 +306,8 @@ const DraftBattleScreenV2 = ({
               symbol,
               gain: parseFloat(gain.toFixed(2)),
               lockedPrice,
-              currentPrice
+              currentPrice,
+              category,
             });
 
             // Equal weight (11.1% each for 9 assets)
@@ -493,8 +498,10 @@ const DraftBattleScreenV2 = ({
     );
   }
 
-  // Find my player for the Command Console
-  const myPlayer = standings.find(p => p.isMe);
+  // Find my player for the Command Console (memoized)
+  const userStanding = useMemo(() => {
+    return standings.find(p => p.isMe) || null;
+  }, [standings]);
 
   // ============================================
   // RENDER
@@ -690,144 +697,15 @@ const DraftBattleScreenV2 = ({
         )}
       </main>
 
-      {/* COMMAND CONSOLE (Fixed Bottom HUD) */}
-      <div style={{
-        position: 'fixed',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        background: 'rgba(10, 14, 20, 0.95)',
-        backdropFilter: 'blur(12px)',
-        borderTop: `1px solid ${isScoutMode ? HOLO_COLORS.amber : HOLO_COLORS.cyan}`,
-        boxShadow: isScoutMode
-          ? '0 -5px 30px rgba(245, 158, 11, 0.2)'
-          : '0 -5px 30px rgba(0, 255, 255, 0.2)',
-        padding: '16px',
-        paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
-        transition: 'all 0.3s ease',
-      }}>
-        {/* Console Header */}
-        <div style={{
-          fontSize: '10px',
-          color: isScoutMode ? HOLO_COLORS.amber : HOLO_COLORS.cyan,
-          textTransform: 'uppercase',
-          letterSpacing: '2px',
-          marginBottom: '12px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-        }}>
-          <span style={{
-            width: '6px',
-            height: '6px',
-            background: isScoutMode ? HOLO_COLORS.amber : HOLO_COLORS.cyan,
-            borderRadius: '50%',
-            animation: 'holoPulse 2s ease-in-out infinite',
-          }} />
-          {isScoutMode ? `SCOUTING: ${scoutedPlayer?.displayName}` : 'YOUR SQUAD'}
-        </div>
-
-        {/* Portfolio Grid Placeholder - Phase 3 */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '8px',
-          marginBottom: '12px',
-        }}>
-          {(isScoutMode ? scoutedPlayer?.portfolio : myPlayer?.portfolio || []).slice(0, 9).map((asset, i) => (
-            <div key={asset?.symbol || i} style={{
-              background: HOLO_COLORS.bgCard,
-              borderRadius: '6px',
-              padding: '8px',
-              height: '50px',
-              border: `1px solid ${HOLO_COLORS.borderSubtle}`,
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}>
-              {asset ? (
-                <>
-                  <div style={{
-                    color: HOLO_COLORS.textPrimary,
-                    fontSize: '11px',
-                    fontWeight: 600,
-                  }}>
-                    {asset.symbol}
-                  </div>
-                  <div style={{
-                    color: asset.gain >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
-                    fontSize: '10px',
-                    fontFamily: 'monospace',
-                  }}>
-                    {asset.gain >= 0 ? '+' : ''}{asset.gain?.toFixed(1)}%
-                  </div>
-                </>
-              ) : (
-                <div style={{ color: HOLO_COLORS.textMuted, fontSize: '10px' }}>-</div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Action Buttons */}
-        <div style={{ display: 'flex', gap: '12px' }}>
-          {isScoutMode ? (
-            <button
-              onClick={handleExitScout}
-              style={{
-                flex: 1,
-                padding: '12px',
-                background: 'rgba(245, 158, 11, 0.2)',
-                border: `1px solid ${HOLO_COLORS.amber}`,
-                borderRadius: '8px',
-                color: HOLO_COLORS.amber,
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontSize: '14px',
-              }}
-            >
-              EXIT SCOUT VIEW
-            </button>
-          ) : (
-            <>
-              <button
-                onClick={handleFreeAgency}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  background: 'rgba(139, 92, 246, 0.3)',
-                  border: `1px solid ${HOLO_COLORS.purple}`,
-                  boxShadow: GLOW_EFFECTS.purple,
-                  borderRadius: '8px',
-                  color: HOLO_COLORS.textPrimary,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                }}
-              >
-                FREE AGENCY
-              </button>
-              <button
-                onClick={handleViewAll}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  background: 'transparent',
-                  border: `1px solid ${HOLO_COLORS.borderSubtle}`,
-                  borderRadius: '8px',
-                  color: HOLO_COLORS.textSecondary,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                }}
-              >
-                VIEW ALL
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+      {/* COMMAND CONSOLE - Phase 3 Implementation */}
+      <CommandConsole
+        userStanding={userStanding}
+        scoutedPlayer={scoutedPlayer}
+        isScoutMode={isScoutMode}
+        onExitScout={handleExitScout}
+        onFreeAgency={handleFreeAgency}
+        onViewAll={handleViewAll}
+      />
 
       {/* Scout Transition Overlay */}
       {scoutTransition && (
