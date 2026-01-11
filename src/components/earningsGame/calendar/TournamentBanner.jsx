@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
-import { designColors, fontMono } from '../designConstants';
+import { designColors } from '../designConstants';
+import { cardBase, flexBetween, monoNumber } from '../styleUtils';
 import { CountdownTimer } from '../shared';
 
 export default function TournamentBanner({
@@ -14,18 +15,14 @@ export default function TournamentBanner({
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       style={{
+        ...cardBase,
         margin: '12px 16px',
         padding: '12px 16px',
-        backgroundColor: designColors.bgCard,
-        borderRadius: '12px',
-        border: `1px solid ${designColors.borderDefault}`,
       }}
     >
       {/* Top row: Week + Countdown */}
       <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+        ...flexBetween,
         marginBottom: '8px',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -42,18 +39,14 @@ export default function TournamentBanner({
       </div>
 
       {/* Bottom row: Portfolio summary + View link */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-      }}>
+      <div style={flexBetween}>
         <span style={{
           fontSize: '13px',
           color: designColors.textSecondary,
         }}>
           {picksCount} picks ·
           <span style={{
-            fontFamily: fontMono,
+            ...monoNumber,
             color: designColors.cyan,
             marginLeft: '4px',
           }}>

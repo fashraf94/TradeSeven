@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { designColors, fontMono } from '../designConstants';
+import { screenContainer, fixedBottomContainer, flexCenter } from '../styleUtils';
 import { EarningsHeader, CountdownTimer } from '../shared';
 import TournamentBanner from './TournamentBanner';
 import DaySelector from './DaySelector';
@@ -62,11 +63,8 @@ export default function EarningsCalendar({
   if (loading) {
     return (
       <div style={{
-        backgroundColor: designColors.bgPrimary,
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        ...screenContainer,
+        ...flexCenter,
       }}>
         <span style={{ color: designColors.textSecondary }}>Loading earnings...</span>
       </div>
@@ -76,8 +74,7 @@ export default function EarningsCalendar({
   if (error) {
     return (
       <div style={{
-        backgroundColor: designColors.bgPrimary,
-        minHeight: '100vh',
+        ...screenContainer,
         padding: '16px',
       }}>
         <EarningsHeader title="EARNINGSGAME" onBack={onBack} />
@@ -109,8 +106,7 @@ export default function EarningsCalendar({
   if (isDesktop) {
     return (
       <div style={{
-        backgroundColor: designColors.bgPrimary,
-        minHeight: '100vh',
+        ...screenContainer,
         display: 'flex',
         flexDirection: 'column',
       }}>
@@ -297,8 +293,7 @@ export default function EarningsCalendar({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       style={{
-        backgroundColor: designColors.bgPrimary,
-        minHeight: '100vh',
+        ...screenContainer,
         paddingBottom: '80px', // Space for bottom CTA
       }}
     >
@@ -363,15 +358,7 @@ export default function EarningsCalendar({
       </div>
 
       {/* Bottom CTA */}
-      <div style={{
-        position: 'fixed',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        padding: '16px',
-        backgroundColor: designColors.bgPrimary,
-        borderTop: `1px solid ${designColors.borderDefault}`,
-      }}>
+      <div style={fixedBottomContainer}>
         <motion.button
           onClick={onViewPortfolio}
           whileTap={{ scale: 0.98 }}

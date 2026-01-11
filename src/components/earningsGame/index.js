@@ -4,6 +4,9 @@ export * from './shared';
 // Design system
 export * from './designConstants';
 
+// Style utilities
+export * from './styleUtils';
+
 // Calendar components (Phase 2)
 export * from './calendar';
 

@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { designColors, fontMono, MIN_PREDICTIONS, MAX_PREDICTIONS, glowEffects } from '../designConstants';
+import { screenContainer, sectionHeader, fixedBottomContainer, buttonPrimary, buttonDisabled, flexBetween } from '../styleUtils';
 import { EarningsHeader } from '../shared';
 import PowerMeter from './PowerMeter';
 import RiskProfile from './RiskProfile';
@@ -23,10 +24,7 @@ export default function PortfolioWarRoom({
   // Desktop layout - Enhanced 2-column grid
   if (isDesktop) {
     return (
-      <div style={{
-        backgroundColor: designColors.bgPrimary,
-        minHeight: '100vh',
-      }}>
+      <div style={screenContainer}>
         {/* Header with inline lock button */}
         <div style={{
           display: 'flex',
@@ -128,16 +126,12 @@ export default function PortfolioWarRoom({
 
           {/* Predictions header with total */}
           <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
+            ...flexBetween,
             marginBottom: '16px',
           }}>
             <span style={{
-              fontSize: '12px',
-              fontWeight: 'bold',
-              color: designColors.textSecondary,
-              letterSpacing: '0.5px',
+              ...sectionHeader,
+              marginBottom: 0,
             }}>
               YOUR PREDICTIONS ({predictions.length}/{MAX_PREDICTIONS})
             </span>
@@ -232,16 +226,12 @@ export default function PortfolioWarRoom({
       {/* Predictions List */}
       <div style={{ padding: '0 16px' }}>
         <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
+          ...flexBetween,
           marginBottom: '12px',
         }}>
           <span style={{
-            fontSize: '12px',
-            fontWeight: 'bold',
-            color: designColors.textSecondary,
-            letterSpacing: '0.5px',
+            ...sectionHeader,
+            marginBottom: 0,
           }}>
             YOUR PREDICTIONS ({predictions.length}/{MAX_PREDICTIONS})
           </span>
@@ -310,15 +300,7 @@ export default function PortfolioWarRoom({
 
       {/* Lock Button */}
       {!isLocked && (
-        <div style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          padding: '16px',
-          backgroundColor: designColors.bgPrimary,
-          borderTop: `1px solid ${designColors.borderDefault}`,
-        }}>
+        <div style={fixedBottomContainer}>
           {/* Validation message */}
           {!canLock && predictions.length > 0 && (
             <div style={{
@@ -339,15 +321,12 @@ export default function PortfolioWarRoom({
             disabled={!canLock}
             whileTap={canLock ? { scale: 0.98 } : {}}
             style={{
+              ...buttonPrimary,
+              ...(!canLock && {
+                ...buttonDisabled,
+                border: `1px solid ${designColors.borderDefault}`,
+              }),
               width: '100%',
-              padding: '16px',
-              backgroundColor: canLock ? designColors.cyan : designColors.bgCard,
-              border: canLock ? 'none' : `1px solid ${designColors.borderDefault}`,
-              borderRadius: '10px',
-              color: canLock ? designColors.bgPrimary : designColors.textMuted,
-              fontSize: '14px',
-              fontWeight: 'bold',
-              cursor: canLock ? 'pointer' : 'not-allowed',
               boxShadow: canLock ? glowEffects.cyanIntense : 'none',
               display: 'flex',
               alignItems: 'center',
