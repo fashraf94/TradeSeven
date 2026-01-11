@@ -7,11 +7,13 @@ import {
   BattleLoadingSkeleton,
   RefreshIndicator,
   BattleErrorState,
+  TopPerformersModal,
 } from '../components/draft';
 
 /**
  * DraftBattleScreenV2 - Altitude Map Redesign
  * Phase 5: Polish & Production
+ * Phase 5.5: Layout Refinements (pod distribution, compact console, Top Performers modal)
  *
  * This is a redesigned version of DraftBattleScreen with a new "Altitude Map" visual concept.
  * Core business logic is preserved exactly from the original.
@@ -46,6 +48,9 @@ const DraftBattleScreenV2 = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+
+  // Phase 5.5: Top Performers modal
+  const [showTopPerformers, setShowTopPerformers] = useState(false);
 
   // Refs for cleanup
   const refreshIntervalRef = useRef(null);
@@ -502,7 +507,7 @@ const DraftBattleScreenV2 = ({
   // ============================================
   const handleBack = () => setScreen('dashboard');
   const handleFreeAgency = () => setScreen('freeAgency');
-  const handleViewAll = () => setScreen('draftResults');
+  const handleTopPerformers = () => setShowTopPerformers(true);
 
   // Retry handler for error state
   const handleRetry = () => {
@@ -713,7 +718,7 @@ const DraftBattleScreenV2 = ({
       <main style={{
         flex: 1,
         padding: '16px',
-        paddingBottom: '240px', // Space for Command Console
+        paddingBottom: '200px', // Space for Command Console (reduced in Phase 5.5)
         overflowY: 'auto',
         minHeight: 'calc(100vh - 180px)',
       }}>
@@ -777,9 +782,17 @@ const DraftBattleScreenV2 = ({
           isScoutMode={isScoutMode}
           onExitScout={handleExitScout}
           onFreeAgency={handleFreeAgency}
-          onViewAll={handleViewAll}
+          onTopPerformers={handleTopPerformers}
         />
       )}
+
+      {/* TOP PERFORMERS MODAL - Phase 5.5 */}
+      <TopPerformersModal
+        isOpen={showTopPerformers}
+        onClose={() => setShowTopPerformers(false)}
+        standings={standings}
+        currentUserId={currentUserId}
+      />
 
       {/* Scout Transition Overlay - Phase 4 Enhanced */}
       <ScoutTransitionOverlay

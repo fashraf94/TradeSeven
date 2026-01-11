@@ -9,7 +9,7 @@ import AssetTile from './AssetTile';
  * and action buttons. In scout mode, shows opponent's portfolio
  * with comparison analysis.
  *
- * Phase 4: Enhanced scout mode with flip animation and dramatic styling
+ * Phase 5.5: Compacted layout for more Altitude Map visibility
  */
 const CommandConsole = ({
   userStanding,       // Current user's standing object with portfolio
@@ -17,7 +17,7 @@ const CommandConsole = ({
   isScoutMode,
   onExitScout,
   onFreeAgency,
-  onViewAll,
+  onTopPerformers,    // NEW - replaces onViewAll
 }) => {
   // State for grid flip animation
   const [isFlipping, setIsFlipping] = useState(false);
@@ -84,59 +84,44 @@ const CommandConsole = ({
       left: 0,
       right: 0,
       background: isScoutMode
-        ? 'linear-gradient(to top, rgba(245, 158, 11, 0.08) 0%, rgba(10, 14, 20, 0.98) 100%)'
-        : 'linear-gradient(to top, rgba(0, 255, 255, 0.06) 0%, rgba(10, 14, 20, 0.98) 100%)',
+        ? 'linear-gradient(to top, rgba(245, 158, 11, 0.1) 0%, rgba(10, 14, 20, 0.98) 100%)'
+        : 'linear-gradient(to top, rgba(0, 255, 255, 0.08) 0%, rgba(10, 14, 20, 0.98) 100%)',
       backdropFilter: 'blur(16px)',
       borderTop: `1px solid ${isScoutMode ? HOLO_COLORS.amber : HOLO_COLORS.cyan}`,
       boxShadow: isScoutMode
         ? '0 -4px 30px rgba(245, 158, 11, 0.15)'
         : '0 -4px 30px rgba(0, 255, 255, 0.15)',
-      padding: '12px 16px',
-      paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+      padding: '10px 12px',
+      paddingBottom: 'max(10px, env(safe-area-inset-bottom))',
       transition: 'all 0.3s ease',
       zIndex: 50,
     }}>
-      {/* Console Header - Enhanced for scout mode */}
+      {/* COMPACT HEADER with inline Best/Worst */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: '10px',
-        padding: isScoutMode ? '8px 12px' : '0',
+        marginBottom: '8px',
+        padding: isScoutMode ? '6px 10px' : '0',
         background: isScoutMode ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
         borderRadius: '6px',
         border: isScoutMode ? `1px solid ${HOLO_COLORS.amber}44` : 'none',
         transition: 'all 0.3s ease',
       }}>
         <div style={{
-          fontSize: '11px',
+          fontSize: '10px',
           fontWeight: 700,
           color: isScoutMode ? HOLO_COLORS.amber : HOLO_COLORS.cyan,
           textTransform: 'uppercase',
           letterSpacing: '1px',
           display: 'flex',
           alignItems: 'center',
-          gap: '8px',
+          gap: '6px',
         }}>
           {isScoutMode ? (
             <>
-              <span style={{
-                fontSize: '16px',
-                animation: 'pulse 1s ease-in-out infinite',
-              }}>📡</span>
-              <span>
-                SIGNAL INTERCEPTED
-                <span style={{
-                  display: 'block',
-                  fontSize: '13px',
-                  color: HOLO_COLORS.textPrimary,
-                  letterSpacing: '0',
-                  textTransform: 'none',
-                  marginTop: '2px',
-                }}>
-                  {scoutedPlayer?.displayName}'s Portfolio
-                </span>
-              </span>
+              <span style={{ animation: 'pulse 1s ease-in-out infinite' }}>📡</span>
+              SCOUTING: {scoutedPlayer?.displayName}
             </>
           ) : (
             <>
@@ -150,50 +135,51 @@ const CommandConsole = ({
         {isScoutMode && scoutedPlayer && (
           <div style={{
             background: HOLO_COLORS.bgCard,
-            padding: '4px 10px',
+            padding: '3px 8px',
             borderRadius: '4px',
             border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+            fontSize: '10px',
           }}>
+            <span style={{ color: HOLO_COLORS.textMuted }}>RANK</span>
             <span style={{
-              fontSize: '10px',
-              color: HOLO_COLORS.textMuted,
-            }}>
-              RANK
-            </span>
-            <span style={{
-              fontSize: '14px',
               fontWeight: 700,
               color: HOLO_COLORS.textPrimary,
-              marginLeft: '6px',
+              marginLeft: '4px',
             }}>
               #{scoutedPlayer.currentRank}
             </span>
           </div>
         )}
 
-        {/* Compact Best/Worst on header (only when not scouting) */}
+        {/* INLINE Best/Worst (only when not scouting) */}
         {!isScoutMode && bestAsset && (
           <div style={{
             display: 'flex',
-            gap: '12px',
+            gap: '10px',
             fontSize: '10px',
           }}>
-            <span style={{ color: HOLO_COLORS.green }}>
-              BEST: {bestAsset.symbol}
+            <span>
+              <span style={{ color: HOLO_COLORS.textMuted }}>BEST:</span>
+              <span style={{ color: HOLO_COLORS.green, marginLeft: '3px', fontWeight: 600 }}>
+                {bestAsset.symbol} +{bestAsset.gain?.toFixed(1)}%
+              </span>
             </span>
-            <span style={{ color: HOLO_COLORS.red }}>
-              WORST: {worstAsset?.symbol}
+            <span>
+              <span style={{ color: HOLO_COLORS.textMuted }}>WORST:</span>
+              <span style={{ color: HOLO_COLORS.red, marginLeft: '3px', fontWeight: 600 }}>
+                {worstAsset?.symbol} {worstAsset?.gain?.toFixed(1)}%
+              </span>
             </span>
           </div>
         )}
       </div>
 
-      {/* 3x3 Portfolio Grid - With flip animation */}
+      {/* COMPACT 3x3 Portfolio Grid */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(3, 1fr)',
-        gap: '8px',
-        marginBottom: '10px',
+        gap: '6px',
+        marginBottom: '8px',
         perspective: '1000px',
       }}>
         <div style={{
@@ -237,87 +223,16 @@ const CommandConsole = ({
         </div>
       </div>
 
-      {/* Best/Worst Row */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: '8px',
-        marginBottom: '10px',
-      }}>
-        {/* Best Asset */}
-        <div style={{
-          background: 'rgba(0, 255, 136, 0.08)',
-          border: `1px solid ${HOLO_COLORS.green}33`,
-          borderRadius: '8px',
-          padding: '8px 12px',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-        }}>
-          <span style={{
-            fontSize: '9px',
-            color: HOLO_COLORS.textMuted,
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-            marginBottom: '2px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-          }}>
-            <span>BEST</span>
-          </span>
-          <span style={{
-            fontSize: '13px',
-            fontWeight: 700,
-            color: HOLO_COLORS.green,
-          }}>
-            {bestAsset?.symbol || '—'} {bestAsset?.gain !== undefined ? `+${bestAsset.gain.toFixed(2)}%` : ''}
-          </span>
-        </div>
-
-        {/* Worst Asset */}
-        <div style={{
-          background: 'rgba(255, 51, 102, 0.08)',
-          border: `1px solid ${HOLO_COLORS.red}33`,
-          borderRadius: '8px',
-          padding: '8px 12px',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-        }}>
-          <span style={{
-            fontSize: '9px',
-            color: HOLO_COLORS.textMuted,
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-            marginBottom: '2px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-          }}>
-            <span>WORST</span>
-          </span>
-          <span style={{
-            fontSize: '13px',
-            fontWeight: 700,
-            color: HOLO_COLORS.red,
-          }}>
-            {worstAsset?.symbol || '—'} {worstAsset?.gain !== undefined ? `${worstAsset.gain.toFixed(2)}%` : ''}
-          </span>
-        </div>
-      </div>
-
-      {/* Scout Mode Summary */}
+      {/* Scout Mode Summary - compact */}
       {isScoutMode && scoutSummary && (
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
-          padding: '8px 12px',
-          background: 'rgba(245, 158, 11, 0.08)',
-          border: `1px solid ${HOLO_COLORS.amber}33`,
+          padding: '6px 10px',
+          background: 'rgba(245, 158, 11, 0.1)',
           borderRadius: '6px',
-          marginBottom: '10px',
-          fontSize: '11px',
+          marginBottom: '8px',
+          fontSize: '10px',
         }}>
           <span style={{ color: HOLO_COLORS.textSecondary }}>
             Their Best: <span style={{ color: HOLO_COLORS.amber, fontWeight: 600 }}>
@@ -330,9 +245,7 @@ const CommandConsole = ({
             </span>
           </span>
           <span style={{
-            color: scoutSummary.youLeadBest
-              ? HOLO_COLORS.green
-              : HOLO_COLORS.red,
+            color: scoutSummary.youLeadBest ? HOLO_COLORS.green : HOLO_COLORS.red,
             fontWeight: 700,
           }}>
             Gap: {scoutSummary.gap.toFixed(1)}%
@@ -340,25 +253,29 @@ const CommandConsole = ({
         </div>
       )}
 
-      {/* Action Buttons */}
-      <div style={{ display: 'flex', gap: '10px' }}>
+      {/* Action Buttons - compact */}
+      <div style={{ display: 'flex', gap: '8px' }}>
         {isScoutMode ? (
           <button
             onClick={onExitScout}
             style={{
               flex: 1,
-              padding: '12px',
+              padding: '10px',
               background: 'rgba(245, 158, 11, 0.15)',
               border: `1px solid ${HOLO_COLORS.amber}`,
               borderRadius: '8px',
               color: HOLO_COLORS.amber,
               fontWeight: 600,
-              fontSize: '14px',
+              fontSize: '13px',
               cursor: 'pointer',
               transition: 'all 0.2s ease',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
             }}
           >
-            EXIT SCOUT VIEW
+            ✕ EXIT SCOUT
           </button>
         ) : (
           <>
@@ -366,44 +283,44 @@ const CommandConsole = ({
               onClick={onFreeAgency}
               style={{
                 flex: 1,
-                padding: '12px',
-                background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.25) 0%, rgba(139, 92, 246, 0.1) 100%)',
+                padding: '10px',
+                background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.3) 0%, rgba(139, 92, 246, 0.1) 100%)',
                 border: `1px solid ${HOLO_COLORS.purple}`,
-                boxShadow: `0 0 15px ${HOLO_COLORS.purple}22`,
+                boxShadow: `0 0 15px ${HOLO_COLORS.purple}33`,
                 borderRadius: '8px',
                 color: HOLO_COLORS.textPrimary,
                 fontWeight: 600,
-                fontSize: '14px',
+                fontSize: '13px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '8px',
+                gap: '6px',
                 transition: 'all 0.2s ease',
               }}
             >
-              Free Agency
+              🔄 Free Agency
             </button>
             <button
-              onClick={onViewAll}
+              onClick={onTopPerformers}
               style={{
                 flex: 1,
-                padding: '12px',
+                padding: '10px',
                 background: 'transparent',
                 border: `1px solid ${HOLO_COLORS.borderSubtle}`,
                 borderRadius: '8px',
                 color: HOLO_COLORS.textSecondary,
                 fontWeight: 600,
-                fontSize: '14px',
+                fontSize: '13px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '8px',
+                gap: '6px',
                 transition: 'all 0.2s ease',
               }}
             >
-              All Picks
+              🏆 Top Performers
             </button>
           </>
         )}

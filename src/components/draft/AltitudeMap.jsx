@@ -11,6 +11,8 @@ import OvertakeCallout from './OvertakeCallout';
  * - Glowing cyan "battle snake" path connecting player positions
  * - TacticalPod hexagons at each player's gain percentage altitude
  * - OvertakeCallout badges showing gaps between players
+ *
+ * Phase 5.5: Fixed horizontal distribution for pods with similar gains
  */
 const AltitudeMap = ({
   standings,          // Array of player standings sorted by rank
@@ -60,14 +62,54 @@ const AltitudeMap = ({
     return 40 + paddedHeight * (1 - normalized);
   };
 
-  // Calculate X position (alternate left/right based on rank)
-  const getXPosition = (rank) => {
-    if (isMobile) {
-      // Tighter positioning on mobile
-      return rank % 2 === 1 ? '30%' : '70%';
+  // Group players by similar gain (within 0.5%) for horizontal distribution
+  const playerGroups = useMemo(() => {
+    if (!standings.length) return [];
+
+    const groups = [];
+    const sorted = [...standings].sort((a, b) => b.totalGain - a.totalGain);
+
+    sorted.forEach((player) => {
+      // Find existing group within 0.5% of this player's gain
+      const existingGroup = groups.find(g =>
+        Math.abs(g.gain - player.totalGain) < 0.5
+      );
+
+      if (existingGroup) {
+        existingGroup.players.push(player);
+      } else {
+        groups.push({
+          gain: player.totalGain,
+          players: [player]
+        });
+      }
+    });
+
+    return groups;
+  }, [standings]);
+
+  // Calculate X position based on group distribution
+  const getXPosition = (player) => {
+    // Find which group this player belongs to
+    const group = playerGroups.find(g =>
+      g.players.some(p => p.odUserId === player.odUserId)
+    );
+
+    if (!group || group.players.length === 1) {
+      // Single player at this level - center them
+      return 50;
     }
-    // Desktop: alternate sides for better visibility
-    return rank % 2 === 1 ? '25%' : '68%';
+
+    // Multiple players at same level - distribute horizontally
+    const playerIndex = group.players.findIndex(p => p.odUserId === player.odUserId);
+    const totalInGroup = group.players.length;
+
+    // Distribute evenly from 15% to 85% of width
+    const minX = isMobile ? 18 : 15;
+    const maxX = isMobile ? 82 : 85;
+    const step = (maxX - minX) / Math.max(1, totalInGroup - 1);
+
+    return minX + (playerIndex * step);
   };
 
   // Generate Y-axis tick marks
@@ -81,7 +123,7 @@ const AltitudeMap = ({
     return ticks;
   }, [minGain, maxGain]);
 
-  // Calculate overtake gaps for callouts
+  // Calculate overtake gaps for callouts - only show when meaningful vertical separation
   const overtakeGaps = useMemo(() => {
     if (standings.length < 2) return [];
 
@@ -92,6 +134,9 @@ const AltitudeMap = ({
       const higher = standings[i];     // Higher ranked player
       const lower = standings[i + 1];  // Lower ranked player
       const gap = higher.totalGain - lower.totalGain;
+
+      // Only show callout if there's meaningful vertical separation (> 0.5%)
+      if (Math.abs(gap) < 0.5) continue;
 
       // Show gap between user and player ahead (if user isn't 1st)
       // Or between 1st and 2nd for drama
@@ -117,23 +162,23 @@ const AltitudeMap = ({
   const snakePath = useMemo(() => {
     if (standings.length < 2) return '';
 
-    // Calculate actual pixel positions for SVG
-    const svgWidth = 100; // Percentage-based width reference
-    const points = standings.map((player, idx) => {
-      const rank = idx + 1;
-      const xPercent = rank % 2 === 1 ? (isMobile ? 30 : 25) : (isMobile ? 70 : 68);
+    // Calculate actual positions for SVG using new getXPosition
+    const points = standings.map((player) => {
       return {
-        x: xPercent,
+        x: getXPosition(player),
         y: getYPosition(player.totalGain),
       };
     });
 
-    // Create smooth curved path using quadratic bezier curves
-    let path = `M ${points[0].x} ${points[0].y}`;
+    // Sort by Y position (top to bottom) for smoother path drawing
+    const sortedPoints = [...points].sort((a, b) => a.y - b.y);
 
-    for (let i = 1; i < points.length; i++) {
-      const prev = points[i - 1];
-      const curr = points[i];
+    // Create smooth curved path using quadratic bezier curves
+    let path = `M ${sortedPoints[0].x} ${sortedPoints[0].y}`;
+
+    for (let i = 1; i < sortedPoints.length; i++) {
+      const prev = sortedPoints[i - 1];
+      const curr = sortedPoints[i];
 
       // Calculate control point for smooth curve
       const midY = (prev.y + curr.y) / 2;
@@ -145,7 +190,7 @@ const AltitudeMap = ({
     }
 
     return path;
-  }, [standings, containerHeight, isMobile]);
+  }, [standings, containerHeight, isMobile, playerGroups]);
 
   // Don't render if no standings
   if (!standings.length) {
@@ -316,9 +361,8 @@ const AltitudeMap = ({
         )}
 
         {/* Connection dots at each pod */}
-        {standings.map((player, idx) => {
-          const rank = idx + 1;
-          const xPercent = rank % 2 === 1 ? (isMobile ? 30 : 25) : (isMobile ? 70 : 68);
+        {standings.map((player) => {
+          const xPercent = getXPosition(player);
           const yPos = getYPosition(player.totalGain);
           const isUser = player.odUserId === currentUserId;
 
@@ -336,10 +380,9 @@ const AltitudeMap = ({
       </svg>
 
       {/* User's Tether Line (connecting user pod to center axis) */}
-      {standings.map((player, idx) => {
+      {standings.map((player) => {
         if (player.odUserId !== currentUserId) return null;
-        const rank = idx + 1;
-        const xPercent = rank % 2 === 1 ? (isMobile ? 30 : 25) : (isMobile ? 70 : 68);
+        const xPercent = getXPosition(player);
         const yPos = getYPosition(player.totalGain);
 
         return (
@@ -368,6 +411,7 @@ const AltitudeMap = ({
         const isUser = player.odUserId === currentUserId;
         const rank = idx + 1;
         const isBeingScouted = scoutedPlayerId === player.odUserId;
+        const xPos = getXPosition(player);
 
         return (
           <TacticalPod
@@ -378,7 +422,7 @@ const AltitudeMap = ({
             onScout={onScoutPlayer}
             isBeingScouted={isBeingScouted}
             style={{
-              left: getXPosition(rank),
+              left: `${xPos}%`,
               top: `${getYPosition(player.totalGain)}px`,
               transform: 'translate(-50%, -50%)',
             }}

@@ -26,3 +26,6 @@ export { default as ScoutTransitionOverlay } from './ScoutTransitionOverlay';
 export { default as BattleLoadingSkeleton } from './BattleLoadingSkeleton';
 export { default as RefreshIndicator } from './RefreshIndicator';
 export { default as BattleErrorState } from './BattleErrorState';
+
+// Layout refinement components (Phase 5.5)
+export { default as TopPerformersModal } from './TopPerformersModal';
