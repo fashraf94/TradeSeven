@@ -1,6 +1,39 @@
-// EODHD API Service for MarketClash
-// Uses Vercel serverless proxy to avoid CORS issues
-// Endpoints: /api/crypto/prices, /api/stocks/prices
+/**
+ * EODHD API Service for MarketClash
+ *
+ * This service handles all communication with the EODHD market data API
+ * through Vercel serverless proxy functions to avoid CORS issues.
+ *
+ * ENDPOINTS:
+ * - /api/stocks/prices - Stock price quotes
+ * - /api/crypto/prices - Crypto price quotes
+ * - /api/news/market - General market news
+ * - /api/news/stock - Stock-specific news
+ * - /api/stocks/earnings - Earnings data
+ *
+ * CACHING STRATEGY (via cacheService.js):
+ * - Stock/Crypto prices: 5-minute cache (LIGHT tier)
+ * - News: 1-hour cache (MODERATE tier)
+ * - Earnings: 24-hour cache (AGGRESSIVE tier)
+ * - Technical indicators: See technicalIndicators.js (24-hour cache)
+ * - Historical data: See historicalData.js (24-hour cache)
+ *
+ * All fetch functions:
+ * 1. Check cache first (cacheService.get)
+ * 2. Return cached data if valid
+ * 3. Fetch from API if cache miss
+ * 4. Store result in cache (cacheService.set)
+ * 5. Track call for monitoring (apiMonitor.track)
+ *
+ * DEBUGGING:
+ * - window.mcCache.report() - View cache statistics
+ * - window.apiMonitor.report() - View API usage
+ * - window.mcDebug.audit() - Full system audit
+ *
+ * @see /src/services/cacheService.js - Cache implementation
+ * @see /src/services/apiMonitor.js - Usage tracking
+ * @see /src/utils/debug.js - Debug utilities
+ */
 
 import {
   STOCKS,
