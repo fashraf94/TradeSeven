@@ -254,6 +254,7 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
     error,
     isSwapping,
     swapSuccess,
+    setSwapSuccess,  // Exposed for SwapSuccessToast dismiss
     swapError,
 
     // Selection state

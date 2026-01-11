@@ -1,4 +1,4 @@
-// Free Agency Components - Phase F3 Complete (Mobile + Desktop)
+// Free Agency Components - Phase F4 Complete (Polish & Production)
 // MarketClash UI Redesign - Holographic War Room Theme
 
 // Shared logic hook
@@ -24,6 +24,12 @@ export { default as SwapPreview } from './shared/SwapPreview';
 export { default as SwapPanelDesktop } from './shared/SwapPanelDesktop';
 export { default as SwapConfirmModal } from './shared/SwapConfirmModal';
 export { default as SwapHistory } from './shared/SwapHistory';
+
+// Polish & UX components
+export { default as FreeAgencyLoadingSkeleton } from './shared/FreeAgencyLoadingSkeleton';
+export { default as FreeAgencyErrorState } from './shared/FreeAgencyErrorState';
+export { default as SwapSuccessToast } from './shared/SwapSuccessToast';
+export { default as WindowClosedOverlay } from './shared/WindowClosedOverlay';
 
 // Layout components
 export { default as FreeAgencyMobile } from './FreeAgencyMobile';

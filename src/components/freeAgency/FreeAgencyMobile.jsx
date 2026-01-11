@@ -7,6 +7,9 @@ import FreeAgentGrid from './shared/FreeAgentGrid';
 import SwapPreview from './shared/SwapPreview';
 import SwapHistory from './shared/SwapHistory';
 import SwapConfirmModal from './shared/SwapConfirmModal';
+import FreeAgencyLoadingSkeleton from './shared/FreeAgencyLoadingSkeleton';
+import FreeAgencyErrorState from './shared/FreeAgencyErrorState';
+import SwapSuccessToast from './shared/SwapSuccessToast';
 
 /**
  * FreeAgencyMobile - Mobile-optimized layout for Free Agency
@@ -19,6 +22,8 @@ import SwapConfirmModal from './shared/SwapConfirmModal';
  * - Swap preview bar (fixed bottom)
  * - Confirmation modal
  * - Swap history feed
+ * - Loading skeleton and error states
+ * - Success toast notification
  */
 const FreeAgencyMobile = ({
   containerStyle,
@@ -35,6 +40,7 @@ const FreeAgencyMobile = ({
   error,
   isSwapping,
   swapSuccess,
+  setSwapSuccess,
   swapError,
   selectedDrop,
   selectedAdd,
@@ -48,7 +54,56 @@ const FreeAgencyMobile = ({
   handleCancelSelection,
   handleConfirmSwap,
   handleBack,
+  loadData,
 }) => {
+
+  // Show loading skeleton
+  if (loading) {
+    return (
+      <div style={{
+        ...containerStyle,
+        minHeight: '100vh',
+        background: HOLO_BACKGROUND,
+      }}>
+        {/* Header placeholder */}
+        <div style={{
+          background: 'rgba(10, 14, 20, 0.95)',
+          padding: '12px 16px',
+          paddingTop: 'max(12px, env(safe-area-inset-top))',
+          borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}`,
+          display: 'flex',
+          justifyContent: 'center',
+        }}>
+          <div style={{
+            fontSize: '16px',
+            fontWeight: 700,
+            color: HOLO_COLORS.purple,
+            textShadow: `0 0 10px ${HOLO_COLORS.purple}66`,
+          }}>
+            Free Agency
+          </div>
+        </div>
+        <FreeAgencyLoadingSkeleton isMobile={true} />
+      </div>
+    );
+  }
+
+  // Show error state (but not for swap errors - those show inline)
+  if (error && !swapError) {
+    return (
+      <div style={{
+        ...containerStyle,
+        minHeight: '100vh',
+        background: HOLO_BACKGROUND,
+      }}>
+        <FreeAgencyErrorState
+          message={error}
+          onRetry={loadData}
+          onBack={handleBack}
+        />
+      </div>
+    );
+  }
 
   return (
     <div style={{
@@ -58,6 +113,12 @@ const FreeAgencyMobile = ({
       color: HOLO_COLORS.textPrimary,
     }}>
       <style>{HOLO_ANIMATIONS}</style>
+
+      {/* Success Toast */}
+      <SwapSuccessToast
+        swapSuccess={swapSuccess}
+        onDismiss={() => setSwapSuccess && setSwapSuccess(null)}
+      />
 
       {/* Header */}
       <header style={{
@@ -124,25 +185,8 @@ const FreeAgencyMobile = ({
           />
         </div>
 
-        {/* Success Message */}
-        {swapSuccess && (
-          <div style={{
-            padding: '12px',
-            background: 'rgba(0, 255, 136, 0.15)',
-            border: `1px solid ${HOLO_COLORS.green}`,
-            borderRadius: '8px',
-            marginBottom: '16px',
-            textAlign: 'center',
-            animation: 'mobileSuccessFade 0.3s ease-out',
-          }}>
-            <span style={{ color: HOLO_COLORS.green, fontWeight: 600 }}>
-              Swapped {swapSuccess.dropped.symbol} → {swapSuccess.added.symbol}
-            </span>
-          </div>
-        )}
-
-        {/* Error Message */}
-        {(error || swapError) && (
+        {/* Swap Error Message */}
+        {swapError && (
           <div style={{
             padding: '12px',
             background: 'rgba(255, 51, 102, 0.15)',
@@ -150,8 +194,9 @@ const FreeAgencyMobile = ({
             borderRadius: '8px',
             marginBottom: '16px',
             textAlign: 'center',
+            fontSize: '13px',
           }}>
-            <span style={{ color: HOLO_COLORS.red }}>{error || swapError}</span>
+            <span style={{ color: HOLO_COLORS.red }}>⚠️ {swapError}</span>
           </div>
         )}
 
@@ -200,13 +245,6 @@ const FreeAgencyMobile = ({
         swapsRemaining={swapsRemaining}
         isSwapping={isSwapping}
       />
-
-      <style>{`
-        @keyframes mobileSuccessFade {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </div>
   );
 };

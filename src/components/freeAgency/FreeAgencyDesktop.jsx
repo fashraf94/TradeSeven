@@ -7,6 +7,9 @@ import FreeAgentGridDesktop from './shared/FreeAgentGridDesktop';
 import SwapPanelDesktop from './shared/SwapPanelDesktop';
 import SwapHistory from './shared/SwapHistory';
 import SwapConfirmModal from './shared/SwapConfirmModal';
+import FreeAgencyLoadingSkeleton from './shared/FreeAgencyLoadingSkeleton';
+import FreeAgencyErrorState from './shared/FreeAgencyErrorState';
+import SwapSuccessToast from './shared/SwapSuccessToast';
 
 /**
  * FreeAgencyDesktop - Desktop-optimized layout for Free Agency
@@ -17,6 +20,8 @@ import SwapConfirmModal from './shared/SwapConfirmModal';
  * - 2-column free agent marketplace
  * - Side panel for swap preview (not fixed bottom bar)
  * - Swap history visible alongside roster
+ * - Loading skeleton and error states
+ * - Success toast notification
  */
 const FreeAgencyDesktop = ({
   containerStyle,
@@ -29,9 +34,12 @@ const FreeAgencyDesktop = ({
   timeInfo,
   portfolioType,
   currentUserId,
+  loading,
   error,
   isSwapping,
   swapSuccess,
+  setSwapSuccess,
+  swapError,
   selectedDrop,
   selectedAdd,
   selectedCategory,
@@ -44,7 +52,61 @@ const FreeAgencyDesktop = ({
   handleCancelSelection,
   handleConfirmSwap,
   handleBack,
+  loadData,
 }) => {
+
+  // Show loading skeleton
+  if (loading) {
+    return (
+      <div style={{
+        ...containerStyle,
+        minHeight: '100vh',
+        background: HOLO_BACKGROUND,
+      }}>
+        {/* Header placeholder */}
+        <div style={{
+          background: 'rgba(10, 14, 20, 0.95)',
+          padding: '16px 24px',
+          borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}`,
+        }}>
+          <div style={{
+            maxWidth: '1400px',
+            margin: '0 auto',
+            display: 'flex',
+            justifyContent: 'center',
+          }}>
+            <h1 style={{
+              margin: 0,
+              fontSize: '20px',
+              fontWeight: 700,
+              color: HOLO_COLORS.purple,
+              textShadow: `0 0 15px ${HOLO_COLORS.purple}66`,
+            }}>
+              Free Agency Marketplace
+            </h1>
+          </div>
+        </div>
+        <FreeAgencyLoadingSkeleton isMobile={false} />
+      </div>
+    );
+  }
+
+  // Show error state (but not for swap errors - those show inline)
+  if (error && !swapError) {
+    return (
+      <div style={{
+        ...containerStyle,
+        minHeight: '100vh',
+        background: HOLO_BACKGROUND,
+      }}>
+        <FreeAgencyErrorState
+          message={error}
+          onRetry={loadData}
+          onBack={handleBack}
+        />
+      </div>
+    );
+  }
 
   return (
     <div style={{
@@ -55,6 +117,12 @@ const FreeAgencyDesktop = ({
       display: 'flex',
       flexDirection: 'column',
     }}>
+      {/* Success Toast */}
+      <SwapSuccessToast
+        swapSuccess={swapSuccess}
+        onDismiss={() => setSwapSuccess && setSwapSuccess(null)}
+      />
+
       {/* Header */}
       <header style={{
         background: 'rgba(10, 14, 20, 0.95)',
@@ -123,24 +191,21 @@ const FreeAgencyDesktop = ({
         </div>
       </div>
 
-      {/* Success/Error Messages */}
-      {(swapSuccess || error) && (
+      {/* Swap Error Banner */}
+      {swapError && (
         <div style={{
           padding: '12px 24px',
-          background: swapSuccess ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 51, 102, 0.1)',
-          borderBottom: `1px solid ${swapSuccess ? HOLO_COLORS.green : HOLO_COLORS.red}44`,
+          background: 'rgba(255, 51, 102, 0.1)',
+          borderBottom: `1px solid ${HOLO_COLORS.red}44`,
         }}>
           <div style={{
             maxWidth: '1400px',
             margin: '0 auto',
             textAlign: 'center',
-            color: swapSuccess ? HOLO_COLORS.green : HOLO_COLORS.red,
-            fontWeight: 600,
+            color: HOLO_COLORS.red,
+            fontSize: '14px',
           }}>
-            {swapSuccess
-              ? `✓ Successfully swapped ${swapSuccess.dropped.symbol} → ${swapSuccess.added.symbol}`
-              : error
-            }
+            ⚠️ {swapError}
           </div>
         </div>
       )}
@@ -251,7 +316,7 @@ const FreeAgencyDesktop = ({
         </div>
       </main>
 
-      {/* Confirmation Modal (same as mobile) */}
+      {/* Confirmation Modal */}
       <SwapConfirmModal
         isOpen={showConfirmModal}
         onClose={() => setShowConfirmModal(false)}
