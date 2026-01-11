@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { designColors, fontMono, MIN_PREDICTIONS, MAX_PREDICTIONS, glowEffects } from '../designConstants';
 import { screenContainer, sectionHeader, fixedBottomContainer, buttonPrimary, buttonDisabled, flexBetween } from '../styleUtils';
 import { buttonTap, cardTap } from '../animationPresets';
-import { EarningsHeader } from '../shared';
+import { EarningsHeader, EmptyState } from '../shared';
 import PowerMeter from './PowerMeter';
 import RiskProfile from './RiskProfile';
 import PredictionCard from './PredictionCard';
@@ -21,6 +21,22 @@ export default function PortfolioWarRoom({
   isDesktop = false,
 }) {
   const canLock = isValid && predictions.length >= MIN_PREDICTIONS;
+
+  // Empty state for no predictions
+  if (predictions.length === 0 && !isLocked) {
+    return (
+      <div style={{ backgroundColor: designColors.bgPrimary, minHeight: '100vh' }}>
+        <EarningsHeader title="PORTFOLIO" onBack={onBack} />
+        <EmptyState
+          icon="📋"
+          title="No predictions yet"
+          message="Add at least 3 predictions to build your portfolio"
+          actionLabel="Browse Earnings"
+          onAction={onBack}
+        />
+      </div>
+    );
+  }
 
   // Desktop layout - Enhanced 2-column grid
   if (isDesktop) {
