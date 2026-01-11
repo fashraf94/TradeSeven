@@ -1,6 +1,8 @@
 // api/week-ahead-earnings.js
 // Fetches earnings only for stocks tracked in MarketClash
 
+import { applySecurityMiddleware } from './_utils/security.js';
+
 const TRACKED_STOCKS = [
   'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA',
   'JPM', 'V', 'JNJ', 'XOM', 'PG', 'MA', 'HD', 'BAC'
@@ -45,9 +47,10 @@ const EARNINGS_TIPS = {
 };
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  if (req.method === 'OPTIONS') return res.status(200).end();
+  // Apply security middleware (CORS, security headers, rate limiting, preflight)
+  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 30, windowMs: 60000 } })) {
+    return;
+  }
 
   const API_KEY = process.env.EODHD_API_KEY;
   const { from, to } = req.query;

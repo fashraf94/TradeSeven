@@ -6,14 +6,12 @@
 // Technical:      /api/stocks/prices?symbols=MU&type=technical&function=rsi&period=14
 // Legacy SMA:     /api/stocks/prices?symbols=XLK&type=sma&period=50
 
-export default async function handler(req, res) {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+import { applySecurityMiddleware } from '../_utils/security.js';
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+export default async function handler(req, res) {
+  // Apply security middleware (CORS, security headers, rate limiting, preflight)
+  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 60, windowMs: 60000 } })) {
+    return;
   }
 
   const { symbols, type, days, period } = req.query;

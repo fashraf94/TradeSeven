@@ -2,10 +2,14 @@
 // Uses static economic calendar data from official government sources
 // No external API for macro events - only EODHD for earnings (separate endpoint)
 
+import { applySecurityMiddleware } from './_utils/security.js';
+
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  if (req.method === 'OPTIONS') return res.status(200).end();
+  // Apply security middleware (CORS, security headers, rate limiting, preflight)
+  // Higher rate limit for static data endpoint
+  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 60, windowMs: 60000 } })) {
+    return;
+  }
 
   const { from, to } = req.query;
 

@@ -1,14 +1,12 @@
 // Vercel Serverless Function - Stock Earnings Data
 // Endpoint: /api/stocks/earnings?symbol=AAPL
 
-export default async function handler(req, res) {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+import { applySecurityMiddleware } from '../_utils/security.js';
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+export default async function handler(req, res) {
+  // Apply security middleware (CORS, security headers, rate limiting, preflight)
+  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 30, windowMs: 60000 } })) {
+    return;
   }
 
   const { symbol } = req.query;
