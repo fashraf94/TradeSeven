@@ -25910,10 +25910,10 @@ export default function PortfolioDuel() {
 
   // DRAFT RESULTS OLD CODE REMOVED - See src/screens/DraftResultsScreen.jsx
 
-  // DRAFT BATTLE VIEW SCREEN - Extracted to DraftBattleScreen component
+  // DRAFT BATTLE VIEW SCREEN - Now using V2 (Altitude Map Redesign) as production
   if (screen === 'draftBattle') {
     return (
-      <DraftBattleScreen
+      <DraftBattleScreenV2
         containerStyle={containerStyle}
         user={user}
         currentDraft={currentDraft}
@@ -25924,11 +25924,11 @@ export default function PortfolioDuel() {
     );
   }
 
-  // DRAFT BATTLE V2 - Altitude Map Redesign (TEST ROUTE)
-  // To test: set screen to 'draftBattleV2' from console or temporarily change above condition
-  if (screen === 'draftBattleV2') {
+  // DRAFT BATTLE V1 (Legacy) - Keep as fallback route
+  // Use 'draftBattleLegacy' to access the old design if needed
+  if (screen === 'draftBattleLegacy') {
     return (
-      <DraftBattleScreenV2
+      <DraftBattleScreen
         containerStyle={containerStyle}
         user={user}
         currentDraft={currentDraft}

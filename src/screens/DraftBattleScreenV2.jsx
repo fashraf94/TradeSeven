@@ -1,10 +1,17 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { HOLO_COLORS, GLOW_EFFECTS, RANK_CONFIG, CATEGORY_CONFIG, HOLO_BACKGROUND, HOLO_ANIMATIONS } from '../constants/holoTheme';
-import { AltitudeMap, CommandConsole, ScoutTransitionOverlay } from '../components/draft';
+import {
+  AltitudeMap,
+  CommandConsole,
+  ScoutTransitionOverlay,
+  BattleLoadingSkeleton,
+  RefreshIndicator,
+  BattleErrorState,
+} from '../components/draft';
 
 /**
  * DraftBattleScreenV2 - Altitude Map Redesign
- * Phase 4: Scout View with Enhanced Transitions
+ * Phase 5: Polish & Production
  *
  * This is a redesigned version of DraftBattleScreen with a new "Altitude Map" visual concept.
  * Core business logic is preserved exactly from the original.
@@ -34,6 +41,11 @@ const DraftBattleScreenV2 = ({
   const [scoutedPlayer, setScoutedPlayer] = useState(null);
   const [scoutTransition, setScoutTransition] = useState(false);
   const [scoutTransitionEntering, setScoutTransitionEntering] = useState(true);
+
+  // Phase 5: Polish state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   // Refs for cleanup
   const refreshIntervalRef = useRef(null);
@@ -222,19 +234,23 @@ const DraftBattleScreenV2 = ({
   }, [currentDraft?.id]);
 
   // ============================================
-  // CALCULATE STANDINGS - Copied exactly from original (lines 193-336)
+  // CALCULATE STANDINGS - Enhanced with refresh/error handling (Phase 5)
   // ============================================
-  useEffect(() => {
-    const calculateStandings = async () => {
-      if (!currentDraft?.players) {
-        setLoading(false);
-        return;
-      }
+  const calculateStandings = useCallback(async () => {
+    if (!currentDraft?.players) {
+      setLoading(false);
+      return;
+    }
 
+    // Don't show full loading on refresh, just the indicator
+    if (standings.length > 0) {
+      setIsRefreshing(true);
+    } else {
       setLoading(true);
+    }
 
-      try {
-        const stockAPIModule = await import('../services/eodhdAPI');
+    try {
+      const stockAPIModule = await import('../services/eodhdAPI');
 
         // STEP 1: Collect ALL unique symbols from ALL players (ONE batch call)
         const allSymbols = new Set();
@@ -357,13 +373,20 @@ const DraftBattleScreenV2 = ({
           });
         }
 
-      } catch (error) {
-        console.error('[DraftBattleV2] Error calculating standings:', error);
-      }
+      setLastUpdated(new Date());
+      setError(null);
 
+    } catch (err) {
+      logger.error('[DraftBattleV2] Error calculating standings:', err);
+      setError(err.message || 'Failed to load standings');
+    } finally {
       setLoading(false);
-    };
+      setIsRefreshing(false);
+    }
+  }, [currentDraft, currentUserId, battleType, standings.length, logger]);
 
+  // Effect to run calculateStandings on mount and set up interval
+  useEffect(() => {
     calculateStandings();
 
     // Refresh every 60 seconds
@@ -373,7 +396,7 @@ const DraftBattleScreenV2 = ({
         clearInterval(refreshIntervalRef.current);
       }
     };
-  }, [currentDraft, currentUserId, battleType]);
+  }, [calculateStandings]);
 
   // ============================================
   // TIMER UPDATE - Copied exactly from original (lines 338-368)
@@ -481,6 +504,13 @@ const DraftBattleScreenV2 = ({
   const handleFreeAgency = () => setScreen('freeAgency');
   const handleViewAll = () => setScreen('draftResults');
 
+  // Retry handler for error state
+  const handleRetry = () => {
+    setError(null);
+    setLoading(true);
+    calculateStandings();
+  };
+
   // ============================================
   // SAFETY CHECK - No draft
   // ============================================
@@ -576,26 +606,55 @@ const DraftBattleScreenV2 = ({
       <div style={{
         background: `linear-gradient(135deg, rgba(0, 255, 255, 0.1) 0%, rgba(0, 255, 136, 0.1) 100%)`,
         borderBottom: `1px solid ${HOLO_COLORS.borderGlow}`,
-        padding: '12px 16px',
+        padding: '10px 16px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         fontSize: '12px',
+        flexWrap: 'wrap',
+        gap: '8px',
       }}>
-        <span style={{ color: HOLO_COLORS.textSecondary }}>
-          {currentDraft?.code || 'DRAFT'}
-        </span>
-        <span style={{
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{
+            color: HOLO_COLORS.textPrimary,
+            fontWeight: 600,
+            background: HOLO_COLORS.bgCard,
+            padding: '4px 8px',
+            borderRadius: '4px',
+          }}>
+            {currentDraft?.code || 'DRAFT'}
+          </span>
+          <span style={{ color: HOLO_COLORS.textMuted }}>-</span>
+          <span style={{ color: HOLO_COLORS.textSecondary }}>
+            {battleType === 'crypto' ? 'Crypto' : 'Stocks'}
+          </span>
+        </div>
+
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
           color: HOLO_COLORS.cyan,
           fontFamily: 'monospace',
           fontWeight: 600,
         }}>
-          Ends in {timeRemaining || '...'}
-        </span>
-        <span style={{ color: HOLO_COLORS.textSecondary }}>
-          {battleType === 'crypto' ? 'Crypto' : 'Stocks'}
-        </span>
+          <span>Ends in {timeRemaining || '...'}</span>
+        </div>
+
+        {lastUpdated && (
+          <div style={{
+            width: '100%',
+            fontSize: '10px',
+            color: HOLO_COLORS.textMuted,
+            textAlign: 'center',
+          }}>
+            Updated {lastUpdated.toLocaleTimeString()}
+          </div>
+        )}
       </div>
+
+      {/* Refresh Indicator */}
+      <RefreshIndicator visible={isRefreshing} lastUpdated={lastUpdated} />
 
       {/* PRICE REPAIR WARNING */}
       {needsPriceRepair && (
@@ -659,27 +718,14 @@ const DraftBattleScreenV2 = ({
         minHeight: 'calc(100vh - 180px)',
       }}>
         {loading ? (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '50vh',
-            gap: '16px',
-          }}>
-            <div style={{
-              width: '48px',
-              height: '48px',
-              border: `3px solid ${HOLO_COLORS.borderSubtle}`,
-              borderTop: `3px solid ${HOLO_COLORS.cyan}`,
-              borderRadius: '50%',
-              animation: 'holoSpin 1s linear infinite',
-            }} />
-            <span style={{ color: HOLO_COLORS.textSecondary }}>
-              Calculating battle standings...
-            </span>
-          </div>
-        ) : (
+          <BattleLoadingSkeleton />
+        ) : error ? (
+          <BattleErrorState
+            message={error}
+            onRetry={handleRetry}
+            onBack={handleBack}
+          />
+        ) : standings.length > 0 ? (
           <div>
             {/* ALTITUDE MAP - Phase 2 Implementation */}
             <AltitudeMap
@@ -715,18 +761,25 @@ const DraftBattleScreenV2 = ({
               </span>
             </div>
           </div>
+        ) : (
+          <BattleErrorState
+            message="No battle data available"
+            onBack={handleBack}
+          />
         )}
       </main>
 
-      {/* COMMAND CONSOLE - Phase 3 Implementation */}
-      <CommandConsole
-        userStanding={userStanding}
-        scoutedPlayer={scoutedPlayer}
-        isScoutMode={isScoutMode}
-        onExitScout={handleExitScout}
-        onFreeAgency={handleFreeAgency}
-        onViewAll={handleViewAll}
-      />
+      {/* COMMAND CONSOLE - Only show when we have data */}
+      {!loading && !error && standings.length > 0 && (
+        <CommandConsole
+          userStanding={userStanding}
+          scoutedPlayer={scoutedPlayer}
+          isScoutMode={isScoutMode}
+          onExitScout={handleExitScout}
+          onFreeAgency={handleFreeAgency}
+          onViewAll={handleViewAll}
+        />
+      )}
 
       {/* Scout Transition Overlay - Phase 4 Enhanced */}
       <ScoutTransitionOverlay
