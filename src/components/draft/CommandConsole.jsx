@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
 import AssetTile from './AssetTile';
 
@@ -8,6 +8,8 @@ import AssetTile from './AssetTile';
  * Displays user's 3x3 portfolio grid, best/worst assets,
  * and action buttons. In scout mode, shows opponent's portfolio
  * with comparison analysis.
+ *
+ * Phase 4: Enhanced scout mode with flip animation and dramatic styling
  */
 const CommandConsole = ({
   userStanding,       // Current user's standing object with portfolio
@@ -17,6 +19,22 @@ const CommandConsole = ({
   onFreeAgency,
   onViewAll,
 }) => {
+  // State for grid flip animation
+  const [isFlipping, setIsFlipping] = useState(false);
+  const [prevScoutMode, setPrevScoutMode] = useState(isScoutMode);
+
+  // Trigger flip animation when scout mode changes
+  useEffect(() => {
+    if (isScoutMode !== prevScoutMode) {
+      setIsFlipping(true);
+      const timer = setTimeout(() => {
+        setIsFlipping(false);
+        setPrevScoutMode(isScoutMode);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [isScoutMode, prevScoutMode]);
+
   // Determine which portfolio to display
   const displayPlayer = isScoutMode ? scoutedPlayer : userStanding;
   const portfolio = displayPlayer?.portfolio || [];
@@ -78,12 +96,17 @@ const CommandConsole = ({
       transition: 'all 0.3s ease',
       zIndex: 50,
     }}>
-      {/* Console Header */}
+      {/* Console Header - Enhanced for scout mode */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: '10px',
+        padding: isScoutMode ? '8px 12px' : '0',
+        background: isScoutMode ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
+        borderRadius: '6px',
+        border: isScoutMode ? `1px solid ${HOLO_COLORS.amber}44` : 'none',
+        transition: 'all 0.3s ease',
       }}>
         <div style={{
           fontSize: '11px',
@@ -93,30 +116,62 @@ const CommandConsole = ({
           letterSpacing: '1px',
           display: 'flex',
           alignItems: 'center',
-          gap: '6px',
+          gap: '8px',
         }}>
           {isScoutMode ? (
             <>
               <span style={{
-                display: 'inline-block',
-                animation: 'pulse 1.5s ease-in-out infinite',
-              }}>!</span>
-              SCOUTING: {scoutedPlayer?.displayName}
+                fontSize: '16px',
+                animation: 'pulse 1s ease-in-out infinite',
+              }}>📡</span>
+              <span>
+                SIGNAL INTERCEPTED
+                <span style={{
+                  display: 'block',
+                  fontSize: '13px',
+                  color: HOLO_COLORS.textPrimary,
+                  letterSpacing: '0',
+                  textTransform: 'none',
+                  marginTop: '2px',
+                }}>
+                  {scoutedPlayer?.displayName}'s Portfolio
+                </span>
+              </span>
             </>
           ) : (
             <>
-              <span style={{
-                width: '6px',
-                height: '6px',
-                background: HOLO_COLORS.cyan,
-                borderRadius: '50%',
-              }} />
+              <span>👤</span>
               YOUR SQUAD
             </>
           )}
         </div>
 
-        {/* Compact Best/Worst on header */}
+        {/* Show opponent's rank when scouting */}
+        {isScoutMode && scoutedPlayer && (
+          <div style={{
+            background: HOLO_COLORS.bgCard,
+            padding: '4px 10px',
+            borderRadius: '4px',
+            border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+          }}>
+            <span style={{
+              fontSize: '10px',
+              color: HOLO_COLORS.textMuted,
+            }}>
+              RANK
+            </span>
+            <span style={{
+              fontSize: '14px',
+              fontWeight: 700,
+              color: HOLO_COLORS.textPrimary,
+              marginLeft: '6px',
+            }}>
+              #{scoutedPlayer.currentRank}
+            </span>
+          </div>
+        )}
+
+        {/* Compact Best/Worst on header (only when not scouting) */}
         {!isScoutMode && bestAsset && (
           <div style={{
             display: 'flex',
@@ -133,30 +188,53 @@ const CommandConsole = ({
         )}
       </div>
 
-      {/* 3x3 Portfolio Grid */}
+      {/* 3x3 Portfolio Grid - With flip animation */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(3, 1fr)',
         gap: '8px',
         marginBottom: '10px',
+        perspective: '1000px',
       }}>
-        {portfolio.slice(0, 9).map((asset, idx) => (
-          <AssetTile
-            key={asset?.symbol || idx}
-            asset={asset}
-            isScoutMode={isScoutMode}
-            comparisonData={getComparisonData(asset)}
-            compact={true}
-          />
-        ))}
-        {/* Fill empty slots if less than 9 assets */}
-        {portfolio.length < 9 && [...Array(9 - Math.max(0, portfolio.length))].map((_, idx) => (
-          <AssetTile
-            key={`empty-${idx}`}
-            asset={null}
-            compact={true}
-          />
-        ))}
+        <div style={{
+          display: 'contents',
+          transform: isFlipping ? 'rotateY(90deg)' : 'rotateY(0deg)',
+          transition: 'transform 0.15s ease-in-out',
+        }}>
+          {portfolio.slice(0, 9).map((asset, idx) => (
+            <div
+              key={asset?.symbol || idx}
+              style={{
+                opacity: isFlipping ? 0.5 : 1,
+                transform: isFlipping ? 'scale(0.95)' : 'scale(1)',
+                transition: 'all 0.15s ease-in-out',
+              }}
+            >
+              <AssetTile
+                asset={asset}
+                isScoutMode={isScoutMode}
+                comparisonData={getComparisonData(asset)}
+                compact={true}
+              />
+            </div>
+          ))}
+          {/* Fill empty slots if less than 9 assets */}
+          {portfolio.length < 9 && [...Array(9 - Math.max(0, portfolio.length))].map((_, idx) => (
+            <div
+              key={`empty-${idx}`}
+              style={{
+                opacity: isFlipping ? 0.5 : 1,
+                transform: isFlipping ? 'scale(0.95)' : 'scale(1)',
+                transition: 'all 0.15s ease-in-out',
+              }}
+            >
+              <AssetTile
+                asset={null}
+                compact={true}
+              />
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Best/Worst Row */}

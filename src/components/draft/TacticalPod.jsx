@@ -12,6 +12,7 @@ const TacticalPod = ({
   rank,             // 1-4
   isUser,           // Boolean - is this the current user?
   onScout,          // Callback when tapped (for scouting opponents)
+  isBeingScouted = false,  // Boolean - is this pod currently being scouted?
   style = {},       // Position styles from parent
 }) => {
   // Mobile detection for responsive sizing
@@ -111,8 +112,12 @@ const TacticalPod = ({
       {/* Outer glow container */}
       <div style={{
         position: 'relative',
-        filter: colors.glow !== 'none' ? `drop-shadow(${colors.glow})` : 'none',
-        animation: isUser || rank === 1 ? 'holoPulse 3s ease-in-out infinite' : 'none',
+        filter: isBeingScouted
+          ? `drop-shadow(0 0 15px ${HOLO_COLORS.amber}) drop-shadow(0 0 30px ${HOLO_COLORS.amber}66)`
+          : colors.glow !== 'none' ? `drop-shadow(${colors.glow})` : 'none',
+        animation: isBeingScouted
+          ? 'scoutedPulse 1.5s ease-in-out infinite'
+          : isUser || rank === 1 ? 'holoPulse 3s ease-in-out infinite' : 'none',
       }}>
         {/* Hexagon Pod */}
         <div style={{
@@ -245,7 +250,39 @@ const TacticalPod = ({
           0%, 100% { filter: drop-shadow(${colors.glow !== 'none' ? colors.glow : '0 0 0 transparent'}); }
           50% { filter: drop-shadow(${colors.glow !== 'none' ? colors.glow.replace('15px', '20px').replace('30px', '40px') : '0 0 0 transparent'}); }
         }
+
+        @keyframes scoutedPulse {
+          0%, 100% {
+            filter: drop-shadow(0 0 15px ${HOLO_COLORS.amber}) drop-shadow(0 0 30px rgba(245, 158, 11, 0.4));
+          }
+          50% {
+            filter: drop-shadow(0 0 20px ${HOLO_COLORS.amber}) drop-shadow(0 0 40px rgba(245, 158, 11, 0.6));
+          }
+        }
       `}</style>
+
+      {/* Scouted indicator badge */}
+      {isBeingScouted && (
+        <div style={{
+          position: 'absolute',
+          top: '-12px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: HOLO_COLORS.amber,
+          color: '#000',
+          fontSize: '8px',
+          fontWeight: 800,
+          padding: '2px 8px',
+          borderRadius: '4px',
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px',
+          boxShadow: `0 0 10px ${HOLO_COLORS.amber}`,
+          animation: 'pulse 1s ease-in-out infinite',
+          zIndex: 20,
+        }}>
+          SCOUTING
+        </div>
+      )}
     </div>
   );
 };

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { HOLO_COLORS, GLOW_EFFECTS, RANK_CONFIG, CATEGORY_CONFIG, HOLO_BACKGROUND, HOLO_ANIMATIONS } from '../constants/holoTheme';
-import { AltitudeMap, CommandConsole } from '../components/draft';
+import { AltitudeMap, CommandConsole, ScoutTransitionOverlay } from '../components/draft';
 
 /**
  * DraftBattleScreenV2 - Altitude Map Redesign
- * Phase 3: Command Console & Integration
+ * Phase 4: Scout View with Enhanced Transitions
  *
  * This is a redesigned version of DraftBattleScreen with a new "Altitude Map" visual concept.
  * Core business logic is preserved exactly from the original.
@@ -33,6 +33,7 @@ const DraftBattleScreenV2 = ({
   const [isScoutMode, setIsScoutMode] = useState(false);
   const [scoutedPlayer, setScoutedPlayer] = useState(null);
   const [scoutTransition, setScoutTransition] = useState(false);
+  const [scoutTransitionEntering, setScoutTransitionEntering] = useState(true);
 
   // Refs for cleanup
   const refreshIntervalRef = useRef(null);
@@ -433,25 +434,44 @@ const DraftBattleScreenV2 = ({
   };
 
   // ============================================
-  // SCOUT VIEW HANDLERS (NEW for Phase 4)
+  // SCOUT VIEW HANDLERS (Phase 4 Enhanced)
   // ============================================
   const handleScoutPlayer = (player) => {
-    if (player.isMe) return; // Can't scout yourself
+    if (player.isMe || player.odUserId === currentUserId) return; // Can't scout yourself
+
+    // Haptic feedback on mobile
+    if (navigator.vibrate) {
+      navigator.vibrate([50, 30, 50]); // Short pattern
+    }
+
+    setScoutTransitionEntering(true);
     setScoutTransition(true);
+
     setTimeout(() => {
       setScoutedPlayer(player);
       setIsScoutMode(true);
       setScoutTransition(false);
     }, 500);
+
+    logger.log('[DraftBattleV2] Scouting player:', player.displayName);
   };
 
   const handleExitScout = () => {
+    // Haptic feedback on mobile
+    if (navigator.vibrate) {
+      navigator.vibrate(30);
+    }
+
+    setScoutTransitionEntering(false);
     setScoutTransition(true);
+
     setTimeout(() => {
       setScoutedPlayer(null);
       setIsScoutMode(false);
       setScoutTransition(false);
-    }, 300);
+    }, 400);
+
+    logger.log('[DraftBattleV2] Exiting scout mode');
   };
 
   // ============================================
@@ -666,6 +686,7 @@ const DraftBattleScreenV2 = ({
               standings={standings}
               currentUserId={currentUserId}
               onScoutPlayer={handleScoutPlayer}
+              scoutedPlayerId={scoutedPlayer?.odUserId}
               containerHeight={Math.max(450, standings.length * 140)}
             />
 
@@ -707,27 +728,11 @@ const DraftBattleScreenV2 = ({
         onViewAll={handleViewAll}
       />
 
-      {/* Scout Transition Overlay */}
-      {scoutTransition && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(245, 158, 11, 0.1)',
-          zIndex: 100,
-          pointerEvents: 'none',
-        }}>
-          <div style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: '4px',
-            background: HOLO_COLORS.amber,
-            boxShadow: GLOW_EFFECTS.amber,
-            animation: 'holoScanDown 0.5s ease-out',
-          }} />
-        </div>
-      )}
+      {/* Scout Transition Overlay - Phase 4 Enhanced */}
+      <ScoutTransitionOverlay
+        active={scoutTransition}
+        entering={scoutTransitionEntering}
+      />
 
       {/* Global Animations */}
       <style>{HOLO_ANIMATIONS}</style>

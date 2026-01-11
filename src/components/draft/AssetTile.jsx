@@ -67,25 +67,47 @@ const AssetTile = ({
       flexDirection: 'column',
       justifyContent: 'center',
     }}>
-      {/* Badge for scout mode */}
+      {/* Badge for scout mode - Enhanced with animations */}
       {badge && (
         <div style={{
           position: 'absolute',
-          top: '-6px',
-          right: '-6px',
+          top: '-8px',
+          right: '-8px',
           background: badge.bg,
           border: `1px solid ${badge.color}`,
           color: badge.color,
-          fontSize: '7px',
+          fontSize: '8px',
           fontWeight: 700,
-          padding: '2px 5px',
+          padding: '3px 6px',
           borderRadius: '4px',
           textTransform: 'uppercase',
           letterSpacing: '0.5px',
-          zIndex: 1,
+          boxShadow: comparisonData?.isThreat
+            ? `0 0 8px ${badge.color}, 0 0 16px ${badge.color}44`
+            : 'none',
+          animation: comparisonData?.isThreat
+            ? 'threatPulse 1.5s ease-in-out infinite'
+            : 'none',
+          zIndex: 10,
         }}>
           {badge.text}
         </div>
+      )}
+
+      {/* Threat pulse animation */}
+      {comparisonData?.isThreat && (
+        <style>{`
+          @keyframes threatPulse {
+            0%, 100% {
+              box-shadow: 0 0 8px ${HOLO_COLORS.purple}, 0 0 16px rgba(139, 92, 246, 0.4);
+              transform: scale(1);
+            }
+            50% {
+              box-shadow: 0 0 12px ${HOLO_COLORS.purple}, 0 0 24px rgba(139, 92, 246, 0.6);
+              transform: scale(1.05);
+            }
+          }
+        `}</style>
       )}
 
       {/* Symbol */}

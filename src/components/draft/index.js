@@ -18,3 +18,6 @@ export { default as AltitudeMap } from './AltitudeMap';
 // Command Console components for Draft Battle V2
 export { default as AssetTile } from './AssetTile';
 export { default as CommandConsole } from './CommandConsole';
+
+// Scout View components for Draft Battle V2 (Phase 4)
+export { default as ScoutTransitionOverlay } from './ScoutTransitionOverlay';

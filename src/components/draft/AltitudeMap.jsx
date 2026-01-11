@@ -16,6 +16,7 @@ const AltitudeMap = ({
   standings,          // Array of player standings sorted by rank
   currentUserId,      // Current user's odUserId
   onScoutPlayer,      // Callback when opponent pod is tapped
+  scoutedPlayerId = null, // ID of player currently being scouted (for highlighting)
   containerHeight = 500, // Height of the map area in pixels
 }) => {
   // Mobile detection for responsive layout
@@ -366,6 +367,7 @@ const AltitudeMap = ({
       {standings.map((player, idx) => {
         const isUser = player.odUserId === currentUserId;
         const rank = idx + 1;
+        const isBeingScouted = scoutedPlayerId === player.odUserId;
 
         return (
           <TacticalPod
@@ -374,6 +376,7 @@ const AltitudeMap = ({
             rank={rank}
             isUser={isUser}
             onScout={onScoutPlayer}
+            isBeingScouted={isBeingScouted}
             style={{
               left: getXPosition(rank),
               top: `${getYPosition(player.totalGain)}px`,
