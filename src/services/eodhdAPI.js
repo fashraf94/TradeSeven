@@ -729,7 +729,17 @@ function generateCommunityData(symbol, price, percentChange) {
 }
 
 /**
- * Symbol conversion helper (for backward compatibility)
+ * Symbol conversion helpers (legacy compatibility stubs)
+ *
+ * These functions originally converted between MarketClash symbols (BTC)
+ * and CoinGecko IDs (bitcoin). Since EODHD uses symbols directly,
+ * these are now identity functions that just return the uppercase symbol.
+ *
+ * Kept for backward compatibility with existing code in:
+ * - DraftBattleScreen.jsx
+ * - draftService.js
+ *
+ * @deprecated Use the symbol directly instead of calling these functions
  */
 export function symbolToCoinGeckoId(symbol) {
   return symbol.toUpperCase();
@@ -804,7 +814,10 @@ export const POPULAR_CRYPTO = CRYPTO.map(crypto => ({
 
 export { FALLBACK_CRYPTO_PRICES, FALLBACK_STOCK_PRICES };
 
-// Empty symbol mapping (EODHD uses symbols directly)
+/**
+ * Legacy symbol mappings (empty - EODHD uses symbols directly)
+ * @deprecated These are kept for backward compatibility only
+ */
 export const SYMBOL_TO_COINGECKO_ID = {};
 export const COINGECKO_ID_TO_SYMBOL = {};
 
