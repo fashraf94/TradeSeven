@@ -71,7 +71,7 @@ import {
   getAvailableSectors,
 } from './services/recommendationEngine';
 // Extracted Screens - Batch 1
-import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftRoomScreen, HomeScreen, EarningsGameScreen } from './screens';
+import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen } from './screens';
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 
@@ -25910,8 +25910,23 @@ export default function PortfolioDuel() {
 
   // DRAFT RESULTS OLD CODE REMOVED - See src/screens/DraftResultsScreen.jsx
 
-  // DRAFT BATTLE VIEW SCREEN - Extracted to DraftBattleScreen component
+  // DRAFT BATTLE VIEW SCREEN - Now using V2 (Altitude Map Redesign) as production
   if (screen === 'draftBattle') {
+    return (
+      <DraftBattleScreenV2
+        containerStyle={containerStyle}
+        user={user}
+        currentDraft={currentDraft}
+        setCurrentDraft={setCurrentDraft}
+        setScreen={setScreen}
+        logger={logger}
+      />
+    );
+  }
+
+  // DRAFT BATTLE V1 (Legacy) - Keep as fallback route
+  // Use 'draftBattleLegacy' to access the old design if needed
+  if (screen === 'draftBattleLegacy') {
     return (
       <DraftBattleScreen
         containerStyle={containerStyle}

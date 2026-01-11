@@ -20,6 +20,7 @@ export { default as BattleViewScreen } from './BattleViewScreen';
 
 // Screen exports - Batch 4
 export { default as DraftBattleScreen } from './DraftBattleScreen';
+export { default as DraftBattleScreenV2 } from './DraftBattleScreenV2';
 export { default as DraftRoomScreen } from './DraftRoomScreen';
 
 // Screen exports - Batch 5

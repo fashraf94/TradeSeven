@@ -9,3 +9,26 @@ export { default as PlayerPanel } from './PlayerPanel';
 export { default as MiniPlayerPanel } from './MiniPlayerPanel';
 export { default as SnakeConduit, SnakeConnector, SnakeConnectorVertical } from './SnakeConduit';
 export { default as AssetResearchModal } from './AssetResearchModal';
+
+// Altitude Map components for Draft Battle V2
+export { default as TacticalPod } from './TacticalPod';
+export { default as OvertakeCallout } from './OvertakeCallout';
+export { default as AltitudeMap } from './AltitudeMap';
+
+// Command Console components for Draft Battle V2
+export { default as AssetTile } from './AssetTile';
+export { default as CommandConsole } from './CommandConsole';
+
+// Scout View components for Draft Battle V2 (Phase 4)
+export { default as ScoutTransitionOverlay } from './ScoutTransitionOverlay';
+
+// Polish components for Draft Battle V2 (Phase 5)
+export { default as BattleLoadingSkeleton } from './BattleLoadingSkeleton';
+export { default as RefreshIndicator } from './RefreshIndicator';
+export { default as BattleErrorState } from './BattleErrorState';
+
+// Layout refinement components (Phase 5.5)
+export { default as TopPerformersModal } from './TopPerformersModal';
+
+// Styled icons (Phase 5.6)
+export * from './HoloIcons';
