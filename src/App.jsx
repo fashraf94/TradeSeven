@@ -1,4 +1,4 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { loadBattlesSafe, saveBattlesSafe, isSameBattles } from './services/LocalStorage';
 import { useUser } from './contexts/UserContext';
 import * as battleTimer from './services/battleTimer';
@@ -11309,6 +11309,7 @@ export default function PortfolioDuel() {
   const [completedWeeklyChallenges, setCompletedWeeklyChallenges] = useState([]);
   const [showSlotMachine, setShowSlotMachine] = useState(false);
   const [slotMachineRevealed, setSlotMachineRevealed] = useState(false);
+  const slotMachineTriggeredRef = useRef(false); // Session-level guard to prevent multiple triggers
   const [expandedChallengeId, setExpandedChallengeId] = useState(null);
   const [showChallengeToast, setShowChallengeToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -12002,10 +12003,12 @@ export default function PortfolioDuel() {
       }
 
       // Show slot machine with a delay to ensure app is fully rendered
-      if (shouldShowSlotMachine) {
+      // Use ref guard to prevent multiple triggers in same session
+      if (shouldShowSlotMachine && !slotMachineTriggeredRef.current) {
+        slotMachineTriggeredRef.current = true; // Mark as triggered
         setTimeout(() => {
           setShowSlotMachine(true);
-        }, 500);
+        }, 800); // Slightly longer delay for app to settle
       }
     } catch (error) {
       console.error('Error loading weekly challenges:', error);
@@ -15504,8 +15507,9 @@ export default function PortfolioDuel() {
   };
 
   // Slot Machine Reveal - New Week Animation
+  // Only render when showSlotMachine is true AND we have all 4 challenges loaded
   const SlotMachineOverlay = () => (
-    showSlotMachine && (
+    showSlotMachine && weeklyChallenges.length >= 4 && (
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
