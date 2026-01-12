@@ -7,6 +7,7 @@ import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
  * A flexible card container that supports multiple visual styles consistent
  * with the MarketClash holographic design system.
  *
+ * @param {string|Component} as - Element type to render ('div', 'button', etc.)
  * @param {string} variant - 'default' | 'elevated' | 'highlighted' | 'interactive'
  * @param {string} accentColor - 'cyan' | 'green' | 'amber' | 'red' | 'purple' | null
  * @param {string} size - 'sm' | 'md' | 'lg' (affects padding and border-radius)
@@ -19,6 +20,7 @@ import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
  * @param {ReactNode} children - Card content
  */
 const HoloCard = ({
+  as: Component = 'div',
   variant = 'default',
   accentColor = null,
   size = 'md',
@@ -140,16 +142,24 @@ const HoloCard = ({
     ...style,
   };
 
+  // Props for the component (button needs disabled prop)
+  const componentProps = {
+    className,
+    style: cardStyle,
+    onClick: handleClick,
+    onMouseEnter: handleMouseEnter,
+    onMouseLeave: handleMouseLeave,
+  };
+
+  // Add disabled prop for button elements
+  if (Component === 'button') {
+    componentProps.disabled = disabled;
+  }
+
   return (
-    <div
-      className={className}
-      style={cardStyle}
-      onClick={handleClick}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
+    <Component {...componentProps}>
       {children}
-    </div>
+    </Component>
   );
 };
 
