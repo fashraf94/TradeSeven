@@ -8,11 +8,13 @@ import { HOLO_COLORS, CATEGORY_CONFIG } from '../../../constants/holoTheme';
  * - Category color indicator
  * - Symbol and gain/loss percentage
  * - Selected state with red highlight and "DROP" badge
+ * - Info button for opening research modal
  */
 const RosterAssetCard = ({
   asset,
   isSelected,
   onSelect,
+  onMoreInfo,        // Callback for info button
   disabled = false,
   compact = false,
 }) => {
@@ -69,6 +71,45 @@ const RosterAssetCard = ({
         </div>
       )}
 
+      {/* Info Button - Top Right */}
+      {onMoreInfo && (
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            onMoreInfo(asset);
+          }}
+          style={{
+            position: 'absolute',
+            top: isSelected ? '14px' : '6px',
+            right: '6px',
+            width: '20px',
+            height: '20px',
+            borderRadius: '50%',
+            background: `${HOLO_COLORS.cyan}22`,
+            border: `1px solid ${HOLO_COLORS.cyan}55`,
+            color: HOLO_COLORS.cyan,
+            fontSize: '10px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.15s ease',
+            zIndex: 2,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = `${HOLO_COLORS.cyan}44`;
+            e.currentTarget.style.transform = 'scale(1.1)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = `${HOLO_COLORS.cyan}22`;
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+        >
+          i
+        </div>
+      )}
+
       {/* Category indicator line */}
       <div style={{
         position: 'absolute',
@@ -82,7 +123,7 @@ const RosterAssetCard = ({
       }} />
 
       {/* Content */}
-      <div style={{ marginLeft: '10px' }}>
+      <div style={{ marginLeft: '10px', marginRight: onMoreInfo ? '18px' : '0' }}>
         {/* Symbol */}
         <div style={{
           fontSize: compact ? '13px' : '14px',

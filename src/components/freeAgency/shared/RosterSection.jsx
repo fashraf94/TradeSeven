@@ -15,6 +15,7 @@ const RosterSection = ({
   roster,
   selectedDrop,
   onSelectDrop,
+  onMoreInfo,        // Callback for researching assets
   canSwap,
 }) => {
   // Flatten roster with gains for display
@@ -103,6 +104,7 @@ const RosterSection = ({
               asset={asset}
               isSelected={selectedDrop?.symbol === asset.symbol}
               onSelect={onSelectDrop}
+              onMoreInfo={onMoreInfo}
               disabled={!canSwap}
               compact
             />
@@ -118,7 +120,7 @@ const RosterSection = ({
           textAlign: 'center',
           marginTop: '8px',
         }}>
-          Tap an asset to select it for swap
+          Tap card to select for swap {onMoreInfo && <>• Tap <span style={{ color: HOLO_COLORS.cyan }}>ⓘ</span> for research</>}
         </div>
       )}
 

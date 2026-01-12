@@ -14,6 +14,7 @@ const RosterGrid = ({
   roster,           // { steady: [], risky: [], defensive: [] }
   selectedDrop,
   onSelectDrop,
+  onMoreInfo,       // Callback for researching assets
   canSwap,
 }) => {
   const categories = ['steady', 'risky', 'defensive'];
@@ -69,6 +70,7 @@ const RosterGrid = ({
                   asset={asset}
                   isSelected={selectedDrop?.symbol === asset.symbol}
                   onSelect={onSelectDrop}
+                  onMoreInfo={onMoreInfo}
                   disabled={!canSwap}
                   compact={false}
                 />

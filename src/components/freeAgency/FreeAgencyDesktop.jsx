@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { HOLO_COLORS, HOLO_BACKGROUND } from '../../constants/holoTheme';
 import WindowStatus from './shared/WindowStatus';
 import SwapsRemaining from './shared/SwapsRemaining';
@@ -10,6 +10,7 @@ import SwapConfirmModal from './shared/SwapConfirmModal';
 import FreeAgencyLoadingSkeleton from './shared/FreeAgencyLoadingSkeleton';
 import FreeAgencyErrorState from './shared/FreeAgencyErrorState';
 import SwapSuccessToast from './shared/SwapSuccessToast';
+import { AssetResearchModal } from '../draft';
 
 /**
  * FreeAgencyDesktop - Desktop-optimized layout for Free Agency
@@ -54,6 +55,8 @@ const FreeAgencyDesktop = ({
   handleBack,
   loadData,
 }) => {
+  // State for asset research modal
+  const [assetForResearch, setAssetForResearch] = useState(null);
 
   // Show loading skeleton
   if (loading) {
@@ -260,6 +263,7 @@ const FreeAgencyDesktop = ({
                 roster={playerRoster}
                 selectedDrop={selectedDrop}
                 onSelectDrop={handleSelectDrop}
+                onMoreInfo={(asset) => setAssetForResearch(asset)}
                 canSwap={canSwap}
               />
             </div>
@@ -326,6 +330,24 @@ const FreeAgencyDesktop = ({
         swapsRemaining={swapsRemaining}
         isSwapping={isSwapping}
       />
+
+      {/* Asset Research Modal */}
+      {assetForResearch && (
+        <AssetResearchModal
+          asset={{
+            symbol: assetForResearch.symbol,
+            name: assetForResearch.name || assetForResearch.symbol,
+            price: assetForResearch.price || assetForResearch.currentPrice || 0,
+            percentChange: assetForResearch.gain || assetForResearch.percentChange || 0,
+            sector: assetForResearch.sector,
+          }}
+          sector={assetForResearch.sector}
+          category={assetForResearch.category}
+          onClose={() => setAssetForResearch(null)}
+          showActionButton={true}
+          actionConfig={null}
+        />
+      )}
     </div>
   );
 };
