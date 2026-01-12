@@ -2,12 +2,11 @@ import React from 'react';
 import { HOLO_COLORS, CATEGORY_CONFIG } from '../../../constants/holoTheme';
 
 /**
- * FreeAgentCard - Individual free agent card with mini chart
+ * FreeAgentCard - Individual free agent card
  *
  * Features:
  * - Category color indicator
  * - Symbol and name
- * - Mini sparkline visualization
  * - Info button for research modal
  * - "+ Add" button when selectable
  */
@@ -19,8 +18,6 @@ const FreeAgentCard = ({
   isSelectable = false,
 }) => {
   const categoryConfig = CATEGORY_CONFIG[asset.category] || CATEGORY_CONFIG.steady;
-  const priceChange = asset.priceChange || 0;
-  const isPositive = priceChange >= 0;
 
   return (
     <div
@@ -51,10 +48,10 @@ const FreeAgentCard = ({
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: '10px',
+        gap: '12px',
         marginLeft: '8px',
       }}>
-        {/* Asset Info */}
+        {/* Asset Info - Takes up available space */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             fontSize: '15px',
@@ -75,38 +72,13 @@ const FreeAgentCard = ({
           </div>
         </div>
 
-        {/* Mini Sparkline */}
-        <div style={{
-          width: '50px',
-          height: '24px',
-          background: `linear-gradient(90deg, transparent, ${isPositive ? HOLO_COLORS.green : HOLO_COLORS.red}22)`,
-          borderRadius: '4px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <svg width="40" height="16" viewBox="0 0 40 16">
-            <path
-              d={isPositive
-                ? "M0,12 Q10,10 20,6 T40,2"
-                : "M0,2 Q10,6 20,10 T40,14"
-              }
-              fill="none"
-              stroke={isPositive ? HOLO_COLORS.green : HOLO_COLORS.red}
-              strokeWidth="2"
-              opacity="0.8"
-            />
-          </svg>
-        </div>
-
-        {/* Action Buttons Container */}
+        {/* Action Buttons - Closer together now */}
         <div style={{
           display: 'flex',
-          gap: '6px',
+          gap: '8px',
           flexShrink: 0,
         }}>
-          {/* Info Button - Always visible when onMoreInfo provided */}
+          {/* Info Button */}
           {onMoreInfo && (
             <button
               onClick={(e) => {
@@ -114,7 +86,7 @@ const FreeAgentCard = ({
                 onMoreInfo(asset);
               }}
               style={{
-                padding: '8px 12px',
+                padding: '8px 14px',
                 background: `${HOLO_COLORS.cyan}15`,
                 border: `1px solid ${HOLO_COLORS.cyan}44`,
                 borderRadius: '6px',
@@ -147,7 +119,7 @@ const FreeAgentCard = ({
               }}
               disabled={disabled}
               style={{
-                padding: '8px 12px',
+                padding: '8px 14px',
                 background: `${HOLO_COLORS.green}22`,
                 border: `1px solid ${HOLO_COLORS.green}66`,
                 borderRadius: '6px',

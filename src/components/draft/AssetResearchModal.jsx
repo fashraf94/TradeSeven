@@ -435,27 +435,34 @@ const AssetResearchModal = ({
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(0, 0, 0, 0.9)',
+        width: '100vw',
+        height: '100vh',
+        background: 'rgba(0, 0, 0, 0.85)',
         backdropFilter: 'blur(8px)',
         zIndex: 1100,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '16px',
+        padding: '20px',
+        boxSizing: 'border-box',
+        overflow: 'auto',
       }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
+          position: 'relative',
           width: '100%',
           maxWidth: '500px',
-          maxHeight: '90vh',
-          background: '#0a0e14',
+          maxHeight: 'min(90vh, 800px)',
+          background: '#0d1117',
           borderRadius: '16px',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          border: '1px solid rgba(0, 255, 255, 0.2)',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.1)',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
+          margin: 'auto',
         }}
       >
         {/* ON THE CLOCK Alert - Shows when it's user's turn */}
@@ -553,6 +560,7 @@ const AssetResearchModal = ({
             alignItems: 'center',
             padding: '16px 20px',
             borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            flexShrink: 0,
           }}
         >
           <button
@@ -1095,6 +1103,7 @@ const AssetResearchModal = ({
               padding: '16px 20px',
               borderTop: '1px solid rgba(255, 255, 255, 0.1)',
               background: 'rgba(0, 0, 0, 0.3)',
+              flexShrink: 0,
             }}
           >
             {/* Draft Mode: ON THE CLOCK - Original behavior */}
