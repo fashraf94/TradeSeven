@@ -44,15 +44,19 @@ const FreeAgentCard = ({
         background: categoryConfig.color,
       }} />
 
-      {/* Content */}
+      {/* Content Row */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
+        width: '100%',
+        marginLeft: '10px',
         gap: '12px',
-        marginLeft: '8px',
       }}>
-        {/* Asset Info - Takes up available space */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Asset Info - Constrained width, not flex */}
+        <div style={{
+          minWidth: '100px',
+          maxWidth: '180px',
+        }}>
           <div style={{
             fontSize: '15px',
             fontWeight: 700,
@@ -72,80 +76,59 @@ const FreeAgentCard = ({
           </div>
         </div>
 
-        {/* Action Buttons - Closer together now */}
-        <div style={{
-          display: 'flex',
-          gap: '8px',
-          flexShrink: 0,
-        }}>
-          {/* Info Button */}
-          {onMoreInfo && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onMoreInfo(asset);
-              }}
-              style={{
-                padding: '8px 14px',
-                background: `${HOLO_COLORS.cyan}15`,
-                border: `1px solid ${HOLO_COLORS.cyan}44`,
-                borderRadius: '6px',
-                fontSize: '11px',
-                fontWeight: 600,
-                color: HOLO_COLORS.cyan,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                transition: 'all 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = `${HOLO_COLORS.cyan}30`;
-                e.currentTarget.style.borderColor = `${HOLO_COLORS.cyan}88`;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = `${HOLO_COLORS.cyan}15`;
-                e.currentTarget.style.borderColor = `${HOLO_COLORS.cyan}44`;
-              }}
-            >
-              Info
-            </button>
-          )}
+        {/* Info Button - Right after the name */}
+        {onMoreInfo && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoreInfo(asset);
+            }}
+            style={{
+              padding: '6px 14px',
+              background: `${HOLO_COLORS.cyan}18`,
+              border: `1px solid ${HOLO_COLORS.cyan}50`,
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: HOLO_COLORS.cyan,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.15s ease',
+              flexShrink: 0,
+            }}
+          >
+            Info
+          </button>
+        )}
 
-          {/* Add/Sign Button - Only when selectable */}
-          {isSelectable && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!disabled) onSelect(asset);
-              }}
-              disabled={disabled}
-              style={{
-                padding: '8px 14px',
-                background: `${HOLO_COLORS.green}22`,
-                border: `1px solid ${HOLO_COLORS.green}66`,
-                borderRadius: '6px',
-                fontSize: '11px',
-                fontWeight: 700,
-                color: HOLO_COLORS.green,
-                textTransform: 'uppercase',
-                cursor: disabled ? 'not-allowed' : 'pointer',
-                whiteSpace: 'nowrap',
-                transition: 'all 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                if (!disabled) {
-                  e.currentTarget.style.background = `${HOLO_COLORS.green}35`;
-                  e.currentTarget.style.borderColor = HOLO_COLORS.green;
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = `${HOLO_COLORS.green}22`;
-                e.currentTarget.style.borderColor = `${HOLO_COLORS.green}66`;
-              }}
-            >
-              + Add
-            </button>
-          )}
-        </div>
+        {/* Spacer - pushes Add button to right */}
+        <div style={{ flex: 1 }} />
+
+        {/* Add Button - Far right, only when selectable */}
+        {isSelectable && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!disabled) onSelect(asset);
+            }}
+            disabled={disabled}
+            style={{
+              padding: '6px 14px',
+              background: `${HOLO_COLORS.green}22`,
+              border: `1px solid ${HOLO_COLORS.green}66`,
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 700,
+              color: HOLO_COLORS.green,
+              textTransform: 'uppercase',
+              cursor: disabled ? 'not-allowed' : 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            + Add
+          </button>
+        )}
       </div>
     </div>
   );

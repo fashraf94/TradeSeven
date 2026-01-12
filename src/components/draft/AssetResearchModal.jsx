@@ -427,42 +427,38 @@ const AssetResearchModal = ({
   const catStyle = categoryColors[category] || categoryColors.steady;
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        width: '100vw',
-        height: '100vh',
-        background: 'rgba(0, 0, 0, 0.85)',
-        backdropFilter: 'blur(8px)',
-        zIndex: 1100,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
-        boxSizing: 'border-box',
-        overflow: 'auto',
-      }}
-    >
+    <>
+      {/* Backdrop - separate fixed element */}
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 9998,
+        }}
+      />
+
+      {/* Modal - separate fixed element, centered */}
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          position: 'relative',
-          width: '100%',
-          maxWidth: '500px',
-          maxHeight: 'min(90vh, 800px)',
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: 'min(calc(100vw - 40px), 480px)',
+          maxHeight: 'calc(100vh - 40px)',
           background: '#0d1117',
           borderRadius: '16px',
-          border: '1px solid rgba(0, 255, 255, 0.2)',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.1)',
+          border: '1px solid rgba(0, 255, 255, 0.3)',
+          boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.15)',
+          zIndex: 9999,
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          margin: 'auto',
         }}
       >
         {/* ON THE CLOCK Alert - Shows when it's user's turn */}
@@ -1191,7 +1187,7 @@ const AssetResearchModal = ({
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 };
 
