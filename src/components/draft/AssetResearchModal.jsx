@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ReactDOM from 'react-dom';
 import FundamentalNews from '../Research/FundamentalNews';
 import LatestEarningsReport from '../Research/LatestEarningsReport';
 
@@ -426,9 +427,10 @@ const AssetResearchModal = ({
   };
   const catStyle = categoryColors[category] || categoryColors.steady;
 
-  return (
+  // Use Portal to render at document.body level, bypassing any parent CSS constraints
+  return ReactDOM.createPortal(
     <>
-      {/* Backdrop - separate fixed element */}
+      {/* Backdrop - matches TopPerformersModal pattern */}
       <div
         onClick={onClose}
         style={{
@@ -437,11 +439,12 @@ const AssetResearchModal = ({
           background: 'rgba(0, 0, 0, 0.85)',
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)',
-          zIndex: 9998,
+          zIndex: 100,
+          animation: 'fadeIn 0.2s ease-out',
         }}
       />
 
-      {/* Modal - separate fixed element, centered */}
+      {/* Modal - matches TopPerformersModal pattern */}
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -455,10 +458,11 @@ const AssetResearchModal = ({
           borderRadius: '16px',
           border: '1px solid rgba(0, 255, 255, 0.3)',
           boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.15)',
-          zIndex: 9999,
+          zIndex: 101,
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
+          animation: 'modalSlideIn 0.3s ease-out',
         }}
       >
         {/* ON THE CLOCK Alert - Shows when it's user's turn */}
@@ -1186,8 +1190,27 @@ const AssetResearchModal = ({
             )}
           </div>
         )}
+
+        {/* Animations - matches TopPerformersModal */}
+        <style>{`
+          @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+          @keyframes modalSlideIn {
+            from {
+              opacity: 0;
+              transform: translate(-50%, -45%);
+            }
+            to {
+              opacity: 1;
+              transform: translate(-50%, -50%);
+            }
+          }
+        `}</style>
       </div>
-    </>
+    </>,
+    document.body
   );
 };
 
