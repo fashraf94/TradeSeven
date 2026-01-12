@@ -29,3 +29,7 @@ export { default as HomeScreen } from './HomeScreen';
 
 // Screen exports - Batch 6
 export { default as EarningsGameScreen } from './EarningsGameScreen';
+
+// Screen exports - Batch 7
+export { default as BuilderScreen } from './BuilderScreen';
+export { default as DashboardScreen } from './DashboardScreen';
