@@ -30,6 +30,7 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
   const [selectedDrop, setSelectedDrop] = useState(null);
   const [selectedAdd, setSelectedAdd] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('steady');
+  const [selectionOrder, setSelectionOrder] = useState(null); // 'add-first' | 'drop-first' | null
 
   // UI state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -61,6 +62,11 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
   const canSwap = useMemo(() => {
     return isWindowOpen && swapsRemaining > 0;
   }, [isWindowOpen, swapsRemaining]);
+
+  // Active category filter (from either selection)
+  const activeCategory = useMemo(() => {
+    return selectedAdd?.category || selectedDrop?.category || null;
+  }, [selectedAdd, selectedDrop]);
 
   // ===========================================
   // DATA FETCHING
@@ -135,22 +141,31 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
   }, [loadData]);
 
   // ===========================================
-  // SELECTION HANDLERS (Reversed flow: Add first, then Drop)
+  // SELECTION HANDLERS (Bidirectional: Add or Drop first)
   // ===========================================
 
-  // Step 1: User selects a FREE AGENT to ADD
+  // User selects a FREE AGENT to ADD (can be first or second selection)
   const handleSelectAdd = useCallback((asset) => {
     if (!canSwap) return;
 
     // If same asset clicked, deselect
     if (selectedAdd?.symbol === asset.symbol) {
       setSelectedAdd(null);
-      setSelectedDrop(null); // Also clear drop selection
+      // If this was the first selection, clear everything
+      if (selectionOrder === 'add-first') {
+        setSelectedDrop(null);
+        setSelectionOrder(null);
+      }
       return;
     }
 
     setSelectedAdd(asset);
-    setSelectedCategory(asset.category); // Lock to this category
+    setSelectedCategory(asset.category); // Update category tab to match
+
+    // Track selection order if this is the first selection
+    if (!selectedDrop) {
+      setSelectionOrder('add-first');
+    }
 
     // Clear drop selection if it's a different category
     if (selectedDrop && selectedDrop.category !== asset.category) {
@@ -158,15 +173,14 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
     }
 
     logger.log('[FreeAgency] Selected to add:', asset.symbol);
-  }, [canSwap, selectedAdd, selectedDrop, logger]);
+  }, [canSwap, selectedAdd, selectedDrop, selectionOrder, logger]);
 
-  // Step 2: User selects a ROSTER ASSET to DROP (must match category)
+  // User selects a ROSTER ASSET to DROP (can be first or second selection)
   const handleSelectDrop = useCallback((asset) => {
     if (!canSwap) return;
-    if (!selectedAdd) return; // Must select free agent first
 
-    // Ensure same category as selected free agent
-    if (asset.category !== selectedAdd.category) {
+    // If a free agent is already selected, ensure same category
+    if (selectedAdd && asset.category !== selectedAdd.category) {
       logger.warn('[FreeAgency] Category mismatch - cannot select');
       return;
     }
@@ -174,16 +188,34 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
     // If same asset clicked, deselect
     if (selectedDrop?.symbol === asset.symbol) {
       setSelectedDrop(null);
+      // If this was the first selection, clear everything
+      if (selectionOrder === 'drop-first') {
+        setSelectedAdd(null);
+        setSelectionOrder(null);
+      }
       return;
     }
 
     setSelectedDrop(asset);
+    setSelectedCategory(asset.category); // Update category tab to match
+
+    // Track selection order if this is the first selection
+    if (!selectedAdd) {
+      setSelectionOrder('drop-first');
+    }
+
+    // Clear add selection if it's a different category
+    if (selectedAdd && selectedAdd.category !== asset.category) {
+      setSelectedAdd(null);
+    }
+
     logger.log('[FreeAgency] Selected to drop:', asset.symbol);
-  }, [canSwap, selectedAdd, selectedDrop, logger]);
+  }, [canSwap, selectedAdd, selectedDrop, selectionOrder, logger]);
 
   const handleCancelSelection = useCallback(() => {
     setSelectedAdd(null);
     setSelectedDrop(null);
+    setSelectionOrder(null);
     setShowConfirmModal(false);
   }, []);
 
@@ -274,6 +306,8 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
     selectedAdd,
     selectedCategory,
     setSelectedCategory,
+    selectionOrder,
+    activeCategory,
     canSwap,
 
     // UI state

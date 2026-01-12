@@ -4,26 +4,46 @@ import { HOLO_COLORS } from '../../../constants/holoTheme';
 /**
  * SwapPreview - Fixed bottom bar showing the pending swap
  *
- * NEW FLOW: Shows ADD → DROP (user selects free agent first)
+ * BIDIRECTIONAL FLOW: Shows ADD → DROP visual regardless of selection order.
+ * Helper text changes based on which piece is missing.
  *
  * Features:
  * - Shows ADD → DROP flow visualization
  * - Cancel and Confirm buttons
  * - Slide-up animation
  * - Safe area padding for iPhone notches
+ * - Dynamic helper text for bidirectional selection
  */
 const SwapPreview = ({
-  selectedAdd,         // First: the free agent to add
-  selectedDrop,        // Second: the roster asset to drop
+  selectedAdd,         // The free agent to add
+  selectedDrop,        // The roster asset to drop
   onCancel,
   onConfirm,
   swapsRemaining,
   isSwapping,
 }) => {
-  // Only show if at least the free agent is selected
-  if (!selectedAdd) return null;
+  // Only show if at least one selection is made
+  if (!selectedAdd && !selectedDrop) return null;
 
   const isComplete = selectedAdd && selectedDrop;
+
+  // Helper text based on what's missing
+  const getHelperText = () => {
+    if (selectedAdd && !selectedDrop) {
+      return `↑ Select a ${selectedAdd.category} asset above to drop`;
+    }
+    if (selectedDrop && !selectedAdd) {
+      return `↓ Select a ${selectedDrop.category} free agent below to add`;
+    }
+    return null;
+  };
+
+  // Border color based on state
+  const getBorderColor = () => {
+    if (isComplete) return HOLO_COLORS.green;
+    if (selectedDrop && !selectedAdd) return HOLO_COLORS.red; // Drop-first: red accent
+    return HOLO_COLORS.cyan; // Add-first: cyan accent
+  };
 
   return (
     <div style={{
@@ -33,7 +53,7 @@ const SwapPreview = ({
       right: 0,
       background: 'linear-gradient(to top, rgba(10, 14, 20, 0.98) 0%, rgba(10, 14, 20, 0.95) 100%)',
       backdropFilter: 'blur(16px)',
-      borderTop: `1px solid ${isComplete ? HOLO_COLORS.green : HOLO_COLORS.cyan}`,
+      borderTop: `1px solid ${getBorderColor()}`,
       padding: '12px 16px',
       paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
       zIndex: 50,
@@ -47,17 +67,18 @@ const SwapPreview = ({
         gap: '12px',
         marginBottom: '12px',
       }}>
-        {/* Adding (Free Agent) - First */}
+        {/* Adding (Free Agent) */}
         <div style={{
           padding: '8px 14px',
-          background: 'rgba(0, 255, 136, 0.15)',
-          border: `1px solid ${HOLO_COLORS.green}66`,
+          background: selectedAdd ? 'rgba(0, 255, 136, 0.15)' : HOLO_COLORS.bgCard,
+          border: `1px solid ${selectedAdd ? HOLO_COLORS.green + '66' : HOLO_COLORS.borderSubtle}`,
           borderRadius: '8px',
           textAlign: 'center',
+          minWidth: '80px',
         }}>
           <div style={{
             fontSize: '9px',
-            color: HOLO_COLORS.green,
+            color: selectedAdd ? HOLO_COLORS.green : HOLO_COLORS.textMuted,
             textTransform: 'uppercase',
             marginBottom: '2px',
           }}>
@@ -66,9 +87,9 @@ const SwapPreview = ({
           <div style={{
             fontSize: '14px',
             fontWeight: 700,
-            color: HOLO_COLORS.textPrimary,
+            color: selectedAdd ? HOLO_COLORS.textPrimary : HOLO_COLORS.textMuted,
           }}>
-            {selectedAdd.symbol}
+            {selectedAdd?.symbol || '?'}
           </div>
         </div>
 
@@ -80,18 +101,18 @@ const SwapPreview = ({
           →
         </div>
 
-        {/* Dropping (Roster Asset) - Second */}
+        {/* Dropping (Roster Asset) */}
         <div style={{
           padding: '8px 14px',
-          background: isComplete ? 'rgba(255, 51, 102, 0.15)' : HOLO_COLORS.bgCard,
-          border: `1px solid ${isComplete ? HOLO_COLORS.red + '66' : HOLO_COLORS.borderSubtle}`,
+          background: selectedDrop ? 'rgba(255, 51, 102, 0.15)' : HOLO_COLORS.bgCard,
+          border: `1px solid ${selectedDrop ? HOLO_COLORS.red + '66' : HOLO_COLORS.borderSubtle}`,
           borderRadius: '8px',
           textAlign: 'center',
           minWidth: '80px',
         }}>
           <div style={{
             fontSize: '9px',
-            color: isComplete ? HOLO_COLORS.red : HOLO_COLORS.textMuted,
+            color: selectedDrop ? HOLO_COLORS.red : HOLO_COLORS.textMuted,
             textTransform: 'uppercase',
             marginBottom: '2px',
           }}>
@@ -100,22 +121,22 @@ const SwapPreview = ({
           <div style={{
             fontSize: '14px',
             fontWeight: 700,
-            color: isComplete ? HOLO_COLORS.textPrimary : HOLO_COLORS.textMuted,
+            color: selectedDrop ? HOLO_COLORS.textPrimary : HOLO_COLORS.textMuted,
           }}>
             {selectedDrop?.symbol || '?'}
           </div>
         </div>
       </div>
 
-      {/* Helper text when drop not selected */}
-      {!isComplete && (
+      {/* Helper text when swap is incomplete */}
+      {!isComplete && getHelperText() && (
         <div style={{
           fontSize: '10px',
           color: HOLO_COLORS.amber,
           textAlign: 'center',
           marginBottom: '10px',
         }}>
-          ↑ Select a {selectedAdd.category} asset above to drop
+          {getHelperText()}
         </div>
       )}
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
 import FundamentalNews from '../Research/FundamentalNews';
 import LatestEarningsReport from '../Research/LatestEarningsReport';
+import { HOLO_COLORS, CATEGORY_CONFIG, getSectorColor, getRatingColor } from '../../constants/holoTheme';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -27,29 +28,6 @@ import LatestEarningsReport from '../Research/LatestEarningsReport';
  *   - variant: 'primary' | 'danger' | 'secondary'
  * - showActionButton: boolean (default: true) - show/hide action section
  */
-
-// Sector color definitions
-const SECTOR_COLORS = {
-  'Technology': '#3b82f6',
-  'Information Technology': '#3b82f6',
-  'Energy': '#ef4444',
-  'Healthcare': '#14b8a6',
-  'Health Care': '#14b8a6',
-  'Financials': '#22c55e',
-  'Financial Services': '#22c55e',
-  'Consumer Cyclical': '#a855f7',
-  'Consumer Discretionary': '#a855f7',
-  'Consumer Defensive': '#ec4899',
-  'Consumer Staples': '#ec4899',
-  'Industrials': '#f59e0b',
-  'Basic Materials': '#f97316',
-  'Materials': '#f97316',
-  'Real Estate': '#6366f1',
-  'Utilities': '#64748b',
-  'Communication Services': '#06b6d4',
-  'Cryptocurrency': '#fbbf24',
-  'default': '#00d9ff'
-};
 
 // Mock fundamental data (in production, fetch from API)
 const getMockFundamentals = (symbol) => {
@@ -411,21 +389,30 @@ const AssetResearchModal = ({
 
   if (!asset) return null;
 
-  const sectorColor = SECTOR_COLORS[sector] || SECTOR_COLORS.default;
+  const sectorColor = getSectorColor(sector);
   const fundamentals = getMockFundamentals(asset.symbol);
   const priceChange = asset.percentChange || asset.change || 0;
 
-  const ratingColor = fundamentals.rating?.includes('Strong') ? '#10b981' :
-    fundamentals.rating === 'Buy' ? '#00d9ff' :
-    fundamentals.rating === 'Hold' ? '#f59e0b' : '#ef4444';
+  const ratingColor = getRatingColor(fundamentals.rating);
 
-  // Category colors
-  const categoryColors = {
-    steady: { bg: 'rgba(16, 185, 129, 0.2)', color: '#10b981', border: 'rgba(16, 185, 129, 0.4)' },
-    risky: { bg: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', border: 'rgba(245, 158, 11, 0.4)' },
-    defensive: { bg: 'rgba(59, 130, 246, 0.2)', color: '#3b82f6', border: 'rgba(59, 130, 246, 0.4)' },
+  // Category styles derived from CATEGORY_CONFIG
+  const getCategoryStyle = (cat) => {
+    const config = CATEGORY_CONFIG[cat] || CATEGORY_CONFIG.steady;
+    const color = config.color;
+    // Convert hex to rgba for backgrounds/borders
+    const hexToRgba = (hex, alpha) => {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    };
+    return {
+      bg: hexToRgba(color, 0.2),
+      color: color,
+      border: hexToRgba(color, 0.4),
+    };
   };
-  const catStyle = categoryColors[category] || categoryColors.steady;
+  const catStyle = getCategoryStyle(category);
 
   // Use Portal to render at document.body level, bypassing any parent CSS constraints
   return ReactDOM.createPortal(

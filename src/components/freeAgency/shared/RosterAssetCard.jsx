@@ -1,13 +1,14 @@
 import React from 'react';
 import { HOLO_COLORS, CATEGORY_CONFIG } from '../../../constants/holoTheme';
+import { CategoryBadge, GainLossBadge, HoloCard } from '../../shared';
 
 /**
  * RosterAssetCard - Individual asset card in the "Select to Drop" section
  *
  * Displays user's portfolio asset with:
  * - Category color indicator
- * - Symbol and gain/loss percentage
- * - Selected state with red highlight and "DROP" badge
+ * - Symbol and gain/loss percentage (using GainLossBadge)
+ * - Selected state with red highlight and "DROP" badge (using HoloCard)
  * - Info button for opening research modal
  */
 const RosterAssetCard = ({
@@ -20,33 +21,27 @@ const RosterAssetCard = ({
 }) => {
   const categoryConfig = CATEGORY_CONFIG[asset.category] || CATEGORY_CONFIG.steady;
   const gain = asset.gain || 0;
-  const isPositive = gain >= 0;
 
   return (
-    <button
-      onClick={() => !disabled && onSelect(asset)}
+    <HoloCard
+      as="button"
+      variant="interactive"
+      accentColor="red"
+      size={compact ? 'sm' : 'md'}
+      selected={isSelected}
       disabled={disabled}
+      onClick={() => onSelect(asset)}
       style={{
         position: 'relative',
         width: compact ? '100px' : '110px',
         minWidth: compact ? '100px' : '110px',
-        padding: compact ? '10px' : '12px',
-        paddingTop: isSelected ? '18px' : (compact ? '10px' : '12px'),
+        paddingTop: isSelected ? '18px' : undefined,
         marginTop: isSelected ? '12px' : '0',
-        background: isSelected
-          ? 'rgba(255, 51, 102, 0.15)'
-          : HOLO_COLORS.bgCard,
-        border: isSelected
-          ? `2px solid ${HOLO_COLORS.red}`
-          : `1px solid ${HOLO_COLORS.borderSubtle}`,
-        borderRadius: '10px',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.5 : 1,
-        transition: 'all 0.2s ease',
         textAlign: 'left',
+        // Add inset shadow for selected state (unique to this card)
         boxShadow: isSelected
           ? `0 0 15px ${HOLO_COLORS.red}44, inset 0 0 20px ${HOLO_COLORS.red}11`
-          : 'none',
+          : undefined,
       }}
     >
       {/* Selected indicator - "DROP" badge */}
@@ -135,35 +130,21 @@ const RosterAssetCard = ({
         </div>
 
         {/* Gain */}
-        <div style={{
-          fontSize: compact ? '11px' : '12px',
-          fontWeight: 600,
-          color: isPositive ? HOLO_COLORS.green : HOLO_COLORS.red,
-        }}>
-          {isPositive ? '+' : ''}{gain.toFixed(2)}%
-        </div>
+        <GainLossBadge
+          value={gain}
+          variant="text"
+          size={compact ? 'sm' : 'md'}
+        />
 
         {/* Category badge */}
-        <div style={{
-          fontSize: '9px',
-          color: categoryConfig.color,
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-          marginTop: '4px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-        }}>
-          <span style={{
-            width: '6px',
-            height: '6px',
-            borderRadius: '50%',
-            background: categoryConfig.color,
-          }} />
-          {categoryConfig.letter}
-        </div>
+        <CategoryBadge
+          category={asset.category}
+          variant="letter"
+          size="sm"
+          style={{ marginTop: '4px' }}
+        />
       </div>
-    </button>
+    </HoloCard>
   );
 };
 

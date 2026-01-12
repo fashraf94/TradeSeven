@@ -15,14 +15,22 @@ import { AssetResearchModal } from '../draft';
 /**
  * FreeAgencyMobile - Mobile-optimized layout for Free Agency
  *
- * Features:
+ * BIDIRECTIONAL FLOW: Users can start swap from either direction:
+ * - Select a roster asset to drop first, then pick a free agent to add
+ * - OR select a free agent to add first, then pick a roster asset to drop
+ *
+ * Layout (top to bottom):
  * - Header with back button and swaps remaining badge
  * - Window status indicator
- * - Horizontal scrolling roster section
- * - Category-filtered free agent grid
- * - Swap preview bar (fixed bottom)
- * - Confirmation modal
+ * - Guidance text (dynamic based on selection state)
+ * - Roster section (user's assets - always active)
+ * - Free agent grid (available players - always active)
  * - Swap history feed
+ * - Swap preview bar (fixed bottom - shows when any selection made)
+ * - Confirmation modal
+ *
+ * Features:
+ * - Category locking (when one is selected, other filters to match)
  * - Loading skeleton and error states
  * - Success toast notification
  */
@@ -47,6 +55,8 @@ const FreeAgencyMobile = ({
   selectedAdd,
   selectedCategory,
   setSelectedCategory,
+  selectionOrder,
+  activeCategory,
   canSwap,
   showConfirmModal,
   setShowConfirmModal,
@@ -59,6 +69,20 @@ const FreeAgencyMobile = ({
 }) => {
   // State for asset research modal
   const [assetForResearch, setAssetForResearch] = useState(null);
+
+  // Dynamic guidance text based on selection state
+  const getGuidanceText = () => {
+    if (!selectedAdd && !selectedDrop) {
+      return "Select a stock from your roster to drop, or a free agent to add";
+    }
+    if (selectedDrop && !selectedAdd) {
+      return `Now select a ${selectedDrop.category} free agent to add`;
+    }
+    if (selectedAdd && !selectedDrop) {
+      return `Now select a ${selectedAdd.category} stock to drop`;
+    }
+    return null; // Both selected, SwapPreview handles it
+  };
 
   // Show loading skeleton
   if (loading) {
@@ -177,7 +201,7 @@ const FreeAgencyMobile = ({
       {/* Main Content */}
       <main style={{
         padding: '16px',
-        paddingBottom: selectedAdd ? '180px' : '100px', // Extra space for SwapPreview
+        paddingBottom: (selectedAdd || selectedDrop) ? '180px' : '100px', // Extra space for SwapPreview
         overflowX: 'hidden',
       }}>
         {/* Window Status */}
@@ -204,23 +228,42 @@ const FreeAgencyMobile = ({
           </div>
         )}
 
-        {/* Free Agent Grid - Step 1: Select to Add */}
+        {/* Guidance Text - show when swap is allowed and incomplete */}
+        {canSwap && getGuidanceText() && (
+          <div style={{
+            padding: '10px 12px',
+            background: `${HOLO_COLORS.purple}11`,
+            border: `1px solid ${HOLO_COLORS.purple}33`,
+            borderRadius: '8px',
+            marginBottom: '16px',
+            textAlign: 'center',
+            fontSize: '11px',
+            color: HOLO_COLORS.purple,
+          }}>
+            {getGuidanceText()}
+          </div>
+        )}
+
+        {/* Roster Section - Your Roster (now at top) */}
+        <RosterSection
+          roster={playerRoster}
+          selectedDrop={selectedDrop}
+          selectedAdd={selectedAdd}
+          activeCategory={activeCategory}
+          onSelectDrop={handleSelectDrop}
+          onMoreInfo={(asset) => setAssetForResearch(asset)}
+          canSwap={canSwap}
+        />
+
+        {/* Free Agent Grid - Free Agents */}
         <FreeAgentGrid
           freeAgents={freeAgents}
           selectedCategory={selectedCategory}
           onSelectCategory={setSelectedCategory}
           selectedAdd={selectedAdd}
-          onSelectAdd={handleSelectAdd}
-          onMoreInfo={(asset) => setAssetForResearch(asset)}
-          canSwap={canSwap}
-        />
-
-        {/* Roster Section - Step 2: Select to Drop */}
-        <RosterSection
-          roster={playerRoster}
           selectedDrop={selectedDrop}
-          selectedAdd={selectedAdd}
-          onSelectDrop={handleSelectDrop}
+          activeCategory={activeCategory}
+          onSelectAdd={handleSelectAdd}
           onMoreInfo={(asset) => setAssetForResearch(asset)}
           canSwap={canSwap}
         />
@@ -232,7 +275,7 @@ const FreeAgencyMobile = ({
         />
       </main>
 
-      {/* Swap Preview Bar (shows when free agent selected) */}
+      {/* Swap Preview Bar (shows when any selection made) */}
       <SwapPreview
         selectedAdd={selectedAdd}
         selectedDrop={selectedDrop}

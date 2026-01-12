@@ -30,6 +30,26 @@ export const HOLO_COLORS = {
   risky: '#f59e0b',     // Amber
   defensive: '#10b981', // Green
 
+  // Sector Colors
+  sectorTech: '#3b82f6',
+  sectorEnergy: '#ef4444',
+  sectorHealthcare: '#14b8a6',
+  sectorFinancials: '#22c55e',
+  sectorConsumerCyclical: '#a855f7',
+  sectorConsumerDefensive: '#ec4899',
+  sectorIndustrials: '#f59e0b',
+  sectorMaterials: '#f97316',
+  sectorRealEstate: '#6366f1',
+  sectorUtilities: '#64748b',
+  sectorCommunication: '#06b6d4',
+  sectorCrypto: '#fbbf24',
+
+  // Rating Colors
+  ratingStrongBuy: '#10b981',
+  ratingBuy: '#00d9ff',
+  ratingHold: '#f59e0b',
+  ratingSell: '#ef4444',
+
   // Text
   textPrimary: '#e6edf3',
   textSecondary: '#8b949e',
@@ -56,6 +76,65 @@ export const CATEGORY_CONFIG = {
   steady: { letter: 'S', color: HOLO_COLORS.steady, label: 'Steady' },
   risky: { letter: 'R', color: HOLO_COLORS.risky, label: 'Risky' },
   defensive: { letter: 'D', color: HOLO_COLORS.defensive, label: 'Defensive' },
+};
+
+// Sector color mapping - handles various naming conventions from data sources
+export const SECTOR_CONFIG = {
+  // Technology
+  'Technology': { color: HOLO_COLORS.sectorTech, label: 'Technology' },
+  'Information Technology': { color: HOLO_COLORS.sectorTech, label: 'Technology' },
+  // Energy
+  'Energy': { color: HOLO_COLORS.sectorEnergy, label: 'Energy' },
+  // Healthcare
+  'Healthcare': { color: HOLO_COLORS.sectorHealthcare, label: 'Healthcare' },
+  'Health Care': { color: HOLO_COLORS.sectorHealthcare, label: 'Healthcare' },
+  // Financials
+  'Financials': { color: HOLO_COLORS.sectorFinancials, label: 'Financials' },
+  'Financial Services': { color: HOLO_COLORS.sectorFinancials, label: 'Financials' },
+  // Consumer Cyclical
+  'Consumer Cyclical': { color: HOLO_COLORS.sectorConsumerCyclical, label: 'Consumer Cyclical' },
+  'Consumer Discretionary': { color: HOLO_COLORS.sectorConsumerCyclical, label: 'Consumer Cyclical' },
+  // Consumer Defensive
+  'Consumer Defensive': { color: HOLO_COLORS.sectorConsumerDefensive, label: 'Consumer Defensive' },
+  'Consumer Staples': { color: HOLO_COLORS.sectorConsumerDefensive, label: 'Consumer Defensive' },
+  // Industrials
+  'Industrials': { color: HOLO_COLORS.sectorIndustrials, label: 'Industrials' },
+  // Materials
+  'Basic Materials': { color: HOLO_COLORS.sectorMaterials, label: 'Materials' },
+  'Materials': { color: HOLO_COLORS.sectorMaterials, label: 'Materials' },
+  // Real Estate
+  'Real Estate': { color: HOLO_COLORS.sectorRealEstate, label: 'Real Estate' },
+  // Utilities
+  'Utilities': { color: HOLO_COLORS.sectorUtilities, label: 'Utilities' },
+  // Communication
+  'Communication Services': { color: HOLO_COLORS.sectorCommunication, label: 'Communication' },
+  // Crypto
+  'Cryptocurrency': { color: HOLO_COLORS.sectorCrypto, label: 'Crypto' },
+  // Default fallback
+  'default': { color: HOLO_COLORS.cyan, label: 'Other' },
+};
+
+// Helper function to get sector color
+export const getSectorColor = (sector) => {
+  return SECTOR_CONFIG[sector]?.color || SECTOR_CONFIG.default.color;
+};
+
+// Rating color mapping
+export const RATING_CONFIG = {
+  'Strong Buy': { color: HOLO_COLORS.ratingStrongBuy, label: 'Strong Buy' },
+  'Buy': { color: HOLO_COLORS.ratingBuy, label: 'Buy' },
+  'Hold': { color: HOLO_COLORS.ratingHold, label: 'Hold' },
+  'Sell': { color: HOLO_COLORS.ratingSell, label: 'Sell' },
+  'Strong Sell': { color: HOLO_COLORS.ratingSell, label: 'Strong Sell' },
+};
+
+// Helper function to get rating color
+export const getRatingColor = (rating) => {
+  if (!rating) return HOLO_COLORS.textMuted;
+  // Check if rating contains "Strong" for Strong Buy
+  if (rating.includes('Strong') && rating.includes('Buy')) return HOLO_COLORS.ratingStrongBuy;
+  if (rating.includes('Strong')) return HOLO_COLORS.ratingSell;
+  return RATING_CONFIG[rating]?.color || HOLO_COLORS.textMuted;
 };
 
 // Background with scanline effect

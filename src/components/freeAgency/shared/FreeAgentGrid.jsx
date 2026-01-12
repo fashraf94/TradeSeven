@@ -6,11 +6,11 @@ import CategoryTabs from './CategoryTabs';
 /**
  * FreeAgentGrid - Grid of available free agents with category filtering
  *
- * NEW FLOW: This is now Step 1. User selects a free agent FIRST,
- * then goes to roster to select which asset to drop.
+ * BIDIRECTIONAL FLOW: User can select free agent first OR roster asset first.
+ * When a roster asset is selected first, this section filters to matching category.
  *
  * Features:
- * - Category tabs (always enabled - user can browse freely)
+ * - Category tabs (locked when a category is active from either selection)
  * - Scrollable list of free agents
  * - Selection state for chosen agent
  */
@@ -19,21 +19,32 @@ const FreeAgentGrid = ({
   selectedCategory,
   onSelectCategory,
   selectedAdd,         // The selected free agent
+  selectedDrop,        // The selected roster asset (for drop-first flow)
+  activeCategory,      // Category filter from either selection
   onSelectAdd,
   onMoreInfo,
   canSwap,
 }) => {
-  // Get agents for current category
-  const displayedAgents = freeAgents[selectedCategory] || [];
+  // Get agents for current category (use activeCategory if set, otherwise selectedCategory)
+  const effectiveCategory = activeCategory || selectedCategory;
+  const displayedAgents = freeAgents[effectiveCategory] || [];
 
-  // Category tabs are NOT locked in new flow - user can browse freely
-  const categoryLocked = false;
+  // Lock category tabs when a selection has been made (from either direction)
+  const categoryLocked = activeCategory !== null;
 
   // Count agents per category
   const counts = {
     steady: freeAgents.steady?.length || 0,
     risky: freeAgents.risky?.length || 0,
     defensive: freeAgents.defensive?.length || 0,
+  };
+
+  // Determine header text
+  const getHeaderText = () => {
+    if (activeCategory) {
+      return `${activeCategory.charAt(0).toUpperCase() + activeCategory.slice(1)} Free Agents`;
+    }
+    return 'Free Agents';
   };
 
   return (
@@ -52,7 +63,7 @@ const FreeAgentGrid = ({
           textTransform: 'uppercase',
           letterSpacing: '1px',
         }}>
-          {selectedAdd ? 'Free Agents' : 'Step 1: Select Free Agent'}
+          {getHeaderText()}
         </div>
 
         <div style={{
@@ -63,8 +74,8 @@ const FreeAgentGrid = ({
         </div>
       </div>
 
-      {/* Helper Text - only show when nothing selected */}
-      {!selectedAdd && canSwap && (
+      {/* Helper Text - show when roster asset selected but no free agent yet */}
+      {selectedDrop && !selectedAdd && canSwap && (
         <div style={{
           fontSize: '10px',
           color: HOLO_COLORS.cyan,
@@ -75,14 +86,14 @@ const FreeAgentGrid = ({
           borderRadius: '6px',
           border: `1px solid ${HOLO_COLORS.cyan}33`,
         }}>
-          Tap a free agent to begin swap
+          Tap a {selectedDrop.category} free agent to add for {selectedDrop.symbol}
         </div>
       )}
 
-      {/* Category Tabs - Always enabled */}
+      {/* Category Tabs - Locked when selection is active */}
       <div style={{ marginBottom: '12px' }}>
         <CategoryTabs
-          selectedCategory={selectedCategory}
+          selectedCategory={effectiveCategory}
           onSelectCategory={onSelectCategory}
           disabled={categoryLocked}
           counts={counts}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { HOLO_COLORS, CATEGORY_CONFIG } from '../../../constants/holoTheme';
+import { HoloCard } from '../../shared';
 
 /**
  * FreeAgentCard - Individual free agent card (now selectable)
@@ -10,7 +11,7 @@ import { HOLO_COLORS, CATEGORY_CONFIG } from '../../../constants/holoTheme';
  * - Category color indicator
  * - Symbol and name
  * - Info button for research modal
- * - Selection state with green highlight
+ * - Selection state with green highlight (using HoloCard)
  * - "Adding" badge when selected
  */
 const FreeAgentCard = ({
@@ -23,29 +24,18 @@ const FreeAgentCard = ({
   const categoryConfig = CATEGORY_CONFIG[asset.category] || CATEGORY_CONFIG.steady;
 
   return (
-    <div
-      onClick={() => !disabled && onSelect(asset)}
+    <HoloCard
+      variant="interactive"
+      accentColor="green"
+      selected={isSelected}
+      disabled={disabled}
+      onClick={() => onSelect(asset)}
       style={{
         width: '100%',
-        padding: '12px',
         paddingLeft: '16px',  // Extra space for category bar
         minHeight: '56px',
-        background: isSelected
-          ? 'rgba(0, 255, 136, 0.12)'
-          : HOLO_COLORS.bgCard,
-        border: isSelected
-          ? `2px solid ${HOLO_COLORS.green}`
-          : `1px solid ${HOLO_COLORS.borderSubtle}`,
-        borderRadius: '10px',
-        opacity: disabled ? 0.4 : 1,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        transition: 'all 0.2s ease',
         position: 'relative',
-        boxSizing: 'border-box',
         overflow: 'hidden',
-        boxShadow: isSelected
-          ? `0 0 15px ${HOLO_COLORS.green}44`
-          : 'none',
       }}
     >
       {/* Selected Badge */}
@@ -171,7 +161,7 @@ const FreeAgentCard = ({
           )}
         </div>
       </div>
-    </div>
+    </HoloCard>
   );
 };
 
