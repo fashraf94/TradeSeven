@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
 import AssetTile from './AssetTile';
+import AssetResearchModal from './AssetResearchModal';
 import { UserIcon, TrophyIcon, SwapIcon, ScoutIcon, FireIcon, SnowflakeIcon, HoloIconAnimations } from './HoloIcons';
 
 /**
@@ -23,6 +24,9 @@ const CommandConsole = ({
   // State for grid flip animation
   const [isFlipping, setIsFlipping] = useState(false);
   const [prevScoutMode, setPrevScoutMode] = useState(isScoutMode);
+
+  // State for asset research modal
+  const [selectedAssetForResearch, setSelectedAssetForResearch] = useState(null);
 
   // Trigger flip animation when scout mode changes
   useEffect(() => {
@@ -194,10 +198,20 @@ const CommandConsole = ({
           {portfolio.slice(0, 9).map((asset, idx) => (
             <div
               key={asset?.symbol || idx}
+              onClick={() => {
+                if (asset?.symbol) {
+                  setSelectedAssetForResearch({
+                    ...asset,
+                    isOpponentAsset: isScoutMode,
+                  });
+                }
+              }}
               style={{
                 opacity: isFlipping ? 0.5 : 1,
                 transform: isFlipping ? 'scale(0.95)' : 'scale(1)',
                 transition: 'all 0.15s ease-in-out',
+                cursor: asset?.symbol ? 'pointer' : 'default',
+                position: 'relative',
               }}
             >
               <AssetTile
@@ -206,6 +220,20 @@ const CommandConsole = ({
                 comparisonData={getComparisonData(asset)}
                 compact={true}
               />
+              {/* Tap hint for filled slots */}
+              {asset?.symbol && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: '2px',
+                  right: '4px',
+                  fontSize: '7px',
+                  color: isScoutMode ? HOLO_COLORS.amber : HOLO_COLORS.cyan,
+                  opacity: 0.5,
+                  pointerEvents: 'none',
+                }}>
+                  tap
+                </div>
+              )}
             </div>
           ))}
           {/* Fill empty slots if less than 9 assets */}
@@ -340,6 +368,24 @@ const CommandConsole = ({
         }
         ${HoloIconAnimations}
       `}</style>
+
+      {/* Asset Research Modal */}
+      {selectedAssetForResearch && (
+        <AssetResearchModal
+          asset={{
+            symbol: selectedAssetForResearch.symbol,
+            name: selectedAssetForResearch.name || selectedAssetForResearch.symbol,
+            price: selectedAssetForResearch.price || selectedAssetForResearch.currentPrice || 0,
+            percentChange: selectedAssetForResearch.gain || selectedAssetForResearch.percentChange || 0,
+            sector: selectedAssetForResearch.sector,
+          }}
+          sector={selectedAssetForResearch.sector}
+          category={selectedAssetForResearch.category}
+          onClose={() => setSelectedAssetForResearch(null)}
+          showActionButton={true}
+          actionConfig={null}
+        />
+      )}
     </div>
   );
 };
