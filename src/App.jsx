@@ -71,7 +71,7 @@ import {
   getAvailableSectors,
 } from './services/recommendationEngine';
 // Extracted Screens - Batch 1
-import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen } from './screens';
+import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen } from './screens';
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 
@@ -23775,9 +23775,68 @@ export default function PortfolioDuel() {
     );
   }
 
-  // PORTFOLIO BUILDER SCREEN (Create Game) - COMPLETE OVERHAUL
+  // PORTFOLIO BUILDER SCREEN (Create Game) - EXTRACTED TO BuilderScreen.jsx
   if (screen === 'builder') {
-    // Stock category definitions
+    return (
+      <BuilderScreen
+        // Layout
+        isDesktop={isDesktop}
+        containerStyle={containerStyle}
+        // Market data
+        stocksData={stocksData}
+        cryptoData={cryptoData}
+        loadingMarketData={loadingMarketData}
+        // Portfolio state
+        portfolio={portfolio}
+        setPortfolio={setPortfolio}
+        portfolioType={portfolioType}
+        setPortfolioType={setPortfolioType}
+        portfolioName={portfolioName}
+        setPortfolioName={setPortfolioName}
+        selectedCrypto={selectedCrypto}
+        setSelectedCrypto={setSelectedCrypto}
+        cryptoPercentage={cryptoPercentage}
+        setCryptoPercentage={setCryptoPercentage}
+        // Builder state
+        builderCategory={builderCategory}
+        setBuilderCategory={setBuilderCategory}
+        builderMode={builderMode}
+        setBuilderMode={setBuilderMode}
+        joinCode={joinCode}
+        setJoinCode={setJoinCode}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        assetType={assetType}
+        setAssetType={setAssetType}
+        // Modal state
+        showPortfolioManager={showPortfolioManager}
+        setShowPortfolioManager={setShowPortfolioManager}
+        showTemplatesModal={showTemplatesModal}
+        setShowTemplatesModal={setShowTemplatesModal}
+        saveTemplateModal={saveTemplateModal}
+        setSaveTemplateModal={setSaveTemplateModal}
+        templateName={templateName}
+        setTemplateName={setTemplateName}
+        // Templates
+        portfolioTemplates={portfolioTemplates}
+        // Handlers
+        handleRemoveAsset={handleRemoveAsset}
+        handleCreateBattle={handleCreateBattle}
+        handleJoinBattle={handleJoinBattle}
+        handleCreateTrainingBattle={handleCreateTrainingBattle}
+        savePortfolioTemplate={savePortfolioTemplate}
+        loadTemplateToPortfolio={loadTemplateToPortfolio}
+        addNotification={addNotification}
+        // Navigation
+        setScreen={setScreen}
+      />
+    );
+  }
+
+  // PLACEHOLDER - Original builder code removed (was ~1600 lines)
+  // This block should never be reached since we return above
+  if (false && screen === 'builder_OLD_DISABLED') {
+    // Stock category definitions - OLD CODE DISABLED
     const LEADERSHIP_STOCKS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'BRK.B', 'JPM', 'V', 'MA', 'UNH', 'JNJ', 'WMT', 'PG', 'HD', 'XOM'];
     const STABLE_STOCKS = ['KO', 'PEP', 'MCD', 'COST', 'VZ', 'T', 'PFE', 'MRK', 'ABBV', 'LLY', 'NEE', 'DUK', 'SO', 'D', 'CVX', 'COP'];
 
