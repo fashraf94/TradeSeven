@@ -3,7 +3,7 @@ import FundamentalNews from '../Research/FundamentalNews';
 import LatestEarningsReport from '../Research/LatestEarningsReport';
 
 /**
- * AssetResearchModal - Detailed asset research view for draft room
+ * AssetResearchModal - Detailed asset research view (reusable across screens)
  *
  * Shows comprehensive asset information with AI Analysis:
  * - Stock hero section (symbol, name, price, change)
@@ -11,7 +11,20 @@ import LatestEarningsReport from '../Research/LatestEarningsReport';
  * - Key metrics: Market Cap, P/E Ratio, Revenue Growth, Profit Margin
  * - Strengths & Weaknesses
  * - Real-time news from EODHD API
- * - Draft-specific acquire action
+ * - Flexible action button (draft acquire, custom actions, or research-only mode)
+ *
+ * Props:
+ * - asset: { symbol, name, price, percentChange?, change?, sector? }
+ * - sector: string (for sector badge color)
+ * - category: 'steady' | 'risky' | 'defensive' (optional, for draft context)
+ * - isMyTurn: boolean (default: false) - shows ON THE CLOCK alert
+ * - timeRemaining: number (default: 0) - seconds remaining in draft
+ * - canPick: boolean (default: false) - enables acquire button in draft
+ * - onAcquire: (asset) => void (optional) - acquire handler for draft
+ * - onClose: () => void - close handler
+ * - actionConfig: { label, onClick, variant, disabled? } (optional) - custom action button
+ *   - variant: 'primary' | 'danger' | 'secondary'
+ * - showActionButton: boolean (default: true) - show/hide action section
  */
 
 // Sector color definitions
@@ -382,11 +395,16 @@ const AssetResearchModal = ({
   asset,
   sector,
   category,
+  // Draft-specific props - optional with safe defaults
   isMyTurn = false,
   timeRemaining = 0,
   canPick = false,
-  onAcquire,
+  onAcquire = null,
   onClose,
+  // Flexible action button configuration
+  // actionConfig: { label: string, onClick: fn, variant: 'primary'|'danger'|'secondary', disabled?: boolean }
+  actionConfig = null,
+  showActionButton = true,
 }) => {
   const [activeTab, setActiveTab] = useState('fundamental');
 
@@ -1070,37 +1088,97 @@ const AssetResearchModal = ({
           </div>
         </div>
 
-        {/* Action Button */}
-        {isMyTurn && canPick && onAcquire && (
+        {/* Action Button Section - Flexible Configuration */}
+        {showActionButton && (
           <div
             style={{
-              padding: '20px',
+              padding: '16px 20px',
               borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'rgba(0, 0, 0, 0.3)',
             }}
           >
-            <button
-              onClick={() => {
-                onAcquire(asset);
-                onClose();
-              }}
-              style={{
-                width: '100%',
-                padding: '16px',
-                borderRadius: '12px',
-                fontSize: '16px',
-                fontWeight: '700',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                background: 'linear-gradient(180deg, #00d9ff 0%, #0ea5e9 100%)',
-                color: '#000',
-                border: 'none',
-                letterSpacing: '1px',
-                textTransform: 'uppercase',
-                boxShadow: '0 0 20px rgba(0, 217, 255, 0.3)',
-              }}
-            >
-              ACQUIRE {asset.symbol}
-            </button>
+            {/* Draft Mode: ON THE CLOCK - Original behavior */}
+            {isMyTurn && canPick && onAcquire && (
+              <button
+                onClick={() => {
+                  onAcquire(asset);
+                  onClose();
+                }}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: 'linear-gradient(135deg, rgba(0, 255, 136, 0.3) 0%, rgba(0, 255, 136, 0.1) 100%)',
+                  border: '2px solid #00ff88',
+                  borderRadius: '10px',
+                  color: '#e6edf3',
+                  fontWeight: 700,
+                  fontSize: '15px',
+                  cursor: 'pointer',
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px',
+                }}
+              >
+                Acquire {asset.symbol}
+              </button>
+            )}
+
+            {/* Custom Action Button - New flexible option */}
+            {!isMyTurn && actionConfig && (
+              <button
+                onClick={actionConfig.onClick}
+                disabled={actionConfig.disabled}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: actionConfig.variant === 'danger'
+                    ? 'linear-gradient(135deg, rgba(255, 51, 102, 0.3) 0%, rgba(255, 51, 102, 0.1) 100%)'
+                    : actionConfig.variant === 'secondary'
+                    ? 'transparent'
+                    : 'linear-gradient(135deg, rgba(0, 255, 136, 0.3) 0%, rgba(0, 255, 136, 0.1) 100%)',
+                  border: `2px solid ${
+                    actionConfig.variant === 'danger'
+                      ? '#ff3366'
+                      : actionConfig.variant === 'secondary'
+                      ? '#374151'
+                      : '#00ff88'
+                  }`,
+                  borderRadius: '10px',
+                  color: actionConfig.variant === 'secondary'
+                    ? '#8b949e'
+                    : '#e6edf3',
+                  fontWeight: 700,
+                  fontSize: '15px',
+                  cursor: actionConfig.disabled ? 'not-allowed' : 'pointer',
+                  opacity: actionConfig.disabled ? 0.5 : 1,
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                {actionConfig.label}
+              </button>
+            )}
+
+            {/* Research Only Mode - Just close button */}
+            {!isMyTurn && !actionConfig && (
+              <button
+                onClick={onClose}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: 'transparent',
+                  border: '1px solid #374151',
+                  borderRadius: '10px',
+                  color: '#8b949e',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                Close
+              </button>
+            )}
           </div>
         )}
       </div>
