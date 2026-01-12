@@ -17,6 +17,7 @@ const FreeAgentGrid = ({
   onSelectCategory,
   selectedDrop,
   onSelectAdd,
+  onMoreInfo,          // Callback for researching agents
   canSwap,
 }) => {
   // Get agents for current category
@@ -104,6 +105,7 @@ const FreeAgentGrid = ({
               key={agent.symbol}
               asset={agent}
               onSelect={onSelectAdd}
+              onMoreInfo={onMoreInfo}
               disabled={!canSwap}
               isSelectable={selectedDrop !== null && selectedDrop.category === agent.category}
             />

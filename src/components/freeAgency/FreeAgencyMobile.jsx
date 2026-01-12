@@ -219,6 +219,7 @@ const FreeAgencyMobile = ({
           onSelectCategory={setSelectedCategory}
           selectedDrop={selectedDrop}
           onSelectAdd={handleSelectAdd}
+          onMoreInfo={(asset) => setAssetForResearch(asset)}
           canSwap={canSwap}
         />
 
@@ -257,14 +258,29 @@ const FreeAgencyMobile = ({
             symbol: assetForResearch.symbol,
             name: assetForResearch.name || assetForResearch.symbol,
             price: assetForResearch.price || assetForResearch.currentPrice || 0,
-            percentChange: assetForResearch.gain || assetForResearch.percentChange || 0,
+            percentChange: assetForResearch.gain || assetForResearch.priceChange || assetForResearch.percentChange || 0,
             sector: assetForResearch.sector,
           }}
           sector={assetForResearch.sector}
           category={assetForResearch.category}
           onClose={() => setAssetForResearch(null)}
           showActionButton={true}
-          actionConfig={null}
+          actionConfig={
+            // Show "Sign" button if: drop is selected AND this agent matches the category
+            selectedDrop &&
+            assetForResearch.category === selectedDrop.category &&
+            canSwap
+              ? {
+                  label: `Sign ${assetForResearch.symbol}`,
+                  onClick: () => {
+                    handleSelectAdd(assetForResearch);
+                    setAssetForResearch(null);
+                  },
+                  variant: 'primary',
+                  disabled: false,
+                }
+              : null
+          }
         />
       )}
     </div>

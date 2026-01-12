@@ -17,6 +17,7 @@ const FreeAgentGridDesktop = ({
   onSelectCategory,
   selectedDrop,
   onSelectAdd,
+  onMoreInfo,          // Callback for researching agents
   canSwap,
 }) => {
   const displayedAgents = freeAgents[selectedCategory] || [];
@@ -97,6 +98,7 @@ const FreeAgentGridDesktop = ({
               key={agent.symbol}
               asset={agent}
               onSelect={onSelectAdd}
+              onMoreInfo={onMoreInfo}
               disabled={!canSwap}
               isSelectable={selectedDrop !== null && selectedDrop.category === agent.category}
             />
