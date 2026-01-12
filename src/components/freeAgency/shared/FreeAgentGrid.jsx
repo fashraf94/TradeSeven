@@ -96,6 +96,7 @@ const FreeAgentGrid = ({
         gap: '10px',
         maxHeight: '400px',
         overflowY: 'auto',
+        overflowX: 'hidden',
         paddingRight: '4px',
       }}>
         {displayedAgents.length === 0 ? (

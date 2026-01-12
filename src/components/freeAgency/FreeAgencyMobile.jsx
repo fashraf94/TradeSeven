@@ -178,6 +178,7 @@ const FreeAgencyMobile = ({
       <main style={{
         padding: '16px',
         paddingBottom: selectedAdd ? '180px' : '100px', // Extra space for SwapPreview
+        overflowX: 'hidden',
       }}>
         {/* Window Status */}
         <div style={{ marginBottom: '16px' }}>

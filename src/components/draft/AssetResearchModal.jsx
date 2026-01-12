@@ -736,109 +736,79 @@ const AssetResearchModal = ({
               </h2>
             </div>
 
-            {/* Tabs - Improved alignment and sizing */}
+            {/* Tabs - Compact text-only for mobile */}
             <div style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(4, 1fr)',
-              gap: '6px',
+              gap: '4px',
               marginBottom: '16px',
             }}>
               <button
                 onClick={() => setActiveTab('fundamental')}
                 style={{
-                  padding: '10px 8px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: activeTab === 'fundamental' ? '#00d9ff' : 'rgba(255, 255, 255, 0.05)',
-                  color: activeTab === 'fundamental' ? '#000' : 'rgba(255, 255, 255, 0.6)',
+                  padding: '8px 4px',
+                  borderRadius: '6px',
+                  border: activeTab === 'fundamental' ? '1px solid #00d9ff' : '1px solid rgba(255, 255, 255, 0.1)',
+                  background: activeTab === 'fundamental' ? 'rgba(0, 217, 255, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  color: activeTab === 'fundamental' ? '#00d9ff' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '11px',
+                  fontSize: '10px',
                   cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '4px',
                   transition: 'all 0.2s',
-                  minHeight: '40px',
+                  textAlign: 'center',
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <path d="M9 9h6v6H9z" />
-                </svg>
                 Analysis
               </button>
               <button
                 onClick={() => setActiveTab('earnings')}
                 style={{
-                  padding: '10px 8px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: activeTab === 'earnings' ? '#8b5cf6' : 'rgba(255, 255, 255, 0.05)',
-                  color: activeTab === 'earnings' ? '#fff' : 'rgba(255, 255, 255, 0.6)',
+                  padding: '8px 4px',
+                  borderRadius: '6px',
+                  border: activeTab === 'earnings' ? '1px solid #8b5cf6' : '1px solid rgba(255, 255, 255, 0.1)',
+                  background: activeTab === 'earnings' ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  color: activeTab === 'earnings' ? '#8b5cf6' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '11px',
+                  fontSize: '10px',
                   cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '4px',
                   transition: 'all 0.2s',
-                  minHeight: '40px',
+                  textAlign: 'center',
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                  <polyline points="14,2 14,8 20,8"/>
-                </svg>
                 Earnings
               </button>
               <button
                 onClick={() => setActiveTab('technical')}
                 style={{
-                  padding: '10px 8px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: activeTab === 'technical' ? '#00d9ff' : 'rgba(255, 255, 255, 0.05)',
-                  color: activeTab === 'technical' ? '#000' : 'rgba(255, 255, 255, 0.6)',
+                  padding: '8px 4px',
+                  borderRadius: '6px',
+                  border: activeTab === 'technical' ? '1px solid #00d9ff' : '1px solid rgba(255, 255, 255, 0.1)',
+                  background: activeTab === 'technical' ? 'rgba(0, 217, 255, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  color: activeTab === 'technical' ? '#00d9ff' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '11px',
+                  fontSize: '10px',
                   cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '4px',
                   transition: 'all 0.2s',
-                  minHeight: '40px',
+                  textAlign: 'center',
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                </svg>
                 Technical
               </button>
               <button
                 onClick={() => setActiveTab('news')}
                 style={{
-                  padding: '10px 8px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: activeTab === 'news' ? '#00d9ff' : 'rgba(255, 255, 255, 0.05)',
-                  color: activeTab === 'news' ? '#000' : 'rgba(255, 255, 255, 0.6)',
+                  padding: '8px 4px',
+                  borderRadius: '6px',
+                  border: activeTab === 'news' ? '1px solid #00d9ff' : '1px solid rgba(255, 255, 255, 0.1)',
+                  background: activeTab === 'news' ? 'rgba(0, 217, 255, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  color: activeTab === 'news' ? '#00d9ff' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '11px',
+                  fontSize: '10px',
                   cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '4px',
                   transition: 'all 0.2s',
-                  minHeight: '40px',
+                  textAlign: 'center',
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2" />
-                </svg>
                 News
               </button>
             </div>
