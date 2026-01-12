@@ -249,19 +249,20 @@ const FreeAgencyDesktop = ({
                 alignItems: 'center',
                 gap: '8px',
               }}>
-                Your Roster
+                {selectedAdd ? 'Step 2: Your Roster' : 'Your Roster'}
                 <span style={{
                   fontSize: '11px',
-                  color: HOLO_COLORS.textMuted,
+                  color: selectedAdd ? HOLO_COLORS.amber : HOLO_COLORS.textMuted,
                   fontWeight: 400,
                 }}>
-                  (Select to drop)
+                  {selectedAdd ? `(Drop a ${selectedAdd.category})` : '(Select free agent first)'}
                 </span>
               </div>
 
               <RosterGrid
                 roster={playerRoster}
                 selectedDrop={selectedDrop}
+                selectedAdd={selectedAdd}
                 onSelectDrop={handleSelectDrop}
                 onMoreInfo={(asset) => setAssetForResearch(asset)}
                 canSwap={canSwap}
@@ -270,8 +271,8 @@ const FreeAgencyDesktop = ({
 
             {/* Swap Panel */}
             <SwapPanelDesktop
-              selectedDrop={selectedDrop}
               selectedAdd={selectedAdd}
+              selectedDrop={selectedDrop}
               onCancel={handleCancelSelection}
               onConfirm={() => setShowConfirmModal(true)}
               swapsRemaining={swapsRemaining}
@@ -312,7 +313,7 @@ const FreeAgencyDesktop = ({
               freeAgents={freeAgents}
               selectedCategory={selectedCategory}
               onSelectCategory={setSelectedCategory}
-              selectedDrop={selectedDrop}
+              selectedAdd={selectedAdd}
               onSelectAdd={handleSelectAdd}
               onMoreInfo={(asset) => setAssetForResearch(asset)}
               canSwap={canSwap}
@@ -338,8 +339,17 @@ const FreeAgencyDesktop = ({
           asset={{
             symbol: assetForResearch.symbol,
             name: assetForResearch.name || assetForResearch.symbol,
-            price: assetForResearch.price || assetForResearch.currentPrice || 0,
-            percentChange: assetForResearch.gain || assetForResearch.priceChange || assetForResearch.percentChange || 0,
+            // Try multiple possible price fields
+            price: assetForResearch.price
+              || assetForResearch.currentPrice
+              || assetForResearch.close
+              || assetForResearch.lastPrice
+              || 0,
+            percentChange: assetForResearch.priceChange
+              || assetForResearch.percentChange
+              || assetForResearch.change
+              || assetForResearch.gain
+              || 0,
             sector: assetForResearch.sector,
           }}
           sector={assetForResearch.sector}
@@ -347,12 +357,10 @@ const FreeAgencyDesktop = ({
           onClose={() => setAssetForResearch(null)}
           showActionButton={true}
           actionConfig={
-            // Show "Sign" button if: drop is selected AND this agent matches the category
-            selectedDrop &&
-            assetForResearch.category === selectedDrop.category &&
-            canSwap
+            // Show "Select" button if this is a free agent and swap is allowed
+            canSwap && !selectedAdd?.symbol
               ? {
-                  label: `Sign ${assetForResearch.symbol}`,
+                  label: `Select ${assetForResearch.symbol}`,
                   onClick: () => {
                     handleSelectAdd(assetForResearch);
                     setAssetForResearch(null);

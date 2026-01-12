@@ -6,22 +6,26 @@ import CategoryTabs from './CategoryTabs';
 /**
  * FreeAgentGridDesktop - Larger 2-column grid for desktop
  *
+ * NEW FLOW: Step 1 - User selects a free agent FIRST, then picks which roster asset to drop.
+ *
  * Features:
  * - 2-column grid layout
- * - More spacious cards
- * - Scrollable within container
+ * - Selection state for chosen agent
+ * - Category tabs always enabled
  */
 const FreeAgentGridDesktop = ({
   freeAgents,
   selectedCategory,
   onSelectCategory,
-  selectedDrop,
+  selectedAdd,       // The selected free agent
   onSelectAdd,
-  onMoreInfo,          // Callback for researching agents
+  onMoreInfo,
   canSwap,
 }) => {
   const displayedAgents = freeAgents[selectedCategory] || [];
-  const categoryLocked = selectedDrop !== null;
+
+  // Category tabs are NOT locked in new flow
+  const categoryLocked = false;
 
   const counts = {
     steady: freeAgents.steady?.length || 0,
@@ -43,7 +47,7 @@ const FreeAgentGridDesktop = ({
           fontWeight: 700,
           color: HOLO_COLORS.textPrimary,
         }}>
-          Free Agent Marketplace
+          {selectedAdd ? 'Free Agent Marketplace' : 'Step 1: Select Free Agent'}
         </div>
         <div style={{
           fontSize: '12px',
@@ -53,7 +57,23 @@ const FreeAgentGridDesktop = ({
         </div>
       </div>
 
-      {/* Category Tabs */}
+      {/* Helper Text - only show when nothing selected */}
+      {!selectedAdd && canSwap && (
+        <div style={{
+          padding: '12px',
+          background: `${HOLO_COLORS.cyan}11`,
+          border: `1px solid ${HOLO_COLORS.cyan}33`,
+          borderRadius: '8px',
+          marginBottom: '16px',
+          textAlign: 'center',
+          fontSize: '12px',
+          color: HOLO_COLORS.cyan,
+        }}>
+          Click a free agent to begin swap
+        </div>
+      )}
+
+      {/* Category Tabs - Always enabled */}
       <div style={{ marginBottom: '16px' }}>
         <CategoryTabs
           selectedCategory={selectedCategory}
@@ -61,16 +81,6 @@ const FreeAgentGridDesktop = ({
           disabled={categoryLocked}
           counts={counts}
         />
-        {categoryLocked && (
-          <div style={{
-            fontSize: '10px',
-            color: HOLO_COLORS.amber,
-            textAlign: 'center',
-            marginTop: '8px',
-          }}>
-            Category locked to {selectedDrop.category}
-          </div>
-        )}
       </div>
 
       {/* Agent Grid - 2 columns for desktop */}
@@ -97,10 +107,10 @@ const FreeAgentGridDesktop = ({
             <FreeAgentCard
               key={agent.symbol}
               asset={agent}
+              isSelected={selectedAdd?.symbol === agent.symbol}
               onSelect={onSelectAdd}
               onMoreInfo={onMoreInfo}
               disabled={!canSwap}
-              isSelectable={selectedDrop !== null && selectedDrop.category === agent.category}
             />
           ))
         )}

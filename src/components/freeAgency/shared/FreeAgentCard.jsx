@@ -2,38 +2,69 @@ import React from 'react';
 import { HOLO_COLORS, CATEGORY_CONFIG } from '../../../constants/holoTheme';
 
 /**
- * FreeAgentCard - Individual free agent card
+ * FreeAgentCard - Individual free agent card (now selectable)
+ *
+ * NEW FLOW: This is the first step. Tapping a card selects it.
  *
  * Features:
  * - Category color indicator
  * - Symbol and name
  * - Info button for research modal
- * - "+ Add" button when selectable
+ * - Selection state with green highlight
+ * - "Adding" badge when selected
  */
 const FreeAgentCard = ({
   asset,
+  isSelected = false,  // Whether this agent is selected
   onSelect,
-  onMoreInfo,          // Callback for info button
+  onMoreInfo,
   disabled = false,
-  isSelectable = false,
 }) => {
   const categoryConfig = CATEGORY_CONFIG[asset.category] || CATEGORY_CONFIG.steady;
 
   return (
     <div
+      onClick={() => !disabled && onSelect(asset)}
       style={{
         width: '100%',
         padding: '14px 16px',
         minHeight: '60px',
-        background: HOLO_COLORS.bgCard,
-        border: `1px solid ${isSelectable ? categoryConfig.color + '66' : HOLO_COLORS.borderSubtle}`,
+        background: isSelected
+          ? 'rgba(0, 255, 136, 0.12)'
+          : HOLO_COLORS.bgCard,
+        border: isSelected
+          ? `2px solid ${HOLO_COLORS.green}`
+          : `1px solid ${HOLO_COLORS.borderSubtle}`,
         borderRadius: '10px',
         opacity: disabled ? 0.4 : 1,
+        cursor: disabled ? 'not-allowed' : 'pointer',
         transition: 'all 0.2s ease',
         position: 'relative',
         overflow: 'hidden',
+        boxShadow: isSelected
+          ? `0 0 15px ${HOLO_COLORS.green}44`
+          : 'none',
       }}
     >
+      {/* Selected Badge */}
+      {isSelected && (
+        <div style={{
+          position: 'absolute',
+          top: '-1px',
+          right: '12px',
+          background: HOLO_COLORS.green,
+          color: '#000',
+          fontSize: '9px',
+          fontWeight: 700,
+          padding: '3px 10px',
+          borderRadius: '0 0 6px 6px',
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px',
+        }}>
+          Adding
+        </div>
+      )}
+
       {/* Category indicator - left edge */}
       <div style={{
         position: 'absolute',
@@ -52,7 +83,7 @@ const FreeAgentCard = ({
         marginLeft: '10px',
         gap: '12px',
       }}>
-        {/* Asset Info - Constrained width, not flex */}
+        {/* Asset Info - Constrained width */}
         <div style={{
           minWidth: '100px',
           maxWidth: '180px',
@@ -60,7 +91,7 @@ const FreeAgentCard = ({
           <div style={{
             fontSize: '15px',
             fontWeight: 700,
-            color: HOLO_COLORS.textPrimary,
+            color: isSelected ? HOLO_COLORS.green : HOLO_COLORS.textPrimary,
             marginBottom: '2px',
           }}>
             {asset.symbol}
@@ -101,33 +132,41 @@ const FreeAgentCard = ({
           </button>
         )}
 
-        {/* Spacer - pushes Add button to right */}
+        {/* Spacer - pushes selection indicator to right */}
         <div style={{ flex: 1 }} />
 
-        {/* Add Button - Far right, only when selectable */}
-        {isSelectable && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (!disabled) onSelect(asset);
-            }}
-            disabled={disabled}
-            style={{
-              padding: '6px 14px',
-              background: `${HOLO_COLORS.green}22`,
-              border: `1px solid ${HOLO_COLORS.green}66`,
-              borderRadius: '6px',
-              fontSize: '12px',
-              fontWeight: 700,
-              color: HOLO_COLORS.green,
-              textTransform: 'uppercase',
-              cursor: disabled ? 'not-allowed' : 'pointer',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-            }}
-          >
-            + Add
-          </button>
+        {/* Selection indicator */}
+        {!isSelected && !disabled && (
+          <div style={{
+            padding: '6px 12px',
+            background: `${HOLO_COLORS.green}15`,
+            border: `1px solid ${HOLO_COLORS.green}44`,
+            borderRadius: '6px',
+            fontSize: '11px',
+            fontWeight: 600,
+            color: HOLO_COLORS.green,
+            flexShrink: 0,
+          }}>
+            + Select
+          </div>
+        )}
+
+        {/* Selected checkmark */}
+        {isSelected && (
+          <div style={{
+            width: '28px',
+            height: '28px',
+            background: HOLO_COLORS.green,
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="3">
+              <polyline points="20,6 9,17 4,12" />
+            </svg>
+          </div>
         )}
       </div>
     </div>

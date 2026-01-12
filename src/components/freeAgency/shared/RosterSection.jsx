@@ -5,17 +5,20 @@ import RosterAssetCard from './RosterAssetCard';
 /**
  * RosterSection - Horizontal scrolling row of user's assets to drop
  *
+ * NEW FLOW: User selects FREE AGENT first, then selects which roster asset to DROP.
+ * This section is only active after a free agent is selected.
+ *
  * Features:
- * - Shows all 9 roster assets in horizontal scroll
- * - Highlights worst performer
- * - Category color coding
- * - Touch-friendly scrolling
+ * - Shows roster assets matching the selected free agent's category
+ * - Highlights worst performer in that category
+ * - Inactive state when no free agent is selected
  */
 const RosterSection = ({
   roster,
   selectedDrop,
+  selectedAdd,        // NEW: the free agent being added
   onSelectDrop,
-  onMoreInfo,        // Callback for researching assets
+  onMoreInfo,
   canSwap,
 }) => {
   // Flatten roster with gains for display
@@ -25,8 +28,16 @@ const RosterSection = ({
     ...(roster.defensive || []),
   ];
 
-  // Find worst performer to highlight
-  const worstAsset = allAssets.reduce((worst, asset) => {
+  // Determine if section is active (free agent selected)
+  const isActive = selectedAdd !== null;
+
+  // Filter to show only matching category when a free agent is selected
+  const displayedAssets = isActive
+    ? allAssets.filter(asset => asset.category === selectedAdd.category)
+    : allAssets;
+
+  // Find worst performer in the displayed assets
+  const worstAsset = displayedAssets.reduce((worst, asset) => {
     if (!worst || (asset.gain || 0) < (worst.gain || 0)) {
       return asset;
     }
@@ -47,14 +58,14 @@ const RosterSection = ({
         <div style={{
           fontSize: '11px',
           fontWeight: 700,
-          color: HOLO_COLORS.textSecondary,
+          color: isActive ? HOLO_COLORS.textPrimary : HOLO_COLORS.textMuted,
           textTransform: 'uppercase',
           letterSpacing: '1px',
         }}>
-          Select Asset to Drop
+          {isActive ? `Step 2: Drop a ${selectedAdd.category}` : 'Your Roster'}
         </div>
 
-        {worstAsset && !selectedDrop && (
+        {isActive && worstAsset && !selectedDrop && (
           <div style={{
             fontSize: '9px',
             color: HOLO_COLORS.amber,
@@ -70,6 +81,15 @@ const RosterSection = ({
               animation: 'rosterPulse 1.5s ease-in-out infinite',
             }} />
             Worst: {worstAsset.symbol}
+          </div>
+        )}
+
+        {!isActive && (
+          <div style={{
+            fontSize: '9px',
+            color: HOLO_COLORS.textMuted,
+          }}>
+            Select free agent first ↓
           </div>
         )}
       </div>
@@ -88,24 +108,26 @@ const RosterSection = ({
         scrollbarWidth: 'none',
         msOverflowStyle: 'none',
         WebkitOverflowScrolling: 'touch',
+        opacity: isActive ? 1 : 0.4,
+        pointerEvents: isActive ? 'auto' : 'none',
       }}>
-        {allAssets.length === 0 ? (
+        {displayedAssets.length === 0 ? (
           <div style={{
             padding: '20px',
             color: HOLO_COLORS.textMuted,
             fontSize: '12px',
           }}>
-            No assets in roster
+            {isActive ? `No ${selectedAdd.category} assets in roster` : 'No assets in roster'}
           </div>
         ) : (
-          allAssets.map((asset) => (
+          displayedAssets.map((asset) => (
             <RosterAssetCard
               key={asset.symbol}
               asset={asset}
               isSelected={selectedDrop?.symbol === asset.symbol}
               onSelect={onSelectDrop}
               onMoreInfo={onMoreInfo}
-              disabled={!canSwap}
+              disabled={!isActive || !canSwap}
               compact
             />
           ))
@@ -113,14 +135,14 @@ const RosterSection = ({
       </div>
 
       {/* Helper text */}
-      {canSwap && !selectedDrop && allAssets.length > 0 && (
+      {isActive && !selectedDrop && displayedAssets.length > 0 && (
         <div style={{
           fontSize: '10px',
-          color: HOLO_COLORS.textMuted,
+          color: HOLO_COLORS.amber,
           textAlign: 'center',
           marginTop: '8px',
         }}>
-          Tap card to select for swap {onMoreInfo && <>• Tap <span style={{ color: HOLO_COLORS.cyan }}>ⓘ</span> for research</>}
+          Tap a {selectedAdd.category} asset to drop for {selectedAdd.symbol}
         </div>
       )}
 

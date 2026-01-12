@@ -6,25 +6,28 @@ import CategoryTabs from './CategoryTabs';
 /**
  * FreeAgentGrid - Grid of available free agents with category filtering
  *
+ * NEW FLOW: This is now Step 1. User selects a free agent FIRST,
+ * then goes to roster to select which asset to drop.
+ *
  * Features:
- * - Category tabs (lock when drop selected)
+ * - Category tabs (always enabled - user can browse freely)
  * - Scrollable list of free agents
- * - Shows "+ Add" when asset is selectable
+ * - Selection state for chosen agent
  */
 const FreeAgentGrid = ({
   freeAgents,
   selectedCategory,
   onSelectCategory,
-  selectedDrop,
+  selectedAdd,         // The selected free agent
   onSelectAdd,
-  onMoreInfo,          // Callback for researching agents
+  onMoreInfo,
   canSwap,
 }) => {
   // Get agents for current category
   const displayedAgents = freeAgents[selectedCategory] || [];
 
-  // Category is locked when a drop is selected
-  const categoryLocked = selectedDrop !== null;
+  // Category tabs are NOT locked in new flow - user can browse freely
+  const categoryLocked = false;
 
   // Count agents per category
   const counts = {
@@ -45,11 +48,11 @@ const FreeAgentGrid = ({
         <div style={{
           fontSize: '11px',
           fontWeight: 700,
-          color: HOLO_COLORS.textSecondary,
+          color: HOLO_COLORS.textPrimary,
           textTransform: 'uppercase',
           letterSpacing: '1px',
         }}>
-          Free Agents
+          {selectedAdd ? 'Free Agents' : 'Step 1: Select Free Agent'}
         </div>
 
         <div style={{
@@ -60,7 +63,23 @@ const FreeAgentGrid = ({
         </div>
       </div>
 
-      {/* Category Tabs */}
+      {/* Helper Text - only show when nothing selected */}
+      {!selectedAdd && canSwap && (
+        <div style={{
+          fontSize: '10px',
+          color: HOLO_COLORS.cyan,
+          textAlign: 'center',
+          marginBottom: '10px',
+          padding: '8px',
+          background: `${HOLO_COLORS.cyan}11`,
+          borderRadius: '6px',
+          border: `1px solid ${HOLO_COLORS.cyan}33`,
+        }}>
+          Tap a free agent to begin swap
+        </div>
+      )}
+
+      {/* Category Tabs - Always enabled */}
       <div style={{ marginBottom: '12px' }}>
         <CategoryTabs
           selectedCategory={selectedCategory}
@@ -68,17 +87,6 @@ const FreeAgentGrid = ({
           disabled={categoryLocked}
           counts={counts}
         />
-
-        {categoryLocked && (
-          <div style={{
-            fontSize: '9px',
-            color: HOLO_COLORS.amber,
-            textAlign: 'center',
-            marginTop: '6px',
-          }}>
-            Category locked to match selected asset
-          </div>
-        )}
       </div>
 
       {/* Agent Grid */}
@@ -104,10 +112,10 @@ const FreeAgentGrid = ({
             <FreeAgentCard
               key={agent.symbol}
               asset={agent}
+              isSelected={selectedAdd?.symbol === agent.symbol}
               onSelect={onSelectAdd}
               onMoreInfo={onMoreInfo}
               disabled={!canSwap}
-              isSelectable={selectedDrop !== null && selectedDrop.category === agent.category}
             />
           ))
         )}

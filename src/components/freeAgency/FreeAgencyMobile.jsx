@@ -177,7 +177,7 @@ const FreeAgencyMobile = ({
       {/* Main Content */}
       <main style={{
         padding: '16px',
-        paddingBottom: selectedDrop ? '180px' : '100px', // Extra space for SwapPreview
+        paddingBottom: selectedAdd ? '180px' : '100px', // Extra space for SwapPreview
       }}>
         {/* Window Status */}
         <div style={{ marginBottom: '16px' }}>
@@ -203,22 +203,23 @@ const FreeAgencyMobile = ({
           </div>
         )}
 
-        {/* Roster Section - Select to Drop */}
-        <RosterSection
-          roster={playerRoster}
-          selectedDrop={selectedDrop}
-          onSelectDrop={handleSelectDrop}
-          onMoreInfo={(asset) => setAssetForResearch(asset)}
-          canSwap={canSwap}
-        />
-
-        {/* Free Agent Grid */}
+        {/* Free Agent Grid - Step 1: Select to Add */}
         <FreeAgentGrid
           freeAgents={freeAgents}
           selectedCategory={selectedCategory}
           onSelectCategory={setSelectedCategory}
-          selectedDrop={selectedDrop}
+          selectedAdd={selectedAdd}
           onSelectAdd={handleSelectAdd}
+          onMoreInfo={(asset) => setAssetForResearch(asset)}
+          canSwap={canSwap}
+        />
+
+        {/* Roster Section - Step 2: Select to Drop */}
+        <RosterSection
+          roster={playerRoster}
+          selectedDrop={selectedDrop}
+          selectedAdd={selectedAdd}
+          onSelectDrop={handleSelectDrop}
           onMoreInfo={(asset) => setAssetForResearch(asset)}
           canSwap={canSwap}
         />
@@ -230,10 +231,10 @@ const FreeAgencyMobile = ({
         />
       </main>
 
-      {/* Swap Preview Bar (shows when asset selected) */}
+      {/* Swap Preview Bar (shows when free agent selected) */}
       <SwapPreview
-        selectedDrop={selectedDrop}
         selectedAdd={selectedAdd}
+        selectedDrop={selectedDrop}
         onCancel={handleCancelSelection}
         onConfirm={() => setShowConfirmModal(true)}
         swapsRemaining={swapsRemaining}
@@ -257,8 +258,17 @@ const FreeAgencyMobile = ({
           asset={{
             symbol: assetForResearch.symbol,
             name: assetForResearch.name || assetForResearch.symbol,
-            price: assetForResearch.price || assetForResearch.currentPrice || 0,
-            percentChange: assetForResearch.gain || assetForResearch.priceChange || assetForResearch.percentChange || 0,
+            // Try multiple possible price fields
+            price: assetForResearch.price
+              || assetForResearch.currentPrice
+              || assetForResearch.close
+              || assetForResearch.lastPrice
+              || 0,
+            percentChange: assetForResearch.priceChange
+              || assetForResearch.percentChange
+              || assetForResearch.change
+              || assetForResearch.gain
+              || 0,
             sector: assetForResearch.sector,
           }}
           sector={assetForResearch.sector}
@@ -266,12 +276,10 @@ const FreeAgencyMobile = ({
           onClose={() => setAssetForResearch(null)}
           showActionButton={true}
           actionConfig={
-            // Show "Sign" button if: drop is selected AND this agent matches the category
-            selectedDrop &&
-            assetForResearch.category === selectedDrop.category &&
-            canSwap
+            // Show "Select" button if this is a free agent and swap is allowed
+            canSwap && !selectedAdd?.symbol
               ? {
-                  label: `Sign ${assetForResearch.symbol}`,
+                  label: `Select ${assetForResearch.symbol}`,
                   onClick: () => {
                     handleSelectAdd(assetForResearch);
                     setAssetForResearch(null);

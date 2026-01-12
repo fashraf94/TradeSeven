@@ -135,43 +135,55 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
   }, [loadData]);
 
   // ===========================================
-  // SELECTION HANDLERS
+  // SELECTION HANDLERS (Reversed flow: Add first, then Drop)
   // ===========================================
-  const handleSelectDrop = useCallback((asset) => {
+
+  // Step 1: User selects a FREE AGENT to ADD
+  const handleSelectAdd = useCallback((asset) => {
     if (!canSwap) return;
 
     // If same asset clicked, deselect
-    if (selectedDrop?.symbol === asset.symbol) {
-      setSelectedDrop(null);
+    if (selectedAdd?.symbol === asset.symbol) {
       setSelectedAdd(null);
-      return;
-    }
-
-    setSelectedDrop(asset);
-    setSelectedCategory(asset.category);
-    setSelectedAdd(null); // Clear any previous add selection
-
-    logger.log('[FreeAgency] Selected to drop:', asset.symbol);
-  }, [canSwap, selectedDrop, logger]);
-
-  const handleSelectAdd = useCallback((asset) => {
-    if (!canSwap || !selectedDrop) return;
-
-    // Ensure same category
-    if (asset.category !== selectedDrop.category) {
-      logger.warn('[FreeAgency] Category mismatch - cannot select');
+      setSelectedDrop(null); // Also clear drop selection
       return;
     }
 
     setSelectedAdd(asset);
-    setShowConfirmModal(true);
+    setSelectedCategory(asset.category); // Lock to this category
+
+    // Clear drop selection if it's a different category
+    if (selectedDrop && selectedDrop.category !== asset.category) {
+      setSelectedDrop(null);
+    }
 
     logger.log('[FreeAgency] Selected to add:', asset.symbol);
-  }, [canSwap, selectedDrop, logger]);
+  }, [canSwap, selectedAdd, selectedDrop, logger]);
+
+  // Step 2: User selects a ROSTER ASSET to DROP (must match category)
+  const handleSelectDrop = useCallback((asset) => {
+    if (!canSwap) return;
+    if (!selectedAdd) return; // Must select free agent first
+
+    // Ensure same category as selected free agent
+    if (asset.category !== selectedAdd.category) {
+      logger.warn('[FreeAgency] Category mismatch - cannot select');
+      return;
+    }
+
+    // If same asset clicked, deselect
+    if (selectedDrop?.symbol === asset.symbol) {
+      setSelectedDrop(null);
+      return;
+    }
+
+    setSelectedDrop(asset);
+    logger.log('[FreeAgency] Selected to drop:', asset.symbol);
+  }, [canSwap, selectedAdd, selectedDrop, logger]);
 
   const handleCancelSelection = useCallback(() => {
-    setSelectedDrop(null);
     setSelectedAdd(null);
+    setSelectedDrop(null);
     setShowConfirmModal(false);
   }, []);
 

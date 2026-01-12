@@ -4,20 +4,22 @@ import { HOLO_COLORS, GLOW_EFFECTS } from '../../../constants/holoTheme';
 /**
  * SwapPanelDesktop - Side panel showing swap preview for desktop
  *
+ * NEW FLOW: Shows ADD → DROP (user selects free agent first)
+ *
  * Features:
  * - Shows in left column (not fixed bottom bar)
- * - Visual DROP → ADD preview
+ * - Visual ADD → DROP preview
  * - Confirm/Cancel buttons
  */
 const SwapPanelDesktop = ({
-  selectedDrop,
-  selectedAdd,
+  selectedAdd,       // First: the free agent to add
+  selectedDrop,      // Second: the roster asset to drop
   onCancel,
   onConfirm,
   swapsRemaining,
   isSwapping,
 }) => {
-  const isComplete = selectedDrop && selectedAdd;
+  const isComplete = selectedAdd && selectedDrop;
 
   return (
     <div style={{
@@ -37,10 +39,10 @@ const SwapPanelDesktop = ({
         marginBottom: '16px',
         textAlign: 'center',
       }}>
-        {selectedDrop ? 'Pending Swap' : 'Select an Asset'}
+        {selectedAdd ? 'Pending Swap' : 'Select a Free Agent'}
       </div>
 
-      {!selectedDrop ? (
+      {!selectedAdd ? (
         // Empty state
         <div style={{
           padding: '30px 20px',
@@ -51,11 +53,11 @@ const SwapPanelDesktop = ({
           <div style={{ fontSize: '32px', marginBottom: '12px', opacity: 0.5 }}>
             🔄
           </div>
-          Select an asset from your roster to begin a swap
+          Select a free agent from the marketplace to begin a swap
         </div>
       ) : (
         <>
-          {/* Swap Visualization */}
+          {/* Swap Visualization: ADD → DROP */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -63,37 +65,30 @@ const SwapPanelDesktop = ({
             gap: '16px',
             marginBottom: '20px',
           }}>
-            {/* Drop Asset */}
+            {/* Add Asset - First */}
             <div style={{
               flex: 1,
               padding: '16px',
-              background: 'rgba(255, 51, 102, 0.1)',
-              border: `1px solid ${HOLO_COLORS.red}44`,
+              background: 'rgba(0, 255, 136, 0.1)',
+              border: `1px solid ${HOLO_COLORS.green}44`,
               borderRadius: '10px',
               textAlign: 'center',
             }}>
               <div style={{
                 fontSize: '10px',
-                color: HOLO_COLORS.red,
+                color: HOLO_COLORS.green,
                 textTransform: 'uppercase',
                 letterSpacing: '0.5px',
                 marginBottom: '6px',
               }}>
-                Dropping
+                Adding
               </div>
               <div style={{
                 fontSize: '18px',
                 fontWeight: 700,
                 color: HOLO_COLORS.textPrimary,
               }}>
-                {selectedDrop.symbol}
-              </div>
-              <div style={{
-                fontSize: '11px',
-                color: (selectedDrop.gain || 0) >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
-                marginTop: '4px',
-              }}>
-                {(selectedDrop.gain || 0) >= 0 ? '+' : ''}{(selectedDrop.gain || 0).toFixed(2)}%
+                {selectedAdd.symbol}
               </div>
             </div>
 
@@ -106,30 +101,30 @@ const SwapPanelDesktop = ({
               →
             </div>
 
-            {/* Add Asset */}
+            {/* Drop Asset - Second */}
             <div style={{
               flex: 1,
               padding: '16px',
-              background: isComplete ? 'rgba(0, 255, 136, 0.1)' : HOLO_COLORS.bgElevated,
-              border: `1px solid ${isComplete ? HOLO_COLORS.green + '44' : HOLO_COLORS.borderSubtle}`,
+              background: isComplete ? 'rgba(255, 51, 102, 0.1)' : HOLO_COLORS.bgElevated,
+              border: `1px solid ${isComplete ? HOLO_COLORS.red + '44' : HOLO_COLORS.borderSubtle}`,
               borderRadius: '10px',
               textAlign: 'center',
             }}>
               <div style={{
                 fontSize: '10px',
-                color: isComplete ? HOLO_COLORS.green : HOLO_COLORS.textMuted,
+                color: isComplete ? HOLO_COLORS.red : HOLO_COLORS.textMuted,
                 textTransform: 'uppercase',
                 letterSpacing: '0.5px',
                 marginBottom: '6px',
               }}>
-                Adding
+                Dropping
               </div>
               <div style={{
                 fontSize: '18px',
                 fontWeight: 700,
                 color: isComplete ? HOLO_COLORS.textPrimary : HOLO_COLORS.textMuted,
               }}>
-                {selectedAdd?.symbol || '?'}
+                {selectedDrop?.symbol || '?'}
               </div>
               {!isComplete && (
                 <div style={{
@@ -137,11 +132,36 @@ const SwapPanelDesktop = ({
                   color: HOLO_COLORS.textMuted,
                   marginTop: '4px',
                 }}>
-                  Select from marketplace
+                  Select from roster
+                </div>
+              )}
+              {isComplete && (
+                <div style={{
+                  fontSize: '11px',
+                  color: (selectedDrop.gain || 0) >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
+                  marginTop: '4px',
+                }}>
+                  {(selectedDrop.gain || 0) >= 0 ? '+' : ''}{(selectedDrop.gain || 0).toFixed(2)}%
                 </div>
               )}
             </div>
           </div>
+
+          {/* Helper text when drop not selected */}
+          {!isComplete && (
+            <div style={{
+              padding: '10px',
+              background: `${HOLO_COLORS.amber}11`,
+              border: `1px solid ${HOLO_COLORS.amber}33`,
+              borderRadius: '6px',
+              marginBottom: '16px',
+              fontSize: '11px',
+              color: HOLO_COLORS.amber,
+              textAlign: 'center',
+            }}>
+              ← Select a {selectedAdd.category} asset from your roster to drop
+            </div>
+          )}
 
           {/* Warning */}
           {isComplete && (
