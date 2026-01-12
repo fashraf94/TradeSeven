@@ -71,7 +71,7 @@ import {
   getAvailableSectors,
 } from './services/recommendationEngine';
 // Extracted Screens - Batch 1
-import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen } from './screens';
+import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen } from './screens';
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 
@@ -25942,8 +25942,21 @@ export default function PortfolioDuel() {
 
   // DRAFT BATTLE VIEW OLD CODE REMOVED - See src/screens/DraftBattleScreen.jsx
 
-  // FREE AGENCY SCREEN - Extracted to FreeAgencyScreen component
+  // FREE AGENCY SCREEN - V2 with Holographic War Room theme (Mobile + Desktop)
   if (screen === 'freeAgency') {
+    return (
+      <FreeAgencyScreenV2
+        containerStyle={containerStyle}
+        currentDraft={currentDraft}
+        user={user}
+        setScreen={setScreen}
+        logger={logger}
+      />
+    );
+  }
+
+  // Legacy Free Agency Screen (kept for backwards compatibility)
+  if (screen === 'freeAgencyLegacy') {
     return (
       <FreeAgencyScreen
         containerStyle={containerStyle}
