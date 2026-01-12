@@ -12,7 +12,7 @@ import RosterAssetCard from './RosterAssetCard';
  * - Touch-friendly scrolling
  */
 const RosterSection = ({
-  roster,           // { steady: [], risky: [], defensive: [] }
+  roster,
   selectedDrop,
   onSelectDrop,
   canSwap,
@@ -79,6 +79,7 @@ const RosterSection = ({
         gap: '10px',
         overflowX: 'auto',
         paddingBottom: '8px',
+        paddingTop: '14px',
         marginLeft: '-16px',
         marginRight: '-16px',
         paddingLeft: '16px',

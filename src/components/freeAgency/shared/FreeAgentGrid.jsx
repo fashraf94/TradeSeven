@@ -12,10 +12,10 @@ import CategoryTabs from './CategoryTabs';
  * - Shows "+ Add" when asset is selectable
  */
 const FreeAgentGrid = ({
-  freeAgents,         // { steady: [], risky: [], defensive: [] }
+  freeAgents,
   selectedCategory,
   onSelectCategory,
-  selectedDrop,       // If set, only show matching category
+  selectedDrop,
   onSelectAdd,
   canSwap,
 }) => {
@@ -84,8 +84,8 @@ const FreeAgentGrid = ({
       <div style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: '8px',
-        maxHeight: '300px',
+        gap: '10px',
+        maxHeight: '400px',
         overflowY: 'auto',
         paddingRight: '4px',
       }}>

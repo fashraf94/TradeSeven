@@ -11,15 +11,13 @@ import { HOLO_COLORS, CATEGORY_CONFIG } from '../../../constants/holoTheme';
  * - "+ Add" indicator when selectable
  */
 const FreeAgentCard = ({
-  asset,              // { symbol, name, category, priceChange }
+  asset,
   onSelect,
   disabled = false,
-  isSelectable = false,  // Only selectable when a drop is chosen
+  isSelectable = false,
 }) => {
   const categoryConfig = CATEGORY_CONFIG[asset.category] || CATEGORY_CONFIG.steady;
-
-  // Placeholder for price change (would come from API in real implementation)
-  const priceChange = asset.priceChange || (Math.random() * 10 - 3); // Simulated for demo
+  const priceChange = asset.priceChange || 0;
   const isPositive = priceChange >= 0;
 
   return (
@@ -28,7 +26,8 @@ const FreeAgentCard = ({
       disabled={disabled || !isSelectable}
       style={{
         width: '100%',
-        padding: '12px',
+        padding: '14px 16px',
+        minHeight: '60px',
         background: HOLO_COLORS.bgCard,
         border: `1px solid ${isSelectable ? categoryConfig.color + '66' : HOLO_COLORS.borderSubtle}`,
         borderRadius: '10px',
@@ -40,7 +39,7 @@ const FreeAgentCard = ({
         overflow: 'hidden',
       }}
     >
-      {/* Category indicator */}
+      {/* Category indicator - left edge */}
       <div style={{
         position: 'absolute',
         left: 0,
@@ -58,19 +57,19 @@ const FreeAgentCard = ({
         marginLeft: '8px',
       }}>
         {/* Asset Info */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1 }}>
           <div style={{
-            fontSize: '14px',
+            fontSize: '15px',
             fontWeight: 700,
             color: HOLO_COLORS.textPrimary,
+            marginBottom: '2px',
           }}>
             {asset.symbol}
           </div>
           <div style={{
-            fontSize: '10px',
+            fontSize: '11px',
             color: HOLO_COLORS.textMuted,
-            marginTop: '2px',
-            maxWidth: '100px',
+            maxWidth: '120px',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
@@ -79,53 +78,43 @@ const FreeAgentCard = ({
           </div>
         </div>
 
-        {/* Mini Sparkline */}
+        {/* Mini Sparkline Placeholder */}
         <div style={{
-          width: '50px',
-          height: '24px',
+          width: '60px',
+          height: '28px',
           background: `linear-gradient(90deg, transparent, ${isPositive ? HOLO_COLORS.green : HOLO_COLORS.red}22)`,
           borderRadius: '4px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
         }}>
-          <svg width="40" height="16" viewBox="0 0 40 16">
+          <svg width="50" height="20" viewBox="0 0 50 20">
             <path
               d={isPositive
-                ? "M0,12 Q10,10 20,8 T40,4"
-                : "M0,4 Q10,6 20,8 T40,12"
+                ? "M0,15 Q12,12 25,8 T50,3"
+                : "M0,3 Q12,8 25,12 T50,17"
               }
               fill="none"
               stroke={isPositive ? HOLO_COLORS.green : HOLO_COLORS.red}
-              strokeWidth="1.5"
+              strokeWidth="2"
               opacity="0.8"
             />
           </svg>
         </div>
 
-        {/* Price change or Add indicator */}
-        {isSelectable ? (
+        {/* Add indicator when selectable */}
+        {isSelectable && (
           <div style={{
-            padding: '6px 10px',
+            padding: '8px 12px',
             background: `${HOLO_COLORS.green}22`,
             border: `1px solid ${HOLO_COLORS.green}66`,
             borderRadius: '6px',
-            fontSize: '10px',
+            fontSize: '11px',
             fontWeight: 700,
             color: HOLO_COLORS.green,
             textTransform: 'uppercase',
           }}>
             + Add
-          </div>
-        ) : (
-          <div style={{
-            fontSize: '11px',
-            fontWeight: 600,
-            color: isPositive ? HOLO_COLORS.green : HOLO_COLORS.red,
-            minWidth: '50px',
-            textAlign: 'right',
-          }}>
-            {isPositive ? '+' : ''}{priceChange.toFixed(2)}%
           </div>
         )}
       </div>

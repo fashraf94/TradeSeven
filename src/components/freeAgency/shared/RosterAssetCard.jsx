@@ -10,8 +10,8 @@ import { HOLO_COLORS, CATEGORY_CONFIG } from '../../../constants/holoTheme';
  * - Selected state with red highlight and "DROP" badge
  */
 const RosterAssetCard = ({
-  asset,              // { symbol, category, gain }
-  isSelected,         // Is this the asset selected to drop?
+  asset,
+  isSelected,
   onSelect,
   disabled = false,
   compact = false,
@@ -29,6 +29,8 @@ const RosterAssetCard = ({
         width: compact ? '100px' : '110px',
         minWidth: compact ? '100px' : '110px',
         padding: compact ? '10px' : '12px',
+        paddingTop: isSelected ? '18px' : (compact ? '10px' : '12px'),
+        marginTop: isSelected ? '12px' : '0',
         background: isSelected
           ? 'rgba(255, 51, 102, 0.15)'
           : HOLO_COLORS.bgCard,
@@ -45,21 +47,23 @@ const RosterAssetCard = ({
           : 'none',
       }}
     >
-      {/* Selected indicator */}
+      {/* Selected indicator - "DROP" badge */}
       {isSelected && (
         <div style={{
           position: 'absolute',
-          top: '-8px',
+          top: '-10px',
           left: '50%',
           transform: 'translateX(-50%)',
           background: HOLO_COLORS.red,
           color: '#000',
-          fontSize: '8px',
+          fontSize: '9px',
           fontWeight: 700,
-          padding: '2px 8px',
+          padding: '3px 10px',
           borderRadius: '4px',
           textTransform: 'uppercase',
           letterSpacing: '0.5px',
+          zIndex: 1,
+          boxShadow: `0 2px 8px ${HOLO_COLORS.red}66`,
         }}>
           Drop
         </div>
