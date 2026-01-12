@@ -1,13 +1,13 @@
 import React from 'react';
 import { HOLO_COLORS, CATEGORY_CONFIG } from '../../../constants/holoTheme';
-import { CategoryBadge } from '../../shared';
+import { CategoryBadge, GainLossBadge } from '../../shared';
 
 /**
  * RosterAssetCard - Individual asset card in the "Select to Drop" section
  *
  * Displays user's portfolio asset with:
  * - Category color indicator
- * - Symbol and gain/loss percentage
+ * - Symbol and gain/loss percentage (using GainLossBadge)
  * - Selected state with red highlight and "DROP" badge
  * - Info button for opening research modal
  */
@@ -21,7 +21,6 @@ const RosterAssetCard = ({
 }) => {
   const categoryConfig = CATEGORY_CONFIG[asset.category] || CATEGORY_CONFIG.steady;
   const gain = asset.gain || 0;
-  const isPositive = gain >= 0;
 
   return (
     <button
@@ -136,13 +135,11 @@ const RosterAssetCard = ({
         </div>
 
         {/* Gain */}
-        <div style={{
-          fontSize: compact ? '11px' : '12px',
-          fontWeight: 600,
-          color: isPositive ? HOLO_COLORS.green : HOLO_COLORS.red,
-        }}>
-          {isPositive ? '+' : ''}{gain.toFixed(2)}%
-        </div>
+        <GainLossBadge
+          value={gain}
+          variant="text"
+          size={compact ? 'sm' : 'md'}
+        />
 
         {/* Category badge */}
         <CategoryBadge
