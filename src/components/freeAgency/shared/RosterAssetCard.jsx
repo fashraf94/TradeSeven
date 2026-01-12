@@ -1,5 +1,6 @@
 import React from 'react';
 import { HOLO_COLORS, CATEGORY_CONFIG } from '../../../constants/holoTheme';
+import { CategoryBadge } from '../../shared';
 
 /**
  * RosterAssetCard - Individual asset card in the "Select to Drop" section
@@ -144,24 +145,12 @@ const RosterAssetCard = ({
         </div>
 
         {/* Category badge */}
-        <div style={{
-          fontSize: '9px',
-          color: categoryConfig.color,
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-          marginTop: '4px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-        }}>
-          <span style={{
-            width: '6px',
-            height: '6px',
-            borderRadius: '50%',
-            background: categoryConfig.color,
-          }} />
-          {categoryConfig.letter}
-        </div>
+        <CategoryBadge
+          category={asset.category}
+          variant="letter"
+          size="sm"
+          style={{ marginTop: '4px' }}
+        />
       </div>
     </button>
   );
