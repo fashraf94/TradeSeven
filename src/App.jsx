@@ -18677,8 +18677,8 @@ export default function PortfolioDuel() {
     );
   };
 
-  // DASHBOARD SCREEN - EXTRACTED TO DashboardScreen.jsx
-  if (screen === 'dashboard') {
+  // DASHBOARD SCREEN - EXTRACTED VERSION DISABLED (crashes with trainingBattles undefined)
+  if (false && screen === 'dashboard_EXTRACTED_DISABLED') {
     return (
       <DashboardScreen
         // Layout
@@ -18777,9 +18777,8 @@ export default function PortfolioDuel() {
     );
   }
 
-  // PLACEHOLDER - Original dashboard code disabled (was ~5000 lines)
-  // This block should never be reached since we return above
-  if (false && screen === 'dashboard_OLD_DISABLED') {
+  // DASHBOARD SCREEN - Original inline code (restored)
+  if (screen === 'dashboard') {
     // Helper function to calculate battle preview data for any battle
     const calculateBattlePreviewData = (battle) => {
       if (!battle) return null;
