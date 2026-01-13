@@ -75,7 +75,7 @@ import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, BattleActionCards } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, BattleActionCards, TrainingModePanel } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -20491,8 +20491,19 @@ export default function PortfolioDuel() {
               </div>
             </motion.div>
 
-            {/* Training Mode Section - Different design for draft vs classic */}
-            {gameMode === 'draft' ? (
+            {/* Training Mode Panel - Extracted Component */}
+            <TrainingModePanel
+              gameMode={gameMode}
+              colors={colors}
+              setTrainingConfirmType={setTrainingConfirmType}
+              setShowTrainingConfirmModal={setShowTrainingConfirmModal}
+              setShowClassicTrainingConfirm={setShowClassicTrainingConfirm}
+            />
+
+            {/* ORIGINAL CODE - COMMENTED OUT FOR REFERENCE */}
+            {false && (
+            // Training Mode Section - Different design for draft vs classic
+            gameMode === 'draft' ? (
               /* SNAKE DRAFT TRAINING SECTION - Redesigned with circular buttons */
               <motion.div
                 id="tour-training-mode"
@@ -21010,7 +21021,9 @@ export default function PortfolioDuel() {
                   Practice against CPU opponent - No pressure, just learning
                 </p>
               </motion.div>
+            )
             )}
+            {/* END ORIGINAL CODE - COMMENTED OUT */}
 
             {/* Weekly Challenges Section */}
             <motion.div
