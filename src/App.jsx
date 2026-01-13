@@ -75,7 +75,7 @@ import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 // Dashboard Components
-import { GameModeToggle } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -20312,7 +20312,10 @@ export default function PortfolioDuel() {
               })()}
             </div>
 
-            {/* Futuristic Research Mode Button */}
+            {/* Research Mode Button - Extracted Component */}
+            <ResearchModeButton setShowResearchMode={setShowResearchMode} />
+
+            {/* OLD ResearchModeButton - commented out for restoration if needed
             <motion.div
               id="tour-research-mode"
               initial={{ opacity: 0, y: 20 }}
@@ -20341,7 +20344,6 @@ export default function PortfolioDuel() {
                 e.currentTarget.style.transform = 'translateY(0)';
               }}
             >
-              {/* CSS Animations for Research Button */}
               <style>{`
                 @keyframes gradientShift {
                   0% { background-position: 0% 50%; }
@@ -20358,8 +20360,6 @@ export default function PortfolioDuel() {
                   50% { opacity: 0.8; transform: scale(1.2); }
                 }
               `}</style>
-
-              {/* Animated gradient border overlay */}
               <div style={{
                 position: 'absolute',
                 top: 0,
@@ -20376,8 +20376,6 @@ export default function PortfolioDuel() {
                 WebkitMaskComposite: 'xor',
                 pointerEvents: 'none',
               }} />
-
-              {/* Scanning line effect */}
               <div style={{
                 position: 'absolute',
                 top: 0,
@@ -20388,8 +20386,6 @@ export default function PortfolioDuel() {
                 animation: 'scanLine 3s ease-in-out infinite',
                 pointerEvents: 'none',
               }} />
-
-              {/* Content */}
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -20397,9 +20393,7 @@ export default function PortfolioDuel() {
                 position: 'relative',
                 zIndex: 1,
               }}>
-                {/* Left side - Icon and text */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  {/* Futuristic icon */}
                   <div style={{
                     width: '48px',
                     height: '48px',
@@ -20422,8 +20416,6 @@ export default function PortfolioDuel() {
                       <path d="M8 8h.01M11 8h.01M14 8h.01M8 11h.01M11 11h.01M14 11h.01M8 14h.01M11 14h.01M14 14h.01" strokeWidth="1.5" />
                     </svg>
                   </div>
-
-                  {/* Text content */}
                   <div>
                     <div style={{
                       fontSize: '11px',
@@ -20452,8 +20444,6 @@ export default function PortfolioDuel() {
                     </div>
                   </div>
                 </div>
-
-                {/* Right side - Arrow */}
                 <div style={{
                   width: '40px',
                   height: '40px',
@@ -20469,8 +20459,6 @@ export default function PortfolioDuel() {
                   </svg>
                 </div>
               </div>
-
-              {/* Particle dots */}
               <div style={{
                 position: 'absolute',
                 top: '10px',
@@ -20494,6 +20482,7 @@ export default function PortfolioDuel() {
                 animation: 'researchPulse 2.5s ease infinite 0.5s',
               }} />
             </motion.div>
+            END OLD ResearchModeButton */}
 
             {/* Stonk Options Button */}
             <motion.div
