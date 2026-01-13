@@ -681,7 +681,10 @@ const DraftBattleScreenV2 = ({
               transition: 'all 0.2s ease',
             }}
           >
-            <span style={{ fontSize: '14px' }}>📊</span>
+            <span style={{
+              fontSize: '14px',
+              textShadow: '0 0 8px rgba(0, 255, 255, 0.8), 0 0 16px rgba(0, 255, 255, 0.4)',
+            }}>📊</span>
             <span style={{
               fontSize: '10px',
               fontWeight: 600,

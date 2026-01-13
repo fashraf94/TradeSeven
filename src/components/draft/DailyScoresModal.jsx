@@ -207,7 +207,10 @@ const DailyScoresModal = ({
             alignItems: 'center',
             gap: '8px',
           }}>
-            <span style={{ fontSize: '18px' }}>📊</span>
+            <span style={{
+              fontSize: '18px',
+              textShadow: '0 0 8px rgba(0, 255, 255, 0.8), 0 0 16px rgba(0, 255, 255, 0.4)',
+            }}>📊</span>
             <span style={{
               fontSize: '14px',
               fontWeight: 700,
@@ -377,7 +380,10 @@ const DailyScoresModal = ({
                           {pointsDisplay}
                         </span>
                         {isWinner && (
-                          <span style={{ fontSize: '14px' }}>🥇</span>
+                          <span style={{
+                            fontSize: '14px',
+                            textShadow: '0 0 8px rgba(255, 215, 0, 0.8), 0 0 16px rgba(255, 215, 0, 0.4)',
+                          }}>🥇</span>
                         )}
                       </div>
                     </div>
