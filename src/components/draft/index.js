@@ -33,5 +33,8 @@ export { default as TopPerformersModal } from './TopPerformersModal';
 // Score Breakdown components (BaggerBomb scoring)
 export { default as ScoreBreakdownPopover } from './ScoreBreakdownPopover';
 
+// Daily Scores modal (Phase 5.7)
+export { default as DailyScoresModal } from './DailyScoresModal';
+
 // Styled icons (Phase 5.6)
 export * from './HoloIcons';

@@ -22,6 +22,17 @@ const CommandConsole = ({
   onFreeAgency,
   onTopPerformers,    // NEW - replaces onViewAll
 }) => {
+  // Mobile detection for responsive grid
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' && window.innerWidth < 768
+  );
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // State for grid flip animation
   const [isFlipping, setIsFlipping] = useState(false);
   const [prevScoutMode, setPrevScoutMode] = useState(isScoutMode);
@@ -207,11 +218,11 @@ const CommandConsole = ({
         )}
       </div>
 
-      {/* COMPACT 3x3 Portfolio Grid */}
+      {/* Responsive Portfolio Grid - 2 columns mobile, 3 columns desktop */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(3, 1fr)',
-        gap: '6px',
+        gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+        gap: isMobile ? '8px' : '6px',
         marginBottom: '8px',
         perspective: '1000px',
       }}>

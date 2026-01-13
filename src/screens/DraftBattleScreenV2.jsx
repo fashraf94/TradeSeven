@@ -8,6 +8,7 @@ import {
   RefreshIndicator,
   BattleErrorState,
   TopPerformersModal,
+  DailyScoresModal,
 } from '../components/draft';
 import { calculateSnakeDraftAssetScore, calculatePortfolioScore } from '../services/scoring/baggerBombCalculator';
 import { getVolatilityThresholds } from '../services/volatilityService';
@@ -53,6 +54,9 @@ const DraftBattleScreenV2 = ({
 
   // Phase 5.5: Top Performers modal
   const [showTopPerformers, setShowTopPerformers] = useState(false);
+
+  // Phase 5.7: Daily Scores modal
+  const [showDailyScores, setShowDailyScores] = useState(false);
 
   // BaggerBomb scoring state
   const [thresholds, setThresholds] = useState({});
@@ -662,7 +666,31 @@ const DraftBattleScreenV2 = ({
           }}>
             DRAFT BATTLE
           </span>
-          <div style={{ width: '40px' }} />
+          {/* Daily Scores Button */}
+          <button
+            onClick={() => setShowDailyScores(true)}
+            style={{
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+              borderRadius: '8px',
+              padding: '6px 10px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <span style={{ fontSize: '14px' }}>📊</span>
+            <span style={{
+              fontSize: '10px',
+              fontWeight: 600,
+              color: HOLO_COLORS.textSecondary,
+              display: 'none',
+            }}>
+              Daily
+            </span>
+          </button>
         </div>
       </header>
 
@@ -851,6 +879,17 @@ const DraftBattleScreenV2 = ({
         onClose={() => setShowTopPerformers(false)}
         standings={standings}
         currentUserId={currentUserId}
+      />
+
+      {/* DAILY SCORES MODAL - Phase 5.7 */}
+      <DailyScoresModal
+        isOpen={showDailyScores}
+        onClose={() => setShowDailyScores(false)}
+        standings={standings}
+        currentUserId={currentUserId}
+        battleStartTime={currentDraft?.createdAt || currentDraft?.startTime}
+        battleEndTime={currentDraft?.battleEndTime}
+        dailyScores={currentDraft?.dailyScores}
       />
 
       {/* Scout Transition Overlay - Phase 4 Enhanced */}
