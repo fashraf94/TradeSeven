@@ -269,12 +269,26 @@ export default function PortfolioBuilderBaggerBomb({
 
   // Load prices and thresholds on mount
   useEffect(() => {
+    let isMounted = true;
+    let loadingTimeoutId = null;
+
     const loadData = async () => {
       const needsPrices = Object.keys(initialStockPrices).length === 0;
       const needsThresholds = Object.keys(initialThresholds).length === 0;
 
       if (needsPrices) setIsLoadingPrices(true);
       if (needsThresholds) setIsLoadingThresholds(true);
+
+      // Safety timeout: force loading to complete after 45 seconds max
+      // This prevents the UI from hanging indefinitely
+      loadingTimeoutId = setTimeout(() => {
+        if (isMounted) {
+          console.warn('[BaggerBomb] Loading timeout - using default thresholds');
+          setThresholds(getDefaultThresholds());
+          setIsLoadingPrices(false);
+          setIsLoadingThresholds(false);
+        }
+      }, 45000);
 
       try {
         const stockSymbols = STOCKS.map(s => s.symbol);
@@ -287,6 +301,8 @@ export default function PortfolioBuilderBaggerBomb({
           needsThresholds ? getVolatilityThresholds(stockSymbols, 'stock') : Promise.resolve(null),
           needsThresholds ? getVolatilityThresholds(cryptoSymbols, 'crypto') : Promise.resolve(null)
         ]);
+
+        if (!isMounted) return;
 
         if (stockPricesResult) setStockPrices(stockPricesResult);
         if (cryptoPricesResult) setCryptoPrices(cryptoPricesResult);
@@ -303,16 +319,24 @@ export default function PortfolioBuilderBaggerBomb({
       } catch (error) {
         console.error('Error loading data:', error);
         // Use fallback defaults if threshold fetch fails
-        if (Object.keys(initialThresholds).length === 0) {
+        if (isMounted && Object.keys(initialThresholds).length === 0) {
           setThresholds(getDefaultThresholds());
         }
       } finally {
-        setIsLoadingPrices(false);
-        setIsLoadingThresholds(false);
+        if (loadingTimeoutId) clearTimeout(loadingTimeoutId);
+        if (isMounted) {
+          setIsLoadingPrices(false);
+          setIsLoadingThresholds(false);
+        }
       }
     };
 
     loadData();
+
+    return () => {
+      isMounted = false;
+      if (loadingTimeoutId) clearTimeout(loadingTimeoutId);
+    };
   }, [initialStockPrices, initialThresholds]);
 
   // Detect mobile/touch device
