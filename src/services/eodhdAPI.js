@@ -84,7 +84,7 @@ const logWarn = (message, ...args) => {
 // FETCH WITH TIMEOUT
 // ============================================
 
-const fetchWithTimeout = async (url, timeout = 15000) => {
+const fetchWithTimeout = async (url, timeout = 30000) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
