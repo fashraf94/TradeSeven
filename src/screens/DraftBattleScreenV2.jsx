@@ -9,6 +9,8 @@ import {
   BattleErrorState,
   TopPerformersModal,
 } from '../components/draft';
+import { calculateSnakeDraftAssetScore, calculatePortfolioScore } from '../services/scoring/baggerBombCalculator';
+import { getVolatilityThresholds } from '../services/volatilityService';
 
 /**
  * DraftBattleScreenV2 - Altitude Map Redesign
@@ -51,6 +53,9 @@ const DraftBattleScreenV2 = ({
 
   // Phase 5.5: Top Performers modal
   const [showTopPerformers, setShowTopPerformers] = useState(false);
+
+  // BaggerBomb scoring state
+  const [thresholds, setThresholds] = useState({});
 
   // Refs for cleanup
   const refreshIntervalRef = useRef(null);
@@ -239,7 +244,7 @@ const DraftBattleScreenV2 = ({
   }, [currentDraft?.id]);
 
   // ============================================
-  // CALCULATE STANDINGS - Enhanced with refresh/error handling (Phase 5)
+  // CALCULATE STANDINGS - BaggerBomb Scoring for Snake Draft
   // ============================================
   const calculateStandings = useCallback(async () => {
     if (!currentDraft?.players) {
@@ -257,126 +262,180 @@ const DraftBattleScreenV2 = ({
     try {
       const stockAPIModule = await import('../services/eodhdAPI');
 
-        // STEP 1: Collect ALL unique symbols from ALL players (ONE batch call)
-        const allSymbols = new Set();
-        currentDraft.players.forEach(player => {
-          (player.picks || []).forEach(symbol => {
-            // For crypto, we need lowercase IDs (or symbols that will be converted)
-            allSymbols.add(battleType === 'crypto' ? symbol.toLowerCase() : symbol.toUpperCase());
-          });
+      // STEP 1: Collect ALL unique symbols from ALL players (ONE batch call)
+      const allSymbols = new Set();
+      currentDraft.players.forEach(player => {
+        (player.picks || []).forEach(symbol => {
+          allSymbols.add(symbol.toUpperCase());
         });
+      });
 
-        const symbolList = Array.from(allSymbols);
-        console.log(`[DraftBattleV2] Fetching ${symbolList.length} unique assets in 1 batch call`);
+      const symbolList = Array.from(allSymbols);
+      console.log(`[DraftBattleV2] Fetching ${symbolList.length} unique assets in 1 batch call`);
 
-        // STEP 2: Clear cache to ensure we get FRESH prices (not cached from when battle started)
-        if (stockAPIModule.clearCache) {
-          stockAPIModule.clearCache();
-          console.log('[DraftBattleV2] Cache cleared to fetch fresh prices');
+      // STEP 2: Fetch volatility thresholds for BaggerBomb scoring
+      let symbolThresholds = thresholds;
+      const missingThresholds = symbolList.filter(s => !symbolThresholds[s]);
+
+      if (missingThresholds.length > 0) {
+        console.log(`[DraftBattleV2] Fetching thresholds for ${missingThresholds.length} symbols`);
+        try {
+          const newThresholds = await getVolatilityThresholds(missingThresholds, 'stock');
+          symbolThresholds = { ...symbolThresholds, ...newThresholds };
+          setThresholds(symbolThresholds);
+        } catch (thresholdError) {
+          console.warn('[DraftBattleV2] Failed to fetch thresholds, using defaults:', thresholdError);
+          // Use default threshold of 3% for stocks
+          missingThresholds.forEach(symbol => {
+            symbolThresholds[symbol] = { symbol, threshold: 3.0, isDefault: true };
+          });
+          setThresholds(symbolThresholds);
         }
+      }
 
-        // Batch fetch ALL prices at once (1 API call instead of 36!)
-        let allPrices = {};
-        if (battleType === 'crypto') {
-          allPrices = await stockAPIModule.getAllCryptoPrices(symbolList);
-        } else {
-          allPrices = await stockAPIModule.getAllStockPrices(symbolList);
-        }
+      // STEP 3: Clear cache to ensure we get FRESH prices
+      if (stockAPIModule.clearCache) {
+        stockAPIModule.clearCache();
+        console.log('[DraftBattleV2] Cache cleared to fetch fresh prices');
+      }
 
-        // STEP 3: Calculate each player's performance using cached prices
-        const playerPerformances = currentDraft.players.map((player) => {
-          let totalGain = 0;
-          const portfolioWithGains = [];
+      // Batch fetch ALL prices at once
+      let allPrices = {};
+      if (battleType === 'crypto') {
+        allPrices = await stockAPIModule.getAllCryptoPrices(symbolList);
+      } else {
+        allPrices = await stockAPIModule.getAllStockPrices(symbolList);
+      }
 
-          for (let pickIndex = 0; pickIndex < (player.picks || []).length; pickIndex++) {
-            const symbol = player.picks[pickIndex];
-            // Get category for this asset from player's pickCategories
-            const category = player.pickCategories?.[pickIndex] || 'steady';
+      // STEP 4: Calculate each player's BaggerBomb score
+      const playerPerformances = currentDraft.players.map((player) => {
+        let totalPoints = 0;
+        let totalBaggerBombs = 0;
+        let totalBusts = 0;
+        let totalPercentGain = 0;
+        const portfolioWithScores = [];
 
-            // Normalize symbol for lookup
-            let lookupKey;
-            if (battleType === 'crypto') {
-              lookupKey = stockAPIModule.symbolToCoinGeckoId
-                ? stockAPIModule.symbolToCoinGeckoId(symbol)
-                : symbol.toLowerCase();
-            } else {
-              lookupKey = symbol.toUpperCase();
-            }
+        for (let pickIndex = 0; pickIndex < (player.picks || []).length; pickIndex++) {
+          const symbol = player.picks[pickIndex];
+          const category = player.pickCategories?.[pickIndex] || 'steady';
 
-            // Get current price from batch result
-            const priceData = allPrices[lookupKey];
-            const currentPrice = priceData?.price || 0;
-
-            // Get locked price (from draft completion)
-            const lockedPrice = Number(currentDraft.lockedPrices?.[symbol] ||
-                             currentDraft.lockedPrices?.[lookupKey] ||
-                             currentPrice) || 0;
-
-            // Calculate gain with sanity checks
-            let gain = 0;
-            if (lockedPrice > 0 && currentPrice > 0) {
-              gain = ((currentPrice - lockedPrice) / lockedPrice) * 100;
-
-              // Sanity check - gains over 500% or under -90% are likely data errors
-              if (gain > 500 || gain < -90) {
-                console.warn(`[DraftBattleV2] Suspicious gain for ${symbol}: ${(Number(gain) || 0).toFixed(2)}% (locked: $${lockedPrice}, current: $${currentPrice})`);
-                gain = 0; // Reset to 0 for display
-              }
-            }
-
-            portfolioWithGains.push({
-              symbol,
-              gain: parseFloat(gain.toFixed(2)),
-              lockedPrice,
-              currentPrice,
-              category,
-            });
-
-            // Equal weight (11.1% each for 9 assets)
-            totalGain += gain / 9;
+          // Normalize symbol for lookup
+          let lookupKey;
+          if (battleType === 'crypto') {
+            lookupKey = stockAPIModule.symbolToCoinGeckoId
+              ? stockAPIModule.symbolToCoinGeckoId(symbol)
+              : symbol.toLowerCase();
+          } else {
+            lookupKey = symbol.toUpperCase();
           }
 
-          // Find best and worst assets
-          const sorted = [...portfolioWithGains].sort((a, b) => b.gain - a.gain);
+          // Get current price from batch result
+          const priceData = allPrices[lookupKey];
+          const currentPrice = priceData?.price || 0;
 
-          return {
-            odUserId: player.odUserId,
-            displayName: player.displayName,
-            isMe: player.odUserId === currentUserId,
-            isCPU: player.isCPU || false,
-            totalGain: parseFloat(totalGain.toFixed(2)),
-            portfolio: portfolioWithGains,
-            bestAsset: sorted[0] || { symbol: '-', gain: 0 },
-            worstAsset: sorted[sorted.length - 1] || { symbol: '-', gain: 0 },
-            previousRank: player.previousRank || 0
-          };
-        });
+          // Get locked price (from draft completion)
+          const lockedPrice = Number(currentDraft.lockedPrices?.[symbol] ||
+                           currentDraft.lockedPrices?.[lookupKey] ||
+                           currentPrice) || 0;
 
-        // Sort by total gain (descending)
-        const sorted = playerPerformances.sort((a, b) => b.totalGain - a.totalGain);
+          // Calculate percentage gain
+          let percentGain = 0;
+          if (lockedPrice > 0 && currentPrice > 0) {
+            percentGain = ((currentPrice - lockedPrice) / lockedPrice) * 100;
 
-        // Assign ranks
-        sorted.forEach((player, index) => {
-          player.currentRank = index + 1;
-        });
+            // Sanity check - gains over 500% or under -90% are likely data errors
+            if (percentGain > 500 || percentGain < -90) {
+              console.warn(`[DraftBattleV2] Suspicious gain for ${symbol}: ${percentGain.toFixed(2)}%`);
+              percentGain = 0;
+            }
+          }
 
-        setStandings(sorted);
+          // Get threshold for this symbol (default 3% for stocks)
+          const threshold = symbolThresholds[symbol.toUpperCase()]?.threshold || 3.0;
 
-        // Calculate asset comparison
-        const myPlayer = sorted.find(p => p.isMe);
-        if (myPlayer) {
-          const myBest = myPlayer.bestAsset;
-          const opponentBests = sorted
-            .filter(p => !p.isMe)
-            .map(p => p.bestAsset)
-            .sort((a, b) => b.gain - a.gain);
+          // Calculate BaggerBomb score for this asset
+          // For now using close price as both high and low (intraday data could be added later)
+          const assetScore = calculateSnakeDraftAssetScore(
+            percentGain,
+            threshold,
+            percentGain > 0 ? percentGain : null,  // intradayHigh
+            percentGain < 0 ? percentGain : null   // intradayLow
+          );
 
-          setAssetComparison({
-            myBest,
-            opponentBest: opponentBests[0],
-            iWin: myBest?.gain > (opponentBests[0]?.gain || 0)
+          portfolioWithScores.push({
+            symbol,
+            gain: parseFloat(percentGain.toFixed(2)),
+            lockedPrice,
+            currentPrice,
+            category,
+            // BaggerBomb scoring data
+            threshold,
+            baggerBombs: assetScore.baggerBombs,
+            busts: assetScore.busts,
+            basePoints: assetScore.basePoints,
+            baggerBombPoints: assetScore.baggerBombPoints,
+            bustPoints: assetScore.bustPoints,
+            totalScore: assetScore.totalScore,
           });
+
+          // Accumulate totals
+          totalPoints += assetScore.totalScore;
+          totalBaggerBombs += assetScore.baggerBombs;
+          totalBusts += assetScore.busts;
+          totalPercentGain += percentGain / 9; // Equal weight average
         }
+
+        // Find best and worst by total score (not just %)
+        const sortedByScore = [...portfolioWithScores].sort((a, b) => b.totalScore - a.totalScore);
+        const sortedByGain = [...portfolioWithScores].sort((a, b) => b.gain - a.gain);
+
+        return {
+          odUserId: player.odUserId,
+          displayName: player.displayName,
+          isMe: player.odUserId === currentUserId,
+          isCPU: player.isCPU || false,
+          // BaggerBomb scoring - points is primary
+          totalPoints: parseFloat(totalPoints.toFixed(2)),
+          totalBaggerBombs,
+          totalBusts,
+          // Keep percentage as secondary info
+          totalGain: parseFloat(totalPercentGain.toFixed(2)),
+          portfolio: portfolioWithScores,
+          // Best/worst by score
+          bestAsset: sortedByScore[0] || { symbol: '-', gain: 0, totalScore: 0 },
+          worstAsset: sortedByScore[sortedByScore.length - 1] || { symbol: '-', gain: 0, totalScore: 0 },
+          // Best/worst by % gain (for reference)
+          bestGainer: sortedByGain[0] || { symbol: '-', gain: 0 },
+          worstGainer: sortedByGain[sortedByGain.length - 1] || { symbol: '-', gain: 0 },
+          previousRank: player.previousRank || 0
+        };
+      });
+
+      // Sort by total POINTS (descending) - this is the key change!
+      const sorted = playerPerformances.sort((a, b) => b.totalPoints - a.totalPoints);
+
+      // Assign ranks
+      sorted.forEach((player, index) => {
+        player.currentRank = index + 1;
+      });
+
+      setStandings(sorted);
+
+      // Calculate asset comparison
+      const myPlayer = sorted.find(p => p.isMe);
+      if (myPlayer) {
+        const myBest = myPlayer.bestAsset;
+        const opponentBests = sorted
+          .filter(p => !p.isMe)
+          .map(p => p.bestAsset)
+          .sort((a, b) => b.totalScore - a.totalScore);
+
+        setAssetComparison({
+          myBest,
+          opponentBest: opponentBests[0],
+          iWin: myBest?.totalScore > (opponentBests[0]?.totalScore || 0)
+        });
+      }
 
       setLastUpdated(new Date());
       setError(null);
@@ -388,7 +447,7 @@ const DraftBattleScreenV2 = ({
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, [currentDraft, currentUserId, battleType, standings.length, logger]);
+  }, [currentDraft, currentUserId, battleType, standings.length, logger, thresholds]);
 
   // Effect to run calculateStandings on mount and set up interval
   useEffect(() => {

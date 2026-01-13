@@ -4,11 +4,13 @@ import { HOLO_COLORS, CATEGORY_CONFIG } from '../../constants/holoTheme';
 /**
  * AssetTile - Individual asset card for the 3x3 portfolio grid
  *
- * Displays asset symbol, gain percentage, and category color indicator.
+ * Displays asset symbol, gain percentage, threshold, and BaggerBomb/Bust indicators.
  * In scout mode, shows comparison badges (THREAT, LINKED, RIVAL).
+ *
+ * BaggerBomb Scoring Update: Shows threshold, BaggerBomb (💣) and Bust (📉) counts.
  */
 const AssetTile = ({
-  asset,              // { symbol, gain, lockedPrice, currentPrice, category }
+  asset,              // { symbol, gain, lockedPrice, currentPrice, category, threshold, baggerBombs, busts, totalScore }
   isScoutMode = false,
   comparisonData = null, // { isLinked, isThreat, isSectorRival, deltaVsYourBest }
   compact = false,
@@ -110,7 +112,7 @@ const AssetTile = ({
         `}</style>
       )}
 
-      {/* Symbol */}
+      {/* Symbol and BaggerBomb/Bust Row */}
       <div style={{
         fontSize: compact ? '11px' : '13px',
         fontWeight: 600,
@@ -121,25 +123,74 @@ const AssetTile = ({
         justifyContent: 'space-between',
       }}>
         <span>{asset.symbol}</span>
-        {/* Category letter indicator */}
-        <span style={{
-          fontSize: '8px',
-          color: categoryColor,
-          fontWeight: 700,
-          opacity: 0.8,
+        {/* BaggerBomb/Bust indicators */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '3px',
+          fontSize: compact ? '9px' : '10px',
         }}>
-          {CATEGORY_CONFIG[asset.category]?.letter || ''}
-        </span>
+          {asset.baggerBombs > 0 && (
+            <span style={{ color: HOLO_COLORS.green }} title={`${asset.baggerBombs} BaggerBomb${asset.baggerBombs > 1 ? 's' : ''}`}>
+              💣{asset.baggerBombs > 1 ? asset.baggerBombs : ''}
+            </span>
+          )}
+          {asset.busts > 0 && (
+            <span style={{ color: HOLO_COLORS.red }} title={`${asset.busts} Bust${asset.busts > 1 ? 's' : ''}`}>
+              📉{asset.busts > 1 ? asset.busts : ''}
+            </span>
+          )}
+          {/* Category letter indicator */}
+          {!asset.baggerBombs && !asset.busts && (
+            <span style={{
+              fontSize: '8px',
+              color: categoryColor,
+              fontWeight: 700,
+              opacity: 0.8,
+            }}>
+              {CATEGORY_CONFIG[asset.category]?.letter || ''}
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Gain Percentage */}
+      {/* Total Score - PRIMARY */}
+      {asset.totalScore !== undefined && (
+        <div style={{
+          fontSize: compact ? '11px' : '13px',
+          fontWeight: 700,
+          fontFamily: 'monospace',
+          color: asset.totalScore >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
+        }}>
+          {asset.totalScore >= 0 ? '+' : ''}{asset.totalScore.toFixed(0)} pts
+        </div>
+      )}
+
+      {/* Gain Percentage and Threshold - SECONDARY */}
       <div style={{
-        fontSize: compact ? '12px' : '14px',
-        fontWeight: 700,
-        fontFamily: 'monospace',
-        color: isPositive ? HOLO_COLORS.green : HOLO_COLORS.red,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginTop: '1px',
       }}>
-        {isPositive ? '+' : ''}{gainValue.toFixed(2)}%
+        <span style={{
+          fontSize: compact ? '9px' : '10px',
+          fontFamily: 'monospace',
+          color: isPositive ? HOLO_COLORS.green : HOLO_COLORS.red,
+          opacity: 0.8,
+        }}>
+          {isPositive ? '+' : ''}{gainValue.toFixed(1)}%
+        </span>
+        {/* Threshold indicator */}
+        {asset.threshold && (
+          <span style={{
+            fontSize: compact ? '8px' : '9px',
+            color: HOLO_COLORS.textMuted,
+            fontFamily: 'monospace',
+          }} title={`Threshold: ${asset.threshold}%`}>
+            ⚡{asset.threshold.toFixed(1)}%
+          </span>
+        )}
       </div>
 
       {/* Category indicator dot */}

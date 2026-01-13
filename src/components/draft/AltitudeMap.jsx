@@ -7,12 +7,13 @@ import OvertakeCallout from './OvertakeCallout';
  * AltitudeMap - Main visualization for Draft Battle standings
  *
  * Displays a vertical map with:
- * - Y-axis showing percentage markers (+10%, 0%, -5%, etc.)
+ * - Y-axis showing point markers (+100, 0, -50, etc.)
  * - Glowing cyan "battle snake" path connecting player positions
- * - TacticalPod hexagons at each player's gain percentage altitude
+ * - TacticalPod hexagons at each player's total points altitude
  * - OvertakeCallout badges showing gaps between players
  *
- * Phase 5.5: Fixed horizontal distribution for pods with similar gains
+ * BaggerBomb Scoring Update: Y-axis now shows points instead of percentages.
+ * Phase 5.5: Fixed horizontal distribution for pods with similar scores
  */
 const AltitudeMap = ({
   standings,          // Array of player standings sorted by rank
@@ -32,54 +33,56 @@ const AltitudeMap = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Calculate the Y-axis range based on standings
-  const { minGain, maxGain, range } = useMemo(() => {
-    if (!standings.length) return { minGain: -10, maxGain: 10, range: 20 };
+  // Calculate the Y-axis range based on standings (using POINTS now)
+  const { minPoints, maxPoints, range } = useMemo(() => {
+    if (!standings.length) return { minPoints: -50, maxPoints: 100, range: 150 };
 
-    const gains = standings.map(p => p.totalGain);
-    const min = Math.min(...gains);
-    const max = Math.max(...gains);
+    // Use totalPoints for BaggerBomb scoring
+    const points = standings.map(p => p.totalPoints || 0);
+    const min = Math.min(...points);
+    const max = Math.max(...points);
 
-    // Round to nearest 5 and add padding
-    const padding = 5;
-    const adjustedMin = Math.floor(min / 5) * 5 - padding;
-    const adjustedMax = Math.ceil(max / 5) * 5 + padding;
+    // Round to nearest 25 for points (larger scale than %)
+    const padding = 25;
+    const adjustedMin = Math.floor(min / 25) * 25 - padding;
+    const adjustedMax = Math.ceil(max / 25) * 25 + padding;
 
     return {
-      minGain: Math.min(adjustedMin, -5),
-      maxGain: Math.max(adjustedMax, 10),
-      range: Math.max(adjustedMax, 10) - Math.min(adjustedMin, -5),
+      minPoints: Math.min(adjustedMin, -25),
+      maxPoints: Math.max(adjustedMax, 50),
+      range: Math.max(adjustedMax, 50) - Math.min(adjustedMin, -25),
     };
   }, [standings]);
 
-  // Calculate Y position for a given gain percentage
-  const getYPosition = (gain) => {
+  // Calculate Y position for a given point value
+  const getYPosition = (points) => {
     // Normalize to 0-1 range where 1 is top
-    const normalized = (gain - minGain) / range;
-    // Invert: higher gain = higher position (lower Y in SVG coordinates)
+    const normalized = (points - minPoints) / range;
+    // Invert: higher points = higher position (lower Y in SVG coordinates)
     // Add padding for pod visibility
     const paddedHeight = containerHeight - 80; // Leave room at top/bottom
     return 40 + paddedHeight * (1 - normalized);
   };
 
-  // Group players by similar gain (within 0.5%) for horizontal distribution
+  // Group players by similar points (within 10 pts) for horizontal distribution
   const playerGroups = useMemo(() => {
     if (!standings.length) return [];
 
     const groups = [];
-    const sorted = [...standings].sort((a, b) => b.totalGain - a.totalGain);
+    const sorted = [...standings].sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
 
     sorted.forEach((player) => {
-      // Find existing group within 0.5% of this player's gain
+      const playerPoints = player.totalPoints || 0;
+      // Find existing group within 10 points of this player's score
       const existingGroup = groups.find(g =>
-        Math.abs(g.gain - player.totalGain) < 0.5
+        Math.abs(g.points - playerPoints) < 10
       );
 
       if (existingGroup) {
         existingGroup.players.push(player);
       } else {
         groups.push({
-          gain: player.totalGain,
+          points: playerPoints,
           players: [player]
         });
       }
@@ -112,18 +115,18 @@ const AltitudeMap = ({
     return minX + (playerIndex * step);
   };
 
-  // Generate Y-axis tick marks
+  // Generate Y-axis tick marks for points
   const yAxisTicks = useMemo(() => {
     const ticks = [];
-    const step = 5;
-    // Start from bottom (minGain) and go up
-    for (let val = Math.floor(minGain / step) * step; val <= maxGain; val += step) {
+    const step = 25; // Use 25-point increments for readability
+    // Start from bottom (minPoints) and go up
+    for (let val = Math.floor(minPoints / step) * step; val <= maxPoints; val += step) {
       ticks.push(val);
     }
     return ticks;
-  }, [minGain, maxGain]);
+  }, [minPoints, maxPoints]);
 
-  // Calculate overtake gaps for callouts - only show when meaningful vertical separation
+  // Calculate overtake gaps for callouts - using POINTS for separation
   const overtakeGaps = useMemo(() => {
     if (standings.length < 2) return [];
 
@@ -133,20 +136,22 @@ const AltitudeMap = ({
     for (let i = 0; i < standings.length - 1; i++) {
       const higher = standings[i];     // Higher ranked player
       const lower = standings[i + 1];  // Lower ranked player
-      const gap = higher.totalGain - lower.totalGain;
+      const higherPoints = higher.totalPoints || 0;
+      const lowerPoints = lower.totalPoints || 0;
+      const gap = higherPoints - lowerPoints;
 
-      // Only show callout if there's meaningful vertical separation (> 0.5%)
-      if (Math.abs(gap) < 0.5) continue;
+      // Only show callout if there's meaningful vertical separation (> 10 pts)
+      if (Math.abs(gap) < 10) continue;
 
       // Show gap between user and player ahead (if user isn't 1st)
       // Or between 1st and 2nd for drama
       const isUserChasing = i === userIndex - 1;
       const isTopTwo = i === 0;
 
-      if ((isUserChasing || isTopTwo) && gap > 0.1) {
+      if ((isUserChasing || isTopTwo) && gap > 5) {
         gaps.push({
           gap,
-          yPosition: (getYPosition(higher.totalGain) + getYPosition(lower.totalGain)) / 2,
+          yPosition: (getYPosition(higherPoints) + getYPosition(lowerPoints)) / 2,
           xPosition: '50%',
           isUserGap: isUserChasing,
           higherPlayer: higher,
@@ -156,22 +161,22 @@ const AltitudeMap = ({
     }
 
     return gaps;
-  }, [standings, currentUserId, containerHeight]);
+  }, [standings, currentUserId, containerHeight, minPoints, range]);
 
   // Generate SVG path for the "battle snake" connecting pods
   const snakePath = useMemo(() => {
     if (standings.length < 2) return '';
 
-    // Calculate actual positions for SVG using new getXPosition
-    const points = standings.map((player) => {
+    // Calculate actual positions for SVG using player points
+    const pathPoints = standings.map((player) => {
       return {
         x: getXPosition(player),
-        y: getYPosition(player.totalGain),
+        y: getYPosition(player.totalPoints || 0),
       };
     });
 
     // Sort by Y position (top to bottom) for smoother path drawing
-    const sortedPoints = [...points].sort((a, b) => a.y - b.y);
+    const sortedPoints = [...pathPoints].sort((a, b) => a.y - b.y);
 
     // Create smooth curved path using quadratic bezier curves
     let path = `M ${sortedPoints[0].x} ${sortedPoints[0].y}`;
@@ -190,7 +195,7 @@ const AltitudeMap = ({
     }
 
     return path;
-  }, [standings, containerHeight, isMobile, playerGroups]);
+  }, [standings, containerHeight, isMobile, playerGroups, minPoints, range]);
 
   // Don't render if no standings
   if (!standings.length) {
@@ -256,7 +261,7 @@ const AltitudeMap = ({
         }} />
       </div>
 
-      {/* Y-Axis Labels */}
+      {/* Y-Axis Labels - Points */}
       {yAxisTicks.map((tick) => {
         const yPos = getYPosition(tick);
         const isZero = tick === 0;
@@ -270,13 +275,13 @@ const AltitudeMap = ({
               left: isMobile ? '8px' : 'auto',
               top: `${yPos}px`,
               transform: 'translateY(-50%)',
-              fontSize: '11px',
+              fontSize: '10px',
               color: isZero ? HOLO_COLORS.cyan : HOLO_COLORS.textMuted,
               fontWeight: isZero ? 700 : 400,
               fontFamily: 'monospace',
               zIndex: 5,
             }}>
-              {tick > 0 ? '+' : ''}{tick}%
+              {tick > 0 ? '+' : ''}{tick} pts
             </div>
 
             {/* Zero line - horizontal dashed line */}
@@ -363,7 +368,7 @@ const AltitudeMap = ({
         {/* Connection dots at each pod */}
         {standings.map((player) => {
           const xPercent = getXPosition(player);
-          const yPos = getYPosition(player.totalGain);
+          const yPos = getYPosition(player.totalPoints || 0);
           const isUser = player.odUserId === currentUserId;
 
           return (
@@ -383,7 +388,7 @@ const AltitudeMap = ({
       {standings.map((player) => {
         if (player.odUserId !== currentUserId) return null;
         const xPercent = getXPosition(player);
-        const yPos = getYPosition(player.totalGain);
+        const yPos = getYPosition(player.totalPoints || 0);
 
         return (
           <div
@@ -423,7 +428,7 @@ const AltitudeMap = ({
             isBeingScouted={isBeingScouted}
             style={{
               left: `${xPos}%`,
-              top: `${getYPosition(player.totalGain)}px`,
+              top: `${getYPosition(player.totalPoints || 0)}px`,
               transform: 'translate(-50%, -50%)',
             }}
           />

@@ -5,11 +5,14 @@ import { BotIcon, StarIcon } from './HoloIcons';
 /**
  * TacticalPod - Hexagonal player marker for the Altitude Map
  *
- * Displays player rank, name, gain percentage in a hexagonal pod
+ * Displays player rank, name, and BaggerBomb points in a hexagonal pod
  * that floats at the appropriate altitude on the map.
+ *
+ * BaggerBomb Scoring Update: Now shows total points as primary score
+ * with BaggerBomb (💣) and Bust (📉) indicators.
  */
 const TacticalPod = ({
-  player,           // { odUserId, displayName, totalGain, isMe, isCPU, currentRank, previousRank }
+  player,           // { odUserId, displayName, totalPoints, totalGain, totalBaggerBombs, totalBusts, isMe, isCPU, currentRank, previousRank }
   rank,             // 1-4
   isUser,           // Boolean - is this the current user?
   onScout,          // Callback when tapped (for scouting opponents)
@@ -190,18 +193,61 @@ const TacticalPod = ({
             </div>
           )}
 
-          {/* Gain Percentage */}
+          {/* Total Points - PRIMARY SCORE */}
           <div style={{
             fontSize: gainFontSize,
             fontWeight: 700,
-            color: player.totalGain >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
-            textShadow: player.totalGain >= 0
+            color: (player.totalPoints || 0) >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
+            textShadow: (player.totalPoints || 0) >= 0
               ? '0 0 8px rgba(0, 255, 136, 0.6)'
               : '0 0 8px rgba(255, 51, 102, 0.6)',
             marginTop: isMobile ? '2px' : '4px',
             fontFamily: 'monospace',
           }}>
-            {player.totalGain >= 0 ? '+' : ''}{player.totalGain.toFixed(2)}%
+            {(player.totalPoints || 0) >= 0 ? '+' : ''}{(player.totalPoints || 0).toFixed(0)} pts
+          </div>
+
+          {/* BaggerBomb / Bust Indicators */}
+          {(player.totalBaggerBombs > 0 || player.totalBusts > 0) && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: isMobile ? '4px' : '6px',
+              marginTop: '2px',
+              fontSize: isMobile ? '9px' : '10px',
+            }}>
+              {player.totalBaggerBombs > 0 && (
+                <span style={{
+                  color: HOLO_COLORS.green,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '2px',
+                }}>
+                  💣 {player.totalBaggerBombs}
+                </span>
+              )}
+              {player.totalBusts > 0 && (
+                <span style={{
+                  color: HOLO_COLORS.red,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '2px',
+                }}>
+                  📉 {player.totalBusts}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Percentage Gain - SECONDARY (smaller) */}
+          <div style={{
+            fontSize: isMobile ? '8px' : '9px',
+            color: HOLO_COLORS.textMuted,
+            marginTop: '1px',
+            fontFamily: 'monospace',
+          }}>
+            ({player.totalGain >= 0 ? '+' : ''}{player.totalGain.toFixed(1)}%)
           </div>
 
           {/* Movement Indicator */}

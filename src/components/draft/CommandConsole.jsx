@@ -11,6 +11,7 @@ import { UserIcon, TrophyIcon, SwapIcon, ScoutIcon, FireIcon, SnowflakeIcon, Hol
  * and action buttons. In scout mode, shows opponent's portfolio
  * with comparison analysis.
  *
+ * BaggerBomb Scoring Update: Shows total points, BaggerBombs (💣) and Busts (📉).
  * Phase 5.5: Compacted layout for more Altitude Map visibility
  */
 const CommandConsole = ({
@@ -63,22 +64,26 @@ const CommandConsole = ({
     };
   };
 
-  // Scout mode summary stats
+  // Scout mode summary stats - Updated for BaggerBomb scoring
   const scoutSummary = useMemo(() => {
     if (!isScoutMode || !scoutedPlayer || !userStanding) return null;
 
-    const theirBest = scoutedPlayer.bestAsset?.gain || 0;
-    const yourBest = userStanding.bestAsset?.gain || 0;
+    const theirPoints = scoutedPlayer.totalPoints || 0;
+    const yourPoints = userStanding.totalPoints || 0;
+    const theirBaggerBombs = scoutedPlayer.totalBaggerBombs || 0;
+    const yourBaggerBombs = userStanding.totalBaggerBombs || 0;
     const sharedAssets = scoutedPlayer.portfolio?.filter(a =>
       userStanding.portfolio?.some(ua => ua.symbol === a.symbol)
     ).length || 0;
 
     return {
-      theirBest,
-      yourBest,
-      gap: Math.abs(theirBest - yourBest),
+      theirPoints,
+      yourPoints,
+      pointGap: Math.abs(theirPoints - yourPoints),
+      theirBaggerBombs,
+      yourBaggerBombs,
       sharedAssets,
-      youLeadBest: yourBest > theirBest,
+      youLead: yourPoints > theirPoints,
     };
   }, [isScoutMode, scoutedPlayer, userStanding]);
 
@@ -156,28 +161,46 @@ const CommandConsole = ({
           </div>
         )}
 
-        {/* INLINE Best/Worst (only when not scouting) */}
-        {!isScoutMode && bestAsset && (
+        {/* INLINE BaggerBomb Stats + Best/Worst (only when not scouting) */}
+        {!isScoutMode && displayPlayer && (
           <div style={{
             display: 'flex',
             gap: '10px',
             fontSize: '10px',
             alignItems: 'center',
+            flexWrap: 'wrap',
           }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-              <FireIcon size={12} />
-              <span style={{ color: HOLO_COLORS.textMuted }}>BEST:</span>
-              <span style={{ color: HOLO_COLORS.green, marginLeft: '2px', fontWeight: 600 }}>
-                {bestAsset.symbol} +{bestAsset.gain?.toFixed(1)}%
-              </span>
+            {/* Total Points */}
+            <span style={{
+              background: HOLO_COLORS.bgCard,
+              padding: '2px 6px',
+              borderRadius: '4px',
+              fontWeight: 700,
+              color: (displayPlayer.totalPoints || 0) >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
+            }}>
+              {(displayPlayer.totalPoints || 0) >= 0 ? '+' : ''}{(displayPlayer.totalPoints || 0).toFixed(0)} pts
             </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-              <SnowflakeIcon size={12} />
-              <span style={{ color: HOLO_COLORS.textMuted }}>WORST:</span>
-              <span style={{ color: HOLO_COLORS.red, marginLeft: '2px', fontWeight: 600 }}>
-                {worstAsset?.symbol} {worstAsset?.gain?.toFixed(1)}%
+            {/* BaggerBombs Count */}
+            {displayPlayer.totalBaggerBombs > 0 && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '2px', color: HOLO_COLORS.green }}>
+                💣 {displayPlayer.totalBaggerBombs}
               </span>
-            </span>
+            )}
+            {/* Busts Count */}
+            {displayPlayer.totalBusts > 0 && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '2px', color: HOLO_COLORS.red }}>
+                📉 {displayPlayer.totalBusts}
+              </span>
+            )}
+            {/* Best Asset */}
+            {bestAsset && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                <FireIcon size={12} />
+                <span style={{ color: HOLO_COLORS.green, fontWeight: 600 }}>
+                  {bestAsset.symbol} +{(bestAsset.totalScore || bestAsset.gain || 0).toFixed(0)}
+                </span>
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -255,7 +278,7 @@ const CommandConsole = ({
         </div>
       </div>
 
-      {/* Scout Mode Summary - compact */}
+      {/* Scout Mode Summary - BaggerBomb points comparison */}
       {isScoutMode && scoutSummary && (
         <div style={{
           display: 'flex',
@@ -265,22 +288,30 @@ const CommandConsole = ({
           borderRadius: '6px',
           marginBottom: '8px',
           fontSize: '10px',
+          flexWrap: 'wrap',
+          gap: '6px',
         }}>
           <span style={{ color: HOLO_COLORS.textSecondary }}>
-            Their Best: <span style={{ color: HOLO_COLORS.amber, fontWeight: 600 }}>
-              +{scoutSummary.theirBest.toFixed(1)}%
+            Them: <span style={{ color: HOLO_COLORS.amber, fontWeight: 600 }}>
+              {scoutSummary.theirPoints >= 0 ? '+' : ''}{scoutSummary.theirPoints.toFixed(0)} pts
             </span>
+            {scoutSummary.theirBaggerBombs > 0 && (
+              <span style={{ marginLeft: '4px' }}>💣{scoutSummary.theirBaggerBombs}</span>
+            )}
           </span>
           <span style={{ color: HOLO_COLORS.textSecondary }}>
-            Your Best: <span style={{ color: HOLO_COLORS.cyan, fontWeight: 600 }}>
-              +{scoutSummary.yourBest.toFixed(1)}%
+            You: <span style={{ color: HOLO_COLORS.cyan, fontWeight: 600 }}>
+              {scoutSummary.yourPoints >= 0 ? '+' : ''}{scoutSummary.yourPoints.toFixed(0)} pts
             </span>
+            {scoutSummary.yourBaggerBombs > 0 && (
+              <span style={{ marginLeft: '4px' }}>💣{scoutSummary.yourBaggerBombs}</span>
+            )}
           </span>
           <span style={{
-            color: scoutSummary.youLeadBest ? HOLO_COLORS.green : HOLO_COLORS.red,
+            color: scoutSummary.youLead ? HOLO_COLORS.green : HOLO_COLORS.red,
             fontWeight: 700,
           }}>
-            Gap: {scoutSummary.gap.toFixed(1)}%
+            Gap: {scoutSummary.pointGap.toFixed(0)} pts
           </span>
         </div>
       )}
