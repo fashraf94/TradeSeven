@@ -74,6 +74,8 @@ import {
 import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen, DashboardScreen } from './screens';
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
+// Dashboard Components
+import { GameModeToggle } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -19280,7 +19282,14 @@ export default function PortfolioDuel() {
             </div>
           </header>
 
-          {/* Game Mode Toggle - Phase 1: Draft Mode Foundation */}
+          {/* Game Mode Toggle - Extracted Component */}
+          <GameModeToggle
+            gameMode={gameMode}
+            setGameMode={setGameMode}
+            colors={colors}
+          />
+
+          {/* OLD GameModeToggle - commented out for restoration if needed
           <div
             id="tour-game-mode-toggle"
             style={{
@@ -19297,7 +19306,6 @@ export default function PortfolioDuel() {
               justifyContent: 'center',
               gap: '8px'
             }}>
-              {/* Snake Draft 4P - LEFT (default) */}
               <button
                 id="tour-snake-draft-btn"
                 onClick={() => setGameMode('draft')}
@@ -19313,9 +19321,8 @@ export default function PortfolioDuel() {
                   transition: 'all 0.2s'
                 }}
               >
-                🐍 Snake Draft 4P
+                Snake Draft 4P
               </button>
-              {/* Builder 1v1 - RIGHT */}
               <button
                 id="tour-builder-btn"
                 onClick={() => setGameMode('classic')}
@@ -19331,10 +19338,11 @@ export default function PortfolioDuel() {
                   transition: 'all 0.2s'
                 }}
               >
-                ⚔️ Builder 1v1
+                Builder 1v1
               </button>
             </div>
           </div>
+          END OLD GameModeToggle */}
 
           {/* Main Content Area - Mobile-first with responsive padding */}
           <div
