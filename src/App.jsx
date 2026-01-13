@@ -74,6 +74,8 @@ import {
 import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen, DashboardScreen } from './screens';
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
+// Dashboard Components
+import { GameModeToggle, ResearchModeButton, BattleActionCards } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -19280,7 +19282,14 @@ export default function PortfolioDuel() {
             </div>
           </header>
 
-          {/* Game Mode Toggle - Phase 1: Draft Mode Foundation */}
+          {/* Game Mode Toggle - Extracted Component */}
+          <GameModeToggle
+            gameMode={gameMode}
+            setGameMode={setGameMode}
+            colors={colors}
+          />
+
+          {/* OLD GameModeToggle - commented out for restoration if needed
           <div
             id="tour-game-mode-toggle"
             style={{
@@ -19297,7 +19306,6 @@ export default function PortfolioDuel() {
               justifyContent: 'center',
               gap: '8px'
             }}>
-              {/* Snake Draft 4P - LEFT (default) */}
               <button
                 id="tour-snake-draft-btn"
                 onClick={() => setGameMode('draft')}
@@ -19313,9 +19321,8 @@ export default function PortfolioDuel() {
                   transition: 'all 0.2s'
                 }}
               >
-                🐍 Snake Draft 4P
+                Snake Draft 4P
               </button>
-              {/* Builder 1v1 - RIGHT */}
               <button
                 id="tour-builder-btn"
                 onClick={() => setGameMode('classic')}
@@ -19331,10 +19338,11 @@ export default function PortfolioDuel() {
                   transition: 'all 0.2s'
                 }}
               >
-                ⚔️ Builder 1v1
+                Builder 1v1
               </button>
             </div>
           </div>
+          END OLD GameModeToggle */}
 
           {/* Main Content Area - Mobile-first with responsive padding */}
           <div
@@ -20033,7 +20041,25 @@ export default function PortfolioDuel() {
               </motion.div>
             )}
 
-            {/* Create & Join Battle Cards - TRUE SIDE-BY-SIDE on all screens */}
+            {/* Battle Action Cards - Extracted Component */}
+            <BattleActionCards
+              gameMode={gameMode}
+              hasActiveBattle={hasActiveBattle}
+              colors={colors}
+              setPortfolio={setPortfolio}
+              setPortfolioType={setPortfolioType}
+              setPortfolioName={setPortfolioName}
+              setAssetType={setAssetType}
+              setSearchTerm={setSearchTerm}
+              setSelectedCrypto={setSelectedCrypto}
+              setJoinCode={setJoinCode}
+              setShowCreateDraftConfirm={setShowCreateDraftConfirm}
+              setShowCreateBattleConfirm={setShowCreateBattleConfirm}
+              setShowJoinDraftConfirm={setShowJoinDraftConfirm}
+              setShowJoinBattleConfirm={setShowJoinBattleConfirm}
+            />
+
+            {/* OLD BattleActionCards - commented out for restoration if needed
             <div
               id="tour-battle-cards"
               style={{
@@ -20045,7 +20071,6 @@ export default function PortfolioDuel() {
                 marginBottom: '16px'
               }}
             >
-              {/* CREATE BATTLE Card */}
               {(() => {
                 const createColor = gameMode === 'draft' ? '#10b981' : colors.cyan;
                 return (
@@ -20055,14 +20080,11 @@ export default function PortfolioDuel() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.2 }}
                     onClick={() => {
-                      // Reset portfolio state
                       setPortfolio([]); setPortfolioType(null);
                       setPortfolioName('');
                       setAssetType('stocks');
                       setSearchTerm('');
                       setSelectedCrypto(null);
-
-                      // Show confirmation popup based on game mode
                       if (gameMode === 'draft') {
                         setShowCreateDraftConfirm(true);
                       } else {
@@ -20081,98 +20103,12 @@ export default function PortfolioDuel() {
                       overflow: 'hidden',
                       transition: 'all 0.3s'
                     }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = createColor;
-                      e.currentTarget.style.boxShadow = `0 0 30px ${createColor}30`;
-                      e.currentTarget.style.transform = 'translateY(-4px)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = colors.border;
-                      e.currentTarget.style.boxShadow = 'none';
-                      e.currentTarget.style.transform = 'translateY(0)';
-                    }}
                   >
-                    {/* Background Pattern - Chart Lines */}
-                    <div style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      opacity: 0.08,
-                      background: `
-                        linear-gradient(90deg, transparent 0%, ${createColor}20 50%, transparent 100%),
-                        repeating-linear-gradient(
-                          0deg,
-                          transparent,
-                          transparent 20px,
-                          ${createColor}10 20px,
-                          ${createColor}10 21px
-                        )
-                      `,
-                      pointerEvents: 'none'
-                    }} />
-
-                    {/* Gradient Overlay */}
-                    <div style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '40%',
-                      height: '100%',
-                      background: `linear-gradient(90deg, ${createColor}10 0%, transparent 100%)`,
-                      pointerEvents: 'none'
-                    }} />
-
-                    {/* Content */}
-                    <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
-                      <Trophy style={{
-                        height: hasActiveBattle ? '40px' : '56px',
-                        width: hasActiveBattle ? '40px' : '56px',
-                        color: createColor,
-                        marginBottom: '16px'
-                      }} />
-                      <h3 style={{
-                        fontSize: hasActiveBattle ? '20px' : '24px',
-                        fontWeight: 'bold',
-                        color: colors.textPrimary,
-                        margin: '0 0 8px 0',
-                        textTransform: 'uppercase',
-                        letterSpacing: '2px'
-                      }}>
-                        {gameMode === 'draft' ? 'Create Draft' : 'Create Battle'}
-                      </h3>
-                      <p style={{
-                        fontSize: '14px',
-                        color: colors.textSecondary,
-                        margin: '0 0 20px 0'
-                      }}>
-                        {gameMode === 'draft' ? 'Start a 4-player snake draft.' : 'Start a new battle & set the rules.'}
-                      </p>
-                      <div style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '10px 20px',
-                        background: gameMode === 'draft' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'transparent',
-                        border: gameMode === 'draft' ? 'none' : `2px solid ${createColor}`,
-                        borderRadius: '10px',
-                        color: gameMode === 'draft' ? '#ffffff' : createColor,
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        textTransform: 'uppercase',
-                        letterSpacing: '1px',
-                        boxShadow: gameMode === 'draft' ? '0 4px 12px rgba(16, 185, 129, 0.3)' : 'none'
-                      }}>
-                        {gameMode === 'draft' ? '🐍 CREATE DRAFT' : 'CREATE BATTLE'}
-                        {gameMode !== 'draft' && <Plus style={{ height: '16px', width: '16px' }} />}
-                      </div>
-                    </div>
+                    <Trophy style={{ height: hasActiveBattle ? '40px' : '56px', width: hasActiveBattle ? '40px' : '56px', color: createColor, marginBottom: '16px' }} />
+                    <h3>{gameMode === 'draft' ? 'Create Draft' : 'Create Battle'}</h3>
                   </motion.div>
                 );
               })()}
-
-              {/* JOIN BATTLE Card */}
               {(() => {
                 const joinColor = gameMode === 'draft' ? '#10b981' : colors.purple;
                 return (
@@ -20182,14 +20118,11 @@ export default function PortfolioDuel() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.3 }}
                     onClick={() => {
-                      // Reset portfolio state
                       setPortfolio([]); setPortfolioType(null);
                       setPortfolioName('');
                       setAssetType('stocks');
                       setSearchTerm('');
                       setJoinCode('');
-
-                      // Show confirmation popup based on game mode
                       if (gameMode === 'draft') {
                         setShowJoinDraftConfirm(true);
                       } else {
@@ -20208,103 +20141,19 @@ export default function PortfolioDuel() {
                       overflow: 'hidden',
                       transition: 'all 0.3s'
                     }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = joinColor;
-                      e.currentTarget.style.boxShadow = `0 0 30px ${joinColor}30`;
-                      e.currentTarget.style.transform = 'translateY(-4px)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = colors.border;
-                      e.currentTarget.style.boxShadow = 'none';
-                      e.currentTarget.style.transform = 'translateY(0)';
-                    }}
                   >
-                    {/* Background Pattern - Target/Crosshair */}
-                    <div style={{
-                      position: 'absolute',
-                      top: '50%',
-                      right: '10%',
-                      transform: 'translateY(-50%)',
-                      width: '120px',
-                      height: '120px',
-                      opacity: 0.06,
-                      border: `3px solid ${joinColor}`,
-                      borderRadius: '50%',
-                      pointerEvents: 'none'
-                    }} />
-                    <div style={{
-                      position: 'absolute',
-                      top: '50%',
-                      right: 'calc(10% + 30px)',
-                      transform: 'translateY(-50%)',
-                      width: '60px',
-                      height: '60px',
-                      opacity: 0.08,
-                      border: `2px solid ${joinColor}`,
-                      borderRadius: '50%',
-                      pointerEvents: 'none'
-                    }} />
-
-                    {/* Gradient Overlay */}
-                    <div style={{
-                      position: 'absolute',
-                      top: 0,
-                      right: 0,
-                      width: '40%',
-                      height: '100%',
-                      background: `linear-gradient(270deg, ${joinColor}10 0%, transparent 100%)`,
-                      pointerEvents: 'none'
-                    }} />
-
-                    {/* Content */}
-                    <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
-                      <Swords style={{
-                        height: hasActiveBattle ? '40px' : '56px',
-                        width: hasActiveBattle ? '40px' : '56px',
-                        color: joinColor,
-                        marginBottom: '16px'
-                      }} />
-                      <h3 style={{
-                        fontSize: hasActiveBattle ? '20px' : '24px',
-                        fontWeight: 'bold',
-                        color: colors.textPrimary,
-                        margin: '0 0 8px 0',
-                        textTransform: 'uppercase',
-                        letterSpacing: '2px'
-                      }}>
-                        {gameMode === 'draft' ? 'Join Draft' : 'Join Battle'}
-                      </h3>
-                      <p style={{
-                        fontSize: '14px',
-                        color: colors.textSecondary,
-                        margin: '0 0 20px 0'
-                      }}>
-                        {gameMode === 'draft' ? 'Enter a draft code to join.' : 'Find an open match & compete.'}
-                      </p>
-                      <div style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '10px 20px',
-                        background: 'transparent',
-                        border: `2px solid ${joinColor}`,
-                        borderRadius: '10px',
-                        color: joinColor,
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        textTransform: 'uppercase',
-                        letterSpacing: '1px'
-                      }}>
-                        {gameMode === 'draft' ? '🎯 JOIN DRAFT' : 'JOIN BATTLE'}
-                        <ArrowRight style={{ height: '16px', width: '16px' }} />
-                      </div>
-                    </div>
+                    <Swords style={{ height: hasActiveBattle ? '40px' : '56px', width: hasActiveBattle ? '40px' : '56px', color: joinColor, marginBottom: '16px' }} />
+                    <h3>{gameMode === 'draft' ? 'Join Draft' : 'Join Battle'}</h3>
                   </motion.div>
                 );
               })()}
             </div>
+            END OLD BattleActionCards */}
 
-            {/* Futuristic Research Mode Button */}
+            {/* Research Mode Button - Extracted Component */}
+            <ResearchModeButton setShowResearchMode={setShowResearchMode} />
+
+            {/* OLD ResearchModeButton - commented out for restoration if needed
             <motion.div
               id="tour-research-mode"
               initial={{ opacity: 0, y: 20 }}
@@ -20333,7 +20182,6 @@ export default function PortfolioDuel() {
                 e.currentTarget.style.transform = 'translateY(0)';
               }}
             >
-              {/* CSS Animations for Research Button */}
               <style>{`
                 @keyframes gradientShift {
                   0% { background-position: 0% 50%; }
@@ -20350,8 +20198,6 @@ export default function PortfolioDuel() {
                   50% { opacity: 0.8; transform: scale(1.2); }
                 }
               `}</style>
-
-              {/* Animated gradient border overlay */}
               <div style={{
                 position: 'absolute',
                 top: 0,
@@ -20368,8 +20214,6 @@ export default function PortfolioDuel() {
                 WebkitMaskComposite: 'xor',
                 pointerEvents: 'none',
               }} />
-
-              {/* Scanning line effect */}
               <div style={{
                 position: 'absolute',
                 top: 0,
@@ -20380,8 +20224,6 @@ export default function PortfolioDuel() {
                 animation: 'scanLine 3s ease-in-out infinite',
                 pointerEvents: 'none',
               }} />
-
-              {/* Content */}
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -20389,9 +20231,7 @@ export default function PortfolioDuel() {
                 position: 'relative',
                 zIndex: 1,
               }}>
-                {/* Left side - Icon and text */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  {/* Futuristic icon */}
                   <div style={{
                     width: '48px',
                     height: '48px',
@@ -20414,8 +20254,6 @@ export default function PortfolioDuel() {
                       <path d="M8 8h.01M11 8h.01M14 8h.01M8 11h.01M11 11h.01M14 11h.01M8 14h.01M11 14h.01M14 14h.01" strokeWidth="1.5" />
                     </svg>
                   </div>
-
-                  {/* Text content */}
                   <div>
                     <div style={{
                       fontSize: '11px',
@@ -20444,8 +20282,6 @@ export default function PortfolioDuel() {
                     </div>
                   </div>
                 </div>
-
-                {/* Right side - Arrow */}
                 <div style={{
                   width: '40px',
                   height: '40px',
@@ -20461,8 +20297,6 @@ export default function PortfolioDuel() {
                   </svg>
                 </div>
               </div>
-
-              {/* Particle dots */}
               <div style={{
                 position: 'absolute',
                 top: '10px',
@@ -20486,6 +20320,7 @@ export default function PortfolioDuel() {
                 animation: 'researchPulse 2.5s ease infinite 0.5s',
               }} />
             </motion.div>
+            END OLD ResearchModeButton */}
 
             {/* Stonk Options Button */}
             <motion.div
