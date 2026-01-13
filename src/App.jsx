@@ -75,7 +75,7 @@ import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, BattleActionCards, TrainingModePanel, ActiveBattlesSection } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, BattleActionCards, TrainingModePanel, ActiveBattlesSection, WeeklyChallengesPanel } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -21062,6 +21062,23 @@ export default function PortfolioDuel() {
             )}
             {/* END ORIGINAL CODE - COMMENTED OUT */}
 
+            {/* Weekly Challenges Panel - Extracted Component */}
+            <WeeklyChallengesPanel
+              showWeeklyChallenges={showWeeklyChallenges}
+              setShowWeeklyChallenges={setShowWeeklyChallenges}
+              weeklyChallenges={weeklyChallenges}
+              activeDailyChallenge={activeDailyChallenge}
+              challengeProgress={challengeProgress}
+              completedWeeklyChallenges={completedWeeklyChallenges}
+              expandedChallengeId={expandedChallengeId}
+              setExpandedChallengeId={setExpandedChallengeId}
+              acceptChallenge={acceptChallenge}
+              colors={colors}
+            />
+
+            {/* ORIGINAL CODE - COMMENTED OUT FOR REFERENCE */}
+            {false && (
+            <>
             {/* Weekly Challenges Section */}
             <motion.div
               id="tour-weekly-challenges"
@@ -21432,6 +21449,9 @@ export default function PortfolioDuel() {
                 </motion.div>
               )}
             </motion.div>
+            </>
+            )}
+            {/* END ORIGINAL CODE - COMMENTED OUT */}
 
             {/* Completed Battles - Compact List */}
             {completedBattles.length > 0 && (
