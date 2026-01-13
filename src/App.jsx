@@ -75,7 +75,7 @@ import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, BattleActionCards } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, BattleActionCards, TrainingModePanel, ActiveBattlesSection, WeeklyChallengesPanel } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -14134,6 +14134,11 @@ export default function PortfolioDuel() {
       return;
     }
 
+    if (!selectedCrypto) {
+      alert('Please select a crypto asset before creating a battle');
+      return;
+    }
+
     const totalAssets = portfolio.length + (selectedCrypto ? 1 : 0);
     if (totalAssets < 7) {
       alert(`Please complete your portfolio (7-13 total assets). You have ${totalAssets}.`);
@@ -14229,6 +14234,11 @@ export default function PortfolioDuel() {
 
     if (!portfolioName.trim()) {
       alert('Please enter a portfolio name before joining');
+      return;
+    }
+
+    if (!selectedCrypto) {
+      alert('Please select a crypto asset before joining a battle');
       return;
     }
 
@@ -14396,6 +14406,11 @@ export default function PortfolioDuel() {
   const handleCreateTrainingBattle = async () => {
     if (!portfolioName.trim()) {
       alert('Please enter a portfolio name before starting training');
+      return;
+    }
+
+    if (!selectedCrypto) {
+      alert('Please select a crypto asset before starting training');
       return;
     }
 
@@ -19354,6 +19369,25 @@ export default function PortfolioDuel() {
               margin: '0 auto'
             }}
           >
+            {/* Active Battles Section - Extracted Component */}
+            <ActiveBattlesSection
+              activeBattles={activeBattles}
+              activeDraftBattles={activeDraftBattles}
+              activeTrainingBattles={activeTrainingBattles}
+              waitingBattles={waitingBattles}
+              user={user}
+              colors={colors}
+              setCurrentBattle={setCurrentBattle}
+              setCurrentDraft={setCurrentDraft}
+              setScreen={setScreen}
+              setActiveBattleId={setActiveBattleId}
+              copyToClipboard={copyToClipboard}
+              battleTimer={battleTimer}
+            />
+
+            {/* ORIGINAL CODE - COMMENTED OUT FOR REFERENCE */}
+            {false && (
+            <>
             {/* Active Battles Section - Shows ALL active battles */}
             {hasActiveBattle && (
               <div style={{ marginBottom: '24px' }}>
@@ -20040,6 +20074,9 @@ export default function PortfolioDuel() {
                 ))}
               </motion.div>
             )}
+            </>
+            )}
+            {/* END ORIGINAL CODE - COMMENTED OUT */}
 
             {/* Battle Action Cards - Extracted Component */}
             <BattleActionCards
@@ -20491,8 +20528,19 @@ export default function PortfolioDuel() {
               </div>
             </motion.div>
 
-            {/* Training Mode Section - Different design for draft vs classic */}
-            {gameMode === 'draft' ? (
+            {/* Training Mode Panel - Extracted Component */}
+            <TrainingModePanel
+              gameMode={gameMode}
+              colors={colors}
+              setTrainingConfirmType={setTrainingConfirmType}
+              setShowTrainingConfirmModal={setShowTrainingConfirmModal}
+              setShowClassicTrainingConfirm={setShowClassicTrainingConfirm}
+            />
+
+            {/* ORIGINAL CODE - COMMENTED OUT FOR REFERENCE */}
+            {false && (
+            // Training Mode Section - Different design for draft vs classic
+            gameMode === 'draft' ? (
               /* SNAKE DRAFT TRAINING SECTION - Redesigned with circular buttons */
               <motion.div
                 id="tour-training-mode"
@@ -21010,8 +21058,27 @@ export default function PortfolioDuel() {
                   Practice against CPU opponent - No pressure, just learning
                 </p>
               </motion.div>
+            )
             )}
+            {/* END ORIGINAL CODE - COMMENTED OUT */}
 
+            {/* Weekly Challenges Panel - Extracted Component */}
+            <WeeklyChallengesPanel
+              showWeeklyChallenges={showWeeklyChallenges}
+              setShowWeeklyChallenges={setShowWeeklyChallenges}
+              weeklyChallenges={weeklyChallenges}
+              activeDailyChallenge={activeDailyChallenge}
+              challengeProgress={challengeProgress}
+              completedWeeklyChallenges={completedWeeklyChallenges}
+              expandedChallengeId={expandedChallengeId}
+              setExpandedChallengeId={setExpandedChallengeId}
+              acceptChallenge={acceptChallenge}
+              colors={colors}
+            />
+
+            {/* ORIGINAL CODE - COMMENTED OUT FOR REFERENCE */}
+            {false && (
+            <>
             {/* Weekly Challenges Section */}
             <motion.div
               id="tour-weekly-challenges"
@@ -21382,6 +21449,9 @@ export default function PortfolioDuel() {
                 </motion.div>
               )}
             </motion.div>
+            </>
+            )}
+            {/* END ORIGINAL CODE - COMMENTED OUT */}
 
             {/* Completed Battles - Compact List */}
             {completedBattles.length > 0 && (
@@ -23765,6 +23835,22 @@ export default function PortfolioDuel() {
         // Navigation
         setScreen={setScreen}
       />
+    );
+  }
+
+  // BAGGERBOMB TRAINING PORTFOLIO BUILDER SCREEN
+  if (screen === 'trainingPortfolioBuilderTD') {
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        <PortfolioBuilderBaggerBomb
+          user={user}
+          onSubmit={handleCreateBaggerBombTrainingBattle}
+          onBack={() => {
+            setBuilderMode('create');
+            setScreen('dashboard');
+          }}
+        />
+      </Suspense>
     );
   }
 
