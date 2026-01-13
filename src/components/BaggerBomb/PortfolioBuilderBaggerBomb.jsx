@@ -9,7 +9,8 @@ import {
   Target, TrendingUp, Rocket, Info, Check, FileText, X
 } from 'lucide-react';
 import { STOCKS, CRYPTO } from '../../data/assets';
-import { getVolatilityThresholds } from '../../services/volatilityService';
+// TODO: Re-enable once EODHD API issues resolved
+// import { getVolatilityThresholds } from '../../services/volatilityService';
 import { getMultipleStockPrices, getMultipleCryptoPrices } from '../../services/eodhdAPI';
 import StockDetailModal from './StockDetailModal';
 import { NotesTab } from '../GamePlan';
@@ -267,77 +268,60 @@ export default function PortfolioBuilderBaggerBomb({
   const [isLoadingThresholds, setIsLoadingThresholds] = useState(Object.keys(initialThresholds).length === 0);
   const [isCreating, setIsCreating] = useState(false);
 
-  // Load prices and thresholds on mount
+  // TODO: Re-enable volatility API call once EODHD issues resolved
+  // TEMPORARILY BYPASS THRESHOLD API - use defaults immediately to prevent loading hang
+  // The volatility threshold API was causing infinite loading states
+  useEffect(() => {
+    // Immediately set default thresholds - no API call
+    if (Object.keys(initialThresholds).length === 0) {
+      console.log('[BaggerBomb] Using hardcoded default thresholds (API bypassed)');
+      setThresholds(getDefaultThresholds());
+    }
+    setIsLoadingThresholds(false);
+  }, [initialThresholds]);
+
+  // Load prices only (thresholds handled above)
   useEffect(() => {
     let isMounted = true;
-    let loadingTimeoutId = null;
 
-    const loadData = async () => {
+    const loadPrices = async () => {
       const needsPrices = Object.keys(initialStockPrices).length === 0;
-      const needsThresholds = Object.keys(initialThresholds).length === 0;
+      if (!needsPrices) {
+        setIsLoadingPrices(false);
+        return;
+      }
 
-      if (needsPrices) setIsLoadingPrices(true);
-      if (needsThresholds) setIsLoadingThresholds(true);
-
-      // Safety timeout: force loading to complete after 45 seconds max
-      // This prevents the UI from hanging indefinitely
-      loadingTimeoutId = setTimeout(() => {
-        if (isMounted) {
-          console.warn('[BaggerBomb] Loading timeout - using default thresholds');
-          setThresholds(getDefaultThresholds());
-          setIsLoadingPrices(false);
-          setIsLoadingThresholds(false);
-        }
-      }, 45000);
+      setIsLoadingPrices(true);
 
       try {
         const stockSymbols = STOCKS.map(s => s.symbol);
         const cryptoSymbols = CRYPTO.filter(c => c.category !== 'Stablecoin').map(c => c.symbol);
 
-        // Fetch prices and thresholds in parallel
-        const [stockPricesResult, cryptoPricesResult, stockThresholds, cryptoThresholds] = await Promise.all([
-          needsPrices ? getMultipleStockPrices(stockSymbols) : Promise.resolve(null),
-          needsPrices ? getMultipleCryptoPrices(cryptoSymbols) : Promise.resolve(null),
-          needsThresholds ? getVolatilityThresholds(stockSymbols, 'stock') : Promise.resolve(null),
-          needsThresholds ? getVolatilityThresholds(cryptoSymbols, 'crypto') : Promise.resolve(null)
+        // Fetch prices only - thresholds use defaults
+        const [stockPricesResult, cryptoPricesResult] = await Promise.all([
+          getMultipleStockPrices(stockSymbols),
+          getMultipleCryptoPrices(cryptoSymbols)
         ]);
 
         if (!isMounted) return;
 
         if (stockPricesResult) setStockPrices(stockPricesResult);
         if (cryptoPricesResult) setCryptoPrices(cryptoPricesResult);
-
-        if (stockThresholds || cryptoThresholds) {
-          const allThresholds = { ...(stockThresholds || {}), ...(cryptoThresholds || {}) };
-          // If we got some thresholds, use them; otherwise use defaults
-          if (Object.keys(allThresholds).length > 0) {
-            setThresholds(allThresholds);
-          } else {
-            setThresholds(getDefaultThresholds());
-          }
-        }
       } catch (error) {
-        console.error('Error loading data:', error);
-        // Use fallback defaults if threshold fetch fails
-        if (isMounted && Object.keys(initialThresholds).length === 0) {
-          setThresholds(getDefaultThresholds());
-        }
+        console.error('Error loading prices:', error);
       } finally {
-        if (loadingTimeoutId) clearTimeout(loadingTimeoutId);
         if (isMounted) {
           setIsLoadingPrices(false);
-          setIsLoadingThresholds(false);
         }
       }
     };
 
-    loadData();
+    loadPrices();
 
     return () => {
       isMounted = false;
-      if (loadingTimeoutId) clearTimeout(loadingTimeoutId);
     };
-  }, [initialStockPrices, initialThresholds]);
+  }, [initialStockPrices]);
 
   // Detect mobile/touch device
   useEffect(() => {
