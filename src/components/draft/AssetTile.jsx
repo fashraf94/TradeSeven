@@ -1,22 +1,32 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { HOLO_COLORS, CATEGORY_CONFIG } from '../../constants/holoTheme';
+import ScoreBreakdownPopover from './ScoreBreakdownPopover';
 
 /**
  * AssetTile - Individual asset card for the 3x3 portfolio grid
  *
- * Displays asset symbol, gain percentage, threshold, and BaggerBomb/Bust indicators.
- * In scout mode, shows comparison badges (THREAT, LINKED, RIVAL).
+ * NEW LAYOUT (Change 1 - Squad Box Redesign):
+ * ┌─────────────────────────────────────┐
+ * │ [S]  AAPL              +1 pts      │
+ * │ ⚡2.3%  💣0 📉0          +0.1%      │
+ * └─────────────────────────────────────┘
  *
- * BaggerBomb Scoring Update: Shows threshold, BaggerBomb (💣) and Bust (📉) counts.
+ * Left side: Category badge [S/R/D], symbol, threshold %, BaggerBomb count 💣, Bust count 📉
+ * Right side: Points (larger/prominent), % change
+ *
+ * Change 3: Points are now tappable to show ScoreBreakdownPopover
  */
 const AssetTile = ({
-  asset,              // { symbol, gain, lockedPrice, currentPrice, category, threshold, baggerBombs, busts, totalScore }
+  asset,              // { symbol, gain, lockedPrice, currentPrice, category, threshold, baggerBombs, busts, totalScore, basePoints, baggerBombPoints, bustPoints }
   isScoutMode = false,
   comparisonData = null, // { isLinked, isThreat, isSectorRival, deltaVsYourBest }
   compact = false,
 }) => {
+  const [showScoreBreakdown, setShowScoreBreakdown] = useState(false);
+
   // Get category color (fallback to cyan if unknown)
   const categoryColor = CATEGORY_CONFIG[asset?.category]?.color || HOLO_COLORS.cyan;
+  const categoryLetter = CATEGORY_CONFIG[asset?.category]?.letter || 'S';
 
   // Determine special highlighting for scout mode
   let borderColor = categoryColor;
@@ -38,6 +48,8 @@ const AssetTile = ({
 
   const gainValue = typeof asset?.gain === 'number' ? asset.gain : 0;
   const isPositive = gainValue >= 0;
+  const totalScore = asset?.totalScore ?? 0;
+  const isScorePositive = totalScore >= 0;
 
   if (!asset || !asset.symbol) {
     return (
@@ -45,7 +57,7 @@ const AssetTile = ({
         background: HOLO_COLORS.bgCard,
         borderRadius: '8px',
         border: `1px dashed ${HOLO_COLORS.borderSubtle}`,
-        minHeight: compact ? '42px' : '60px',
+        minHeight: compact ? '52px' : '64px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -56,155 +68,200 @@ const AssetTile = ({
   }
 
   return (
-    <div style={{
-      position: 'relative',
-      background: HOLO_COLORS.bgCard,
-      borderRadius: '8px',
-      borderLeft: `3px solid ${borderColor}`,
-      boxShadow: glowEffect,
-      padding: compact ? '6px 8px' : '10px 12px',
-      transition: 'all 0.2s ease',
-      minHeight: compact ? '42px' : '60px',
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'center',
-    }}>
-      {/* Badge for scout mode - Enhanced with animations */}
-      {badge && (
-        <div style={{
-          position: 'absolute',
-          top: '-8px',
-          right: '-8px',
-          background: badge.bg,
-          border: `1px solid ${badge.color}`,
-          color: badge.color,
-          fontSize: '8px',
-          fontWeight: 700,
-          padding: '3px 6px',
-          borderRadius: '4px',
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-          boxShadow: comparisonData?.isThreat
-            ? `0 0 8px ${badge.color}, 0 0 16px ${badge.color}44`
-            : 'none',
-          animation: comparisonData?.isThreat
-            ? 'threatPulse 1.5s ease-in-out infinite'
-            : 'none',
-          zIndex: 10,
-        }}>
-          {badge.text}
-        </div>
-      )}
-
-      {/* Threat pulse animation */}
-      {comparisonData?.isThreat && (
-        <style>{`
-          @keyframes threatPulse {
-            0%, 100% {
-              box-shadow: 0 0 8px ${HOLO_COLORS.purple}, 0 0 16px rgba(139, 92, 246, 0.4);
-              transform: scale(1);
-            }
-            50% {
-              box-shadow: 0 0 12px ${HOLO_COLORS.purple}, 0 0 24px rgba(139, 92, 246, 0.6);
-              transform: scale(1.05);
-            }
-          }
-        `}</style>
-      )}
-
-      {/* Symbol and BaggerBomb/Bust Row */}
+    <>
       <div style={{
-        fontSize: compact ? '11px' : '13px',
-        fontWeight: 600,
-        color: HOLO_COLORS.textPrimary,
-        marginBottom: '2px',
+        position: 'relative',
+        background: HOLO_COLORS.bgCard,
+        borderRadius: '8px',
+        borderLeft: `3px solid ${borderColor}`,
+        boxShadow: glowEffect,
+        padding: compact ? '8px 10px' : '10px 12px',
+        transition: 'all 0.2s ease',
+        minHeight: compact ? '52px' : '64px',
         display: 'flex',
-        alignItems: 'center',
+        flexDirection: 'column',
         justifyContent: 'space-between',
       }}>
-        <span>{asset.symbol}</span>
-        {/* BaggerBomb/Bust indicators */}
+        {/* Badge for scout mode */}
+        {badge && (
+          <div style={{
+            position: 'absolute',
+            top: '-8px',
+            right: '-8px',
+            background: badge.bg,
+            border: `1px solid ${badge.color}`,
+            color: badge.color,
+            fontSize: '8px',
+            fontWeight: 700,
+            padding: '3px 6px',
+            borderRadius: '4px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            boxShadow: comparisonData?.isThreat
+              ? `0 0 8px ${badge.color}, 0 0 16px ${badge.color}44`
+              : 'none',
+            animation: comparisonData?.isThreat
+              ? 'threatPulse 1.5s ease-in-out infinite'
+              : 'none',
+            zIndex: 10,
+          }}>
+            {badge.text}
+          </div>
+        )}
+
+        {/* Threat pulse animation */}
+        {comparisonData?.isThreat && (
+          <style>{`
+            @keyframes threatPulse {
+              0%, 100% {
+                box-shadow: 0 0 8px ${HOLO_COLORS.purple}, 0 0 16px rgba(139, 92, 246, 0.4);
+                transform: scale(1);
+              }
+              50% {
+                box-shadow: 0 0 12px ${HOLO_COLORS.purple}, 0 0 24px rgba(139, 92, 246, 0.6);
+                transform: scale(1.05);
+              }
+            }
+          `}</style>
+        )}
+
+        {/* ROW 1: Category Badge + Symbol + Points */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '3px',
-          fontSize: compact ? '9px' : '10px',
+          justifyContent: 'space-between',
+          marginBottom: '4px',
         }}>
-          {asset.baggerBombs > 0 && (
-            <span style={{ color: HOLO_COLORS.green }} title={`${asset.baggerBombs} BaggerBomb${asset.baggerBombs > 1 ? 's' : ''}`}>
-              💣{asset.baggerBombs > 1 ? asset.baggerBombs : ''}
-            </span>
-          )}
-          {asset.busts > 0 && (
-            <span style={{ color: HOLO_COLORS.red }} title={`${asset.busts} Bust${asset.busts > 1 ? 's' : ''}`}>
-              📉{asset.busts > 1 ? asset.busts : ''}
-            </span>
-          )}
-          {/* Category letter indicator */}
-          {!asset.baggerBombs && !asset.busts && (
+          {/* Left: Category Badge + Symbol */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+          }}>
+            {/* Category Badge [S/R/D] */}
             <span style={{
-              fontSize: '8px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: compact ? '16px' : '18px',
+              height: compact ? '16px' : '18px',
+              borderRadius: '4px',
+              background: `${categoryColor}33`,
+              border: `1px solid ${categoryColor}66`,
               color: categoryColor,
+              fontSize: compact ? '9px' : '10px',
               fontWeight: 700,
-              opacity: 0.8,
             }}>
-              {CATEGORY_CONFIG[asset.category]?.letter || ''}
+              {categoryLetter}
             </span>
-          )}
-        </div>
-      </div>
 
-      {/* Total Score - PRIMARY */}
-      {asset.totalScore !== undefined && (
+            {/* Symbol */}
+            <span style={{
+              fontSize: compact ? '12px' : '14px',
+              fontWeight: 700,
+              color: HOLO_COLORS.textPrimary,
+            }}>
+              {asset.symbol}
+            </span>
+          </div>
+
+          {/* Right: Points (TAPPABLE - Change 3) */}
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowScoreBreakdown(true);
+            }}
+            style={{
+              cursor: 'pointer',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              background: isScorePositive ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 51, 102, 0.1)',
+              transition: 'all 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = isScorePositive ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255, 51, 102, 0.2)';
+              e.currentTarget.style.transform = 'scale(1.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = isScorePositive ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 51, 102, 0.1)';
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+          >
+            <span style={{
+              fontSize: compact ? '12px' : '14px',
+              fontWeight: 700,
+              fontFamily: 'monospace',
+              color: isScorePositive ? HOLO_COLORS.green : HOLO_COLORS.red,
+            }}>
+              {isScorePositive ? '+' : ''}{totalScore.toFixed(0)} pts
+            </span>
+          </div>
+        </div>
+
+        {/* ROW 2: Threshold + BaggerBombs/Busts + % Change */}
         <div style={{
-          fontSize: compact ? '11px' : '13px',
-          fontWeight: 700,
-          fontFamily: 'monospace',
-          color: asset.totalScore >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
         }}>
-          {asset.totalScore >= 0 ? '+' : ''}{asset.totalScore.toFixed(0)} pts
-        </div>
-      )}
+          {/* Left: Threshold + BaggerBomb/Bust counts */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: compact ? '6px' : '8px',
+            fontSize: compact ? '9px' : '10px',
+          }}>
+            {/* Threshold */}
+            {asset.threshold && (
+              <span style={{
+                color: HOLO_COLORS.textMuted,
+                fontFamily: 'monospace',
+              }} title={`Threshold: ${asset.threshold}%`}>
+                ⚡{asset.threshold.toFixed(1)}%
+              </span>
+            )}
 
-      {/* Gain Percentage and Threshold - SECONDARY */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginTop: '1px',
-      }}>
-        <span style={{
-          fontSize: compact ? '9px' : '10px',
-          fontFamily: 'monospace',
-          color: isPositive ? HOLO_COLORS.green : HOLO_COLORS.red,
-          opacity: 0.8,
-        }}>
-          {isPositive ? '+' : ''}{gainValue.toFixed(1)}%
-        </span>
-        {/* Threshold indicator */}
-        {asset.threshold && (
+            {/* BaggerBomb count */}
+            <span style={{
+              color: (asset.baggerBombs || 0) > 0 ? HOLO_COLORS.green : HOLO_COLORS.textMuted,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '1px',
+            }}>
+              💣{asset.baggerBombs || 0}
+            </span>
+
+            {/* Bust count */}
+            <span style={{
+              color: (asset.busts || 0) > 0 ? HOLO_COLORS.red : HOLO_COLORS.textMuted,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '1px',
+            }}>
+              📉{asset.busts || 0}
+            </span>
+          </div>
+
+          {/* Right: Percentage change */}
           <span style={{
-            fontSize: compact ? '8px' : '9px',
-            color: HOLO_COLORS.textMuted,
+            fontSize: compact ? '10px' : '11px',
             fontFamily: 'monospace',
-          }} title={`Threshold: ${asset.threshold}%`}>
-            ⚡{asset.threshold.toFixed(1)}%
+            color: isPositive ? HOLO_COLORS.green : HOLO_COLORS.red,
+            opacity: 0.8,
+          }}>
+            {isPositive ? '+' : ''}{gainValue.toFixed(1)}%
           </span>
-        )}
+        </div>
       </div>
 
-      {/* Category indicator dot */}
-      <div style={{
-        position: 'absolute',
-        bottom: '6px',
-        right: '6px',
-        width: '5px',
-        height: '5px',
-        borderRadius: '50%',
-        background: categoryColor,
-        boxShadow: `0 0 4px ${categoryColor}`,
-      }} />
-    </div>
+      {/* Score Breakdown Popover (Change 3) */}
+      {showScoreBreakdown && (
+        <ScoreBreakdownPopover
+          asset={asset}
+          onClose={() => setShowScoreBreakdown(false)}
+        />
+      )}
+    </>
   );
 };
 

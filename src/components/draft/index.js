@@ -30,5 +30,8 @@ export { default as BattleErrorState } from './BattleErrorState';
 // Layout refinement components (Phase 5.5)
 export { default as TopPerformersModal } from './TopPerformersModal';
 
+// Score Breakdown components (BaggerBomb scoring)
+export { default as ScoreBreakdownPopover } from './ScoreBreakdownPopover';
+
 // Styled icons (Phase 5.6)
 export * from './HoloIcons';

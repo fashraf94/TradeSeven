@@ -370,6 +370,379 @@ const TechnicalAnalysisTab = ({ asset, fundamentals }) => {
   );
 };
 
+/**
+ * BaggerBombTab - BaggerBomb scoring stats for an asset
+ *
+ * Shows:
+ * - Threshold tiers (1.0x, 1.5x, 2.0x of base threshold)
+ * - This battle stats
+ * - Historical 30-day stats (mock)
+ */
+const BaggerBombTab = ({ asset }) => {
+  // Get base threshold (default 2.5% for unknown stocks)
+  const baseThreshold = asset?.threshold || 2.5;
+
+  // Calculate threshold tiers
+  const thresholds = {
+    baggerBomb: baseThreshold,
+    doubleBagger: baseThreshold * 1.5,
+    tenBagger: baseThreshold * 2.0,
+    bust: baseThreshold,
+    crash: baseThreshold * 1.5,
+    meltdown: baseThreshold * 2.0,
+  };
+
+  // Mock historical data (in production, fetch from API)
+  const getHistoricalStats = (symbol) => {
+    const mockData = {
+      'AAPL': { hitRate: 35, avgMove: 1.8, daysAboveThreshold: 10 },
+      'TSLA': { hitRate: 55, avgMove: 3.2, daysAboveThreshold: 17 },
+      'NVDA': { hitRate: 48, avgMove: 2.8, daysAboveThreshold: 14 },
+      'MSFT': { hitRate: 32, avgMove: 1.6, daysAboveThreshold: 9 },
+      'GOOGL': { hitRate: 38, avgMove: 2.1, daysAboveThreshold: 11 },
+      'AMZN': { hitRate: 42, avgMove: 2.3, daysAboveThreshold: 12 },
+      'META': { hitRate: 45, avgMove: 2.5, daysAboveThreshold: 13 },
+    };
+    return mockData[symbol] || { hitRate: 40, avgMove: 2.0, daysAboveThreshold: 12 };
+  };
+
+  const historical = getHistoricalStats(asset?.symbol);
+
+  // This battle stats (from asset object if available)
+  const currentBaggerBombs = asset?.baggerBombs || 0;
+  const currentBusts = asset?.busts || 0;
+  const currentBaggerBombPoints = asset?.baggerBombPoints || 0;
+  const currentBustPoints = asset?.bustPoints || 0;
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        marginBottom: '20px',
+      }}>
+        <span style={{ fontSize: '24px' }}>💣</span>
+        <div>
+          <h3 style={{
+            margin: 0,
+            fontSize: '16px',
+            fontWeight: 700,
+            color: '#00ff88',
+          }}>
+            BAGGERBOMB STATS
+          </h3>
+          <p style={{
+            margin: '2px 0 0',
+            fontSize: '11px',
+            color: 'rgba(255, 255, 255, 0.5)',
+          }}>
+            Volatility scoring for {asset?.symbol}
+          </p>
+        </div>
+      </div>
+
+      {/* THRESHOLDS Section */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{
+          fontSize: '10px',
+          fontWeight: 700,
+          color: 'rgba(255, 255, 255, 0.5)',
+          textTransform: 'uppercase',
+          letterSpacing: '1px',
+          marginBottom: '10px',
+        }}>
+          THRESHOLDS
+        </div>
+
+        {/* Positive Thresholds */}
+        <div style={{
+          background: 'rgba(0, 255, 136, 0.05)',
+          borderRadius: '10px',
+          padding: '12px',
+          marginBottom: '8px',
+        }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '8px 0',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+          }}>
+            <span style={{ color: '#00ff88', fontSize: '13px' }}>💣 BaggerBomb</span>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+              <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
+                +{thresholds.baggerBomb.toFixed(1)}%
+              </span>
+              <span style={{ color: '#00ff88', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
+                +15 pts
+              </span>
+            </div>
+          </div>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '8px 0',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+          }}>
+            <span style={{ color: '#00ff88', fontSize: '13px' }}>💣💣 Double Bagger</span>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+              <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
+                +{thresholds.doubleBagger.toFixed(1)}%
+              </span>
+              <span style={{ color: '#00ff88', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
+                +30 pts
+              </span>
+            </div>
+          </div>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '8px 0',
+          }}>
+            <span style={{ color: '#00ff88', fontSize: '13px' }}>🚀💣 TenBagger</span>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+              <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
+                +{thresholds.tenBagger.toFixed(1)}%
+              </span>
+              <span style={{ color: '#00ff88', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
+                +50 pts
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Negative Thresholds */}
+        <div style={{
+          background: 'rgba(255, 51, 102, 0.05)',
+          borderRadius: '10px',
+          padding: '12px',
+        }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '8px 0',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+          }}>
+            <span style={{ color: '#ff3366', fontSize: '13px' }}>📉 Bust</span>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+              <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
+                -{thresholds.bust.toFixed(1)}%
+              </span>
+              <span style={{ color: '#ff3366', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
+                -10 pts
+              </span>
+            </div>
+          </div>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '8px 0',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+          }}>
+            <span style={{ color: '#ff3366', fontSize: '13px' }}>💥 Crash</span>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+              <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
+                -{thresholds.crash.toFixed(1)}%
+              </span>
+              <span style={{ color: '#ff3366', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
+                -20 pts
+              </span>
+            </div>
+          </div>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '8px 0',
+          }}>
+            <span style={{ color: '#ff3366', fontSize: '13px' }}>🔥 Meltdown</span>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+              <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
+                -{thresholds.meltdown.toFixed(1)}%
+              </span>
+              <span style={{ color: '#ff3366', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
+                -35 pts
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* THIS BATTLE Section */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{
+          fontSize: '10px',
+          fontWeight: 700,
+          color: 'rgba(255, 255, 255, 0.5)',
+          textTransform: 'uppercase',
+          letterSpacing: '1px',
+          marginBottom: '10px',
+        }}>
+          THIS BATTLE
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: '10px',
+        }}>
+          {/* BaggerBombs */}
+          <div style={{
+            background: currentBaggerBombs > 0 ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+            borderRadius: '10px',
+            padding: '14px',
+            textAlign: 'center',
+            border: currentBaggerBombs > 0 ? '1px solid rgba(0, 255, 136, 0.3)' : 'none',
+          }}>
+            <div style={{ fontSize: '24px', marginBottom: '6px' }}>
+              {currentBaggerBombs > 0 ? '💣'.repeat(Math.min(currentBaggerBombs, 3)) : '💣'}
+            </div>
+            <div style={{
+              fontSize: '18px',
+              fontWeight: 700,
+              color: currentBaggerBombs > 0 ? '#00ff88' : 'rgba(255, 255, 255, 0.3)',
+            }}>
+              {currentBaggerBombs}x
+            </div>
+            <div style={{
+              fontSize: '10px',
+              color: 'rgba(255, 255, 255, 0.5)',
+              marginTop: '4px',
+            }}>
+              {currentBaggerBombPoints > 0 ? `+${currentBaggerBombPoints} pts` : 'No hits yet'}
+            </div>
+          </div>
+
+          {/* Busts */}
+          <div style={{
+            background: currentBusts > 0 ? 'rgba(255, 51, 102, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+            borderRadius: '10px',
+            padding: '14px',
+            textAlign: 'center',
+            border: currentBusts > 0 ? '1px solid rgba(255, 51, 102, 0.3)' : 'none',
+          }}>
+            <div style={{ fontSize: '24px', marginBottom: '6px' }}>
+              {currentBusts > 0 ? '📉'.repeat(Math.min(currentBusts, 3)) : '📉'}
+            </div>
+            <div style={{
+              fontSize: '18px',
+              fontWeight: 700,
+              color: currentBusts > 0 ? '#ff3366' : 'rgba(255, 255, 255, 0.3)',
+            }}>
+              {currentBusts}x
+            </div>
+            <div style={{
+              fontSize: '10px',
+              color: 'rgba(255, 255, 255, 0.5)',
+              marginTop: '4px',
+            }}>
+              {currentBustPoints < 0 ? `${currentBustPoints} pts` : 'No busts'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* HISTORICAL Section */}
+      <div>
+        <div style={{
+          fontSize: '10px',
+          fontWeight: 700,
+          color: 'rgba(255, 255, 255, 0.5)',
+          textTransform: 'uppercase',
+          letterSpacing: '1px',
+          marginBottom: '10px',
+        }}>
+          HISTORICAL (30 DAYS)
+        </div>
+
+        <div style={{
+          background: 'rgba(0, 217, 255, 0.05)',
+          borderRadius: '10px',
+          padding: '14px',
+        }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr 1fr',
+            gap: '12px',
+            textAlign: 'center',
+          }}>
+            <div>
+              <div style={{
+                fontSize: '20px',
+                fontWeight: 700,
+                color: historical.hitRate >= 50 ? '#00ff88' : historical.hitRate >= 30 ? '#f59e0b' : '#ff3366',
+              }}>
+                {historical.hitRate}%
+              </div>
+              <div style={{
+                fontSize: '9px',
+                color: 'rgba(255, 255, 255, 0.5)',
+                marginTop: '4px',
+                textTransform: 'uppercase',
+              }}>
+                Hit Rate
+              </div>
+            </div>
+            <div>
+              <div style={{
+                fontSize: '20px',
+                fontWeight: 700,
+                color: '#00d9ff',
+              }}>
+                {historical.avgMove.toFixed(1)}%
+              </div>
+              <div style={{
+                fontSize: '9px',
+                color: 'rgba(255, 255, 255, 0.5)',
+                marginTop: '4px',
+                textTransform: 'uppercase',
+              }}>
+                Avg Daily Move
+              </div>
+            </div>
+            <div>
+              <div style={{
+                fontSize: '20px',
+                fontWeight: 700,
+                color: '#fff',
+              }}>
+                {historical.daysAboveThreshold}/30
+              </div>
+              <div style={{
+                fontSize: '9px',
+                color: 'rgba(255, 255, 255, 0.5)',
+                marginTop: '4px',
+                textTransform: 'uppercase',
+              }}>
+                Days Hit
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Note */}
+        <div style={{
+          marginTop: '12px',
+          padding: '10px',
+          background: 'rgba(245, 158, 11, 0.08)',
+          borderLeft: '3px solid #f59e0b',
+          borderRadius: '0 8px 8px 0',
+          fontSize: '11px',
+          color: 'rgba(255, 255, 255, 0.7)',
+        }}>
+          <strong style={{ color: '#f59e0b' }}>Note:</strong> Threshold tiers are 1.0x, 1.5x, and 2.0x of the base threshold ({baseThreshold.toFixed(1)}%).
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AssetResearchModal = ({
   asset,
   sector,
@@ -723,23 +1096,23 @@ const AssetResearchModal = ({
               </h2>
             </div>
 
-            {/* Tabs - Compact text-only for mobile */}
+            {/* Tabs - Compact text-only for mobile (now 5 tabs) */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              gap: '4px',
+              gridTemplateColumns: 'repeat(5, 1fr)',
+              gap: '3px',
               marginBottom: '16px',
             }}>
               <button
                 onClick={() => setActiveTab('fundamental')}
                 style={{
-                  padding: '8px 4px',
+                  padding: '8px 3px',
                   borderRadius: '6px',
                   border: activeTab === 'fundamental' ? '1px solid #00d9ff' : '1px solid rgba(255, 255, 255, 0.1)',
                   background: activeTab === 'fundamental' ? 'rgba(0, 217, 255, 0.2)' : 'rgba(255, 255, 255, 0.05)',
                   color: activeTab === 'fundamental' ? '#00d9ff' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '10px',
+                  fontSize: '9px',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   textAlign: 'center',
@@ -750,13 +1123,13 @@ const AssetResearchModal = ({
               <button
                 onClick={() => setActiveTab('earnings')}
                 style={{
-                  padding: '8px 4px',
+                  padding: '8px 3px',
                   borderRadius: '6px',
                   border: activeTab === 'earnings' ? '1px solid #8b5cf6' : '1px solid rgba(255, 255, 255, 0.1)',
                   background: activeTab === 'earnings' ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
                   color: activeTab === 'earnings' ? '#8b5cf6' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '10px',
+                  fontSize: '9px',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   textAlign: 'center',
@@ -767,13 +1140,13 @@ const AssetResearchModal = ({
               <button
                 onClick={() => setActiveTab('technical')}
                 style={{
-                  padding: '8px 4px',
+                  padding: '8px 3px',
                   borderRadius: '6px',
                   border: activeTab === 'technical' ? '1px solid #00d9ff' : '1px solid rgba(255, 255, 255, 0.1)',
                   background: activeTab === 'technical' ? 'rgba(0, 217, 255, 0.2)' : 'rgba(255, 255, 255, 0.05)',
                   color: activeTab === 'technical' ? '#00d9ff' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '10px',
+                  fontSize: '9px',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   textAlign: 'center',
@@ -782,15 +1155,32 @@ const AssetResearchModal = ({
                 Technical
               </button>
               <button
+                onClick={() => setActiveTab('baggerbomb')}
+                style={{
+                  padding: '8px 3px',
+                  borderRadius: '6px',
+                  border: activeTab === 'baggerbomb' ? '1px solid #00ff88' : '1px solid rgba(255, 255, 255, 0.1)',
+                  background: activeTab === 'baggerbomb' ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  color: activeTab === 'baggerbomb' ? '#00ff88' : 'rgba(255, 255, 255, 0.6)',
+                  fontWeight: '600',
+                  fontSize: '9px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  textAlign: 'center',
+                }}
+              >
+                💣 Bomb
+              </button>
+              <button
                 onClick={() => setActiveTab('news')}
                 style={{
-                  padding: '8px 4px',
+                  padding: '8px 3px',
                   borderRadius: '6px',
                   border: activeTab === 'news' ? '1px solid #00d9ff' : '1px solid rgba(255, 255, 255, 0.1)',
                   background: activeTab === 'news' ? 'rgba(0, 217, 255, 0.2)' : 'rgba(255, 255, 255, 0.05)',
                   color: activeTab === 'news' ? '#00d9ff' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '10px',
+                  fontSize: '9px',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   textAlign: 'center',
@@ -1042,6 +1432,10 @@ const AssetResearchModal = ({
 
             {activeTab === 'technical' && (
               <TechnicalAnalysisTab asset={asset} fundamentals={fundamentals} />
+            )}
+
+            {activeTab === 'baggerbomb' && (
+              <BaggerBombTab asset={asset} />
             )}
 
             {activeTab === 'earnings' && (
