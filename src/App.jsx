@@ -14134,6 +14134,11 @@ export default function PortfolioDuel() {
       return;
     }
 
+    if (!selectedCrypto) {
+      alert('Please select a crypto asset before creating a battle');
+      return;
+    }
+
     const totalAssets = portfolio.length + (selectedCrypto ? 1 : 0);
     if (totalAssets < 7) {
       alert(`Please complete your portfolio (7-13 total assets). You have ${totalAssets}.`);
@@ -14229,6 +14234,11 @@ export default function PortfolioDuel() {
 
     if (!portfolioName.trim()) {
       alert('Please enter a portfolio name before joining');
+      return;
+    }
+
+    if (!selectedCrypto) {
+      alert('Please select a crypto asset before joining a battle');
       return;
     }
 
@@ -14396,6 +14406,11 @@ export default function PortfolioDuel() {
   const handleCreateTrainingBattle = async () => {
     if (!portfolioName.trim()) {
       alert('Please enter a portfolio name before starting training');
+      return;
+    }
+
+    if (!selectedCrypto) {
+      alert('Please select a crypto asset before starting training');
       return;
     }
 
@@ -23800,6 +23815,22 @@ export default function PortfolioDuel() {
         // Navigation
         setScreen={setScreen}
       />
+    );
+  }
+
+  // BAGGERBOMB TRAINING PORTFOLIO BUILDER SCREEN
+  if (screen === 'trainingPortfolioBuilderTD') {
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        <PortfolioBuilderBaggerBomb
+          user={user}
+          onSubmit={handleCreateBaggerBombTrainingBattle}
+          onBack={() => {
+            setBuilderMode('create');
+            setScreen('dashboard');
+          }}
+        />
+      </Suspense>
     );
   }
 

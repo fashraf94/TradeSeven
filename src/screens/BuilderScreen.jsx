@@ -1391,6 +1391,7 @@ const BuilderScreen = ({
               disabled={(() => {
                 const totalAssets = portfolio.length + (selectedCrypto ? 1 : 0);
                 return !portfolioName ||
+                  !selectedCrypto ||
                   totalAssets < 7 ||
                   totalAssets > 13 ||
                   Math.abs(totalPercentage - 100) >= 0.01 ||
@@ -1399,7 +1400,7 @@ const BuilderScreen = ({
               })()}
               style={(() => {
                 const totalAssets = portfolio.length + (selectedCrypto ? 1 : 0);
-                const canProceed = portfolioName && totalAssets >= 7 && totalAssets <= 13 && Math.abs(totalPercentage - 100) < 0.01 && cryptoPercentage >= 7.5 && cryptoPercentage <= 20;
+                const canProceed = portfolioName && selectedCrypto && totalAssets >= 7 && totalAssets <= 13 && Math.abs(totalPercentage - 100) < 0.01 && cryptoPercentage >= 7.5 && cryptoPercentage <= 20;
                 return {
                   width: '100%',
                   backgroundColor: canProceed
