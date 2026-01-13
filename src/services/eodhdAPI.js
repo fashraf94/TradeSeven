@@ -84,7 +84,7 @@ const logWarn = (message, ...args) => {
 // FETCH WITH TIMEOUT
 // ============================================
 
-const fetchWithTimeout = async (url, timeout = 15000) => {
+const fetchWithTimeout = async (url, timeout = 30000) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -232,8 +232,8 @@ export async function getPopularStocks() {
       price: price,
       change: parseFloat(prices[symbol]?.change) || 0,
       percentChange: percentChange,
-      priceChange7d: (Math.random() - 0.5) * 10,
-      priceChange30d: (Math.random() - 0.5) * 30,
+      priceChange7d: null, // Not available from EODHD API
+      priceChange30d: null, // Not available from EODHD API
       volatility: 'medium',
       week52High: price * 1.25,
       week52Low: price * 0.75,
@@ -381,8 +381,8 @@ export async function getPopularCrypto() {
       price: price,
       change24h: change24h,
       percentChange: change24h,
-      priceChange7d: (Math.random() - 0.5) * 15,
-      priceChange30d: (Math.random() - 0.5) * 40,
+      priceChange7d: null, // Not available from EODHD API
+      priceChange30d: null, // Not available from EODHD API
       volatility: 'high',
       week52High: price * 1.5,
       week52Low: price * 0.5,
@@ -397,10 +397,10 @@ export async function getPopularCrypto() {
  * Get extended crypto data (for compatibility with old API)
  */
 export async function getCryptoExtendedData(cryptoId) {
-  // EODHD doesn't have 7d/30d change, so we return estimates
+  // EODHD doesn't provide 7d/30d historical price changes
   return {
-    priceChange7d: (Math.random() - 0.5) * 15,
-    priceChange30d: (Math.random() - 0.5) * 40,
+    priceChange7d: null, // Not available from EODHD API
+    priceChange30d: null, // Not available from EODHD API
     week52High: 0,
     week52Low: 0
   };

@@ -218,21 +218,24 @@ function findMissingSymbols(symbols, type) {
 // API FETCHING
 // ============================================
 
-/**
- * Fetch thresholds from API for given symbols
- */
-async function fetchFromAPI(symbols, type) {
-  if (symbols.length === 0) {
-    return {};
-  }
+const FETCH_TIMEOUT_MS = 30000; // 30 second timeout
+const MAX_SYMBOLS_PER_REQUEST = 20; // Server limit
 
+/**
+ * Fetch a single batch of thresholds from API
+ * Includes 30-second timeout to prevent UI from hanging indefinitely
+ */
+async function fetchBatch(symbols, type) {
   const symbolsParam = symbols.map(s => s.toUpperCase()).join(',');
   const url = `${API_BASE}?symbols=${encodeURIComponent(symbolsParam)}&type=${type}`;
 
-  logDebug(`Fetching thresholds for ${symbols.length} ${type} symbols from API`);
+  // Create abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw new Error(`API returned ${response.status}`);
@@ -244,13 +247,67 @@ async function fetchFromAPI(symbols, type) {
       throw new Error('Invalid API response');
     }
 
-    logDebug(`Received ${Object.keys(data.thresholds).length} thresholds from API`);
     return data.thresholds;
 
   } catch (error) {
-    logWarn(`API fetch failed:`, error.message);
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      logWarn(`API fetch timed out after ${FETCH_TIMEOUT_MS}ms`);
+    } else {
+      logWarn(`API fetch failed:`, error.message);
+    }
     return null;
   }
+}
+
+/**
+ * Fetch thresholds from API for given symbols
+ * Automatically batches requests to stay under server limit (20 symbols max)
+ */
+async function fetchFromAPI(symbols, type) {
+  if (symbols.length === 0) {
+    return {};
+  }
+
+  const upperSymbols = symbols.map(s => s.toUpperCase());
+
+  // If under limit, make a single request
+  if (upperSymbols.length <= MAX_SYMBOLS_PER_REQUEST) {
+    logDebug(`Fetching thresholds for ${upperSymbols.length} ${type} symbols from API`);
+    return await fetchBatch(upperSymbols, type);
+  }
+
+  // Batch symbols into chunks of MAX_SYMBOLS_PER_REQUEST
+  const batches = [];
+  for (let i = 0; i < upperSymbols.length; i += MAX_SYMBOLS_PER_REQUEST) {
+    batches.push(upperSymbols.slice(i, i + MAX_SYMBOLS_PER_REQUEST));
+  }
+
+  logDebug(`Fetching thresholds for ${upperSymbols.length} ${type} symbols in ${batches.length} batches`);
+
+  // Fetch all batches in parallel
+  const batchResults = await Promise.all(
+    batches.map(batch => fetchBatch(batch, type))
+  );
+
+  // Merge results from all batches
+  const mergedResults = {};
+  let successCount = 0;
+
+  for (const result of batchResults) {
+    if (result) {
+      Object.assign(mergedResults, result);
+      successCount++;
+    }
+  }
+
+  // If all batches failed, return null to trigger fallback
+  if (successCount === 0) {
+    return null;
+  }
+
+  logDebug(`Received ${Object.keys(mergedResults).length} thresholds from ${successCount}/${batches.length} batches`);
+  return mergedResults;
 }
 
 // ============================================

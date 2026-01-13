@@ -9,8 +9,9 @@ import {
   Target, TrendingUp, Rocket, Info, Check, FileText, X
 } from 'lucide-react';
 import { STOCKS, CRYPTO } from '../../data/assets';
-import { getVolatilityThresholds } from '../../services/volatilityService';
-import { getMultipleStockPrices, getMultipleCryptoPrices } from '../../services/eodhdAPI';
+// TODO: Re-enable once EODHD API issues resolved
+// import { getVolatilityThresholds } from '../../services/volatilityService';
+// import { getMultipleStockPrices, getMultipleCryptoPrices } from '../../services/eodhdAPI';
 import StockDetailModal from './StockDetailModal';
 import { NotesTab } from '../GamePlan';
 import { useUser } from '../../contexts';
@@ -228,18 +229,22 @@ const getDefaultThresholds = () => {
 /**
  * PortfolioBuilderBaggerBomb - Main component
  * Accepts user prop for backwards compatibility, but prefers context
+ *
+ * Price data comes from App.jsx via stocksData/cryptoData props (arrays)
+ * Thresholds use hardcoded defaults (API bypassed due to EODHD issues)
  */
 export default function PortfolioBuilderBaggerBomb({
   onSubmit,
   onBack,
   user: userProp,
-  stockPrices: initialStockPrices = {},
-  cryptoPrices: initialCryptoPrices = {},
+  stocksData = [],      // Array from App.jsx: [{ symbol, name, price, percentChange, ... }]
+  cryptoData = [],      // Array from App.jsx: [{ symbol, name, price, change24h, ... }]
   thresholds: initialThresholds = {}
 }) {
   // Get user from context, fall back to prop
   const { user: contextUser } = useUser();
   const user = userProp || contextUser;
+
   // Portfolio state
   const [portfolio, setPortfolio] = useState([]);
   const [selectedCrypto, setSelectedCrypto] = useState(null);
@@ -259,61 +264,57 @@ export default function PortfolioBuilderBaggerBomb({
   const [selectedStockForDetail, setSelectedStockForDetail] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
 
-  // Data state
-  const [stockPrices, setStockPrices] = useState(initialStockPrices);
-  const [cryptoPrices, setCryptoPrices] = useState(initialCryptoPrices);
-  const [thresholds, setThresholds] = useState(initialThresholds);
-  const [isLoadingPrices, setIsLoadingPrices] = useState(Object.keys(initialStockPrices).length === 0);
-  const [isLoadingThresholds, setIsLoadingThresholds] = useState(Object.keys(initialThresholds).length === 0);
+  // Convert stocksData array to stockPrices object format
+  // App.jsx provides: [{ symbol: 'AAPL', price: 240, percentChange: 1.5, ... }]
+  // Component needs: { AAPL: { price: 240, percentChange: 1.5 }, ... }
+  const stockPrices = useMemo(() => {
+    const prices = {};
+    if (stocksData && stocksData.length > 0) {
+      stocksData.forEach(stock => {
+        if (stock?.symbol) {
+          prices[stock.symbol] = {
+            price: stock.price || 0,
+            change: stock.change || 0,
+            percentChange: stock.percentChange || 0
+          };
+        }
+      });
+    }
+    return prices;
+  }, [stocksData]);
+
+  // Convert cryptoData array to cryptoPrices object format
+  const cryptoPrices = useMemo(() => {
+    const prices = {};
+    if (cryptoData && cryptoData.length > 0) {
+      cryptoData.forEach(crypto => {
+        if (crypto?.symbol) {
+          prices[crypto.symbol] = {
+            price: crypto.price || 0,
+            change24h: crypto.change24h || 0
+          };
+        }
+      });
+    }
+    return prices;
+  }, [cryptoData]);
+
+  // Thresholds - use defaults (API bypassed due to EODHD issues)
+  // TODO: Re-enable API calls once EODHD issues resolved
+  const [thresholds, setThresholds] = useState(() => {
+    return Object.keys(initialThresholds).length > 0 ? initialThresholds : getDefaultThresholds();
+  });
+
+  // Loading states - prices come from App.jsx, thresholds are defaults
+  const isLoadingPrices = stocksData.length === 0;
+  const isLoadingThresholds = false; // Always false - using defaults
   const [isCreating, setIsCreating] = useState(false);
 
-  // Load prices and thresholds on mount
+  // Log once on mount
   useEffect(() => {
-    const loadData = async () => {
-      const needsPrices = Object.keys(initialStockPrices).length === 0;
-      const needsThresholds = Object.keys(initialThresholds).length === 0;
-
-      if (needsPrices) setIsLoadingPrices(true);
-      if (needsThresholds) setIsLoadingThresholds(true);
-
-      try {
-        const stockSymbols = STOCKS.map(s => s.symbol);
-        const cryptoSymbols = CRYPTO.filter(c => c.category !== 'Stablecoin').map(c => c.symbol);
-
-        // Fetch prices and thresholds in parallel
-        const [stockPricesResult, cryptoPricesResult, stockThresholds, cryptoThresholds] = await Promise.all([
-          needsPrices ? getMultipleStockPrices(stockSymbols) : Promise.resolve(null),
-          needsPrices ? getMultipleCryptoPrices(cryptoSymbols) : Promise.resolve(null),
-          needsThresholds ? getVolatilityThresholds(stockSymbols, 'stock') : Promise.resolve(null),
-          needsThresholds ? getVolatilityThresholds(cryptoSymbols, 'crypto') : Promise.resolve(null)
-        ]);
-
-        if (stockPricesResult) setStockPrices(stockPricesResult);
-        if (cryptoPricesResult) setCryptoPrices(cryptoPricesResult);
-
-        if (stockThresholds || cryptoThresholds) {
-          const allThresholds = { ...(stockThresholds || {}), ...(cryptoThresholds || {}) };
-          // If we got some thresholds, use them; otherwise use defaults
-          if (Object.keys(allThresholds).length > 0) {
-            setThresholds(allThresholds);
-          } else {
-            setThresholds(getDefaultThresholds());
-          }
-        }
-      } catch (error) {
-        console.error('Error loading data:', error);
-        // Use fallback defaults if threshold fetch fails
-        if (Object.keys(initialThresholds).length === 0) {
-          setThresholds(getDefaultThresholds());
-        }
-      } finally {
-        setIsLoadingPrices(false);
-        setIsLoadingThresholds(false);
-      }
-    };
-
-    loadData();
-  }, [initialStockPrices, initialThresholds]);
+    console.log('[BaggerBomb] Using prices from App.jsx, default thresholds');
+    console.log(`[BaggerBomb] Received ${stocksData.length} stocks, ${cryptoData.length} crypto`);
+  }, []); // Empty deps - run only once on mount
 
   // Detect mobile/touch device
   useEffect(() => {
