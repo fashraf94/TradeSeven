@@ -218,8 +218,11 @@ function findMissingSymbols(symbols, type) {
 // API FETCHING
 // ============================================
 
+const FETCH_TIMEOUT_MS = 30000; // 30 second timeout
+
 /**
  * Fetch thresholds from API for given symbols
+ * Includes 30-second timeout to prevent UI from hanging indefinitely
  */
 async function fetchFromAPI(symbols, type) {
   if (symbols.length === 0) {
@@ -231,8 +234,13 @@ async function fetchFromAPI(symbols, type) {
 
   logDebug(`Fetching thresholds for ${symbols.length} ${type} symbols from API`);
 
+  // Create abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw new Error(`API returned ${response.status}`);
@@ -248,7 +256,12 @@ async function fetchFromAPI(symbols, type) {
     return data.thresholds;
 
   } catch (error) {
-    logWarn(`API fetch failed:`, error.message);
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      logWarn(`API fetch timed out after ${FETCH_TIMEOUT_MS}ms`);
+    } else {
+      logWarn(`API fetch failed:`, error.message);
+    }
     return null;
   }
 }
