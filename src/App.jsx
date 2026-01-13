@@ -75,7 +75,7 @@ import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, BattleActionCards, TrainingModePanel } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, BattleActionCards, TrainingModePanel, ActiveBattlesSection } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -19354,6 +19354,25 @@ export default function PortfolioDuel() {
               margin: '0 auto'
             }}
           >
+            {/* Active Battles Section - Extracted Component */}
+            <ActiveBattlesSection
+              activeBattles={activeBattles}
+              activeDraftBattles={activeDraftBattles}
+              activeTrainingBattles={activeTrainingBattles}
+              waitingBattles={waitingBattles}
+              user={user}
+              colors={colors}
+              setCurrentBattle={setCurrentBattle}
+              setCurrentDraft={setCurrentDraft}
+              setScreen={setScreen}
+              setActiveBattleId={setActiveBattleId}
+              copyToClipboard={copyToClipboard}
+              battleTimer={battleTimer}
+            />
+
+            {/* ORIGINAL CODE - COMMENTED OUT FOR REFERENCE */}
+            {false && (
+            <>
             {/* Active Battles Section - Shows ALL active battles */}
             {hasActiveBattle && (
               <div style={{ marginBottom: '24px' }}>
@@ -20040,6 +20059,9 @@ export default function PortfolioDuel() {
                 ))}
               </motion.div>
             )}
+            </>
+            )}
+            {/* END ORIGINAL CODE - COMMENTED OUT */}
 
             {/* Battle Action Cards - Extracted Component */}
             <BattleActionCards
