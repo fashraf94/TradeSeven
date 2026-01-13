@@ -33,6 +33,9 @@ const AltitudeMap = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Minimum vertical separation between pods (in pixels)
+  const MIN_POD_SEPARATION = isMobile ? 95 : 130;
+
   // Calculate the Y-axis range based on standings (using POINTS now)
   const { minPoints, maxPoints, range } = useMemo(() => {
     if (!standings.length) return { minPoints: -50, maxPoints: 100, range: 150 };
@@ -115,6 +118,43 @@ const AltitudeMap = ({
     return minX + (playerIndex * step);
   };
 
+  // Calculate adjusted Y positions to ensure minimum separation between pods
+  const adjustedYPositions = useMemo(() => {
+    if (!standings.length) return {};
+
+    // Sort standings by points (highest first)
+    const sorted = [...standings].sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
+
+    // Calculate raw Y positions first
+    const positions = {};
+    sorted.forEach((player) => {
+      positions[player.odUserId] = getYPosition(player.totalPoints || 0);
+    });
+
+    // Adjust positions to ensure minimum separation
+    // Process from top to bottom (lowest Y value first in screen coords)
+    for (let i = 1; i < sorted.length; i++) {
+      const currentPlayer = sorted[i];
+      const prevPlayer = sorted[i - 1];
+
+      const currentY = positions[currentPlayer.odUserId];
+      const prevY = positions[prevPlayer.odUserId];
+
+      // If too close, push this pod down
+      const separation = currentY - prevY;
+      if (separation < MIN_POD_SEPARATION) {
+        positions[currentPlayer.odUserId] = prevY + MIN_POD_SEPARATION;
+      }
+    }
+
+    return positions;
+  }, [standings, containerHeight, minPoints, range, MIN_POD_SEPARATION]);
+
+  // Get adjusted Y position for a player
+  const getAdjustedYPosition = (player) => {
+    return adjustedYPositions[player.odUserId] || getYPosition(player.totalPoints || 0);
+  };
+
   // Generate Y-axis tick marks for points
   const yAxisTicks = useMemo(() => {
     const ticks = [];
@@ -128,7 +168,7 @@ const AltitudeMap = ({
 
   // Calculate overtake gaps for callouts - using POINTS for separation
   const overtakeGaps = useMemo(() => {
-    if (standings.length < 2) return [];
+    if (standings.length < 2 || !Object.keys(adjustedYPositions).length) return [];
 
     const gaps = [];
     const userIndex = standings.findIndex(p => p.odUserId === currentUserId);
@@ -140,7 +180,7 @@ const AltitudeMap = ({
       const lowerPoints = lower.totalPoints || 0;
       const gap = higherPoints - lowerPoints;
 
-      // Only show callout if there's meaningful vertical separation (> 10 pts)
+      // Only show callout if there's meaningful point gap (> 10 pts)
       if (Math.abs(gap) < 10) continue;
 
       // Show gap between user and player ahead (if user isn't 1st)
@@ -149,9 +189,13 @@ const AltitudeMap = ({
       const isTopTwo = i === 0;
 
       if ((isUserChasing || isTopTwo) && gap > 5) {
+        // Use adjusted Y positions for visual placement
+        const higherY = adjustedYPositions[higher.odUserId] || getYPosition(higherPoints);
+        const lowerY = adjustedYPositions[lower.odUserId] || getYPosition(lowerPoints);
+
         gaps.push({
           gap,
-          yPosition: (getYPosition(higherPoints) + getYPosition(lowerPoints)) / 2,
+          yPosition: (higherY + lowerY) / 2,
           xPosition: '50%',
           isUserGap: isUserChasing,
           higherPlayer: higher,
@@ -161,17 +205,17 @@ const AltitudeMap = ({
     }
 
     return gaps;
-  }, [standings, currentUserId, containerHeight, minPoints, range]);
+  }, [standings, currentUserId, containerHeight, minPoints, range, adjustedYPositions]);
 
   // Generate SVG path for the "battle snake" connecting pods
   const snakePath = useMemo(() => {
     if (standings.length < 2) return '';
 
-    // Calculate actual positions for SVG using player points
+    // Calculate actual positions for SVG using adjusted player positions
     const pathPoints = standings.map((player) => {
       return {
         x: getXPosition(player),
-        y: getYPosition(player.totalPoints || 0),
+        y: getAdjustedYPosition(player),
       };
     });
 
@@ -368,7 +412,7 @@ const AltitudeMap = ({
         {/* Connection dots at each pod */}
         {standings.map((player) => {
           const xPercent = getXPosition(player);
-          const yPos = getYPosition(player.totalPoints || 0);
+          const yPos = getAdjustedYPosition(player);
           const isUser = player.odUserId === currentUserId;
 
           return (
@@ -388,7 +432,7 @@ const AltitudeMap = ({
       {standings.map((player) => {
         if (player.odUserId !== currentUserId) return null;
         const xPercent = getXPosition(player);
-        const yPos = getYPosition(player.totalPoints || 0);
+        const yPos = getAdjustedYPosition(player);
 
         return (
           <div
@@ -428,7 +472,7 @@ const AltitudeMap = ({
             isBeingScouted={isBeingScouted}
             style={{
               left: `${xPos}%`,
-              top: `${getYPosition(player.totalPoints || 0)}px`,
+              top: `${getAdjustedYPosition(player)}px`,
               transform: 'translate(-50%, -50%)',
             }}
           />
