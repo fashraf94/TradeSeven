@@ -155,6 +155,18 @@ const AltitudeMap = ({
     return adjustedYPositions[player.odUserId] || getYPosition(player.totalPoints || 0);
   };
 
+  // Calculate actual container height needed based on adjusted positions
+  const actualContainerHeight = useMemo(() => {
+    if (!standings.length || !Object.keys(adjustedYPositions).length) return containerHeight;
+
+    // Find the maximum Y position of any pod
+    const maxY = Math.max(...Object.values(adjustedYPositions));
+    // Add padding for pod height (half of pod = ~45px) plus "tap to scout" text (~30px) plus margin
+    const neededHeight = maxY + 100;
+
+    return Math.max(containerHeight, neededHeight);
+  }, [adjustedYPositions, containerHeight, standings.length]);
+
   // Generate Y-axis tick marks for points
   const yAxisTicks = useMemo(() => {
     const ticks = [];
@@ -259,7 +271,7 @@ const AltitudeMap = ({
   return (
     <div style={{
       position: 'relative',
-      height: `${containerHeight}px`,
+      height: `${actualContainerHeight}px`,
       width: '100%',
       overflow: 'visible',
     }}>

@@ -224,7 +224,10 @@ const TacticalPod = ({
                   alignItems: 'center',
                   gap: '2px',
                 }}>
-                  💣 {player.totalBaggerBombs}
+                  <span style={{
+                    textShadow: '0 0 8px rgba(0, 255, 170, 0.8), 0 0 16px rgba(0, 255, 170, 0.4)',
+                  }}>💣</span>
+                  {player.totalBaggerBombs}
                 </span>
               )}
               {player.totalBusts > 0 && (
@@ -234,7 +237,10 @@ const TacticalPod = ({
                   alignItems: 'center',
                   gap: '2px',
                 }}>
-                  📉 {player.totalBusts}
+                  <span style={{
+                    textShadow: '0 0 8px rgba(255, 100, 100, 0.8), 0 0 16px rgba(255, 100, 100, 0.4)',
+                  }}>📉</span>
+                  {player.totalBusts}
                 </span>
               )}
             </div>

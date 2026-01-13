@@ -183,13 +183,15 @@ const CommandConsole = ({
             {/* BaggerBombs Count */}
             {displayPlayer.totalBaggerBombs > 0 && (
               <span style={{ display: 'flex', alignItems: 'center', gap: '2px', color: HOLO_COLORS.green }}>
-                💣 {displayPlayer.totalBaggerBombs}
+                <span style={{ textShadow: '0 0 8px rgba(0, 255, 170, 0.8), 0 0 16px rgba(0, 255, 170, 0.4)' }}>💣</span>
+                {displayPlayer.totalBaggerBombs}
               </span>
             )}
             {/* Busts Count */}
             {displayPlayer.totalBusts > 0 && (
               <span style={{ display: 'flex', alignItems: 'center', gap: '2px', color: HOLO_COLORS.red }}>
-                📉 {displayPlayer.totalBusts}
+                <span style={{ textShadow: '0 0 8px rgba(255, 100, 100, 0.8), 0 0 16px rgba(255, 100, 100, 0.4)' }}>📉</span>
+                {displayPlayer.totalBusts}
               </span>
             )}
             {/* Best Asset */}
@@ -296,7 +298,10 @@ const CommandConsole = ({
               {scoutSummary.theirPoints >= 0 ? '+' : ''}{scoutSummary.theirPoints.toFixed(0)} pts
             </span>
             {scoutSummary.theirBaggerBombs > 0 && (
-              <span style={{ marginLeft: '4px' }}>💣{scoutSummary.theirBaggerBombs}</span>
+              <span style={{ marginLeft: '4px' }}>
+                <span style={{ textShadow: '0 0 8px rgba(0, 255, 170, 0.8), 0 0 16px rgba(0, 255, 170, 0.4)' }}>💣</span>
+                {scoutSummary.theirBaggerBombs}
+              </span>
             )}
           </span>
           <span style={{ color: HOLO_COLORS.textSecondary }}>
@@ -304,7 +309,10 @@ const CommandConsole = ({
               {scoutSummary.yourPoints >= 0 ? '+' : ''}{scoutSummary.yourPoints.toFixed(0)} pts
             </span>
             {scoutSummary.yourBaggerBombs > 0 && (
-              <span style={{ marginLeft: '4px' }}>💣{scoutSummary.yourBaggerBombs}</span>
+              <span style={{ marginLeft: '4px' }}>
+                <span style={{ textShadow: '0 0 8px rgba(0, 255, 170, 0.8), 0 0 16px rgba(0, 255, 170, 0.4)' }}>💣</span>
+                {scoutSummary.yourBaggerBombs}
+              </span>
             )}
           </span>
           <span style={{

@@ -196,7 +196,10 @@ const ScoreBreakdownPopover = ({ asset, onClose }) => {
                 alignItems: 'center',
                 gap: '6px',
               }}>
-                💣 BaggerBomb ×{baggerBombs}
+                <span style={{
+                  textShadow: baggerBombs > 0 ? '0 0 8px rgba(0, 255, 170, 0.8), 0 0 16px rgba(0, 255, 170, 0.4)' : 'none',
+                }}>💣</span>
+                BaggerBomb ×{baggerBombs}
               </span>
               <span style={{
                 fontFamily: 'monospace',
@@ -225,7 +228,10 @@ const ScoreBreakdownPopover = ({ asset, onClose }) => {
                 alignItems: 'center',
                 gap: '6px',
               }}>
-                📉 Busts ×{busts}
+                <span style={{
+                  textShadow: busts > 0 ? '0 0 8px rgba(255, 100, 100, 0.8), 0 0 16px rgba(255, 100, 100, 0.4)' : 'none',
+                }}>📉</span>
+                Busts ×{busts}
               </span>
               <span style={{
                 fontFamily: 'monospace',
@@ -315,7 +321,11 @@ const ScoreBreakdownPopover = ({ asset, onClose }) => {
                       fontSize: '11px',
                     }}
                   >
-                    <span>{event.type === 'baggerbomb' ? '💣' : '📉'}</span>
+                    <span style={{
+                      textShadow: event.type === 'baggerbomb'
+                        ? '0 0 8px rgba(0, 255, 170, 0.8), 0 0 16px rgba(0, 255, 170, 0.4)'
+                        : '0 0 8px rgba(255, 100, 100, 0.8), 0 0 16px rgba(255, 100, 100, 0.4)',
+                    }}>{event.type === 'baggerbomb' ? '💣' : '📉'}</span>
                     <span style={{ color: HOLO_COLORS.textMuted }}>
                       Hit at {event.time}
                     </span>
@@ -365,8 +375,12 @@ const ScoreBreakdownPopover = ({ asset, onClose }) => {
                 fontFamily: 'monospace',
                 color: HOLO_COLORS.cyan,
                 fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
               }}>
-                ⚡ {threshold.toFixed(1)}%
+                <span style={{ textShadow: '0 0 8px rgba(255, 215, 0, 0.8), 0 0 16px rgba(255, 215, 0, 0.4)' }}>⚡</span>
+                {threshold.toFixed(1)}%
               </span>
             </div>
           </div>

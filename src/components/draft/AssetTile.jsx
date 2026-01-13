@@ -216,8 +216,14 @@ const AssetTile = ({
               <span style={{
                 color: HOLO_COLORS.textMuted,
                 fontFamily: 'monospace',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '2px',
               }} title={`Threshold: ${asset.threshold}%`}>
-                ⚡{asset.threshold.toFixed(1)}%
+                <span style={{
+                  textShadow: '0 0 8px rgba(255, 215, 0, 0.8), 0 0 16px rgba(255, 215, 0, 0.4)',
+                }}>⚡</span>
+                {asset.threshold.toFixed(1)}%
               </span>
             )}
 
@@ -226,9 +232,14 @@ const AssetTile = ({
               color: (asset.baggerBombs || 0) > 0 ? HOLO_COLORS.green : HOLO_COLORS.textMuted,
               display: 'flex',
               alignItems: 'center',
-              gap: '1px',
+              gap: '2px',
             }}>
-              💣{asset.baggerBombs || 0}
+              <span style={{
+                textShadow: (asset.baggerBombs || 0) > 0
+                  ? '0 0 8px rgba(0, 255, 170, 0.8), 0 0 16px rgba(0, 255, 170, 0.4)'
+                  : 'none',
+              }}>💣</span>
+              {asset.baggerBombs || 0}
             </span>
 
             {/* Bust count */}
@@ -236,9 +247,14 @@ const AssetTile = ({
               color: (asset.busts || 0) > 0 ? HOLO_COLORS.red : HOLO_COLORS.textMuted,
               display: 'flex',
               alignItems: 'center',
-              gap: '1px',
+              gap: '2px',
             }}>
-              📉{asset.busts || 0}
+              <span style={{
+                textShadow: (asset.busts || 0) > 0
+                  ? '0 0 8px rgba(255, 100, 100, 0.8), 0 0 16px rgba(255, 100, 100, 0.4)'
+                  : 'none',
+              }}>📉</span>
+              {asset.busts || 0}
             </span>
           </div>
 
