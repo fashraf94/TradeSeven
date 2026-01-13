@@ -28,7 +28,7 @@ const ScoreBreakdownPopover = ({ asset, onClose }) => {
   const {
     symbol,
     gain = 0,
-    threshold = 3.0,
+    threshold = 2.5,  // Default matches BaggerBombTab fallback
     baggerBombs = 0,
     busts = 0,
     basePoints = 0,

@@ -409,6 +409,17 @@ const CommandConsole = ({
             price: selectedAssetForResearch.price || selectedAssetForResearch.currentPrice || 0,
             percentChange: selectedAssetForResearch.gain || selectedAssetForResearch.percentChange || 0,
             sector: selectedAssetForResearch.sector,
+            // BaggerBomb scoring data - ensures consistent thresholds across all views
+            threshold: selectedAssetForResearch.threshold,
+            baggerBombs: selectedAssetForResearch.baggerBombs,
+            busts: selectedAssetForResearch.busts,
+            basePoints: selectedAssetForResearch.basePoints,
+            baggerBombPoints: selectedAssetForResearch.baggerBombPoints,
+            bustPoints: selectedAssetForResearch.bustPoints,
+            totalScore: selectedAssetForResearch.totalScore,
+            gain: selectedAssetForResearch.gain,
+            lockedPrice: selectedAssetForResearch.lockedPrice,
+            currentPrice: selectedAssetForResearch.currentPrice,
           }}
           sector={selectedAssetForResearch.sector}
           category={selectedAssetForResearch.category}
