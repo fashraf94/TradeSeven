@@ -229,18 +229,22 @@ const getDefaultThresholds = () => {
 /**
  * PortfolioBuilderBaggerBomb - Main component
  * Accepts user prop for backwards compatibility, but prefers context
+ *
+ * Price data comes from App.jsx via stocksData/cryptoData props (arrays)
+ * Thresholds use hardcoded defaults (API bypassed due to EODHD issues)
  */
 export default function PortfolioBuilderBaggerBomb({
   onSubmit,
   onBack,
   user: userProp,
-  stockPrices: initialStockPrices = {},
-  cryptoPrices: initialCryptoPrices = {},
+  stocksData = [],      // Array from App.jsx: [{ symbol, name, price, percentChange, ... }]
+  cryptoData = [],      // Array from App.jsx: [{ symbol, name, price, change24h, ... }]
   thresholds: initialThresholds = {}
 }) {
   // Get user from context, fall back to prop
   const { user: contextUser } = useUser();
   const user = userProp || contextUser;
+
   // Portfolio state
   const [portfolio, setPortfolio] = useState([]);
   const [selectedCrypto, setSelectedCrypto] = useState(null);
@@ -260,30 +264,56 @@ export default function PortfolioBuilderBaggerBomb({
   const [selectedStockForDetail, setSelectedStockForDetail] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
 
-  // Data state - initialize with defaults immediately (no API calls)
-  const [stockPrices, setStockPrices] = useState(() => {
-    // Use initial props if provided, otherwise empty (will use fallbacks)
-    return Object.keys(initialStockPrices).length > 0 ? initialStockPrices : {};
-  });
-  const [cryptoPrices, setCryptoPrices] = useState(() => {
-    return Object.keys(initialCryptoPrices).length > 0 ? initialCryptoPrices : {};
-  });
+  // Convert stocksData array to stockPrices object format
+  // App.jsx provides: [{ symbol: 'AAPL', price: 240, percentChange: 1.5, ... }]
+  // Component needs: { AAPL: { price: 240, percentChange: 1.5 }, ... }
+  const stockPrices = useMemo(() => {
+    const prices = {};
+    if (stocksData && stocksData.length > 0) {
+      stocksData.forEach(stock => {
+        if (stock?.symbol) {
+          prices[stock.symbol] = {
+            price: stock.price || 0,
+            change: stock.change || 0,
+            percentChange: stock.percentChange || 0
+          };
+        }
+      });
+    }
+    return prices;
+  }, [stocksData]);
+
+  // Convert cryptoData array to cryptoPrices object format
+  const cryptoPrices = useMemo(() => {
+    const prices = {};
+    if (cryptoData && cryptoData.length > 0) {
+      cryptoData.forEach(crypto => {
+        if (crypto?.symbol) {
+          prices[crypto.symbol] = {
+            price: crypto.price || 0,
+            change24h: crypto.change24h || 0
+          };
+        }
+      });
+    }
+    return prices;
+  }, [cryptoData]);
+
+  // Thresholds - use defaults (API bypassed due to EODHD issues)
+  // TODO: Re-enable API calls once EODHD issues resolved
   const [thresholds, setThresholds] = useState(() => {
-    // Always use defaults - API is bypassed
     return Object.keys(initialThresholds).length > 0 ? initialThresholds : getDefaultThresholds();
   });
-  // TODO: Re-enable API calls once EODHD issues resolved
-  // BYPASS ALL API CALLS - set loading to false immediately
-  const [isLoadingPrices, setIsLoadingPrices] = useState(false);
-  const [isLoadingThresholds, setIsLoadingThresholds] = useState(false);
+
+  // Loading states - prices come from App.jsx, thresholds are defaults
+  const isLoadingPrices = stocksData.length === 0;
+  const isLoadingThresholds = false; // Always false - using defaults
   const [isCreating, setIsCreating] = useState(false);
 
-  // Log once on mount that we're using defaults
+  // Log once on mount
   useEffect(() => {
-    console.log('[BaggerBomb] API BYPASSED - using default thresholds and fallback prices');
-    // Ensure loading states are false (defensive)
-    setIsLoadingPrices(false);
-    setIsLoadingThresholds(false);
+    console.log('[BaggerBomb] Using prices from App.jsx, default thresholds');
+    console.log(`[BaggerBomb] Received ${stocksData.length} stocks, ${cryptoData.length} crypto`);
   }, []); // Empty deps - run only once on mount
 
   // Detect mobile/touch device

@@ -21939,6 +21939,8 @@ export default function PortfolioDuel() {
       <Suspense fallback={<LoadingFallback />}>
         <PortfolioBuilderBaggerBomb
           user={user}
+          stocksData={stocksData}
+          cryptoData={cryptoData}
           onSubmit={handleCreateBaggerBombTrainingBattle}
           onBack={() => {
             setBuilderMode('create');
