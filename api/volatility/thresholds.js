@@ -185,8 +185,10 @@ function buildFallbackResponse(symbol, type) {
 // EODHD API HELPERS
 // ============================================
 
+const FETCH_TIMEOUT_MS = 5000; // 5 second timeout per symbol
+
 /**
- * Fetch historical OHLC data from EODHD
+ * Fetch historical OHLC data from EODHD with timeout
  */
 async function fetchHistoricalData(symbol, type, apiKey) {
   // Calculate date range (45 days back)
@@ -208,21 +210,34 @@ async function fetchHistoricalData(symbol, type, apiKey) {
 
   console.log(`[Volatility] Fetching data for ${symbol} (${type})`);
 
-  const response = await fetch(url);
+  // Add timeout to prevent hanging
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-  if (!response.ok) {
-    throw new Error(`EODHD returned ${response.status}`);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`EODHD returned ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    // EODHD returns array of OHLC objects
+    // { date, open, high, low, close, adjusted_close, volume }
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error('No historical data available');
+    }
+
+    return data;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error(`Timeout fetching ${symbol} after ${FETCH_TIMEOUT_MS}ms`);
+    }
+    throw error;
   }
-
-  const data = await response.json();
-
-  // EODHD returns array of OHLC objects
-  // { date, open, high, low, close, adjusted_close, volume }
-  if (!Array.isArray(data) || data.length === 0) {
-    throw new Error('No historical data available');
-  }
-
-  return data;
 }
 
 /**
