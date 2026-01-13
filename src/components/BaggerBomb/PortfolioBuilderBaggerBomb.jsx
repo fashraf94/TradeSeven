@@ -11,7 +11,7 @@ import {
 import { STOCKS, CRYPTO } from '../../data/assets';
 // TODO: Re-enable once EODHD API issues resolved
 // import { getVolatilityThresholds } from '../../services/volatilityService';
-import { getMultipleStockPrices, getMultipleCryptoPrices } from '../../services/eodhdAPI';
+// import { getMultipleStockPrices, getMultipleCryptoPrices } from '../../services/eodhdAPI';
 import StockDetailModal from './StockDetailModal';
 import { NotesTab } from '../GamePlan';
 import { useUser } from '../../contexts';
@@ -260,68 +260,31 @@ export default function PortfolioBuilderBaggerBomb({
   const [selectedStockForDetail, setSelectedStockForDetail] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
 
-  // Data state
-  const [stockPrices, setStockPrices] = useState(initialStockPrices);
-  const [cryptoPrices, setCryptoPrices] = useState(initialCryptoPrices);
-  const [thresholds, setThresholds] = useState(initialThresholds);
-  const [isLoadingPrices, setIsLoadingPrices] = useState(Object.keys(initialStockPrices).length === 0);
-  const [isLoadingThresholds, setIsLoadingThresholds] = useState(Object.keys(initialThresholds).length === 0);
+  // Data state - initialize with defaults immediately (no API calls)
+  const [stockPrices, setStockPrices] = useState(() => {
+    // Use initial props if provided, otherwise empty (will use fallbacks)
+    return Object.keys(initialStockPrices).length > 0 ? initialStockPrices : {};
+  });
+  const [cryptoPrices, setCryptoPrices] = useState(() => {
+    return Object.keys(initialCryptoPrices).length > 0 ? initialCryptoPrices : {};
+  });
+  const [thresholds, setThresholds] = useState(() => {
+    // Always use defaults - API is bypassed
+    return Object.keys(initialThresholds).length > 0 ? initialThresholds : getDefaultThresholds();
+  });
+  // TODO: Re-enable API calls once EODHD issues resolved
+  // BYPASS ALL API CALLS - set loading to false immediately
+  const [isLoadingPrices, setIsLoadingPrices] = useState(false);
+  const [isLoadingThresholds, setIsLoadingThresholds] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
-  // TODO: Re-enable volatility API call once EODHD issues resolved
-  // TEMPORARILY BYPASS THRESHOLD API - use defaults immediately to prevent loading hang
-  // The volatility threshold API was causing infinite loading states
+  // Log once on mount that we're using defaults
   useEffect(() => {
-    // Immediately set default thresholds - no API call
-    if (Object.keys(initialThresholds).length === 0) {
-      console.log('[BaggerBomb] Using hardcoded default thresholds (API bypassed)');
-      setThresholds(getDefaultThresholds());
-    }
+    console.log('[BaggerBomb] API BYPASSED - using default thresholds and fallback prices');
+    // Ensure loading states are false (defensive)
+    setIsLoadingPrices(false);
     setIsLoadingThresholds(false);
-  }, [initialThresholds]);
-
-  // Load prices only (thresholds handled above)
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadPrices = async () => {
-      const needsPrices = Object.keys(initialStockPrices).length === 0;
-      if (!needsPrices) {
-        setIsLoadingPrices(false);
-        return;
-      }
-
-      setIsLoadingPrices(true);
-
-      try {
-        const stockSymbols = STOCKS.map(s => s.symbol);
-        const cryptoSymbols = CRYPTO.filter(c => c.category !== 'Stablecoin').map(c => c.symbol);
-
-        // Fetch prices only - thresholds use defaults
-        const [stockPricesResult, cryptoPricesResult] = await Promise.all([
-          getMultipleStockPrices(stockSymbols),
-          getMultipleCryptoPrices(cryptoSymbols)
-        ]);
-
-        if (!isMounted) return;
-
-        if (stockPricesResult) setStockPrices(stockPricesResult);
-        if (cryptoPricesResult) setCryptoPrices(cryptoPricesResult);
-      } catch (error) {
-        console.error('Error loading prices:', error);
-      } finally {
-        if (isMounted) {
-          setIsLoadingPrices(false);
-        }
-      }
-    };
-
-    loadPrices();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [initialStockPrices]);
+  }, []); // Empty deps - run only once on mount
 
   // Detect mobile/touch device
   useEffect(() => {
