@@ -35,6 +35,68 @@ const KNOWN_SYMBOLS = [
   'KO', 'PEP', 'MCD', 'SBUX', 'CMG'
 ];
 
+// Company name lookup (EODHD returns symbol as company name)
+const COMPANY_NAMES = {
+  // Banks & Finance
+  'WFC': 'Wells Fargo', 'BAC': 'Bank of America', 'JPM': 'JPMorgan Chase',
+  'GS': 'Goldman Sachs', 'MS': 'Morgan Stanley', 'C': 'Citigroup',
+  'USB': 'U.S. Bancorp', 'PNC': 'PNC Financial', 'BLK': 'BlackRock',
+  'SCHW': 'Charles Schwab', 'TFC': 'Truist', 'STT': 'State Street',
+  'IBKR': 'Interactive Brokers', 'COF': 'Capital One', 'AXP': 'American Express',
+  // Big Tech
+  'AAPL': 'Apple', 'MSFT': 'Microsoft', 'GOOGL': 'Alphabet', 'GOOG': 'Alphabet',
+  'AMZN': 'Amazon', 'META': 'Meta Platforms', 'NVDA': 'NVIDIA', 'TSLA': 'Tesla',
+  'NFLX': 'Netflix', 'AMD': 'AMD', 'INTC': 'Intel', 'CRM': 'Salesforce',
+  'ORCL': 'Oracle', 'ADBE': 'Adobe', 'IBM': 'IBM', 'CSCO': 'Cisco',
+  // Payments & Fintech
+  'V': 'Visa', 'MA': 'Mastercard', 'PYPL': 'PayPal', 'SQ': 'Block',
+  'COIN': 'Coinbase', 'HOOD': 'Robinhood', 'SOFI': 'SoFi', 'AFRM': 'Affirm',
+  // Healthcare
+  'JNJ': 'Johnson & Johnson', 'UNH': 'UnitedHealth', 'PFE': 'Pfizer',
+  'MRK': 'Merck', 'ABBV': 'AbbVie', 'LLY': 'Eli Lilly', 'TMO': 'Thermo Fisher',
+  'DHR': 'Danaher', 'ABT': 'Abbott Labs', 'BMY': 'Bristol-Myers Squibb',
+  'AMGN': 'Amgen', 'GILD': 'Gilead Sciences', 'CVS': 'CVS Health',
+  'CI': 'Cigna', 'HUM': 'Humana', 'ELV': 'Elevance Health',
+  // Energy
+  'XOM': 'Exxon Mobil', 'CVX': 'Chevron', 'COP': 'ConocoPhillips',
+  'SLB': 'Schlumberger', 'EOG': 'EOG Resources', 'MPC': 'Marathon Petroleum',
+  'PSX': 'Phillips 66', 'VLO': 'Valero Energy', 'OXY': 'Occidental',
+  // Retail
+  'HD': 'Home Depot', 'LOW': 'Lowes', 'TGT': 'Target', 'WMT': 'Walmart',
+  'COST': 'Costco', 'KR': 'Kroger', 'DG': 'Dollar General', 'DLTR': 'Dollar Tree',
+  'TJX': 'TJ Maxx', 'ROST': 'Ross Stores', 'BBY': 'Best Buy',
+  // Consumer
+  'NKE': 'Nike', 'SBUX': 'Starbucks', 'MCD': 'McDonalds', 'CMG': 'Chipotle',
+  'DPZ': 'Dominos Pizza', 'YUM': 'Yum Brands', 'KO': 'Coca-Cola', 'PEP': 'PepsiCo',
+  'PG': 'Procter & Gamble', 'CL': 'Colgate-Palmolive',
+  // Media & Telecom
+  'DIS': 'Disney', 'CMCSA': 'Comcast', 'T': 'AT&T', 'VZ': 'Verizon', 'TMUS': 'T-Mobile',
+  // Aerospace & Defense
+  'BA': 'Boeing', 'LMT': 'Lockheed Martin', 'RTX': 'Raytheon',
+  'GD': 'General Dynamics', 'NOC': 'Northrop Grumman',
+  // Industrial
+  'CAT': 'Caterpillar', 'DE': 'John Deere', 'MMM': '3M', 'HON': 'Honeywell',
+  'GE': 'GE Aerospace', 'UPS': 'UPS', 'FDX': 'FedEx',
+  // Airlines
+  'DAL': 'Delta Air Lines', 'UAL': 'United Airlines', 'AAL': 'American Airlines',
+  'LUV': 'Southwest Airlines',
+  // Auto
+  'F': 'Ford', 'GM': 'General Motors', 'RIVN': 'Rivian', 'LCID': 'Lucid Motors',
+  // Semiconductors
+  'TSM': 'Taiwan Semiconductor', 'ASML': 'ASML', 'AVGO': 'Broadcom',
+  'QCOM': 'Qualcomm', 'TXN': 'Texas Instruments', 'MU': 'Micron',
+  'AMAT': 'Applied Materials', 'LRCX': 'Lam Research', 'KLAC': 'KLA Corp',
+  'ADI': 'Analog Devices', 'MRVL': 'Marvell', 'ON': 'ON Semiconductor',
+  'NXPI': 'NXP Semiconductors',
+  // Cloud & Software
+  'SNOW': 'Snowflake', 'PLTR': 'Palantir', 'DDOG': 'Datadog', 'NET': 'Cloudflare',
+  'ZS': 'Zscaler', 'CRWD': 'CrowdStrike', 'PANW': 'Palo Alto Networks',
+  'FTNT': 'Fortinet', 'NOW': 'ServiceNow', 'WDAY': 'Workday',
+  'TEAM': 'Atlassian', 'ZM': 'Zoom', 'DOCU': 'DocuSign',
+  // Other notable
+  'BRK': 'Berkshire Hathaway', 'SPY': 'S&P 500 ETF', 'QQQ': 'Nasdaq 100 ETF'
+};
+
 /**
  * Check if an event is a valid earnings event
  */
@@ -717,16 +779,23 @@ export async function getHybridEarningsCalendar(days = 14) {
           hasDash: 0,
           hasDot: 0,
           tooLong: 0,
-          noCompanyName: 0,
+          emptySymbol: 0,
           pastDate: 0,
           passed: 0
         };
         const rejectionSamples = [];
 
         // Filter for quality US stocks with future dates
+        // NOTE: We don't filter on companyName because EODHD returns symbol as companyName
+        // We use COMPANY_NAMES lookup later to get proper names
         const qualityEvents = eohdCalendar.filter(event => {
           const symbol = event.symbol || '';
-          const companyName = event.companyName || '';
+
+          // Skip empty symbols
+          if (!symbol || symbol.length === 0) {
+            rejectionCounts.emptySymbol++;
+            return false;
+          }
 
           // Skip preferred shares and special securities (contain - or .)
           if (symbol.includes('-')) {
@@ -744,13 +813,6 @@ export async function getHybridEarningsCalendar(days = 14) {
           if (symbol.length > 5) {
             rejectionCounts.tooLong++;
             if (rejectionSamples.length < 3) rejectionSamples.push({ symbol, reason: 'too long' });
-            return false;
-          }
-
-          // Must have company name
-          if (!companyName || companyName === symbol) {
-            rejectionCounts.noCompanyName++;
-            if (rejectionSamples.length < 5) rejectionSamples.push({ symbol, companyName, reason: 'no company name' });
             return false;
           }
 
@@ -777,19 +839,26 @@ export async function getHybridEarningsCalendar(days = 14) {
 
         console.log(`[Hybrid] Taking first ${sortedEvents.length} events`);
         if (sortedEvents.length > 0) {
-          console.log('[Hybrid] Sample companies:', sortedEvents.slice(0, 5).map(e => `${e.symbol} (${e.companyName})`));
+          // Show with lookup names
+          console.log('[Hybrid] Sample companies:', sortedEvents.slice(0, 5).map(e =>
+            `${e.symbol} (${COMPANY_NAMES[e.symbol.toUpperCase()] || e.companyName || e.symbol})`
+          ));
         }
 
         // Use EODHD data with default odds (most companies beat earnings historically)
         const eohdOnly = sortedEvents.map(event => {
+          const symbolUpper = event.symbol.toUpperCase();
           const defaultBeatOdds = 0.70; // Historical average - ~70% of companies beat
           const yesCost = Math.round(defaultBeatOdds * 10000);
           const noCost = Math.round((1 - defaultBeatOdds) * 10000);
 
+          // Use lookup table for company name, fallback to EODHD name or symbol
+          const companyName = COMPANY_NAMES[symbolUpper] || event.companyName || symbolUpper;
+
           return {
-            id: `eodhd_${event.symbol}_${event.reportDate}`,
-            symbol: event.symbol.toUpperCase(),
-            companyName: event.companyName,
+            id: `eodhd_${symbolUpper}_${event.reportDate}`,
+            symbol: symbolUpper,
+            companyName: companyName,
             reportDate: new Date(event.reportDate),
             reportTime: event.reportTime || 'TBD',
             beatOdds: defaultBeatOdds,
