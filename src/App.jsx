@@ -22398,21 +22398,32 @@ export default function PortfolioDuel() {
     );
   }
 
-  // EARNINGS GAME SCREEN
-  if (screen === 'earningsGame') {
-    return (
-      <EarningsGameScreen
-        user={user}
-        onBack={() => setScreen('dashboard')}
-        setScreen={setScreen}
-        colors={colors}
-        isDesktop={isDesktop}
-      />
-    );
-  }
+  // EARNINGS GAME SCREEN - No longer conditionally returned, moved to final return block with CSS display toggle
 
   return (
     <>
+      {/* EarningsGame - ALWAYS MOUNTED to prevent state loss from Firestore battle updates */}
+      {/* Uses CSS display toggle instead of conditional rendering */}
+      <div style={{
+        display: screen === 'earningsGame' ? 'block' : 'none',
+        position: screen === 'earningsGame' ? 'relative' : 'fixed',
+        visibility: screen === 'earningsGame' ? 'visible' : 'hidden',
+        pointerEvents: screen === 'earningsGame' ? 'auto' : 'none',
+        top: screen === 'earningsGame' ? 'auto' : '-9999px',
+        left: screen === 'earningsGame' ? 'auto' : '-9999px'
+      }}>
+        <EarningsGameScreen
+          user={user}
+          onBack={() => setScreen('dashboard')}
+          setScreen={setScreen}
+          colors={colors}
+          isDesktop={isDesktop}
+        />
+      </div>
+
+      {/* Only show default content when NOT on earningsGame */}
+      {screen !== 'earningsGame' && (
+        <>
       <ChallengeModal />
       {/* Toast Notification */}
       {toast && (
@@ -22439,6 +22450,8 @@ export default function PortfolioDuel() {
         </div>
       )}
 
+        </>
+      )}
     </>
   );
 }
