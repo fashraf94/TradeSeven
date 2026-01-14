@@ -41,9 +41,15 @@ const EarningsGameScreen = ({
   console.log('[EarningsGame] ====== COMPONENT MOUNTING ======');
   console.log('[EarningsGame] user:', user?.odUserId);
 
+  // Track mount/unmount
+  useEffect(() => {
+    console.log('[EarningsGame] *** MOUNTED (effect cleanup registered) ***');
+    return () => {
+      console.log('[EarningsGame] *** UNMOUNTING ***');
+    };
+  }, []);
+
   // Use the hook for portfolio state management
-  // Pass userId to enable Firebase persistence
-  console.log('[EarningsGame] Calling useEarningsGame...');
   const {
     predictions,
     addPrediction,
@@ -58,10 +64,8 @@ const EarningsGameScreen = ({
     reset,
     clearPortfolio,
   } = useEarningsGame(user?.odUserId);
-  console.log('[EarningsGame] useEarningsGame complete');
 
   // Tournament state from Firebase
-  console.log('[EarningsGame] Calling useTournament...');
   const {
     tournament,
     userEntry,
@@ -76,7 +80,6 @@ const EarningsGameScreen = ({
     enterTournament,
     refreshLeaderboard,
   } = useTournament(user?.odUserId);
-  console.log('[EarningsGame] useTournament complete');
 
   // View state for navigation between screens
   const [view, setView] = useState('tournament'); // 'tournament' | 'calendar' | 'portfolio' | 'arena' | 'results'
