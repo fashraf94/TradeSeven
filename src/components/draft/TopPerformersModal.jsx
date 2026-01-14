@@ -1,6 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { HOLO_COLORS, CATEGORY_CONFIG, GLOW_EFFECTS } from '../../constants/holoTheme';
 import { TrophyIcon, UserIcon } from './HoloIcons';
+import AssetResearchModal from './AssetResearchModal';
+import ScoreBreakdownPopover from './ScoreBreakdownPopover';
 
 /**
  * TopPerformersModal - Shows top 5 performing assets across all portfolios
@@ -10,6 +12,7 @@ import { TrophyIcon, UserIcon } from './HoloIcons';
  *
  * Phase 5.5: Replaces "All Picks" button functionality
  * Phase 5.6: Updated to use styled HoloIcons
+ * Phase 5.7: Added Research Modal on ticker tap, Score Breakdown on points tap
  */
 const TopPerformersModal = ({
   isOpen,
@@ -17,11 +20,16 @@ const TopPerformersModal = ({
   standings,      // Array of player standings with portfolios
   currentUserId,  // Current user's ID for highlighting
 }) => {
+  // State for research modal
+  const [selectedAssetForResearch, setSelectedAssetForResearch] = useState(null);
+  // State for score breakdown popover
+  const [selectedAssetForBreakdown, setSelectedAssetForBreakdown] = useState(null);
+
   // Aggregate and sort all assets across portfolios
   const topAssets = useMemo(() => {
     if (!standings?.length) return [];
 
-    // Build a map of unique assets with their best gain and owners
+    // Build a map of unique assets with their best data and owners
     const assetMap = new Map();
 
     standings.forEach((player) => {
@@ -29,11 +37,30 @@ const TopPerformersModal = ({
         if (!asset?.symbol) return;
 
         const existing = assetMap.get(asset.symbol);
-        if (!existing || asset.gain > existing.gain) {
+        // Use asset with highest totalScore (or gain as fallback)
+        const assetScore = asset.totalScore ?? (asset.gain * 10);
+        const existingScore = existing?.totalScore ?? (existing?.gain * 10) ?? -Infinity;
+
+        if (!existing || assetScore > existingScore) {
           assetMap.set(asset.symbol, {
+            // Core data
             symbol: asset.symbol,
+            name: asset.name || asset.symbol,
             gain: asset.gain,
             category: asset.category,
+            sector: asset.sector,
+            // BaggerBomb scoring data
+            threshold: asset.threshold,
+            baggerBombs: asset.baggerBombs || 0,
+            busts: asset.busts || 0,
+            basePoints: asset.basePoints || 0,
+            baggerBombPoints: asset.baggerBombPoints || 0,
+            bustPoints: asset.bustPoints || 0,
+            totalScore: asset.totalScore ?? (asset.gain * 10),
+            // Price data
+            price: asset.currentPrice || asset.price,
+            lockedPrice: asset.lockedPrice,
+            currentPrice: asset.currentPrice,
             owners: existing?.owners || [],
           });
         }
@@ -50,11 +77,23 @@ const TopPerformersModal = ({
       });
     });
 
-    // Sort by gain descending and take top 5
+    // Sort by totalScore descending and take top 5
     return Array.from(assetMap.values())
-      .sort((a, b) => b.gain - a.gain)
+      .sort((a, b) => b.totalScore - a.totalScore)
       .slice(0, 5);
   }, [standings]);
+
+  // Handle ticker tap - open research modal
+  const handleTickerTap = (asset, e) => {
+    e.stopPropagation();
+    setSelectedAssetForResearch(asset);
+  };
+
+  // Handle points tap - open score breakdown
+  const handlePointsTap = (asset, e) => {
+    e.stopPropagation();
+    setSelectedAssetForBreakdown(asset);
+  };
 
   if (!isOpen) return null;
 
@@ -149,6 +188,7 @@ const TopPerformersModal = ({
               {topAssets.map((asset, idx) => {
                 const categoryColor = CATEGORY_CONFIG[asset.category]?.color || HOLO_COLORS.cyan;
                 const isPositive = asset.gain >= 0;
+                const isPointsPositive = asset.totalScore >= 0;
                 const userOwns = asset.owners.some(o => o.odUserId === currentUserId);
 
                 return (
@@ -190,12 +230,18 @@ const TopPerformersModal = ({
                       {idx + 1}
                     </div>
 
-                    {/* Asset Info */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    {/* Asset Info - Left side (Ticker area - tappable for Research Modal) */}
+                    <div
+                      onClick={(e) => handleTickerTap(asset, e)}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        cursor: 'pointer',
+                      }}
+                    >
                       <div style={{
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'space-between',
                         marginBottom: '4px',
                       }}>
                         <span style={{
@@ -204,26 +250,18 @@ const TopPerformersModal = ({
                           color: HOLO_COLORS.textPrimary,
                         }}>
                           {asset.symbol}
-                          {userOwns && (
-                            <span style={{
-                              marginLeft: '6px',
-                              fontSize: '9px',
-                              color: HOLO_COLORS.cyan,
-                              fontWeight: 600,
-                              textTransform: 'uppercase',
-                            }}>
-                              YOURS
-                            </span>
-                          )}
                         </span>
-                        <span style={{
-                          fontSize: '14px',
-                          fontWeight: 700,
-                          fontFamily: 'monospace',
-                          color: isPositive ? HOLO_COLORS.green : HOLO_COLORS.red,
-                        }}>
-                          {isPositive ? '+' : ''}{asset.gain.toFixed(2)}%
-                        </span>
+                        {userOwns && (
+                          <span style={{
+                            marginLeft: '6px',
+                            fontSize: '9px',
+                            color: HOLO_COLORS.cyan,
+                            fontWeight: 600,
+                            textTransform: 'uppercase',
+                          }}>
+                            YOURS
+                          </span>
+                        )}
                       </div>
 
                       {/* Owners */}
@@ -254,6 +292,43 @@ const TopPerformersModal = ({
                           </span>
                         )}
                       </div>
+                    </div>
+
+                    {/* Right side - Points (tappable) + Percentage */}
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'flex-end',
+                      gap: '2px',
+                      flexShrink: 0,
+                    }}>
+                      {/* Points - tappable for Score Breakdown */}
+                      <div
+                        onClick={(e) => handlePointsTap(asset, e)}
+                        style={{
+                          fontSize: '14px',
+                          fontWeight: 700,
+                          fontFamily: 'monospace',
+                          color: isPointsPositive ? HOLO_COLORS.green : HOLO_COLORS.red,
+                          cursor: 'pointer',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        {isPointsPositive ? '+' : ''}{asset.totalScore.toFixed(0)} pts
+                      </div>
+                      {/* Percentage */}
+                      <span style={{
+                        fontSize: '11px',
+                        fontFamily: 'monospace',
+                        color: isPositive ? HOLO_COLORS.green : HOLO_COLORS.red,
+                        opacity: 0.8,
+                      }}>
+                        {isPositive ? '+' : ''}{asset.gain.toFixed(2)}%
+                      </span>
                     </div>
                   </div>
                 );
@@ -293,6 +368,42 @@ const TopPerformersModal = ({
           }
         }
       `}</style>
+
+      {/* Asset Research Modal */}
+      {selectedAssetForResearch && (
+        <AssetResearchModal
+          asset={{
+            symbol: selectedAssetForResearch.symbol,
+            name: selectedAssetForResearch.name || selectedAssetForResearch.symbol,
+            price: selectedAssetForResearch.price || selectedAssetForResearch.currentPrice || 0,
+            percentChange: selectedAssetForResearch.gain || 0,
+            sector: selectedAssetForResearch.sector,
+            // BaggerBomb scoring data
+            threshold: selectedAssetForResearch.threshold,
+            baggerBombs: selectedAssetForResearch.baggerBombs,
+            busts: selectedAssetForResearch.busts,
+            basePoints: selectedAssetForResearch.basePoints,
+            baggerBombPoints: selectedAssetForResearch.baggerBombPoints,
+            bustPoints: selectedAssetForResearch.bustPoints,
+            totalScore: selectedAssetForResearch.totalScore,
+            gain: selectedAssetForResearch.gain,
+            lockedPrice: selectedAssetForResearch.lockedPrice,
+            currentPrice: selectedAssetForResearch.currentPrice,
+          }}
+          sector={selectedAssetForResearch.sector}
+          category={selectedAssetForResearch.category}
+          onClose={() => setSelectedAssetForResearch(null)}
+          showActionButton={false}
+        />
+      )}
+
+      {/* Score Breakdown Popover */}
+      {selectedAssetForBreakdown && (
+        <ScoreBreakdownPopover
+          asset={selectedAssetForBreakdown}
+          onClose={() => setSelectedAssetForBreakdown(null)}
+        />
+      )}
     </>
   );
 };

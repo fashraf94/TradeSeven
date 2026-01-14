@@ -4,17 +4,19 @@ import { HOLO_COLORS } from '../../constants/holoTheme';
 /**
  * OvertakeCallout - Badge showing the gap between players
  *
- * Displays "-2.33% TO OVERTAKE" style callout positioned
+ * Displays "-25 pts TO OVERTAKE" style callout positioned
  * between players on the Altitude Map.
+ *
+ * BaggerBomb Scoring Update: Now shows points gap instead of percentage.
  */
 const OvertakeCallout = ({
-  gapPercent,         // The percentage difference (positive = gap to close)
+  gapPercent,         // The point difference (positive = gap to close) - named gapPercent for backwards compatibility
   isUserGap = false,  // Is this showing the gap for the current user to close?
   direction = 'up',   // 'up' = user needs to gain, 'down' = user is ahead
   style = {},
 }) => {
-  // Only show if gap is meaningful (at least 0.01%)
-  if (Math.abs(gapPercent) < 0.01) return null;
+  // Only show if gap is meaningful (at least 5 points)
+  if (Math.abs(gapPercent) < 5) return null;
 
   // Determine styling based on whether this is user's gap
   const borderColor = isUserGap ? HOLO_COLORS.cyan : HOLO_COLORS.amber;
@@ -51,9 +53,9 @@ const OvertakeCallout = ({
         [
       </span>
 
-      {/* Gap text */}
+      {/* Gap text - now shows points */}
       <span>
-        {gapPercent > 0 ? '-' : '+'}{Math.abs(gapPercent).toFixed(2)}% TO OVERTAKE
+        {gapPercent > 0 ? '-' : '+'}{Math.abs(gapPercent).toFixed(0)} pts TO OVERTAKE
       </span>
 
       {/* Right bracket */}
