@@ -14,85 +14,156 @@ const GAMMA_API_BASE = '/api/polymarket';
 const CACHE_DURATION = 5 * 60 * 1000;
 let earningsCache = { data: null, lastFetched: null };
 
-// Common stock symbols to look for in slugs
-const COMMON_SYMBOLS = [
-  'NVDA', 'AAPL', 'MSFT', 'GOOGL', 'META', 'AMZN', 'TSLA', 'AMD',
-  'NFLX', 'CRM', 'INTC', 'MU', 'WMT', 'TGT', 'COST', 'NKE',
-  'JPM', 'BAC', 'GS', 'V', 'MA', 'C', 'WFC', 'MS', 'BLK',
-  'DAL', 'UAL', 'AAL', 'LUV', 'TSM', 'UNH', 'JNJ', 'PFE',
-  'STT', 'MTB', 'PNC', 'BK', 'USB', 'TFC', 'SCHW'
+// Search queries that will find earnings events
+const EARNINGS_SEARCH_QUERIES = [
+  'beat quarterly earnings',
+  'quarterly earnings'
 ];
 
-// Earnings-specific symbols for Q4 2025 / Q1 2026 season
-const EARNINGS_SYMBOLS = [
-  'jpm', 'jpmorgan', 'jp morgan',
-  'dal', 'delta',
-  'bk', 'bank of new york', 'bny mellon',
-  'c', 'citi', 'citigroup',
-  'bac', 'bank of america',
-  'wfc', 'wells fargo',
-  'tsm', 'tsmc', 'taiwan semi',
-  'ms', 'morgan stanley',
-  'gs', 'goldman', 'goldman sachs',
-  'blk', 'blackrock',
-  'stt', 'state street',
-  'mtb', 'm&t bank',
-  'pnc', 'pnc financial',
-  'usb', 'us bancorp',
-  'tfc', 'truist'
+// Known stock symbols for fallback matching
+const KNOWN_SYMBOLS = [
+  'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSM', 'TSLA', 'AMD',
+  'JPM', 'GS', 'MS', 'BAC', 'WFC', 'C', 'BLK', 'PNC', 'USB', 'TFC',
+  'NFLX', 'AAL', 'UAL', 'DAL', 'LUV', 'STT', 'IBKR', 'TXN', 'SCHW',
+  'UNH', 'JNJ', 'PFE', 'MRK', 'ABBV', 'LLY', 'BMY', 'GILD', 'AMGN',
+  'V', 'MA', 'PYPL', 'SQ', 'COIN', 'HOOD',
+  'WMT', 'TGT', 'COST', 'HD', 'LOW',
+  'DIS', 'CMCSA', 'T', 'VZ', 'TMUS',
+  'XOM', 'CVX', 'COP', 'SLB', 'EOG',
+  'BA', 'LMT', 'RTX', 'NOC', 'GD',
+  'CAT', 'DE', 'MMM', 'HON', 'GE',
+  'KO', 'PEP', 'MCD', 'SBUX', 'CMG'
 ];
 
 /**
- * Extract stock symbol from Polymarket event slug or title
+ * Check if an event is a valid earnings event
  */
-export function extractSymbolFromSlug(slug, title = '') {
-  if (!slug && !title) return null;
+function isEarningsEvent(event) {
+  const title = (event.title || '').toLowerCase();
 
-  const text = `${slug || ''} ${title || ''}`.toUpperCase();
+  // Must contain these keywords
+  const hasEarnings = title.includes('earnings');
+  const hasQuarterly = title.includes('quarterly');
+  const hasBeat = title.includes('beat');
 
-  // Try pattern matching on slug
-  if (slug) {
-    const patterns = [
-      /^([a-z]{1,5})-quarterly-earnings/i,
-      /will-.*-\(([a-z]{1,5})\)-beat/i,
-      /will-([a-z]{1,5})-beat/i,
-      /([a-z]{1,5})-beat-.*earnings/i,
-      /([a-z]{1,5})-q[1-4]-/i,
-    ];
+  // Must match the pattern "Will X beat quarterly earnings"
+  const isEarningsPattern = hasEarnings && (hasBeat || hasQuarterly);
 
-    for (const pattern of patterns) {
-      const match = slug.match(pattern);
-      if (match?.[1]) return match[1].toUpperCase();
-    }
+  // Exclude non-earnings events
+  const excludeKeywords = [
+    'bitcoin', 'btc', 'ethereum', 'eth', 'solana', 'sol', 'crypto',
+    'nfl', 'nba', 'mlb', 'nhl', 'soccer', 'football', 'basketball',
+    'election', 'trump', 'biden', 'president', 'senate', 'congress',
+    'fed', 'fomc', 'interest rate', 'inflation'
+  ];
+
+  const isExcluded = excludeKeywords.some(keyword => title.includes(keyword));
+
+  return isEarningsPattern && !isExcluded;
+}
+
+/**
+ * Extract stock symbol from title like "Will Goldman Sachs (GS) beat quarterly earnings?"
+ */
+function extractSymbolFromTitle(title) {
+  if (!title) return null;
+
+  // Pattern: "Will Company Name (TICKER) beat..."
+  const tickerMatch = title.match(/\(([A-Z]{1,5})\)/);
+  if (tickerMatch) {
+    return tickerMatch[1];
   }
 
-  // Fallback: find common symbols in text
-  for (const symbol of COMMON_SYMBOLS) {
-    // Check for exact symbol match (with word boundaries)
-    const symbolRegex = new RegExp(`\\b${symbol}\\b`, 'i');
-    if (symbolRegex.test(text)) return symbol;
+  // Fallback: try to find known symbols in the title
+  const upperTitle = title.toUpperCase();
+  for (const symbol of KNOWN_SYMBOLS) {
+    // Check for word boundary to avoid partial matches
+    const symbolRegex = new RegExp(`\\b${symbol}\\b`);
+    if (symbolRegex.test(upperTitle)) {
+      return symbol;
+    }
   }
 
   return null;
 }
 
 /**
- * Parse outcome prices from market data
+ * Extract company name from title
  */
-export function parseOutcomePrices(market) {
-  try {
-    const prices = JSON.parse(market.outcomePrices || '[]');
-    const outcomes = JSON.parse(market.outcomes || '[]');
-    const yesIndex = outcomes.findIndex(o => o.toLowerCase() === 'yes');
-    const noIndex = outcomes.findIndex(o => o.toLowerCase() === 'no');
+function extractCompanyFromTitle(title) {
+  if (!title) return null;
 
-    return {
-      yesOdds: yesIndex >= 0 ? parseFloat(prices[yesIndex]) : 0.5,
-      noOdds: noIndex >= 0 ? parseFloat(prices[noIndex]) : 0.5
-    };
-  } catch {
-    return { yesOdds: 0.5, noOdds: 0.5 };
+  // Pattern: "Will Company Name (TICKER) beat..."
+  const match = title.match(/Will\s+(.+?)\s+\([A-Z]{1,5}\)/i);
+  if (match) {
+    return match[1].trim();
   }
+
+  return null;
+}
+
+/**
+ * Transform Polymarket event to our format
+ */
+function transformPolymarketEvent(event) {
+  const title = event.title || '';
+  const symbol = extractSymbolFromTitle(title);
+
+  if (!symbol) {
+    console.log('[Polymarket] No symbol found for:', title);
+    return null;
+  }
+
+  const companyName = extractCompanyFromTitle(title) || symbol;
+
+  // Get beat odds from the "Yes" outcome
+  // Polymarket events have markets array with outcomes
+  let beatOdds = 0.5;
+
+  if (event.markets && event.markets[0]) {
+    const market = event.markets[0];
+    // outcomePrices is usually [yesPrice, noPrice] as JSON string
+    if (market.outcomePrices) {
+      try {
+        const prices = JSON.parse(market.outcomePrices);
+        beatOdds = parseFloat(prices[0]) || 0.5;
+      } catch (e) {
+        // Try direct access if not JSON
+        if (typeof market.outcomePrices === 'number') {
+          beatOdds = market.outcomePrices;
+        }
+      }
+    }
+  }
+
+  // Get end date for when earnings will be reported
+  const endDate = event.endDate || event.markets?.[0]?.endDate;
+
+  // Calculate prices based on odds (using $10K budget)
+  const yesCost = Math.round(beatOdds * 10000);
+  const noCost = Math.round((1 - beatOdds) * 10000);
+
+  return {
+    id: event.id || `pm_${symbol}_${Date.now()}`,
+    slug: event.slug,
+    symbol,
+    companyName,
+    title,
+    reportDate: endDate ? new Date(endDate) : null,
+    reportTime: 'TBD',
+    yesOdds: beatOdds,
+    noOdds: 1 - beatOdds,
+    beatOdds,
+    missOdds: 1 - beatOdds,
+    beatProbability: Math.round(beatOdds * 100),
+    yesCost,
+    noCost,
+    volume: parseFloat(event.volume) || event.markets?.[0]?.volume || 0,
+    source: 'polymarket',
+    polymarketId: event.id,
+    resolved: event.closed,
+    lastUpdated: new Date()
+  };
 }
 
 /**
@@ -100,115 +171,6 @@ export function parseOutcomePrices(market) {
  */
 export function oddsToPrice(odds, budget = 10000) {
   return Math.round(odds * budget);
-}
-
-/**
- * Fetch all active events from Polymarket
- */
-async function fetchActiveEvents(limit = 100, offset = 0) {
-  const url = `${GAMMA_API_BASE}/events?active=true&closed=false&limit=${limit}&offset=${offset}&order=endDate&ascending=true`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Polymarket API error: ${response.status}`);
-  return response.json();
-}
-
-/**
- * Search events with query parameter
- */
-async function searchEvents(query, limit = 100) {
-  const url = `${GAMMA_API_BASE}/events?active=true&closed=false&limit=${limit}&q=${encodeURIComponent(query)}`;
-  console.log('[Polymarket] Searching:', query);
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Polymarket search error: ${response.status}`);
-  return response.json();
-}
-
-/**
- * Filter for earnings-related events
- */
-function filterEarningsEvents(events) {
-  // Debug logging
-  console.log('=== POLYMARKET DEBUG ===');
-  console.log('Total events to filter:', events.length);
-  console.log('Sample events:', events.slice(0, 5).map(e => ({
-    title: e.title,
-    slug: e.slug,
-    endDate: e.endDate
-  })));
-
-  // Expanded keywords based on how Polymarket titles earnings markets
-  const keywords = [
-    'earnings',
-    'beat',
-    'eps',
-    'quarterly',
-    'revenue',
-    'q4 2024',
-    'q1 2025',
-    'q4 2025',
-    'q1 2026',
-    'guidance',
-    'report'
-  ];
-
-  const filtered = events.filter(event => {
-    const title = (event.title || '').toLowerCase();
-    const slug = (event.slug || '').toLowerCase();
-    const text = `${title} ${slug}`;
-
-    // Check keywords
-    const hasKeyword = keywords.some(kw => text.includes(kw));
-
-    // Check for known earnings symbols
-    const hasSymbol = EARNINGS_SYMBOLS.some(sym => text.includes(sym));
-
-    const matches = hasKeyword || hasSymbol;
-
-    if (matches) {
-      console.log('[Polymarket] MATCHED:', event.title?.slice(0, 60), '|', event.slug);
-    }
-
-    return matches;
-  });
-
-  console.log('Filtered earnings events:', filtered.length);
-  console.log('=== END DEBUG ===');
-
-  return filtered;
-}
-
-/**
- * Transform Polymarket event to our format
- */
-function transformEvent(event) {
-  const market = event.markets?.[0];
-  if (!market) return null;
-
-  const symbol = extractSymbolFromSlug(event.slug, event.title);
-  if (!symbol) {
-    console.log('[Polymarket] No symbol found for:', event.slug);
-    return null;
-  }
-
-  const { yesOdds, noOdds } = parseOutcomePrices(market);
-
-  return {
-    id: event.id,
-    slug: event.slug,
-    symbol,
-    companyName: symbol, // Could enhance with company name lookup
-    reportDate: event.endDate ? new Date(event.endDate) : null,
-    reportTime: 'TBD',
-    yesOdds,
-    noOdds,
-    beatProbability: Math.round(yesOdds * 100),
-    yesCost: oddsToPrice(yesOdds),
-    noCost: oddsToPrice(noOdds),
-    volume: parseFloat(market.volume) || 0,
-    title: event.title,
-    resolved: event.closed,
-    lastUpdated: new Date()
-  };
 }
 
 // Test data for when API doesn't return earnings
@@ -222,71 +184,13 @@ const TEST_EARNINGS_DATA = [
     reportTime: 'BMO',
     yesOdds: 0.91,
     noOdds: 0.09,
+    beatOdds: 0.91,
+    missOdds: 0.09,
     beatProbability: 91,
     yesCost: 9100,
     noCost: 900,
     volume: 50000,
-    title: 'Will JPM beat Q4 earnings?'
-  },
-  {
-    id: 'test-dal',
-    slug: 'dal-q4-earnings',
-    symbol: 'DAL',
-    companyName: 'Delta Air Lines',
-    reportDate: new Date('2026-01-10'),
-    reportTime: 'BMO',
-    yesOdds: 0.64,
-    noOdds: 0.36,
-    beatProbability: 64,
-    yesCost: 6400,
-    noCost: 3600,
-    volume: 30000,
-    title: 'Will DAL beat Q4 earnings?'
-  },
-  {
-    id: 'test-bac',
-    slug: 'bac-q4-earnings',
-    symbol: 'BAC',
-    companyName: 'Bank of America',
-    reportDate: new Date('2026-01-16'),
-    reportTime: 'BMO',
-    yesOdds: 0.85,
-    noOdds: 0.15,
-    beatProbability: 85,
-    yesCost: 8500,
-    noCost: 1500,
-    volume: 45000,
-    title: 'Will BAC beat Q4 earnings?'
-  },
-  {
-    id: 'test-wfc',
-    slug: 'wfc-q4-earnings',
-    symbol: 'WFC',
-    companyName: 'Wells Fargo',
-    reportDate: new Date('2026-01-15'),
-    reportTime: 'BMO',
-    yesOdds: 0.78,
-    noOdds: 0.22,
-    beatProbability: 78,
-    yesCost: 7800,
-    noCost: 2200,
-    volume: 35000,
-    title: 'Will WFC beat Q4 earnings?'
-  },
-  {
-    id: 'test-c',
-    slug: 'c-q4-earnings',
-    symbol: 'C',
-    companyName: 'Citigroup',
-    reportDate: new Date('2026-01-15'),
-    reportTime: 'BMO',
-    yesOdds: 0.72,
-    noOdds: 0.28,
-    beatProbability: 72,
-    yesCost: 7200,
-    noCost: 2800,
-    volume: 28000,
-    title: 'Will C beat Q4 earnings?'
+    title: 'Will JPMorgan Chase (JPM) beat quarterly earnings?'
   },
   {
     id: 'test-gs',
@@ -297,11 +201,64 @@ const TEST_EARNINGS_DATA = [
     reportTime: 'BMO',
     yesOdds: 0.88,
     noOdds: 0.12,
+    beatOdds: 0.88,
+    missOdds: 0.12,
     beatProbability: 88,
     yesCost: 8800,
     noCost: 1200,
     volume: 42000,
-    title: 'Will GS beat Q4 earnings?'
+    title: 'Will Goldman Sachs (GS) beat quarterly earnings?'
+  },
+  {
+    id: 'test-bac',
+    slug: 'bac-q4-earnings',
+    symbol: 'BAC',
+    companyName: 'Bank of America',
+    reportDate: new Date('2026-01-16'),
+    reportTime: 'BMO',
+    yesOdds: 0.85,
+    noOdds: 0.15,
+    beatOdds: 0.85,
+    missOdds: 0.15,
+    beatProbability: 85,
+    yesCost: 8500,
+    noCost: 1500,
+    volume: 45000,
+    title: 'Will Bank of America (BAC) beat quarterly earnings?'
+  },
+  {
+    id: 'test-wfc',
+    slug: 'wfc-q4-earnings',
+    symbol: 'WFC',
+    companyName: 'Wells Fargo',
+    reportDate: new Date('2026-01-15'),
+    reportTime: 'BMO',
+    yesOdds: 0.78,
+    noOdds: 0.22,
+    beatOdds: 0.78,
+    missOdds: 0.22,
+    beatProbability: 78,
+    yesCost: 7800,
+    noCost: 2200,
+    volume: 35000,
+    title: 'Will Wells Fargo (WFC) beat quarterly earnings?'
+  },
+  {
+    id: 'test-c',
+    slug: 'c-q4-earnings',
+    symbol: 'C',
+    companyName: 'Citigroup',
+    reportDate: new Date('2026-01-15'),
+    reportTime: 'BMO',
+    yesOdds: 0.72,
+    noOdds: 0.28,
+    beatOdds: 0.72,
+    missOdds: 0.28,
+    beatProbability: 72,
+    yesCost: 7200,
+    noCost: 2800,
+    volume: 28000,
+    title: 'Will Citigroup (C) beat quarterly earnings?'
   },
   {
     id: 'test-ms',
@@ -312,11 +269,13 @@ const TEST_EARNINGS_DATA = [
     reportTime: 'BMO',
     yesOdds: 0.82,
     noOdds: 0.18,
+    beatOdds: 0.82,
+    missOdds: 0.18,
     beatProbability: 82,
     yesCost: 8200,
     noCost: 1800,
     volume: 38000,
-    title: 'Will MS beat Q4 earnings?'
+    title: 'Will Morgan Stanley (MS) beat quarterly earnings?'
   },
   {
     id: 'test-blk',
@@ -327,11 +286,13 @@ const TEST_EARNINGS_DATA = [
     reportTime: 'BMO',
     yesOdds: 0.79,
     noOdds: 0.21,
+    beatOdds: 0.79,
+    missOdds: 0.21,
     beatProbability: 79,
     yesCost: 7900,
     noCost: 2100,
     volume: 25000,
-    title: 'Will BLK beat Q4 earnings?'
+    title: 'Will BlackRock (BLK) beat quarterly earnings?'
   },
   {
     id: 'test-tsm',
@@ -342,11 +303,30 @@ const TEST_EARNINGS_DATA = [
     reportTime: 'BMO',
     yesOdds: 0.94,
     noOdds: 0.06,
+    beatOdds: 0.94,
+    missOdds: 0.06,
     beatProbability: 94,
     yesCost: 9400,
     noCost: 600,
     volume: 65000,
-    title: 'Will TSM beat Q4 earnings?'
+    title: 'Will Taiwan Semiconductor (TSM) beat quarterly earnings?'
+  },
+  {
+    id: 'test-dal',
+    slug: 'dal-q4-earnings',
+    symbol: 'DAL',
+    companyName: 'Delta Air Lines',
+    reportDate: new Date('2026-01-10'),
+    reportTime: 'BMO',
+    yesOdds: 0.64,
+    noOdds: 0.36,
+    beatOdds: 0.64,
+    missOdds: 0.36,
+    beatProbability: 64,
+    yesCost: 6400,
+    noCost: 3600,
+    volume: 30000,
+    title: 'Will Delta Air Lines (DAL) beat quarterly earnings?'
   },
   {
     id: 'test-unh',
@@ -357,11 +337,13 @@ const TEST_EARNINGS_DATA = [
     reportTime: 'BMO',
     yesOdds: 0.86,
     noOdds: 0.14,
+    beatOdds: 0.86,
+    missOdds: 0.14,
     beatProbability: 86,
     yesCost: 8600,
     noCost: 1400,
     volume: 55000,
-    title: 'Will UNH beat Q4 earnings?'
+    title: 'Will UnitedHealth (UNH) beat quarterly earnings?'
   },
   {
     id: 'test-pnc',
@@ -372,11 +354,13 @@ const TEST_EARNINGS_DATA = [
     reportTime: 'BMO',
     yesOdds: 0.68,
     noOdds: 0.32,
+    beatOdds: 0.68,
+    missOdds: 0.32,
     beatProbability: 68,
     yesCost: 6800,
     noCost: 3200,
     volume: 18000,
-    title: 'Will PNC beat Q4 earnings?'
+    title: 'Will PNC Financial (PNC) beat quarterly earnings?'
   },
   {
     id: 'test-nflx',
@@ -387,11 +371,13 @@ const TEST_EARNINGS_DATA = [
     reportTime: 'AMC',
     yesOdds: 0.76,
     noOdds: 0.24,
+    beatOdds: 0.76,
+    missOdds: 0.24,
     beatProbability: 76,
     yesCost: 7600,
     noCost: 2400,
     volume: 72000,
-    title: 'Will NFLX beat Q4 earnings?'
+    title: 'Will Netflix (NFLX) beat quarterly earnings?'
   },
   {
     id: 'test-jnj',
@@ -402,11 +388,13 @@ const TEST_EARNINGS_DATA = [
     reportTime: 'BMO',
     yesOdds: 0.81,
     noOdds: 0.19,
+    beatOdds: 0.81,
+    missOdds: 0.19,
     beatProbability: 81,
     yesCost: 8100,
     noCost: 1900,
     volume: 48000,
-    title: 'Will JNJ beat Q4 earnings?'
+    title: 'Will Johnson & Johnson (JNJ) beat quarterly earnings?'
   },
   {
     id: 'test-aapl',
@@ -417,11 +405,13 @@ const TEST_EARNINGS_DATA = [
     reportTime: 'AMC',
     yesOdds: 0.89,
     noOdds: 0.11,
+    beatOdds: 0.89,
+    missOdds: 0.11,
     beatProbability: 89,
     yesCost: 8900,
     noCost: 1100,
     volume: 120000,
-    title: 'Will AAPL beat Q1 FY26 earnings?'
+    title: 'Will Apple (AAPL) beat quarterly earnings?'
   },
   {
     id: 'test-msft',
@@ -432,11 +422,13 @@ const TEST_EARNINGS_DATA = [
     reportTime: 'AMC',
     yesOdds: 0.92,
     noOdds: 0.08,
+    beatOdds: 0.92,
+    missOdds: 0.08,
     beatProbability: 92,
     yesCost: 9200,
     noCost: 800,
     volume: 115000,
-    title: 'Will MSFT beat Q2 FY26 earnings?'
+    title: 'Will Microsoft (MSFT) beat quarterly earnings?'
   },
   {
     id: 'test-meta',
@@ -447,11 +439,13 @@ const TEST_EARNINGS_DATA = [
     reportTime: 'AMC',
     yesOdds: 0.83,
     noOdds: 0.17,
+    beatOdds: 0.83,
+    missOdds: 0.17,
     beatProbability: 83,
     yesCost: 8300,
     noCost: 1700,
     volume: 95000,
-    title: 'Will META beat Q4 earnings?'
+    title: 'Will Meta Platforms (META) beat quarterly earnings?'
   },
   {
     id: 'test-amzn',
@@ -462,11 +456,13 @@ const TEST_EARNINGS_DATA = [
     reportTime: 'AMC',
     yesOdds: 0.87,
     noOdds: 0.13,
+    beatOdds: 0.87,
+    missOdds: 0.13,
     beatProbability: 87,
     yesCost: 8700,
     noCost: 1300,
     volume: 105000,
-    title: 'Will AMZN beat Q4 earnings?'
+    title: 'Will Amazon (AMZN) beat quarterly earnings?'
   },
   {
     id: 'test-googl',
@@ -477,16 +473,18 @@ const TEST_EARNINGS_DATA = [
     reportTime: 'AMC',
     yesOdds: 0.84,
     noOdds: 0.16,
+    beatOdds: 0.84,
+    missOdds: 0.16,
     beatProbability: 84,
     yesCost: 8400,
     noCost: 1600,
     volume: 98000,
-    title: 'Will GOOGL beat Q4 earnings?'
+    title: 'Will Alphabet (GOOGL) beat quarterly earnings?'
   }
 ];
 
 /**
- * Main: Fetch all earnings markets - try multiple approaches
+ * Main: Fetch all earnings markets
  */
 export async function fetchEarningsMarkets(useCache = true) {
   // Check cache
@@ -498,56 +496,48 @@ export async function fetchEarningsMarkets(useCache = true) {
   }
 
   try {
-    let allEvents = [];
+    const allEvents = [];
 
-    // Approach 1: Search specifically for "earnings"
-    console.log('[Polymarket] Trying earnings search...');
-    try {
-      const earningsSearch = await searchEvents('earnings');
-      console.log('[Polymarket] Earnings search returned:', earningsSearch.length, 'events');
-      allEvents = [...allEvents, ...earningsSearch];
-    } catch (e) {
-      console.log('[Polymarket] Earnings search failed:', e.message);
+    // Search with earnings-specific queries
+    for (const query of EARNINGS_SEARCH_QUERIES) {
+      try {
+        const url = `${GAMMA_API_BASE}/events?q=${encodeURIComponent(query)}&active=true&closed=false&limit=100`;
+        console.log('[Polymarket] Searching:', query);
+
+        const response = await fetch(url);
+        if (response.ok) {
+          const events = await response.json();
+          console.log(`[Polymarket] "${query}" returned ${events.length} events`);
+          allEvents.push(...events);
+        }
+      } catch (e) {
+        console.log(`[Polymarket] Search "${query}" failed:`, e.message);
+      }
     }
 
-    // Approach 2: Search for "beat"
-    console.log('[Polymarket] Trying beat search...');
-    try {
-      const beatSearch = await searchEvents('beat quarterly');
-      console.log('[Polymarket] Beat search returned:', beatSearch.length, 'events');
-      allEvents = [...allEvents, ...beatSearch];
-    } catch (e) {
-      console.log('[Polymarket] Beat search failed:', e.message);
-    }
-
-    // Approach 3: Get all events and filter
-    console.log('[Polymarket] Fetching all events...');
-    let offset = 0;
-    while (offset < 500) {
-      const events = await fetchActiveEvents(100, offset);
-      if (!events?.length) break;
-      allEvents = [...allEvents, ...events];
-      if (events.length < 100) break;
-      offset += 100;
-    }
-    console.log('[Polymarket] Total events after all fetches:', allEvents.length);
-
-    // Deduplicate by ID
-    const uniqueEvents = Array.from(
-      new Map(allEvents.map(e => [e.id, e])).values()
-    );
+    // Remove duplicates by event ID
+    const uniqueEvents = [...new Map(allEvents.map(e => [e.id, e])).values()];
     console.log('[Polymarket] Unique events:', uniqueEvents.length);
 
-    // Filter and transform
-    const earnings = filterEarningsEvents(uniqueEvents)
-      .map(transformEvent)
-      .filter(Boolean)
+    // Filter to only earnings events
+    const earningsEvents = uniqueEvents.filter(isEarningsEvent);
+    console.log(`[Polymarket] Found ${earningsEvents.length} earnings events from ${uniqueEvents.length} total`);
+
+    // Debug: show what we found
+    earningsEvents.slice(0, 5).forEach(e => {
+      console.log('[Polymarket] Matched:', e.title?.slice(0, 60));
+    });
+
+    // Transform to our format
+    const transformed = earningsEvents
+      .map(transformPolymarketEvent)
+      .filter(e => e !== null)
       .sort((a, b) => new Date(a.reportDate) - new Date(b.reportDate));
 
-    console.log('[Polymarket] Final earnings events:', earnings.length);
+    console.log(`[Polymarket] Transformed ${transformed.length} events with valid symbols`);
 
     // If no real data found, use test data
-    if (earnings.length === 0) {
+    if (transformed.length === 0) {
       console.log('[Polymarket] No earnings found from API, using test data');
       const enhancedTestData = TEST_EARNINGS_DATA.map(event => enhanceEventWithParlays(event));
       earningsCache = { data: enhancedTestData, lastFetched: Date.now() };
@@ -555,11 +545,12 @@ export async function fetchEarningsMarkets(useCache = true) {
     }
 
     // Enhance with parlay data
-    const enhancedEarnings = earnings.map(event => enhanceEventWithParlays(event));
+    const enhancedEarnings = transformed.map(event => enhanceEventWithParlays(event));
 
     // Update cache
     earningsCache = { data: enhancedEarnings, lastFetched: Date.now() };
     return enhancedEarnings;
+
   } catch (error) {
     console.error('[Polymarket] Fetch error:', error);
     // Return test data on error
@@ -591,7 +582,7 @@ export async function getUpcomingEarnings(days = 45) {
  * Calculate prediction metrics
  */
 export function calculatePredictionMetrics(event, prediction) {
-  const odds = prediction === 'beat' ? event.yesOdds : event.noOdds;
+  const odds = prediction === 'beat' ? event.beatOdds : event.missOdds;
   const cost = prediction === 'beat' ? event.yesCost : event.noCost;
 
   let multiplier;
