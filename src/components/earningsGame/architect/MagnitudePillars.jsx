@@ -73,6 +73,7 @@ export default function MagnitudePillars({
       <div style={{
         display: 'flex',
         justifyContent: 'center',
+        alignItems: 'stretch',
         gap: '8px',
       }}>
         {MAGNITUDES.map((mag, index) => {
@@ -124,9 +125,10 @@ export default function MagnitudePillars({
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'space-between',
+                justifyContent: 'flex-start',
                 gap: '6px',
                 minHeight: '200px',
+                height: '100%',
                 filter: canSelect ? 'none' : 'grayscale(80%)',
               }}
             >
@@ -162,50 +164,59 @@ export default function MagnitudePillars({
                 {mag.label}
               </div>
 
-              {/* Range */}
+              {/* Range - brighter for visibility */}
               <span style={{
                 fontSize: '9px',
-                color: designColors.textMuted,
+                color: '#c9d1d9',
               }}>
                 {mag.range}
               </span>
 
-              {/* Divider */}
+              {/* Bottom section - pushed to bottom with marginTop: auto */}
               <div style={{
-                width: '70%',
-                height: '1px',
-                backgroundColor: designColors.borderDefault,
-                margin: '4px 0',
-              }} />
-
-              {/* Price */}
-              <span style={{
-                fontSize: '15px',
-                fontWeight: 'bold',
-                fontFamily: fontMono,
-                color: isSelected ? designColors.cyan : designColors.textPrimary,
-              }}>
-                ${price > 0 ? price.toLocaleString() : '—'}
-              </span>
-
-              {/* Multiplier */}
-              <span style={{
-                fontSize: '11px',
-                fontWeight: '600',
-                color: isSelected ? designColors.cyan : designColors.textSecondary,
-              }}>
-                {multiplier > 0 ? `${multiplier}x` : '—'}
-              </span>
-
-              {/* Historical Probability - ALWAYS INSIDE at bottom */}
-              <span style={{
-                fontSize: '9px',
-                color: designColors.textMuted,
                 marginTop: 'auto',
-                paddingTop: '4px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                width: '100%',
               }}>
-                Hist: {Math.round(histProb * 100)}%
-              </span>
+                {/* Divider */}
+                <div style={{
+                  width: '70%',
+                  height: '1px',
+                  backgroundColor: designColors.borderDefault,
+                  marginBottom: '8px',
+                }} />
+
+                {/* Price */}
+                <span style={{
+                  fontSize: '15px',
+                  fontWeight: 'bold',
+                  fontFamily: fontMono,
+                  color: designColors.cyan,
+                }}>
+                  ${price > 0 ? price.toLocaleString() : '—'}
+                </span>
+
+                {/* Multiplier */}
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  color: isSelected ? designColors.cyan : designColors.textSecondary,
+                  marginTop: '2px',
+                }}>
+                  {multiplier > 0 ? `${multiplier.toFixed(1)}x` : '—'}
+                </span>
+
+                {/* Historical Probability - brighter for visibility */}
+                <span style={{
+                  fontSize: '9px',
+                  color: '#8b949e',
+                  marginTop: '4px',
+                }}>
+                  Hist: {Math.round(histProb * 100)}%
+                </span>
+              </div>
             </motion.button>
           );
         })}

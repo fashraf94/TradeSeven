@@ -8,6 +8,8 @@ import {
   getDoc,
   getDocs,
   updateDoc,
+  setDoc,
+  deleteDoc,
   query,
   where,
   onSnapshot,
@@ -1460,6 +1462,92 @@ export async function recordSnakeDraftDailyScore(battleId, odUserId, dayKey, sco
 }
 
 // =====================================================
+// EARNINGS GAME PORTFOLIOS
+// =====================================================
+
+/**
+ * Save user's earnings portfolio
+ *
+ * @param {string} userId - User ID (odUserId or Firebase UID)
+ * @param {Object} portfolioData - Portfolio data including predictions and isLocked
+ * @returns {Promise<boolean>} - Success status
+ */
+export async function saveEarningsPortfolio(userId, portfolioData) {
+  if (!userId) {
+    console.warn('[Firebase] saveEarningsPortfolio: userId required');
+    return false;
+  }
+
+  try {
+    const docRef = doc(db, 'earningsPortfolios', userId);
+    const cleanedData = removeUndefined({
+      ...portfolioData,
+      odUserId: userId,
+      updatedAt: serverTimestamp()
+    });
+
+    await setDoc(docRef, cleanedData, { merge: true });
+    console.log('✅ Earnings portfolio saved for user:', userId);
+    return true;
+  } catch (error) {
+    console.error('❌ Error saving earnings portfolio:', error);
+    throw error;
+  }
+}
+
+/**
+ * Load user's earnings portfolio
+ *
+ * @param {string} userId - User ID (odUserId or Firebase UID)
+ * @returns {Promise<Object|null>} - Portfolio data or null if not found
+ */
+export async function loadEarningsPortfolio(userId) {
+  if (!userId) {
+    console.warn('[Firebase] loadEarningsPortfolio: userId required');
+    return null;
+  }
+
+  try {
+    const docRef = doc(db, 'earningsPortfolios', userId);
+    const snapshot = await getDoc(docRef);
+
+    if (snapshot.exists()) {
+      console.log('✅ Earnings portfolio loaded for user:', userId);
+      return snapshot.data();
+    }
+
+    console.log('📭 No earnings portfolio found for user:', userId);
+    return null;
+  } catch (error) {
+    console.error('❌ Error loading earnings portfolio:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete user's earnings portfolio
+ *
+ * @param {string} userId - User ID (odUserId or Firebase UID)
+ * @returns {Promise<boolean>} - Success status
+ */
+export async function deleteEarningsPortfolio(userId) {
+  if (!userId) {
+    console.warn('[Firebase] deleteEarningsPortfolio: userId required');
+    return false;
+  }
+
+  try {
+    const docRef = doc(db, 'earningsPortfolios', userId);
+    await deleteDoc(docRef);
+    console.log('✅ Earnings portfolio deleted for user:', userId);
+    return true;
+  } catch (error) {
+    console.error('❌ Error deleting earnings portfolio:', error);
+    throw error;
+  }
+}
+
+// =====================================================
 // EXPORTS
 // =====================================================
 
@@ -1496,5 +1584,10 @@ export default {
   createChallenge,
   getBattleChallenges,
   updateChallenge,
-  subscribeToChallenges
+  subscribeToChallenges,
+
+  // Earnings Game Portfolios
+  saveEarningsPortfolio,
+  loadEarningsPortfolio,
+  deleteEarningsPortfolio
 };
