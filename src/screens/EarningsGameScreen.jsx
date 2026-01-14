@@ -127,11 +127,17 @@ const EarningsGameScreen = ({
   // Load earnings data
   useEffect(() => {
     const loadData = async () => {
+      console.log('[EarningsGame] ====== LOADING EARNINGS DATA ======');
       try {
         const data = await getHybridEarningsCalendar(14);
+        console.log('[EarningsGame] Received', data?.length || 0, 'events');
+        if (data?.length > 0) {
+          console.log('[EarningsGame] First event:', data[0]);
+          console.log('[EarningsGame] Data source:', data[0]?.dataSource);
+        }
         setEvents(data);
       } catch (err) {
-        console.error('Load error:', err);
+        console.error('[EarningsGame] Load error:', err);
         setError(err.message);
       } finally {
         setLoading(false);

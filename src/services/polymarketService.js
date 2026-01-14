@@ -555,13 +555,22 @@ export function calculatePredictionMetrics(event, prediction) {
  * Fetch EODHD earnings calendar
  */
 async function fetchEODHDCalendar(days = 14) {
+  console.log('[EODHD] Fetching calendar for', days, 'days...');
   try {
-    const response = await fetch(`/api/stocks/earnings-calendar?days=${days}`);
+    const url = `/api/stocks/earnings-calendar?days=${days}`;
+    console.log('[EODHD] URL:', url);
+    const response = await fetch(url);
+    console.log('[EODHD] Response status:', response.status);
     if (!response.ok) {
+      const text = await response.text();
+      console.error('[EODHD] Error response:', text);
       throw new Error(`EODHD calendar error: ${response.status}`);
     }
     const data = await response.json();
     console.log(`[EODHD] Calendar returned ${data.events?.length || 0} events`);
+    if (data.events?.length > 0) {
+      console.log('[EODHD] Sample symbols:', data.events.slice(0, 5).map(e => e.symbol));
+    }
     return data.events || [];
   } catch (error) {
     console.error('[EODHD] Calendar fetch error:', error.message);
@@ -573,32 +582,46 @@ async function fetchEODHDCalendar(days = 14) {
  * Fetch raw Polymarket events (without enhancement)
  */
 async function fetchPolymarketEventsRaw() {
+  console.log('[Polymarket-Raw] Starting fetch...');
   try {
     const allEvents = [];
 
     for (const query of EARNINGS_SEARCH_QUERIES) {
       try {
         const url = `${GAMMA_API_BASE}/events?q=${encodeURIComponent(query)}&active=true&closed=false&limit=100`;
+        console.log('[Polymarket-Raw] Fetching:', url);
         const response = await fetch(url);
+        console.log('[Polymarket-Raw] Response status:', response.status);
         if (response.ok) {
           const events = await response.json();
+          console.log(`[Polymarket-Raw] "${query}" returned ${events.length} events`);
           allEvents.push(...events);
+        } else {
+          console.error('[Polymarket-Raw] Error:', response.status, await response.text());
         }
       } catch (e) {
-        console.log(`[Polymarket] Search "${query}" failed:`, e.message);
+        console.log(`[Polymarket-Raw] Search "${query}" failed:`, e.message);
       }
     }
 
+    console.log('[Polymarket-Raw] Total events collected:', allEvents.length);
+
     // Remove duplicates and filter
     const uniqueEvents = [...new Map(allEvents.map(e => [e.id, e])).values()];
+    console.log('[Polymarket-Raw] Unique events:', uniqueEvents.length);
+
     const earningsEvents = uniqueEvents.filter(isEarningsEvent);
+    console.log('[Polymarket-Raw] After earnings filter:', earningsEvents.length);
 
     // Transform to get symbols and odds
     const transformed = earningsEvents
       .map(event => {
         const title = event.title || '';
         const symbol = extractSymbolFromTitle(title);
-        if (!symbol) return null;
+        if (!symbol) {
+          console.log('[Polymarket-Raw] No symbol extracted from:', title.slice(0, 50));
+          return null;
+        }
 
         let beatOdds = 0.5;
         if (event.markets && event.markets[0]?.outcomePrices) {
@@ -619,10 +642,13 @@ async function fetchPolymarketEventsRaw() {
       })
       .filter(e => e !== null);
 
-    console.log(`[Polymarket] Found ${transformed.length} events with symbols`);
+    console.log(`[Polymarket-Raw] Final: ${transformed.length} events with symbols`);
+    if (transformed.length > 0) {
+      console.log('[Polymarket-Raw] Symbols:', transformed.map(e => e.symbol));
+    }
     return transformed;
   } catch (error) {
-    console.error('[Polymarket] Raw fetch error:', error);
+    console.error('[Polymarket-Raw] Error:', error);
     return [];
   }
 }
@@ -633,16 +659,25 @@ async function fetchPolymarketEventsRaw() {
  * Uses EODHD for accurate dates/times, Polymarket for odds
  */
 export async function getHybridEarningsCalendar(days = 14) {
+  console.log('[Hybrid] ========== STARTING HYBRID FETCH ==========');
+  console.log('[Hybrid] Days:', days);
   const fetchTimestamp = new Date();
 
   try {
     // Fetch from both sources in parallel
+    console.log('[Hybrid] Fetching from both sources...');
     const [eohdCalendar, polymarketEvents] = await Promise.all([
       fetchEODHDCalendar(days),
       fetchPolymarketEventsRaw()
     ]);
 
     console.log(`[Hybrid] EODHD: ${eohdCalendar.length}, Polymarket: ${polymarketEvents.length}`);
+    if (eohdCalendar.length > 0) {
+      console.log('[Hybrid] EODHD symbols:', eohdCalendar.slice(0, 10).map(e => e.symbol));
+    }
+    if (polymarketEvents.length > 0) {
+      console.log('[Hybrid] Polymarket symbols:', polymarketEvents.map(e => e.symbol));
+    }
 
     // If no Polymarket data, fall back to test data
     if (polymarketEvents.length === 0) {
