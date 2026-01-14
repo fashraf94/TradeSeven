@@ -407,6 +407,30 @@ export function useEarningsGame(userId = null) {
   }, []);
 
   /**
+   * Clear portfolio completely (including Firebase)
+   * Use this when starting a new tournament portfolio
+   */
+  const clearPortfolio = useCallback(async () => {
+    setPredictions([]);
+    setIsLocked(false);
+    setError(null);
+    clearStorage();
+
+    // Also clear from Firebase if logged in
+    if (userId) {
+      try {
+        const fb = await getFirebaseService();
+        if (fb && fb.deleteEarningsPortfolio) {
+          await fb.deleteEarningsPortfolio(userId);
+          console.log('[useEarningsGame] Cleared portfolio from Firebase');
+        }
+      } catch (e) {
+        console.warn('[useEarningsGame] Failed to clear from Firebase:', e);
+      }
+    }
+  }, [userId]);
+
+  /**
    * Calculate score based on actual results
    */
   const calculateScore = useCallback((results) => {
@@ -468,6 +492,7 @@ export function useEarningsGame(userId = null) {
     lockPortfolio,
     unlockPortfolio,
     reset,
+    clearPortfolio,
     calculateScore,
 
     // Constants (for UI)

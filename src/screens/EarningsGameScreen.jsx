@@ -52,6 +52,7 @@ const EarningsGameScreen = ({
     isValid,
     validationMessage,
     reset,
+    clearPortfolio,
   } = useEarningsGame(user?.odId);
 
   // Tournament state from Firebase
@@ -501,21 +502,72 @@ const EarningsGameScreen = ({
       <div style={{ minHeight: '100vh', background: '#0d1117' }}>
         <NavigationTabs />
         <PortfolioWarRoom
-        predictions={predictions}
-        totalSpent={totalSpent}
-        budgetRemaining={budgetRemaining}
-        totalPotentialPoints={totalPotentialPoints}
-        isLocked={isLocked}
-        isValid={isValid}
-        validationMessage={validationMessage}
-        onBack={() => setView('calendar')}
-        onRemove={removePrediction}
-        onLock={() => {
-          lockPortfolio();
-          setView('arena');
-        }}
-        isDesktop={isDesktop}
-      />
+          predictions={predictions}
+          totalSpent={totalSpent}
+          budgetRemaining={budgetRemaining}
+          totalPotentialPoints={totalPotentialPoints}
+          isLocked={isLocked}
+          isValid={isValid}
+          validationMessage={validationMessage}
+          onBack={() => setView('calendar')}
+          onRemove={removePrediction}
+          onLock={() => {
+            lockPortfolio();
+            setView('arena');
+          }}
+          isDesktop={isDesktop}
+        />
+
+        {/* Tournament Entry and Reset Buttons */}
+        {isLocked && (
+          <div style={{ padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* Enter Tournament button - show when locked but not entered */}
+            {!hasEntered && tournament && !isDeadlinePassed && (
+              <button
+                onClick={async () => {
+                  const username = user?.username || user?.odId || 'Anonymous';
+                  const success = await enterTournament(predictions, username);
+                  if (success) {
+                    setView('tournament');
+                  }
+                }}
+                style={{
+                  padding: '16px 32px',
+                  background: 'linear-gradient(90deg, #10b981 0%, #059669 100%)',
+                  border: 'none',
+                  borderRadius: '12px',
+                  color: '#ffffff',
+                  fontWeight: '700',
+                  fontSize: '16px',
+                  cursor: 'pointer'
+                }}
+              >
+                🏆 Enter Tournament
+              </button>
+            )}
+
+            {/* Start New Portfolio button */}
+            <button
+              onClick={async () => {
+                if (window.confirm('Start a new portfolio? This will clear your current picks.')) {
+                  await clearPortfolio();
+                  setView('calendar');
+                }
+              }}
+              style={{
+                padding: '12px 24px',
+                background: 'transparent',
+                border: '1px solid #f59e0b',
+                borderRadius: '8px',
+                color: '#f59e0b',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              Start New Portfolio
+            </button>
+          </div>
+        )}
       </div>
     );
   }

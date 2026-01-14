@@ -30,7 +30,10 @@ export function useTournament(userId) {
   // Load tournament and user entry on mount
   useEffect(() => {
     async function loadTournamentData() {
+      console.log('[useTournament] Loading for userId:', userId);
+
       if (!userId) {
+        console.log('[useTournament] No userId, skipping load');
         setIsLoading(false);
         return;
       }
@@ -39,20 +42,24 @@ export function useTournament(userId) {
         setIsLoading(true);
         setError(null);
         const fb = await getFirebase();
+        console.log('[useTournament] Firebase loaded, calling getCurrentTournament...');
 
         // Get current tournament (creates if doesn't exist)
         const currentTournament = await fb.getCurrentTournament();
+        console.log('[useTournament] Tournament loaded:', currentTournament);
         setTournament(currentTournament);
 
         // Get user's entry if exists
         const entry = await fb.getUserTournamentEntry(userId);
+        console.log('[useTournament] User entry:', entry);
         setUserEntry(entry);
 
         // Get leaderboard
         const lb = await fb.getTournamentLeaderboard(currentTournament.id, 50);
+        console.log('[useTournament] Leaderboard loaded:', lb?.length, 'entries');
         setLeaderboard(lb);
 
-        console.log('[useTournament] Loaded:', {
+        console.log('[useTournament] Load complete:', {
           tournament: currentTournament.id,
           hasEntry: !!entry,
           leaderboardSize: lb.length
