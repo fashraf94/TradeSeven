@@ -501,28 +501,12 @@ const EarningsGameScreen = ({
     return (
       <div style={{ minHeight: '100vh', background: '#0d1117' }}>
         <NavigationTabs />
-        <PortfolioWarRoom
-          predictions={predictions}
-          totalSpent={totalSpent}
-          budgetRemaining={budgetRemaining}
-          totalPotentialPoints={totalPotentialPoints}
-          isLocked={isLocked}
-          isValid={isValid}
-          validationMessage={validationMessage}
-          onBack={() => setView('calendar')}
-          onRemove={removePrediction}
-          onLock={() => {
-            lockPortfolio();
-            setView('arena');
-          }}
-          isDesktop={isDesktop}
-        />
 
-        {/* Tournament Entry and Reset Buttons */}
+        {/* Tournament Entry and Reset Buttons - at top for visibility */}
         {isLocked && (
-          <div style={{ padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* Enter Tournament button - show when locked but not entered */}
-            {!hasEntered && tournament && !isDeadlinePassed && (
+            {!hasEntered && tournament && (
               <button
                 onClick={async () => {
                   const username = user?.username || user?.odId || 'Anonymous';
@@ -568,6 +552,23 @@ const EarningsGameScreen = ({
             </button>
           </div>
         )}
+
+        <PortfolioWarRoom
+          predictions={predictions}
+          totalSpent={totalSpent}
+          budgetRemaining={budgetRemaining}
+          totalPotentialPoints={totalPotentialPoints}
+          isLocked={isLocked}
+          isValid={isValid}
+          validationMessage={validationMessage}
+          onBack={() => setView('calendar')}
+          onRemove={removePrediction}
+          onLock={() => {
+            lockPortfolio();
+            setView('arena');
+          }}
+          isDesktop={isDesktop}
+        />
       </div>
     );
   }

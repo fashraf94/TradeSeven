@@ -1652,8 +1652,9 @@ export async function getCurrentTournament() {
     }
 
     // Create new tournament for this week
-    const lockDeadline = new Date(monday);
-    lockDeadline.setHours(11, 0, 0, 0); // 6 AM ET = 11 AM UTC
+    // Lock deadline is Friday 11:59 PM ET (Saturday 4:59 AM UTC)
+    const lockDeadline = new Date(friday);
+    lockDeadline.setHours(23, 59, 59, 999);
 
     const newTournament = {
       id: weekId,
