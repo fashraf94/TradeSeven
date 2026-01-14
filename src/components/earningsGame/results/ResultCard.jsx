@@ -66,7 +66,7 @@ export default function ResultCard({
         fontFamily: fontMono,
         color: isCorrect ? designColors.green : designColors.textMuted,
       }}>
-        {isCorrect ? `+${pointsEarned.toLocaleString()}` : '0'} pts
+        {isCorrect ? `+${(pointsEarned || 0).toLocaleString()}` : '0'} pts
       </span>
     </motion.div>
   );

@@ -104,10 +104,17 @@ const generateBotPrediction = (event, parlays, strategy, riskLevel) => {
 
   if (!parlay) return null;
 
-  // Get precision option
+  // Get precision option with defensive fallbacks
   const precisionOption = parlay.precisionOptions?.find(p => p.tier === precisionTier)
     || parlay.precisionOptions?.[0]
-    || { tier: 'standard', multiplier: parlay.baseMultiplier, range: parlay.magnitudeRange };
+    || {
+      tier: 'standard',
+      multiplier: parlay.baseMultiplier || 1.5,
+      range: parlay.magnitudeRange || '±2%'
+    };
+
+  // Ensure tier is always defined
+  const tierName = precisionOption?.tier || 'standard';
 
   return {
     eventId: event.id || `${event.symbol}_${event.reportDate}`,
@@ -120,8 +127,8 @@ const generateBotPrediction = (event, parlays, strategy, riskLevel) => {
     magnitudeLabel: parlay.magnitudeLabel,
     magnitudeEmoji: parlay.magnitudeEmoji,
     magnitudeRange: parlay.magnitudeRange,
-    precisionTier: precisionOption.tier,
-    precisionLabel: precisionOption.tier.charAt(0).toUpperCase() + precisionOption.tier.slice(1),
+    precisionTier: tierName,
+    precisionLabel: tierName.charAt(0).toUpperCase() + tierName.slice(1),
     precisionRange: precisionOption.range || parlay.magnitudeRange,
     price: parlay.price,
     priceDisplay: parlay.priceDisplay,
