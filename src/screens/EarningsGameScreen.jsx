@@ -38,6 +38,8 @@ const EarningsGameScreen = ({
   colors = {},
   isDesktop = false
 }) => {
+  console.log('[EarningsGame] ====== COMPONENT MOUNTING ======');
+
   // Use the hook for portfolio state management
   // Pass userId to enable Firebase persistence
   const {
