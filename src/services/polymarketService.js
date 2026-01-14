@@ -99,32 +99,47 @@ const COMPANY_NAMES = {
 
 /**
  * Check if an event is a valid earnings event
+ * More lenient filter to catch various Polymarket title formats
  */
 function isEarningsEvent(event) {
   const title = (event.title || '').toLowerCase();
+  const slug = (event.slug || '').toLowerCase();
 
-  // Must contain these keywords
-  const hasEarnings = title.includes('earnings');
-  const hasQuarterly = title.includes('quarterly');
-  const hasBeat = title.includes('beat');
+  // Check for ticker pattern (NVDA), (TSM), etc. - required
+  const tickerPattern = /\([A-Z]{1,5}\)/i;
+  const hasTicker = tickerPattern.test(event.title || '');
 
-  // Must match the pattern "Will X beat quarterly earnings"
-  const isEarningsPattern = hasEarnings && (hasBeat || hasQuarterly);
+  // Keywords that indicate earnings events
+  const earningsKeywords = [
+    'earnings', 'beat', 'miss', 'quarterly', 'eps', 'revenue',
+    'q1', 'q2', 'q3', 'q4', 'fiscal', 'report', 'results',
+    'expectations', 'estimates', 'guidance', 'outlook'
+  ];
+  const hasEarningsKeyword = earningsKeywords.some(kw =>
+    title.includes(kw) || slug.includes(kw)
+  );
 
   // Exclude non-earnings events
   const excludeKeywords = [
-    'bitcoin', 'btc', 'ethereum', 'eth', 'solana', 'sol', 'crypto',
-    'nfl', 'nba', 'mlb', 'nhl', 'soccer', 'football', 'basketball',
-    'election', 'trump', 'biden', 'president', 'senate', 'congress',
-    'fed', 'fomc', 'interest rate', 'inflation'
+    'bitcoin', 'btc', 'ethereum', 'eth', 'solana', 'sol', 'crypto', 'token',
+    'nfl', 'nba', 'mlb', 'nhl', 'soccer', 'football', 'basketball', 'sports',
+    'election', 'trump', 'biden', 'president', 'senate', 'congress', 'vote',
+    'fed', 'fomc', 'interest rate', 'inflation', 'cpi', 'gdp',
+    'war', 'ukraine', 'russia', 'china', 'tariff',
+    'weather', 'hurricane', 'earthquake'
   ];
-
   const isExcluded = excludeKeywords.some(keyword => title.includes(keyword));
-  const isValid = isEarningsPattern && !isExcluded;
 
-  // Log rejected events that mention "earnings" for debugging
-  if (!isValid && hasEarnings) {
-    console.log('[Polymarket] Rejected earnings event:', title.slice(0, 80));
+  // Valid if has ticker + earnings keyword + not excluded
+  const isValid = hasTicker && hasEarningsKeyword && !isExcluded;
+
+  // Debug logging for events that mention stocks but were rejected
+  if (!isValid && hasTicker && hasEarningsKeyword) {
+    console.log('[Polymarket] Rejected (excluded):', title.slice(0, 80));
+  } else if (!isValid && hasTicker) {
+    console.log('[Polymarket] Rejected (no earnings keyword):', title.slice(0, 60));
+  } else if (!isValid && hasEarningsKeyword) {
+    console.log('[Polymarket] Rejected (no ticker):', title.slice(0, 60));
   }
 
   return isValid;
@@ -816,9 +831,56 @@ export async function getHybridEarningsCalendar(days = 14) {
           tooLong: 0,
           emptySymbol: 0,
           pastDate: 0,
+          otcForeign: 0,
+          preferredShare: 0,
+          specialSecurity: 0,
+          hasNumbers: 0,
+          weirdPrefix: 0,
           passed: 0
         };
         const rejectionSamples = [];
+
+        /**
+         * Check if a ticker is a valid, tradeable US stock
+         * Filters out: preferred shares, OTC, foreign ADRs, warrants, units, rights
+         */
+        const isValidTicker = (symbol) => {
+          const s = (symbol || '').toUpperCase().trim();
+          if (!s) return { valid: false, reason: 'emptySymbol' };
+
+          // Reject symbols with special characters (- or .)
+          if (s.includes('-')) return { valid: false, reason: 'hasDash' };
+          if (s.includes('.')) return { valid: false, reason: 'hasDot' };
+
+          // Reject if too long (normal US tickers are 1-4 chars, some 5)
+          if (s.length > 5) return { valid: false, reason: 'tooLong' };
+
+          // Reject if contains numbers (warrants like SPAC.WS often become SPACWS)
+          if (/[0-9]/.test(s)) return { valid: false, reason: 'hasNumbers' };
+
+          // Reject preferred shares - patterns like WFCNP, JPMPR, BOFAPR
+          // These end with P followed by a letter (not at start of 2-char symbols)
+          if (s.length >= 4 && /P[A-Z]$/.test(s)) return { valid: false, reason: 'preferredShare' };
+
+          // Reject OTC/foreign stocks (often end in F for foreign, Y for ADR)
+          if (s.length >= 4 && s.endsWith('F')) return { valid: false, reason: 'otcForeign' };
+          if (s.length >= 4 && s.endsWith('Y')) return { valid: false, reason: 'otcForeign' };
+
+          // Reject warrants (W suffix), units (U suffix), rights (R suffix)
+          // But allow 1-2 char symbols like F (Ford), W (Wayfair), U (Unity)
+          if (s.length >= 3 && s.endsWith('W') && !['BAW', 'CAW', 'DAW', 'SAW'].includes(s)) {
+            return { valid: false, reason: 'specialSecurity' };
+          }
+          if (s.length >= 4 && s.endsWith('U')) return { valid: false, reason: 'specialSecurity' };
+          if (s.length >= 4 && s.endsWith('R') && !['UBER', 'ABBR'].includes(s)) {
+            return { valid: false, reason: 'specialSecurity' };
+          }
+
+          // Reject weird prefixes (ZZ, XX patterns often indicate test/placeholder)
+          if (/^(ZZ|XX|YY)/.test(s)) return { valid: false, reason: 'weirdPrefix' };
+
+          return { valid: true, reason: 'passed' };
+        };
 
         // Filter for quality US stocks with future dates
         // NOTE: We don't filter on companyName because EODHD returns symbol as companyName
@@ -826,36 +888,33 @@ export async function getHybridEarningsCalendar(days = 14) {
         const qualityEvents = eohdCalendar.filter(event => {
           const symbol = event.symbol || '';
 
-          // Skip empty symbols
-          if (!symbol || symbol.length === 0) {
-            rejectionCounts.emptySymbol++;
+          // Check if valid ticker
+          const { valid, reason } = isValidTicker(symbol);
+          if (!valid) {
+            rejectionCounts[reason] = (rejectionCounts[reason] || 0) + 1;
+            if (rejectionSamples.length < 10) {
+              rejectionSamples.push({ symbol, reason });
+            }
             return false;
           }
 
-          // Skip preferred shares and special securities (contain - or .)
-          if (symbol.includes('-')) {
-            rejectionCounts.hasDash++;
-            if (rejectionSamples.length < 3) rejectionSamples.push({ symbol, reason: 'has dash' });
-            return false;
-          }
-          if (symbol.includes('.')) {
-            rejectionCounts.hasDot++;
-            if (rejectionSamples.length < 3) rejectionSamples.push({ symbol, reason: 'has dot' });
-            return false;
-          }
+          // Must be future date (today or later) - use local date comparison
+          // Parse reportDate as local date to avoid timezone issues
+          const [year, month, day] = event.reportDate.split('-').map(Number);
+          const eventDate = new Date(year, month - 1, day);
+          eventDate.setHours(0, 0, 0, 0);
 
-          // Skip if symbol is too long (likely OTC or foreign)
-          if (symbol.length > 5) {
-            rejectionCounts.tooLong++;
-            if (rejectionSamples.length < 3) rejectionSamples.push({ symbol, reason: 'too long' });
-            return false;
-          }
-
-          // Must be future date (today or later)
-          const eventDate = new Date(event.reportDate);
           if (eventDate < today) {
             rejectionCounts.pastDate++;
-            if (rejectionSamples.length < 5) rejectionSamples.push({ symbol, reportDate: event.reportDate, parsed: eventDate.toISOString(), reason: 'past date' });
+            if (rejectionSamples.length < 10) {
+              rejectionSamples.push({
+                symbol,
+                reportDate: event.reportDate,
+                parsed: eventDate.toDateString(),
+                today: today.toDateString(),
+                reason: 'past date'
+              });
+            }
             return false;
           }
 
@@ -867,16 +926,30 @@ export async function getHybridEarningsCalendar(days = 14) {
         console.log('[Hybrid] Rejection samples:', rejectionSamples);
         console.log(`[Hybrid] Quality filtered: ${qualityEvents.length} of ${eohdCalendar.length}`);
 
-        // Sort by date and take first 50
+        // Sort by: 1) Date, 2) Priority stocks first (those in COMPANY_NAMES)
         const sortedEvents = qualityEvents
-          .sort((a, b) => new Date(a.reportDate) - new Date(b.reportDate))
+          .sort((a, b) => {
+            // First, compare by date
+            const dateA = new Date(a.reportDate);
+            const dateB = new Date(b.reportDate);
+            if (dateA.getTime() !== dateB.getTime()) {
+              return dateA - dateB;
+            }
+            // Same date: prioritize known stocks (in COMPANY_NAMES lookup)
+            const aIsKnown = !!COMPANY_NAMES[a.symbol.toUpperCase()];
+            const bIsKnown = !!COMPANY_NAMES[b.symbol.toUpperCase()];
+            if (aIsKnown && !bIsKnown) return -1;
+            if (!aIsKnown && bIsKnown) return 1;
+            // Both known or both unknown: sort alphabetically
+            return a.symbol.localeCompare(b.symbol);
+          })
           .slice(0, 50);
 
         console.log(`[Hybrid] Taking first ${sortedEvents.length} events`);
         if (sortedEvents.length > 0) {
           // Show with lookup names
-          console.log('[Hybrid] Sample companies:', sortedEvents.slice(0, 5).map(e =>
-            `${e.symbol} (${COMPANY_NAMES[e.symbol.toUpperCase()] || e.companyName || e.symbol})`
+          console.log('[Hybrid] Sample companies:', sortedEvents.slice(0, 8).map(e =>
+            `${e.symbol} (${COMPANY_NAMES[e.symbol.toUpperCase()] || 'unknown'})`
           ));
         }
 
@@ -890,11 +963,16 @@ export async function getHybridEarningsCalendar(days = 14) {
           // Use lookup table for company name, fallback to EODHD name or symbol
           const companyName = COMPANY_NAMES[symbolUpper] || event.companyName || symbolUpper;
 
+          // Parse date as LOCAL date to avoid timezone issues
+          // event.reportDate is "YYYY-MM-DD" - parse components to create local date
+          const [year, month, day] = event.reportDate.split('-').map(Number);
+          const localDate = new Date(year, month - 1, day); // month is 0-indexed
+
           return {
             id: `eodhd_${symbolUpper}_${event.reportDate}`,
             symbol: symbolUpper,
             companyName: companyName,
-            reportDate: new Date(event.reportDate),
+            reportDate: localDate,
             reportTime: event.reportTime || 'TBD',
             beatOdds: defaultBeatOdds,
             missOdds: 1 - defaultBeatOdds,
@@ -943,12 +1021,16 @@ export async function getHybridEarningsCalendar(days = 14) {
         const yesCost = Math.round(pmData.beatOdds * 10000);
         const noCost = Math.round(pmData.missOdds * 10000);
 
+        // Parse date as LOCAL date to avoid timezone issues
+        const [year, month, day] = event.reportDate.split('-').map(Number);
+        const localDate = new Date(year, month - 1, day);
+
         return {
           id: `${event.symbol}_${event.reportDate}`,
           symbol: event.symbol.toUpperCase(),
           companyName: event.companyName,
-          // Use EODHD date/time (more accurate)
-          reportDate: new Date(event.reportDate),
+          // Use EODHD date/time (more accurate), parsed as local date
+          reportDate: localDate,
           reportTime: event.reportTime || 'TBD',
           // Use Polymarket odds (real market data)
           beatOdds: pmData.beatOdds,
