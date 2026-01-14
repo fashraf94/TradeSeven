@@ -7,7 +7,8 @@
 
 import { enhanceEventWithParlays } from './earningsReactionsService';
 
-const GAMMA_API_BASE = 'https://gamma-api.polymarket.com';
+// Use our Vercel proxy to avoid CORS issues
+const GAMMA_API_BASE = '/api/polymarket';
 
 // Cache for 5 minutes
 const CACHE_DURATION = 5 * 60 * 1000;
