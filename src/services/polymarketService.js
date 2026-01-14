@@ -659,6 +659,7 @@ async function fetchPolymarketEventsRaw() {
  * Uses EODHD for accurate dates/times, Polymarket for odds
  */
 export async function getHybridEarningsCalendar(days = 14) {
+  console.log('[Hybrid] >>>>>>> FUNCTION ENTERED <<<<<<<');
   console.log('[Hybrid] ========== STARTING HYBRID FETCH ==========');
   console.log('[Hybrid] Days:', days);
   const fetchTimestamp = new Date();

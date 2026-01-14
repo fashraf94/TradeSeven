@@ -137,15 +137,19 @@ const EarningsGameScreen = ({
   // Load earnings data
   console.log('[EarningsGame] Registering useEffect for data load...');
   useEffect(() => {
-    console.log('[EarningsGame] useEffect FIRED!');
+    console.log('[EarningsGame] >>>>>>> useEffect FIRED! <<<<<<<');
     const loadData = async () => {
-      console.log('[EarningsGame] ====== LOADING EARNINGS DATA ======');
+      console.log('[EarningsGame] loadData() called');
+      console.log('[EarningsGame] About to call getHybridEarningsCalendar...');
       try {
         const data = await getHybridEarningsCalendar(14);
+        console.log('[EarningsGame] getHybridEarningsCalendar returned');
         console.log('[EarningsGame] Received', data?.length || 0, 'events');
         if (data?.length > 0) {
           console.log('[EarningsGame] First event:', data[0]);
           console.log('[EarningsGame] Data source:', data[0]?.dataSource);
+        } else {
+          console.log('[EarningsGame] WARNING: No events returned!');
         }
         setEvents(data);
       } catch (err) {
