@@ -38,6 +38,7 @@ const EarningsGameScreen = ({
   isDesktop = false
 }) => {
   // Use the hook for portfolio state management
+  // Pass userId to enable Firebase persistence
   const {
     predictions,
     addPrediction,
@@ -50,7 +51,7 @@ const EarningsGameScreen = ({
     isValid,
     validationMessage,
     reset,
-  } = useEarningsGame();
+  } = useEarningsGame(user?.odId);
 
   // View state for navigation between screens
   const [view, setView] = useState('calendar'); // 'calendar' | 'portfolio' | 'arena' | 'results'
