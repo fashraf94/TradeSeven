@@ -579,92 +579,92 @@ async function fetchEODHDCalendar(days = 14) {
 }
 
 /**
- * Fetch raw Polymarket events (without enhancement)
+ * Fetch raw Polymarket events using multiple strategies
+ * Polymarket's search API doesn't reliably return earnings events,
+ * so we try multiple approaches
  */
 async function fetchPolymarketEventsRaw() {
-  console.log('[Polymarket-Raw] Starting fetch...');
-  try {
-    const allEvents = [];
+  console.log('[Polymarket] Starting multi-strategy fetch...');
 
-    for (const query of EARNINGS_SEARCH_QUERIES) {
-      try {
-        const url = `${GAMMA_API_BASE}/events?q=${encodeURIComponent(query)}&active=true&closed=false&limit=100`;
-        console.log('[Polymarket-Raw] Fetching:', url);
-        const response = await fetch(url);
-        console.log('[Polymarket-Raw] Response status:', response.status);
-        if (response.ok) {
-          const events = await response.json();
-          console.log(`[Polymarket-Raw] "${query}" returned ${events.length} events`);
-          allEvents.push(...events);
-        } else {
-          console.error('[Polymarket-Raw] Error:', response.status, await response.text());
-        }
-      } catch (e) {
-        console.log(`[Polymarket-Raw] Search "${query}" failed:`, e.message);
+  // Strategy URLs to try
+  const strategies = [
+    // Strategy 1: Tag filter (if Polymarket supports it)
+    { name: 'tag=earnings', url: `${GAMMA_API_BASE}/events?tag=earnings&active=true&closed=false&limit=100` },
+    // Strategy 2: Text search for earnings
+    { name: 'q=earnings', url: `${GAMMA_API_BASE}/events?q=earnings&active=true&closed=false&limit=100` },
+    // Strategy 3: Get ALL active events (larger fetch, filter client-side)
+    { name: 'all-active', url: `${GAMMA_API_BASE}/events?active=true&closed=false&limit=500` },
+  ];
+
+  for (const strategy of strategies) {
+    try {
+      console.log(`[Polymarket] Trying strategy: ${strategy.name}`);
+      const response = await fetch(strategy.url);
+      console.log(`[Polymarket] Response status: ${response.status}`);
+
+      if (!response.ok) {
+        console.log(`[Polymarket] Strategy ${strategy.name} failed with ${response.status}`);
+        continue;
       }
-    }
 
-    console.log('[Polymarket-Raw] Total events collected:', allEvents.length);
+      const events = await response.json();
+      console.log(`[Polymarket] Strategy ${strategy.name} returned ${events.length} events`);
 
-    // Log first few raw event titles for debugging
-    if (allEvents.length > 0) {
-      console.log('[Polymarket-Raw] Sample raw titles:');
-      allEvents.slice(0, 5).forEach((e, i) => {
+      if (events.length === 0) continue;
+
+      // Log sample titles
+      console.log('[Polymarket] Sample titles:');
+      events.slice(0, 5).forEach((e, i) => {
         console.log(`  ${i + 1}. ${e.title?.slice(0, 80)}`);
       });
-    } else {
-      console.log('[Polymarket-Raw] ⚠️ API returned 0 events! Polymarket may not have active earnings markets.');
+
+      // Filter for earnings events
+      const earningsEvents = events.filter(isEarningsEvent);
+      console.log(`[Polymarket] After earnings filter: ${earningsEvents.length} events`);
+
+      if (earningsEvents.length === 0) {
+        console.log('[Polymarket] No earnings events in this batch, trying next strategy...');
+        continue;
+      }
+
+      // Transform to our format
+      const transformed = earningsEvents
+        .map(event => {
+          const title = event.title || '';
+          const symbol = extractSymbolFromTitle(title);
+          if (!symbol) return null;
+
+          let beatOdds = 0.5;
+          if (event.markets && event.markets[0]?.outcomePrices) {
+            try {
+              const prices = JSON.parse(event.markets[0].outcomePrices);
+              beatOdds = parseFloat(prices[0]) || 0.5;
+            } catch (e) { /* use default */ }
+          }
+
+          return {
+            symbol: symbol.toUpperCase(),
+            beatOdds,
+            missOdds: 1 - beatOdds,
+            polymarketId: event.id,
+            polymarketTitle: title,
+            polymarketEndDate: event.endDate || event.markets?.[0]?.endDate
+          };
+        })
+        .filter(e => e !== null);
+
+      console.log(`[Polymarket] Transformed: ${transformed.length} events with symbols`);
+      if (transformed.length > 0) {
+        console.log('[Polymarket] Symbols:', transformed.map(e => e.symbol));
+        return transformed;
+      }
+    } catch (error) {
+      console.error(`[Polymarket] Strategy ${strategy.name} error:`, error.message);
     }
-
-    // Remove duplicates and filter
-    const uniqueEvents = [...new Map(allEvents.map(e => [e.id, e])).values()];
-    console.log('[Polymarket-Raw] Unique events:', uniqueEvents.length);
-
-    const earningsEvents = uniqueEvents.filter(isEarningsEvent);
-    console.log('[Polymarket-Raw] After earnings filter:', earningsEvents.length);
-
-    if (earningsEvents.length === 0 && uniqueEvents.length > 0) {
-      console.log('[Polymarket-Raw] ⚠️ Filter rejected ALL events! Check isEarningsEvent function.');
-    }
-
-    // Transform to get symbols and odds
-    const transformed = earningsEvents
-      .map(event => {
-        const title = event.title || '';
-        const symbol = extractSymbolFromTitle(title);
-        if (!symbol) {
-          console.log('[Polymarket-Raw] No symbol extracted from:', title.slice(0, 50));
-          return null;
-        }
-
-        let beatOdds = 0.5;
-        if (event.markets && event.markets[0]?.outcomePrices) {
-          try {
-            const prices = JSON.parse(event.markets[0].outcomePrices);
-            beatOdds = parseFloat(prices[0]) || 0.5;
-          } catch (e) { /* use default */ }
-        }
-
-        return {
-          symbol: symbol.toUpperCase(),
-          beatOdds,
-          missOdds: 1 - beatOdds,
-          polymarketId: event.id,
-          polymarketTitle: title,
-          polymarketEndDate: event.endDate || event.markets?.[0]?.endDate
-        };
-      })
-      .filter(e => e !== null);
-
-    console.log(`[Polymarket-Raw] Final: ${transformed.length} events with symbols`);
-    if (transformed.length > 0) {
-      console.log('[Polymarket-Raw] Symbols:', transformed.map(e => e.symbol));
-    }
-    return transformed;
-  } catch (error) {
-    console.error('[Polymarket-Raw] Error:', error);
-    return [];
   }
+
+  console.log('[Polymarket] All strategies exhausted, returning empty');
+  return [];
 }
 
 /**
@@ -694,11 +694,50 @@ export async function getHybridEarningsCalendar(days = 14) {
       console.log('[Hybrid] Polymarket symbols:', polymarketEvents.map(e => e.symbol));
     }
 
-    // If no Polymarket data, fall back to test data
+    // If no Polymarket data, use EODHD with default odds (better than test data)
     if (polymarketEvents.length === 0) {
-      console.warn('[Hybrid] ⚠️ No Polymarket events found! Falling back to test data.');
-      console.warn('[Hybrid] Check if /api/polymarket/events is working and returning earnings events.');
-      console.warn('[Hybrid] EODHD returned', eohdCalendar.length, 'events - these will NOT be shown without Polymarket odds.');
+      console.warn('[Hybrid] ⚠️ No Polymarket events found!');
+
+      if (eohdCalendar.length > 0) {
+        console.log('[Hybrid] Using EODHD events with default 70/30 beat odds');
+
+        // Use EODHD data with default odds (most companies beat earnings historically)
+        const eohdOnly = eohdCalendar.slice(0, 30).map(event => {
+          const defaultBeatOdds = 0.70; // Historical average - ~70% of companies beat
+          const yesCost = Math.round(defaultBeatOdds * 10000);
+          const noCost = Math.round((1 - defaultBeatOdds) * 10000);
+
+          return {
+            id: `eodhd_${event.symbol}_${event.reportDate}`,
+            symbol: event.symbol.toUpperCase(),
+            companyName: event.companyName,
+            reportDate: new Date(event.reportDate),
+            reportTime: event.reportTime || 'TBD',
+            beatOdds: defaultBeatOdds,
+            missOdds: 1 - defaultBeatOdds,
+            yesOdds: defaultBeatOdds,
+            noOdds: 1 - defaultBeatOdds,
+            beatProbability: Math.round(defaultBeatOdds * 100),
+            yesCost,
+            noCost,
+            source: 'eodhd_only',
+            dataSource: 'eodhd_default_odds',
+            hasPolymarketOdds: false,
+            lastFetched: fetchTimestamp
+          };
+        });
+
+        // Sort by date and enhance with parlays
+        const enhanced = eohdOnly
+          .sort((a, b) => new Date(a.reportDate) - new Date(b.reportDate))
+          .map(event => enhanceEventWithParlays(event));
+
+        console.log(`[Hybrid] Returning ${enhanced.length} EODHD events with default odds`);
+        return enhanced;
+      }
+
+      // Last resort: use test data
+      console.warn('[Hybrid] No EODHD data either, falling back to test data.');
       const testData = getTestEarningsData();
       return testData.map(event => ({
         ...enhanceEventWithParlays(event),
