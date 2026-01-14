@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap } from 'lucide-react';
+import { Zap, TrendingUp } from 'lucide-react';
 import { designColors, fontMono, MAGNITUDES, BUDGET } from '../designConstants';
 import { fadeIn, slideUp, slideInRight, springSmooth, springBouncy } from '../animationPresets';
-import { calculateParlayPrices, calculatePayout } from '../../../services/earningsReactionsService';
+import { calculateParlayPrices, calculateParlayPricesAsync, calculatePayout } from '../../../services/earningsReactionsService';
+import { getStockEarningsStats } from '../../../services/stockEarningsHistoryService';
 import BeatMissToggle from './BeatMissToggle';
 import MagnitudePillars from './MagnitudePillars';
 import PredictionSummary from './PredictionSummary';
@@ -22,6 +23,10 @@ export default function ParlayArchitectModal({
   const [selectedPrecisionTier, setSelectedPrecisionTier] = useState('standard');
   const [showLotteryMode, setShowLotteryMode] = useState(false);
 
+  // Stock-specific historical data
+  const [stockStats, setStockStats] = useState(null);
+  const [loadingStats, setLoadingStats] = useState(false);
+
   // Reset state when modal opens with new event
   useMemo(() => {
     if (isOpen) {
@@ -29,19 +34,78 @@ export default function ParlayArchitectModal({
       setSelectedMagnitude(null);
       setSelectedPrecisionTier('standard');
       setShowLotteryMode(false);
+      setStockStats(null);
     }
   }, [isOpen, event?.id]);
+
+  // Fetch stock-specific historical stats when modal opens
+  useEffect(() => {
+    if (!isOpen || !event?.symbol) {
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingStats(true);
+
+    getStockEarningsStats(event.symbol)
+      .then(stats => {
+        if (!cancelled) {
+          setStockStats(stats);
+          setLoadingStats(false);
+        }
+      })
+      .catch(err => {
+        console.warn('[ParlayArchitectModal] Failed to fetch stock stats:', err);
+        if (!cancelled) {
+          setLoadingStats(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, event?.symbol]);
 
   // Reset precision tier when magnitude changes
   useEffect(() => {
     setSelectedPrecisionTier('standard');
   }, [selectedMagnitude]);
 
-  // Calculate all parlay prices from the service
-  const parlayPrices = useMemo(() => {
-    if (!event) return [];
-    return calculateParlayPrices(event, BUDGET);
-  }, [event]);
+  // State for parlay prices (async calculation)
+  const [parlayPrices, setParlayPrices] = useState([]);
+  const [loadingParlays, setLoadingParlays] = useState(false);
+
+  // Calculate parlay prices using async version (stock-specific data when available)
+  useEffect(() => {
+    if (!isOpen || !event) {
+      setParlayPrices([]);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingParlays(true);
+
+    // Use async version to get stock-specific probabilities
+    calculateParlayPricesAsync(event, BUDGET)
+      .then(prices => {
+        if (!cancelled) {
+          setParlayPrices(prices);
+          setLoadingParlays(false);
+        }
+      })
+      .catch(err => {
+        console.warn('[ParlayArchitectModal] Async calculation failed, falling back to sync:', err);
+        if (!cancelled) {
+          // Fallback to sync version if async fails
+          setParlayPrices(calculateParlayPrices(event, BUDGET));
+          setLoadingParlays(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, event]);
 
   // Get the selected parlay details
   const selectedParlay = useMemo(() => {
@@ -107,6 +171,92 @@ export default function ParlayArchitectModal({
   const canAfford = selectedParlay ? selectedParlay.price <= currentBudget : true;
 
   if (!isOpen || !event) return null;
+
+  // Stock Stats Bar Component - shows historical earnings reaction data
+  const StockStatsBar = ({ stats }) => {
+    if (!stats) return null;
+
+    const { avgMoveOnBeat, avgMoveOnMiss, beatRate, quartersAnalyzed } = stats;
+
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        style={{
+          background: 'rgba(0, 217, 255, 0.08)',
+          border: '1px solid rgba(0, 217, 255, 0.2)',
+          borderRadius: '8px',
+          padding: '12px 16px',
+          marginBottom: '16px'
+        }}
+      >
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          marginBottom: '8px'
+        }}>
+          <TrendingUp size={14} color="#00d9ff" />
+          <span style={{
+            fontSize: '11px',
+            color: '#00d9ff',
+            fontWeight: '600',
+            letterSpacing: '0.5px'
+          }}>
+            HISTORICAL DATA ({quartersAnalyzed} QUARTERS)
+          </span>
+        </div>
+
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-around',
+          gap: '16px'
+        }}>
+          {avgMoveOnBeat !== null && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                fontSize: '16px',
+                fontWeight: '700',
+                fontFamily: fontMono,
+                color: avgMoveOnBeat >= 0 ? '#10b981' : '#ef4444'
+              }}>
+                {avgMoveOnBeat >= 0 ? '+' : ''}{avgMoveOnBeat.toFixed(1)}%
+              </div>
+              <div style={{ fontSize: '10px', color: '#8b949e' }}>Avg on Beat</div>
+            </div>
+          )}
+
+          {avgMoveOnMiss !== null && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                fontSize: '16px',
+                fontWeight: '700',
+                fontFamily: fontMono,
+                color: avgMoveOnMiss >= 0 ? '#10b981' : '#ef4444'
+              }}>
+                {avgMoveOnMiss >= 0 ? '+' : ''}{avgMoveOnMiss.toFixed(1)}%
+              </div>
+              <div style={{ fontSize: '10px', color: '#8b949e' }}>Avg on Miss</div>
+            </div>
+          )}
+
+          {beatRate !== null && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                fontSize: '16px',
+                fontWeight: '700',
+                fontFamily: fontMono,
+                color: '#f59e0b'
+              }}>
+                {beatRate}%
+              </div>
+              <div style={{ fontSize: '10px', color: '#8b949e' }}>Beat Rate</div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    );
+  };
 
   // Lottery Mode Toggle Component
   const LotteryModeToggle = () => (
@@ -256,7 +406,7 @@ export default function ParlayArchitectModal({
               padding: '12px',
               backgroundColor: designColors.bgCardInner,
               borderRadius: '8px',
-              marginBottom: '24px',
+              marginBottom: '16px',
             }}>
               <span style={{
                 fontSize: '12px',
@@ -273,6 +423,9 @@ export default function ParlayArchitectModal({
                 ${currentBudget.toLocaleString()} / ${BUDGET.toLocaleString()}
               </span>
             </div>
+
+            {/* Stock Stats Bar - Historical earnings data */}
+            <StockStatsBar stats={stockStats} />
 
             {/* Outcome section */}
             <div style={{ marginBottom: '24px' }}>
@@ -489,7 +642,7 @@ export default function ParlayArchitectModal({
             padding: '16px',
             backgroundColor: designColors.bgCardInner,
             borderRadius: '10px',
-            marginBottom: '32px',
+            marginBottom: '20px',
             border: `1px solid ${designColors.borderDefault}`,
           }}>
             <span style={{
@@ -508,6 +661,9 @@ export default function ParlayArchitectModal({
               ${currentBudget.toLocaleString()} / ${BUDGET.toLocaleString()}
             </span>
           </div>
+
+          {/* Stock Stats Bar - Historical earnings data */}
+          <StockStatsBar stats={stockStats} />
 
           {/* Outcome section */}
           <div style={{ marginBottom: '32px' }}>

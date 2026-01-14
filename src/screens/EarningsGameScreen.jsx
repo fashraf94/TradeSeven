@@ -15,6 +15,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEarningsGame } from '../hooks/useEarningsGame';
+import { useTournament } from '../hooks/useTournament';
 import { getUpcomingEarnings } from '../services/polymarketService';
 import {
   designColors,
@@ -38,6 +39,7 @@ const EarningsGameScreen = ({
   isDesktop = false
 }) => {
   // Use the hook for portfolio state management
+  // Pass userId to enable Firebase persistence
   const {
     predictions,
     addPrediction,
@@ -50,10 +52,27 @@ const EarningsGameScreen = ({
     isValid,
     validationMessage,
     reset,
-  } = useEarningsGame();
+    clearPortfolio,
+  } = useEarningsGame(user?.odUserId);
+
+  // Tournament state from Firebase
+  const {
+    tournament,
+    userEntry,
+    leaderboard: tournamentLeaderboard,
+    isLoading: tournamentLoading,
+    isDeadlinePassed,
+    userRank,
+    userBracket,
+    hasEntered,
+    deadlineFormatted,
+    entryCount,
+    enterTournament,
+    refreshLeaderboard,
+  } = useTournament(user?.odUserId);
 
   // View state for navigation between screens
-  const [view, setView] = useState('calendar'); // 'calendar' | 'portfolio' | 'arena' | 'results'
+  const [view, setView] = useState('tournament'); // 'tournament' | 'calendar' | 'portfolio' | 'arena' | 'results'
 
   // Events and loading state
   const [events, setEvents] = useState([]);
@@ -65,21 +84,28 @@ const EarningsGameScreen = ({
   const [selectedOutcome, setSelectedOutcome] = useState(null);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
 
-  // Mock data for arena (to be replaced with real data later)
-  const mockUserPosition = {
-    rank: 42,
-    points: totalPotentialPoints,
-    bracket: 'gold',
-    movement: 3,
-  };
+  // User position from tournament data (real from Firebase)
+  const userPosition = useMemo(() => ({
+    rank: userRank || 0,
+    points: userEntry?.totalPoints || totalPotentialPoints,
+    bracket: userBracket?.tier || 'participant',
+    movement: 0, // TODO: Calculate from previous rank
+  }), [userRank, userEntry, totalPotentialPoints, userBracket]);
 
-  const mockLeaderboard = [
-    { odId: '1', rank: 1, bracket: 'diamond', username: 'TradeMaster', points: 15420 },
-    { odId: '2', rank: 2, bracket: 'diamond', username: 'EarningsKing', points: 14890 },
-    { odId: '3', rank: 3, bracket: 'gold', username: 'BullRunner', points: 12350 },
-    { odId: user?.odId || 'current', rank: 42, bracket: 'gold', username: 'You', points: totalPotentialPoints },
-    { odId: '5', rank: 43, bracket: 'silver', username: 'StockPicker', points: 8200 },
-  ];
+  // Leaderboard data (real from Firebase, with current user highlighted)
+  const leaderboardData = useMemo(() => {
+    if (!tournamentLeaderboard || tournamentLeaderboard.length === 0) {
+      // Fallback empty state
+      return [];
+    }
+    return tournamentLeaderboard.map((entry, index) => ({
+      odId: entry.odUserId,
+      rank: entry.rank || index + 1,
+      bracket: entry.bracket || 'participant',
+      username: entry.username || 'Anonymous',
+      points: entry.totalPoints || 0,
+    }));
+  }, [tournamentLeaderboard]);
 
   // Mock results data - simulates completed predictions
   const mockResultsData = useMemo(() => {
@@ -113,23 +139,16 @@ const EarningsGameScreen = ({
     loadData();
   }, []);
 
-  // Calculate tournament week number based on current date
-  const getTournamentWeek = () => {
-    const now = new Date();
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
-    const weekNum = Math.ceil(((now - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
-    return weekNum;
-  };
-
-  // Get lock deadline (next Monday 9am)
-  const getLockDeadline = () => {
-    const now = new Date();
-    const daysUntilMonday = (8 - now.getDay()) % 7 || 7;
-    const nextMonday = new Date(now);
-    nextMonday.setDate(now.getDate() + daysUntilMonday);
-    nextMonday.setHours(9, 0, 0, 0);
-    return nextMonday;
-  };
+  // Get tournament info for UI components
+  const tournamentInfo = useMemo(() => ({
+    id: tournament?.id,
+    week: tournament?.weekNumber || 1,
+    name: tournament?.name || 'Weekly Tournament',
+    lockDeadline: tournament?.lockDeadline ? new Date(tournament.lockDeadline) : new Date(),
+    status: hasEntered ? 'entered' : (isDeadlinePassed ? 'locked' : 'open'),
+    participantCount: entryCount || 0,
+    deadlineFormatted,
+  }), [tournament, hasEntered, isDeadlinePassed, entryCount, deadlineFormatted]);
 
   // Handlers
   const handleSelectEvent = (event) => {
@@ -160,9 +179,17 @@ const EarningsGameScreen = ({
     removePrediction(eventId);
   };
 
-  const handleLock = () => {
+  const handleLock = async () => {
     const success = lockPortfolio();
     if (success) {
+      // Enter the tournament with current predictions
+      const username = user?.username || user?.odId || 'Anonymous';
+      const entered = await enterTournament(predictions, username);
+      if (entered) {
+        console.log('[EarningsGameScreen] Successfully entered tournament');
+      } else {
+        console.warn('[EarningsGameScreen] Failed to enter tournament, but portfolio is locked');
+      }
       setView('arena');
     }
   };
@@ -190,21 +217,326 @@ const EarningsGameScreen = ({
   // Format helpers
   const formatDate = (date) => new Date(date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
+  // Helper function for deadline countdown
+  const getTimeUntilDeadline = (deadline) => {
+    if (!deadline) return '';
+    const now = new Date();
+    const dl = new Date(deadline);
+    const diff = dl - now;
+
+    if (diff <= 0) return 'Deadline passed';
+
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (hours > 24) {
+      const days = Math.floor(hours / 24);
+      return `${days}d ${hours % 24}h`;
+    }
+    return `${hours}h ${minutes}m`;
+  };
+
+  // ========================================
+  // Navigation Tabs Component
+  // ========================================
+  const NavigationTabs = () => (
+    <div style={{
+      display: 'flex',
+      gap: '8px',
+      padding: '12px 20px',
+      borderBottom: '1px solid #21262d',
+      background: '#0d1117',
+      overflowX: 'auto',
+      WebkitOverflowScrolling: 'touch'
+    }}>
+      {[
+        { id: 'tournament', label: '🏆 Tournament', show: true },
+        { id: 'calendar', label: '📅 Earnings', show: true },
+        { id: 'portfolio', label: '📊 Portfolio', show: predictions.length > 0 || hasEntered },
+        { id: 'arena', label: '🎯 Live Results', show: hasEntered }
+      ].filter(tab => tab.show).map(tab => (
+        <button
+          key={tab.id}
+          onClick={() => setView(tab.id)}
+          style={{
+            padding: '8px 16px',
+            background: view === tab.id ? 'rgba(0, 217, 255, 0.15)' : 'transparent',
+            border: view === tab.id ? '1px solid #00d9ff' : '1px solid #21262d',
+            borderRadius: '8px',
+            color: view === tab.id ? '#00d9ff' : '#8b949e',
+            fontWeight: '600',
+            cursor: 'pointer',
+            fontSize: '13px',
+            whiteSpace: 'nowrap',
+            flexShrink: 0
+          }}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  // ========================================
+  // VIEW: TOURNAMENT HUB
+  // ========================================
+  if (view === 'tournament') {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+        <NavigationTabs />
+        <div style={{ padding: '20px' }}>
+          {/* Tournament Header */}
+          <div style={{
+            background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+            borderRadius: '16px',
+            padding: '24px',
+            marginBottom: '24px',
+            border: '1px solid #21262d'
+          }}>
+            <h2 style={{ color: '#00d9ff', margin: '0 0 8px 0', fontSize: '24px' }}>
+              🏆 {tournament?.name || 'Current Tournament'}
+            </h2>
+            <div style={{ color: '#8b949e', fontSize: '14px' }}>
+              {tournament?.status === 'open' && !isDeadlinePassed && (
+                <span>Locks in: {getTimeUntilDeadline(tournament?.lockDeadline)}</span>
+              )}
+              {isDeadlinePassed && <span style={{ color: '#f59e0b' }}>Tournament In Progress</span>}
+              {!tournament && !tournamentLoading && (
+                <span>No active tournament</span>
+              )}
+            </div>
+          </div>
+
+          {/* Your Entry Status */}
+          {hasEntered ? (
+            <div style={{
+              background: '#161b22',
+              borderRadius: '12px',
+              padding: '20px',
+              marginBottom: '24px',
+              border: '1px solid #21262d'
+            }}>
+              <h3 style={{ color: '#ffffff', margin: '0 0 16px 0' }}>Your Entry</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '28px', fontWeight: '700', color: '#00d9ff' }}>
+                    #{userRank || '-'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#8b949e' }}>Rank</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
+                    {userEntry?.results?.totalPoints?.toLocaleString() || 0}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#8b949e' }}>Points</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
+                    {userEntry?.predictionCount || 0}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#8b949e' }}>Picks</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '28px' }}>
+                    {userBracket?.emoji || '🎮'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: userBracket?.color || '#8b949e' }}>
+                    {userBracket?.name || 'Participant'}
+                  </div>
+                </div>
+              </div>
+
+              {/* View Predictions Button */}
+              <button
+                onClick={() => setView('arena')}
+                style={{
+                  marginTop: '16px',
+                  width: '100%',
+                  padding: '12px',
+                  background: 'rgba(0, 217, 255, 0.1)',
+                  border: '1px solid #00d9ff',
+                  borderRadius: '8px',
+                  color: '#00d9ff',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                View Your Predictions →
+              </button>
+            </div>
+          ) : (
+            <div style={{
+              background: '#161b22',
+              borderRadius: '12px',
+              padding: '20px',
+              marginBottom: '24px',
+              border: '1px solid #21262d',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '48px', marginBottom: '12px' }}>📋</div>
+              <h3 style={{ color: '#ffffff', margin: '0 0 8px 0' }}>No Entry Yet</h3>
+              <p style={{ color: '#8b949e', margin: '0 0 16px 0' }}>
+                Build a portfolio to enter this week's tournament
+              </p>
+              <button
+                onClick={() => setView('calendar')}
+                style={{
+                  padding: '12px 24px',
+                  background: 'linear-gradient(90deg, #00d9ff 0%, #0099cc 100%)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#0d1117',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                Browse Earnings
+              </button>
+            </div>
+          )}
+
+          {/* Leaderboard */}
+          <div style={{
+            background: '#161b22',
+            borderRadius: '12px',
+            padding: '20px',
+            border: '1px solid #21262d'
+          }}>
+            <h3 style={{ color: '#ffffff', margin: '0 0 16px 0' }}>
+              Leaderboard ({tournamentLeaderboard?.length || 0} entries)
+            </h3>
+
+            {tournamentLeaderboard && tournamentLeaderboard.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {tournamentLeaderboard.slice(0, 20).map((entry, index) => (
+                  <div
+                    key={entry.odUserId || index}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '12px',
+                      background: entry.odUserId === user?.odId
+                        ? 'rgba(0, 217, 255, 0.1)'
+                        : index % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
+                      borderRadius: '8px',
+                      borderLeft: entry.odUserId === user?.odId ? '3px solid #00d9ff' : 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{
+                        fontWeight: '700',
+                        color: index === 0 ? '#ffd700' : index < 3 ? '#c0c0c0' : '#8b949e',
+                        width: '30px'
+                      }}>
+                        {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`}
+                      </span>
+                      <span style={{ color: '#ffffff' }}>{entry.username || 'Anonymous'}</span>
+                      {entry.odUserId === user?.odId && (
+                        <span style={{
+                          fontSize: '10px',
+                          color: '#00d9ff',
+                          background: 'rgba(0, 217, 255, 0.2)',
+                          padding: '2px 6px',
+                          borderRadius: '4px'
+                        }}>YOU</span>
+                      )}
+                    </div>
+                    <span style={{ fontWeight: '700', color: '#00d9ff' }}>
+                      {entry.totalPoints?.toLocaleString() || 0} pts
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ color: '#8b949e', textAlign: 'center', padding: '20px' }}>
+                No entries yet. Be the first!
+              </div>
+            )}
+          </div>
+
+          {/* TESTING ONLY - Bot Population Button */}
+          {tournament && (
+            <button
+              onClick={async () => {
+                try {
+                  // Import bot service and firebase
+                  const botService = await import('../services/earningsBotService');
+                  const fb = await import('../firebase/firebaseService');
+                  const { enhanceEventWithParlays } = await import('../services/earningsReactionsService');
+
+                  // Generate parlays for each event
+                  const parlaysByEvent = {};
+                  for (const event of events.slice(0, 20)) { // Limit to first 20 events
+                    try {
+                      const enhanced = enhanceEventWithParlays(event);
+                      parlaysByEvent[event.symbol] = enhanced.parlays || [];
+                    } catch (e) {
+                      console.warn(`Could not generate parlays for ${event.symbol}:`, e);
+                    }
+                  }
+
+                  console.log('Generated parlays for', Object.keys(parlaysByEvent).length, 'events');
+
+                  // Generate bot entries
+                  const botEntries = botService.generateBotEntries(
+                    events.slice(0, 20),
+                    parlaysByEvent,
+                    12 // Number of bots
+                  );
+
+                  console.log('Generated bot entries:', botEntries);
+
+                  if (botEntries.length === 0) {
+                    alert('Could not generate bot entries. Make sure there are events with parlays.');
+                    return;
+                  }
+
+                  // Save to Firebase
+                  const results = await fb.createBotTournamentEntries(tournament.id, botEntries);
+                  console.log('Bot creation results:', results);
+
+                  // Refresh leaderboard
+                  await refreshLeaderboard();
+
+                  alert(`Created ${results.filter(r => r.success).length} bot entries!`);
+                } catch (error) {
+                  console.error('Error creating bots:', error);
+                  alert('Error creating bots: ' + error.message);
+                }
+              }}
+              style={{
+                padding: '12px 24px',
+                background: 'linear-gradient(90deg, #8b5cf6 0%, #6d28d9 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#ffffff',
+                fontWeight: '600',
+                cursor: 'pointer',
+                marginTop: '16px',
+                width: '100%'
+              }}
+            >
+              🤖 Populate Tournament with Bots (Testing)
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // ========================================
   // VIEW: CALENDAR (New EarningsCalendar component)
   // ========================================
   if (view === 'calendar') {
     return (
-      <>
+      <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+        <NavigationTabs />
         <EarningsCalendar
           events={events}
           predictions={predictions}
-          tournament={{
-            week: getTournamentWeek(),
-            lockDeadline: getLockDeadline(),
-            status: isLocked ? 'locked' : 'open',
-          }}
-          loading={loading}
+          tournament={tournamentInfo}
+          loading={loading || tournamentLoading}
           error={error}
           onBack={onBack}
           onOpenArchitect={(event) => {
@@ -224,7 +556,7 @@ const EarningsGameScreen = ({
           currentBudget={budgetRemaining}
           isDesktop={isDesktop}
         />
-      </>
+      </div>
     );
   }
 
@@ -233,22 +565,77 @@ const EarningsGameScreen = ({
   // ========================================
   if (view === 'portfolio') {
     return (
-      <PortfolioWarRoom
-        predictions={predictions}
-        totalSpent={totalSpent}
-        budgetRemaining={budgetRemaining}
-        totalPotentialPoints={totalPotentialPoints}
-        isLocked={isLocked}
-        isValid={isValid}
-        validationMessage={validationMessage}
-        onBack={() => setView('calendar')}
-        onRemove={removePrediction}
-        onLock={() => {
-          lockPortfolio();
-          setView('arena');
-        }}
-        isDesktop={isDesktop}
-      />
+      <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+        <NavigationTabs />
+
+        {/* Tournament Entry and Reset Buttons - at top for visibility */}
+        {isLocked && (
+          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* Enter Tournament button - show when locked but not entered */}
+            {!hasEntered && tournament && (
+              <button
+                onClick={async () => {
+                  const username = user?.username || user?.odId || 'Anonymous';
+                  const success = await enterTournament(predictions, username);
+                  if (success) {
+                    setView('tournament');
+                  }
+                }}
+                style={{
+                  padding: '16px 32px',
+                  background: 'linear-gradient(90deg, #10b981 0%, #059669 100%)',
+                  border: 'none',
+                  borderRadius: '12px',
+                  color: '#ffffff',
+                  fontWeight: '700',
+                  fontSize: '16px',
+                  cursor: 'pointer'
+                }}
+              >
+                🏆 Enter Tournament
+              </button>
+            )}
+
+            {/* Start New Portfolio button */}
+            <button
+              onClick={async () => {
+                if (window.confirm('Start a new portfolio? This will clear your current picks.')) {
+                  await clearPortfolio();
+                  setView('calendar');
+                }
+              }}
+              style={{
+                padding: '12px 24px',
+                background: 'transparent',
+                border: '1px solid #f59e0b',
+                borderRadius: '8px',
+                color: '#f59e0b',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              Start New Portfolio
+            </button>
+          </div>
+        )}
+
+        <PortfolioWarRoom
+          predictions={predictions}
+          totalSpent={totalSpent}
+          budgetRemaining={budgetRemaining}
+          totalPotentialPoints={totalPotentialPoints}
+          isLocked={isLocked}
+          isValid={isValid}
+          validationMessage={validationMessage}
+          onBack={() => setView('calendar')}
+          onRemove={removePrediction}
+          onLock={() => {
+            lockPortfolio();
+            setView('arena');
+          }}
+          isDesktop={isDesktop}
+        />
+      </div>
     );
   }
 
@@ -257,18 +644,19 @@ const EarningsGameScreen = ({
   // ========================================
   if (view === 'arena') {
     return (
-      <>
+      <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+        <NavigationTabs />
         <LiveMatchArena
           predictions={predictions}
-          userPosition={mockUserPosition}
+          userPosition={userPosition}
           resultsData={mockResultsData}
           onBack={() => setView('portfolio')}
           onViewLeaderboard={() => setShowLeaderboard(true)}
-          leaderboard={isDesktop ? mockLeaderboard : null}
+          leaderboard={isDesktop ? leaderboardData : null}
           currentUserId={user?.odId || 'current'}
           tournament={{
-            week: getTournamentWeek(),
-            participantCount: 1247,
+            week: tournamentInfo.week,
+            participantCount: tournamentInfo.participantCount,
           }}
           isDesktop={isDesktop}
         />
@@ -277,17 +665,17 @@ const EarningsGameScreen = ({
         <AnimatePresence>
           {showLeaderboard && (
             <LeaderboardModal
-              leaderboard={mockLeaderboard}
+              leaderboard={leaderboardData}
               currentUserId={user?.odId || 'current'}
               tournament={{
-                week: getTournamentWeek(),
-                participantCount: 1247,
+                week: tournamentInfo.week,
+                participantCount: tournamentInfo.participantCount,
               }}
               onClose={() => setShowLeaderboard(false)}
             />
           )}
         </AnimatePresence>
-      </>
+      </div>
     );
   }
 
@@ -296,14 +684,15 @@ const EarningsGameScreen = ({
   // ========================================
   if (view === 'results') {
     return (
-      <>
+      <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+        <NavigationTabs />
         <TournamentResults
           predictions={predictions}
           resultsData={mockResultsData}
-          userPosition={mockUserPosition}
+          userPosition={userPosition}
           tournament={{
-            week: getTournamentWeek(),
-            participantCount: 1247,
+            week: tournamentInfo.week,
+            participantCount: tournamentInfo.participantCount,
           }}
           onPlayNext={handlePlayNext}
           onViewLeaderboard={() => setShowLeaderboard(true)}
@@ -314,17 +703,17 @@ const EarningsGameScreen = ({
         <AnimatePresence>
           {showLeaderboard && (
             <LeaderboardModal
-              leaderboard={mockLeaderboard}
+              leaderboard={leaderboardData}
               currentUserId={user?.odId || 'current'}
               tournament={{
-                week: getTournamentWeek(),
-                participantCount: 1247,
+                week: tournamentInfo.week,
+                participantCount: tournamentInfo.participantCount,
               }}
               onClose={() => setShowLeaderboard(false)}
             />
           )}
         </AnimatePresence>
-      </>
+      </div>
     );
   }
 
