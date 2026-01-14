@@ -53,6 +53,26 @@ export default function EarningsCalendar({
   // Check if an event is already picked
   const isPicked = (eventId) => predictions.some(p => p.eventId === eventId);
 
+  // Check if we have any live Polymarket odds
+  const hasAnyLiveOdds = useMemo(() => {
+    return events.some(e => e.hasPolymarketOdds === true);
+  }, [events]);
+
+  // Get the data source for display
+  const dataSourceInfo = useMemo(() => {
+    if (events.length === 0) return null;
+    const firstEvent = events[0];
+    const source = firstEvent?.dataSource || 'unknown';
+    if (source === 'hybrid_eodhd_polymarket' || source === 'polymarket_live') {
+      return { label: 'LIVE ODDS', color: designColors.cyan, icon: '📊' };
+    } else if (source === 'eodhd_default_odds' || source === 'eodhd_only') {
+      return { label: 'EST. ODDS', color: designColors.gold, icon: '~' };
+    } else if (source === 'test_fallback') {
+      return { label: 'TEST DATA', color: designColors.red, icon: '⚠️' };
+    }
+    return { label: 'ODDS', color: designColors.textMuted, icon: '' };
+  }, [events]);
+
   // Format selected day header
   const formatDayHeader = () => {
     if (!selectedDay) return '';
@@ -249,11 +269,38 @@ export default function EarningsCalendar({
           {/* Right content: Company cards grid */}
           <div style={{ flex: 1, padding: '24px', overflowY: 'auto' }}>
             <div style={{
-              fontSize: '14px',
-              color: designColors.textSecondary,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
               marginBottom: '20px',
             }}>
-              {formatDayHeader()} · {dayEvents.length} companies
+              <span style={{
+                fontSize: '14px',
+                color: designColors.textSecondary,
+              }}>
+                {formatDayHeader()} · {dayEvents.length} companies
+              </span>
+              {dataSourceInfo && (
+                <span style={{
+                  fontSize: '10px',
+                  fontWeight: 'bold',
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  backgroundColor: `${dataSourceInfo.color}15`,
+                  color: dataSourceInfo.color,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+                title={dataSourceInfo.label === 'EST. ODDS'
+                  ? 'Historical average odds (no live Polymarket data)'
+                  : dataSourceInfo.label === 'LIVE ODDS'
+                  ? 'Real-time odds from Polymarket prediction markets'
+                  : ''}
+                >
+                  {dataSourceInfo.icon} {dataSourceInfo.label}
+                </span>
+              )}
             </div>
 
             <div style={{
@@ -273,6 +320,7 @@ export default function EarningsCalendar({
                     companyName={event.companyName}
                     reportTime={event.reportTime || 'AMC'}
                     beatOdds={event.yesOdds}
+                    hasLiveOdds={event.hasPolymarketOdds === true}
                     isPicked={isPicked(event.id)}
                     onAdd={() => onOpenArchitect(event)}
                     onView={() => onOpenArchitect(event)}
@@ -320,13 +368,30 @@ export default function EarningsCalendar({
       />
 
       {/* Day header */}
-      <div style={{ padding: '16px 16px 8px' }}>
+      <div style={{
+        padding: '16px 16px 8px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+      }}>
         <span style={{
           fontSize: '13px',
           color: designColors.textSecondary,
         }}>
           {formatDayHeader()} · {dayEvents.length} companies
         </span>
+        {dataSourceInfo && (
+          <span style={{
+            fontSize: '9px',
+            fontWeight: 'bold',
+            padding: '2px 6px',
+            borderRadius: '4px',
+            backgroundColor: `${dataSourceInfo.color}15`,
+            color: dataSourceInfo.color,
+          }}>
+            {dataSourceInfo.icon} {dataSourceInfo.label}
+          </span>
+        )}
       </div>
 
       {/* Company cards - 2 column grid on mobile */}
@@ -349,6 +414,7 @@ export default function EarningsCalendar({
                 companyName={event.companyName}
                 reportTime={event.reportTime || 'AMC'}
                 beatOdds={event.yesOdds}
+                hasLiveOdds={event.hasPolymarketOdds === true}
                 isPicked={isPicked(event.id)}
                 onAdd={() => onOpenArchitect(event)}
                 onView={() => onOpenArchitect(event)}

@@ -7,6 +7,7 @@ export default function CompanyCard({
   companyName,
   reportTime,      // 'BMO' | 'AMC'
   beatOdds,        // 0-1
+  hasLiveOdds = false,  // true if odds from Polymarket, false if estimated
   isPicked = false,
   onAdd,
   onView,
@@ -100,15 +101,30 @@ export default function CompanyCard({
           <span style={{
             fontSize: '12px',
             color: designColors.textSecondary,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
           }}>
             <span style={{
               fontFamily: fontMono,
-              color: designColors.cyan,
+              color: hasLiveOdds ? designColors.cyan : designColors.textMuted,
               fontWeight: 'bold',
             }}>
               {Math.round(beatOdds * 100)}%
             </span>
             {' '}beat
+            {!hasLiveOdds && (
+              <span
+                title="Historical estimate (no live market data)"
+                style={{
+                  fontSize: '9px',
+                  color: designColors.gold,
+                  marginLeft: '2px',
+                }}
+              >
+                ~
+              </span>
+            )}
           </span>
         )}
 
