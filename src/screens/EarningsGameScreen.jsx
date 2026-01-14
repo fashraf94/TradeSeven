@@ -16,7 +16,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEarningsGame } from '../hooks/useEarningsGame';
 import { useTournament } from '../hooks/useTournament';
-import { getUpcomingEarnings } from '../services/polymarketService';
+import { getHybridEarningsCalendar } from '../services/polymarketService';
 import {
   designColors,
   fontMono,
@@ -128,7 +128,7 @@ const EarningsGameScreen = ({
   useEffect(() => {
     const loadData = async () => {
       try {
-        const data = await getUpcomingEarnings(45);
+        const data = await getHybridEarningsCalendar(14);
         setEvents(data);
       } catch (err) {
         console.error('Load error:', err);
