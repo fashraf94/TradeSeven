@@ -1786,9 +1786,12 @@ export async function getUserTournamentEntry(userId) {
  * @returns {Promise<Array>} - Array of entries with rank
  */
 export async function getTournamentLeaderboard(tournamentId, maxResults = 50) {
+  console.log('[Firebase] Getting leaderboard for tournament:', tournamentId);
+
   if (!tournamentId) {
     const tournament = await getCurrentTournament();
     tournamentId = tournament.id;
+    console.log('[Firebase] Using current tournament:', tournamentId);
   }
 
   try {
@@ -1801,14 +1804,19 @@ export async function getTournamentLeaderboard(tournamentId, maxResults = 50) {
     );
 
     const snapshot = await getDocs(q);
+    console.log('[Firebase] Leaderboard query returned:', snapshot.size, 'entries');
+
     const entries = [];
     let rank = 1;
 
     snapshot.forEach(docSnapshot => {
+      const data = docSnapshot.data();
+      console.log('[Firebase] Entry:', docSnapshot.id, data.username, data.results?.totalPoints);
       entries.push({
         entryId: docSnapshot.id,
+        odUserId: docSnapshot.id,
         rank: rank++,
-        ...docSnapshot.data()
+        ...data
       });
     });
 
