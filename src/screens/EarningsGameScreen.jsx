@@ -15,6 +15,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEarningsGame } from '../hooks/useEarningsGame';
+import { useTournament } from '../hooks/useTournament';
 import { getUpcomingEarnings } from '../services/polymarketService';
 import {
   designColors,
@@ -53,6 +54,22 @@ const EarningsGameScreen = ({
     reset,
   } = useEarningsGame(user?.odId);
 
+  // Tournament state from Firebase
+  const {
+    tournament,
+    userEntry,
+    leaderboard: tournamentLeaderboard,
+    isLoading: tournamentLoading,
+    isDeadlinePassed,
+    userRank,
+    userBracket,
+    hasEntered,
+    deadlineFormatted,
+    entryCount,
+    enterTournament,
+    refreshLeaderboard,
+  } = useTournament(user?.odId);
+
   // View state for navigation between screens
   const [view, setView] = useState('calendar'); // 'calendar' | 'portfolio' | 'arena' | 'results'
 
@@ -66,21 +83,28 @@ const EarningsGameScreen = ({
   const [selectedOutcome, setSelectedOutcome] = useState(null);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
 
-  // Mock data for arena (to be replaced with real data later)
-  const mockUserPosition = {
-    rank: 42,
-    points: totalPotentialPoints,
-    bracket: 'gold',
-    movement: 3,
-  };
+  // User position from tournament data (real from Firebase)
+  const userPosition = useMemo(() => ({
+    rank: userRank || 0,
+    points: userEntry?.totalPoints || totalPotentialPoints,
+    bracket: userBracket?.tier || 'participant',
+    movement: 0, // TODO: Calculate from previous rank
+  }), [userRank, userEntry, totalPotentialPoints, userBracket]);
 
-  const mockLeaderboard = [
-    { odId: '1', rank: 1, bracket: 'diamond', username: 'TradeMaster', points: 15420 },
-    { odId: '2', rank: 2, bracket: 'diamond', username: 'EarningsKing', points: 14890 },
-    { odId: '3', rank: 3, bracket: 'gold', username: 'BullRunner', points: 12350 },
-    { odId: user?.odId || 'current', rank: 42, bracket: 'gold', username: 'You', points: totalPotentialPoints },
-    { odId: '5', rank: 43, bracket: 'silver', username: 'StockPicker', points: 8200 },
-  ];
+  // Leaderboard data (real from Firebase, with current user highlighted)
+  const leaderboardData = useMemo(() => {
+    if (!tournamentLeaderboard || tournamentLeaderboard.length === 0) {
+      // Fallback empty state
+      return [];
+    }
+    return tournamentLeaderboard.map((entry, index) => ({
+      odId: entry.odUserId,
+      rank: entry.rank || index + 1,
+      bracket: entry.bracket || 'participant',
+      username: entry.username || 'Anonymous',
+      points: entry.totalPoints || 0,
+    }));
+  }, [tournamentLeaderboard]);
 
   // Mock results data - simulates completed predictions
   const mockResultsData = useMemo(() => {
@@ -114,23 +138,16 @@ const EarningsGameScreen = ({
     loadData();
   }, []);
 
-  // Calculate tournament week number based on current date
-  const getTournamentWeek = () => {
-    const now = new Date();
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
-    const weekNum = Math.ceil(((now - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
-    return weekNum;
-  };
-
-  // Get lock deadline (next Monday 9am)
-  const getLockDeadline = () => {
-    const now = new Date();
-    const daysUntilMonday = (8 - now.getDay()) % 7 || 7;
-    const nextMonday = new Date(now);
-    nextMonday.setDate(now.getDate() + daysUntilMonday);
-    nextMonday.setHours(9, 0, 0, 0);
-    return nextMonday;
-  };
+  // Get tournament info for UI components
+  const tournamentInfo = useMemo(() => ({
+    id: tournament?.id,
+    week: tournament?.weekNumber || 1,
+    name: tournament?.name || 'Weekly Tournament',
+    lockDeadline: tournament?.lockDeadline ? new Date(tournament.lockDeadline) : new Date(),
+    status: hasEntered ? 'entered' : (isDeadlinePassed ? 'locked' : 'open'),
+    participantCount: entryCount || 0,
+    deadlineFormatted,
+  }), [tournament, hasEntered, isDeadlinePassed, entryCount, deadlineFormatted]);
 
   // Handlers
   const handleSelectEvent = (event) => {
@@ -161,9 +178,17 @@ const EarningsGameScreen = ({
     removePrediction(eventId);
   };
 
-  const handleLock = () => {
+  const handleLock = async () => {
     const success = lockPortfolio();
     if (success) {
+      // Enter the tournament with current predictions
+      const username = user?.username || user?.odId || 'Anonymous';
+      const entered = await enterTournament(predictions, username);
+      if (entered) {
+        console.log('[EarningsGameScreen] Successfully entered tournament');
+      } else {
+        console.warn('[EarningsGameScreen] Failed to enter tournament, but portfolio is locked');
+      }
       setView('arena');
     }
   };
@@ -200,12 +225,8 @@ const EarningsGameScreen = ({
         <EarningsCalendar
           events={events}
           predictions={predictions}
-          tournament={{
-            week: getTournamentWeek(),
-            lockDeadline: getLockDeadline(),
-            status: isLocked ? 'locked' : 'open',
-          }}
-          loading={loading}
+          tournament={tournamentInfo}
+          loading={loading || tournamentLoading}
           error={error}
           onBack={onBack}
           onOpenArchitect={(event) => {
@@ -261,15 +282,15 @@ const EarningsGameScreen = ({
       <>
         <LiveMatchArena
           predictions={predictions}
-          userPosition={mockUserPosition}
+          userPosition={userPosition}
           resultsData={mockResultsData}
           onBack={() => setView('portfolio')}
           onViewLeaderboard={() => setShowLeaderboard(true)}
-          leaderboard={isDesktop ? mockLeaderboard : null}
+          leaderboard={isDesktop ? leaderboardData : null}
           currentUserId={user?.odId || 'current'}
           tournament={{
-            week: getTournamentWeek(),
-            participantCount: 1247,
+            week: tournamentInfo.week,
+            participantCount: tournamentInfo.participantCount,
           }}
           isDesktop={isDesktop}
         />
@@ -278,11 +299,11 @@ const EarningsGameScreen = ({
         <AnimatePresence>
           {showLeaderboard && (
             <LeaderboardModal
-              leaderboard={mockLeaderboard}
+              leaderboard={leaderboardData}
               currentUserId={user?.odId || 'current'}
               tournament={{
-                week: getTournamentWeek(),
-                participantCount: 1247,
+                week: tournamentInfo.week,
+                participantCount: tournamentInfo.participantCount,
               }}
               onClose={() => setShowLeaderboard(false)}
             />
@@ -301,10 +322,10 @@ const EarningsGameScreen = ({
         <TournamentResults
           predictions={predictions}
           resultsData={mockResultsData}
-          userPosition={mockUserPosition}
+          userPosition={userPosition}
           tournament={{
-            week: getTournamentWeek(),
-            participantCount: 1247,
+            week: tournamentInfo.week,
+            participantCount: tournamentInfo.participantCount,
           }}
           onPlayNext={handlePlayNext}
           onViewLeaderboard={() => setShowLeaderboard(true)}
@@ -315,11 +336,11 @@ const EarningsGameScreen = ({
         <AnimatePresence>
           {showLeaderboard && (
             <LeaderboardModal
-              leaderboard={mockLeaderboard}
+              leaderboard={leaderboardData}
               currentUserId={user?.odId || 'current'}
               tournament={{
-                week: getTournamentWeek(),
-                participantCount: 1247,
+                week: tournamentInfo.week,
+                participantCount: tournamentInfo.participantCount,
               }}
               onClose={() => setShowLeaderboard(false)}
             />
