@@ -454,6 +454,72 @@ const EarningsGameScreen = ({
               </div>
             )}
           </div>
+
+          {/* TESTING ONLY - Bot Population Button */}
+          {tournament && (
+            <button
+              onClick={async () => {
+                try {
+                  // Import bot service and firebase
+                  const botService = await import('../services/earningsBotService');
+                  const fb = await import('../firebase/firebaseService');
+                  const { enhanceEventWithParlays } = await import('../services/earningsReactionsService');
+
+                  // Generate parlays for each event
+                  const parlaysByEvent = {};
+                  for (const event of events.slice(0, 20)) { // Limit to first 20 events
+                    try {
+                      const enhanced = enhanceEventWithParlays(event);
+                      parlaysByEvent[event.symbol] = enhanced.parlays || [];
+                    } catch (e) {
+                      console.warn(`Could not generate parlays for ${event.symbol}:`, e);
+                    }
+                  }
+
+                  console.log('Generated parlays for', Object.keys(parlaysByEvent).length, 'events');
+
+                  // Generate bot entries
+                  const botEntries = botService.generateBotEntries(
+                    events.slice(0, 20),
+                    parlaysByEvent,
+                    12 // Number of bots
+                  );
+
+                  console.log('Generated bot entries:', botEntries);
+
+                  if (botEntries.length === 0) {
+                    alert('Could not generate bot entries. Make sure there are events with parlays.');
+                    return;
+                  }
+
+                  // Save to Firebase
+                  const results = await fb.createBotTournamentEntries(tournament.id, botEntries);
+                  console.log('Bot creation results:', results);
+
+                  // Refresh leaderboard
+                  await refreshLeaderboard();
+
+                  alert(`Created ${results.filter(r => r.success).length} bot entries!`);
+                } catch (error) {
+                  console.error('Error creating bots:', error);
+                  alert('Error creating bots: ' + error.message);
+                }
+              }}
+              style={{
+                padding: '12px 24px',
+                background: 'linear-gradient(90deg, #8b5cf6 0%, #6d28d9 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#ffffff',
+                fontWeight: '600',
+                cursor: 'pointer',
+                marginTop: '16px',
+                width: '100%'
+              }}
+            >
+              🤖 Populate Tournament with Bots (Testing)
+            </button>
+          )}
         </div>
       </div>
     );

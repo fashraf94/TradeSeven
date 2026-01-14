@@ -1995,6 +1995,91 @@ export async function updateTournamentStatus(tournamentId, status) {
   }
 }
 
+/**
+ * Create bot entries for a tournament
+ * @param {string} tournamentId - Tournament ID
+ * @param {Array} botEntries - Array of bot portfolio objects
+ * @returns {Promise<Array>} - Results of bot entry creation
+ */
+export async function createBotTournamentEntries(tournamentId, botEntries) {
+  if (!tournamentId || !botEntries || botEntries.length === 0) {
+    console.warn('[Firebase] No bot entries to create');
+    return [];
+  }
+
+  const results = [];
+
+  for (const bot of botEntries) {
+    try {
+      const odUserId = `${bot.odUserId}_${tournamentId}`;
+      const entryRef = doc(db, 'earningsEntries', odUserId);
+
+      const entry = {
+        odUserId: bot.odUserId,
+        odUserIdFull: odUserId,
+        tournamentId,
+        username: bot.username,
+        avatar: bot.avatar,
+        isBot: true,
+        predictions: bot.predictions,
+        totalSpent: bot.totalSpent,
+        totalPotentialPoints: bot.totalPotentialPoints,
+        predictionCount: bot.predictionCount,
+        lockedAt: serverTimestamp(),
+        results: {
+          totalPoints: 0,
+          correctPredictions: 0,
+          incorrectPredictions: 0,
+          pendingPredictions: bot.predictionCount
+        },
+        rank: null,
+        bracket: null
+      };
+
+      await setDoc(entryRef, removeUndefined(entry));
+      results.push({ odUserId, username: bot.username, success: true });
+
+    } catch (error) {
+      console.error(`[Firebase] Error creating bot entry ${bot.username}:`, error);
+      results.push({ username: bot.username, success: false, error: error.message });
+    }
+  }
+
+  // Update tournament entry count
+  try {
+    const tournamentRef = doc(db, 'earningsTournaments', tournamentId);
+    await updateDoc(tournamentRef, {
+      entryCount: increment(results.filter(r => r.success).length)
+    });
+  } catch (e) {
+    console.error('[Firebase] Error updating entry count:', e);
+  }
+
+  console.log(`[Firebase] Created ${results.filter(r => r.success).length}/${botEntries.length} bot entries`);
+  return results;
+}
+
+/**
+ * Remove all bot entries from a tournament (for cleanup)
+ * @param {string} tournamentId - Tournament ID
+ * @returns {Promise<number>} - Number of entries deleted
+ */
+export async function clearBotEntries(tournamentId) {
+  const entriesRef = collection(db, 'earningsEntries');
+  const q = query(entriesRef, where('tournamentId', '==', tournamentId), where('isBot', '==', true));
+
+  const snapshot = await getDocs(q);
+  let deleted = 0;
+
+  for (const docSnap of snapshot.docs) {
+    await deleteDoc(docSnap.ref);
+    deleted++;
+  }
+
+  console.log(`[Firebase] Deleted ${deleted} bot entries from ${tournamentId}`);
+  return deleted;
+}
+
 // =====================================================
 // EXPORTS
 // =====================================================
@@ -2048,5 +2133,9 @@ export default {
   updatePredictionResult,
   updateTournamentRankings,
   getTournament,
-  updateTournamentStatus
+  updateTournamentStatus,
+
+  // Tournament Bots
+  createBotTournamentEntries,
+  clearBotEntries
 };
