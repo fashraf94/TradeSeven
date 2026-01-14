@@ -701,8 +701,44 @@ export async function getHybridEarningsCalendar(days = 14) {
       if (eohdCalendar.length > 0) {
         console.log('[Hybrid] Using EODHD events with default 70/30 beat odds');
 
+        // Get today's date for filtering
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Filter for quality US stocks with future dates
+        const qualityEvents = eohdCalendar.filter(event => {
+          const symbol = event.symbol || '';
+
+          // Skip preferred shares and special securities (contain - or .)
+          if (symbol.includes('-') || symbol.includes('.')) return false;
+
+          // Skip if symbol is too long (likely OTC or foreign)
+          if (symbol.length > 5) return false;
+
+          // Must have company name
+          if (!event.companyName || event.companyName === symbol) return false;
+
+          // Must be future date (today or later)
+          const eventDate = new Date(event.reportDate);
+          if (eventDate < today) return false;
+
+          return true;
+        });
+
+        console.log(`[Hybrid] Quality filtered: ${qualityEvents.length} of ${eohdCalendar.length}`);
+
+        // Sort by date and take first 50
+        const sortedEvents = qualityEvents
+          .sort((a, b) => new Date(a.reportDate) - new Date(b.reportDate))
+          .slice(0, 50);
+
+        console.log(`[Hybrid] Taking first ${sortedEvents.length} events`);
+        if (sortedEvents.length > 0) {
+          console.log('[Hybrid] Sample companies:', sortedEvents.slice(0, 5).map(e => `${e.symbol} (${e.companyName})`));
+        }
+
         // Use EODHD data with default odds (most companies beat earnings historically)
-        const eohdOnly = eohdCalendar.slice(0, 30).map(event => {
+        const eohdOnly = sortedEvents.map(event => {
           const defaultBeatOdds = 0.70; // Historical average - ~70% of companies beat
           const yesCost = Math.round(defaultBeatOdds * 10000);
           const noCost = Math.round((1 - defaultBeatOdds) * 10000);
@@ -727,10 +763,8 @@ export async function getHybridEarningsCalendar(days = 14) {
           };
         });
 
-        // Sort by date and enhance with parlays
-        const enhanced = eohdOnly
-          .sort((a, b) => new Date(a.reportDate) - new Date(b.reportDate))
-          .map(event => enhanceEventWithParlays(event));
+        // Enhance with parlays
+        const enhanced = eohdOnly.map(event => enhanceEventWithParlays(event));
 
         console.log(`[Hybrid] Returning ${enhanced.length} EODHD events with default odds`);
         return enhanced;
