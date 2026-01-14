@@ -704,27 +704,70 @@ export async function getHybridEarningsCalendar(days = 14) {
         // Get today's date for filtering
         const today = new Date();
         today.setHours(0, 0, 0, 0);
+        console.log('[Hybrid] Today (for date filter):', today.toISOString());
+
+        // DEBUG: Log sample raw EODHD data
+        console.log('[Hybrid] Sample EODHD raw data (first 5):');
+        eohdCalendar.slice(0, 5).forEach((e, i) => {
+          console.log(`  ${i + 1}. symbol="${e.symbol}", companyName="${e.companyName}", reportDate="${e.reportDate}"`);
+        });
+
+        // Track rejection reasons
+        const rejectionCounts = {
+          hasDash: 0,
+          hasDot: 0,
+          tooLong: 0,
+          noCompanyName: 0,
+          pastDate: 0,
+          passed: 0
+        };
+        const rejectionSamples = [];
 
         // Filter for quality US stocks with future dates
         const qualityEvents = eohdCalendar.filter(event => {
           const symbol = event.symbol || '';
+          const companyName = event.companyName || '';
 
           // Skip preferred shares and special securities (contain - or .)
-          if (symbol.includes('-') || symbol.includes('.')) return false;
+          if (symbol.includes('-')) {
+            rejectionCounts.hasDash++;
+            if (rejectionSamples.length < 3) rejectionSamples.push({ symbol, reason: 'has dash' });
+            return false;
+          }
+          if (symbol.includes('.')) {
+            rejectionCounts.hasDot++;
+            if (rejectionSamples.length < 3) rejectionSamples.push({ symbol, reason: 'has dot' });
+            return false;
+          }
 
           // Skip if symbol is too long (likely OTC or foreign)
-          if (symbol.length > 5) return false;
+          if (symbol.length > 5) {
+            rejectionCounts.tooLong++;
+            if (rejectionSamples.length < 3) rejectionSamples.push({ symbol, reason: 'too long' });
+            return false;
+          }
 
           // Must have company name
-          if (!event.companyName || event.companyName === symbol) return false;
+          if (!companyName || companyName === symbol) {
+            rejectionCounts.noCompanyName++;
+            if (rejectionSamples.length < 5) rejectionSamples.push({ symbol, companyName, reason: 'no company name' });
+            return false;
+          }
 
           // Must be future date (today or later)
           const eventDate = new Date(event.reportDate);
-          if (eventDate < today) return false;
+          if (eventDate < today) {
+            rejectionCounts.pastDate++;
+            if (rejectionSamples.length < 5) rejectionSamples.push({ symbol, reportDate: event.reportDate, parsed: eventDate.toISOString(), reason: 'past date' });
+            return false;
+          }
 
+          rejectionCounts.passed++;
           return true;
         });
 
+        console.log('[Hybrid] Rejection counts:', rejectionCounts);
+        console.log('[Hybrid] Rejection samples:', rejectionSamples);
         console.log(`[Hybrid] Quality filtered: ${qualityEvents.length} of ${eohdCalendar.length}`);
 
         // Sort by date and take first 50
