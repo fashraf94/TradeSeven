@@ -606,12 +606,26 @@ async function fetchPolymarketEventsRaw() {
 
     console.log('[Polymarket-Raw] Total events collected:', allEvents.length);
 
+    // Log first few raw event titles for debugging
+    if (allEvents.length > 0) {
+      console.log('[Polymarket-Raw] Sample raw titles:');
+      allEvents.slice(0, 5).forEach((e, i) => {
+        console.log(`  ${i + 1}. ${e.title?.slice(0, 80)}`);
+      });
+    } else {
+      console.log('[Polymarket-Raw] ⚠️ API returned 0 events! Polymarket may not have active earnings markets.');
+    }
+
     // Remove duplicates and filter
     const uniqueEvents = [...new Map(allEvents.map(e => [e.id, e])).values()];
     console.log('[Polymarket-Raw] Unique events:', uniqueEvents.length);
 
     const earningsEvents = uniqueEvents.filter(isEarningsEvent);
     console.log('[Polymarket-Raw] After earnings filter:', earningsEvents.length);
+
+    if (earningsEvents.length === 0 && uniqueEvents.length > 0) {
+      console.log('[Polymarket-Raw] ⚠️ Filter rejected ALL events! Check isEarningsEvent function.');
+    }
 
     // Transform to get symbols and odds
     const transformed = earningsEvents
