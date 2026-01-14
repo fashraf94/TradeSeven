@@ -1,6 +1,14 @@
 import { motion } from 'framer-motion';
+import { Target, Crosshair } from 'lucide-react';
 import { designColors, glowEffects, fontMono, MAGNITUDES } from '../designConstants';
 import { cardTap } from '../animationPresets';
+
+// Precision tier styling
+const precisionStyles = {
+  standard: { color: designColors.textMuted, label: 'Standard', Icon: null },
+  narrow: { color: designColors.orange, label: 'Narrow', Icon: Target },
+  bullseye: { color: designColors.cyan, label: 'Bullseye', Icon: Crosshair }
+};
 
 export default function PredictionSummary({
   symbol,
@@ -14,6 +22,8 @@ export default function PredictionSummary({
   budgetAfterPick,   // Budget after this pick
   onConfirm,         // () => void
   disabled = false,  // True if selection incomplete
+  precisionTier = 'standard',
+  precisionLabel,
 }) {
   const magnitudeInfo = MAGNITUDES.find(m => m.id === magnitude);
   const outcomeLabel = outcome === 'beat' ? 'BEAT' : 'MISS';
@@ -37,6 +47,10 @@ export default function PredictionSummary({
 
   const riskColor = riskColors[riskLevel] || designColors.textMuted;
   const riskLabel = riskLabels[riskLevel] || riskLevel;
+
+  const precisionStyle = precisionStyles[precisionTier] || precisionStyles.standard;
+  const PrecisionIcon = precisionStyle.Icon;
+  const showPrecisionBadge = precisionTier !== 'standard';
 
   return (
     <motion.div
@@ -140,6 +154,39 @@ export default function PredictionSummary({
         )}
       </div>
 
+      {/* Precision tier badge (if not standard) */}
+      {showPrecisionBadge && !disabled && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '6px',
+          marginBottom: '12px',
+          padding: '8px 12px',
+          backgroundColor: `${precisionStyle.color}15`,
+          borderRadius: '6px',
+          border: `1px solid ${precisionStyle.color}40`,
+        }}>
+          {PrecisionIcon && (
+            <PrecisionIcon size={14} color={precisionStyle.color} />
+          )}
+          <span style={{
+            fontSize: '11px',
+            fontWeight: 'bold',
+            color: precisionStyle.color,
+            letterSpacing: '0.5px',
+          }}>
+            {precisionLabel || precisionStyle.label} PRECISION
+          </span>
+          <span style={{
+            fontSize: '10px',
+            color: designColors.textMuted,
+          }}>
+            — Higher risk, higher reward
+          </span>
+        </div>
+      )}
+
       {/* Stats row */}
       <div style={{
         display: 'flex',
@@ -203,9 +250,9 @@ export default function PredictionSummary({
             fontFamily: fontMono,
             fontSize: '18px',
             fontWeight: 'bold',
-            color: designColors.orange,
+            color: showPrecisionBadge ? precisionStyle.color : designColors.orange,
           }}>
-            {disabled ? '—' : `${multiplier}x`}
+            {disabled ? '—' : `${multiplier.toFixed(1)}x`}
           </div>
         </div>
 

@@ -1,11 +1,13 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Zap } from 'lucide-react';
 import { designColors, fontMono, MAGNITUDES, BUDGET } from '../designConstants';
 import { fadeIn, slideUp, slideInRight, springSmooth, springBouncy } from '../animationPresets';
-import { calculateParlayPrices } from '../../../services/earningsReactionsService';
+import { calculateParlayPrices, calculatePayout } from '../../../services/earningsReactionsService';
 import BeatMissToggle from './BeatMissToggle';
 import MagnitudePillars from './MagnitudePillars';
 import PredictionSummary from './PredictionSummary';
+import PrecisionTierSelector from './PrecisionTierSelector';
 
 export default function ParlayArchitectModal({
   event,             // { id, symbol, companyName, yesOdds, noOdds, ... }
@@ -17,14 +19,23 @@ export default function ParlayArchitectModal({
 }) {
   const [selectedOutcome, setSelectedOutcome] = useState(null);
   const [selectedMagnitude, setSelectedMagnitude] = useState(null);
+  const [selectedPrecisionTier, setSelectedPrecisionTier] = useState('standard');
+  const [showLotteryMode, setShowLotteryMode] = useState(false);
 
   // Reset state when modal opens with new event
   useMemo(() => {
     if (isOpen) {
       setSelectedOutcome(null);
       setSelectedMagnitude(null);
+      setSelectedPrecisionTier('standard');
+      setShowLotteryMode(false);
     }
   }, [isOpen, event?.id]);
+
+  // Reset precision tier when magnitude changes
+  useEffect(() => {
+    setSelectedPrecisionTier('standard');
+  }, [selectedMagnitude]);
 
   // Calculate all parlay prices from the service
   const parlayPrices = useMemo(() => {
@@ -39,6 +50,17 @@ export default function ParlayArchitectModal({
       p.outcome === selectedOutcome && p.magnitude === selectedMagnitude
     );
   }, [parlayPrices, selectedOutcome, selectedMagnitude]);
+
+  // Get the selected precision option
+  const selectedPrecisionOption = useMemo(() => {
+    if (!selectedParlay || !selectedParlay.precisionOptions) return null;
+    return selectedParlay.precisionOptions.find(o => o.tierId === selectedPrecisionTier)
+      || selectedParlay.precisionOptions[0];
+  }, [selectedParlay, selectedPrecisionTier]);
+
+  // Calculate final multiplier and payout based on precision tier
+  const finalMultiplier = selectedPrecisionOption?.finalMultiplier || selectedParlay?.baseMultiplier || 0;
+  const finalPotentialPoints = selectedParlay ? calculatePayout(selectedParlay.price, finalMultiplier) : 0;
 
   // Budget after this pick
   const budgetAfterPick = selectedParlay
@@ -55,9 +77,25 @@ export default function ParlayArchitectModal({
       outcome: selectedOutcome,
       magnitude: selectedMagnitude,
       price: selectedParlay.price,
-      potentialPoints: selectedParlay.potentialPoints,
-      multiplier: selectedParlay.multiplier,
+      potentialPoints: finalPotentialPoints,
+      multiplier: finalMultiplier,
+      baseMultiplier: selectedParlay.baseMultiplier,
       risk: selectedParlay.risk,
+      // Precision tier info
+      precisionTier: selectedPrecisionTier,
+      precisionLabel: selectedPrecisionOption?.tierLabel || 'Standard',
+      precisionRange: selectedPrecisionOption?.range?.label || selectedParlay.magnitudeRange,
+      // Additional parlay info for the hook
+      precisionOptions: selectedParlay.precisionOptions,
+      outcomeLabel: selectedParlay.outcomeLabel,
+      magnitudeLabel: selectedParlay.magnitudeLabel,
+      magnitudeEmoji: selectedParlay.magnitudeEmoji,
+      magnitudeRange: selectedParlay.magnitudeRange,
+      priceDisplay: selectedParlay.priceDisplay,
+      combinedProb: selectedParlay.combinedProb,
+      outcomeOdds: selectedParlay.outcomeOdds,
+      reactionProb: selectedParlay.reactionProb,
+      sector: selectedParlay.sector,
       createdAt: new Date().toISOString(),
     };
 
@@ -69,6 +107,65 @@ export default function ParlayArchitectModal({
   const canAfford = selectedParlay ? selectedParlay.price <= currentBudget : true;
 
   if (!isOpen || !event) return null;
+
+  // Lottery Mode Toggle Component
+  const LotteryModeToggle = () => (
+    <motion.button
+      onClick={() => setShowLotteryMode(!showLotteryMode)}
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '10px 16px',
+        backgroundColor: showLotteryMode
+          ? 'rgba(0, 217, 255, 0.15)'
+          : designColors.bgCardInner,
+        border: showLotteryMode
+          ? `1px solid ${designColors.cyan}`
+          : `1px solid ${designColors.borderDefault}`,
+        borderRadius: '8px',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        width: '100%',
+        justifyContent: 'center',
+      }}
+    >
+      <div style={{
+        width: '28px',
+        height: '28px',
+        borderRadius: '8px',
+        background: showLotteryMode
+          ? 'rgba(0, 217, 255, 0.25)'
+          : 'rgba(139, 148, 158, 0.15)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        <Zap
+          size={16}
+          color={showLotteryMode ? designColors.cyan : designColors.textSecondary}
+          fill={showLotteryMode ? designColors.cyan : 'none'}
+        />
+      </div>
+      <span style={{
+        fontSize: '13px',
+        fontWeight: 'bold',
+        color: showLotteryMode ? designColors.cyan : designColors.textSecondary,
+        letterSpacing: '0.5px',
+      }}>
+        LOTTERY MODE
+      </span>
+      <span style={{
+        fontSize: '11px',
+        color: designColors.textMuted,
+        marginLeft: '4px',
+      }}>
+        {showLotteryMode ? 'ON' : 'OFF'}
+      </span>
+    </motion.button>
+  );
 
   // Mobile bottom sheet
   if (!isDesktop) {
@@ -207,19 +304,57 @@ export default function ParlayArchitectModal({
               />
             </div>
 
+            {/* Lottery Mode section */}
+            {selectedMagnitude && (
+              <div style={{ marginBottom: '24px' }}>
+                <div style={{
+                  fontSize: '12px',
+                  color: designColors.textSecondary,
+                  marginBottom: '12px',
+                  letterSpacing: '1px',
+                }}>
+                  PRECISION (OPTIONAL)
+                </div>
+                <LotteryModeToggle />
+
+                <AnimatePresence>
+                  {showLotteryMode && selectedParlay && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2 }}
+                      style={{ marginTop: '12px', overflow: 'hidden' }}
+                    >
+                      <PrecisionTierSelector
+                        magnitude={selectedMagnitude}
+                        baseMultiplier={selectedParlay.baseMultiplier}
+                        precisionOptions={selectedParlay.precisionOptions}
+                        selected={selectedPrecisionTier}
+                        onSelect={setSelectedPrecisionTier}
+                        price={selectedParlay.price}
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
             {/* Prediction summary */}
             <PredictionSummary
               symbol={event.symbol}
               outcome={selectedOutcome}
               magnitude={selectedMagnitude}
               price={selectedParlay?.price || 0}
-              potentialPoints={selectedParlay?.potentialPoints || 0}
-              multiplier={selectedParlay?.multiplier || 0}
+              potentialPoints={finalPotentialPoints}
+              multiplier={finalMultiplier}
               riskLevel={selectedParlay?.risk?.level || 'low'}
               budgetRemaining={currentBudget}
               budgetAfterPick={budgetAfterPick}
               onConfirm={handleConfirm}
               disabled={!isComplete || !canAfford}
+              precisionTier={selectedPrecisionTier}
+              precisionLabel={selectedPrecisionOption?.tierLabel}
             />
 
             {/* Budget warning */}
@@ -402,6 +537,42 @@ export default function ParlayArchitectModal({
             />
           </div>
 
+          {/* Lottery Mode / Precision section */}
+          {selectedMagnitude && (
+            <div style={{ marginBottom: '32px' }}>
+              <div style={{
+                fontSize: '12px',
+                color: designColors.textSecondary,
+                marginBottom: '16px',
+                letterSpacing: '1px',
+              }}>
+                STEP 3: PRECISION TIER (OPTIONAL)
+              </div>
+              <LotteryModeToggle />
+
+              <AnimatePresence>
+                {showLotteryMode && selectedParlay && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    style={{ marginTop: '16px', overflow: 'hidden' }}
+                  >
+                    <PrecisionTierSelector
+                      magnitude={selectedMagnitude}
+                      baseMultiplier={selectedParlay.baseMultiplier}
+                      precisionOptions={selectedParlay.precisionOptions}
+                      selected={selectedPrecisionTier}
+                      onSelect={setSelectedPrecisionTier}
+                      price={selectedParlay.price}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
           {/* Prediction summary */}
           <div style={{ marginTop: 'auto' }}>
             <PredictionSummary
@@ -409,13 +580,15 @@ export default function ParlayArchitectModal({
               outcome={selectedOutcome}
               magnitude={selectedMagnitude}
               price={selectedParlay?.price || 0}
-              potentialPoints={selectedParlay?.potentialPoints || 0}
-              multiplier={selectedParlay?.multiplier || 0}
+              potentialPoints={finalPotentialPoints}
+              multiplier={finalMultiplier}
               riskLevel={selectedParlay?.risk?.level || 'low'}
               budgetRemaining={currentBudget}
               budgetAfterPick={budgetAfterPick}
               onConfirm={handleConfirm}
               disabled={!isComplete || !canAfford}
+              precisionTier={selectedPrecisionTier}
+              precisionLabel={selectedPrecisionOption?.tierLabel}
             />
 
             {/* Budget warning */}
