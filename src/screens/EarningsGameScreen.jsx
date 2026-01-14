@@ -83,6 +83,7 @@ const EarningsGameScreen = ({
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [selectedOutcome, setSelectedOutcome] = useState(null);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
 
   // User position from tournament data (real from Firebase)
   const userPosition = useMemo(() => ({
@@ -234,6 +235,223 @@ const EarningsGameScreen = ({
       return `${days}d ${hours % 24}h`;
     }
     return `${hours}h ${minutes}m`;
+  };
+
+  // ========================================
+  // Player Portfolio Modal Component
+  // ========================================
+  const PlayerPortfolioModal = ({ player, onClose }) => {
+    if (!player) return null;
+
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.85)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            background: '#161b22',
+            borderRadius: '16px',
+            maxWidth: '600px',
+            width: '100%',
+            maxHeight: '80vh',
+            overflow: 'auto',
+            border: '1px solid #21262d'
+          }}
+        >
+          {/* Header */}
+          <div style={{
+            padding: '20px',
+            borderBottom: '1px solid #21262d',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            position: 'sticky',
+            top: 0,
+            background: '#161b22',
+            zIndex: 1
+          }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '24px' }}>{player.avatar || '🎮'}</span>
+                <h2 style={{ margin: 0, color: '#ffffff', fontSize: '20px' }}>
+                  {player.username}
+                </h2>
+                {player.isBot && (
+                  <span style={{
+                    fontSize: '10px',
+                    background: 'rgba(139, 92, 246, 0.2)',
+                    color: '#8b5cf6',
+                    padding: '2px 6px',
+                    borderRadius: '4px'
+                  }}>BOT</span>
+                )}
+              </div>
+              <div style={{ color: '#8b949e', fontSize: '14px', marginTop: '4px' }}>
+                {player.predictionCount || player.predictions?.length || 0} picks · ${(player.totalSpent || 0).toLocaleString()} spent
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#8b949e',
+                fontSize: '24px',
+                cursor: 'pointer',
+                padding: '8px'
+              }}
+            >×</button>
+          </div>
+
+          {/* Stats */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-around',
+            padding: '16px 20px',
+            borderBottom: '1px solid #21262d',
+            background: 'rgba(0, 217, 255, 0.05)'
+          }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '24px', fontWeight: '700', color: '#00d9ff' }}>
+                {(player.results?.totalPoints || 0).toLocaleString()}
+              </div>
+              <div style={{ fontSize: '12px', color: '#8b949e' }}>Points</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '24px', fontWeight: '700', color: '#10b981' }}>
+                {player.results?.correctPredictions || 0}
+              </div>
+              <div style={{ fontSize: '12px', color: '#8b949e' }}>Correct</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '24px', fontWeight: '700', color: '#ef4444' }}>
+                {player.results?.incorrectPredictions || 0}
+              </div>
+              <div style={{ fontSize: '12px', color: '#8b949e' }}>Wrong</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b' }}>
+                {player.results?.pendingPredictions || 0}
+              </div>
+              <div style={{ fontSize: '12px', color: '#8b949e' }}>Pending</div>
+            </div>
+          </div>
+
+          {/* Predictions List */}
+          <div style={{ padding: '20px' }}>
+            <h3 style={{ color: '#ffffff', margin: '0 0 16px 0', fontSize: '16px' }}>
+              Predictions
+            </h3>
+
+            {player.predictions && player.predictions.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {player.predictions.map((pred, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      background: '#0d1117',
+                      borderRadius: '8px',
+                      padding: '12px 16px',
+                      border: pred.resolved
+                        ? pred.isCorrect
+                          ? '1px solid #10b981'
+                          : '1px solid #ef4444'
+                        : '1px solid #21262d'
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '8px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{
+                          fontWeight: '700',
+                          color: '#ffffff',
+                          fontSize: '16px'
+                        }}>
+                          {pred.symbol}
+                        </span>
+                        <span style={{
+                          fontSize: '12px',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          background: pred.outcome === 'beat'
+                            ? 'rgba(16, 185, 129, 0.2)'
+                            : 'rgba(239, 68, 68, 0.2)',
+                          color: pred.outcome === 'beat' ? '#10b981' : '#ef4444'
+                        }}>
+                          {pred.outcomeLabel || pred.outcome?.toUpperCase()}
+                        </span>
+                      </div>
+
+                      {pred.resolved && (
+                        <span style={{
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          color: pred.isCorrect ? '#10b981' : '#ef4444'
+                        }}>
+                          {pred.isCorrect ? '✓ CORRECT' : '✗ WRONG'}
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      fontSize: '13px',
+                      color: '#8b949e'
+                    }}>
+                      <span>
+                        {pred.magnitudeLabel || pred.magnitude} {pred.magnitudeEmoji || ''} · {pred.precisionLabel || 'Standard'}
+                      </span>
+                      <span>
+                        {pred.priceDisplay || `$${pred.price}`} → <span style={{ color: '#00d9ff' }}>
+                          ${(pred.potentialPayout || 0).toLocaleString()}
+                        </span>
+                      </span>
+                    </div>
+
+                    {pred.resolved && pred.isCorrect && (
+                      <div style={{
+                        marginTop: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: '#10b981'
+                      }}>
+                        +{(pred.pointsEarned || 0).toLocaleString()} pts
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ color: '#8b949e', textAlign: 'center' }}>
+                No predictions available
+              </div>
+            )}
+          </div>
+        </motion.div>
+      </div>
+    );
   };
 
   // ========================================
@@ -411,16 +629,29 @@ const EarningsGameScreen = ({
                 {tournamentLeaderboard.slice(0, 20).map((entry, index) => (
                   <div
                     key={entry.odUserId || index}
+                    onClick={() => setSelectedPlayer(entry)}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       padding: '12px',
-                      background: entry.odUserId === user?.odId
+                      background: entry.odUserId === user?.odUserId
                         ? 'rgba(0, 217, 255, 0.1)'
                         : index % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
                       borderRadius: '8px',
-                      borderLeft: entry.odUserId === user?.odId ? '3px solid #00d9ff' : 'none'
+                      borderLeft: entry.odUserId === user?.odUserId ? '3px solid #00d9ff' : 'none',
+                      cursor: 'pointer',
+                      transition: 'background 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (entry.odUserId !== user?.odUserId) {
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = entry.odUserId === user?.odUserId
+                        ? 'rgba(0, 217, 255, 0.1)'
+                        : index % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent';
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -431,8 +662,18 @@ const EarningsGameScreen = ({
                       }}>
                         {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`}
                       </span>
+                      {entry.avatar && <span style={{ fontSize: '16px' }}>{entry.avatar}</span>}
                       <span style={{ color: '#ffffff' }}>{entry.username || 'Anonymous'}</span>
-                      {entry.odUserId === user?.odId && (
+                      {entry.isBot && (
+                        <span style={{
+                          fontSize: '10px',
+                          color: '#8b5cf6',
+                          background: 'rgba(139, 92, 246, 0.2)',
+                          padding: '2px 6px',
+                          borderRadius: '4px'
+                        }}>BOT</span>
+                      )}
+                      {entry.odUserId === user?.odUserId && (
                         <span style={{
                           fontSize: '10px',
                           color: '#00d9ff',
@@ -442,9 +683,12 @@ const EarningsGameScreen = ({
                         }}>YOU</span>
                       )}
                     </div>
-                    <span style={{ fontWeight: '700', color: '#00d9ff' }}>
-                      {entry.totalPoints?.toLocaleString() || 0} pts
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontWeight: '700', color: '#00d9ff' }}>
+                        {(entry.results?.totalPoints || 0).toLocaleString()} pts
+                      </span>
+                      <span style={{ color: '#8b949e', fontSize: '12px' }}>›</span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -521,6 +765,16 @@ const EarningsGameScreen = ({
             </button>
           )}
         </div>
+
+        {/* Player Portfolio Modal */}
+        <AnimatePresence>
+          {selectedPlayer && (
+            <PlayerPortfolioModal
+              player={selectedPlayer}
+              onClose={() => setSelectedPlayer(null)}
+            />
+          )}
+        </AnimatePresence>
       </div>
     );
   }
