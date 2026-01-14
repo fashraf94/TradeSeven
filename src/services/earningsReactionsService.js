@@ -307,6 +307,38 @@ export function getReactionProbabilities(symbol, outcome) {
 }
 
 /**
+ * Get reaction probabilities - tries stock-specific first, falls back to sector
+ * This is the ASYNC version that checks historical data
+ *
+ * @param {string} symbol - Stock symbol
+ * @param {string} outcome - 'beat' or 'miss'
+ * @returns {Promise<Object>} - { probabilities, source, sector? }
+ */
+export async function getReactionProbabilitiesAsync(symbol, outcome) {
+  // Dynamically import to avoid circular dependencies
+  const { getStockReactionProbabilities } = await import('./stockEarningsHistoryService');
+
+  // Try stock-specific data first
+  const stockProbs = await getStockReactionProbabilities(symbol);
+
+  if (stockProbs) {
+    const probs = outcome === 'beat' ? stockProbs.afterBeat : stockProbs.afterMiss;
+    // Validate we have all magnitude bands
+    if (probs && probs.upBig !== undefined && probs.up !== undefined &&
+        probs.flat !== undefined && probs.down !== undefined && probs.downBig !== undefined) {
+      return { probabilities: probs, source: 'stock-specific' };
+    }
+  }
+
+  // Fall back to sector defaults
+  const sector = getSectorForSymbol(symbol);
+  const sectorData = SECTOR_DEFAULTS[sector] || SECTOR_DEFAULTS.default;
+  const probs = outcome === 'beat' ? sectorData.afterBeat : sectorData.afterMiss;
+
+  return { probabilities: probs, source: 'sector-default', sector };
+}
+
+/**
  * Calculate all parlay options for an earnings event
  * Returns 10 base parlays (5 for beat, 5 for miss)
  * Each parlay includes precision tier options for Lottery Mode
@@ -413,6 +445,142 @@ export function enhanceEventWithParlays(event, budget = BUDGET) {
 }
 
 /**
+ * Calculate parlay prices - ASYNC version that uses stock-specific data when available
+ *
+ * @param {Object} event - Earnings event with beatOdds and symbol
+ * @param {number} budget - Budget amount (default BUDGET)
+ * @returns {Promise<Array>} - Array of parlay options
+ */
+export async function calculateParlayPricesAsync(event, budget = BUDGET) {
+  const { beatOdds = 0.5, symbol } = event;
+  const missOdds = 1 - beatOdds;
+
+  // Fetch stock-specific probabilities (async)
+  const [beatProbs, missProbs] = await Promise.all([
+    getReactionProbabilitiesAsync(symbol, 'beat'),
+    getReactionProbabilitiesAsync(symbol, 'miss')
+  ]);
+
+  const parlays = [];
+
+  ['beat', 'miss'].forEach(outcome => {
+    const outcomeOdds = outcome === 'beat' ? beatOdds : missOdds;
+    const { probabilities: reactions, source } = outcome === 'beat' ? beatProbs : missProbs;
+
+    Object.entries(MAGNITUDE_BANDS).forEach(([bandId, band]) => {
+      const reactionProb = reactions[bandId];
+      const combinedProb = outcomeOdds * reactionProb;
+
+      // Calculate base price with floor
+      const price = calculateParlayPrice(outcomeOdds, reactionProb, budget);
+      const baseMultiplier = getMultiplier(combinedProb);
+      const basePayout = calculatePayout(price, baseMultiplier);
+      const risk = getRiskLevel(baseMultiplier);
+
+      // Get precision options for Lottery Mode
+      const precisionOptions = getPrecisionOptions(bandId, baseMultiplier);
+
+      parlays.push({
+        id: `${outcome}-${bandId}`,
+        outcome,
+        outcomeLabel: outcome === 'beat' ? 'BEAT' : 'MISS',
+        magnitude: bandId,
+        magnitudeLabel: band.label,
+        magnitudeEmoji: band.emoji,
+        magnitudeRange: band.range,
+
+        // Probabilities
+        outcomeOdds,
+        reactionProb,
+        combinedProb,
+
+        // Data source indicator
+        dataSource: source,
+
+        // Base pricing (Standard tier)
+        price,
+        priceDisplay: `$${price.toLocaleString()}`,
+        baseMultiplier,
+        basePayout,
+        basePayoutDisplay: `$${basePayout.toLocaleString()}`,
+        risk,
+
+        // Precision options for Lottery Mode
+        precisionOptions,
+
+        // Sector info
+        sector: getSectorForSymbol(symbol)
+      });
+    });
+  });
+
+  // Sort: beat outcomes first, then by price descending
+  parlays.sort((a, b) => {
+    if (a.outcome !== b.outcome) return a.outcome === 'beat' ? -1 : 1;
+    return b.price - a.price;
+  });
+
+  return parlays;
+}
+
+/**
+ * Enhance an event with calculated parlays - ASYNC version
+ * Includes stock-specific stats when available
+ *
+ * @param {Object} event - Earnings event
+ * @param {number} budget - Budget amount (default BUDGET)
+ * @returns {Promise<Object>} - Enhanced event with parlays, reactionSummary, stockStats
+ */
+export async function enhanceEventWithParlaysAsync(event, budget = BUDGET) {
+  const parlays = await calculateParlayPricesAsync(event, budget);
+
+  // Try to get stock-specific stats for display
+  let stockStats = null;
+  try {
+    const { getStockEarningsStats } = await import('./stockEarningsHistoryService');
+    stockStats = await getStockEarningsStats(event.symbol);
+  } catch (e) {
+    // Service not available, continue without
+    console.warn('[enhanceEventWithParlaysAsync] Could not fetch stock stats:', e.message);
+  }
+
+  // Create reaction summary for display
+  const sector = getSectorForSymbol(event.symbol);
+  const sectorData = SECTOR_DEFAULTS[sector] || SECTOR_DEFAULTS.default;
+
+  // Determine data source from parlays
+  const dataSource = parlays[0]?.dataSource || 'sector-default';
+
+  const reactionSummary = {
+    sector,
+    sectorLabel: sector.charAt(0).toUpperCase() + sector.slice(1),
+    dataSource,
+    stockStats, // Will be null if no history, or { avgMoveOnBeat, avgMoveOnMiss, etc. }
+    afterBeat: Object.entries(sectorData.afterBeat).map(([band, prob]) => ({
+      band,
+      ...MAGNITUDE_BANDS[band],
+      probability: prob,
+      probabilityDisplay: `${(prob * 100).toFixed(0)}%`
+    })),
+    afterMiss: Object.entries(sectorData.afterMiss).map(([band, prob]) => ({
+      band,
+      ...MAGNITUDE_BANDS[band],
+      probability: prob,
+      probabilityDisplay: `${(prob * 100).toFixed(0)}%`
+    }))
+  };
+
+  return {
+    ...event,
+    parlays,
+    reactionSummary,
+    stockStats, // Also at top level for easy access
+    dataSource,
+    enhancedAt: new Date().toISOString()
+  };
+}
+
+/**
  * Verify if a prediction hit based on actual results
  */
 export function verifyPrediction(prediction, actualMove, didBeat) {
@@ -462,5 +630,9 @@ export default {
   getReactionProbabilities,
   calculateParlayPrices,
   enhanceEventWithParlays,
-  verifyPrediction
+  verifyPrediction,
+  // Async versions that use stock-specific historical data
+  getReactionProbabilitiesAsync,
+  calculateParlayPricesAsync,
+  enhanceEventWithParlaysAsync
 };
