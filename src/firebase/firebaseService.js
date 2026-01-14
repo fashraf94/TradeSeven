@@ -16,7 +16,8 @@ import {
   orderBy,
   limit,
   Timestamp,
-  serverTimestamp
+  serverTimestamp,
+  increment
 } from 'firebase/firestore';
 import { db } from './config';
 import { getVolatilityThresholds } from '../services/volatilityService.js';
@@ -1548,6 +1549,452 @@ export async function deleteEarningsPortfolio(userId) {
 }
 
 // =====================================================
+// EARNINGS TOURNAMENTS
+// =====================================================
+
+/**
+ * Get week number of the year (ISO week)
+ * @param {Date} date - Date to get week number for
+ * @returns {number} - Week number (1-52)
+ */
+function getWeekNumber(date) {
+  const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+  const pastDaysOfYear = (date - firstDayOfYear) / 86400000;
+  return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+}
+
+/**
+ * Calculate bracket based on rank and total entries
+ * @param {number} rank - User's rank
+ * @param {number} totalEntries - Total tournament entries
+ * @returns {string} - Bracket tier
+ */
+function calculateBracket(rank, totalEntries) {
+  if (rank === 1) return 'diamond';
+  if (rank <= 3) return 'gold';
+  if (rank <= Math.ceil(totalEntries * 0.1)) return 'silver'; // Top 10%
+  if (rank <= Math.ceil(totalEntries * 0.25)) return 'bronze'; // Top 25%
+  return 'participant';
+}
+
+/**
+ * Verify if a prediction was correct
+ * @param {Object} prediction - The prediction to verify
+ * @param {number} actualMove - Actual price move percentage
+ * @param {boolean} didBeat - Whether the company beat earnings
+ * @returns {boolean} - Whether prediction was correct
+ */
+function verifyTournamentPrediction(prediction, actualMove, didBeat) {
+  // Check outcome
+  const outcomeCorrect =
+    (prediction.outcome === 'beat' && didBeat) ||
+    (prediction.outcome === 'miss' && !didBeat);
+
+  if (!outcomeCorrect) return false;
+
+  // Check magnitude based on precision tier
+  const { magnitude, precisionTier } = prediction;
+
+  // Define ranges for each magnitude band
+  const ranges = {
+    upBig: { min: 5, max: Infinity },
+    up: { min: 2, max: 5 },
+    flat: { min: -2, max: 2 },
+    down: { min: -5, max: -2 },
+    downBig: { min: -Infinity, max: -5 }
+  };
+
+  const range = ranges[magnitude];
+  if (!range) return false;
+
+  // For standard tier, just check the band
+  if (precisionTier === 'standard' || !precisionTier) {
+    if (magnitude === 'upBig') return actualMove > 5;
+    if (magnitude === 'downBig') return actualMove < -5;
+    return actualMove >= range.min && actualMove < range.max;
+  }
+
+  // For narrow/bullseye tiers, use the same band logic for now
+  // (could be made stricter based on precisionRange in the future)
+  if (magnitude === 'upBig') return actualMove > 5;
+  if (magnitude === 'downBig') return actualMove < -5;
+  return actualMove >= range.min && actualMove < range.max;
+}
+
+/**
+ * Get or create the current week's tournament
+ * Creates a new tournament document if one doesn't exist for this week
+ *
+ * @returns {Promise<Object>} - Tournament data with id
+ */
+export async function getCurrentTournament() {
+  // Calculate current week's Monday
+  const now = new Date();
+  const monday = new Date(now);
+  const dayOfWeek = now.getDay();
+  const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  monday.setDate(now.getDate() + daysToMonday);
+  monday.setHours(0, 0, 0, 0);
+
+  const friday = new Date(monday);
+  friday.setDate(monday.getDate() + 4);
+  friday.setHours(23, 59, 59, 999);
+
+  const weekId = `tournament_${monday.getFullYear()}_W${getWeekNumber(monday)}`;
+  const tournamentRef = doc(db, 'earningsTournaments', weekId);
+
+  try {
+    const snapshot = await getDoc(tournamentRef);
+
+    if (snapshot.exists()) {
+      console.log('📅 Found existing tournament:', weekId);
+      return { id: weekId, ...snapshot.data() };
+    }
+
+    // Create new tournament for this week
+    const lockDeadline = new Date(monday);
+    lockDeadline.setHours(11, 0, 0, 0); // 6 AM ET = 11 AM UTC
+
+    const newTournament = {
+      id: weekId,
+      name: `Earnings Week ${monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${friday.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+      weekStart: monday.toISOString().split('T')[0],
+      weekEnd: friday.toISOString().split('T')[0],
+      lockDeadline: lockDeadline.toISOString(),
+      status: 'open',
+      entryCount: 0,
+      createdAt: serverTimestamp()
+    };
+
+    await setDoc(tournamentRef, newTournament);
+    console.log('✅ Created new tournament:', weekId);
+    return newTournament;
+  } catch (error) {
+    console.error('❌ Error getting/creating tournament:', error);
+    throw error;
+  }
+}
+
+/**
+ * Enter a tournament with a locked portfolio
+ *
+ * @param {string} userId - User ID (odUserId)
+ * @param {string} username - Display username
+ * @param {Array} predictions - Array of prediction objects
+ * @returns {Promise<Object>} - Entry data with entryId
+ */
+export async function enterTournament(userId, username, predictions) {
+  if (!userId) {
+    throw new Error('userId required');
+  }
+
+  if (!predictions || predictions.length === 0) {
+    throw new Error('predictions required');
+  }
+
+  const tournament = await getCurrentTournament();
+
+  // Check if deadline passed
+  if (new Date() > new Date(tournament.lockDeadline)) {
+    throw new Error('Tournament lock deadline has passed');
+  }
+
+  const entryId = `${userId}_${tournament.id}`;
+  const entryRef = doc(db, 'earningsEntries', entryId);
+
+  // Check if already entered
+  const existing = await getDoc(entryRef);
+  if (existing.exists()) {
+    throw new Error('Already entered this tournament');
+  }
+
+  const totalSpent = predictions.reduce((sum, p) => sum + (p.price || 0), 0);
+  const totalPotentialPoints = predictions.reduce((sum, p) => sum + (p.potentialPayout || 0), 0);
+
+  const entry = {
+    odUserId: userId,
+    tournamentId: tournament.id,
+    username: username || userId,
+    predictions: removeUndefined(predictions),
+    totalSpent,
+    totalPotentialPoints,
+    predictionCount: predictions.length,
+    lockedAt: serverTimestamp(),
+
+    // Results - to be filled in as earnings report
+    results: {
+      totalPoints: 0,
+      correctPredictions: 0,
+      incorrectPredictions: 0,
+      pendingPredictions: predictions.length
+    },
+    rank: null,
+    bracket: null
+  };
+
+  try {
+    await setDoc(entryRef, removeUndefined(entry));
+
+    // Increment entry count on tournament
+    const tournamentRef = doc(db, 'earningsTournaments', tournament.id);
+    await updateDoc(tournamentRef, {
+      entryCount: increment(1)
+    });
+
+    console.log('✅ Tournament entry created:', entryId);
+    return { entryId, tournamentId: tournament.id, ...entry };
+  } catch (error) {
+    console.error('❌ Error entering tournament:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get user's entry for current tournament
+ *
+ * @param {string} userId - User ID (odUserId)
+ * @returns {Promise<Object|null>} - Entry data or null
+ */
+export async function getUserTournamentEntry(userId) {
+  if (!userId) return null;
+
+  try {
+    const tournament = await getCurrentTournament();
+    const entryId = `${userId}_${tournament.id}`;
+    const entryRef = doc(db, 'earningsEntries', entryId);
+
+    const snapshot = await getDoc(entryRef);
+    if (snapshot.exists()) {
+      console.log('✅ Found tournament entry for user:', userId);
+      return { entryId, ...snapshot.data() };
+    }
+
+    console.log('📭 No tournament entry found for user:', userId);
+    return null;
+  } catch (error) {
+    console.error('❌ Error getting user tournament entry:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get tournament leaderboard
+ *
+ * @param {string} tournamentId - Tournament ID
+ * @param {number} maxResults - Maximum results to return (default 50)
+ * @returns {Promise<Array>} - Array of entries with rank
+ */
+export async function getTournamentLeaderboard(tournamentId, maxResults = 50) {
+  if (!tournamentId) {
+    const tournament = await getCurrentTournament();
+    tournamentId = tournament.id;
+  }
+
+  try {
+    const entriesRef = collection(db, 'earningsEntries');
+    const q = query(
+      entriesRef,
+      where('tournamentId', '==', tournamentId),
+      orderBy('results.totalPoints', 'desc'),
+      limit(maxResults)
+    );
+
+    const snapshot = await getDocs(q);
+    const entries = [];
+    let rank = 1;
+
+    snapshot.forEach(docSnapshot => {
+      entries.push({
+        entryId: docSnapshot.id,
+        rank: rank++,
+        ...docSnapshot.data()
+      });
+    });
+
+    console.log(`📊 Leaderboard loaded: ${entries.length} entries`);
+    return entries;
+  } catch (error) {
+    console.error('❌ Error getting tournament leaderboard:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get user's rank in tournament
+ *
+ * @param {string} userId - User ID (odUserId)
+ * @param {string} tournamentId - Tournament ID (optional, uses current if not provided)
+ * @returns {Promise<Object|null>} - Rank info or null
+ */
+export async function getUserRank(userId, tournamentId = null) {
+  if (!userId) return null;
+
+  try {
+    if (!tournamentId) {
+      const tournament = await getCurrentTournament();
+      tournamentId = tournament.id;
+    }
+
+    // Get all entries sorted by points
+    const leaderboard = await getTournamentLeaderboard(tournamentId, 1000);
+    const userEntry = leaderboard.find(e => e.odUserId === userId);
+
+    if (userEntry) {
+      return {
+        rank: userEntry.rank,
+        totalEntries: leaderboard.length,
+        bracket: calculateBracket(userEntry.rank, leaderboard.length),
+        totalPoints: userEntry.results?.totalPoints || 0
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error('❌ Error getting user rank:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update prediction result after earnings are released
+ *
+ * @param {string} entryId - Entry document ID (userId_tournamentId)
+ * @param {string} eventId - Event/prediction ID
+ * @param {number} actualMove - Actual price move percentage
+ * @param {boolean} didBeat - Whether the company beat earnings
+ * @returns {Promise<Object|null>} - Updated results or null
+ */
+export async function updatePredictionResult(entryId, eventId, actualMove, didBeat) {
+  try {
+    const entryRef = doc(db, 'earningsEntries', entryId);
+    const snapshot = await getDoc(entryRef);
+
+    if (!snapshot.exists()) {
+      console.warn('Entry not found:', entryId);
+      return null;
+    }
+
+    const entry = snapshot.data();
+    const predictions = entry.predictions || [];
+
+    // Find and update the prediction
+    const updatedPredictions = predictions.map(p => {
+      if (p.eventId === eventId) {
+        const isCorrect = verifyTournamentPrediction(p, actualMove, didBeat);
+        return {
+          ...p,
+          resolved: true,
+          actualMove,
+          didBeat,
+          isCorrect,
+          pointsEarned: isCorrect ? (p.potentialPayout || 0) : 0
+        };
+      }
+      return p;
+    });
+
+    // Recalculate results
+    const resolved = updatedPredictions.filter(p => p.resolved);
+    const results = {
+      totalPoints: resolved.reduce((sum, p) => sum + (p.pointsEarned || 0), 0),
+      correctPredictions: resolved.filter(p => p.isCorrect).length,
+      incorrectPredictions: resolved.filter(p => p.resolved && !p.isCorrect).length,
+      pendingPredictions: updatedPredictions.filter(p => !p.resolved).length
+    };
+
+    await updateDoc(entryRef, {
+      predictions: updatedPredictions,
+      results
+    });
+
+    console.log('✅ Prediction result updated:', eventId);
+    return results;
+  } catch (error) {
+    console.error('❌ Error updating prediction result:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update ranks and brackets for all entries in a tournament
+ * Should be called after results are updated
+ *
+ * @param {string} tournamentId - Tournament ID
+ * @returns {Promise<void>}
+ */
+export async function updateTournamentRankings(tournamentId) {
+  try {
+    const leaderboard = await getTournamentLeaderboard(tournamentId, 10000);
+
+    // Update each entry with their rank and bracket
+    const updates = leaderboard.map(async (entry, index) => {
+      const rank = index + 1;
+      const bracket = calculateBracket(rank, leaderboard.length);
+
+      const entryRef = doc(db, 'earningsEntries', entry.entryId);
+      await updateDoc(entryRef, { rank, bracket });
+    });
+
+    await Promise.all(updates);
+    console.log(`✅ Updated rankings for ${leaderboard.length} entries`);
+  } catch (error) {
+    console.error('❌ Error updating tournament rankings:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get tournament by ID
+ *
+ * @param {string} tournamentId - Tournament ID
+ * @returns {Promise<Object|null>} - Tournament data or null
+ */
+export async function getTournament(tournamentId) {
+  if (!tournamentId) return null;
+
+  try {
+    const tournamentRef = doc(db, 'earningsTournaments', tournamentId);
+    const snapshot = await getDoc(tournamentRef);
+
+    if (snapshot.exists()) {
+      return { id: tournamentId, ...snapshot.data() };
+    }
+    return null;
+  } catch (error) {
+    console.error('❌ Error getting tournament:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update tournament status
+ *
+ * @param {string} tournamentId - Tournament ID
+ * @param {string} status - New status ('open', 'locked', 'in_progress', 'completed')
+ * @returns {Promise<boolean>} - Success status
+ */
+export async function updateTournamentStatus(tournamentId, status) {
+  const validStatuses = ['open', 'locked', 'in_progress', 'completed'];
+  if (!validStatuses.includes(status)) {
+    throw new Error(`Invalid status: ${status}`);
+  }
+
+  try {
+    const tournamentRef = doc(db, 'earningsTournaments', tournamentId);
+    await updateDoc(tournamentRef, {
+      status,
+      updatedAt: serverTimestamp()
+    });
+
+    console.log(`✅ Tournament ${tournamentId} status updated to: ${status}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Error updating tournament status:', error);
+    throw error;
+  }
+}
+
+// =====================================================
 // EXPORTS
 // =====================================================
 
@@ -1589,5 +2036,16 @@ export default {
   // Earnings Game Portfolios
   saveEarningsPortfolio,
   loadEarningsPortfolio,
-  deleteEarningsPortfolio
+  deleteEarningsPortfolio,
+
+  // Earnings Tournaments
+  getCurrentTournament,
+  enterTournament,
+  getUserTournamentEntry,
+  getTournamentLeaderboard,
+  getUserRank,
+  updatePredictionResult,
+  updateTournamentRankings,
+  getTournament,
+  updateTournamentStatus
 };
