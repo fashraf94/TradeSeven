@@ -681,7 +681,9 @@ export async function getHybridEarningsCalendar(days = 14) {
 
     // If no Polymarket data, fall back to test data
     if (polymarketEvents.length === 0) {
-      console.log('[Hybrid] No Polymarket events, using test fallback');
+      console.warn('[Hybrid] ⚠️ No Polymarket events found! Falling back to test data.');
+      console.warn('[Hybrid] Check if /api/polymarket/events is working and returning earnings events.');
+      console.warn('[Hybrid] EODHD returned', eohdCalendar.length, 'events - these will NOT be shown without Polymarket odds.');
       const testData = getTestEarningsData();
       return testData.map(event => ({
         ...enhanceEventWithParlays(event),
