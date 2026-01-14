@@ -53,7 +53,7 @@ const EarningsGameScreen = ({
     validationMessage,
     reset,
     clearPortfolio,
-  } = useEarningsGame(user?.odId);
+  } = useEarningsGame(user?.odUserId);
 
   // Tournament state from Firebase
   const {
@@ -69,7 +69,7 @@ const EarningsGameScreen = ({
     entryCount,
     enterTournament,
     refreshLeaderboard,
-  } = useTournament(user?.odId);
+  } = useTournament(user?.odUserId);
 
   // View state for navigation between screens
   const [view, setView] = useState('tournament'); // 'tournament' | 'calendar' | 'portfolio' | 'arena' | 'results'
