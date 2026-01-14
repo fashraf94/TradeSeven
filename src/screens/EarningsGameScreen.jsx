@@ -71,7 +71,7 @@ const EarningsGameScreen = ({
   } = useTournament(user?.odId);
 
   // View state for navigation between screens
-  const [view, setView] = useState('calendar'); // 'calendar' | 'portfolio' | 'arena' | 'results'
+  const [view, setView] = useState('tournament'); // 'tournament' | 'calendar' | 'portfolio' | 'arena' | 'results'
 
   // Events and loading state
   const [events, setEvents] = useState([]);
@@ -216,12 +216,255 @@ const EarningsGameScreen = ({
   // Format helpers
   const formatDate = (date) => new Date(date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
+  // Helper function for deadline countdown
+  const getTimeUntilDeadline = (deadline) => {
+    if (!deadline) return '';
+    const now = new Date();
+    const dl = new Date(deadline);
+    const diff = dl - now;
+
+    if (diff <= 0) return 'Deadline passed';
+
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (hours > 24) {
+      const days = Math.floor(hours / 24);
+      return `${days}d ${hours % 24}h`;
+    }
+    return `${hours}h ${minutes}m`;
+  };
+
+  // ========================================
+  // Navigation Tabs Component
+  // ========================================
+  const NavigationTabs = () => (
+    <div style={{
+      display: 'flex',
+      gap: '8px',
+      padding: '12px 20px',
+      borderBottom: '1px solid #21262d',
+      background: '#0d1117',
+      overflowX: 'auto',
+      WebkitOverflowScrolling: 'touch'
+    }}>
+      {[
+        { id: 'tournament', label: '🏆 Tournament', show: true },
+        { id: 'calendar', label: '📅 Earnings', show: true },
+        { id: 'portfolio', label: '📊 Portfolio', show: predictions.length > 0 || hasEntered },
+        { id: 'arena', label: '🎯 Live Results', show: hasEntered }
+      ].filter(tab => tab.show).map(tab => (
+        <button
+          key={tab.id}
+          onClick={() => setView(tab.id)}
+          style={{
+            padding: '8px 16px',
+            background: view === tab.id ? 'rgba(0, 217, 255, 0.15)' : 'transparent',
+            border: view === tab.id ? '1px solid #00d9ff' : '1px solid #21262d',
+            borderRadius: '8px',
+            color: view === tab.id ? '#00d9ff' : '#8b949e',
+            fontWeight: '600',
+            cursor: 'pointer',
+            fontSize: '13px',
+            whiteSpace: 'nowrap',
+            flexShrink: 0
+          }}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  // ========================================
+  // VIEW: TOURNAMENT HUB
+  // ========================================
+  if (view === 'tournament') {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+        <NavigationTabs />
+        <div style={{ padding: '20px' }}>
+          {/* Tournament Header */}
+          <div style={{
+            background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+            borderRadius: '16px',
+            padding: '24px',
+            marginBottom: '24px',
+            border: '1px solid #21262d'
+          }}>
+            <h2 style={{ color: '#00d9ff', margin: '0 0 8px 0', fontSize: '24px' }}>
+              🏆 {tournament?.name || 'Current Tournament'}
+            </h2>
+            <div style={{ color: '#8b949e', fontSize: '14px' }}>
+              {tournament?.status === 'open' && !isDeadlinePassed && (
+                <span>Locks in: {getTimeUntilDeadline(tournament?.lockDeadline)}</span>
+              )}
+              {isDeadlinePassed && <span style={{ color: '#f59e0b' }}>Tournament In Progress</span>}
+              {!tournament && !tournamentLoading && (
+                <span>No active tournament</span>
+              )}
+            </div>
+          </div>
+
+          {/* Your Entry Status */}
+          {hasEntered ? (
+            <div style={{
+              background: '#161b22',
+              borderRadius: '12px',
+              padding: '20px',
+              marginBottom: '24px',
+              border: '1px solid #21262d'
+            }}>
+              <h3 style={{ color: '#ffffff', margin: '0 0 16px 0' }}>Your Entry</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '28px', fontWeight: '700', color: '#00d9ff' }}>
+                    #{userRank || '-'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#8b949e' }}>Rank</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
+                    {userEntry?.results?.totalPoints?.toLocaleString() || 0}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#8b949e' }}>Points</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
+                    {userEntry?.predictionCount || 0}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#8b949e' }}>Picks</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '28px' }}>
+                    {userBracket?.emoji || '🎮'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: userBracket?.color || '#8b949e' }}>
+                    {userBracket?.name || 'Participant'}
+                  </div>
+                </div>
+              </div>
+
+              {/* View Predictions Button */}
+              <button
+                onClick={() => setView('arena')}
+                style={{
+                  marginTop: '16px',
+                  width: '100%',
+                  padding: '12px',
+                  background: 'rgba(0, 217, 255, 0.1)',
+                  border: '1px solid #00d9ff',
+                  borderRadius: '8px',
+                  color: '#00d9ff',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                View Your Predictions →
+              </button>
+            </div>
+          ) : (
+            <div style={{
+              background: '#161b22',
+              borderRadius: '12px',
+              padding: '20px',
+              marginBottom: '24px',
+              border: '1px solid #21262d',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '48px', marginBottom: '12px' }}>📋</div>
+              <h3 style={{ color: '#ffffff', margin: '0 0 8px 0' }}>No Entry Yet</h3>
+              <p style={{ color: '#8b949e', margin: '0 0 16px 0' }}>
+                Build a portfolio to enter this week's tournament
+              </p>
+              <button
+                onClick={() => setView('calendar')}
+                style={{
+                  padding: '12px 24px',
+                  background: 'linear-gradient(90deg, #00d9ff 0%, #0099cc 100%)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#0d1117',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                Browse Earnings
+              </button>
+            </div>
+          )}
+
+          {/* Leaderboard */}
+          <div style={{
+            background: '#161b22',
+            borderRadius: '12px',
+            padding: '20px',
+            border: '1px solid #21262d'
+          }}>
+            <h3 style={{ color: '#ffffff', margin: '0 0 16px 0' }}>
+              Leaderboard ({tournamentLeaderboard?.length || 0} entries)
+            </h3>
+
+            {tournamentLeaderboard && tournamentLeaderboard.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {tournamentLeaderboard.slice(0, 20).map((entry, index) => (
+                  <div
+                    key={entry.odUserId || index}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '12px',
+                      background: entry.odUserId === user?.odId
+                        ? 'rgba(0, 217, 255, 0.1)'
+                        : index % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
+                      borderRadius: '8px',
+                      borderLeft: entry.odUserId === user?.odId ? '3px solid #00d9ff' : 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{
+                        fontWeight: '700',
+                        color: index === 0 ? '#ffd700' : index < 3 ? '#c0c0c0' : '#8b949e',
+                        width: '30px'
+                      }}>
+                        {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`}
+                      </span>
+                      <span style={{ color: '#ffffff' }}>{entry.username || 'Anonymous'}</span>
+                      {entry.odUserId === user?.odId && (
+                        <span style={{
+                          fontSize: '10px',
+                          color: '#00d9ff',
+                          background: 'rgba(0, 217, 255, 0.2)',
+                          padding: '2px 6px',
+                          borderRadius: '4px'
+                        }}>YOU</span>
+                      )}
+                    </div>
+                    <span style={{ fontWeight: '700', color: '#00d9ff' }}>
+                      {entry.totalPoints?.toLocaleString() || 0} pts
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ color: '#8b949e', textAlign: 'center', padding: '20px' }}>
+                No entries yet. Be the first!
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ========================================
   // VIEW: CALENDAR (New EarningsCalendar component)
   // ========================================
   if (view === 'calendar') {
     return (
-      <>
+      <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+        <NavigationTabs />
         <EarningsCalendar
           events={events}
           predictions={predictions}
@@ -246,7 +489,7 @@ const EarningsGameScreen = ({
           currentBudget={budgetRemaining}
           isDesktop={isDesktop}
         />
-      </>
+      </div>
     );
   }
 
@@ -255,7 +498,9 @@ const EarningsGameScreen = ({
   // ========================================
   if (view === 'portfolio') {
     return (
-      <PortfolioWarRoom
+      <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+        <NavigationTabs />
+        <PortfolioWarRoom
         predictions={predictions}
         totalSpent={totalSpent}
         budgetRemaining={budgetRemaining}
@@ -271,6 +516,7 @@ const EarningsGameScreen = ({
         }}
         isDesktop={isDesktop}
       />
+      </div>
     );
   }
 
@@ -279,7 +525,8 @@ const EarningsGameScreen = ({
   // ========================================
   if (view === 'arena') {
     return (
-      <>
+      <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+        <NavigationTabs />
         <LiveMatchArena
           predictions={predictions}
           userPosition={userPosition}
@@ -309,7 +556,7 @@ const EarningsGameScreen = ({
             />
           )}
         </AnimatePresence>
-      </>
+      </div>
     );
   }
 
@@ -318,7 +565,8 @@ const EarningsGameScreen = ({
   // ========================================
   if (view === 'results') {
     return (
-      <>
+      <div style={{ minHeight: '100vh', background: '#0d1117' }}>
+        <NavigationTabs />
         <TournamentResults
           predictions={predictions}
           resultsData={mockResultsData}
@@ -346,7 +594,7 @@ const EarningsGameScreen = ({
             />
           )}
         </AnimatePresence>
-      </>
+      </div>
     );
   }
 
