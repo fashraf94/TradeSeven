@@ -10,8 +10,8 @@ import { enhanceEventWithParlays } from './earningsReactionsService';
 // Use our Vercel proxy to avoid CORS issues
 const GAMMA_API_BASE = '/api/polymarket';
 
-// Cache for 5 minutes
-const CACHE_DURATION = 5 * 60 * 1000;
+// Cache for 1 minute (more real-time odds updates)
+const CACHE_DURATION = 1 * 60 * 1000;
 let earningsCache = { data: null, lastFetched: null };
 
 // Search queries that will find earnings events
@@ -58,8 +58,14 @@ function isEarningsEvent(event) {
   ];
 
   const isExcluded = excludeKeywords.some(keyword => title.includes(keyword));
+  const isValid = isEarningsPattern && !isExcluded;
 
-  return isEarningsPattern && !isExcluded;
+  // Log rejected events that mention "earnings" for debugging
+  if (!isValid && hasEarnings) {
+    console.log('[Polymarket] Rejected earnings event:', title.slice(0, 80));
+  }
+
+  return isValid;
 }
 
 /**
@@ -495,6 +501,8 @@ export async function fetchEarningsMarkets(useCache = true) {
     }
   }
 
+  const fetchTimestamp = new Date();
+
   try {
     const allEvents = [];
 
@@ -539,16 +547,25 @@ export async function fetchEarningsMarkets(useCache = true) {
     // If no real data found, use test data
     if (transformed.length === 0) {
       console.log('[Polymarket] No earnings found from API, using test data');
-      const enhancedTestData = TEST_EARNINGS_DATA.map(event => enhanceEventWithParlays(event));
+      const enhancedTestData = TEST_EARNINGS_DATA.map(event => ({
+        ...enhanceEventWithParlays(event),
+        dataSource: 'test_fallback',
+        lastFetched: fetchTimestamp
+      }));
       earningsCache = { data: enhancedTestData, lastFetched: Date.now() };
       return enhancedTestData;
     }
 
-    // Enhance with parlay data
-    const enhancedEarnings = transformed.map(event => enhanceEventWithParlays(event));
+    // Enhance with parlay data and add metadata
+    const enhancedEarnings = transformed.map(event => ({
+      ...enhanceEventWithParlays(event),
+      dataSource: 'polymarket_live',
+      lastFetched: fetchTimestamp
+    }));
 
     // Update cache
     earningsCache = { data: enhancedEarnings, lastFetched: Date.now() };
+    console.log(`[Polymarket] Live data fetched at ${fetchTimestamp.toISOString()}`);
     return enhancedEarnings;
 
   } catch (error) {
@@ -556,11 +573,28 @@ export async function fetchEarningsMarkets(useCache = true) {
     // Return test data on error
     if (!earningsCache.data) {
       console.log('[Polymarket] Using test data due to error');
-      const enhancedTestData = TEST_EARNINGS_DATA.map(event => enhanceEventWithParlays(event));
+      const enhancedTestData = TEST_EARNINGS_DATA.map(event => ({
+        ...enhanceEventWithParlays(event),
+        dataSource: 'test_fallback',
+        lastFetched: fetchTimestamp
+      }));
       return enhancedTestData;
     }
     return earningsCache.data;
   }
+}
+
+/**
+ * Get cache status - useful for debugging
+ */
+export function getCacheStatus() {
+  return {
+    hasCachedData: !!earningsCache.data,
+    lastFetched: earningsCache.lastFetched ? new Date(earningsCache.lastFetched) : null,
+    cacheAge: earningsCache.lastFetched ? Date.now() - earningsCache.lastFetched : null,
+    cacheDuration: CACHE_DURATION,
+    eventCount: earningsCache.data?.length || 0
+  };
 }
 
 /**
@@ -605,5 +639,6 @@ export default {
   fetchEarningsMarkets,
   getUpcomingEarnings,
   calculatePredictionMetrics,
-  oddsToPrice
+  oddsToPrice,
+  getCacheStatus
 };

@@ -38,8 +38,8 @@ export default async function handler(req, res) {
 
     console.log('[polymarket-proxy] Returned', Array.isArray(data) ? data.length : 'non-array', 'results');
 
-    // Cache for 5 minutes
-    res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');
+    // Cache for 1 minute (more real-time odds updates)
+    res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
 
     return res.status(200).json(data);
 
