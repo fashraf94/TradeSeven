@@ -12,7 +12,7 @@
  * Phase 6 Refactor: Integrated TournamentResults with ResultCard for end-of-week results display
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEarningsGame } from '../hooks/useEarningsGame';
 import { useTournament } from '../hooks/useTournament';
@@ -993,4 +993,14 @@ const EarningsGameScreen = ({
   return null;
 };
 
-export default EarningsGameScreen;
+// Wrap in memo to prevent re-renders from parent state changes (e.g., Firestore battle updates)
+// Custom comparison ignores callback props that are recreated on every render
+export default memo(EarningsGameScreen, (prevProps, nextProps) => {
+  // Only re-render if meaningful props change
+  return (
+    prevProps.user?.odUserId === nextProps.user?.odUserId &&
+    prevProps.isDesktop === nextProps.isDesktop &&
+    prevProps.colors === nextProps.colors
+    // Ignore onBack, setScreen as they're callbacks that change reference but not behavior
+  );
+});
