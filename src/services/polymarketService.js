@@ -6,6 +6,7 @@
  */
 
 import { enhanceEventWithParlays } from './earningsReactionsService';
+import { getBatchOdds } from './oddsService';
 
 // Use our Vercel proxy to avoid CORS issues
 const GAMMA_API_BASE = '/api/polymarket';
@@ -97,34 +98,205 @@ const COMPANY_NAMES = {
   'BRK': 'Berkshire Hathaway', 'SPY': 'S&P 500 ETF', 'QQQ': 'Nasdaq 100 ETF'
 };
 
+// Sector lookup for calculating odds (maps symbol -> sector)
+const COMPANY_SECTORS = {
+  // Banks & Finance
+  'WFC': 'financial', 'BAC': 'financial', 'JPM': 'financial', 'GS': 'financial',
+  'MS': 'financial', 'C': 'financial', 'USB': 'financial', 'PNC': 'financial',
+  'BLK': 'financial', 'SCHW': 'financial', 'TFC': 'financial', 'STT': 'financial',
+  'IBKR': 'financial', 'COF': 'financial', 'AXP': 'financial', 'V': 'financial',
+  'MA': 'financial', 'PYPL': 'financial', 'SQ': 'financial', 'COIN': 'financial',
+  'HOOD': 'financial', 'SOFI': 'financial', 'AFRM': 'financial',
+  // Big Tech & Software
+  'AAPL': 'technology', 'MSFT': 'technology', 'GOOGL': 'technology', 'GOOG': 'technology',
+  'AMZN': 'technology', 'META': 'technology', 'NFLX': 'technology', 'CRM': 'technology',
+  'ORCL': 'technology', 'ADBE': 'technology', 'IBM': 'technology', 'CSCO': 'technology',
+  'SNOW': 'technology', 'PLTR': 'technology', 'DDOG': 'technology', 'NET': 'technology',
+  'ZS': 'technology', 'CRWD': 'technology', 'PANW': 'technology', 'FTNT': 'technology',
+  'NOW': 'technology', 'WDAY': 'technology', 'TEAM': 'technology', 'ZM': 'technology',
+  'DOCU': 'technology',
+  // Semiconductors (part of tech)
+  'NVDA': 'technology', 'AMD': 'technology', 'INTC': 'technology', 'TSLA': 'technology',
+  'TSM': 'technology', 'ASML': 'technology', 'AVGO': 'technology', 'QCOM': 'technology',
+  'TXN': 'technology', 'MU': 'technology', 'AMAT': 'technology', 'LRCX': 'technology',
+  'KLAC': 'technology', 'ADI': 'technology', 'MRVL': 'technology', 'ON': 'technology',
+  'NXPI': 'technology',
+  // Healthcare
+  'JNJ': 'healthcare', 'UNH': 'healthcare', 'PFE': 'healthcare', 'MRK': 'healthcare',
+  'ABBV': 'healthcare', 'LLY': 'healthcare', 'TMO': 'healthcare', 'DHR': 'healthcare',
+  'ABT': 'healthcare', 'BMY': 'healthcare', 'AMGN': 'healthcare', 'GILD': 'healthcare',
+  'CVS': 'healthcare', 'CI': 'healthcare', 'HUM': 'healthcare', 'ELV': 'healthcare',
+  // Energy
+  'XOM': 'energy', 'CVX': 'energy', 'COP': 'energy', 'SLB': 'energy',
+  'EOG': 'energy', 'MPC': 'energy', 'PSX': 'energy', 'VLO': 'energy', 'OXY': 'energy',
+  // Consumer Cyclical
+  'HD': 'consumer_cyclical', 'LOW': 'consumer_cyclical', 'TGT': 'consumer_cyclical',
+  'COST': 'consumer_cyclical', 'TJX': 'consumer_cyclical', 'ROST': 'consumer_cyclical',
+  'BBY': 'consumer_cyclical', 'NKE': 'consumer_cyclical', 'SBUX': 'consumer_cyclical',
+  'MCD': 'consumer_cyclical', 'CMG': 'consumer_cyclical', 'DPZ': 'consumer_cyclical',
+  'YUM': 'consumer_cyclical', 'DIS': 'consumer_cyclical', 'F': 'consumer_cyclical',
+  'GM': 'consumer_cyclical', 'RIVN': 'consumer_cyclical', 'LCID': 'consumer_cyclical',
+  // Consumer Defensive
+  'WMT': 'consumer_defensive', 'KR': 'consumer_defensive', 'DG': 'consumer_defensive',
+  'DLTR': 'consumer_defensive', 'KO': 'consumer_defensive', 'PEP': 'consumer_defensive',
+  'PG': 'consumer_defensive', 'CL': 'consumer_defensive',
+  // Industrial
+  'BA': 'industrial', 'LMT': 'industrial', 'RTX': 'industrial', 'GD': 'industrial',
+  'NOC': 'industrial', 'CAT': 'industrial', 'DE': 'industrial', 'MMM': 'industrial',
+  'HON': 'industrial', 'GE': 'industrial', 'UPS': 'industrial', 'FDX': 'industrial',
+  'DAL': 'industrial', 'UAL': 'industrial', 'AAL': 'industrial', 'LUV': 'industrial',
+  // Communication
+  'CMCSA': 'communication', 'T': 'communication', 'VZ': 'communication', 'TMUS': 'communication'
+};
+
+// Sector beat rates from historical S&P 500 data
+const SECTOR_BEAT_RATES = {
+  technology: 0.78,
+  financial: 0.74,
+  healthcare: 0.76,
+  consumer_cyclical: 0.71,
+  consumer_defensive: 0.73,
+  industrial: 0.70,
+  energy: 0.65,
+  communication: 0.75,
+  default: 0.70
+};
+
+// Cache for historical beat rates (to avoid repeated API calls)
+const historicalBeatRateCache = new Map();
+const BEAT_RATE_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Get beat odds for a symbol, using historical data if available
+ * Falls back to sector-based defaults when no history exists
+ *
+ * @param {string} symbol - Stock symbol
+ * @param {number|null} historicalBeatRate - Optional pre-fetched beat rate (0-100)
+ * @returns {{ odds: number, sector: string, confidence: string, source: string }}
+ */
+function getSmartBeatOdds(symbol, historicalBeatRate = null) {
+  const upperSymbol = symbol.toUpperCase();
+  const sector = COMPANY_SECTORS[upperSymbol] || 'default';
+  const sectorRate = SECTOR_BEAT_RATES[sector] || 0.70;
+
+  // If we have a historical beat rate passed in, use it
+  if (historicalBeatRate !== null && historicalBeatRate !== undefined) {
+    // Convert from percentage (0-100) to decimal (0-1) if needed
+    const beatRate = historicalBeatRate > 1 ? historicalBeatRate / 100 : historicalBeatRate;
+
+    // Validate it's a reasonable rate
+    if (beatRate >= 0 && beatRate <= 1) {
+      // Blend historical rate (85%) with sector baseline (15%) for stability
+      const blendedOdds = (beatRate * 0.85) + (sectorRate * 0.15);
+      const clampedOdds = Math.min(0.95, Math.max(0.20, blendedOdds));
+
+      return {
+        odds: clampedOdds,
+        sector,
+        confidence: 'high', // We have actual data
+        source: 'historical',
+        historicalRate: beatRate,
+        sectorRate
+      };
+    }
+  }
+
+  // Check cache for previously fetched historical rate
+  const cached = historicalBeatRateCache.get(upperSymbol);
+  if (cached && Date.now() - cached.timestamp < BEAT_RATE_CACHE_TTL) {
+    const blendedOdds = (cached.beatRate * 0.85) + (sectorRate * 0.15);
+    const clampedOdds = Math.min(0.95, Math.max(0.20, blendedOdds));
+
+    return {
+      odds: clampedOdds,
+      sector,
+      confidence: 'high',
+      source: 'cached_historical',
+      historicalRate: cached.beatRate,
+      sectorRate
+    };
+  }
+
+  // Fall back to sector-based defaults
+  // Add small consistent variation per stock (based on symbol hash)
+  const hash = symbol.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  const variation = ((hash % 7) - 3) / 100; // -0.03 to +0.03
+
+  const odds = Math.min(0.85, Math.max(0.60, sectorRate + variation));
+
+  return {
+    odds,
+    sector,
+    confidence: COMPANY_SECTORS[upperSymbol] ? 'medium' : 'low',
+    source: 'sector_default',
+    sectorRate
+  };
+}
+
+/**
+ * Legacy function - kept for backwards compatibility
+ * Use getSmartBeatOdds for new code
+ */
+function getSectorBeatOdds(symbol) {
+  return getSmartBeatOdds(symbol, null);
+}
+
+/**
+ * Cache a historical beat rate for a symbol (called after API fetch)
+ */
+function cacheHistoricalBeatRate(symbol, beatRate) {
+  if (beatRate !== null && beatRate !== undefined) {
+    const rate = beatRate > 1 ? beatRate / 100 : beatRate;
+    historicalBeatRateCache.set(symbol.toUpperCase(), {
+      beatRate: rate,
+      timestamp: Date.now()
+    });
+  }
+}
+
 /**
  * Check if an event is a valid earnings event
+ * More lenient filter to catch various Polymarket title formats
  */
 function isEarningsEvent(event) {
   const title = (event.title || '').toLowerCase();
+  const slug = (event.slug || '').toLowerCase();
 
-  // Must contain these keywords
-  const hasEarnings = title.includes('earnings');
-  const hasQuarterly = title.includes('quarterly');
-  const hasBeat = title.includes('beat');
+  // Check for ticker pattern (NVDA), (TSM), etc. - required
+  const tickerPattern = /\([A-Z]{1,5}\)/i;
+  const hasTicker = tickerPattern.test(event.title || '');
 
-  // Must match the pattern "Will X beat quarterly earnings"
-  const isEarningsPattern = hasEarnings && (hasBeat || hasQuarterly);
+  // Keywords that indicate earnings events
+  const earningsKeywords = [
+    'earnings', 'beat', 'miss', 'quarterly', 'eps', 'revenue',
+    'q1', 'q2', 'q3', 'q4', 'fiscal', 'report', 'results',
+    'expectations', 'estimates', 'guidance', 'outlook'
+  ];
+  const hasEarningsKeyword = earningsKeywords.some(kw =>
+    title.includes(kw) || slug.includes(kw)
+  );
 
   // Exclude non-earnings events
   const excludeKeywords = [
-    'bitcoin', 'btc', 'ethereum', 'eth', 'solana', 'sol', 'crypto',
-    'nfl', 'nba', 'mlb', 'nhl', 'soccer', 'football', 'basketball',
-    'election', 'trump', 'biden', 'president', 'senate', 'congress',
-    'fed', 'fomc', 'interest rate', 'inflation'
+    'bitcoin', 'btc', 'ethereum', 'eth', 'solana', 'sol', 'crypto', 'token',
+    'nfl', 'nba', 'mlb', 'nhl', 'soccer', 'football', 'basketball', 'sports',
+    'election', 'trump', 'biden', 'president', 'senate', 'congress', 'vote',
+    'fed', 'fomc', 'interest rate', 'inflation', 'cpi', 'gdp',
+    'war', 'ukraine', 'russia', 'china', 'tariff',
+    'weather', 'hurricane', 'earthquake'
   ];
-
   const isExcluded = excludeKeywords.some(keyword => title.includes(keyword));
-  const isValid = isEarningsPattern && !isExcluded;
 
-  // Log rejected events that mention "earnings" for debugging
-  if (!isValid && hasEarnings) {
-    console.log('[Polymarket] Rejected earnings event:', title.slice(0, 80));
+  // Valid if has ticker + earnings keyword + not excluded
+  const isValid = hasTicker && hasEarningsKeyword && !isExcluded;
+
+  // Debug logging for events that mention stocks but were rejected
+  if (!isValid && hasTicker && hasEarningsKeyword) {
+    console.log('[Polymarket] Rejected (excluded):', title.slice(0, 80));
+  } else if (!isValid && hasTicker) {
+    console.log('[Polymarket] Rejected (no earnings keyword):', title.slice(0, 60));
+  } else if (!isValid && hasEarningsKeyword) {
+    console.log('[Polymarket] Rejected (no ticker):', title.slice(0, 60));
   }
 
   return isValid;
@@ -642,90 +814,15 @@ async function fetchEODHDCalendar(days = 14) {
 
 /**
  * Fetch raw Polymarket events using multiple strategies
- * Polymarket's search API doesn't reliably return earnings events,
- * so we try multiple approaches
+ *
+ * DISABLED: Polymarket rarely has stock earnings markets, and the multi-strategy
+ * search was causing an infinite loop that blocked calendar loading.
+ * We now use our own Market-Informed Odds Engine instead.
  */
 async function fetchPolymarketEventsRaw() {
-  console.log('[Polymarket] Starting multi-strategy fetch...');
-
-  // Strategy URLs to try
-  const strategies = [
-    // Strategy 1: Tag filter (if Polymarket supports it)
-    { name: 'tag=earnings', url: `${GAMMA_API_BASE}/events?tag=earnings&active=true&closed=false&limit=100` },
-    // Strategy 2: Text search for earnings
-    { name: 'q=earnings', url: `${GAMMA_API_BASE}/events?q=earnings&active=true&closed=false&limit=100` },
-    // Strategy 3: Get ALL active events (larger fetch, filter client-side)
-    { name: 'all-active', url: `${GAMMA_API_BASE}/events?active=true&closed=false&limit=500` },
-  ];
-
-  for (const strategy of strategies) {
-    try {
-      console.log(`[Polymarket] Trying strategy: ${strategy.name}`);
-      const response = await fetch(strategy.url);
-      console.log(`[Polymarket] Response status: ${response.status}`);
-
-      if (!response.ok) {
-        console.log(`[Polymarket] Strategy ${strategy.name} failed with ${response.status}`);
-        continue;
-      }
-
-      const events = await response.json();
-      console.log(`[Polymarket] Strategy ${strategy.name} returned ${events.length} events`);
-
-      if (events.length === 0) continue;
-
-      // Log sample titles
-      console.log('[Polymarket] Sample titles:');
-      events.slice(0, 5).forEach((e, i) => {
-        console.log(`  ${i + 1}. ${e.title?.slice(0, 80)}`);
-      });
-
-      // Filter for earnings events
-      const earningsEvents = events.filter(isEarningsEvent);
-      console.log(`[Polymarket] After earnings filter: ${earningsEvents.length} events`);
-
-      if (earningsEvents.length === 0) {
-        console.log('[Polymarket] No earnings events in this batch, trying next strategy...');
-        continue;
-      }
-
-      // Transform to our format
-      const transformed = earningsEvents
-        .map(event => {
-          const title = event.title || '';
-          const symbol = extractSymbolFromTitle(title);
-          if (!symbol) return null;
-
-          let beatOdds = 0.5;
-          if (event.markets && event.markets[0]?.outcomePrices) {
-            try {
-              const prices = JSON.parse(event.markets[0].outcomePrices);
-              beatOdds = parseFloat(prices[0]) || 0.5;
-            } catch (e) { /* use default */ }
-          }
-
-          return {
-            symbol: symbol.toUpperCase(),
-            beatOdds,
-            missOdds: 1 - beatOdds,
-            polymarketId: event.id,
-            polymarketTitle: title,
-            polymarketEndDate: event.endDate || event.markets?.[0]?.endDate
-          };
-        })
-        .filter(e => e !== null);
-
-      console.log(`[Polymarket] Transformed: ${transformed.length} events with symbols`);
-      if (transformed.length > 0) {
-        console.log('[Polymarket] Symbols:', transformed.map(e => e.symbol));
-        return transformed;
-      }
-    } catch (error) {
-      console.error(`[Polymarket] Strategy ${strategy.name} error:`, error.message);
-    }
-  }
-
-  console.log('[Polymarket] All strategies exhausted, returning empty');
+  // DISABLED - Polymarket rarely has stock earnings markets.
+  // Using our Market-Informed Odds Engine (oddsService.js) instead.
+  console.log('[Polymarket] DISABLED - Using Market-Informed Odds Engine v1');
   return [];
 }
 
@@ -781,9 +878,56 @@ export async function getHybridEarningsCalendar(days = 14) {
           tooLong: 0,
           emptySymbol: 0,
           pastDate: 0,
+          otcForeign: 0,
+          preferredShare: 0,
+          specialSecurity: 0,
+          hasNumbers: 0,
+          weirdPrefix: 0,
           passed: 0
         };
         const rejectionSamples = [];
+
+        /**
+         * Check if a ticker is a valid, tradeable US stock
+         * Filters out: preferred shares, OTC, foreign ADRs, warrants, units, rights
+         */
+        const isValidTicker = (symbol) => {
+          const s = (symbol || '').toUpperCase().trim();
+          if (!s) return { valid: false, reason: 'emptySymbol' };
+
+          // Reject symbols with special characters (- or .)
+          if (s.includes('-')) return { valid: false, reason: 'hasDash' };
+          if (s.includes('.')) return { valid: false, reason: 'hasDot' };
+
+          // Reject if too long (normal US tickers are 1-4 chars, some 5)
+          if (s.length > 5) return { valid: false, reason: 'tooLong' };
+
+          // Reject if contains numbers (warrants like SPAC.WS often become SPACWS)
+          if (/[0-9]/.test(s)) return { valid: false, reason: 'hasNumbers' };
+
+          // Reject preferred shares - patterns like WFCNP, JPMPR, BOFAPR
+          // These end with P followed by a letter (not at start of 2-char symbols)
+          if (s.length >= 4 && /P[A-Z]$/.test(s)) return { valid: false, reason: 'preferredShare' };
+
+          // Reject OTC/foreign stocks (often end in F for foreign, Y for ADR)
+          if (s.length >= 4 && s.endsWith('F')) return { valid: false, reason: 'otcForeign' };
+          if (s.length >= 4 && s.endsWith('Y')) return { valid: false, reason: 'otcForeign' };
+
+          // Reject warrants (W suffix), units (U suffix), rights (R suffix)
+          // But allow 1-2 char symbols like F (Ford), W (Wayfair), U (Unity)
+          if (s.length >= 3 && s.endsWith('W') && !['BAW', 'CAW', 'DAW', 'SAW'].includes(s)) {
+            return { valid: false, reason: 'specialSecurity' };
+          }
+          if (s.length >= 4 && s.endsWith('U')) return { valid: false, reason: 'specialSecurity' };
+          if (s.length >= 4 && s.endsWith('R') && !['UBER', 'ABBR'].includes(s)) {
+            return { valid: false, reason: 'specialSecurity' };
+          }
+
+          // Reject weird prefixes (ZZ, XX patterns often indicate test/placeholder)
+          if (/^(ZZ|XX|YY)/.test(s)) return { valid: false, reason: 'weirdPrefix' };
+
+          return { valid: true, reason: 'passed' };
+        };
 
         // Filter for quality US stocks with future dates
         // NOTE: We don't filter on companyName because EODHD returns symbol as companyName
@@ -791,36 +935,33 @@ export async function getHybridEarningsCalendar(days = 14) {
         const qualityEvents = eohdCalendar.filter(event => {
           const symbol = event.symbol || '';
 
-          // Skip empty symbols
-          if (!symbol || symbol.length === 0) {
-            rejectionCounts.emptySymbol++;
+          // Check if valid ticker
+          const { valid, reason } = isValidTicker(symbol);
+          if (!valid) {
+            rejectionCounts[reason] = (rejectionCounts[reason] || 0) + 1;
+            if (rejectionSamples.length < 10) {
+              rejectionSamples.push({ symbol, reason });
+            }
             return false;
           }
 
-          // Skip preferred shares and special securities (contain - or .)
-          if (symbol.includes('-')) {
-            rejectionCounts.hasDash++;
-            if (rejectionSamples.length < 3) rejectionSamples.push({ symbol, reason: 'has dash' });
-            return false;
-          }
-          if (symbol.includes('.')) {
-            rejectionCounts.hasDot++;
-            if (rejectionSamples.length < 3) rejectionSamples.push({ symbol, reason: 'has dot' });
-            return false;
-          }
+          // Must be future date (today or later) - use local date comparison
+          // Parse reportDate as local date to avoid timezone issues
+          const [year, month, day] = event.reportDate.split('-').map(Number);
+          const eventDate = new Date(year, month - 1, day);
+          eventDate.setHours(0, 0, 0, 0);
 
-          // Skip if symbol is too long (likely OTC or foreign)
-          if (symbol.length > 5) {
-            rejectionCounts.tooLong++;
-            if (rejectionSamples.length < 3) rejectionSamples.push({ symbol, reason: 'too long' });
-            return false;
-          }
-
-          // Must be future date (today or later)
-          const eventDate = new Date(event.reportDate);
           if (eventDate < today) {
             rejectionCounts.pastDate++;
-            if (rejectionSamples.length < 5) rejectionSamples.push({ symbol, reportDate: event.reportDate, parsed: eventDate.toISOString(), reason: 'past date' });
+            if (rejectionSamples.length < 10) {
+              rejectionSamples.push({
+                symbol,
+                reportDate: event.reportDate,
+                parsed: eventDate.toDateString(),
+                today: today.toDateString(),
+                reason: 'past date'
+              });
+            }
             return false;
           }
 
@@ -832,45 +973,122 @@ export async function getHybridEarningsCalendar(days = 14) {
         console.log('[Hybrid] Rejection samples:', rejectionSamples);
         console.log(`[Hybrid] Quality filtered: ${qualityEvents.length} of ${eohdCalendar.length}`);
 
-        // Sort by date and take first 50
+        // Sort by: 1) Date, 2) Priority stocks first (those in COMPANY_NAMES)
         const sortedEvents = qualityEvents
-          .sort((a, b) => new Date(a.reportDate) - new Date(b.reportDate))
+          .sort((a, b) => {
+            // First, compare by date
+            const dateA = new Date(a.reportDate);
+            const dateB = new Date(b.reportDate);
+            if (dateA.getTime() !== dateB.getTime()) {
+              return dateA - dateB;
+            }
+            // Same date: prioritize known stocks (in COMPANY_NAMES lookup)
+            const aIsKnown = !!COMPANY_NAMES[a.symbol.toUpperCase()];
+            const bIsKnown = !!COMPANY_NAMES[b.symbol.toUpperCase()];
+            if (aIsKnown && !bIsKnown) return -1;
+            if (!aIsKnown && bIsKnown) return 1;
+            // Both known or both unknown: sort alphabetically
+            return a.symbol.localeCompare(b.symbol);
+          })
           .slice(0, 50);
 
         console.log(`[Hybrid] Taking first ${sortedEvents.length} events`);
         if (sortedEvents.length > 0) {
           // Show with lookup names
-          console.log('[Hybrid] Sample companies:', sortedEvents.slice(0, 5).map(e =>
-            `${e.symbol} (${COMPANY_NAMES[e.symbol.toUpperCase()] || e.companyName || e.symbol})`
+          console.log('[Hybrid] Sample companies:', sortedEvents.slice(0, 8).map(e =>
+            `${e.symbol} (${COMPANY_NAMES[e.symbol.toUpperCase()] || 'unknown'})`
           ));
         }
 
-        // Use EODHD data with default odds (most companies beat earnings historically)
+        // Use Market-Informed Odds Engine v1.1 via oddsService
+        // This fetches full odds with historical + price momentum + sector blend
+        const prioritySymbols = sortedEvents
+          .filter(e => COMPANY_NAMES[e.symbol.toUpperCase()])
+          .slice(0, 20) // Limit to top 20 known companies
+          .map(e => ({
+            symbol: e.symbol.toUpperCase(),
+            sector: COMPANY_SECTORS[e.symbol.toUpperCase()] || 'default'
+          }));
+
+        console.log(`[Hybrid] Fetching full odds for ${prioritySymbols.length} priority stocks via oddsService...`);
+
+        // Fetch odds from the full odds engine (includes price momentum)
+        let oddsMap = new Map();
+        try {
+          oddsMap = await getBatchOdds(prioritySymbols);
+          console.log(`[Hybrid] Got full odds for ${oddsMap.size} stocks`);
+
+          // Log sample results
+          const samples = Array.from(oddsMap.entries()).slice(0, 5);
+          samples.forEach(([symbol, odds]) => {
+            const priceInfo = odds.breakdown?.priceMomentum?.display || 'N/A';
+            console.log(`[Hybrid] ${symbol}: ${odds.probabilityPercent}% beat (${odds.confidence}, price: ${priceInfo})`);
+          });
+        } catch (e) {
+          console.warn(`[Hybrid] Batch odds fetch failed, using fallbacks:`, e.message);
+        }
+
+        // Map events with full odds data from the engine
         const eohdOnly = sortedEvents.map(event => {
           const symbolUpper = event.symbol.toUpperCase();
-          const defaultBeatOdds = 0.70; // Historical average - ~70% of companies beat
-          const yesCost = Math.round(defaultBeatOdds * 10000);
-          const noCost = Math.round((1 - defaultBeatOdds) * 10000);
+
+          // Get full odds from the engine, or fallback to sector default
+          const oddsData = oddsMap.get(symbolUpper);
+          let beatOdds, confidence, oddsSource, breakdown;
+
+          if (oddsData && !oddsData.fallback) {
+            beatOdds = oddsData.probability;
+            confidence = oddsData.confidence;
+            oddsSource = oddsData.breakdown?.historical?.quarters >= 3 ? 'historical_plus_momentum' : 'sector_plus_momentum';
+            breakdown = oddsData.breakdown;
+          } else {
+            // Fallback to sector default
+            const sector = COMPANY_SECTORS[symbolUpper] || 'default';
+            beatOdds = SECTOR_BEAT_RATES[sector] || 0.70;
+            confidence = 'sector_default';
+            oddsSource = 'sector_default';
+            breakdown = null;
+          }
+
+          const yesCost = Math.round(beatOdds * 10000);
+          const noCost = Math.round((1 - beatOdds) * 10000);
 
           // Use lookup table for company name, fallback to EODHD name or symbol
           const companyName = COMPANY_NAMES[symbolUpper] || event.companyName || symbolUpper;
+
+          // Parse date as LOCAL date to avoid timezone issues
+          const [year, month, day] = event.reportDate.split('-').map(Number);
+          const localDate = new Date(year, month - 1, day);
+
+          // Extract historical and momentum info for display
+          const historicalRate = breakdown?.historical?.rate;
+          const priceChange = breakdown?.priceMomentum?.change;
 
           return {
             id: `eodhd_${symbolUpper}_${event.reportDate}`,
             symbol: symbolUpper,
             companyName: companyName,
-            reportDate: new Date(event.reportDate),
+            reportDate: localDate,
             reportTime: event.reportTime || 'TBD',
-            beatOdds: defaultBeatOdds,
-            missOdds: 1 - defaultBeatOdds,
-            yesOdds: defaultBeatOdds,
-            noOdds: 1 - defaultBeatOdds,
-            beatProbability: Math.round(defaultBeatOdds * 100),
+            beatOdds: beatOdds,
+            missOdds: 1 - beatOdds,
+            yesOdds: beatOdds,
+            noOdds: 1 - beatOdds,
+            beatProbability: Math.round(beatOdds * 100),
             yesCost,
             noCost,
             source: 'eodhd_only',
-            dataSource: 'eodhd_default_odds',
+            dataSource: 'market_informed_v1.1',
+            sector: COMPANY_SECTORS[symbolUpper] || 'default',
+            oddsConfidence: confidence,
+            oddsSource: oddsSource,
+            historicalBeatRate: historicalRate !== null && historicalRate !== undefined
+              ? Math.round(historicalRate * 100) : null,
+            priceChange30d: priceChange !== null && priceChange !== undefined
+              ? Math.round(priceChange * 10) / 10 : null,
+            oddsBreakdown: breakdown, // Full breakdown for transparency
             hasPolymarketOdds: false,
+            hasCalculatedOdds: oddsSource !== 'sector_default',
             lastFetched: fetchTimestamp
           };
         });
@@ -878,7 +1096,7 @@ export async function getHybridEarningsCalendar(days = 14) {
         // Enhance with parlays
         const enhanced = eohdOnly.map(event => enhanceEventWithParlays(event));
 
-        console.log(`[Hybrid] Returning ${enhanced.length} EODHD events with default odds`);
+        console.log(`[Hybrid] Returning ${enhanced.length} events with market-informed odds`);
         return enhanced;
       }
 
@@ -908,12 +1126,16 @@ export async function getHybridEarningsCalendar(days = 14) {
         const yesCost = Math.round(pmData.beatOdds * 10000);
         const noCost = Math.round(pmData.missOdds * 10000);
 
+        // Parse date as LOCAL date to avoid timezone issues
+        const [year, month, day] = event.reportDate.split('-').map(Number);
+        const localDate = new Date(year, month - 1, day);
+
         return {
           id: `${event.symbol}_${event.reportDate}`,
           symbol: event.symbol.toUpperCase(),
           companyName: event.companyName,
-          // Use EODHD date/time (more accurate)
-          reportDate: new Date(event.reportDate),
+          // Use EODHD date/time (more accurate), parsed as local date
+          reportDate: localDate,
           reportTime: event.reportTime || 'TBD',
           // Use Polymarket odds (real market data)
           beatOdds: pmData.beatOdds,
