@@ -1,12 +1,13 @@
 // api/earnings/odds.js
-// Calculate beat probability for a single stock using Market-Informed Odds Engine
+// Calculate beat probability for a single stock using Market-Informed Odds Engine v1.1
 //
 // Endpoint: GET /api/earnings/odds?symbol=NVDA&sector=technology
 //
 // Returns calculated beat probability based on:
-// - Historical earnings beat rate
-// - 30-day price momentum
-// - Sector baseline
+// - Historical earnings beat rate (35% weight)
+// - 30-day price momentum (20% weight)
+// - Options IV / Expected move (15% weight) - NEW
+// - Sector baseline (15% weight)
 
 import { applySecurityMiddleware } from '../_utils/security.js';
 
@@ -63,11 +64,13 @@ export default async function handler(req, res) {
 
   try {
     // Fetch all needed data in parallel
-    const [fundamentalsRes, priceRes] = await Promise.all([
+    const [fundamentalsRes, priceRes, optionsRes] = await Promise.all([
       // Historical earnings from fundamentals
       fetch(`https://eodhd.com/api/fundamentals/${tickerWithExchange}?api_token=${apiKey}&filter=Earnings::History`),
       // Current and historical price (last 35 days to ensure we get 30 trading days)
-      fetch(`https://eodhd.com/api/eod/${tickerWithExchange}?api_token=${apiKey}&period=d&order=d&limit=35&fmt=json`)
+      fetch(`https://eodhd.com/api/eod/${tickerWithExchange}?api_token=${apiKey}&period=d&order=d&limit=35&fmt=json`),
+      // Options data for IV/expected move
+      fetch(`https://eodhd.com/api/options/${tickerWithExchange}?api_token=${apiKey}`)
     ]);
 
     // Parse fundamentals
@@ -125,11 +128,81 @@ export default async function handler(req, res) {
       console.warn(`[Odds] Price fetch failed for ${upperSymbol}: ${priceRes.status}`);
     }
 
+    // Parse options data for expected move / IV
+    let expectedMovePercent = null;
+    let impliedVolatility = null;
+
+    if (optionsRes.ok && currentPrice) {
+      try {
+        const optionsData = await optionsRes.json();
+
+        if (optionsData && typeof optionsData === 'object') {
+          // Find nearest expiration
+          const expirations = Object.keys(optionsData)
+            .filter(key => key.match(/^\d{4}-\d{2}-\d{2}$/))
+            .sort();
+
+          if (expirations.length > 0) {
+            const nearestExpiry = expirations[0];
+            const chain = optionsData[nearestExpiry];
+
+            if (chain?.options) {
+              const calls = chain.options.CALL || chain.options.call || [];
+              const puts = chain.options.PUT || chain.options.put || [];
+
+              // Find ATM strike
+              let atmStrike = null;
+              let minDiff = Infinity;
+
+              calls.forEach(opt => {
+                const strike = opt.strike || opt.strikePrice;
+                if (strike) {
+                  const diff = Math.abs(strike - currentPrice);
+                  if (diff < minDiff) {
+                    minDiff = diff;
+                    atmStrike = strike;
+                  }
+                }
+              });
+
+              if (atmStrike) {
+                const atmCall = calls.find(o => (o.strike || o.strikePrice) === atmStrike);
+                const atmPut = puts.find(o => (o.strike || o.strikePrice) === atmStrike);
+
+                if (atmCall && atmPut) {
+                  const callPrice = atmCall.lastPrice || atmCall.ask || 0;
+                  const putPrice = atmPut.lastPrice || atmPut.ask || 0;
+                  const straddlePrice = callPrice + putPrice;
+
+                  if (straddlePrice > 0) {
+                    expectedMovePercent = (straddlePrice / currentPrice) * 100;
+                    console.log(`[Odds] ${upperSymbol}: Expected Move = ${expectedMovePercent.toFixed(1)}% (straddle: $${straddlePrice.toFixed(2)})`);
+                  }
+
+                  // Get average IV
+                  const callIV = atmCall.impliedVolatility || atmCall.iv || 0;
+                  const putIV = atmPut.impliedVolatility || atmPut.iv || 0;
+                  if (callIV > 0 || putIV > 0) {
+                    impliedVolatility = ((callIV + putIV) / 2) * 100; // Convert to percentage
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (optErr) {
+        console.warn(`[Odds] Options parsing error for ${upperSymbol}:`, optErr.message);
+      }
+    } else if (!optionsRes.ok) {
+      console.log(`[Odds] No options data for ${upperSymbol} (${optionsRes.status})`);
+    }
+
     // Calculate probability using our engine logic
     const result = calculateOddsInline({
       beatRate,
       totalQuarters,
       priceChange30d,
+      expectedMovePercent,
       sector: sector || 'default'
     });
 
@@ -144,7 +217,9 @@ export default async function handler(req, res) {
         historicalBeatRate: beatRate !== null ? Math.round(beatRate * 100) : null,
         quartersAnalyzed: totalQuarters,
         priceChange30d: priceChange30d !== null ? Math.round(priceChange30d * 10) / 10 : null,
-        currentPrice,
+        expectedMovePercent: expectedMovePercent !== null ? Math.round(expectedMovePercent * 10) / 10 : null,
+        impliedVolatility: impliedVolatility !== null ? Math.round(impliedVolatility) : null,
+        currentPrice: currentPrice !== null ? Math.round(currentPrice) : null,
         sector: sector || 'default'
       },
       calculatedAt: new Date().toISOString()
@@ -173,9 +248,10 @@ export default async function handler(req, res) {
 
 /**
  * Inline odds calculation (since we can't easily import ES modules in Vercel serverless)
+ * Market-Informed Odds Engine v1.1 with IV Factor
  */
-function calculateOddsInline({ beatRate, totalQuarters, priceChange30d, sector }) {
-  // Determine base rate
+function calculateOddsInline({ beatRate, totalQuarters, priceChange30d, expectedMovePercent, sector }) {
+  // Determine base rate from historical data
   let baseRate = 0.70;
   let confidence = 'low';
 
@@ -217,8 +293,41 @@ function calculateOddsInline({ beatRate, totalQuarters, priceChange30d, sector }
     }
   }
 
-  // Calculate adjusted rate
+  // Apply IV / Expected Move factor
+  // High expected move = market uncertainty = regress toward 50%
+  // Low expected move = market confidence = trust other signals
+  let ivFactor = 1.0;
+  let ivSignal = 'no_data';
+
+  if (expectedMovePercent !== null && expectedMovePercent !== undefined) {
+    if (expectedMovePercent >= 12) {
+      // Very high expected move - lots of uncertainty, regress toward 50%
+      ivFactor = 0.85;
+      ivSignal = 'high_uncertainty';
+    } else if (expectedMovePercent >= 8) {
+      ivFactor = 0.92;
+      ivSignal = 'elevated_uncertainty';
+    } else if (expectedMovePercent >= 5) {
+      ivFactor = 0.97;
+      ivSignal = 'moderate';
+    } else if (expectedMovePercent <= 3) {
+      // Low expected move - market confident, amplify signal
+      ivFactor = 1.05;
+      ivSignal = 'high_confidence';
+    } else {
+      ivFactor = 1.0;
+      ivSignal = 'normal';
+    }
+  }
+
+  // Calculate adjusted rate with all factors
   let probability = baseRate * priceFactor;
+
+  // Apply IV factor - regresses extreme probabilities toward 50%
+  if (ivFactor !== 1.0) {
+    const distanceFrom50 = probability - 0.50;
+    probability = 0.50 + (distanceFrom50 * ivFactor);
+  }
 
   // Blend with sector baseline (15% weight)
   const sectorKey = (sector || 'default').toLowerCase().replace(/\s+/g, '_');
@@ -245,12 +354,18 @@ function calculateOddsInline({ beatRate, totalQuarters, priceChange30d, sector }
         signal: priceSignal,
         display: priceChange30d !== null ? `${priceChange30d >= 0 ? '+' : ''}${priceChange30d.toFixed(1)}%` : 'No data'
       },
+      optionsIV: {
+        factor: ivFactor,
+        expectedMove: expectedMovePercent,
+        signal: ivSignal,
+        display: expectedMovePercent !== null ? `±${expectedMovePercent.toFixed(1)}%` : 'No data'
+      },
       sector: {
         rate: sectorRate,
         name: sector || 'default',
         display: `${Math.round(sectorRate * 100)}% avg`
       }
     },
-    methodology: 'market_informed_v1'
+    methodology: 'market_informed_v1.1'
   };
 }
