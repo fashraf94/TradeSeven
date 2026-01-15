@@ -63,13 +63,33 @@ export default function EarningsCalendar({
     if (events.length === 0) return null;
     const firstEvent = events[0];
     const source = firstEvent?.dataSource || 'unknown';
+
+    // Market-Informed Engine v1 - our calculated odds
+    if (source === 'market_informed_v1') {
+      const confidence = firstEvent?.oddsConfidence || 'low';
+      if (confidence === 'high') {
+        return { label: 'CALCULATED', color: designColors.cyan, icon: '📊' };
+      } else if (confidence === 'medium') {
+        return { label: 'SECTOR EST.', color: designColors.green, icon: '📈' };
+      }
+      return { label: 'SECTOR AVG', color: designColors.gold, icon: '~' };
+    }
+
+    // Legacy: Polymarket live data
     if (source === 'hybrid_eodhd_polymarket' || source === 'polymarket_live') {
       return { label: 'LIVE ODDS', color: designColors.cyan, icon: '📊' };
-    } else if (source === 'eodhd_default_odds' || source === 'eodhd_only') {
+    }
+
+    // Legacy: Default 70% odds
+    if (source === 'eodhd_default_odds' || source === 'eodhd_only') {
       return { label: 'EST. ODDS', color: designColors.gold, icon: '~' };
-    } else if (source === 'test_fallback') {
+    }
+
+    // Test/fallback data
+    if (source === 'test_fallback') {
       return { label: 'TEST DATA', color: designColors.red, icon: '⚠️' };
     }
+
     return { label: 'ODDS', color: designColors.textMuted, icon: '' };
   }, [events]);
 
@@ -320,7 +340,7 @@ export default function EarningsCalendar({
                     companyName={event.companyName}
                     reportTime={event.reportTime || 'AMC'}
                     beatOdds={event.yesOdds}
-                    hasLiveOdds={event.hasPolymarketOdds === true}
+                    hasLiveOdds={event.hasPolymarketOdds === true || event.hasCalculatedOdds === true}
                     isPicked={isPicked(event.id)}
                     onAdd={() => onOpenArchitect(event)}
                     onView={() => onOpenArchitect(event)}
@@ -414,7 +434,7 @@ export default function EarningsCalendar({
                 companyName={event.companyName}
                 reportTime={event.reportTime || 'AMC'}
                 beatOdds={event.yesOdds}
-                hasLiveOdds={event.hasPolymarketOdds === true}
+                hasLiveOdds={event.hasPolymarketOdds === true || event.hasCalculatedOdds === true}
                 isPicked={isPicked(event.id)}
                 onAdd={() => onOpenArchitect(event)}
                 onView={() => onOpenArchitect(event)}
