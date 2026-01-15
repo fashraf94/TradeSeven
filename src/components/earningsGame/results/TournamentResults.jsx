@@ -1,28 +1,87 @@
 import { motion } from 'framer-motion';
-import { designColors, fontMono, glowEffects } from '../designConstants';
+import { designColors, fontMono, glowEffects, MEDALS } from '../designConstants';
 import { cardTap } from '../animationPresets';
 import { EarningsHeader, BracketBadge } from '../shared';
 import ResultCard from './ResultCard';
 
+// XP calculation (simplified version from resolution service)
+const XP_REWARDS = {
+  participation: 50,
+  first: 500,
+  second: 350,
+  third: 250,
+  top10: 150,
+  diamond: 100,
+  platinum: 75,
+  gold: 50,
+  silver: 25,
+  bronze: 10,
+  perfectPrediction: 25,
+  allCorrect: 200,
+};
+
+function calculateXP(rank, bracket, correctCount, totalCount) {
+  let xp = XP_REWARDS.participation;
+
+  if (rank === 1) xp += XP_REWARDS.first;
+  else if (rank === 2) xp += XP_REWARDS.second;
+  else if (rank === 3) xp += XP_REWARDS.third;
+  else if (rank <= 10) xp += XP_REWARDS.top10;
+  else if (bracket) xp += XP_REWARDS[bracket] || 0;
+
+  xp += correctCount * XP_REWARDS.perfectPrediction;
+
+  if (correctCount === totalCount && correctCount > 0) {
+    xp += XP_REWARDS.allCorrect;
+  }
+
+  return xp;
+}
+
 export default function TournamentResults({
   predictions,
-  resultsData,          // { [eventId]: { isCorrect, pointsEarned } }
-  userPosition,         // { rank, points, bracket }
+  resultsData = {},     // { [eventId]: { isCorrect, pointsEarned, actualMove, actualOutcome, actualMagnitude } }
+  userPosition,         // { rank, points, bracket, medal }
   tournament,
+  xpEarned = null,      // Optional pre-calculated XP
   onPlayNext,
   onViewLeaderboard,
   isDesktop = false,
 }) {
-  // Calculate stats
-  const results = predictions.map(p => ({
-    ...p,
-    isCorrect: resultsData[p.eventId]?.isCorrect || false,
-    pointsEarned: resultsData[p.eventId]?.pointsEarned || 0,
-  }));
+  // Calculate stats - now supports resolved predictions with more detail
+  const results = predictions.map(p => {
+    const result = resultsData[p.eventId] || {};
+    return {
+      ...p,
+      isCorrect: p.isCorrect !== undefined ? p.isCorrect : (result.isCorrect || false),
+      pointsEarned: p.pointsEarned !== undefined ? p.pointsEarned : (result.pointsEarned || 0),
+      actualMove: p.actualMove !== undefined ? p.actualMove : result.actualMove,
+      actualOutcome: p.actualOutcome !== undefined ? p.actualOutcome : result.actualOutcome,
+      actualMagnitude: p.actualMagnitude !== undefined ? p.actualMagnitude : result.actualMagnitude,
+      resolved: p.resolved !== undefined ? p.resolved : result.resolved,
+    };
+  });
 
   const correctCount = results.filter(r => r.isCorrect).length;
   const totalCount = results.length;
-  const accuracy = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
+  const pendingCount = results.filter(r => !r.resolved && !r.isCorrect).length;
+  const accuracy = totalCount > 0 ? Math.round((correctCount / (totalCount - pendingCount || 1)) * 100) : 0;
+
+  // Calculate XP if not provided
+  const earnedXP = xpEarned || calculateXP(
+    userPosition.rank,
+    userPosition.bracket,
+    correctCount,
+    totalCount
+  );
+
+  // Get medal for rank
+  const medal = userPosition.medal || (
+    userPosition.rank === 1 ? MEDALS?.gold :
+    userPosition.rank === 2 ? MEDALS?.silver :
+    userPosition.rank === 3 ? MEDALS?.bronze :
+    userPosition.rank <= 10 ? MEDALS?.top10 : null
+  );
 
   // Points to next bracket
   const getPointsToNextBracket = () => {
@@ -83,6 +142,26 @@ export default function TournamentResults({
             }}>
               {userPosition.points?.toLocaleString()} PTS
             </div>
+
+            {/* XP Earned Badge */}
+            <motion.div
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.5, type: 'spring' }}
+              style={{
+                marginTop: '16px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 16px',
+                backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                border: `1px solid ${designColors.green}`,
+                borderRadius: '20px',
+              }}
+            >
+              <span style={{ fontSize: '16px' }}>+{earnedXP}</span>
+              <span style={{ color: designColors.green, fontWeight: '600', fontSize: '12px' }}>XP EARNED</span>
+            </motion.div>
 
             {nextBracket && (
               <div style={{
@@ -241,6 +320,26 @@ export default function TournamentResults({
         }}>
           {userPosition.points?.toLocaleString()} PTS
         </div>
+
+        {/* XP Earned Badge */}
+        <motion.div
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: 0.5, type: 'spring' }}
+          style={{
+            marginTop: '12px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 12px',
+            backgroundColor: 'rgba(16, 185, 129, 0.15)',
+            border: `1px solid ${designColors.green}`,
+            borderRadius: '16px',
+          }}
+        >
+          <span style={{ fontSize: '14px' }}>+{earnedXP}</span>
+          <span style={{ color: designColors.green, fontWeight: '600', fontSize: '11px' }}>XP</span>
+        </motion.div>
 
         {/* Gap to next bracket */}
         {nextBracket && (
