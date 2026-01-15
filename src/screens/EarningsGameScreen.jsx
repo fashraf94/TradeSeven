@@ -28,7 +28,8 @@ import {
   PortfolioWarRoom,
   LiveMatchArena,
   LeaderboardModal,
-  TournamentResults
+  TournamentResults,
+  EntrySelector
 } from '../components/earningsGame';
 
 const EarningsGameScreen = ({
@@ -65,20 +66,30 @@ const EarningsGameScreen = ({
     clearPortfolio,
   } = useEarningsGame(user?.odUserId);
 
-  // Tournament state from Firebase
+  // Tournament state from Firebase (with multi-entry support)
   const {
     tournament,
-    userEntry,
+    userEntry,           // Best entry (backward compat)
+    userEntries,         // All entries array
+    activeEntry,         // Currently selected entry
+    activeEntryId,
     leaderboard: tournamentLeaderboard,
     isLoading: tournamentLoading,
     isDeadlinePassed,
     userRank,
     userBracket,
     hasEntered,
+    canCreateEntry,
+    entriesCount,
     deadlineFormatted,
     entryCount,
+    MAX_ENTRIES_PER_USER,
+    // Actions
+    createEntry,
+    selectEntry,
     enterTournament,
     refreshLeaderboard,
+    refreshUserEntries,
   } = useTournament(user?.odUserId);
 
   // View state for navigation between screens
@@ -203,15 +214,16 @@ const EarningsGameScreen = ({
   };
 
   const handleLock = async () => {
-    const success = lockPortfolio();
+    const success = await lockPortfolio();
     if (success) {
-      // Enter the tournament with current predictions
+      // Create a new tournament entry with current predictions
       const username = user?.username || user?.odId || 'Anonymous';
-      const entered = await enterTournament(predictions, username);
-      if (entered) {
-        console.log('[EarningsGameScreen] Successfully entered tournament');
+      const result = await createEntry(predictions, username);
+      if (result.success) {
+        console.log('[EarningsGameScreen] Successfully created entry:', result.entry?.entryId);
+        await refreshUserEntries();
       } else {
-        console.warn('[EarningsGameScreen] Failed to enter tournament, but portfolio is locked');
+        console.warn('[EarningsGameScreen] Failed to create entry:', result.error);
       }
       setView('arena');
     }
@@ -547,8 +559,8 @@ const EarningsGameScreen = ({
             </div>
           </div>
 
-          {/* Your Entry Status */}
-          {hasEntered ? (
+          {/* Your Entries - Multi-entry display */}
+          {hasEntered && userEntries && userEntries.length > 0 ? (
             <div style={{
               background: '#161b22',
               borderRadius: '12px',
@@ -556,53 +568,60 @@ const EarningsGameScreen = ({
               marginBottom: '24px',
               border: '1px solid #21262d'
             }}>
-              <h3 style={{ color: '#ffffff', margin: '0 0 16px 0' }}>Your Entry</h3>
-              <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>
-                <div>
-                  <div style={{ fontSize: '28px', fontWeight: '700', color: '#00d9ff' }}>
-                    #{userRank || '-'}
+              {/* Best Entry Summary */}
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ color: '#ffffff', margin: '0 0 12px 0' }}>
+                  Your Best Entry {userEntries.length > 1 && `(${userEntries.length} total)`}
+                </h3>
+                <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#00d9ff' }}>
+                      #{userRank || '-'}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#8b949e' }}>Best Rank</div>
                   </div>
-                  <div style={{ fontSize: '12px', color: '#8b949e' }}>Rank</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
-                    {userEntry?.results?.totalPoints?.toLocaleString() || 0}
+                  <div>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#10b981' }}>
+                      {userEntry?.results?.totalPoints?.toLocaleString() || 0}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#8b949e' }}>Top Points</div>
                   </div>
-                  <div style={{ fontSize: '12px', color: '#8b949e' }}>Points</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
-                    {userEntry?.predictionCount || 0}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#8b949e' }}>Picks</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '28px' }}>
-                    {userBracket?.emoji || '🎮'}
-                  </div>
-                  <div style={{ fontSize: '12px', color: userBracket?.color || '#8b949e' }}>
-                    {userBracket?.name || 'Participant'}
+                  <div>
+                    <div style={{ fontSize: '24px' }}>
+                      {userBracket?.emoji || '🎮'}
+                    </div>
+                    <div style={{ fontSize: '11px', color: userBracket?.color || '#8b949e' }}>
+                      {userBracket?.name || 'Bracket'}
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* View Predictions Button */}
-              <button
-                onClick={() => setView('arena')}
-                style={{
-                  marginTop: '16px',
-                  width: '100%',
-                  padding: '12px',
-                  background: 'rgba(0, 217, 255, 0.1)',
-                  border: '1px solid #00d9ff',
-                  borderRadius: '8px',
-                  color: '#00d9ff',
-                  fontWeight: '600',
-                  cursor: 'pointer'
+              {/* Entry Selector */}
+              <EntrySelector
+                entries={userEntries}
+                maxEntries={MAX_ENTRIES_PER_USER || 3}
+                activeEntryId={activeEntryId}
+                isDeadlinePassed={isDeadlinePassed}
+                onSelectEntry={(entry) => {
+                  selectEntry(entry.entryId);
+                  setView('arena');
                 }}
-              >
-                View Your Predictions →
-              </button>
+                onViewEntry={() => setView('arena')}
+                onEditEntry={(entry) => {
+                  selectEntry(entry.entryId);
+                  setView('calendar');
+                }}
+                onCreateEntry={() => {
+                  if (!canCreateEntry) {
+                    alert(`Maximum ${MAX_ENTRIES_PER_USER || 3} entries allowed`);
+                    return;
+                  }
+                  reset();
+                  setView('calendar');
+                }}
+                isDesktop={isDesktop}
+              />
             </div>
           ) : (
             <div style={{
@@ -844,53 +863,91 @@ const EarningsGameScreen = ({
       <div style={{ minHeight: '100vh', background: '#0d1117' }}>
         <NavigationTabs />
 
-        {/* Tournament Entry and Reset Buttons - at top for visibility */}
-        {isLocked && (
-          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* Enter Tournament button - show when locked but not entered */}
-            {!hasEntered && tournament && (
-              <button
-                onClick={async () => {
-                  const username = user?.username || user?.odId || 'Anonymous';
-                  const success = await enterTournament(predictions, username);
-                  if (success) {
-                    setView('tournament');
-                  }
-                }}
-                style={{
-                  padding: '16px 32px',
-                  background: 'linear-gradient(90deg, #10b981 0%, #059669 100%)',
-                  border: 'none',
-                  borderRadius: '12px',
-                  color: '#ffffff',
-                  fontWeight: '700',
-                  fontSize: '16px',
-                  cursor: 'pointer'
-                }}
-              >
-                🏆 Enter Tournament
-              </button>
-            )}
+        {/* Multi-Entry Manager - Show entries when user has tournament entries */}
+        {hasEntered && userEntries && userEntries.length > 0 && (
+          <div style={{ padding: '20px 20px 0 20px' }}>
+            <EntrySelector
+              entries={userEntries}
+              maxEntries={MAX_ENTRIES_PER_USER || 3}
+              activeEntryId={activeEntryId}
+              isDeadlinePassed={isDeadlinePassed}
+              onSelectEntry={(entry) => {
+                selectEntry(entry.entryId);
+                if (entry.status === 'locked' || entry.status === 'complete') {
+                  setView('arena');
+                }
+              }}
+              onViewEntry={() => setView('arena')}
+              onEditEntry={(entry) => {
+                selectEntry(entry.entryId);
+                setView('calendar');
+              }}
+              onCreateEntry={async () => {
+                if (!canCreateEntry) {
+                  alert(`Maximum ${MAX_ENTRIES_PER_USER || 3} entries allowed per tournament`);
+                  return;
+                }
+                reset(); // Clear local predictions only (doesn't affect Firebase entries!)
+                setView('calendar');
+              }}
+              isDesktop={isDesktop}
+            />
+          </div>
+        )}
 
-            {/* Start New Portfolio button */}
+        {/* Tournament Entry button - show when portfolio is locked but NOT yet entered */}
+        {isLocked && !hasEntered && tournament && (
+          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <button
               onClick={async () => {
-                if (window.confirm('Start a new portfolio? This will clear your current picks.')) {
-                  await clearPortfolio();
-                  setView('calendar');
+                const username = user?.username || user?.odId || 'Anonymous';
+                const success = await enterTournament(predictions, username);
+                if (success) {
+                  await refreshUserEntries();
+                  setView('tournament');
                 }
               }}
               style={{
-                padding: '12px 24px',
-                background: 'transparent',
-                border: '1px solid #f59e0b',
-                borderRadius: '8px',
-                color: '#f59e0b',
-                fontWeight: '600',
+                padding: '16px 32px',
+                background: 'linear-gradient(90deg, #10b981 0%, #059669 100%)',
+                border: 'none',
+                borderRadius: '12px',
+                color: '#ffffff',
+                fontWeight: '700',
+                fontSize: '16px',
                 cursor: 'pointer'
               }}
             >
-              Start New Portfolio
+              🏆 Enter Tournament
+            </button>
+          </div>
+        )}
+
+        {/* Create Additional Entry button - show when user has entries but can create more */}
+        {hasEntered && canCreateEntry && !isDeadlinePassed && (
+          <div style={{ padding: '0 20px 20px 20px' }}>
+            <button
+              onClick={() => {
+                reset(); // Clear local predictions only (doesn't affect Firebase entries!)
+                setView('calendar');
+              }}
+              style={{
+                width: '100%',
+                padding: '12px 24px',
+                background: 'transparent',
+                border: '2px dashed #21262d',
+                borderRadius: '8px',
+                color: '#8b949e',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px'
+              }}
+            >
+              <span style={{ fontSize: '18px' }}>+</span>
+              Create Entry {(entriesCount || 0) + 1}
             </button>
           </div>
         )}
@@ -905,9 +962,24 @@ const EarningsGameScreen = ({
           validationMessage={validationMessage}
           onBack={() => setView('calendar')}
           onRemove={removePrediction}
-          onLock={() => {
-            lockPortfolio();
-            setView('arena');
+          onLock={async () => {
+            // First lock the local portfolio state
+            const locked = await lockPortfolio();
+            if (!locked) return;
+
+            // Then create/enter tournament entry
+            const username = user?.username || user?.odId || 'Anonymous';
+            const result = await createEntry(predictions, username);
+
+            if (result.success) {
+              // Refresh entries list and navigate to arena
+              await refreshUserEntries();
+              setView('arena');
+            } else {
+              console.error('[EarningsGame] Failed to create entry:', result.error);
+              // Still go to arena if local lock succeeded
+              setView('arena');
+            }
           }}
           isDesktop={isDesktop}
         />
