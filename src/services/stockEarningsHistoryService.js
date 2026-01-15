@@ -108,19 +108,35 @@ export async function getStockReactionProbabilities(symbol) {
     return null;
   }
 
-  // Validate we have all required magnitude bands
-  const { afterBeat, afterMiss } = history.probabilities;
+  // Fill in missing magnitude bands with 0 probability
+  // This handles edge cases where a stock has never had certain magnitude moves
+  const { afterBeat = {}, afterMiss = {} } = history.probabilities;
   const requiredBands = ['upBig', 'up', 'flat', 'down', 'downBig'];
 
-  const hasAllBeatBands = afterBeat && requiredBands.every(band => afterBeat[band] !== undefined);
-  const hasAllMissBands = afterMiss && requiredBands.every(band => afterMiss[band] !== undefined);
+  // Create complete probability objects, filling in missing bands with 0
+  const normalizedAfterBeat = {};
+  const normalizedAfterMiss = {};
 
-  if (!hasAllBeatBands || !hasAllMissBands) {
-    console.log(`[stockEarningsHistory] ${symbol}: Incomplete probability data, using sector defaults`);
+  requiredBands.forEach(band => {
+    normalizedAfterBeat[band] = afterBeat[band] !== undefined ? afterBeat[band] : 0;
+    normalizedAfterMiss[band] = afterMiss[band] !== undefined ? afterMiss[band] : 0;
+  });
+
+  // Verify we have at least SOME data (not all zeros in both)
+  const beatTotal = Object.values(normalizedAfterBeat).reduce((sum, val) => sum + val, 0);
+  const missTotal = Object.values(normalizedAfterMiss).reduce((sum, val) => sum + val, 0);
+
+  if (beatTotal === 0 && missTotal === 0) {
+    console.log(`[stockEarningsHistory] ${symbol}: No probability data available, using sector defaults`);
     return null;
   }
 
-  return history.probabilities;
+  console.log(`[stockEarningsHistory] ${symbol}: Using stock-specific probabilities (${history.quartersAnalyzed} quarters)`);
+
+  return {
+    afterBeat: normalizedAfterBeat,
+    afterMiss: normalizedAfterMiss
+  };
 }
 
 /**

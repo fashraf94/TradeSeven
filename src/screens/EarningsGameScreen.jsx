@@ -23,6 +23,7 @@ import {
   BUDGET,
   MIN_PREDICTIONS,
   MAX_PREDICTIONS,
+  BRACKETS,
   EarningsCalendar,
   ParlayArchitectModal,
   PortfolioWarRoom,
@@ -667,71 +668,108 @@ const EarningsGameScreen = ({
 
             {tournamentLeaderboard && tournamentLeaderboard.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {tournamentLeaderboard.slice(0, 20).map((entry, index) => (
-                  <div
-                    key={entry.odUserId || index}
-                    onClick={() => setSelectedPlayer(entry)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '12px',
-                      background: entry.odUserId === user?.odUserId
-                        ? 'rgba(0, 217, 255, 0.1)'
-                        : index % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
-                      borderRadius: '8px',
-                      borderLeft: entry.odUserId === user?.odUserId ? '3px solid #00d9ff' : 'none',
-                      cursor: 'pointer',
-                      transition: 'background 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (entry.odUserId !== user?.odUserId) {
-                        e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = entry.odUserId === user?.odUserId
-                        ? 'rgba(0, 217, 255, 0.1)'
-                        : index % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent';
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{
-                        fontWeight: '700',
-                        color: index === 0 ? '#ffd700' : index < 3 ? '#c0c0c0' : '#8b949e',
-                        width: '30px'
-                      }}>
-                        {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`}
-                      </span>
-                      {entry.avatar && <span style={{ fontSize: '16px' }}>{entry.avatar}</span>}
-                      <span style={{ color: '#ffffff' }}>{entry.username || 'Anonymous'}</span>
-                      {entry.isBot && (
+                {tournamentLeaderboard.slice(0, 20).map((entry, index) => {
+                  // Get bracket config for colors
+                  const bracketConfig = BRACKETS[entry.bracket] || BRACKETS.participant;
+
+                  return (
+                    <div
+                      key={entry.odUserId || index}
+                      onClick={() => setSelectedPlayer(entry)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '12px',
+                        background: entry.odUserId === user?.odUserId
+                          ? 'rgba(0, 217, 255, 0.1)'
+                          : index % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
+                        borderRadius: '8px',
+                        borderLeft: entry.odUserId === user?.odUserId ? '3px solid #00d9ff' : 'none',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (entry.odUserId !== user?.odUserId) {
+                          e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = entry.odUserId === user?.odUserId
+                          ? 'rgba(0, 217, 255, 0.1)'
+                          : index % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent';
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {/* Rank with medal for top 3 */}
                         <span style={{
-                          fontSize: '10px',
-                          color: '#8b5cf6',
-                          background: 'rgba(139, 92, 246, 0.2)',
-                          padding: '2px 6px',
-                          borderRadius: '4px'
-                        }}>BOT</span>
-                      )}
-                      {entry.odUserId === user?.odUserId && (
+                          fontWeight: '700',
+                          color: index === 0 ? '#ffd700' : index < 3 ? '#c0c0c0' : '#8b949e',
+                          width: '30px'
+                        }}>
+                          {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`}
+                        </span>
+
+                        {/* Bracket badge */}
                         <span style={{
-                          fontSize: '10px',
-                          color: '#00d9ff',
-                          background: 'rgba(0, 217, 255, 0.2)',
-                          padding: '2px 6px',
-                          borderRadius: '4px'
-                        }}>YOU</span>
-                      )}
+                          fontSize: '14px',
+                          width: '24px',
+                          textAlign: 'center',
+                        }}>
+                          {bracketConfig.emoji}
+                        </span>
+
+                        {/* Username */}
+                        <span style={{ color: '#ffffff' }}>{entry.username || 'Anonymous'}</span>
+
+                        {/* Entry number if multi-entry */}
+                        {entry.entryNumber && entry.entryNumber > 1 && (
+                          <span style={{
+                            fontSize: '9px',
+                            color: '#8b949e',
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            padding: '2px 4px',
+                            borderRadius: '3px',
+                          }}>
+                            #{entry.entryNumber}
+                          </span>
+                        )}
+
+                        {/* Bot badge */}
+                        {entry.isBot && (
+                          <span style={{
+                            fontSize: '10px',
+                            color: '#8b5cf6',
+                            background: 'rgba(139, 92, 246, 0.2)',
+                            padding: '2px 6px',
+                            borderRadius: '4px'
+                          }}>BOT</span>
+                        )}
+
+                        {/* Current user badge */}
+                        {entry.odUserId === user?.odUserId && (
+                          <span style={{
+                            fontSize: '10px',
+                            color: '#00d9ff',
+                            background: 'rgba(0, 217, 255, 0.2)',
+                            padding: '2px 6px',
+                            borderRadius: '4px'
+                          }}>YOU</span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {/* Points with bracket color */}
+                        <span style={{
+                          fontWeight: '700',
+                          color: bracketConfig.color || '#00d9ff'
+                        }}>
+                          {(entry.results?.totalPoints || 0).toLocaleString()} pts
+                        </span>
+                        <span style={{ color: '#8b949e', fontSize: '12px' }}>›</span>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontWeight: '700', color: '#00d9ff' }}>
-                        {(entry.results?.totalPoints || 0).toLocaleString()} pts
-                      </span>
-                      <span style={{ color: '#8b949e', fontSize: '12px' }}>›</span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div style={{ color: '#8b949e', textAlign: 'center', padding: '20px' }}>
