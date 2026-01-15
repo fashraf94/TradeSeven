@@ -275,11 +275,11 @@ export function getPrecisionOptions(magnitudeBand, baseMultiplier) {
 
 /**
  * Calculate price for a parlay
- * Applies $500 minimum floor
+ * Applies $500 minimum floor and rounds to whole dollars
  */
 export function calculateParlayPrice(beatMissOdds, reactionProbability, budget = BUDGET) {
   const rawPrice = budget * beatMissOdds * reactionProbability;
-  return Math.max(rawPrice, MIN_PRICE);
+  return Math.max(Math.round(rawPrice), MIN_PRICE);
 }
 
 /**

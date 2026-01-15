@@ -538,7 +538,7 @@ export default function ParlayArchitectModal({
                   fontSize: '12px',
                   color: designColors.red,
                 }}>
-                  Insufficient budget. Need ${selectedParlay.price - currentBudget} more.
+                  Insufficient budget. Need ${(selectedParlay.price - currentBudget).toLocaleString()} more.
                 </span>
               </motion.div>
             )}
@@ -785,7 +785,7 @@ export default function ParlayArchitectModal({
                   fontSize: '13px',
                   color: designColors.red,
                 }}>
-                  Insufficient budget. Need ${selectedParlay.price - currentBudget} more.
+                  Insufficient budget. Need ${(selectedParlay.price - currentBudget).toLocaleString()} more.
                 </span>
               </motion.div>
             )}
