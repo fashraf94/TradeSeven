@@ -813,10 +813,18 @@ async function fetchEODHDCalendar(days = 14) {
 
 /**
  * Fetch raw Polymarket events using multiple strategies
- * Polymarket's search API doesn't reliably return earnings events,
- * so we try multiple approaches
+ *
+ * DISABLED: Polymarket rarely has stock earnings markets, and the multi-strategy
+ * search was causing an infinite loop that blocked calendar loading.
+ * We now use our own Market-Informed Odds Engine instead.
  */
 async function fetchPolymarketEventsRaw() {
+  // DISABLED - Using our own odds engine (oddsService.js) instead
+  console.log('[Polymarket] DISABLED - Using Market-Informed Odds Engine v1');
+  return [];
+
+  // Original code kept for reference (disabled):
+  /*
   console.log('[Polymarket] Starting multi-strategy fetch...');
 
   // Strategy URLs to try - ordered by specificity
@@ -933,6 +941,7 @@ async function fetchPolymarketEventsRaw() {
   }
 
   return transformed;
+  */
 }
 
 /**
