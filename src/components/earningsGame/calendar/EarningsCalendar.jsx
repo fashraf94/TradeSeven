@@ -58,7 +58,7 @@ export default function EarningsCalendar({
     return events.some(e => e.hasPolymarketOdds === true);
   }, [events]);
 
-  // Get the data source for display
+  // Get the data source for display - count how many have historical vs sector defaults
   const dataSourceInfo = useMemo(() => {
     if (events.length === 0) return null;
     const firstEvent = events[0];
@@ -66,13 +66,35 @@ export default function EarningsCalendar({
 
     // Market-Informed Engine v1 - our calculated odds
     if (source === 'market_informed_v1') {
-      const confidence = firstEvent?.oddsConfidence || 'low';
-      if (confidence === 'high') {
-        return { label: 'CALCULATED', color: designColors.cyan, icon: '📊' };
-      } else if (confidence === 'medium') {
-        return { label: 'SECTOR EST.', color: designColors.green, icon: '📈' };
+      // Count how many events have historical data
+      const historicalCount = events.filter(e =>
+        e.oddsSource === 'historical' || e.oddsSource === 'cached_historical'
+      ).length;
+
+      if (historicalCount >= events.length * 0.5) {
+        // Majority have historical data
+        return {
+          label: `CALCULATED (${historicalCount})`,
+          color: designColors.cyan,
+          icon: '📊',
+          tooltip: `${historicalCount} stocks with historical beat rates`
+        };
+      } else if (historicalCount > 0) {
+        // Some have historical data
+        return {
+          label: `MIXED (${historicalCount} hist)`,
+          color: designColors.green,
+          icon: '📈',
+          tooltip: `${historicalCount} stocks with historical data, rest using sector averages`
+        };
       }
-      return { label: 'SECTOR AVG', color: designColors.gold, icon: '~' };
+      // All using sector defaults
+      return {
+        label: 'SECTOR AVG',
+        color: designColors.gold,
+        icon: '~',
+        tooltip: 'Using sector-based average beat rates'
+      };
     }
 
     // Legacy: Polymarket live data
