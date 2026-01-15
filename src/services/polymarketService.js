@@ -6,6 +6,7 @@
  */
 
 import { enhanceEventWithParlays } from './earningsReactionsService';
+import { getBatchOdds } from './oddsService';
 
 // Use our Vercel proxy to avoid CORS issues
 const GAMMA_API_BASE = '/api/polymarket';
@@ -999,69 +1000,55 @@ export async function getHybridEarningsCalendar(days = 14) {
           ));
         }
 
-        // Fetch historical beat rates for priority stocks (known companies only, to limit API calls)
+        // Use Market-Informed Odds Engine v1.1 via oddsService
+        // This fetches full odds with historical + price momentum + sector blend
         const prioritySymbols = sortedEvents
           .filter(e => COMPANY_NAMES[e.symbol.toUpperCase()])
-          .slice(0, 15) // Limit to top 15 to avoid too many API calls
-          .map(e => e.symbol.toUpperCase());
+          .slice(0, 20) // Limit to top 20 known companies
+          .map(e => ({
+            symbol: e.symbol.toUpperCase(),
+            sector: COMPANY_SECTORS[e.symbol.toUpperCase()] || 'default'
+          }));
 
-        console.log(`[Hybrid] Fetching historical beat rates for ${prioritySymbols.length} priority stocks...`);
+        console.log(`[Hybrid] Fetching full odds for ${prioritySymbols.length} priority stocks via oddsService...`);
 
-        // Fetch historical data in parallel (with rate limiting)
-        const historicalDataMap = new Map();
-        const batchSize = 5;
+        // Fetch odds from the full odds engine (includes price momentum)
+        let oddsMap = new Map();
+        try {
+          oddsMap = await getBatchOdds(prioritySymbols);
+          console.log(`[Hybrid] Got full odds for ${oddsMap.size} stocks`);
 
-        for (let i = 0; i < prioritySymbols.length; i += batchSize) {
-          const batch = prioritySymbols.slice(i, i + batchSize);
-          try {
-            const batchResults = await Promise.all(
-              batch.map(async (symbol) => {
-                try {
-                  const response = await fetch(`/api/stocks/earnings-history?symbol=${symbol}`);
-                  if (response.ok) {
-                    const result = await response.json();
-                    if (result.success && result.data?.stats?.beatRate !== undefined) {
-                      return { symbol, beatRate: result.data.stats.beatRate };
-                    }
-                  }
-                  return { symbol, beatRate: null };
-                } catch (e) {
-                  console.warn(`[Hybrid] Failed to fetch history for ${symbol}:`, e.message);
-                  return { symbol, beatRate: null };
-                }
-              })
-            );
-
-            batchResults.forEach(({ symbol, beatRate }) => {
-              if (beatRate !== null) {
-                historicalDataMap.set(symbol, beatRate);
-                cacheHistoricalBeatRate(symbol, beatRate);
-              }
-            });
-
-            // Small delay between batches
-            if (i + batchSize < prioritySymbols.length) {
-              await new Promise(resolve => setTimeout(resolve, 200));
-            }
-          } catch (e) {
-            console.warn(`[Hybrid] Batch fetch error:`, e.message);
-          }
+          // Log sample results
+          const samples = Array.from(oddsMap.entries()).slice(0, 5);
+          samples.forEach(([symbol, odds]) => {
+            const priceInfo = odds.breakdown?.priceMomentum?.display || 'N/A';
+            console.log(`[Hybrid] ${symbol}: ${odds.probabilityPercent}% beat (${odds.confidence}, price: ${priceInfo})`);
+          });
+        } catch (e) {
+          console.warn(`[Hybrid] Batch odds fetch failed, using fallbacks:`, e.message);
         }
 
-        console.log(`[Hybrid] Got historical beat rates for ${historicalDataMap.size} stocks:`,
-          Array.from(historicalDataMap.entries()).map(([s, r]) => `${s}:${r}%`).join(', ')
-        );
-
-        // Use EODHD data with SMART calculated odds (Market-Informed Engine v1.1)
+        // Map events with full odds data from the engine
         const eohdOnly = sortedEvents.map(event => {
           const symbolUpper = event.symbol.toUpperCase();
 
-          // Get historical beat rate if we fetched it
-          const historicalBeatRate = historicalDataMap.get(symbolUpper) || null;
+          // Get full odds from the engine, or fallback to sector default
+          const oddsData = oddsMap.get(symbolUpper);
+          let beatOdds, confidence, oddsSource, breakdown;
 
-          // Use smart odds calculation - historical if available, sector default otherwise
-          const oddsResult = getSmartBeatOdds(symbolUpper, historicalBeatRate);
-          const { odds: beatOdds, sector, confidence, source, historicalRate } = oddsResult;
+          if (oddsData && !oddsData.fallback) {
+            beatOdds = oddsData.probability;
+            confidence = oddsData.confidence;
+            oddsSource = oddsData.breakdown?.historical?.quarters >= 3 ? 'historical_plus_momentum' : 'sector_plus_momentum';
+            breakdown = oddsData.breakdown;
+          } else {
+            // Fallback to sector default
+            const sector = COMPANY_SECTORS[symbolUpper] || 'default';
+            beatOdds = SECTOR_BEAT_RATES[sector] || 0.70;
+            confidence = 'sector_default';
+            oddsSource = 'sector_default';
+            breakdown = null;
+          }
 
           const yesCost = Math.round(beatOdds * 10000);
           const noCost = Math.round((1 - beatOdds) * 10000);
@@ -1070,9 +1057,12 @@ export async function getHybridEarningsCalendar(days = 14) {
           const companyName = COMPANY_NAMES[symbolUpper] || event.companyName || symbolUpper;
 
           // Parse date as LOCAL date to avoid timezone issues
-          // event.reportDate is "YYYY-MM-DD" - parse components to create local date
           const [year, month, day] = event.reportDate.split('-').map(Number);
-          const localDate = new Date(year, month - 1, day); // month is 0-indexed
+          const localDate = new Date(year, month - 1, day);
+
+          // Extract historical and momentum info for display
+          const historicalRate = breakdown?.historical?.rate;
+          const priceChange = breakdown?.priceMomentum?.change;
 
           return {
             id: `eodhd_${symbolUpper}_${event.reportDate}`,
@@ -1088,13 +1078,17 @@ export async function getHybridEarningsCalendar(days = 14) {
             yesCost,
             noCost,
             source: 'eodhd_only',
-            dataSource: 'market_informed_v1',
-            sector: sector,
+            dataSource: 'market_informed_v1.1',
+            sector: COMPANY_SECTORS[symbolUpper] || 'default',
             oddsConfidence: confidence,
-            oddsSource: source, // 'historical', 'cached_historical', or 'sector_default'
-            historicalBeatRate: historicalRate ? Math.round(historicalRate * 100) : null,
+            oddsSource: oddsSource,
+            historicalBeatRate: historicalRate !== null && historicalRate !== undefined
+              ? Math.round(historicalRate * 100) : null,
+            priceChange30d: priceChange !== null && priceChange !== undefined
+              ? Math.round(priceChange * 10) / 10 : null,
+            oddsBreakdown: breakdown, // Full breakdown for transparency
             hasPolymarketOdds: false,
-            hasCalculatedOdds: source !== 'sector_default', // True only if we have actual historical data
+            hasCalculatedOdds: oddsSource !== 'sector_default',
             lastFetched: fetchTimestamp
           };
         });
