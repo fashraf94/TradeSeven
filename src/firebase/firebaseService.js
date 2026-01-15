@@ -2089,6 +2089,420 @@ export async function clearBotEntries(tournamentId) {
 }
 
 // =====================================================
+// MULTI-ENTRY TOURNAMENT SYSTEM
+// =====================================================
+
+export const MAX_ENTRIES_PER_USER = 3;
+
+/**
+ * Get medal for top ranks
+ * @param {number} rank - User's rank
+ * @returns {string|null} - Medal type or null
+ */
+function getMedal(rank) {
+  if (rank === 1) return 'gold';
+  if (rank === 2) return 'silver';
+  if (rank === 3) return 'bronze';
+  if (rank <= 10) return 'top10';
+  return null;
+}
+
+/**
+ * Get all entries for a user in a tournament
+ * @param {string} tournamentId - Tournament ID
+ * @param {string} userId - User's odUserId
+ * @returns {Promise<Array>} - Array of entry objects
+ */
+export async function getUserEntriesForTournament(tournamentId, userId) {
+  if (!tournamentId || !userId) return [];
+
+  try {
+    const entriesRef = collection(db, 'earningsEntries');
+    const q = query(
+      entriesRef,
+      where('tournamentId', '==', tournamentId),
+      where('odUserId', '==', userId),
+      orderBy('entryNumber', 'asc')
+    );
+
+    const snapshot = await getDocs(q);
+    const entries = [];
+
+    snapshot.forEach(docSnap => {
+      entries.push({
+        entryId: docSnap.id,
+        ...docSnap.data()
+      });
+    });
+
+    console.log(`[Firebase] Found ${entries.length} entries for user ${userId} in ${tournamentId}`);
+    return entries;
+  } catch (error) {
+    console.error('[Firebase] Error getting user entries:', error);
+    return [];
+  }
+}
+
+/**
+ * Create a new tournament entry (supports multiple entries per user)
+ *
+ * @param {string} userId - User ID (odUserId)
+ * @param {string} username - Display username
+ * @param {Array} predictions - Array of prediction objects
+ * @param {number} entryNumber - Entry number (1, 2, or 3)
+ * @returns {Promise<Object>} - Entry data with entryId
+ */
+export async function createTournamentEntry(userId, username, predictions, entryNumber = null) {
+  if (!userId) {
+    throw new Error('userId required');
+  }
+
+  if (!predictions || predictions.length === 0) {
+    throw new Error('predictions required');
+  }
+
+  const tournament = await getCurrentTournament();
+
+  // Check if deadline passed
+  if (new Date() > new Date(tournament.lockDeadline)) {
+    throw new Error('Tournament lock deadline has passed');
+  }
+
+  // Get existing entries for this user
+  const existingEntries = await getUserEntriesForTournament(tournament.id, userId);
+
+  // If no entryNumber specified, use next available
+  if (entryNumber === null) {
+    if (existingEntries.length >= MAX_ENTRIES_PER_USER) {
+      throw new Error(`Maximum ${MAX_ENTRIES_PER_USER} entries allowed per tournament`);
+    }
+    entryNumber = existingEntries.length + 1;
+  }
+
+  // Validate entry number
+  if (entryNumber < 1 || entryNumber > MAX_ENTRIES_PER_USER) {
+    throw new Error(`Entry number must be between 1 and ${MAX_ENTRIES_PER_USER}`);
+  }
+
+  // Check if this entry number already exists
+  if (existingEntries.find(e => e.entryNumber === entryNumber)) {
+    throw new Error(`Entry ${entryNumber} already exists. Use updateEntry to modify it.`);
+  }
+
+  // Create entry ID with entry number
+  const entryId = `${userId}_${entryNumber}_${tournament.id}`;
+  const entryRef = doc(db, 'earningsEntries', entryId);
+
+  const totalSpent = predictions.reduce((sum, p) => sum + (p.price || 0), 0);
+  const totalPotentialPoints = predictions.reduce((sum, p) => sum + (p.potentialPayout || 0), 0);
+
+  const entry = {
+    odUserId: userId,
+    tournamentId: tournament.id,
+    username: username || userId,
+    entryNumber,
+    predictions: removeUndefined(predictions),
+    totalSpent,
+    totalPotentialPoints,
+    predictionCount: predictions.length,
+    status: 'locked', // Entry is locked when created through tournament
+    lockedAt: serverTimestamp(),
+    createdAt: serverTimestamp(),
+
+    // Results - to be filled in as earnings report
+    results: {
+      totalPoints: 0,
+      correctPredictions: 0,
+      incorrectPredictions: 0,
+      pendingPredictions: predictions.length
+    },
+    rank: null,
+    bracket: null,
+    medal: null
+  };
+
+  try {
+    await setDoc(entryRef, removeUndefined(entry));
+
+    // Increment entry count on tournament (only for new entries)
+    const tournamentRef = doc(db, 'earningsTournaments', tournament.id);
+    await updateDoc(tournamentRef, {
+      entryCount: increment(1)
+    });
+
+    console.log(`[Firebase] Created entry ${entryNumber} for ${userId}:`, entryId);
+    return { entryId, tournamentId: tournament.id, entryNumber, ...entry };
+  } catch (error) {
+    console.error('[Firebase] Error creating tournament entry:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update an existing tournament entry's predictions
+ * @param {string} entryId - Entry document ID
+ * @param {Array} predictions - Updated predictions array
+ * @returns {Promise<Object>} - Updated entry data
+ */
+export async function updateTournamentEntry(entryId, predictions) {
+  if (!entryId || !predictions) {
+    throw new Error('entryId and predictions required');
+  }
+
+  try {
+    const entryRef = doc(db, 'earningsEntries', entryId);
+    const snapshot = await getDoc(entryRef);
+
+    if (!snapshot.exists()) {
+      throw new Error('Entry not found');
+    }
+
+    const entry = snapshot.data();
+
+    // Check if tournament deadline passed
+    const tournament = await getTournament(entry.tournamentId);
+    if (tournament && new Date() > new Date(tournament.lockDeadline)) {
+      throw new Error('Tournament lock deadline has passed');
+    }
+
+    const totalSpent = predictions.reduce((sum, p) => sum + (p.price || 0), 0);
+    const totalPotentialPoints = predictions.reduce((sum, p) => sum + (p.potentialPayout || 0), 0);
+
+    await updateDoc(entryRef, {
+      predictions: removeUndefined(predictions),
+      totalSpent,
+      totalPotentialPoints,
+      predictionCount: predictions.length,
+      'results.pendingPredictions': predictions.length,
+      updatedAt: serverTimestamp()
+    });
+
+    console.log(`[Firebase] Updated entry:`, entryId);
+    return { entryId, ...entry, predictions, totalSpent, totalPotentialPoints };
+  } catch (error) {
+    console.error('[Firebase] Error updating entry:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a tournament entry (only if tournament is still open)
+ * @param {string} entryId - Entry document ID
+ * @returns {Promise<boolean>} - Success status
+ */
+export async function deleteTournamentEntry(entryId) {
+  if (!entryId) {
+    throw new Error('entryId required');
+  }
+
+  try {
+    const entryRef = doc(db, 'earningsEntries', entryId);
+    const snapshot = await getDoc(entryRef);
+
+    if (!snapshot.exists()) {
+      throw new Error('Entry not found');
+    }
+
+    const entry = snapshot.data();
+
+    // Check if tournament deadline passed
+    const tournament = await getTournament(entry.tournamentId);
+    if (tournament && new Date() > new Date(tournament.lockDeadline)) {
+      throw new Error('Cannot delete entry after tournament deadline');
+    }
+
+    await deleteDoc(entryRef);
+
+    // Decrement entry count on tournament
+    const tournamentRef = doc(db, 'earningsTournaments', entry.tournamentId);
+    await updateDoc(tournamentRef, {
+      entryCount: increment(-1)
+    });
+
+    console.log(`[Firebase] Deleted entry:`, entryId);
+    return true;
+  } catch (error) {
+    console.error('[Firebase] Error deleting entry:', error);
+    throw error;
+  }
+}
+
+/**
+ * Resolve a tournament entry with actual earnings results
+ * @param {string} entryId - Entry document ID
+ * @param {Array} results - Array of { eventId, actualMove, didBeat, outcome, magnitude }
+ * @returns {Promise<Object>} - Updated entry with scores
+ */
+export async function resolveEntryPredictions(entryId, results) {
+  if (!entryId || !results) {
+    throw new Error('entryId and results required');
+  }
+
+  try {
+    const entryRef = doc(db, 'earningsEntries', entryId);
+    const snapshot = await getDoc(entryRef);
+
+    if (!snapshot.exists()) {
+      throw new Error('Entry not found');
+    }
+
+    const entry = snapshot.data();
+    const predictions = entry.predictions || [];
+    let totalPoints = 0;
+    let correctCount = 0;
+    let incorrectCount = 0;
+    let pendingCount = 0;
+
+    // Update each prediction with result
+    const updatedPredictions = predictions.map(pred => {
+      const result = results.find(r => r.eventId === pred.eventId || r.symbol === pred.symbol);
+
+      if (!result || !result.resolved) {
+        pendingCount++;
+        return { ...pred, resolved: false };
+      }
+
+      // Check if prediction was correct (both outcome AND magnitude must match)
+      const outcomeCorrect = pred.outcome === result.outcome;
+      const magnitudeCorrect = pred.magnitude === result.magnitude;
+      const isWinner = outcomeCorrect && magnitudeCorrect;
+
+      const pointsEarned = isWinner ? (pred.potentialPayout || 0) : 0;
+      totalPoints += pointsEarned;
+
+      if (isWinner) {
+        correctCount++;
+      } else {
+        incorrectCount++;
+      }
+
+      return {
+        ...pred,
+        resolved: true,
+        actualOutcome: result.outcome,
+        actualMagnitude: result.magnitude,
+        actualMove: result.priceMove,
+        outcomeCorrect,
+        magnitudeCorrect,
+        isCorrect: isWinner,
+        isWinner,
+        pointsEarned
+      };
+    });
+
+    // Update entry
+    await updateDoc(entryRef, {
+      predictions: removeUndefined(updatedPredictions),
+      results: {
+        totalPoints,
+        correctPredictions: correctCount,
+        incorrectPredictions: incorrectCount,
+        pendingPredictions: pendingCount
+      },
+      status: pendingCount === 0 ? 'complete' : 'in_progress',
+      resolvedAt: pendingCount === 0 ? serverTimestamp() : null
+    });
+
+    console.log(`[Firebase] Resolved entry ${entryId}: ${correctCount} correct, ${incorrectCount} incorrect, ${pendingCount} pending`);
+    return {
+      entryId,
+      totalPoints,
+      correctPredictions: correctCount,
+      incorrectPredictions: incorrectCount,
+      pendingPredictions: pendingCount,
+      predictions: updatedPredictions
+    };
+  } catch (error) {
+    console.error('[Firebase] Error resolving entry:', error);
+    throw error;
+  }
+}
+
+/**
+ * Calculate and update ranks, brackets, and medals for all entries in a tournament
+ * @param {string} tournamentId - Tournament ID
+ * @returns {Promise<Object>} - Rankings summary
+ */
+export async function calculateTournamentRankings(tournamentId) {
+  if (!tournamentId) {
+    throw new Error('tournamentId required');
+  }
+
+  try {
+    const entriesRef = collection(db, 'earningsEntries');
+    const q = query(
+      entriesRef,
+      where('tournamentId', '==', tournamentId),
+      orderBy('results.totalPoints', 'desc')
+    );
+
+    const snapshot = await getDocs(q);
+    const entries = [];
+
+    snapshot.forEach(docSnap => {
+      entries.push({
+        entryId: docSnap.id,
+        ...docSnap.data()
+      });
+    });
+
+    const totalEntries = entries.length;
+    let rank = 1;
+
+    // Update each entry with rank, bracket, and medal
+    for (const entry of entries) {
+      const bracket = calculateBracket(rank, totalEntries);
+      const medal = getMedal(rank);
+
+      const entryRef = doc(db, 'earningsEntries', entry.entryId);
+      await updateDoc(entryRef, {
+        rank,
+        bracket,
+        medal,
+        finalPoints: entry.results?.totalPoints || 0
+      });
+
+      rank++;
+    }
+
+    console.log(`[Firebase] Updated rankings for ${totalEntries} entries in ${tournamentId}`);
+    return {
+      tournamentId,
+      totalEntries,
+      topEntries: entries.slice(0, 10).map(e => ({
+        entryId: e.entryId,
+        username: e.username,
+        points: e.results?.totalPoints || 0
+      }))
+    };
+  } catch (error) {
+    console.error('[Firebase] Error calculating rankings:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get the best entry for a user in a tournament (for display)
+ * @param {string} tournamentId - Tournament ID
+ * @param {string} userId - User's odUserId
+ * @returns {Promise<Object|null>} - Best entry or null
+ */
+export async function getUserBestEntry(tournamentId, userId) {
+  const entries = await getUserEntriesForTournament(tournamentId, userId);
+
+  if (entries.length === 0) return null;
+
+  // Sort by points (highest first)
+  entries.sort((a, b) => {
+    const aPoints = a.results?.totalPoints || 0;
+    const bPoints = b.results?.totalPoints || 0;
+    return bPoints - aPoints;
+  });
+
+  return entries[0];
+}
+
+// =====================================================
 // EXPORTS
 // =====================================================
 
@@ -2142,6 +2556,16 @@ export default {
   updateTournamentRankings,
   getTournament,
   updateTournamentStatus,
+
+  // Multi-Entry Tournament System
+  MAX_ENTRIES_PER_USER,
+  getUserEntriesForTournament,
+  createTournamentEntry,
+  updateTournamentEntry,
+  deleteTournamentEntry,
+  resolveEntryPredictions,
+  calculateTournamentRankings,
+  getUserBestEntry,
 
   // Tournament Bots
   createBotTournamentEntries,

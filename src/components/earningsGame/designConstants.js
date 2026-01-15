@@ -50,12 +50,22 @@ export const BUDGET = 10000;
 export const MIN_PREDICTIONS = 3;
 export const MAX_PREDICTIONS = 10;
 
-// Bracket definitions
+// Bracket definitions (top percentiles)
 export const BRACKETS = {
-  diamond: { emoji: '🏆', label: 'DIAMOND', color: '#00d9ff' },
-  gold: { emoji: '🥇', label: 'GOLD', color: '#fbbf24' },
-  silver: { emoji: '🥈', label: 'SILVER', color: '#9ca3af' },
-  bronze: { emoji: '🥉', label: 'BRONZE', color: '#f97316' },
+  diamond: { emoji: '💎', label: 'DIAMOND', color: '#00ffff', percentile: 0.10 },
+  platinum: { emoji: '⚪', label: 'PLATINUM', color: '#e5e4e2', percentile: 0.25 },
+  gold: { emoji: '🥇', label: 'GOLD', color: '#ffd700', percentile: 0.50 },
+  silver: { emoji: '🥈', label: 'SILVER', color: '#c0c0c0', percentile: 0.75 },
+  bronze: { emoji: '🥉', label: 'BRONZE', color: '#cd7f32', percentile: 1.00 },
+  participant: { emoji: '🎮', label: 'PARTICIPANT', color: '#8b949e', percentile: 1.00 },
+};
+
+// Medal definitions (top ranks)
+export const MEDALS = {
+  gold: { icon: '🥇', label: '1st Place', color: '#FFD700', rank: 1 },
+  silver: { icon: '🥈', label: '2nd Place', color: '#C0C0C0', rank: 2 },
+  bronze: { icon: '🥉', label: '3rd Place', color: '#CD7F32', rank: 3 },
+  top10: { icon: '🏅', label: 'Top 10', color: '#00d9ff', rank: 10 },
 };
 
 // Magnitude definitions

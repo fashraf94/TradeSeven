@@ -17,22 +17,39 @@ export const EARNINGS_BUDGET = BUDGET;
 export const MIN_PREDICTIONS = 3;
 export const MAX_PREDICTIONS = 10;
 
-const STORAGE_KEY = 'marketclash_earnings_portfolio';
+const STORAGE_KEY_PREFIX = 'marketclash_earnings_portfolio';
 
 // ============================================
 // PERSISTENCE HELPERS
 // ============================================
 
 /**
- * Load portfolio from localStorage
+ * Get user-specific storage key
+ * Each user gets their own localStorage key to prevent data bleeding
  */
-function loadFromStorage() {
+function getStorageKey(userId) {
+  if (!userId) return null;
+  return `${STORAGE_KEY_PREFIX}_${userId}`;
+}
+
+/**
+ * Load portfolio from localStorage for a specific user
+ */
+function loadFromStorage(userId) {
+  const key = getStorageKey(userId);
+  if (!key) return null;
+
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(key);
     if (stored) {
       const data = JSON.parse(stored);
-      // Validate structure
+      // Validate structure and user ownership
       if (data && Array.isArray(data.predictions)) {
+        // Verify this data belongs to the correct user
+        if (data.odUserId && data.odUserId !== userId) {
+          console.warn('[useEarningsGame] Storage data belongs to different user, ignoring');
+          return null;
+        }
         return data;
       }
     }
@@ -43,12 +60,16 @@ function loadFromStorage() {
 }
 
 /**
- * Save portfolio to localStorage
+ * Save portfolio to localStorage for a specific user
  */
-function saveToStorage(data) {
+function saveToStorage(userId, data) {
+  const key = getStorageKey(userId);
+  if (!key) return;
+
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    localStorage.setItem(key, JSON.stringify({
       ...data,
+      odUserId: userId, // Always include for verification
       savedAt: new Date().toISOString()
     }));
   } catch (e) {
@@ -57,13 +78,38 @@ function saveToStorage(data) {
 }
 
 /**
- * Clear portfolio from localStorage
+ * Clear portfolio from localStorage for a specific user
  */
-function clearStorage() {
+function clearStorage(userId) {
+  const key = getStorageKey(userId);
+  if (!key) return;
+
   try {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(key);
   } catch (e) {
     console.error('[useEarningsGame] Error clearing storage:', e);
+  }
+}
+
+/**
+ * Migrate from old shared storage key to user-specific key (one-time migration)
+ */
+function migrateOldStorage(userId) {
+  if (!userId) return;
+
+  try {
+    // Check if old shared key exists
+    const oldKey = STORAGE_KEY_PREFIX; // The old non-user-scoped key
+    const oldData = localStorage.getItem(oldKey);
+
+    if (oldData) {
+      console.log('[useEarningsGame] Found old shared storage, migrating...');
+      // Remove old shared key to prevent future conflicts
+      localStorage.removeItem(oldKey);
+      console.log('[useEarningsGame] Removed old shared storage key');
+    }
+  } catch (e) {
+    console.warn('[useEarningsGame] Error during storage migration:', e);
   }
 }
 
@@ -146,24 +192,43 @@ export function useEarningsGame(userId = null) {
     async function loadPortfolio() {
       setIsLoading(true);
 
+      // Migrate old shared storage (one-time cleanup)
+      migrateOldStorage(userId);
+
+      console.log('[useEarningsGame] Loading portfolio for user:', userId);
+
       // Try Firebase first if we have a userId
       if (userId) {
         const firebaseData = await loadFromFirebase(userId);
         if (firebaseData) {
+          console.log('[useEarningsGame] Loaded from Firebase for:', userId);
           setPredictions(firebaseData.predictions || []);
           setIsLocked(firebaseData.isLocked || false);
           setIsLoading(false);
-          // Also update localStorage as backup
-          saveToStorage(firebaseData);
+          // Also update localStorage as backup (user-scoped)
+          saveToStorage(userId, firebaseData);
           return;
         }
       }
 
-      // Fall back to localStorage
-      const localData = loadFromStorage();
-      if (localData) {
-        setPredictions(localData.predictions || []);
-        setIsLocked(localData.isLocked || false);
+      // Fall back to localStorage (user-scoped)
+      if (userId) {
+        const localData = loadFromStorage(userId);
+        if (localData) {
+          console.log('[useEarningsGame] Loaded from localStorage for:', userId);
+          setPredictions(localData.predictions || []);
+          setIsLocked(localData.isLocked || false);
+        } else {
+          console.log('[useEarningsGame] No saved portfolio for:', userId);
+          // Ensure clean state for this user
+          setPredictions([]);
+          setIsLocked(false);
+        }
+      } else {
+        // No userId - start with empty state
+        console.log('[useEarningsGame] No userId provided, starting with empty state');
+        setPredictions([]);
+        setIsLocked(false);
       }
 
       setIsLoading(false);
@@ -177,22 +242,20 @@ export function useEarningsGame(userId = null) {
   // ==========================================
 
   useEffect(() => {
-    // Don't save during initial load
-    if (isLoading) return;
+    // Don't save during initial load or if no userId
+    if (isLoading || !userId) return;
 
     const data = { predictions, isLocked };
 
-    // Always save to localStorage (immediate)
-    saveToStorage(data);
+    // Always save to localStorage (immediate, user-scoped)
+    saveToStorage(userId, data);
 
     // Also save to Firebase (async, debounced)
-    if (userId) {
-      const timeoutId = setTimeout(() => {
-        saveToFirebase(userId, data);
-      }, 1000); // Debounce by 1 second
+    const timeoutId = setTimeout(() => {
+      saveToFirebase(userId, data);
+    }, 1000); // Debounce by 1 second
 
-      return () => clearTimeout(timeoutId);
-    }
+    return () => clearTimeout(timeoutId);
   }, [predictions, isLocked, userId, isLoading]);
 
   // ==========================================
@@ -375,11 +438,11 @@ export function useEarningsGame(userId = null) {
     setIsSaving(true);
     setIsLocked(true);
 
-    // Force immediate save
+    // Force immediate save (user-scoped)
     const data = { predictions, isLocked: true };
-    saveToStorage(data);
 
     if (userId) {
+      saveToStorage(userId, data);
       await saveToFirebase(userId, data);
     }
 
@@ -397,14 +460,17 @@ export function useEarningsGame(userId = null) {
   }, []);
 
   /**
-   * Reset the entire portfolio
+   * Reset the entire portfolio (local state only)
+   * Does NOT clear Firebase - use clearPortfolio() for full clear
    */
   const reset = useCallback(() => {
     setPredictions([]);
     setIsLocked(false);
     setError(null);
-    clearStorage();
-  }, []);
+    if (userId) {
+      clearStorage(userId);
+    }
+  }, [userId]);
 
   /**
    * Clear portfolio completely (including Firebase)
@@ -414,15 +480,17 @@ export function useEarningsGame(userId = null) {
     setPredictions([]);
     setIsLocked(false);
     setError(null);
-    clearStorage();
 
-    // Also clear from Firebase if logged in
+    // Clear from localStorage (user-scoped)
     if (userId) {
+      clearStorage(userId);
+
+      // Also clear from Firebase
       try {
         const fb = await getFirebaseService();
         if (fb && fb.deleteEarningsPortfolio) {
           await fb.deleteEarningsPortfolio(userId);
-          console.log('[useEarningsGame] Cleared portfolio from Firebase');
+          console.log('[useEarningsGame] Cleared portfolio from Firebase for:', userId);
         }
       } catch (e) {
         console.warn('[useEarningsGame] Failed to clear from Firebase:', e);
