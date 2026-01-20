@@ -3,11 +3,41 @@
 //
 // Endpoint: GET /api/earnings/odds?symbol=NVDA&sector=technology
 //
-// Returns calculated beat probability based on:
-// - Historical earnings beat rate (35% weight)
-// - 30-day price momentum (20% weight)
-// - Options IV / Expected move (15% weight) - NEW
-// - Sector baseline (15% weight)
+/**
+ * Market-Informed Odds Engine v1.1
+ *
+ * ALGORITHM (Multiplicative Adjustment System):
+ *
+ * Step 1: BASE RATE
+ *   - Start with historical beat rate from EODHD (if ≥3 quarters available)
+ *   - Fallback to sector average beat rate if insufficient data
+ *
+ * Step 2: MOMENTUM ADJUSTMENT (multiplicative)
+ *   - Apply price momentum factor (0.88 to 1.12)
+ *   - +15% momentum → 1.12x multiplier (12% boost to beat odds)
+ *   - -15% momentum → 0.88x multiplier (12% reduction to beat odds)
+ *   - Rationale: Stocks running into earnings tend to beat more often
+ *
+ * Step 3: IV REGRESSION (when options data available)
+ *   - High IV → regress probability toward 50% (more uncertainty)
+ *   - Low IV → slight boost away from 50% (more certainty)
+ *   - Skipped entirely if no options data available
+ *
+ * Step 4: SECTOR BLEND
+ *   - Final = (85% × calculated probability) + (15% × sector baseline)
+ *   - Ensures sector context is always factored in
+ *
+ * Step 5: CLAMPING
+ *   - Result clamped to [0.15, 0.95] range
+ *   - Prevents extreme probabilities
+ *
+ * CONFIDENCE LEVELS:
+ *   - 'high': ≥10 quarters of historical data
+ *   - 'medium': 6-9 quarters of historical data
+ *   - 'low': 3-5 quarters of historical data
+ *   - 'sector_default': Using sector defaults (< 3 quarters)
+ *   - 'none': Pure sector default (API failures)
+ */
 
 import { applySecurityMiddleware } from '../_utils/security.js';
 
