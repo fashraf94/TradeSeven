@@ -112,10 +112,12 @@ export function calculateLocalOdds({
   let baseRate = 0.70;
   let confidence = 'low';
 
-  if (beatRate !== null && totalQuarters >= 3) {
+  // Minimum 4 quarters (1 full year) required for stock-specific confidence
+  if (beatRate !== null && totalQuarters >= 4) {
     baseRate = beatRate;
-    confidence = totalQuarters >= 8 ? 'high' : totalQuarters >= 5 ? 'medium' : 'low';
+    confidence = totalQuarters >= 10 ? 'high' : totalQuarters >= 6 ? 'medium' : 'low';
   } else {
+    // Use sector average (insufficient historical data)
     const sectorKey = (sector || 'default').toLowerCase().replace(/\s+/g, '_');
     baseRate = DEFAULT_SECTOR_RATES[sectorKey] || 0.70;
   }

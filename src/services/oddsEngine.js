@@ -333,11 +333,12 @@ export function calculateBeatProbabilitySimple({
   let baseRate = 0.70;
   let confidence = 'low';
 
-  if (beatRate !== null && totalQuarters >= 3) {
+  // Minimum 4 quarters (1 full year) required for stock-specific confidence
+  if (beatRate !== null && totalQuarters >= 4) {
     baseRate = beatRate;
-    confidence = totalQuarters >= 8 ? 'high' : 'medium';
+    confidence = totalQuarters >= 10 ? 'high' : totalQuarters >= 6 ? 'medium' : 'low';
   } else {
-    // Use sector average
+    // Use sector average (insufficient historical data)
     const sectorKey = (sector || 'default').toLowerCase().replace(/\s+/g, '_');
     baseRate = SECTOR_BEAT_RATES[sectorKey]?.beatRate || 0.70;
   }

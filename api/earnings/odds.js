@@ -9,7 +9,7 @@
  * ALGORITHM (Multiplicative Adjustment System):
  *
  * Step 1: BASE RATE
- *   - Start with historical beat rate from EODHD (if ≥3 quarters available)
+ *   - Start with historical beat rate from EODHD (if ≥4 quarters available)
  *   - Fallback to sector average beat rate if insufficient data
  *
  * Step 2: MOMENTUM ADJUSTMENT (multiplicative)
@@ -32,10 +32,10 @@
  *   - Prevents extreme probabilities
  *
  * CONFIDENCE LEVELS:
- *   - 'high': ≥10 quarters of historical data
- *   - 'medium': 6-9 quarters of historical data
- *   - 'low': 3-5 quarters of historical data
- *   - 'sector_default': Using sector defaults (< 3 quarters)
+ *   - 'high': ≥10 quarters of historical data (2.5+ years)
+ *   - 'medium': 6-9 quarters of historical data (1.5-2.5 years)
+ *   - 'low': 4-5 quarters of historical data (1-1.5 years)
+ *   - 'sector_default': <4 quarters, using sector defaults with adjustments
  *   - 'none': Pure sector default (API failures)
  */
 
@@ -285,13 +285,15 @@ function calculateOddsInline({ beatRate, totalQuarters, priceChange30d, expected
   let baseRate = 0.70;
   let confidence = 'low';
 
-  if (beatRate !== null && totalQuarters >= 3) {
+  // Minimum 4 quarters (1 full year) required for stock-specific confidence
+  // This captures seasonal patterns in earnings behavior
+  if (beatRate !== null && totalQuarters >= 4) {
     baseRate = beatRate;
     if (totalQuarters >= 10) confidence = 'high';
     else if (totalQuarters >= 6) confidence = 'medium';
     else confidence = 'low';
   } else {
-    // Use sector average
+    // Use sector average (insufficient historical data)
     const sectorKey = (sector || 'default').toLowerCase().replace(/\s+/g, '_');
     baseRate = SECTOR_BEAT_RATES[sectorKey] || 0.70;
     confidence = 'sector_default';

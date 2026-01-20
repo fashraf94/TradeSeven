@@ -1125,7 +1125,7 @@ export async function getHybridEarningsCalendar(days = 14) {
           if (oddsData && !oddsData.fallback) {
             beatOdds = oddsData.probability;
             confidence = oddsData.confidence;
-            oddsSource = oddsData.breakdown?.historical?.quarters >= 3 ? 'historical_plus_momentum' : 'sector_plus_momentum';
+            oddsSource = oddsData.breakdown?.historical?.quarters >= 4 ? 'historical_plus_momentum' : 'sector_plus_momentum';
             breakdown = oddsData.breakdown;
           } else {
             // Fallback to sector default
