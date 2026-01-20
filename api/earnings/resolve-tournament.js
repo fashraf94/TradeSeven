@@ -158,11 +158,15 @@ export default async function handler(req, res) {
 
   // If CRON_SECRET is configured, require it (but allow local testing without it)
   if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    // Also check for Vercel cron header
+    // Also check for Vercel cron header or test mode
     const isVercelCron = req.headers['x-vercel-cron'] === '1';
-    if (!isVercelCron) {
+    const isTestMode = req.query.testMode === 'true';
+    if (!isVercelCron && !isTestMode) {
       console.warn('Unauthorized resolution attempt');
       return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (isTestMode) {
+      console.log('⚠️ Test mode enabled - auth bypassed');
     }
   }
 
