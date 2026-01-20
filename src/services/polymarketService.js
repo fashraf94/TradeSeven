@@ -8,48 +8,70 @@
 import { enhanceEventWithParlays } from './earningsReactionsService';
 import { getBatchOdds } from './oddsService';
 
-// Priority stocks - well-known companies that users care about most
-// These get shown first regardless of date, then fill with others
+// Priority stocks - Most anticipated earnings that users care about
+// Based on Earnings Whispers "Most Anticipated" + major companies
+// This ensures we show the stocks retail investors actually follow
 const PRIORITY_STOCKS = new Set([
-  // Mega-cap Tech
+  // === MEGA CAP TECH (Always Include) ===
   'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'META', 'NVDA', 'TSLA', 'AMD', 'INTC',
   'AVGO', 'ORCL', 'CRM', 'ADBE', 'NFLX', 'CSCO', 'IBM', 'QCOM', 'TXN', 'MU',
-  'AMAT', 'LRCX', 'KLAC', 'SNPS', 'CDNS', 'MRVL', 'ADI', 'NXPI', 'ON', 'MCHP',
 
-  // Financials
-  'JPM', 'BAC', 'WFC', 'GS', 'MS', 'C', 'USB', 'PNC', 'TFC', 'COF',
-  'AXP', 'BLK', 'SCHW', 'CME', 'ICE', 'SPGI', 'MCO', 'MMC', 'AON', 'CB',
+  // === THIS WEEK's EARNINGS WHISPERS LIST (Jan 20-24, 2026) ===
+  // Tuesday
+  'MMM', 'UAL', 'DHI', 'USB', 'IBKR', 'PRGS', 'FAST', 'PEBO', 'KEY', 'OZK',
+  'ZION', 'WTFC', 'FOR', 'MBWM',
 
-  // Healthcare
+  // Wednesday
+  'JNJ', 'HAL', 'KMI', 'ALLY', 'SCHW', 'TXG', 'PLD', 'TRV', 'BANC',
+  'CACI', 'PNFP', 'FCFS', 'RLI', 'BKU', 'EQBK', 'MMYT',
+
+  // Thursday
+  'PG', 'ISRG', 'GE', 'COF', 'HBAN', 'AA', 'TXN', 'CSX', 'ABT',
+  'EWBC', 'TCBI', 'MKC', 'ACM', 'NG', 'NWLI',
+
+  // Friday
+  'SLB', 'ERIC', 'WBS', 'FCNCA', 'BAH', 'CMA', 'ALK', 'CUST',
+
+  // === FINANCIALS (High Interest) ===
+  'JPM', 'BAC', 'WFC', 'GS', 'MS', 'C', 'PNC', 'TFC', 'COF', 'AXP',
+  'BLK', 'SCHW', 'CME', 'ICE', 'SPGI', 'MCO', 'MMC', 'AON', 'CB',
+  'FITB', 'RF', 'CFG', 'MTB', 'HBAN', 'CMA', 'ZION', 'FHN', 'SNV',
+
+  // === HEALTHCARE ===
   'UNH', 'JNJ', 'PFE', 'MRK', 'ABBV', 'LLY', 'TMO', 'ABT', 'DHR', 'BMY',
   'AMGN', 'GILD', 'VRTX', 'REGN', 'ISRG', 'MDT', 'SYK', 'BDX', 'ZTS', 'CI',
 
-  // Consumer
+  // === CONSUMER ===
   'WMT', 'COST', 'HD', 'TGT', 'LOW', 'NKE', 'SBUX', 'MCD', 'YUM', 'CMG',
-  'LULU', 'ROST', 'TJX', 'DG', 'DLTR', 'KR', 'SYY', 'KO', 'PEP', 'PM',
+  'PG', 'KO', 'PEP', 'PM', 'MO', 'CL', 'KMB', 'GIS', 'K', 'CAG',
 
-  // Industrial
+  // === INDUSTRIAL ===
   'CAT', 'DE', 'BA', 'HON', 'UPS', 'FDX', 'UNP', 'LMT', 'RTX', 'GD',
   'NOC', 'GE', 'MMM', 'EMR', 'ETN', 'ITW', 'PH', 'ROK', 'CMI', 'PCAR',
+  'FAST', 'CACI', 'BAH',
 
-  // Energy
+  // === ENERGY ===
   'XOM', 'CVX', 'COP', 'SLB', 'EOG', 'MPC', 'VLO', 'PSX', 'OXY', 'HAL',
+  'KMI', 'WMB', 'OKE', 'TRGP',
 
-  // Airlines & Travel
+  // === AIRLINES & TRAVEL ===
   'DAL', 'UAL', 'AAL', 'LUV', 'ALK', 'JBLU', 'MAR', 'HLT', 'ABNB', 'BKNG',
 
-  // Homebuilders & Real Estate
-  'DHI', 'LEN', 'PHM', 'NVR', 'TOL', 'KBH', 'AMT', 'PLD', 'EQIX', 'SPG',
+  // === HOMEBUILDERS ===
+  'DHI', 'LEN', 'PHM', 'NVR', 'TOL', 'KBH', 'MTH', 'TMHC', 'MDC',
 
-  // Media & Entertainment
-  'DIS', 'CMCSA', 'WBD', 'PARA', 'FOX', 'FOXA', 'NWSA', 'LYV', 'EA', 'TTWO',
+  // === REITS ===
+  'AMT', 'PLD', 'EQIX', 'SPG', 'O', 'WELL', 'AVB', 'EQR', 'DLR',
 
-  // Telecom
-  'VZ', 'T', 'TMUS',
+  // === TELECOM ===
+  'VZ', 'T', 'TMUS', 'ERIC',
 
-  // Other Notable
-  'V', 'MA', 'PYPL', 'SQ', 'COIN', 'HOOD', 'SHOP', 'SNOW', 'PLTR', 'NET',
-  'DDOG', 'ZS', 'CRWD', 'PANW', 'FTNT', 'NOW', 'WDAY', 'TEAM', 'DOCU', 'ZM'
+  // === TRANSPORTATION ===
+  'CSX', 'NSC', 'UNP', 'JBHT', 'XPO', 'ODFL',
+
+  // === OTHER NOTABLE ===
+  'V', 'MA', 'PYPL', 'SQ', 'COIN', 'SHOP', 'SNOW', 'PLTR', 'NET',
+  'DDOG', 'ZS', 'CRWD', 'PANW', 'NOW', 'WDAY'
 ]);
 
 // Use our Vercel proxy to avoid CORS issues
@@ -1026,12 +1048,35 @@ export async function getHybridEarningsCalendar(days = 14) {
         priorityEvents.sort(sortByDate);
         otherEvents.sort(sortByDate);
 
-        // Combine: priority first, then fill with others up to 50
-        const combinedEvents = [...priorityEvents, ...otherEvents];
+        // Ensure we have coverage across all days
+        // Group priority events by date
+        const priorityByDate = {};
+        priorityEvents.forEach(e => {
+          const date = e.reportDate.split('T')[0];
+          if (!priorityByDate[date]) priorityByDate[date] = [];
+          priorityByDate[date].push(e);
+        });
+
+        // Take up to 12 priority stocks per day to ensure variety
+        const balancedPriority = [];
+        Object.keys(priorityByDate).sort().forEach(date => {
+          const dayEvents = priorityByDate[date].slice(0, 12); // Max 12 per day
+          balancedPriority.push(...dayEvents);
+        });
+
+        // If we have less than 35 priority stocks, fill with other quality stocks
+        let combinedEvents = [...balancedPriority];
+        if (combinedEvents.length < 35) {
+          const needed = 35 - combinedEvents.length;
+          combinedEvents.push(...otherEvents.slice(0, needed));
+        }
+
+        // Cap at 50 total
         const limitedEvents = combinedEvents.slice(0, 50);
 
-        console.log(`[Hybrid] Priority stocks: ${priorityEvents.length}, Other: ${otherEvents.length}`);
-        console.log(`[Hybrid] Showing ${limitedEvents.length} events (${priorityEvents.slice(0, 50).length} priority)`);
+        console.log(`[Hybrid] Priority stocks found: ${priorityEvents.length}`);
+        console.log(`[Hybrid] Balanced to ${balancedPriority.length} priority across ${Object.keys(priorityByDate).length} days`);
+        console.log(`[Hybrid] Final count: ${limitedEvents.length} events`);
 
         const sortedEvents = limitedEvents;
         if (sortedEvents.length > 0) {
