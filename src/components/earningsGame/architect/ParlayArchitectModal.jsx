@@ -91,6 +91,11 @@ export default function ParlayArchitectModal({
         if (!cancelled) {
           setParlayPrices(prices);
           setLoadingParlays(false);
+          // Log data source for verification
+          const sampleParlay = prices[0];
+          if (sampleParlay) {
+            console.log(`[Magnitude] ${event.symbol}: dataSource=${sampleParlay.dataSource}, quarters=${sampleParlay.quarterCount || 'N/A'}`);
+          }
         }
       })
       .catch(err => {
@@ -424,8 +429,10 @@ export default function ParlayArchitectModal({
               </span>
             </div>
 
-            {/* Stock Stats Bar - Historical earnings data */}
-            <StockStatsBar stats={stockStats} />
+            {/* Stock Stats Bar - Historical earnings data (only show with sufficient stock-specific data) */}
+            {stockStats && stockStats.quartersAnalyzed >= 4 && (
+              <StockStatsBar stats={stockStats} />
+            )}
 
             {/* Outcome section */}
             <div style={{ marginBottom: '24px' }}>
@@ -662,8 +669,10 @@ export default function ParlayArchitectModal({
             </span>
           </div>
 
-          {/* Stock Stats Bar - Historical earnings data */}
-          <StockStatsBar stats={stockStats} />
+          {/* Stock Stats Bar - Historical earnings data (only show with sufficient stock-specific data) */}
+          {stockStats && stockStats.quartersAnalyzed >= 4 && (
+            <StockStatsBar stats={stockStats} />
+          )}
 
           {/* Outcome section */}
           <div style={{ marginBottom: '32px' }}>

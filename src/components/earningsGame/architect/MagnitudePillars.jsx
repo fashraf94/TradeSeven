@@ -81,6 +81,8 @@ export default function MagnitudePillars({
           const price = parlay?.price || 0;
           const multiplier = parlay?.multiplier || 0;
           const histProb = parlay?.reactionProb || 0;
+          const quarterCount = parlay?.quarterCount || null;
+          const sector = parlay?.sector || 'default';
           const isSelected = selected === mag.id;
           const isAffordable = price <= budgetRemaining && price > 0;
           const canSelect = !disabled && isAffordable && outcome;
@@ -208,14 +210,28 @@ export default function MagnitudePillars({
                   {multiplier > 0 ? `${multiplier.toFixed(1)}x` : '—'}
                 </span>
 
-                {/* Historical Probability - brighter for visibility */}
-                <span style={{
-                  fontSize: '9px',
-                  color: '#8b949e',
-                  marginTop: '4px',
-                }}>
-                  Hist: {Math.round(histProb * 100)}%
-                </span>
+                {/* Historical Probability with data source indicator */}
+                {quarterCount ? (
+                  // Stock-specific data - cyan
+                  <span style={{
+                    fontSize: '9px',
+                    color: '#00d9ff',
+                    marginTop: '4px',
+                  }}>
+                    {Math.round(histProb * 100)}%
+                    <span style={{ opacity: 0.7, marginLeft: '3px' }}>({quarterCount}q)</span>
+                  </span>
+                ) : (
+                  // Sector estimate - amber
+                  <span style={{
+                    fontSize: '9px',
+                    color: '#fbbf24',
+                    marginTop: '4px',
+                  }}>
+                    {Math.round(histProb * 100)}%
+                    <span style={{ opacity: 0.7, marginLeft: '3px' }}>({sector} est)</span>
+                  </span>
+                )}
               </div>
             </motion.button>
           );

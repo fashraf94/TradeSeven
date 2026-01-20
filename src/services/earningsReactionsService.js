@@ -312,11 +312,11 @@ export function getReactionProbabilities(symbol, outcome) {
  *
  * @param {string} symbol - Stock symbol
  * @param {string} outcome - 'beat' or 'miss'
- * @returns {Promise<Object>} - { probabilities, source, sector? }
+ * @returns {Promise<Object>} - { probabilities, source, sector?, quarterCount? }
  */
 export async function getReactionProbabilitiesAsync(symbol, outcome) {
   // Dynamically import to avoid circular dependencies
-  const { getStockReactionProbabilities } = await import('./stockEarningsHistoryService');
+  const { getStockReactionProbabilities, getStockEarningsHistory } = await import('./stockEarningsHistoryService');
 
   // Try stock-specific data first
   const stockProbs = await getStockReactionProbabilities(symbol);
@@ -326,7 +326,10 @@ export async function getReactionProbabilitiesAsync(symbol, outcome) {
     // Validate we have all magnitude bands
     if (probs && probs.upBig !== undefined && probs.up !== undefined &&
         probs.flat !== undefined && probs.down !== undefined && probs.downBig !== undefined) {
-      return { probabilities: probs, source: 'stock-specific' };
+      // Get quarter count from history
+      const history = await getStockEarningsHistory(symbol);
+      const quarterCount = history?.quartersAnalyzed || 0;
+      return { probabilities: probs, source: 'stock-specific', quarterCount };
     }
   }
 
@@ -463,9 +466,11 @@ export async function calculateParlayPricesAsync(event, budget = BUDGET) {
 
   const parlays = [];
 
+  const sector = getSectorForSymbol(symbol);
+
   ['beat', 'miss'].forEach(outcome => {
     const outcomeOdds = outcome === 'beat' ? beatOdds : missOdds;
-    const { probabilities: reactions, source } = outcome === 'beat' ? beatProbs : missProbs;
+    const { probabilities: reactions, source, quarterCount } = outcome === 'beat' ? beatProbs : missProbs;
 
     Object.entries(MAGNITUDE_BANDS).forEach(([bandId, band]) => {
       const reactionProb = reactions[bandId];
@@ -496,6 +501,7 @@ export async function calculateParlayPricesAsync(event, budget = BUDGET) {
 
         // Data source indicator
         dataSource: source,
+        quarterCount: quarterCount || null, // Number of quarters if stock-specific, null if sector
 
         // Base pricing (Standard tier)
         price,
@@ -509,7 +515,7 @@ export async function calculateParlayPricesAsync(event, budget = BUDGET) {
         precisionOptions,
 
         // Sector info
-        sector: getSectorForSymbol(symbol)
+        sector
       });
     });
   });
