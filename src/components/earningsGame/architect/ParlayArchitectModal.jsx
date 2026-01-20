@@ -443,7 +443,7 @@ export default function ParlayArchitectModal({
                 missOdds={event.noOdds || 0.5}
                 onSelect={setSelectedOutcome}
               />
-              {/* Polymarket attribution */}
+              {/* Attribution */}
               <div style={{
                 textAlign: 'center',
                 fontSize: '11px',
@@ -451,7 +451,7 @@ export default function ParlayArchitectModal({
                 marginTop: '8px',
                 fontStyle: 'italic'
               }}>
-                Odds via <span style={{ color: '#a78bfa' }}>Polymarket</span>
+                Based on 12-quarter historical data
               </div>
             </div>
 
@@ -681,7 +681,7 @@ export default function ParlayArchitectModal({
               missOdds={event.noOdds || 0.5}
               onSelect={setSelectedOutcome}
             />
-            {/* Polymarket attribution */}
+            {/* Attribution */}
             <div style={{
               textAlign: 'center',
               fontSize: '11px',
@@ -689,7 +689,7 @@ export default function ParlayArchitectModal({
               marginTop: '8px',
               fontStyle: 'italic'
             }}>
-              Odds via <span style={{ color: '#a78bfa' }}>Polymarket</span>
+              Based on 12-quarter historical data
             </div>
           </div>
 
