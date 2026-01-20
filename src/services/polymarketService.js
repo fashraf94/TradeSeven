@@ -8,6 +8,50 @@
 import { enhanceEventWithParlays } from './earningsReactionsService';
 import { getBatchOdds } from './oddsService';
 
+// Priority stocks - well-known companies that users care about most
+// These get shown first regardless of date, then fill with others
+const PRIORITY_STOCKS = new Set([
+  // Mega-cap Tech
+  'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'META', 'NVDA', 'TSLA', 'AMD', 'INTC',
+  'AVGO', 'ORCL', 'CRM', 'ADBE', 'NFLX', 'CSCO', 'IBM', 'QCOM', 'TXN', 'MU',
+  'AMAT', 'LRCX', 'KLAC', 'SNPS', 'CDNS', 'MRVL', 'ADI', 'NXPI', 'ON', 'MCHP',
+
+  // Financials
+  'JPM', 'BAC', 'WFC', 'GS', 'MS', 'C', 'USB', 'PNC', 'TFC', 'COF',
+  'AXP', 'BLK', 'SCHW', 'CME', 'ICE', 'SPGI', 'MCO', 'MMC', 'AON', 'CB',
+
+  // Healthcare
+  'UNH', 'JNJ', 'PFE', 'MRK', 'ABBV', 'LLY', 'TMO', 'ABT', 'DHR', 'BMY',
+  'AMGN', 'GILD', 'VRTX', 'REGN', 'ISRG', 'MDT', 'SYK', 'BDX', 'ZTS', 'CI',
+
+  // Consumer
+  'WMT', 'COST', 'HD', 'TGT', 'LOW', 'NKE', 'SBUX', 'MCD', 'YUM', 'CMG',
+  'LULU', 'ROST', 'TJX', 'DG', 'DLTR', 'KR', 'SYY', 'KO', 'PEP', 'PM',
+
+  // Industrial
+  'CAT', 'DE', 'BA', 'HON', 'UPS', 'FDX', 'UNP', 'LMT', 'RTX', 'GD',
+  'NOC', 'GE', 'MMM', 'EMR', 'ETN', 'ITW', 'PH', 'ROK', 'CMI', 'PCAR',
+
+  // Energy
+  'XOM', 'CVX', 'COP', 'SLB', 'EOG', 'MPC', 'VLO', 'PSX', 'OXY', 'HAL',
+
+  // Airlines & Travel
+  'DAL', 'UAL', 'AAL', 'LUV', 'ALK', 'JBLU', 'MAR', 'HLT', 'ABNB', 'BKNG',
+
+  // Homebuilders & Real Estate
+  'DHI', 'LEN', 'PHM', 'NVR', 'TOL', 'KBH', 'AMT', 'PLD', 'EQIX', 'SPG',
+
+  // Media & Entertainment
+  'DIS', 'CMCSA', 'WBD', 'PARA', 'FOX', 'FOXA', 'NWSA', 'LYV', 'EA', 'TTWO',
+
+  // Telecom
+  'VZ', 'T', 'TMUS',
+
+  // Other Notable
+  'V', 'MA', 'PYPL', 'SQ', 'COIN', 'HOOD', 'SHOP', 'SNOW', 'PLTR', 'NET',
+  'DDOG', 'ZS', 'CRWD', 'PANW', 'FTNT', 'NOW', 'WDAY', 'TEAM', 'DOCU', 'ZM'
+]);
+
 // Use our Vercel proxy to avoid CORS issues
 const GAMMA_API_BASE = '/api/polymarket';
 
@@ -973,26 +1017,23 @@ export async function getHybridEarningsCalendar(days = 14) {
         console.log('[Hybrid] Rejection samples:', rejectionSamples);
         console.log(`[Hybrid] Quality filtered: ${qualityEvents.length} of ${eohdCalendar.length}`);
 
-        // Sort by: 1) Date, 2) Priority stocks first (those in COMPANY_NAMES)
-        const sortedEvents = qualityEvents
-          .sort((a, b) => {
-            // First, compare by date
-            const dateA = new Date(a.reportDate);
-            const dateB = new Date(b.reportDate);
-            if (dateA.getTime() !== dateB.getTime()) {
-              return dateA - dateB;
-            }
-            // Same date: prioritize known stocks (in COMPANY_NAMES lookup)
-            const aIsKnown = !!COMPANY_NAMES[a.symbol.toUpperCase()];
-            const bIsKnown = !!COMPANY_NAMES[b.symbol.toUpperCase()];
-            if (aIsKnown && !bIsKnown) return -1;
-            if (!aIsKnown && bIsKnown) return 1;
-            // Both known or both unknown: sort alphabetically
-            return a.symbol.localeCompare(b.symbol);
-          })
-          .slice(0, 50);
+        // Separate priority and non-priority stocks
+        const priorityEvents = qualityEvents.filter(e => PRIORITY_STOCKS.has(e.symbol.toUpperCase()));
+        const otherEvents = qualityEvents.filter(e => !PRIORITY_STOCKS.has(e.symbol.toUpperCase()));
 
-        console.log(`[Hybrid] Taking first ${sortedEvents.length} events`);
+        // Sort each group by date
+        const sortByDate = (a, b) => new Date(a.reportDate) - new Date(b.reportDate);
+        priorityEvents.sort(sortByDate);
+        otherEvents.sort(sortByDate);
+
+        // Combine: priority first, then fill with others up to 50
+        const combinedEvents = [...priorityEvents, ...otherEvents];
+        const limitedEvents = combinedEvents.slice(0, 50);
+
+        console.log(`[Hybrid] Priority stocks: ${priorityEvents.length}, Other: ${otherEvents.length}`);
+        console.log(`[Hybrid] Showing ${limitedEvents.length} events (${priorityEvents.slice(0, 50).length} priority)`);
+
+        const sortedEvents = limitedEvents;
         if (sortedEvents.length > 0) {
           // Show with lookup names
           console.log('[Hybrid] Sample companies:', sortedEvents.slice(0, 8).map(e =>
