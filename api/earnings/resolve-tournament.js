@@ -30,6 +30,38 @@ function classifyMagnitude(percentMove) {
   return 'downBig';
 }
 
+/**
+ * Safely parse a date from various formats (Firestore Timestamp, ISO string, Date object)
+ * Returns null if parsing fails instead of throwing
+ */
+function safeParseDate(value) {
+  if (!value) return null;
+
+  try {
+    // Firestore Timestamp object - has toDate() method
+    if (typeof value?.toDate === 'function') {
+      return value.toDate();
+    }
+
+    // Firestore Timestamp-like object with seconds/nanoseconds
+    if (typeof value === 'object' && value.seconds !== undefined) {
+      return new Date(value.seconds * 1000 + (value.nanoseconds || 0) / 1000000);
+    }
+
+    // Already a Date object
+    if (value instanceof Date) {
+      return isNaN(value.getTime()) ? null : value;
+    }
+
+    // String or number - try to parse
+    const parsed = new Date(value);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  } catch (error) {
+    console.warn(`[resolve-tournament] Failed to parse date:`, value, error.message);
+    return null;
+  }
+}
+
 // Fetch earnings result for a single symbol using existing API
 async function fetchEarningsResult(symbol, earningsDate) {
   // Determine base URL for internal API call
@@ -42,11 +74,17 @@ async function fetchEarningsResult(symbol, earningsDate) {
   // Build URL - date is optional, API returns most recent if not provided
   let url = `${baseUrl}/api/earnings/results?symbol=${encodeURIComponent(symbol)}`;
   if (earningsDate) {
-    // Format date as YYYY-MM-DD if it's a Date object or timestamp
-    const dateStr = typeof earningsDate === 'string'
-      ? earningsDate.split('T')[0]
-      : new Date(earningsDate).toISOString().split('T')[0];
-    url += `&date=${dateStr}`;
+    // Format date as YYYY-MM-DD - handle strings, Dates, and Firestore Timestamps
+    let dateStr;
+    if (typeof earningsDate === 'string') {
+      dateStr = earningsDate.split('T')[0];
+    } else {
+      const parsed = safeParseDate(earningsDate);
+      dateStr = parsed ? parsed.toISOString().split('T')[0] : null;
+    }
+    if (dateStr) {
+      url += `&date=${dateStr}`;
+    }
   }
 
   console.log(`Fetching result: ${url}`);
@@ -215,9 +253,10 @@ export default async function handler(req, res) {
 
         if (data.status === 'open') {
           // Check if lock deadline has passed
-          const lockDeadline = data.lockDeadline ? new Date(data.lockDeadline) : null;
+          // Handle both Firestore Timestamps and ISO strings
+          const lockDeadline = safeParseDate(data.lockDeadline);
           if (lockDeadline && lockDeadline < now) {
-            console.log(`  Auto-transitioning ${doc.id} from 'open' to 'locked' (deadline: ${data.lockDeadline})`);
+            console.log(`  Auto-transitioning ${doc.id} from 'open' to 'locked' (deadline: ${lockDeadline.toISOString()})`);
             // Update status to 'locked'
             if (!isDryRun) {
               await db.collection('earningsTournaments').doc(doc.id).update({
@@ -227,7 +266,8 @@ export default async function handler(req, res) {
             }
             tournamentDocs.push(doc);
           } else {
-            console.log(`  Skipping ${doc.id} - still open (deadline: ${data.lockDeadline || 'none'})`);
+            const deadlineStr = lockDeadline ? lockDeadline.toISOString() : (data.lockDeadline || 'none');
+            console.log(`  Skipping ${doc.id} - still open (deadline: ${deadlineStr})`);
           }
         } else {
           // Already locked or in_progress
