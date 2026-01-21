@@ -47,7 +47,8 @@ export default async function handler(req, res) {
 
   try {
     // Fetch earnings history to get the actual result
-    const fundamentalsUrl = `https://eodhd.com/api/fundamentals/${tickerWithExchange}?api_token=${apiKey}&filter=Earnings::History`;
+    // Note: Using full fundamentals (no filter) for reliability - filter can alter response structure
+    const fundamentalsUrl = `https://eodhd.com/api/fundamentals/${tickerWithExchange}?api_token=${apiKey}&fmt=json`;
     const fundamentalsRes = await fetch(fundamentalsUrl);
 
     if (!fundamentalsRes.ok) {
@@ -57,17 +58,39 @@ export default async function handler(req, res) {
     const fundamentalsData = await fundamentalsRes.json();
     const history = fundamentalsData?.Earnings?.History || {};
 
+    // Diagnostic logging
+    const historyKeys = Object.keys(history);
+    console.log(`[EarningsResults] ${upperSymbol}: Found ${historyKeys.length} earnings entries in history`);
+
+    if (historyKeys.length > 0) {
+      // Log the most recent entry structure for debugging
+      const mostRecentKey = historyKeys.sort().reverse()[0];
+      const mostRecentEntry = history[mostRecentKey];
+      console.log(`[EarningsResults] ${upperSymbol}: Most recent entry key=${mostRecentKey}, reportDate=${mostRecentEntry?.reportDate}, epsActual=${mostRecentEntry?.epsActual}`);
+    }
+
     // Convert to array and sort by date (newest first)
+    // IMPORTANT: Use values.reportDate (actual report date), not the key (fiscal period end date)
     const today = new Date();
-    const entries = Object.entries(history)
-      .map(([reportDate, values]) => ({
-        reportDate,
+    const allEntries = Object.entries(history)
+      .map(([fiscalPeriodKey, values]) => ({
+        fiscalPeriodKey,
+        reportDate: values.reportDate || fiscalPeriodKey, // Use actual report date, fallback to key
         epsActual: values.epsActual,
         epsEstimate: values.epsEstimate,
         epsDifference: values.epsDifference,
         surprisePercent: values.surprisePercent,
-        beforeAfterMarket: values.beforeAfterMarket
-      }))
+        beforeAfterMarket: values.beforeAfterMarket,
+        fiscalQuarter: values.fiscalQuarter,
+        fiscalYear: values.fiscalYear
+      }));
+
+    // Log filtering diagnostics
+    const withActualEps = allEntries.filter(e => e.epsActual !== null && e.epsActual !== undefined);
+    const inPast = allEntries.filter(e => new Date(e.reportDate) <= today);
+    console.log(`[EarningsResults] ${upperSymbol}: ${allEntries.length} total, ${withActualEps.length} have epsActual, ${inPast.length} in past`);
+
+    const entries = allEntries
       .filter(e => {
         // Must have actual EPS data and be in the past
         if (e.epsActual === null || e.epsActual === undefined) return false;
@@ -75,12 +98,31 @@ export default async function handler(req, res) {
       })
       .sort((a, b) => new Date(b.reportDate) - new Date(a.reportDate));
 
+    console.log(`[EarningsResults] ${upperSymbol}: ${entries.length} entries after filtering`);
+
     if (entries.length === 0) {
+      // More detailed error response for debugging
+      const pendingEntries = allEntries
+        .filter(e => e.epsActual === null || e.epsActual === undefined)
+        .filter(e => new Date(e.reportDate) <= today)
+        .slice(0, 3);
+
       return res.status(200).json({
         success: false,
         symbol: upperSymbol,
         resolved: false,
         error: 'No earnings results found yet',
+        debug: {
+          totalHistoryEntries: historyKeys.length,
+          entriesWithEpsActual: withActualEps.length,
+          entriesInPast: inPast.length,
+          pendingEntries: pendingEntries.map(e => ({
+            reportDate: e.reportDate,
+            fiscalPeriodKey: e.fiscalPeriodKey,
+            epsActual: e.epsActual,
+            epsEstimate: e.epsEstimate
+          }))
+        },
         checkedAt: new Date().toISOString()
       });
     }
@@ -99,14 +141,24 @@ export default async function handler(req, res) {
 
       if (matchedEntry) {
         result = matchedEntry;
+        console.log(`[EarningsResults] ${upperSymbol}: Matched entry for ${date} -> ${result.reportDate} (Q${result.fiscalQuarter} ${result.fiscalYear})`);
       } else {
-        // No match found for the target date
+        // No match found for the target date - provide helpful debug info
+        const availableDates = entries.slice(0, 5).map(e => ({
+          reportDate: e.reportDate,
+          quarter: `Q${e.fiscalQuarter} ${e.fiscalYear}`,
+          epsActual: e.epsActual
+        }));
+
+        console.warn(`[EarningsResults] ${upperSymbol}: No match for target ${date}. Available: ${availableDates.map(d => d.reportDate).join(', ')}`);
+
         return res.status(200).json({
           success: false,
           symbol: upperSymbol,
           resolved: false,
           error: `No earnings result found near ${date}`,
           closestResult: entries[0]?.reportDate,
+          availableDates,
           checkedAt: new Date().toISOString()
         });
       }
@@ -167,6 +219,9 @@ export default async function handler(req, res) {
       symbol: upperSymbol,
       resolved: true,
       reportDate: result.reportDate,
+      fiscalQuarter: result.fiscalQuarter,
+      fiscalYear: result.fiscalYear,
+      quarter: result.fiscalQuarter && result.fiscalYear ? `Q${result.fiscalQuarter} ${result.fiscalYear}` : null,
       epsActual: result.epsActual,
       epsEstimate: result.epsEstimate,
       epsSurprise: result.epsDifference,
