@@ -1,6 +1,17 @@
 // api/earnings/debug-tournaments.js
 // Debug endpoint to list all tournaments and their status
-// GET /api/earnings/debug-tournaments?testMode=true
+//
+// PURPOSE: Provides visibility into tournament state for debugging resolution issues.
+// Shows tournament counts by status, prediction resolution progress, and identifies
+// tournaments that may be stuck (e.g., 'open' but past deadline).
+//
+// SECURITY: Requires ?testMode=true parameter to access. Does not expose user data
+// or financial information - only tournament IDs, status, and aggregate counts.
+//
+// Usage:
+//   GET /api/earnings/debug-tournaments?testMode=true
+//
+// Created: Jan 2026 during tournament resolution debugging
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';

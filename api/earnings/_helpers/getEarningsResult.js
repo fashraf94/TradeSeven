@@ -2,20 +2,26 @@
 // Shared earnings result logic - used by both results.js API and resolve-tournament.js
 //
 // This avoids internal HTTP calls which can fail silently on Vercel
+//
+// Created: Jan 2026 during tournament resolution debugging
+// Dependencies: dateUtils (shared date handling), earningsConfig (magnitude thresholds)
 
 import { safeParseDate, toYYYYMMDD } from '../../../src/utils/dateUtils.js';
+import { MAGNITUDE_THRESHOLDS } from '../../../src/config/earningsConfig.js';
 
 /**
  * Get magnitude band from price move percentage
+ * Uses thresholds from centralized config for consistency
+ *
  * @param {number|null} priceMove - Price move percentage
- * @returns {string} - Magnitude band
+ * @returns {string} - Magnitude band: 'upBig' | 'up' | 'flat' | 'down' | 'downBig' | 'unknown'
  */
 export function getMagnitudeBand(priceMove) {
   if (priceMove === null || priceMove === undefined) return 'unknown';
-  if (priceMove > 5) return 'upBig';
-  if (priceMove >= 2) return 'up';
-  if (priceMove >= -2) return 'flat';
-  if (priceMove >= -5) return 'down';
+  if (priceMove > MAGNITUDE_THRESHOLDS.UP_BIG) return 'upBig';
+  if (priceMove >= MAGNITUDE_THRESHOLDS.UP_MIN) return 'up';
+  if (priceMove >= -MAGNITUDE_THRESHOLDS.FLAT_RANGE) return 'flat';
+  if (priceMove >= MAGNITUDE_THRESHOLDS.DOWN_BIG) return 'down';
   return 'downBig';
 }
 

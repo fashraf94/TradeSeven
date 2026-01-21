@@ -1,12 +1,29 @@
 // api/earnings/migrate-dates.js
-// One-time migration script to fix predictions with empty reportDate: {}
+// ============================================================================
+// MIGRATION UTILITY - Fix predictions with empty reportDate: {}
+// ============================================================================
+//
+// PURPOSE: Repairs prediction records where reportDate was corrupted to {}
+// due to a bug in removeUndefined() that stripped Date objects.
+//
+// ROOT CAUSE (FIXED):
+//   removeUndefined() was stripping Date objects to {} because
+//   Date objects have no enumerable properties (Object.entries returns [])
+//   Fix applied in commit: "fix: Harden removeUndefined() to handle edge cases"
+//
+// SAFETY:
+//   - Requires ?testMode=true to run
+//   - Use ?dryRun=true to preview changes without saving
+//   - Logs all changes for audit trail
 //
 // Usage:
 //   GET /api/earnings/migrate-dates?testMode=true&dryRun=true  - Preview changes
 //   GET /api/earnings/migrate-dates?testMode=true              - Apply fixes
+//   GET /api/earnings/migrate-dates?testMode=true&tournamentId=xxx - Specific tournament
 //
-// The bug: removeUndefined() was stripping Date objects to {} because
-// Date objects have no enumerable properties (Object.entries returns [])
+// Created: Jan 2026 during tournament resolution debugging
+// Status: Kept for potential future data repair needs
+// ============================================================================
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
