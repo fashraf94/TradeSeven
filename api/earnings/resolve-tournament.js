@@ -296,6 +296,9 @@ export default async function handler(req, res) {
       errors: []
     };
 
+    // Debug samples for dry run (collect first 10 for diagnosis)
+    const debugSamples = [];
+
     // Process each tournament
     for (const tournamentDoc of tournamentDocs) {
       const tournament = tournamentDoc.data();
@@ -369,11 +372,43 @@ export default async function handler(req, res) {
       for (const [key, { symbol, date, rawDate }] of symbolDatePairs) {
         console.log(`    [FETCH] ${symbol} | key=${key} | queryDate=${date}`);
         const result = await fetchEarningsResult(symbol, date);
+
+        // Determine match status for debug
+        let matchStatus = 'unknown';
         if (result && result.resolved) {
           resultsMap.set(key, result);
+          matchStatus = 'success';
           console.log(`    ✓ ${symbol}: ${result.outcome} / ${result.magnitude} (${result.priceMove?.toFixed(2)}%) | resultDate=${result.reportDate}`);
+        } else if (result && result.availableDates) {
+          matchStatus = 'date_mismatch';
+          console.log(`    ✗ ${symbol}: Date mismatch | queried=${date} | available=${result.availableDates.map(d => d.reportDate).join(', ')}`);
+        } else if (result && result.debug?.entriesWithEpsActual === 0) {
+          matchStatus = 'no_data_yet';
+          console.log(`    ✗ ${symbol}: No EPS data yet | response=${JSON.stringify(result || {}).substring(0, 200)}`);
         } else {
+          matchStatus = 'no_result';
           console.log(`    ✗ ${symbol}: No result | response=${JSON.stringify(result || {}).substring(0, 200)}`);
+        }
+
+        // Collect debug sample (first 10 only)
+        if (debugSamples.length < 10) {
+          const rawDateType = typeof rawDate;
+          debugSamples.push({
+            symbol,
+            predictionRawDate: rawDate,
+            predictionRawDateType: rawDateType,
+            predictionNormalizedDate: date,
+            resultLookupKey: key,
+            resultResponse: result ? {
+              success: result.success,
+              resolved: result.resolved,
+              error: result.error,
+              reportDate: result.reportDate,
+              availableDates: result.availableDates?.slice(0, 3),
+              debug: result.debug
+            } : null,
+            matchStatus
+          });
         }
 
         fetchCount++;
@@ -539,12 +574,30 @@ export default async function handler(req, res) {
     console.log('========================================');
     console.log('');
 
-    return res.status(200).json({
+    // Build response
+    const response = {
       success: true,
       dryRun: isDryRun,
       timestamp: new Date().toISOString(),
       ...results
-    });
+    };
+
+    // Include debug samples for dry runs to help diagnose issues
+    if (isDryRun && debugSamples.length > 0) {
+      response.debugSamples = debugSamples;
+      response.debugSummary = {
+        totalSamples: debugSamples.length,
+        byStatus: {
+          success: debugSamples.filter(s => s.matchStatus === 'success').length,
+          date_mismatch: debugSamples.filter(s => s.matchStatus === 'date_mismatch').length,
+          no_data_yet: debugSamples.filter(s => s.matchStatus === 'no_data_yet').length,
+          no_result: debugSamples.filter(s => s.matchStatus === 'no_result').length,
+          unknown: debugSamples.filter(s => s.matchStatus === 'unknown').length
+        }
+      };
+    }
+
+    return res.status(200).json(response);
 
   } catch (error) {
     console.error('');
