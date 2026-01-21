@@ -19515,7 +19515,7 @@ export default function PortfolioDuel() {
                       fontSize: '13px',
                       color: '#9ca3af'
                     }}>
-                      Predict earnings with Polymarket odds
+                      Predict earnings with market-informed odds
                     </span>
                   </div>
                 </div>

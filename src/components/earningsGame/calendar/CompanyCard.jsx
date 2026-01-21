@@ -7,7 +7,7 @@ export default function CompanyCard({
   companyName,
   reportTime,      // 'BMO' | 'AMC'
   beatOdds,        // 0-1
-  hasLiveOdds = false,  // true if odds from Polymarket, false if estimated
+  hasLiveOdds = false,  // true if odds from market data (calculated), false if sector default
   isPicked = false,
   onAdd,
   onView,

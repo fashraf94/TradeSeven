@@ -9,6 +9,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { CACHE_TTLS } from '../../src/config/earningsConfig.js';
 
 // Initialize Anthropic client lazily
 let anthropicClient = null;
@@ -54,7 +55,7 @@ export default async function handler(req, res) {
       const recentlyVerified = cachedQuarters.filter(q => {
         const verifiedAt = new Date(q.verifiedAt);
         const daysSinceVerification = (Date.now() - verifiedAt) / (1000 * 60 * 60 * 24);
-        return daysSinceVerification < 30; // Cache valid for 30 days
+        return daysSinceVerification < CACHE_TTLS.VERIFICATION_DAYS; // Cache validity from config
       });
 
       if (recentlyVerified.length >= parseInt(quarters)) {

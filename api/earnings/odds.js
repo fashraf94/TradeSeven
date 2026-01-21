@@ -40,26 +40,20 @@
  */
 
 import { applySecurityMiddleware } from '../_utils/security.js';
-
-// Sector beat rates (inlined to avoid import issues in serverless)
-const SECTOR_BEAT_RATES = {
-  technology: 0.78,
-  financial: 0.74,
-  healthcare: 0.76,
-  consumer_cyclical: 0.71,
-  consumer_defensive: 0.73,
-  industrial: 0.70,
-  energy: 0.65,
-  utilities: 0.69,
-  materials: 0.67,
-  real_estate: 0.68,
-  communication: 0.75,
-  default: 0.70
-};
+import {
+  SECTOR_BEAT_RATES,
+  DEFAULT_BEAT_RATE,
+  MOMENTUM_THRESHOLDS,
+  MOMENTUM_FACTORS,
+  IV_THRESHOLDS,
+  IV_FACTORS,
+  PROBABILITY_CONFIG,
+  RATE_LIMITS
+} from '../../src/config/earningsConfig.js';
 
 export default async function handler(req, res) {
   // Security middleware
-  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 30, windowMs: 60000 } })) {
+  if (applySecurityMiddleware(req, res, { rateLimit: RATE_LIMITS.ODDS_API })) {
     return;
   }
 
@@ -260,7 +254,7 @@ export default async function handler(req, res) {
 
     // Return default odds on error (graceful fallback)
     const sectorKey = (sector || 'default').toLowerCase().replace(/\s+/g, '_');
-    const fallbackRate = SECTOR_BEAT_RATES[sectorKey] || 0.70;
+    const fallbackRate = SECTOR_BEAT_RATES[sectorKey] || DEFAULT_BEAT_RATE;
 
     return res.status(200).json({
       success: false,
@@ -277,17 +271,17 @@ export default async function handler(req, res) {
 }
 
 /**
- * Inline odds calculation (since we can't easily import ES modules in Vercel serverless)
- * Market-Informed Odds Engine v1.1 with IV Factor
+ * Odds calculation using Market-Informed Odds Engine v1.1 with IV Factor
+ * Uses centralized config from src/config/earningsConfig.js
  */
 function calculateOddsInline({ beatRate, totalQuarters, priceChange30d, expectedMovePercent, sector }) {
   // Determine base rate from historical data
-  let baseRate = 0.70;
+  let baseRate = DEFAULT_BEAT_RATE;
   let confidence = 'low';
 
-  // Minimum 4 quarters (1 full year) required for stock-specific confidence
+  // Minimum quarters required for stock-specific confidence
   // This captures seasonal patterns in earnings behavior
-  if (beatRate !== null && totalQuarters >= 4) {
+  if (beatRate !== null && totalQuarters >= PROBABILITY_CONFIG.MIN_QUARTERS_REQUIRED) {
     baseRate = beatRate;
     if (totalQuarters >= 10) confidence = 'high';
     else if (totalQuarters >= 6) confidence = 'medium';
@@ -295,7 +289,7 @@ function calculateOddsInline({ beatRate, totalQuarters, priceChange30d, expected
   } else {
     // Use sector average (insufficient historical data)
     const sectorKey = (sector || 'default').toLowerCase().replace(/\s+/g, '_');
-    baseRate = SECTOR_BEAT_RATES[sectorKey] || 0.70;
+    baseRate = SECTOR_BEAT_RATES[sectorKey] || DEFAULT_BEAT_RATE;
     confidence = 'sector_default';
   }
 
@@ -304,23 +298,23 @@ function calculateOddsInline({ beatRate, totalQuarters, priceChange30d, expected
   let priceSignal = 'neutral';
 
   if (priceChange30d !== null && priceChange30d !== undefined) {
-    if (priceChange30d >= 15) {
-      priceFactor = 1.12;
+    if (priceChange30d >= MOMENTUM_THRESHOLDS.STRONG_BULLISH) {
+      priceFactor = MOMENTUM_FACTORS.strong_bullish;
       priceSignal = 'strong_bullish';
-    } else if (priceChange30d >= 8) {
-      priceFactor = 1.07;
+    } else if (priceChange30d >= MOMENTUM_THRESHOLDS.BULLISH) {
+      priceFactor = MOMENTUM_FACTORS.bullish;
       priceSignal = 'bullish';
-    } else if (priceChange30d >= 3) {
-      priceFactor = 1.03;
+    } else if (priceChange30d >= MOMENTUM_THRESHOLDS.SLIGHT_BULLISH) {
+      priceFactor = MOMENTUM_FACTORS.slight_bullish;
       priceSignal = 'slight_bullish';
-    } else if (priceChange30d <= -15) {
-      priceFactor = 0.88;
+    } else if (priceChange30d <= MOMENTUM_THRESHOLDS.STRONG_BEARISH) {
+      priceFactor = MOMENTUM_FACTORS.strong_bearish;
       priceSignal = 'strong_bearish';
-    } else if (priceChange30d <= -8) {
-      priceFactor = 0.93;
+    } else if (priceChange30d <= MOMENTUM_THRESHOLDS.BEARISH) {
+      priceFactor = MOMENTUM_FACTORS.bearish;
       priceSignal = 'bearish';
-    } else if (priceChange30d <= -3) {
-      priceFactor = 0.97;
+    } else if (priceChange30d <= MOMENTUM_THRESHOLDS.SLIGHT_BEARISH) {
+      priceFactor = MOMENTUM_FACTORS.slight_bearish;
       priceSignal = 'slight_bearish';
     }
   }
@@ -332,22 +326,22 @@ function calculateOddsInline({ beatRate, totalQuarters, priceChange30d, expected
   let ivSignal = 'no_data';
 
   if (expectedMovePercent !== null && expectedMovePercent !== undefined) {
-    if (expectedMovePercent >= 12) {
+    if (expectedMovePercent >= IV_THRESHOLDS.VERY_HIGH) {
       // Very high expected move - lots of uncertainty, regress toward 50%
-      ivFactor = 0.85;
+      ivFactor = IV_FACTORS.very_high;
       ivSignal = 'high_uncertainty';
-    } else if (expectedMovePercent >= 8) {
-      ivFactor = 0.92;
+    } else if (expectedMovePercent >= IV_THRESHOLDS.ELEVATED) {
+      ivFactor = IV_FACTORS.elevated;
       ivSignal = 'elevated_uncertainty';
-    } else if (expectedMovePercent >= 5) {
-      ivFactor = 0.97;
+    } else if (expectedMovePercent >= IV_THRESHOLDS.MODERATE) {
+      ivFactor = IV_FACTORS.moderate;
       ivSignal = 'moderate';
-    } else if (expectedMovePercent <= 3) {
+    } else if (expectedMovePercent <= IV_THRESHOLDS.LOW) {
       // Low expected move - market confident, amplify signal
-      ivFactor = 1.05;
+      ivFactor = IV_FACTORS.high_confidence;
       ivSignal = 'high_confidence';
     } else {
-      ivFactor = 1.0;
+      ivFactor = IV_FACTORS.normal;
       ivSignal = 'normal';
     }
   }
@@ -361,13 +355,13 @@ function calculateOddsInline({ beatRate, totalQuarters, priceChange30d, expected
     probability = 0.50 + (distanceFrom50 * ivFactor);
   }
 
-  // Blend with sector baseline (15% weight)
+  // Blend with sector baseline
   const sectorKey = (sector || 'default').toLowerCase().replace(/\s+/g, '_');
-  const sectorRate = SECTOR_BEAT_RATES[sectorKey] || 0.70;
-  probability = (probability * 0.85) + (sectorRate * 0.15);
+  const sectorRate = SECTOR_BEAT_RATES[sectorKey] || DEFAULT_BEAT_RATE;
+  probability = (probability * PROBABILITY_CONFIG.CALCULATED_WEIGHT) + (sectorRate * PROBABILITY_CONFIG.SECTOR_BLEND_WEIGHT);
 
   // Clamp to reasonable range
-  probability = Math.min(0.95, Math.max(0.15, probability));
+  probability = Math.min(PROBABILITY_CONFIG.MAX_PROBABILITY, Math.max(PROBABILITY_CONFIG.MIN_PROBABILITY, probability));
 
   return {
     probability,

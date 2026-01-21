@@ -16,7 +16,7 @@ import React, { useState, useEffect, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEarningsGame } from '../hooks/useEarningsGame';
 import { useTournament } from '../hooks/useTournament';
-import { getHybridEarningsCalendar } from '../services/polymarketService';
+import { getHybridEarningsCalendar } from '../services/earningsCalendarService';
 import {
   designColors,
   fontMono,

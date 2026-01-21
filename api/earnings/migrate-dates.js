@@ -1,15 +1,33 @@
 // api/earnings/migrate-dates.js
-// One-time migration script to fix predictions with empty reportDate: {}
+// ============================================================================
+// MIGRATION UTILITY - Fix predictions with empty reportDate: {}
+// ============================================================================
+//
+// PURPOSE: Repairs prediction records where reportDate was corrupted to {}
+// due to a bug in removeUndefined() that stripped Date objects.
+//
+// ROOT CAUSE (FIXED):
+//   removeUndefined() was stripping Date objects to {} because
+//   Date objects have no enumerable properties (Object.entries returns [])
+//   Fix applied in commit: "fix: Harden removeUndefined() to handle edge cases"
+//
+// SAFETY:
+//   - Requires ?testMode=true to run
+//   - Use ?dryRun=true to preview changes without saving
+//   - Logs all changes for audit trail
 //
 // Usage:
 //   GET /api/earnings/migrate-dates?testMode=true&dryRun=true  - Preview changes
 //   GET /api/earnings/migrate-dates?testMode=true              - Apply fixes
+//   GET /api/earnings/migrate-dates?testMode=true&tournamentId=xxx - Specific tournament
 //
-// The bug: removeUndefined() was stripping Date objects to {} because
-// Date objects have no enumerable properties (Object.entries returns [])
+// Created: Jan 2026 during tournament resolution debugging
+// Status: Kept for potential future data repair needs
+// ============================================================================
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { isEmptyDate, toYYYYMMDD } from '../../src/utils/dateUtils.js';
 
 // Initialize Firebase Admin
 function getFirebaseAdmin() {
@@ -65,21 +83,6 @@ async function fetchEarningsCalendar(fromDate, toDate) {
 
   console.log(`[migrate-dates] Found ${calendarMap.size} earnings events in calendar`);
   return calendarMap;
-}
-
-/**
- * Check if a reportDate value is empty/broken
- */
-function isEmptyDate(value) {
-  if (!value) return true;
-  if (typeof value === 'string' && value.length > 0) return false;
-  if (typeof value === 'object') {
-    // Check if it's an empty object {}
-    if (Object.keys(value).length === 0) return true;
-    // Check if it's a valid Firestore Timestamp
-    if (value.seconds !== undefined || typeof value.toDate === 'function') return false;
-  }
-  return true;
 }
 
 export default async function handler(req, res) {
@@ -170,8 +173,8 @@ export default async function handler(req, res) {
       endDate.setDate(endDate.getDate() + 3);
 
       const calendarMap = await fetchEarningsCalendar(
-        startDate.toISOString().split('T')[0],
-        endDate.toISOString().split('T')[0]
+        toYYYYMMDD(startDate),
+        toYYYYMMDD(endDate)
       );
 
       // Get all entries for this tournament

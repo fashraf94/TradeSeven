@@ -2,18 +2,26 @@
 // Shared earnings result logic - used by both results.js API and resolve-tournament.js
 //
 // This avoids internal HTTP calls which can fail silently on Vercel
+//
+// Created: Jan 2026 during tournament resolution debugging
+// Dependencies: dateUtils (shared date handling), earningsConfig (magnitude thresholds)
+
+import { safeParseDate, toYYYYMMDD } from '../../../src/utils/dateUtils.js';
+import { MAGNITUDE_THRESHOLDS } from '../../../src/config/earningsConfig.js';
 
 /**
  * Get magnitude band from price move percentage
+ * Uses thresholds from centralized config for consistency
+ *
  * @param {number|null} priceMove - Price move percentage
- * @returns {string} - Magnitude band
+ * @returns {string} - Magnitude band: 'upBig' | 'up' | 'flat' | 'down' | 'downBig' | 'unknown'
  */
 export function getMagnitudeBand(priceMove) {
   if (priceMove === null || priceMove === undefined) return 'unknown';
-  if (priceMove > 5) return 'upBig';
-  if (priceMove >= 2) return 'up';
-  if (priceMove >= -2) return 'flat';
-  if (priceMove >= -5) return 'down';
+  if (priceMove > MAGNITUDE_THRESHOLDS.UP_BIG) return 'upBig';
+  if (priceMove >= MAGNITUDE_THRESHOLDS.UP_MIN) return 'up';
+  if (priceMove >= -MAGNITUDE_THRESHOLDS.FLAT_RANGE) return 'flat';
+  if (priceMove >= MAGNITUDE_THRESHOLDS.DOWN_BIG) return 'down';
   return 'downBig';
 }
 
@@ -28,7 +36,12 @@ export function getMagnitudeBand(priceMove) {
 export async function getEarningsDayMove(symbol, reportDate, timing, apiKey) {
   try {
     const tickerWithExchange = `${symbol}.US`;
-    const reportDateObj = new Date(reportDate);
+    const reportDateObj = safeParseDate(reportDate);
+
+    if (!reportDateObj) {
+      console.warn(`[getEarningsResult] Could not parse reportDate: ${reportDate}`);
+      return null;
+    }
 
     // Calculate date range for price lookup
     const fromDate = new Date(reportDateObj);
@@ -36,8 +49,8 @@ export async function getEarningsDayMove(symbol, reportDate, timing, apiKey) {
     const toDate = new Date(reportDateObj);
     toDate.setDate(toDate.getDate() + 5); // 5 days after
 
-    const fromStr = fromDate.toISOString().split('T')[0];
-    const toStr = toDate.toISOString().split('T')[0];
+    const fromStr = toYYYYMMDD(fromDate);
+    const toStr = toYYYYMMDD(toDate);
 
     const priceUrl = `https://eodhd.com/api/eod/${tickerWithExchange}?api_token=${apiKey}&from=${fromStr}&to=${toStr}&fmt=json`;
     const priceRes = await fetch(priceUrl);
@@ -58,7 +71,7 @@ export async function getEarningsDayMove(symbol, reportDate, timing, apiKey) {
     prices.sort((a, b) => new Date(a.date) - new Date(b.date));
 
     // Find the report date index
-    const reportDateStr = reportDate.split('T')[0];
+    const reportDateStr = toYYYYMMDD(reportDate);
     const reportDayIndex = prices.findIndex(p => p.date >= reportDateStr);
 
     if (reportDayIndex < 0) {

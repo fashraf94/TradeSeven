@@ -11,7 +11,7 @@
 
 import { applySecurityMiddleware } from '../_utils/security.js';
 
-// Priority stocks from polymarketService - high-interest stocks for retail investors
+// Priority stocks from earningsCalendarService - high-interest stocks for retail investors
 const PRIORITY_STOCKS = new Set([
   // Mega Cap Tech
   'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'META', 'NVDA', 'TSLA', 'AMD', 'INTC',
