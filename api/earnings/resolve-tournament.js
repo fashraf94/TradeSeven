@@ -331,11 +331,31 @@ export default async function handler(req, res) {
           }
 
           const symbol = pred.symbol;
-          const date = pred.reportDate || pred.earningsDate || pred.date;
+          // Extract date - handle various field names and formats
+          const rawDate = pred.reportDate || pred.earningsDate || pred.date;
+          // Log the type and structure of the raw date for debugging
+          const rawDateType = typeof rawDate;
+          const rawDateKeys = rawDate && typeof rawDate === 'object' ? Object.keys(rawDate).slice(0, 5) : [];
+
+          // Normalize date to YYYY-MM-DD string for consistent keying
+          let date;
+          if (typeof rawDate === 'string') {
+            date = rawDate.split('T')[0]; // Handle ISO strings
+          } else {
+            const parsed = safeParseDate(rawDate);
+            date = parsed ? parsed.toISOString().split('T')[0] : null;
+          }
+
+          if (!date) {
+            console.warn(`    [WARN] ${symbol}: Could not parse date. rawDate=${JSON.stringify(rawDate)}, type=${rawDateType}, keys=${rawDateKeys.join(',')}`);
+            return; // Skip this prediction
+          }
+
           const key = `${symbol}_${date}`;
 
           if (!symbolDatePairs.has(key)) {
-            symbolDatePairs.set(key, { symbol, date });
+            symbolDatePairs.set(key, { symbol, date, rawDate });
+            console.log(`    [DEBUG] Prediction: ${symbol} | type=${rawDateType} | rawDate=${JSON.stringify(rawDate).substring(0, 50)} | normalized=${date}`);
           }
         });
       });
@@ -346,13 +366,14 @@ export default async function handler(req, res) {
       const resultsMap = new Map();
       let fetchCount = 0;
 
-      for (const [key, { symbol, date }] of symbolDatePairs) {
+      for (const [key, { symbol, date, rawDate }] of symbolDatePairs) {
+        console.log(`    [FETCH] ${symbol} | key=${key} | queryDate=${date}`);
         const result = await fetchEarningsResult(symbol, date);
         if (result && result.resolved) {
           resultsMap.set(key, result);
-          console.log(`    ✓ ${symbol}: ${result.outcome} / ${result.magnitude} (${result.priceMove?.toFixed(2)}%)`);
+          console.log(`    ✓ ${symbol}: ${result.outcome} / ${result.magnitude} (${result.priceMove?.toFixed(2)}%) | resultDate=${result.reportDate}`);
         } else {
-          console.log(`    ✗ ${symbol}: No result available yet`);
+          console.log(`    ✗ ${symbol}: No result | response=${JSON.stringify(result || {}).substring(0, 200)}`);
         }
 
         fetchCount++;
@@ -363,6 +384,11 @@ export default async function handler(req, res) {
       }
 
       console.log(`    Results fetched: ${resultsMap.size} / ${symbolDatePairs.size}`);
+
+      // Debug: Show all keys in resultsMap
+      if (resultsMap.size > 0) {
+        console.log(`    [DEBUG] resultsMap keys: ${Array.from(resultsMap.keys()).join(', ')}`);
+      }
 
       // Score each entry
       const batch = db.batch();
@@ -384,8 +410,15 @@ export default async function handler(req, res) {
             return pred;
           }
 
-          // Build lookup key
-          const date = pred.reportDate || pred.earningsDate || pred.date;
+          // Build lookup key - normalize date the same way as when fetching
+          const rawDate = pred.reportDate || pred.earningsDate || pred.date;
+          let date;
+          if (typeof rawDate === 'string') {
+            date = rawDate.split('T')[0];
+          } else {
+            const parsed = safeParseDate(rawDate);
+            date = parsed ? parsed.toISOString().split('T')[0] : rawDate;
+          }
           const key = `${pred.symbol}_${date}`;
           const result = resultsMap.get(key);
 
@@ -394,6 +427,7 @@ export default async function handler(req, res) {
             pendingCount++;
             tournamentPendingCount++;
             results.predictionsPending++;
+            console.log(`    [PENDING] ${pred.symbol} | key=${key} | not in resultsMap`);
             return {
               ...pred,
               resolved: false,
