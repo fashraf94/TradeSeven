@@ -1029,11 +1029,14 @@ const EarningsGameScreen = ({
   // VIEW: ARENA (Phase 5 - LiveMatchArena)
   // ========================================
   if (view === 'arena') {
+    // Use predictions from Firebase entry if available, otherwise local predictions
+    const arenaPredictions = activeEntry?.predictions || predictions;
+
     return (
       <div style={{ minHeight: '100vh', background: '#0d1117' }}>
         <NavigationTabs />
         <LiveMatchArena
-          predictions={predictions}
+          predictions={arenaPredictions}
           userPosition={userPosition}
           resultsData={mockResultsData}
           onBack={() => setView('portfolio')}
@@ -1069,11 +1072,14 @@ const EarningsGameScreen = ({
   // VIEW: RESULTS (Phase 6 - TournamentResults)
   // ========================================
   if (view === 'results') {
+    // Use predictions from Firebase entry if available, otherwise local predictions
+    const resultsPredictions = activeEntry?.predictions || predictions;
+
     return (
       <div style={{ minHeight: '100vh', background: '#0d1117' }}>
         <NavigationTabs />
         <TournamentResults
-          predictions={predictions}
+          predictions={resultsPredictions}
           resultsData={mockResultsData}
           userPosition={userPosition}
           tournament={{

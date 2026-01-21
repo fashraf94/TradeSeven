@@ -8,7 +8,13 @@ export default function MagnitudeGaugeCard({
   outcomeCorrect = null,
   index = 0,
 }) {
-  const mag = MAGNITUDES.find(m => m.id === prediction.magnitude);
+  const mag = MAGNITUDES.find(m => m.id === prediction.magnitude) || {
+    id: prediction.magnitude,
+    label: prediction.magnitudeLabel || prediction.magnitude || 'Unknown',
+    range: prediction.magnitudeRange || '',
+    min: -Infinity,
+    max: Infinity,
+  };
 
   // Determine status
   let status = 'pending';
@@ -22,14 +28,16 @@ export default function MagnitudeGaugeCard({
   }
 
   // Calculate points display
-  let pointsDisplay = `(${prediction.potentialPoints?.toLocaleString()})`;
+  // Handle both potentialPoints and potentialPayout field names
+  const points = prediction.potentialPoints ?? prediction.potentialPayout ?? 0;
+  let pointsDisplay = points > 0 ? `(${points.toLocaleString()})` : '';
   if (status === 'correct') {
-    pointsDisplay = `+${prediction.potentialPoints?.toLocaleString()}`;
+    pointsDisplay = `+${points.toLocaleString()}`;
   } else if (status === 'incorrect' || status === 'wrong_magnitude') {
     pointsDisplay = '0';
   }
 
-  const isClutch = status === 'pending' && prediction.potentialPoints > 3000;
+  const isClutch = status === 'pending' && points > 3000;
 
   const statusConfig = {
     pending: { label: 'PENDING', color: designColors.textMuted },
@@ -104,7 +112,7 @@ export default function MagnitudeGaugeCard({
         marginBottom: '12px',
       }}>
         Your pick: <span style={{ color: designColors.textPrimary }}>
-          {mag?.label} ({mag?.range})
+          {mag.label}{mag.range ? ` (${mag.range})` : ''}
         </span>
       </div>
 

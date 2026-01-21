@@ -169,7 +169,7 @@ export default function MagnitudeGauge({
       }}>
         <span style={{ color: designColors.textMuted }}>-10%</span>
 
-        {hasValue && (
+        {hasValue ? (
           <motion.span
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
@@ -181,6 +181,14 @@ export default function MagnitudeGauge({
           >
             {actualValue >= 0 ? '+' : ''}{actualValue.toFixed(1)}%
           </motion.span>
+        ) : (
+          <span style={{
+            color: designColors.textMuted,
+            fontSize: '11px',
+            fontStyle: 'italic',
+          }}>
+            Awaiting close
+          </span>
         )}
 
         <span style={{ color: designColors.textMuted }}>+10%</span>
