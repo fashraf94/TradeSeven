@@ -8,7 +8,13 @@ export default function MagnitudeGaugeCard({
   outcomeCorrect = null,
   index = 0,
 }) {
-  const mag = MAGNITUDES.find(m => m.id === prediction.magnitude);
+  const mag = MAGNITUDES.find(m => m.id === prediction.magnitude) || {
+    id: prediction.magnitude,
+    label: prediction.magnitudeLabel || prediction.magnitude || 'Unknown',
+    range: prediction.magnitudeRange || '',
+    min: -Infinity,
+    max: Infinity,
+  };
 
   // Determine status
   let status = 'pending';
@@ -104,7 +110,7 @@ export default function MagnitudeGaugeCard({
         marginBottom: '12px',
       }}>
         Your pick: <span style={{ color: designColors.textPrimary }}>
-          {mag?.label} ({mag?.range})
+          {mag.label}{mag.range ? ` (${mag.range})` : ''}
         </span>
       </div>
 

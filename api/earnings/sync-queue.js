@@ -9,6 +9,60 @@
 
 import { applySecurityMiddleware } from '../_utils/security.js';
 
+// IV Data Cache - prevents redundant API calls (24 hour TTL)
+const ivDataCache = new Map();
+const IV_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Check if a stock has options/IV data available
+ * @param {string} symbol - Stock ticker
+ * @returns {Promise<boolean>} True if IV data is available
+ */
+async function hasIVData(symbol) {
+  const upperSymbol = symbol.toUpperCase();
+
+  // Check cache first
+  const cached = ivDataCache.get(upperSymbol);
+  if (cached && Date.now() - cached.timestamp < IV_CACHE_DURATION) {
+    return cached.hasIV;
+  }
+
+  const apiKey = process.env.EODHD_API_KEY;
+  if (!apiKey) {
+    console.warn(`[sync-queue] EODHD_API_KEY not configured, assuming IV data available`);
+    return true; // Assume available if we can't check
+  }
+
+  try {
+    const tickerWithExchange = `${upperSymbol}.US`;
+    const optionsUrl = `https://eodhd.com/api/options/${tickerWithExchange}?api_token=${apiKey}`;
+    const optionsRes = await fetch(optionsUrl);
+
+    if (!optionsRes.ok) {
+      // Cache negative result
+      ivDataCache.set(upperSymbol, { hasIV: false, timestamp: Date.now() });
+      return false;
+    }
+
+    const optionsData = await optionsRes.json();
+
+    // Check if we have valid options data with expirations
+    const hasValidOptions = optionsData &&
+      typeof optionsData === 'object' &&
+      Object.keys(optionsData).some(key => key.match(/^\d{4}-\d{2}-\d{2}$/));
+
+    // Cache the result
+    ivDataCache.set(upperSymbol, { hasIV: hasValidOptions, timestamp: Date.now() });
+
+    return hasValidOptions;
+  } catch (error) {
+    console.warn(`[sync-queue] Error checking IV for ${upperSymbol}:`, error.message);
+    // Cache negative result on error
+    ivDataCache.set(upperSymbol, { hasIV: false, timestamp: Date.now() });
+    return false;
+  }
+}
+
 // Priority stocks - high-interest for retail investors
 const PRIORITY_STOCKS = new Set([
   // Mega Cap Tech
@@ -96,6 +150,7 @@ export default async function handler(req, res) {
     const added = [];
     const skipped = [];
     const updated = [];
+    const noIVData = []; // Track stocks skipped due to no IV data
     let batch = db.batch();
     let batchCount = 0;
 
@@ -105,6 +160,22 @@ export default async function handler(req, res) {
 
       const existingQueueEntry = existingQueue.get(symbol);
       const existingVerification = existingVerifications.get(symbol);
+
+      // Skip stocks without IV data (no point in verifying if they can't be used)
+      // Only check for new additions, not updates to existing queue entries
+      if (!existingQueueEntry && !existingVerification) {
+        const hasIV = await hasIVData(symbol);
+        if (!hasIV) {
+          console.log(`[sync-queue] Skipping ${symbol} - no IV data`);
+          noIVData.push(symbol);
+          skipped.push({ symbol, reason: 'no_iv_data' });
+          continue;
+        }
+        // Small delay to avoid rate limiting (every 5 IV checks)
+        if ((noIVData.length + added.length) % 5 === 0) {
+          await new Promise(r => setTimeout(r, 100));
+        }
+      }
 
       // Check if verification is fresh (within 30 days)
       const verificationIsFresh = existingVerification &&
@@ -213,6 +284,7 @@ export default async function handler(req, res) {
       added: added.length,
       updated: updated.length,
       skipped: skipped.length,
+      skippedNoIV: noIVData.length,
       cleanedUp: cleanedUp.length,
       queueStats: {
         pending: pendingCount.data().count,
@@ -223,6 +295,9 @@ export default async function handler(req, res) {
 
     console.log(`[sync-queue] Complete:`, summary);
     console.log(`[sync-queue] Added stocks:`, added.map(a => a.symbol).slice(0, 20));
+    if (noIVData.length > 0) {
+      console.log(`[sync-queue] Skipped (no IV data):`, noIVData.slice(0, 30).join(', '));
+    }
 
     return res.status(200).json({
       success: true,
