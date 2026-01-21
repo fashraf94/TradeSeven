@@ -124,9 +124,36 @@ export default async function handler(req, res) {
       });
     }
 
-    // Determine beat/miss
-    const didBeat = result.epsActual > result.epsEstimate;
-    const didMiss = result.epsActual < result.epsEstimate;
+    // Determine beat/miss - prefer EODHD's pre-calculated surprisePercent when available
+    let didBeat, didMiss, determinationMethod;
+
+    if (result.surprisePercent !== null && result.surprisePercent !== undefined) {
+      // Use EODHD's pre-calculated surprise (more reliable)
+      didBeat = result.surprisePercent > 0;
+      didMiss = result.surprisePercent < 0;
+      determinationMethod = 'surprisePercent';
+
+      // Cross-validation: Check if our calculation would differ
+      const hasEstimate = result.epsEstimate !== null && result.epsEstimate !== undefined;
+      if (hasEstimate) {
+        const calcBeat = result.epsActual > result.epsEstimate;
+        const calcMiss = result.epsActual < result.epsEstimate;
+
+        if ((didBeat && calcMiss) || (didMiss && calcBeat)) {
+          console.warn(`[EarningsResults] ${upperSymbol}: DATA MISMATCH - ` +
+            `surprisePercent=${result.surprisePercent.toFixed(2)}% suggests ${didBeat ? 'BEAT' : 'MISS'}, ` +
+            `but epsActual(${result.epsActual}) vs epsEstimate(${result.epsEstimate}) suggests ${calcBeat ? 'BEAT' : 'MISS'}`);
+        }
+      }
+    } else {
+      // Fallback to manual calculation if surprisePercent not available
+      didBeat = result.epsActual > result.epsEstimate;
+      didMiss = result.epsActual < result.epsEstimate;
+      determinationMethod = 'calculated';
+
+      console.log(`[EarningsResults] ${upperSymbol}: No surprisePercent available, using calculated beat/miss`);
+    }
+
     const outcome = didBeat ? 'beat' : (didMiss ? 'miss' : 'meet');
 
     // Get stock price move after earnings
@@ -147,6 +174,7 @@ export default async function handler(req, res) {
       didBeat,
       didMiss,
       outcome,
+      determinationMethod,
       priceMove: priceMove !== null ? Math.round(priceMove * 100) / 100 : null,
       magnitude,
       beforeAfterMarket: result.beforeAfterMarket,
