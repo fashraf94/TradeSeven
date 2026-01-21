@@ -199,12 +199,41 @@ export default async function handler(req, res) {
         return res.status(404).json({ error: `Tournament ${tournamentId} not found` });
       }
     } else {
-      // Get all active tournaments
-      console.log('Fetching active tournaments...');
+      // Get all tournaments that need resolution
+      // Include 'open' because tournaments may not have been transitioned to 'locked' yet
+      console.log('Fetching tournaments for resolution...');
       const snapshot = await db.collection('earningsTournaments')
-        .where('status', 'in', ['locked', 'in_progress', 'active'])
+        .where('status', 'in', ['open', 'locked', 'in_progress'])
         .get();
-      tournamentDocs = snapshot.docs;
+
+      // Filter and auto-transition 'open' tournaments that are past their lock deadline
+      const now = new Date();
+      tournamentDocs = [];
+
+      for (const doc of snapshot.docs) {
+        const data = doc.data();
+
+        if (data.status === 'open') {
+          // Check if lock deadline has passed
+          const lockDeadline = data.lockDeadline ? new Date(data.lockDeadline) : null;
+          if (lockDeadline && lockDeadline < now) {
+            console.log(`  Auto-transitioning ${doc.id} from 'open' to 'locked' (deadline: ${data.lockDeadline})`);
+            // Update status to 'locked'
+            if (!isDryRun) {
+              await db.collection('earningsTournaments').doc(doc.id).update({
+                status: 'locked',
+                lockedAt: new Date()
+              });
+            }
+            tournamentDocs.push(doc);
+          } else {
+            console.log(`  Skipping ${doc.id} - still open (deadline: ${data.lockDeadline || 'none'})`);
+          }
+        } else {
+          // Already locked or in_progress
+          tournamentDocs.push(doc);
+        }
+      }
     }
 
     console.log(`Found ${tournamentDocs.length} tournament(s) to process`);
