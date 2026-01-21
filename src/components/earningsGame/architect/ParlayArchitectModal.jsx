@@ -525,6 +525,8 @@ export default function ParlayArchitectModal({
               disabled={!isComplete || !canAfford}
               precisionTier={selectedPrecisionTier}
               precisionLabel={selectedPrecisionOption?.tierLabel}
+              reactionProb={selectedParlay?.reactionProb}
+              quarterCount={selectedParlay?.quarterCount}
             />
 
             {/* Budget warning */}
@@ -774,6 +776,8 @@ export default function ParlayArchitectModal({
               disabled={!isComplete || !canAfford}
               precisionTier={selectedPrecisionTier}
               precisionLabel={selectedPrecisionOption?.tierLabel}
+              reactionProb={selectedParlay?.reactionProb}
+              quarterCount={selectedParlay?.quarterCount}
             />
 
             {/* Budget warning */}

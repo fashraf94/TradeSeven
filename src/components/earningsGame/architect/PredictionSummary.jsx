@@ -10,6 +10,29 @@ const precisionStyles = {
   bullseye: { color: designColors.cyan, label: 'Bullseye', Icon: Crosshair }
 };
 
+// Magnitude labels for explanation sentence
+const MAGNITUDE_LABELS = {
+  upBig: 'UP BIG (+5% or more)',
+  up: 'UP (+2% to +5%)',
+  flat: 'FLAT (±2%)',
+  down: 'DOWN (-2% to -5%)',
+  downBig: 'DOWN BIG (-5% or more)'
+};
+
+/**
+ * Generate explanatory sentence about historical probability
+ */
+function getExplanationSentence(symbol, outcome, magnitude, probability, quarterCount) {
+  if (!symbol || !outcome || !magnitude || probability === undefined) return null;
+
+  const magnitudeLabel = MAGNITUDE_LABELS[magnitude] || magnitude;
+  const probabilityPercent = Math.round(probability * 100);
+  const outcomeText = outcome === 'beat' ? 'beating' : 'missing';
+  const dataSource = quarterCount ? `${quarterCount} quarters` : 'sector averages';
+
+  return `${symbol} moves ${magnitudeLabel} ${probabilityPercent}% of the time after ${outcomeText} earnings (based on ${dataSource})`;
+}
+
 export default function PredictionSummary({
   symbol,
   outcome,           // 'beat' | 'miss'
@@ -24,6 +47,9 @@ export default function PredictionSummary({
   disabled = false,  // True if selection incomplete
   precisionTier = 'standard',
   precisionLabel,
+  // New props for explanation sentence
+  reactionProb,      // Historical probability (0-1)
+  quarterCount,      // Number of quarters data is based on (null for sector)
 }) {
   const magnitudeInfo = MAGNITUDES.find(m => m.id === magnitude);
   const outcomeLabel = outcome === 'beat' ? 'BEAT' : 'MISS';
@@ -153,6 +179,22 @@ export default function PredictionSummary({
           </>
         )}
       </div>
+
+      {/* Explanatory sentence about historical probability */}
+      {!disabled && reactionProb !== undefined && (
+        <p style={{
+          color: '#9ca3af',
+          fontSize: '12px',
+          fontStyle: 'italic',
+          textAlign: 'center',
+          marginTop: '0px',
+          marginBottom: '12px',
+          lineHeight: '1.4',
+          padding: '0 8px',
+        }}>
+          {getExplanationSentence(symbol, outcome, magnitude, reactionProb, quarterCount)}
+        </p>
+      )}
 
       {/* Precision tier badge (if not standard) */}
       {showPrecisionBadge && !disabled && (
