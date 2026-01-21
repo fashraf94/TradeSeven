@@ -333,19 +333,29 @@ export default async function handler(req, res) {
           const symbol = pred.symbol;
           // Extract date - handle various field names and formats
           const rawDate = pred.reportDate || pred.earningsDate || pred.date;
+          // Log the type and structure of the raw date for debugging
+          const rawDateType = typeof rawDate;
+          const rawDateKeys = rawDate && typeof rawDate === 'object' ? Object.keys(rawDate).slice(0, 5) : [];
+
           // Normalize date to YYYY-MM-DD string for consistent keying
           let date;
           if (typeof rawDate === 'string') {
             date = rawDate.split('T')[0]; // Handle ISO strings
           } else {
             const parsed = safeParseDate(rawDate);
-            date = parsed ? parsed.toISOString().split('T')[0] : rawDate;
+            date = parsed ? parsed.toISOString().split('T')[0] : null;
           }
+
+          if (!date) {
+            console.warn(`    [WARN] ${symbol}: Could not parse date. rawDate=${JSON.stringify(rawDate)}, type=${rawDateType}, keys=${rawDateKeys.join(',')}`);
+            return; // Skip this prediction
+          }
+
           const key = `${symbol}_${date}`;
 
           if (!symbolDatePairs.has(key)) {
             symbolDatePairs.set(key, { symbol, date, rawDate });
-            console.log(`    [DEBUG] Prediction: ${symbol} | rawDate=${rawDate} | normalized=${date}`);
+            console.log(`    [DEBUG] Prediction: ${symbol} | type=${rawDateType} | rawDate=${JSON.stringify(rawDate).substring(0, 50)} | normalized=${date}`);
           }
         });
       });
