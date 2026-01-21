@@ -100,8 +100,8 @@ export default async function handler(req, res) {
         mismatches.push(verification);
       }
 
-      // Rate limiting - wait 500ms between calls
-      await sleep(500);
+      // Rate limiting - wait 2 seconds between calls to avoid rate limits
+      await sleep(2000);
     }
 
     // Step 4: Build verified result
@@ -201,23 +201,65 @@ If you cannot find reliable information, respond with:
       messages: [{ role: 'user', content: prompt }]
     });
 
-    // Extract the text response
-    const textContent = response.content.find(c => c.type === 'text');
-    const responseText = textContent?.text || '';
+    // Extract text from response - handle different content block types
+    let responseText = '';
 
-    // Parse JSON from response
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.warn(`[verify-stock] ${symbol} ${quarterLabel}: Could not parse Claude response`);
-      return {
-        ...eodhQuarter,
-        verified: false,
-        verificationError: 'Could not parse response',
-        verifiedAt: new Date().toISOString()
-      };
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        responseText += block.text;
+      }
     }
 
-    const webResult = JSON.parse(jsonMatch[0]);
+    console.log(`[verify-stock] ${symbol} ${quarterLabel}: Raw response length: ${responseText.length}`);
+
+    // Try to find JSON in the response
+    let webResult;
+
+    // First try: Look for JSON block with beat_or_miss
+    const jsonMatch = responseText.match(/\{[\s\S]*?"beat_or_miss"[\s\S]*?\}/);
+
+    if (jsonMatch) {
+      try {
+        webResult = JSON.parse(jsonMatch[0]);
+      } catch (parseError) {
+        console.warn(`[verify-stock] ${symbol} ${quarterLabel}: JSON parse failed:`, parseError.message);
+      }
+    }
+
+    // Fallback: Extract beat/miss from natural language
+    if (!webResult) {
+      const lowerText = responseText.toLowerCase();
+
+      let beatOrMiss = 'unknown';
+      if ((lowerText.includes('beat') && lowerText.includes('expectations')) ||
+          (lowerText.includes('beat') && lowerText.includes('estimates')) ||
+          lowerText.includes('topped') || lowerText.includes('exceeded')) {
+        beatOrMiss = 'beat';
+      } else if ((lowerText.includes('miss') && lowerText.includes('expectations')) ||
+                 (lowerText.includes('miss') && lowerText.includes('estimates')) ||
+                 lowerText.includes('fell short') || lowerText.includes('disappointed')) {
+        beatOrMiss = 'miss';
+      } else if (lowerText.includes('met expectations') || lowerText.includes('in line')) {
+        beatOrMiss = 'meet';
+      }
+
+      // Try to extract EPS numbers
+      const epsPattern = /\$?([\d.]+)\s*(?:eps|per share|actual)/i;
+      const estimatePattern = /estimate[sd]?\s*(?:of|at|was)?\s*\$?([\d.]+)/i;
+
+      const epsMatch = responseText.match(epsPattern);
+      const estimateMatch = responseText.match(estimatePattern);
+
+      webResult = {
+        beat_or_miss: beatOrMiss,
+        reported_eps: epsMatch ? parseFloat(epsMatch[1]) : null,
+        consensus_estimate: estimateMatch ? parseFloat(estimateMatch[1]) : null,
+        confidence: beatOrMiss !== 'unknown' ? 'medium' : 'low',
+        source: 'web search (parsed)'
+      };
+
+      console.log(`[verify-stock] ${symbol} ${quarterLabel}: Fallback parsing - ${beatOrMiss}`);
+    }
 
     // Compare with EODHD data
     const eodhSaysBeat = didBeat === true;
@@ -261,11 +303,17 @@ If you cannot find reliable information, respond with:
     };
 
   } catch (error) {
+    // Check for rate limit error
+    if (error.message && (error.message.includes('rate_limit') || error.message.includes('429'))) {
+      console.warn(`[verify-stock] ${symbol} ${quarterLabel}: Rate limited, waiting 60 seconds...`);
+      await sleep(60000); // Wait 60 seconds before continuing
+    }
+
     console.error(`[verify-stock] ${symbol} ${quarterLabel}: Claude API error:`, error.message);
     return {
       ...eodhQuarter,
       verified: false,
-      verificationError: error.message,
+      verificationError: error.message?.substring(0, 200) || 'Unknown error',
       verifiedAt: new Date().toISOString()
     };
   }
