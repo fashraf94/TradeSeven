@@ -9,21 +9,10 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { BATCH_CONFIG } from '../../src/config/earningsConfig.js';
 
-// Backoff delays in milliseconds
-const BACKOFF_DELAYS = [
-  2000,    // 2 seconds (normal delay)
-  5000,    // 5 seconds (after first rate limit)
-  15000,   // 15 seconds (after second)
-  60000,   // 1 minute (after third)
-  300000   // 5 minutes (after fourth)
-];
-
-// Quarters to process per batch iteration
-const QUARTERS_PER_ITERATION = 4;
-
-// Default stocks per batch run
-const DEFAULT_STOCKS_PER_BATCH = 5;
+// Import batch constants from centralized config
+const { BACKOFF_DELAYS, QUARTERS_PER_ITERATION, DEFAULT_STOCKS_PER_BATCH } = BATCH_CONFIG;
 
 // Initialize Anthropic client lazily
 let anthropicClient = null;

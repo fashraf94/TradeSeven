@@ -8,10 +8,10 @@
  */
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { CACHE_TTLS, BATCH_CONFIG } from '../../src/config/earningsConfig.js';
 
-// IV Data Cache - prevents redundant API calls (24 hour TTL)
+// IV Data Cache - prevents redundant API calls
 const ivDataCache = new Map();
-const IV_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
  * Check if a stock has options/IV data available
@@ -23,7 +23,7 @@ async function hasIVData(symbol) {
 
   // Check cache first
   const cached = ivDataCache.get(upperSymbol);
-  if (cached && Date.now() - cached.timestamp < IV_CACHE_DURATION) {
+  if (cached && Date.now() - cached.timestamp < CACHE_TTLS.IV_DATA) {
     return cached.hasIV;
   }
 
@@ -234,8 +234,8 @@ export default async function handler(req, res) {
         batchCount++;
       }
 
-      // Commit batch every 400 operations (Firestore limit is 500)
-      if (batchCount >= 400) {
+      // Commit batch periodically (Firestore limit is 500)
+      if (batchCount >= BATCH_CONFIG.MAX_SYNC_BATCH_COUNT) {
         await batch.commit();
         batch = db.batch(); // Create new batch after commit
         batchCount = 0;

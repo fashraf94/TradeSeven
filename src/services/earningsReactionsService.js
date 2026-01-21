@@ -1,6 +1,13 @@
 // src/services/earningsReactionsService.js
 // Enhanced EarningsGame pricing with price floors, steeper multipliers, and precision tiers
 
+import {
+  SECTOR_DEFAULTS as CONFIG_SECTOR_DEFAULTS,
+  MOMENTUM_MAGNITUDE_ADJUSTMENTS,
+  MOMENTUM_CLASS_THRESHOLDS,
+  MAGNITUDE_THRESHOLDS
+} from '../config/earningsConfig.js';
+
 // ============================================
 // CONSTANTS
 // ============================================
@@ -8,14 +15,14 @@
 export const BUDGET = 10000;
 export const MIN_PRICE = 500; // Price floor - no parlay costs less than this
 
-// Magnitude bands for stock reactions
+// Magnitude bands for stock reactions (using thresholds from config)
 export const MAGNITUDE_BANDS = {
   upBig: {
     id: 'upBig',
     label: 'Up Big',
     emoji: '🚀',
-    range: '> +5%',
-    min: 5,
+    range: `> +${MAGNITUDE_THRESHOLDS.UP_BIG}%`,
+    min: MAGNITUDE_THRESHOLDS.UP_BIG,
     max: Infinity,
     midpoint: 7 // Used for precision tier centering
   },
@@ -23,36 +30,36 @@ export const MAGNITUDE_BANDS = {
     id: 'up',
     label: 'Up',
     emoji: '📈',
-    range: '+2% to +5%',
-    min: 2,
-    max: 5,
+    range: `+${MAGNITUDE_THRESHOLDS.UP_MIN}% to +${MAGNITUDE_THRESHOLDS.UP_BIG}%`,
+    min: MAGNITUDE_THRESHOLDS.UP_MIN,
+    max: MAGNITUDE_THRESHOLDS.UP_BIG,
     midpoint: 3.5
   },
   flat: {
     id: 'flat',
     label: 'Flat',
     emoji: '😐',
-    range: '-2% to +2%',
-    min: -2,
-    max: 2,
+    range: `-${MAGNITUDE_THRESHOLDS.FLAT_RANGE}% to +${MAGNITUDE_THRESHOLDS.FLAT_RANGE}%`,
+    min: -MAGNITUDE_THRESHOLDS.FLAT_RANGE,
+    max: MAGNITUDE_THRESHOLDS.FLAT_RANGE,
     midpoint: 0
   },
   down: {
     id: 'down',
     label: 'Down',
     emoji: '📉',
-    range: '-5% to -2%',
-    min: -5,
-    max: -2,
+    range: `${MAGNITUDE_THRESHOLDS.DOWN_BIG}% to ${MAGNITUDE_THRESHOLDS.DOWN_MIN}%`,
+    min: MAGNITUDE_THRESHOLDS.DOWN_BIG,
+    max: MAGNITUDE_THRESHOLDS.DOWN_MIN,
     midpoint: -3.5
   },
   downBig: {
     id: 'downBig',
     label: 'Down Big',
     emoji: '💥',
-    range: '< -5%',
+    range: `< ${MAGNITUDE_THRESHOLDS.DOWN_BIG}%`,
     min: -Infinity,
-    max: -5,
+    max: MAGNITUDE_THRESHOLDS.DOWN_BIG,
     midpoint: -7
   }
 };
@@ -83,126 +90,16 @@ export const PRECISION_TIERS = {
   }
 };
 
-// Sector-based default probabilities for stock reactions after earnings
-export const SECTOR_DEFAULTS = {
-  tech: {
-    afterBeat: { upBig: 0.20, up: 0.25, flat: 0.25, down: 0.20, downBig: 0.10 },
-    afterMiss: { upBig: 0.05, up: 0.10, flat: 0.15, down: 0.30, downBig: 0.40 }
-  },
-  financials: {
-    afterBeat: { upBig: 0.10, up: 0.35, flat: 0.35, down: 0.15, downBig: 0.05 },
-    afterMiss: { upBig: 0.05, up: 0.10, flat: 0.20, down: 0.40, downBig: 0.25 }
-  },
-  consumer: {
-    afterBeat: { upBig: 0.15, up: 0.30, flat: 0.30, down: 0.18, downBig: 0.07 },
-    afterMiss: { upBig: 0.05, up: 0.12, flat: 0.18, down: 0.35, downBig: 0.30 }
-  },
-  healthcare: {
-    afterBeat: { upBig: 0.08, up: 0.30, flat: 0.40, down: 0.17, downBig: 0.05 },
-    afterMiss: { upBig: 0.05, up: 0.15, flat: 0.25, down: 0.35, downBig: 0.20 }
-  },
-  industrial: {
-    afterBeat: { upBig: 0.12, up: 0.32, flat: 0.32, down: 0.17, downBig: 0.07 },
-    afterMiss: { upBig: 0.05, up: 0.10, flat: 0.20, down: 0.38, downBig: 0.27 }
-  },
-  energy: {
-    afterBeat: { upBig: 0.18, up: 0.28, flat: 0.26, down: 0.18, downBig: 0.10 },
-    afterMiss: { upBig: 0.06, up: 0.12, flat: 0.17, down: 0.32, downBig: 0.33 }
-  },
-  default: {
-    afterBeat: { upBig: 0.12, up: 0.30, flat: 0.32, down: 0.18, downBig: 0.08 },
-    afterMiss: { upBig: 0.05, up: 0.10, flat: 0.20, down: 0.35, downBig: 0.30 }
-  }
-};
+// Re-export sector defaults from centralized config for backwards compatibility
+export const SECTOR_DEFAULTS = CONFIG_SECTOR_DEFAULTS;
 
-// ============================================
-// MOMENTUM MAGNITUDE ADJUSTMENTS
-// ============================================
+// MOMENTUM_MAGNITUDE_ADJUSTMENTS imported from config
 // Based on trading insight: stocks running into earnings tend to have smaller post-earnings moves (priced in)
 // Stocks selling off into earnings tend to have larger surprise moves
 
-const MOMENTUM_MAGNITUDE_ADJUSTMENTS = {
-  // Strong positive momentum (+15% or more)
-  strongBullish: {
-    afterBeat: {
-      flat: 1.20,      // +20% more likely to be flat (priced in)
-      up: 1.05,        // slightly more likely
-      upBig: 0.85,     // -15% less likely (already ran)
-      down: 0.95,      // slightly less likely
-      downBig: 0.85    // -15% less likely
-    },
-    afterMiss: {
-      flat: 0.80,      // -20% less likely (surprise!)
-      up: 0.85,        // less likely
-      upBig: 0.70,     // much less likely
-      down: 1.15,      // more likely
-      downBig: 1.30    // +30% more likely (nasty surprise)
-    }
-  },
-
-  // Moderate positive momentum (+5% to +15%)
-  moderateBullish: {
-    afterBeat: {
-      flat: 1.10,
-      up: 1.02,
-      upBig: 0.92,
-      down: 0.98,
-      downBig: 0.92
-    },
-    afterMiss: {
-      flat: 0.90,
-      up: 0.92,
-      upBig: 0.85,
-      down: 1.08,
-      downBig: 1.15
-    }
-  },
-
-  // Neutral momentum (-5% to +5%)
-  neutral: {
-    afterBeat: { flat: 1.0, up: 1.0, upBig: 1.0, down: 1.0, downBig: 1.0 },
-    afterMiss: { flat: 1.0, up: 1.0, upBig: 1.0, down: 1.0, downBig: 1.0 }
-  },
-
-  // Moderate negative momentum (-15% to -5%)
-  moderateBearish: {
-    afterBeat: {
-      flat: 0.90,      // less likely flat
-      up: 1.05,
-      upBig: 1.15,     // +15% more likely (positive surprise)
-      down: 0.95,
-      downBig: 0.90
-    },
-    afterMiss: {
-      flat: 0.90,
-      up: 0.95,
-      upBig: 0.90,
-      down: 1.08,
-      downBig: 1.12    // more likely big down (confirms fears)
-    }
-  },
-
-  // Strong negative momentum (-15% or worse)
-  strongBearish: {
-    afterBeat: {
-      flat: 0.80,      // -20% less likely flat
-      up: 1.10,
-      upBig: 1.30,     // +30% more likely (big positive surprise)
-      down: 0.90,
-      downBig: 0.85
-    },
-    afterMiss: {
-      flat: 0.85,
-      up: 0.90,
-      upBig: 0.85,
-      down: 1.10,
-      downBig: 1.20    // +20% more likely (confirms worst fears)
-    }
-  }
-};
-
 /**
  * Classify momentum based on 30-day price change
+ * Uses thresholds from centralized config
  * @param {number|null} priceChange30d - 30-day price change percentage
  * @returns {string} - Momentum classification
  */
@@ -213,10 +110,10 @@ function classifyMomentum(priceChange30d) {
   }
 
   let momentumClass;
-  if (priceChange30d >= 15) momentumClass = 'strongBullish';
-  else if (priceChange30d >= 5) momentumClass = 'moderateBullish';
-  else if (priceChange30d <= -15) momentumClass = 'strongBearish';
-  else if (priceChange30d <= -5) momentumClass = 'moderateBearish';
+  if (priceChange30d >= MOMENTUM_CLASS_THRESHOLDS.STRONG_BULLISH) momentumClass = 'strongBullish';
+  else if (priceChange30d >= MOMENTUM_CLASS_THRESHOLDS.MODERATE_BULLISH) momentumClass = 'moderateBullish';
+  else if (priceChange30d <= MOMENTUM_CLASS_THRESHOLDS.STRONG_BEARISH) momentumClass = 'strongBearish';
+  else if (priceChange30d <= MOMENTUM_CLASS_THRESHOLDS.MODERATE_BEARISH) momentumClass = 'moderateBearish';
   else momentumClass = 'neutral';
 
   console.log(`[Momentum] ${priceChange30d?.toFixed(1)}% → ${momentumClass}`);
