@@ -48,20 +48,63 @@ export default async function handler(req, res) {
 
     // Convert to array and get last 12 quarters with actual EPS data
     const today = new Date();
+
+    // Diagnostic logging for data quality
+    const allQuarters = Object.entries(earningsHistory).map(([date, data]) => ({
+      date,
+      reportDate: data.reportDate || date,
+      hasActual: data.epsActual !== null && data.epsActual !== undefined,
+      hasEstimate: data.epsEstimate !== null && data.epsEstimate !== undefined,
+      hasSurprise: data.surprisePercent !== null && data.surprisePercent !== undefined,
+      epsActual: data.epsActual,
+      epsEstimate: data.epsEstimate,
+      surprisePercent: data.surprisePercent
+    }));
+
+    const missingEstimate = allQuarters.filter(q => q.hasActual && !q.hasEstimate);
+    const missingSurprise = allQuarters.filter(q => q.hasActual && q.hasEstimate && !q.hasSurprise);
+
+    if (missingEstimate.length > 0) {
+      console.warn(`[earnings-history] ${upperSymbol}: ${missingEstimate.length} quarters have epsActual but missing epsEstimate`);
+      missingEstimate.slice(0, 3).forEach(q => {
+        console.warn(`  - ${q.date}: epsActual=${q.epsActual}, epsEstimate=${q.epsEstimate}`);
+      });
+    }
+
+    if (missingSurprise.length > 0) {
+      console.log(`[earnings-history] ${upperSymbol}: ${missingSurprise.length} quarters missing surprisePercent (will use calculation)`);
+    }
+
     const earningsArray = Object.entries(earningsHistory)
       .map(([date, data]) => ({
         reportDate: data.reportDate || date,
         epsActual: data.epsActual,
         epsEstimate: data.epsEstimate,
         epsDifference: data.epsDifference,
+        surprisePercent: data.surprisePercent,        // Pre-calculated by EODHD
+        fiscalQuarter: data.fiscalQuarter,             // Q1, Q2, Q3, Q4
+        fiscalYear: data.fiscalYear,                   // Year
         beforeAfterMarket: data.beforeAfterMarket || null,
       }))
       .filter(e => {
-        // Must have report date, actual EPS, and estimate
+        // Must have report date and actual EPS
         if (!e.reportDate || e.epsActual === null || e.epsActual === undefined) return false;
-        if (e.epsEstimate === null || e.epsEstimate === undefined) return false;
+
         // Must be in the past
-        return new Date(e.reportDate) < today;
+        if (new Date(e.reportDate) >= today) return false;
+
+        // Accept if we have EITHER:
+        // 1. epsEstimate (for calculation), OR
+        // 2. surprisePercent (pre-calculated by EODHD)
+        const hasEstimate = e.epsEstimate !== null && e.epsEstimate !== undefined;
+        const hasSurprise = e.surprisePercent !== null && e.surprisePercent !== undefined;
+
+        if (!hasEstimate && !hasSurprise) {
+          console.log(`[earnings-history] ${upperSymbol}: Excluding ${e.reportDate} - no estimate or surprisePercent`);
+          return false;
+        }
+
+        return true;
       })
       .sort((a, b) => new Date(b.reportDate) - new Date(a.reportDate))
       .slice(0, 12);
@@ -152,10 +195,39 @@ export default async function handler(req, res) {
       const reactionPrice = priceMap[reactionDay].close;
       const percentMove = ((reactionPrice - lockPrice) / lockPrice) * 100;
 
-      // Determine if beat or miss
-      const didBeat = earning.epsActual > earning.epsEstimate;
-      const didMiss = earning.epsActual < earning.epsEstimate;
-      const didMeet = !didBeat && !didMiss;
+      // Determine beat/miss - prefer EODHD's pre-calculated surprisePercent when available
+      let didBeat, didMiss, didMeet;
+      let determinationMethod = 'calculated';
+
+      if (earning.surprisePercent !== null && earning.surprisePercent !== undefined) {
+        // Use EODHD's pre-calculated surprise (more reliable)
+        didBeat = earning.surprisePercent > 0;
+        didMiss = earning.surprisePercent < 0;
+        didMeet = earning.surprisePercent === 0;
+        determinationMethod = 'surprisePercent';
+
+        // Cross-validation: Check if our calculation would differ
+        const hasEstimate = earning.epsEstimate !== null && earning.epsEstimate !== undefined;
+        if (hasEstimate) {
+          const calcBeat = earning.epsActual > earning.epsEstimate;
+          const calcMiss = earning.epsActual < earning.epsEstimate;
+
+          if ((didBeat && calcMiss) || (didMiss && calcBeat)) {
+            console.warn(`[earnings-history] ${upperSymbol} Q${earning.fiscalQuarter || '?'} ${earning.fiscalYear || ''}: ` +
+              `DATA MISMATCH - surprisePercent=${earning.surprisePercent.toFixed(2)}% suggests ${didBeat ? 'BEAT' : 'MISS'}, ` +
+              `but epsActual(${earning.epsActual}) vs epsEstimate(${earning.epsEstimate}) suggests ${calcBeat ? 'BEAT' : 'MISS'}`);
+          }
+        }
+      } else {
+        // Fallback to manual calculation if surprisePercent not available
+        didBeat = earning.epsActual > earning.epsEstimate;
+        didMiss = earning.epsActual < earning.epsEstimate;
+        didMeet = !didBeat && !didMiss;
+        determinationMethod = 'calculated';
+
+        console.log(`[earnings-history] ${upperSymbol} Q${earning.fiscalQuarter || '?'}: ` +
+          `No surprisePercent available, using calculated beat/miss`);
+      }
 
       // Categorize magnitude
       let magnitude = 'flat';
@@ -166,11 +238,15 @@ export default async function handler(req, res) {
 
       reactions.push({
         reportDate: earning.reportDate,
+        fiscalQuarter: earning.fiscalQuarter,
+        fiscalYear: earning.fiscalYear,
         epsActual: earning.epsActual,
         epsEstimate: earning.epsEstimate,
+        surprisePercent: earning.surprisePercent,
         didBeat,
         didMiss,
         didMeet,
+        determinationMethod,
         beforeAfterMarket: earning.beforeAfterMarket,
         lockPrice: Math.round(lockPrice * 100) / 100,
         lockDate: prevDay,
@@ -261,6 +337,18 @@ export default async function handler(req, res) {
 
         // Individual reactions (for display)
         reactions: reactions.slice(0, 8), // Last 8 for UI display
+
+        // Data quality metrics
+        dataQuality: {
+          totalQuarters: reactions.length,
+          determinationMethods: {
+            surprisePercent: reactions.filter(r => r.determinationMethod === 'surprisePercent').length,
+            calculated: reactions.filter(r => r.determinationMethod === 'calculated').length
+          },
+          quartersExcluded: missingEstimate.length,
+          epsType: 'non-GAAP (adjusted)',
+          source: 'EODHD'
+        },
 
         // Metadata
         fetchedAt: new Date().toISOString()
