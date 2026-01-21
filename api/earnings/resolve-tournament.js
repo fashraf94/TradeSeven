@@ -4,6 +4,7 @@
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getEarningsResult } from './_helpers/getEarningsResult.js';
 
 // Initialize Firebase Admin (server-side)
 function getFirebaseAdmin() {
@@ -62,43 +63,32 @@ function safeParseDate(value) {
   }
 }
 
-// Fetch earnings result for a single symbol using existing API
+// Fetch earnings result for a single symbol using direct function call
+// (Avoids internal HTTP calls which can fail silently on Vercel)
 async function fetchEarningsResult(symbol, earningsDate) {
-  // Determine base URL for internal API call
-  const baseUrl = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : process.env.NEXT_PUBLIC_VERCEL_URL
-    ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-    : 'http://localhost:3000';
-
-  // Build URL - date is optional, API returns most recent if not provided
-  let url = `${baseUrl}/api/earnings/results?symbol=${encodeURIComponent(symbol)}`;
+  // Format date as YYYY-MM-DD - handle strings, Dates, and Firestore Timestamps
+  let dateStr = null;
   if (earningsDate) {
-    // Format date as YYYY-MM-DD - handle strings, Dates, and Firestore Timestamps
-    let dateStr;
     if (typeof earningsDate === 'string') {
       dateStr = earningsDate.split('T')[0];
     } else {
       const parsed = safeParseDate(earningsDate);
       dateStr = parsed ? parsed.toISOString().split('T')[0] : null;
     }
-    if (dateStr) {
-      url += `&date=${dateStr}`;
-    }
   }
 
-  console.log(`Fetching result: ${url}`);
+  console.log(`[resolve] Fetching result: ${symbol} (date: ${dateStr || 'latest'})`);
 
   try {
-    const response = await fetch(url);
-    const data = await response.json();
+    // Call the shared function directly instead of making HTTP request
+    const result = await getEarningsResult(symbol, dateStr);
 
-    if (!response.ok || !data.success) {
-      console.warn(`No result for ${symbol}: ${data.error || response.status}`);
-      return null;
+    if (!result.success || !result.resolved) {
+      console.warn(`No result for ${symbol}: ${result.error || 'Not resolved'}`);
+      return result; // Return full result for debug info
     }
 
-    return data;
+    return result;
   } catch (error) {
     console.error(`Error fetching ${symbol}:`, error.message);
     return null;
