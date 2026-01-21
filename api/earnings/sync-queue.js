@@ -96,7 +96,7 @@ export default async function handler(req, res) {
     const added = [];
     const skipped = [];
     const updated = [];
-    const batch = db.batch();
+    let batch = db.batch();
     let batchCount = 0;
 
     for (const event of calendarEvents) {
@@ -166,6 +166,7 @@ export default async function handler(req, res) {
       // Commit batch every 400 operations (Firestore limit is 500)
       if (batchCount >= 400) {
         await batch.commit();
+        batch = db.batch(); // Create new batch after commit
         batchCount = 0;
       }
     }
