@@ -50,6 +50,14 @@ function removeUndefined(obj) {
   if (obj === null || obj === undefined) {
     return null;
   }
+
+  // Preserve Date objects - convert to ISO string for Firebase compatibility
+  // This prevents dates from being stripped to {} by Object.entries()
+  // (Date objects have no enumerable properties, so Object.entries returns [])
+  if (obj instanceof Date) {
+    return obj.toISOString();
+  }
+
   if (Array.isArray(obj)) {
     return obj
       .map(item => removeUndefined(item))
