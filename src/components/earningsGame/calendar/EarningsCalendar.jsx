@@ -53,9 +53,9 @@ export default function EarningsCalendar({
   // Check if an event is already picked
   const isPicked = (eventId) => predictions.some(p => p.eventId === eventId);
 
-  // Check if we have any live Polymarket odds
+  // Check if we have any live market-informed odds (vs sector defaults)
   const hasAnyLiveOdds = useMemo(() => {
-    return events.some(e => e.hasPolymarketOdds === true);
+    return events.some(e => e.hasPolymarketOdds === true || e.hasCalculatedOdds === true);
   }, [events]);
 
   // Get the data source for display - count how many have historical vs sector defaults
@@ -97,7 +97,7 @@ export default function EarningsCalendar({
       };
     }
 
-    // Legacy: Polymarket live data
+    // Legacy data source (no longer used)
     if (source === 'hybrid_eodhd_polymarket' || source === 'polymarket_live') {
       return { label: 'LIVE ODDS', color: designColors.cyan, icon: '📊' };
     }
@@ -335,9 +335,9 @@ export default function EarningsCalendar({
                   gap: '4px',
                 }}
                 title={dataSourceInfo.label === 'EST. ODDS'
-                  ? 'Historical average odds (no live Polymarket data)'
+                  ? 'Estimated odds based on sector averages'
                   : dataSourceInfo.label === 'LIVE ODDS'
-                  ? 'Real-time odds from Polymarket prediction markets'
+                  ? 'Real-time odds from market data'
                   : ''}
                 >
                   {dataSourceInfo.icon} {dataSourceInfo.label}
