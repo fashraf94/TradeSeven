@@ -5,6 +5,7 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getEarningsResult } from './_helpers/getEarningsResult.js';
+import { safeParseDate, toYYYYMMDD } from '../../src/utils/dateUtils.js';
 
 // Initialize Firebase Admin (server-side)
 function getFirebaseAdmin() {
@@ -31,51 +32,11 @@ function classifyMagnitude(percentMove) {
   return 'downBig';
 }
 
-/**
- * Safely parse a date from various formats (Firestore Timestamp, ISO string, Date object)
- * Returns null if parsing fails instead of throwing
- */
-function safeParseDate(value) {
-  if (!value) return null;
-
-  try {
-    // Firestore Timestamp object - has toDate() method
-    if (typeof value?.toDate === 'function') {
-      return value.toDate();
-    }
-
-    // Firestore Timestamp-like object with seconds/nanoseconds
-    if (typeof value === 'object' && value.seconds !== undefined) {
-      return new Date(value.seconds * 1000 + (value.nanoseconds || 0) / 1000000);
-    }
-
-    // Already a Date object
-    if (value instanceof Date) {
-      return isNaN(value.getTime()) ? null : value;
-    }
-
-    // String or number - try to parse
-    const parsed = new Date(value);
-    return isNaN(parsed.getTime()) ? null : parsed;
-  } catch (error) {
-    console.warn(`[resolve-tournament] Failed to parse date:`, value, error.message);
-    return null;
-  }
-}
-
 // Fetch earnings result for a single symbol using direct function call
 // (Avoids internal HTTP calls which can fail silently on Vercel)
 async function fetchEarningsResult(symbol, earningsDate) {
-  // Format date as YYYY-MM-DD - handle strings, Dates, and Firestore Timestamps
-  let dateStr = null;
-  if (earningsDate) {
-    if (typeof earningsDate === 'string') {
-      dateStr = earningsDate.split('T')[0];
-    } else {
-      const parsed = safeParseDate(earningsDate);
-      dateStr = parsed ? parsed.toISOString().split('T')[0] : null;
-    }
-  }
+  // Format date as YYYY-MM-DD using shared utility
+  const dateStr = toYYYYMMDD(earningsDate);
 
   console.log(`[resolve] Fetching result: ${symbol} (date: ${dateStr || 'latest'})`);
 
@@ -330,14 +291,8 @@ export default async function handler(req, res) {
           const rawDateType = typeof rawDate;
           const rawDateKeys = rawDate && typeof rawDate === 'object' ? Object.keys(rawDate).slice(0, 5) : [];
 
-          // Normalize date to YYYY-MM-DD string for consistent keying
-          let date;
-          if (typeof rawDate === 'string') {
-            date = rawDate.split('T')[0]; // Handle ISO strings
-          } else {
-            const parsed = safeParseDate(rawDate);
-            date = parsed ? parsed.toISOString().split('T')[0] : null;
-          }
+          // Normalize date to YYYY-MM-DD string using shared utility
+          const date = toYYYYMMDD(rawDate);
 
           if (!date) {
             console.warn(`    [WARN] ${symbol}: Could not parse date. rawDate=${JSON.stringify(rawDate)}, type=${rawDateType}, keys=${rawDateKeys.join(',')}`);
@@ -435,15 +390,9 @@ export default async function handler(req, res) {
             return pred;
           }
 
-          // Build lookup key - normalize date the same way as when fetching
+          // Build lookup key - normalize date using shared utility
           const rawDate = pred.reportDate || pred.earningsDate || pred.date;
-          let date;
-          if (typeof rawDate === 'string') {
-            date = rawDate.split('T')[0];
-          } else {
-            const parsed = safeParseDate(rawDate);
-            date = parsed ? parsed.toISOString().split('T')[0] : rawDate;
-          }
+          const date = toYYYYMMDD(rawDate) || rawDate;
           const key = `${pred.symbol}_${date}`;
           const result = resultsMap.get(key);
 

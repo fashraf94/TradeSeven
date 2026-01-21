@@ -3,6 +3,8 @@
 //
 // This avoids internal HTTP calls which can fail silently on Vercel
 
+import { safeParseDate, toYYYYMMDD } from '../../../src/utils/dateUtils.js';
+
 /**
  * Get magnitude band from price move percentage
  * @param {number|null} priceMove - Price move percentage
@@ -28,7 +30,12 @@ export function getMagnitudeBand(priceMove) {
 export async function getEarningsDayMove(symbol, reportDate, timing, apiKey) {
   try {
     const tickerWithExchange = `${symbol}.US`;
-    const reportDateObj = new Date(reportDate);
+    const reportDateObj = safeParseDate(reportDate);
+
+    if (!reportDateObj) {
+      console.warn(`[getEarningsResult] Could not parse reportDate: ${reportDate}`);
+      return null;
+    }
 
     // Calculate date range for price lookup
     const fromDate = new Date(reportDateObj);
@@ -36,8 +43,8 @@ export async function getEarningsDayMove(symbol, reportDate, timing, apiKey) {
     const toDate = new Date(reportDateObj);
     toDate.setDate(toDate.getDate() + 5); // 5 days after
 
-    const fromStr = fromDate.toISOString().split('T')[0];
-    const toStr = toDate.toISOString().split('T')[0];
+    const fromStr = toYYYYMMDD(fromDate);
+    const toStr = toYYYYMMDD(toDate);
 
     const priceUrl = `https://eodhd.com/api/eod/${tickerWithExchange}?api_token=${apiKey}&from=${fromStr}&to=${toStr}&fmt=json`;
     const priceRes = await fetch(priceUrl);
@@ -58,7 +65,7 @@ export async function getEarningsDayMove(symbol, reportDate, timing, apiKey) {
     prices.sort((a, b) => new Date(a.date) - new Date(b.date));
 
     // Find the report date index
-    const reportDateStr = reportDate.split('T')[0];
+    const reportDateStr = toYYYYMMDD(reportDate);
     const reportDayIndex = prices.findIndex(p => p.date >= reportDateStr);
 
     if (reportDayIndex < 0) {

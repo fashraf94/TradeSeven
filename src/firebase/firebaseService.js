@@ -34,6 +34,7 @@ import {
   getSnakeDraftEndDate,
   TRAINING_CONFIG
 } from '../constants/battleTiming.js';
+import { toISOString as dateToISO } from '../utils/dateUtils.js';
 
 // =====================================================
 // HELPERS
@@ -54,8 +55,9 @@ function removeUndefined(obj) {
   // Preserve Date objects - convert to ISO string for Firebase compatibility
   // This prevents dates from being stripped to {} by Object.entries()
   // (Date objects have no enumerable properties, so Object.entries returns [])
+  // Uses shared dateUtils to ensure consistent date handling across codebase
   if (obj instanceof Date) {
-    return obj.toISOString();
+    return dateToISO(obj);
   }
 
   if (Array.isArray(obj)) {

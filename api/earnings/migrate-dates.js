@@ -10,6 +10,7 @@
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { isEmptyDate, toYYYYMMDD } from '../../src/utils/dateUtils.js';
 
 // Initialize Firebase Admin
 function getFirebaseAdmin() {
@@ -65,21 +66,6 @@ async function fetchEarningsCalendar(fromDate, toDate) {
 
   console.log(`[migrate-dates] Found ${calendarMap.size} earnings events in calendar`);
   return calendarMap;
-}
-
-/**
- * Check if a reportDate value is empty/broken
- */
-function isEmptyDate(value) {
-  if (!value) return true;
-  if (typeof value === 'string' && value.length > 0) return false;
-  if (typeof value === 'object') {
-    // Check if it's an empty object {}
-    if (Object.keys(value).length === 0) return true;
-    // Check if it's a valid Firestore Timestamp
-    if (value.seconds !== undefined || typeof value.toDate === 'function') return false;
-  }
-  return true;
 }
 
 export default async function handler(req, res) {
@@ -170,8 +156,8 @@ export default async function handler(req, res) {
       endDate.setDate(endDate.getDate() + 3);
 
       const calendarMap = await fetchEarningsCalendar(
-        startDate.toISOString().split('T')[0],
-        endDate.toISOString().split('T')[0]
+        toYYYYMMDD(startDate),
+        toYYYYMMDD(endDate)
       );
 
       // Get all entries for this tournament
