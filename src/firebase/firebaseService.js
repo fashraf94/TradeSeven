@@ -48,6 +48,7 @@ import { toISOString as dateToISO } from '../utils/dateUtils.js';
  * @returns {any} - Cleaned object with no undefined values
  */
 function removeUndefined(obj) {
+  // Handle null and undefined
   if (obj === null || obj === undefined) {
     return null;
   }
@@ -60,11 +61,52 @@ function removeUndefined(obj) {
     return dateToISO(obj);
   }
 
+  // Handle Firestore Timestamp-like objects (has toDate method)
+  // Convert to ISO string for consistency
+  if (typeof obj?.toDate === 'function') {
+    try {
+      const date = obj.toDate();
+      return dateToISO(date);
+    } catch {
+      console.warn('[removeUndefined] Failed to convert Timestamp-like object');
+      return null;
+    }
+  }
+
+  // Warn about NaN and Infinity - Firestore doesn't accept these
+  if (typeof obj === 'number' && !Number.isFinite(obj)) {
+    console.warn('[removeUndefined] NaN or Infinity detected - Firestore will reject this value');
+  }
+
+  // Handle arrays - filter out undefined elements BEFORE mapping
+  // Previous bug: map first converted undefined->null, then filter didn't remove nulls
   if (Array.isArray(obj)) {
     return obj
-      .map(item => removeUndefined(item))
-      .filter(item => item !== undefined);
+      .filter(item => item !== undefined)
+      .map(item => removeUndefined(item));
   }
+
+  // Handle Map - convert to plain object (warn since this may be unintended)
+  if (obj instanceof Map) {
+    console.warn('[removeUndefined] Map object detected - converting to plain object');
+    const plain = {};
+    for (const [key, value] of obj) {
+      if (value !== undefined) {
+        plain[key] = removeUndefined(value);
+      }
+    }
+    return plain;
+  }
+
+  // Handle Set - convert to array (warn since this may be unintended)
+  if (obj instanceof Set) {
+    console.warn('[removeUndefined] Set object detected - converting to array');
+    return Array.from(obj)
+      .filter(item => item !== undefined)
+      .map(item => removeUndefined(item));
+  }
+
+  // Handle plain objects
   if (typeof obj === 'object' && obj !== null) {
     const cleaned = {};
     for (const [key, value] of Object.entries(obj)) {
@@ -77,6 +119,8 @@ function removeUndefined(obj) {
     }
     return cleaned;
   }
+
+  // Return primitives as-is
   return obj;
 }
 
