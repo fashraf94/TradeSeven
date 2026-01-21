@@ -115,6 +115,149 @@ export const SECTOR_DEFAULTS = {
   }
 };
 
+// ============================================
+// MOMENTUM MAGNITUDE ADJUSTMENTS
+// ============================================
+// Based on trading insight: stocks running into earnings tend to have smaller post-earnings moves (priced in)
+// Stocks selling off into earnings tend to have larger surprise moves
+
+const MOMENTUM_MAGNITUDE_ADJUSTMENTS = {
+  // Strong positive momentum (+15% or more)
+  strongBullish: {
+    afterBeat: {
+      flat: 1.20,      // +20% more likely to be flat (priced in)
+      up: 1.05,        // slightly more likely
+      upBig: 0.85,     // -15% less likely (already ran)
+      down: 0.95,      // slightly less likely
+      downBig: 0.85    // -15% less likely
+    },
+    afterMiss: {
+      flat: 0.80,      // -20% less likely (surprise!)
+      up: 0.85,        // less likely
+      upBig: 0.70,     // much less likely
+      down: 1.15,      // more likely
+      downBig: 1.30    // +30% more likely (nasty surprise)
+    }
+  },
+
+  // Moderate positive momentum (+5% to +15%)
+  moderateBullish: {
+    afterBeat: {
+      flat: 1.10,
+      up: 1.02,
+      upBig: 0.92,
+      down: 0.98,
+      downBig: 0.92
+    },
+    afterMiss: {
+      flat: 0.90,
+      up: 0.92,
+      upBig: 0.85,
+      down: 1.08,
+      downBig: 1.15
+    }
+  },
+
+  // Neutral momentum (-5% to +5%)
+  neutral: {
+    afterBeat: { flat: 1.0, up: 1.0, upBig: 1.0, down: 1.0, downBig: 1.0 },
+    afterMiss: { flat: 1.0, up: 1.0, upBig: 1.0, down: 1.0, downBig: 1.0 }
+  },
+
+  // Moderate negative momentum (-15% to -5%)
+  moderateBearish: {
+    afterBeat: {
+      flat: 0.90,      // less likely flat
+      up: 1.05,
+      upBig: 1.15,     // +15% more likely (positive surprise)
+      down: 0.95,
+      downBig: 0.90
+    },
+    afterMiss: {
+      flat: 0.90,
+      up: 0.95,
+      upBig: 0.90,
+      down: 1.08,
+      downBig: 1.12    // more likely big down (confirms fears)
+    }
+  },
+
+  // Strong negative momentum (-15% or worse)
+  strongBearish: {
+    afterBeat: {
+      flat: 0.80,      // -20% less likely flat
+      up: 1.10,
+      upBig: 1.30,     // +30% more likely (big positive surprise)
+      down: 0.90,
+      downBig: 0.85
+    },
+    afterMiss: {
+      flat: 0.85,
+      up: 0.90,
+      upBig: 0.85,
+      down: 1.10,
+      downBig: 1.20    // +20% more likely (confirms worst fears)
+    }
+  }
+};
+
+/**
+ * Classify momentum based on 30-day price change
+ * @param {number|null} priceChange30d - 30-day price change percentage
+ * @returns {string} - Momentum classification
+ */
+function classifyMomentum(priceChange30d) {
+  if (priceChange30d === null || priceChange30d === undefined) {
+    console.log(`[Momentum] No data → neutral`);
+    return 'neutral';
+  }
+
+  let momentumClass;
+  if (priceChange30d >= 15) momentumClass = 'strongBullish';
+  else if (priceChange30d >= 5) momentumClass = 'moderateBullish';
+  else if (priceChange30d <= -15) momentumClass = 'strongBearish';
+  else if (priceChange30d <= -5) momentumClass = 'moderateBearish';
+  else momentumClass = 'neutral';
+
+  console.log(`[Momentum] ${priceChange30d?.toFixed(1)}% → ${momentumClass}`);
+  return momentumClass;
+}
+
+/**
+ * Apply momentum adjustments to magnitude probabilities
+ * @param {Object} baseProbabilities - Base probability object { upBig, up, flat, down, downBig }
+ * @param {string} momentumClass - Momentum classification
+ * @param {string} outcome - 'beat' or 'miss'
+ * @returns {Object} - Adjusted probabilities (normalized to sum to 1.0)
+ */
+function applyMomentumToMagnitude(baseProbabilities, momentumClass, outcome) {
+  const adjustments = MOMENTUM_MAGNITUDE_ADJUSTMENTS[momentumClass];
+  if (!adjustments) return baseProbabilities;
+
+  const factors = outcome === 'beat' ? adjustments.afterBeat : adjustments.afterMiss;
+
+  // Apply factors
+  const adjusted = {};
+  let total = 0;
+
+  Object.keys(baseProbabilities).forEach(magnitude => {
+    adjusted[magnitude] = baseProbabilities[magnitude] * (factors[magnitude] || 1.0);
+    total += adjusted[magnitude];
+  });
+
+  // Normalize to ensure probabilities sum to 1.0
+  Object.keys(adjusted).forEach(magnitude => {
+    adjusted[magnitude] = Math.round((adjusted[magnitude] / total) * 100) / 100;
+  });
+
+  // Log sample adjustment for debugging
+  if (momentumClass !== 'neutral') {
+    console.log(`[Magnitude Adjust] ${outcome}: flat ${baseProbabilities.flat?.toFixed(2)} → ${adjusted.flat?.toFixed(2)}`);
+  }
+
+  return adjusted;
+}
+
 // Symbol to sector mapping
 const SYMBOL_SECTORS = {
   // Tech
@@ -312,11 +455,11 @@ export function getReactionProbabilities(symbol, outcome) {
  *
  * @param {string} symbol - Stock symbol
  * @param {string} outcome - 'beat' or 'miss'
- * @returns {Promise<Object>} - { probabilities, source, sector? }
+ * @returns {Promise<Object>} - { probabilities, source, sector?, quarterCount? }
  */
 export async function getReactionProbabilitiesAsync(symbol, outcome) {
   // Dynamically import to avoid circular dependencies
-  const { getStockReactionProbabilities } = await import('./stockEarningsHistoryService');
+  const { getStockReactionProbabilities, getStockEarningsHistory } = await import('./stockEarningsHistoryService');
 
   // Try stock-specific data first
   const stockProbs = await getStockReactionProbabilities(symbol);
@@ -326,7 +469,10 @@ export async function getReactionProbabilitiesAsync(symbol, outcome) {
     // Validate we have all magnitude bands
     if (probs && probs.upBig !== undefined && probs.up !== undefined &&
         probs.flat !== undefined && probs.down !== undefined && probs.downBig !== undefined) {
-      return { probabilities: probs, source: 'stock-specific' };
+      // Get quarter count from history
+      const history = await getStockEarningsHistory(symbol);
+      const quarterCount = history?.quartersAnalyzed || 0;
+      return { probabilities: probs, source: 'stock-specific', quarterCount };
     }
   }
 
@@ -446,14 +592,18 @@ export function enhanceEventWithParlays(event, budget = BUDGET) {
 
 /**
  * Calculate parlay prices - ASYNC version that uses stock-specific data when available
+ * Now includes momentum adjustments to magnitude probabilities
  *
- * @param {Object} event - Earnings event with beatOdds and symbol
+ * @param {Object} event - Earnings event with beatOdds, symbol, and optionally priceChange30d
  * @param {number} budget - Budget amount (default BUDGET)
  * @returns {Promise<Array>} - Array of parlay options
  */
 export async function calculateParlayPricesAsync(event, budget = BUDGET) {
-  const { beatOdds = 0.5, symbol } = event;
+  const { beatOdds = 0.5, symbol, priceChange30d } = event;
   const missOdds = 1 - beatOdds;
+
+  // Classify momentum for magnitude adjustments
+  const momentumClass = classifyMomentum(priceChange30d);
 
   // Fetch stock-specific probabilities (async)
   const [beatProbs, missProbs] = await Promise.all([
@@ -461,11 +611,25 @@ export async function calculateParlayPricesAsync(event, budget = BUDGET) {
     getReactionProbabilitiesAsync(symbol, 'miss')
   ]);
 
+  // Apply momentum adjustments to base probabilities
+  const adjustedBeatProbs = {
+    ...beatProbs,
+    probabilities: applyMomentumToMagnitude(beatProbs.probabilities, momentumClass, 'beat')
+  };
+  const adjustedMissProbs = {
+    ...missProbs,
+    probabilities: applyMomentumToMagnitude(missProbs.probabilities, momentumClass, 'miss')
+  };
+
+  console.log(`[Magnitude] ${symbol}: momentum=${momentumClass} (${priceChange30d?.toFixed(1) || 'N/A'}%), applying adjustments`);
+
   const parlays = [];
+
+  const sector = getSectorForSymbol(symbol);
 
   ['beat', 'miss'].forEach(outcome => {
     const outcomeOdds = outcome === 'beat' ? beatOdds : missOdds;
-    const { probabilities: reactions, source } = outcome === 'beat' ? beatProbs : missProbs;
+    const { probabilities: reactions, source, quarterCount } = outcome === 'beat' ? adjustedBeatProbs : adjustedMissProbs;
 
     Object.entries(MAGNITUDE_BANDS).forEach(([bandId, band]) => {
       const reactionProb = reactions[bandId];
@@ -496,6 +660,7 @@ export async function calculateParlayPricesAsync(event, budget = BUDGET) {
 
         // Data source indicator
         dataSource: source,
+        quarterCount: quarterCount || null, // Number of quarters if stock-specific, null if sector
 
         // Base pricing (Standard tier)
         price,
@@ -509,7 +674,11 @@ export async function calculateParlayPricesAsync(event, budget = BUDGET) {
         precisionOptions,
 
         // Sector info
-        sector: getSectorForSymbol(symbol)
+        sector,
+
+        // Momentum info
+        momentumClass,
+        priceChange30d: priceChange30d || null
       });
     });
   });

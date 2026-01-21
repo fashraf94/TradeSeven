@@ -3,11 +3,57 @@
 //
 // Features:
 // - In-memory caching (10 minute TTL)
+// - IV data caching (24 hour TTL) for API resilience
 // - Batch fetching for multiple symbols
 // - Graceful fallback on errors
 
 const CACHE = new Map();
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+// IV Data Cache - prevents good stocks from being excluded due to temporary API failures
+const ivDataCache = new Map();
+const IV_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Get cached IV data for a symbol
+ * @param {string} symbol - Stock ticker
+ * @returns {Object|null} Cached IV data or null
+ */
+function getCachedIVData(symbol) {
+  const cached = ivDataCache.get(symbol.toUpperCase());
+  if (cached && Date.now() - cached.timestamp < IV_CACHE_DURATION) {
+    console.log(`[IV Cache] Hit for ${symbol}`);
+    return cached.data;
+  }
+  return null;
+}
+
+/**
+ * Store IV data in cache
+ * @param {string} symbol - Stock ticker
+ * @param {Object} data - IV data to cache
+ */
+function setCachedIVData(symbol, data) {
+  ivDataCache.set(symbol.toUpperCase(), {
+    data,
+    timestamp: Date.now()
+  });
+  console.log(`[IV Cache] Stored for ${symbol}`);
+}
+
+/**
+ * Get expired cached IV data (for fallback during API failures)
+ * @param {string} symbol - Stock ticker
+ * @returns {Object|null} Expired cached IV data or null
+ */
+function getExpiredIVCache(symbol) {
+  const cached = ivDataCache.get(symbol.toUpperCase());
+  if (cached) {
+    console.log(`[IV Cache] Using expired cache for ${symbol}`);
+    return cached.data;
+  }
+  return null;
+}
 
 // Default sector beat rates (fallback if API fails)
 const DEFAULT_SECTOR_RATES = {
@@ -52,6 +98,17 @@ export async function getStockOdds(symbol, sector = null) {
 
     // Cache the result
     CACHE.set(cacheKey, { data, timestamp: Date.now() });
+
+    // Cache IV data separately for longer retention (API resilience)
+    const ivData = data.breakdown?.optionsIV || data.rawData;
+    if (ivData && (ivData.expectedMove !== null || ivData.expectedMovePercent !== null)) {
+      setCachedIVData(symbol, {
+        expectedMove: ivData.expectedMove ?? ivData.expectedMovePercent,
+        signal: ivData.signal || 'available',
+        factor: ivData.factor,
+        hasIVData: true
+      });
+    }
 
     console.log(`[OddsService] ${symbol}: ${data.probabilityPercent}% beat (${data.confidence})`);
     return data;
@@ -112,10 +169,12 @@ export function calculateLocalOdds({
   let baseRate = 0.70;
   let confidence = 'low';
 
-  if (beatRate !== null && totalQuarters >= 3) {
+  // Minimum 4 quarters (1 full year) required for stock-specific confidence
+  if (beatRate !== null && totalQuarters >= 4) {
     baseRate = beatRate;
-    confidence = totalQuarters >= 8 ? 'high' : totalQuarters >= 5 ? 'medium' : 'low';
+    confidence = totalQuarters >= 10 ? 'high' : totalQuarters >= 6 ? 'medium' : 'low';
   } else {
+    // Use sector average (insufficient historical data)
     const sectorKey = (sector || 'default').toLowerCase().replace(/\s+/g, '_');
     baseRate = DEFAULT_SECTOR_RATES[sectorKey] || 0.70;
   }
@@ -151,6 +210,60 @@ export function calculateLocalOdds({
 }
 
 /**
+ * Check if a stock has IV data available
+ * Uses odds breakdown first, then falls back to IV cache
+ * @param {Object} oddsData - Odds data from getStockOdds
+ * @param {string} symbol - Stock ticker (for cache fallback)
+ * @returns {boolean} True if IV data is available
+ */
+export function hasIVData(oddsData, symbol) {
+  // Check fresh data first
+  const ivFromOdds = oddsData?.breakdown?.optionsIV;
+  if (ivFromOdds && ivFromOdds.signal !== 'no_data') {
+    return true;
+  }
+
+  // Check rawData
+  if (oddsData?.rawData?.expectedMovePercent !== null && oddsData?.rawData?.expectedMovePercent !== undefined) {
+    return true;
+  }
+
+  // Fall back to IV cache (handles temporary API failures)
+  const cachedIV = getCachedIVData(symbol) || getExpiredIVCache(symbol);
+  if (cachedIV && cachedIV.hasIVData) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Get IV data for a stock (from odds or cache)
+ * @param {Object} oddsData - Odds data from getStockOdds
+ * @param {string} symbol - Stock ticker
+ * @returns {Object|null} IV data or null
+ */
+export function getIVData(oddsData, symbol) {
+  // Try fresh data first
+  const ivFromOdds = oddsData?.breakdown?.optionsIV;
+  if (ivFromOdds && ivFromOdds.signal !== 'no_data') {
+    return ivFromOdds;
+  }
+
+  // Try rawData
+  if (oddsData?.rawData?.expectedMovePercent !== null) {
+    return {
+      expectedMove: oddsData.rawData.expectedMovePercent,
+      signal: 'available',
+      hasIVData: true
+    };
+  }
+
+  // Fall back to cache
+  return getCachedIVData(symbol) || getExpiredIVCache(symbol);
+}
+
+/**
  * Clear the odds cache
  */
 export function clearOddsCache() {
@@ -159,13 +272,28 @@ export function clearOddsCache() {
 }
 
 /**
+ * Clear the IV cache
+ */
+export function clearIVCache() {
+  ivDataCache.clear();
+  console.log('[OddsService] IV Cache cleared');
+}
+
+/**
  * Get cache stats for debugging
  */
 export function getCacheStats() {
   return {
-    size: CACHE.size,
-    keys: Array.from(CACHE.keys()),
-    ttlMs: CACHE_TTL
+    oddsCache: {
+      size: CACHE.size,
+      keys: Array.from(CACHE.keys()),
+      ttlMs: CACHE_TTL
+    },
+    ivCache: {
+      size: ivDataCache.size,
+      keys: Array.from(ivDataCache.keys()),
+      ttlMs: IV_CACHE_DURATION
+    }
   };
 }
 
@@ -173,6 +301,9 @@ export default {
   getStockOdds,
   getBatchOdds,
   calculateLocalOdds,
+  hasIVData,
+  getIVData,
   clearOddsCache,
+  clearIVCache,
   getCacheStats
 };

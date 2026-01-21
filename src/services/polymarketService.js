@@ -6,7 +6,7 @@
  */
 
 import { enhanceEventWithParlays } from './earningsReactionsService';
-import { getBatchOdds } from './oddsService';
+import { getBatchOdds, hasIVData } from './oddsService';
 
 // Priority stocks - Most anticipated earnings that users care about
 // Based on Earnings Whispers "Most Anticipated" + major companies
@@ -1125,7 +1125,7 @@ export async function getHybridEarningsCalendar(days = 14) {
           if (oddsData && !oddsData.fallback) {
             beatOdds = oddsData.probability;
             confidence = oddsData.confidence;
-            oddsSource = oddsData.breakdown?.historical?.quarters >= 3 ? 'historical_plus_momentum' : 'sector_plus_momentum';
+            oddsSource = oddsData.breakdown?.historical?.quarters >= 4 ? 'historical_plus_momentum' : 'sector_plus_momentum';
             breakdown = oddsData.breakdown;
           } else {
             // Fallback to sector default
@@ -1150,6 +1150,9 @@ export async function getHybridEarningsCalendar(days = 14) {
           const historicalRate = breakdown?.historical?.rate;
           const priceChange = breakdown?.priceMomentum?.change;
 
+          // Check IV data availability (from odds or cache)
+          const stockHasIVData = hasIVData(oddsData, symbolUpper);
+
           return {
             id: `eodhd_${symbolUpper}_${event.reportDate}`,
             symbol: symbolUpper,
@@ -1172,15 +1175,36 @@ export async function getHybridEarningsCalendar(days = 14) {
               ? Math.round(historicalRate * 100) : null,
             priceChange30d: priceChange !== null && priceChange !== undefined
               ? Math.round(priceChange * 10) / 10 : null,
+            expectedMove: breakdown?.optionsIV?.expectedMove || null,
             oddsBreakdown: breakdown, // Full breakdown for transparency
             hasPolymarketOdds: false,
             hasCalculatedOdds: oddsSource !== 'sector_default',
+            hasIVData: stockHasIVData, // IV data availability flag
             lastFetched: fetchTimestamp
           };
         });
 
-        // Enhance with parlays
-        const enhanced = eohdOnly.map(event => enhanceEventWithParlays(event));
+        // Filter to only include stocks with IV data available (quality filter)
+        const eventsWithIV = eohdOnly.filter(event => {
+          if (!event.hasIVData) {
+            console.log(`[Calendar Filter] Excluding ${event.symbol} - no IV data`);
+            return false;
+          }
+          return true;
+        });
+
+        console.log(`[Calendar] IV Filter: ${eohdOnly.length} → ${eventsWithIV.length} events (${eohdOnly.length - eventsWithIV.length} excluded)`);
+
+        // ========== CALENDAR BUILD SUMMARY ==========
+        console.log(`[Calendar Build Summary]`);
+        console.log(`  Raw events: ${eohdCalendar.length}`);
+        console.log(`  After quality filter: ${qualityEvents.length}`);
+        console.log(`  After priority sort: ${sortedEvents.length}`);
+        console.log(`  After IV filter: ${eventsWithIV.length}`);
+        console.log(`  Stocks excluded for no IV: ${eohdOnly.length - eventsWithIV.length}`);
+
+        // Enhance with parlays (only events that passed IV filter)
+        const enhanced = eventsWithIV.map(event => enhanceEventWithParlays(event));
 
         console.log(`[Hybrid] Returning ${enhanced.length} events with market-informed odds`);
         return enhanced;

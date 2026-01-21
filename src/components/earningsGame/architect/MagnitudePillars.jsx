@@ -81,6 +81,8 @@ export default function MagnitudePillars({
           const price = parlay?.price || 0;
           const multiplier = parlay?.multiplier || 0;
           const histProb = parlay?.reactionProb || 0;
+          const quarterCount = parlay?.quarterCount || null;
+          const sector = parlay?.sector || 'default';
           const isSelected = selected === mag.id;
           const isAffordable = price <= budgetRemaining && price > 0;
           const canSelect = !disabled && isAffordable && outcome;
@@ -206,15 +208,6 @@ export default function MagnitudePillars({
                   marginTop: '2px',
                 }}>
                   {multiplier > 0 ? `${multiplier.toFixed(1)}x` : '—'}
-                </span>
-
-                {/* Historical Probability - brighter for visibility */}
-                <span style={{
-                  fontSize: '9px',
-                  color: '#8b949e',
-                  marginTop: '4px',
-                }}>
-                  Hist: {Math.round(histProb * 100)}%
                 </span>
               </div>
             </motion.button>
