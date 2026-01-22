@@ -964,6 +964,89 @@ const DashboardScreen = ({
           )}
 
           {/* ═══════════════════════════════════════════════════════════════
+              EARN COINS SECTION - Low-risk ways to build balance
+              ═══════════════════════════════════════════════════════════════ */}
+          <div style={{ marginBottom: '24px' }}>
+            {/* Section Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              marginBottom: '16px',
+              paddingBottom: '12px',
+              borderBottom: `1px solid ${colors.borderSubtle}`
+            }}>
+              <Zap style={{ height: '16px', width: '16px', color: colors.gold }} />
+              <span style={{
+                fontSize: '12px',
+                fontWeight: '600',
+                color: colors.textMuted,
+                textTransform: 'uppercase',
+                letterSpacing: '1.5px'
+              }}>
+                Earn Coins
+              </span>
+              <span style={{
+                fontSize: '11px',
+                color: colors.textMuted,
+                fontWeight: '400'
+              }}>
+                — Low-risk ways to build your balance
+              </span>
+            </div>
+
+            {/* Training Mode Card */}
+            <div
+              onClick={() => {
+                setTrainingConfirmType('stocks');
+                setShowTrainingConfirmModal(true);
+              }}
+              style={{
+                background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%)',
+                border: `1px solid ${colors.purple}50`,
+                borderRadius: '12px',
+                padding: '16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '14px'
+              }}
+            >
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '10px',
+                background: `${colors.purple}20`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '22px',
+                flexShrink: 0
+              }}>
+                🤖
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{
+                  color: colors.purple,
+                  fontWeight: '600',
+                  fontSize: '15px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  <GraduationCap size={14} />
+                  Training Mode
+                </div>
+                <div style={{ color: colors.textMuted, fontSize: '12px', marginTop: '2px' }}>
+                  Practice vs CPU to hone your skills
+                </div>
+              </div>
+              <ArrowRight style={{ height: '16px', width: '16px', color: colors.textMuted }} />
+            </div>
+          </div>
+
+          {/* ═══════════════════════════════════════════════════════════════
               COMPETE SECTION - Primary game modes (more prominent)
               ═══════════════════════════════════════════════════════════════ */}
           <div style={{ marginBottom: '24px' }}>
@@ -1058,89 +1141,6 @@ const DashboardScreen = ({
                 Enter a battle code
               </div>
             </div>
-            </div>
-          </div>
-
-          {/* ═══════════════════════════════════════════════════════════════
-              EARN COINS SECTION - Low-risk ways to build balance
-              ═══════════════════════════════════════════════════════════════ */}
-          <div style={{ marginBottom: '24px' }}>
-            {/* Section Header */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              marginBottom: '16px',
-              paddingBottom: '12px',
-              borderBottom: `1px solid ${colors.borderSubtle}`
-            }}>
-              <Zap style={{ height: '16px', width: '16px', color: colors.gold }} />
-              <span style={{
-                fontSize: '12px',
-                fontWeight: '600',
-                color: colors.textMuted,
-                textTransform: 'uppercase',
-                letterSpacing: '1.5px'
-              }}>
-                Earn Coins
-              </span>
-              <span style={{
-                fontSize: '11px',
-                color: colors.textMuted,
-                fontWeight: '400'
-              }}>
-                — Low-risk ways to build your balance
-              </span>
-            </div>
-
-            {/* Training Mode Card */}
-            <div
-              onClick={() => {
-                setTrainingConfirmType('stocks');
-                setShowTrainingConfirmModal(true);
-              }}
-              style={{
-                background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%)',
-                border: `1px solid ${colors.purple}50`,
-                borderRadius: '12px',
-                padding: '16px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '14px'
-              }}
-            >
-              <div style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '10px',
-                background: `${colors.purple}20`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '22px',
-                flexShrink: 0
-              }}>
-                🤖
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{
-                  color: colors.purple,
-                  fontWeight: '600',
-                  fontSize: '15px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}>
-                  <GraduationCap size={14} />
-                  Training Mode
-                </div>
-                <div style={{ color: colors.textMuted, fontSize: '12px', marginTop: '2px' }}>
-                  Practice vs CPU to hone your skills
-                </div>
-              </div>
-              <ArrowRight style={{ height: '16px', width: '16px', color: colors.textMuted }} />
             </div>
           </div>
 
