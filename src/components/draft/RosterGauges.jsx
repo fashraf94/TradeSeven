@@ -279,40 +279,7 @@ const RosterGauges = ({
         ROSTER CORES
       </div>
 
-      {/* CSS Animations */}
-      <style>{`
-        .gauge-flash {
-          animation: gauge-flash-anim 0.4s ease-out;
-        }
-
-        .gauge-celebrate {
-          animation: gauge-celebrate-anim 1s ease-out;
-        }
-
-        @keyframes gauge-flash-anim {
-          0% { filter: brightness(1); }
-          30% { filter: brightness(1.5) drop-shadow(0 0 10px currentColor); }
-          100% { filter: brightness(1); }
-        }
-
-        @keyframes gauge-celebrate-anim {
-          0% { transform: scale(1); }
-          15% { transform: scale(1.2); }
-          30% { transform: scale(1.1); }
-          45% { transform: scale(1.15); }
-          60% { transform: scale(1.08); }
-          75% { transform: scale(1.1); }
-          100% { transform: scale(1); }
-        }
-
-        /* Reduced motion support */
-        @media (prefers-reduced-motion: reduce) {
-          .gauge-flash,
-          .gauge-celebrate {
-            animation: none !important;
-          }
-        }
-      `}</style>
+      {/* Animations and classes consolidated in index.css: gauge-flash, gauge-celebrate, .gauge-flash, .gauge-celebrate */}
     </div>
   );
 };

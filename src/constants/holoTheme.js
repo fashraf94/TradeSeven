@@ -151,25 +151,7 @@ export const HOLO_BACKGROUND = `
   ${HOLO_COLORS.bgDeep}
 `;
 
-// Animation keyframes (for use in style tags)
-export const HOLO_ANIMATIONS = `
-  @keyframes holoSpin {
-    to { transform: rotate(360deg); }
-  }
-  @keyframes holoScanDown {
-    0% { top: 0; opacity: 1; }
-    100% { top: 100%; opacity: 0; }
-  }
-  @keyframes holoPulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-  }
-  @keyframes holoGlow {
-    0%, 100% { box-shadow: 0 0 15px rgba(0, 255, 255, 0.5); }
-    50% { box-shadow: 0 0 25px rgba(0, 255, 255, 0.8); }
-  }
-  @keyframes holoFloat {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-4px); }
-  }
-`;
+// Animation keyframes - now consolidated in animations.js
+// Re-exported for backwards compatibility with components using HOLO_ANIMATIONS
+// Note: These keyframes are also available in index.css as spin, holo-pulse, holo-glow, holo-float, scan-down
+export { HOLO_ANIMATIONS } from './animations.js';

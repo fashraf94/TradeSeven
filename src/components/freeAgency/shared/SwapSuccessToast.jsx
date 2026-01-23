@@ -31,7 +31,7 @@ const SwapSuccessToast = ({
       left: '50%',
       transform: 'translateX(-50%)',
       zIndex: 200,
-      animation: 'successToastIn 0.4s ease-out',
+      animation: 'success-toast-in 0.4s ease-out',
     }}>
       <div style={{
         background: 'rgba(0, 255, 136, 0.15)',
@@ -56,7 +56,7 @@ const SwapSuccessToast = ({
           fontSize: '20px',
           color: '#000',
           fontWeight: 700,
-          animation: 'successCheckPop 0.3s ease-out 0.2s both',
+          animation: 'success-check-pop 0.3s ease-out 0.2s both',
         }}>
           ✓
         </div>
@@ -105,24 +105,7 @@ const SwapSuccessToast = ({
         )}
       </div>
 
-      <style>{`
-        @keyframes successToastIn {
-          0% {
-            opacity: 0;
-            transform: translateX(-50%) translateY(-20px) scale(0.9);
-          }
-          100% {
-            opacity: 1;
-            transform: translateX(-50%) translateY(0) scale(1);
-          }
-        }
-
-        @keyframes successCheckPop {
-          0% { transform: scale(0); }
-          50% { transform: scale(1.2); }
-          100% { transform: scale(1); }
-        }
-      `}</style>
+      {/* Animations consolidated in index.css: success-toast-in, success-check-pop */}
     </div>
   );
 };

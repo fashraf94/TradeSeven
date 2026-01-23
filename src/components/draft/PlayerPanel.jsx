@@ -353,74 +353,7 @@ const PlayerPanel = ({
         </div>
       )}
 
-      {/* CSS Animations */}
-      <style>{`
-        /* Green pulse animation for current picker */
-        @keyframes picker-pulse-green {
-          0%, 100% {
-            box-shadow:
-              0 0 15px rgba(0, 255, 136, 0.6),
-              0 0 30px rgba(0, 255, 136, 0.3),
-              inset 0 0 15px rgba(0, 255, 136, 0.1);
-          }
-          50% {
-            box-shadow:
-              0 0 25px rgba(0, 255, 136, 0.8),
-              0 0 45px rgba(0, 255, 136, 0.4),
-              inset 0 0 20px rgba(0, 255, 136, 0.15);
-          }
-        }
-
-        .picker-pulse-green {
-          animation: picker-pulse-green 2s ease-in-out infinite;
-        }
-
-        /* Orange pulse animation for next picker */
-        @keyframes next-pulse-orange {
-          0%, 100% {
-            box-shadow:
-              0 0 12px rgba(255, 149, 0, 0.5),
-              0 0 25px rgba(255, 149, 0, 0.25);
-          }
-          50% {
-            box-shadow:
-              0 0 20px rgba(255, 149, 0, 0.7),
-              0 0 40px rgba(255, 149, 0, 0.35),
-              inset 0 0 10px rgba(255, 149, 0, 0.1);
-          }
-        }
-
-        .next-pulse-orange {
-          animation: next-pulse-orange 2.5s ease-in-out infinite;
-        }
-
-        @keyframes pick-check-pop {
-          0% {
-            transform: scale(0);
-            opacity: 0;
-          }
-          50% {
-            transform: scale(1.2);
-          }
-          100% {
-            transform: scale(1);
-            opacity: 1;
-          }
-        }
-
-        .pick-check-animation {
-          animation: pick-check-pop 0.4s ease-out forwards;
-        }
-
-        /* Reduced motion support */
-        @media (prefers-reduced-motion: reduce) {
-          .picker-pulse-green,
-          .next-pulse-orange,
-          .pick-check-animation {
-            animation: none !important;
-          }
-        }
-      `}</style>
+      {/* Animations and classes consolidated in index.css: picker-pulse-green, next-pulse-orange, pick-check-pop, .picker-pulse-green, .next-pulse-orange, .pick-check-animation */}
     </div>
   );
 };

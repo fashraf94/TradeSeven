@@ -104,7 +104,7 @@ const CommandDeckConfirmButton = ({
               border: '2px solid rgba(10, 14, 20, 0.3)',
               borderTopColor: '#0a0e14',
               borderRadius: '50%',
-              animation: 'confirm-spin 0.8s linear infinite',
+              animation: 'spin 0.8s linear infinite',
             }} />
             CONFIRMING...
           </span>
@@ -122,33 +122,7 @@ const CommandDeckConfirmButton = ({
         )}
       </span>
 
-      {/* CSS Animations */}
-      <style>{`
-        @keyframes confirm-spin {
-          to { transform: rotate(360deg); }
-        }
-
-        .confirm-btn-ready {
-          animation: confirm-pulse 2s ease-in-out infinite;
-        }
-
-        @keyframes confirm-pulse {
-          0%, 100% {
-            box-shadow: 0 0 30px rgba(0, 255, 136, 0.5), 0 0 60px rgba(0, 255, 136, 0.25), inset 0 0 20px rgba(0, 255, 136, 0.1);
-          }
-          50% {
-            box-shadow: 0 0 40px rgba(0, 255, 136, 0.6), 0 0 80px rgba(0, 255, 136, 0.35), inset 0 0 25px rgba(0, 255, 136, 0.15);
-          }
-        }
-
-        /* Reduced motion support */
-        @media (prefers-reduced-motion: reduce) {
-          .confirm-btn-ready,
-          .confirm-spinner {
-            animation: none !important;
-          }
-        }
-      `}</style>
+      {/* Animations and classes consolidated in index.css: spin, confirm-pulse, .confirm-btn-ready */}
     </button>
   );
 };

@@ -312,21 +312,8 @@ const SnakeConduit = ({
           }
         }
 
-        /* Slithering dash animation - dashes move along the path */
-        @keyframes slither-dash {
-          0% {
-            stroke-dashoffset: 0;
-          }
-          100% {
-            stroke-dashoffset: -130;
-          }
-        }
-
-        .snake-slither-dash {
-          animation: slither-dash 2s linear infinite;
-        }
-
-        /* Wave undulation animation */
+        /* Most keyframes consolidated in index.css: slither-dash, body-pulse, scale-shimmer, head-bob, tongue-flick, eye-glow */
+        /* snake-wave kept inline for SVG path morphing */
         @keyframes snake-wave {
           0%, 100% {
             d: path('M -50,120 Q 75,180 150,120 Q 225,60 300,120 Q 375,180 450,120 Q 525,60 600,120 Q 675,180 750,120 Q 825,60 950,120');
@@ -336,101 +323,36 @@ const SnakeConduit = ({
           }
         }
 
-        .snake-body-main,
-        .snake-body-glow,
-        .snake-scales,
-        .snake-highlight,
         .snake-slither-dash {
+          animation: slither-dash 2s linear infinite;
+        }
+        .snake-body-main, .snake-body-glow, .snake-scales, .snake-highlight, .snake-slither-dash {
           animation: snake-wave 4s ease-in-out infinite;
         }
-
-        /* Stagger the dash animation */
         .snake-slither-dash {
           animation: slither-dash 2s linear infinite, snake-wave 4s ease-in-out infinite;
         }
-
-        /* Body glow pulse */
-        @keyframes body-pulse {
-          0%, 100% {
-            opacity: 0.25;
-            stroke-width: 16px;
-          }
-          50% {
-            opacity: 0.4;
-            stroke-width: 20px;
-          }
-        }
-
         .snake-body-glow {
           animation: body-pulse 3s ease-in-out infinite, snake-wave 4s ease-in-out infinite;
         }
-
-        /* Scale shimmer */
-        @keyframes scale-shimmer {
-          0%, 100% {
-            opacity: 0.4;
-          }
-          50% {
-            opacity: 0.7;
-          }
-        }
-
         .snake-scales {
           animation: scale-shimmer 3s ease-in-out infinite, snake-wave 4s ease-in-out infinite;
         }
-
-        /* Snake head bobbing animation */
-        @keyframes head-bob {
-          0%, 100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-3px);
-          }
-        }
-
         .snake-head {
           animation: head-bob 2s ease-in-out infinite;
         }
-
         .snake-head-right {
           animation-delay: 1s;
         }
-
-        /* Tongue flick animation */
-        @keyframes tongue-flick {
-          0%, 80%, 100% {
-            opacity: 0;
-            transform: scaleX(0);
-          }
-          85%, 95% {
-            opacity: 1;
-            transform: scaleX(1);
-          }
-        }
-
         .snake-tongue {
           transform-origin: left center;
           animation: tongue-flick 3s ease-in-out infinite;
         }
-
-        /* Offset the animations so they don't flick at the same time */
         .snake-tongue-left {
           animation-delay: 0s;
         }
-
         .snake-tongue-right {
           animation-delay: 1.5s;
-        }
-
-        /* Eye glow effect */
-        @keyframes eye-glow {
-          0%, 100% {
-            filter: drop-shadow(0 0 2px #ffcc00);
-          }
-          50% {
-            filter: drop-shadow(0 0 6px #ffcc00);
-          }
         }
 
         /* Reduced motion support */

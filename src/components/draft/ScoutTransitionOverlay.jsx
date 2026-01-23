@@ -32,7 +32,7 @@ const ScoutTransitionOverlay = ({
         position: 'absolute',
         inset: 0,
         background: `rgba(${rgbValues}, 0.15)`,
-        animation: 'flashFade 0.4s ease-out forwards',
+        animation: 'flash-fade 0.4s ease-out forwards',
       }} />
 
       {/* Scanline sweeping down */}
@@ -43,7 +43,7 @@ const ScoutTransitionOverlay = ({
         height: '4px',
         background: `linear-gradient(90deg, transparent, ${color}, transparent)`,
         boxShadow: `0 0 20px ${color}, 0 0 40px ${color}`,
-        animation: 'scanDown 0.5s ease-out forwards',
+        animation: 'scan-down 0.5s ease-out forwards',
       }} />
 
       {/* Glitch lines */}
@@ -57,7 +57,7 @@ const ScoutTransitionOverlay = ({
           rgba(${rgbValues}, 0.1) 2px,
           rgba(${rgbValues}, 0.1) 4px
         )`,
-        animation: 'glitchFlicker 0.3s ease-out',
+        animation: 'glitch-flicker 0.3s ease-out',
       }} />
 
       {/* Center text flash */}
@@ -72,7 +72,7 @@ const ScoutTransitionOverlay = ({
         textTransform: 'uppercase',
         letterSpacing: '4px',
         textShadow: `0 0 20px ${color}, 0 0 40px ${color}`,
-        animation: 'textFlash 0.5s ease-out forwards',
+        animation: 'text-flash 0.5s ease-out forwards',
         whiteSpace: 'nowrap',
         display: 'flex',
         alignItems: 'center',
@@ -84,34 +84,7 @@ const ScoutTransitionOverlay = ({
         {entering ? 'INTERCEPTING SIGNAL...' : 'RETURNING TO BASE'}
       </div>
 
-      {/* Keyframe styles */}
-      <style>{`
-        @keyframes scanDown {
-          0% { top: 0; opacity: 1; }
-          100% { top: 100%; opacity: 0; }
-        }
-
-        @keyframes flashFade {
-          0% { opacity: 1; }
-          100% { opacity: 0; }
-        }
-
-        @keyframes glitchFlicker {
-          0% { opacity: 0.8; transform: translateX(0); }
-          20% { opacity: 0.6; transform: translateX(-3px); }
-          40% { opacity: 0.9; transform: translateX(3px); }
-          60% { opacity: 0.5; transform: translateX(-2px); }
-          80% { opacity: 0.8; transform: translateX(1px); }
-          100% { opacity: 0; transform: translateX(0); }
-        }
-
-        @keyframes textFlash {
-          0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
-          30% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
-          60% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-          100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
-        }
-      `}</style>
+      {/* Animations consolidated in index.css: scan-down, flash-fade, glitch-flicker, text-flash */}
     </div>
   );
 };

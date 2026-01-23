@@ -57,7 +57,7 @@ const SwapPreview = ({
       padding: '12px 16px',
       paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
       zIndex: 50,
-      animation: 'swapSlideUp 0.3s ease-out',
+      animation: 'slide-up 0.3s ease-out',
     }}>
       {/* Swap Preview Row: ADD → DROP */}
       <div style={{
@@ -190,7 +190,7 @@ const SwapPreview = ({
                 border: '2px solid transparent',
                 borderTop: `2px solid ${HOLO_COLORS.green}`,
                 borderRadius: '50%',
-                animation: 'swapSpin 0.8s linear infinite',
+                animation: 'spin 0.8s linear infinite',
               }} />
               Swapping...
             </>
@@ -202,15 +202,7 @@ const SwapPreview = ({
         </button>
       </div>
 
-      <style>{`
-        @keyframes swapSlideUp {
-          from { transform: translateY(100%); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
-        }
-        @keyframes swapSpin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
+      {/* Animations consolidated in index.css: slide-up, spin */}
     </div>
   );
 };
