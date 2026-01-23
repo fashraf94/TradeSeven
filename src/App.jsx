@@ -19332,13 +19332,52 @@ export default function PortfolioDuel() {
 
 
             {/* ═══════════════════════════════════════════════════════════════
-                COMPETE SECTION - Primary game modes
+                EARN COINS SECTION - Low-risk ways to build balance
                 ═══════════════════════════════════════════════════════════════ */}
             <div style={{
               display: 'flex',
               alignItems: 'center',
               gap: '10px',
               margin: '0 16px 16px',
+              paddingBottom: '12px',
+              borderBottom: `1px solid ${colors.borderSubtle}`
+            }}>
+              <Zap style={{ height: '16px', width: '16px', color: colors.gold }} />
+              <span style={{
+                fontSize: '12px',
+                fontWeight: '600',
+                color: colors.textMuted,
+                textTransform: 'uppercase',
+                letterSpacing: '1.5px'
+              }}>
+                Earn Coins
+              </span>
+              <span style={{
+                fontSize: '11px',
+                color: colors.textMuted,
+                fontWeight: '400'
+              }}>
+                — Low-risk ways to build your balance
+              </span>
+            </div>
+
+            {/* Training Mode Panel - Extracted Component */}
+            <TrainingModePanel
+              gameMode={gameMode}
+              colors={colors}
+              setTrainingConfirmType={setTrainingConfirmType}
+              setShowTrainingConfirmModal={setShowTrainingConfirmModal}
+              setShowClassicTrainingConfirm={setShowClassicTrainingConfirm}
+            />
+
+            {/* ═══════════════════════════════════════════════════════════════
+                COMPETE SECTION - Primary game modes
+                ═══════════════════════════════════════════════════════════════ */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              margin: '24px 16px 16px',
               paddingBottom: '12px',
               borderBottom: `1px solid ${colors.borderSubtle}`
             }}>
@@ -19552,45 +19591,6 @@ export default function PortfolioDuel() {
                 <ArrowRight size={20} color="#f59e0b" />
               </div>
             </motion.div>
-
-            {/* ═══════════════════════════════════════════════════════════════
-                EARN COINS SECTION - Low-risk ways to build balance
-                ═══════════════════════════════════════════════════════════════ */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              margin: '24px 16px 16px',
-              paddingBottom: '12px',
-              borderBottom: `1px solid ${colors.borderSubtle}`
-            }}>
-              <Zap style={{ height: '16px', width: '16px', color: colors.gold }} />
-              <span style={{
-                fontSize: '12px',
-                fontWeight: '600',
-                color: colors.textMuted,
-                textTransform: 'uppercase',
-                letterSpacing: '1.5px'
-              }}>
-                Earn Coins
-              </span>
-              <span style={{
-                fontSize: '11px',
-                color: colors.textMuted,
-                fontWeight: '400'
-              }}>
-                — Low-risk ways to build your balance
-              </span>
-            </div>
-
-            {/* Training Mode Panel - Extracted Component */}
-            <TrainingModePanel
-              gameMode={gameMode}
-              colors={colors}
-              setTrainingConfirmType={setTrainingConfirmType}
-              setShowTrainingConfirmModal={setShowTrainingConfirmModal}
-              setShowClassicTrainingConfirm={setShowClassicTrainingConfirm}
-            />
 
 
             {/* Weekly Challenges Panel - Extracted Component */}
