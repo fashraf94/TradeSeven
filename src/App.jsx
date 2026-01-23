@@ -19301,6 +19301,8 @@ export default function PortfolioDuel() {
           <GameModeToggle
             gameMode={gameMode}
             setGameMode={setGameMode}
+            setShowResearchMode={setShowResearchMode}
+            setScreen={setScreen}
             colors={colors}
           />
 
@@ -19418,11 +19420,6 @@ export default function PortfolioDuel() {
               setShowJoinBattleConfirm={setShowJoinBattleConfirm}
             />
 
-
-            {/* Research Mode Button - Extracted Component */}
-            <ResearchModeButton setShowResearchMode={setShowResearchMode} />
-
-
             {/* Stonk Options Button */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -19506,92 +19503,6 @@ export default function PortfolioDuel() {
                 <ArrowRight size={20} color="#10b981" />
               </div>
             </motion.div>
-
-            {/* EarningsGame Button */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.42 }}
-              onClick={() => setScreen('earningsGame')}
-              style={{
-                margin: '16px 16px 0',
-                padding: '16px 20px',
-                borderRadius: '14px',
-                cursor: 'pointer',
-                position: 'relative',
-                overflow: 'hidden',
-                background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.1) 100%)',
-                border: '1px solid rgba(245, 158, 11, 0.4)',
-                transition: 'all 0.3s ease'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = '#f59e0b';
-                e.currentTarget.style.boxShadow = '0 0 25px rgba(245, 158, 11, 0.3)';
-                e.currentTarget.style.transform = 'translateY(-2px)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.4)';
-                e.currentTarget.style.boxShadow = 'none';
-                e.currentTarget.style.transform = 'translateY(0)';
-              }}
-            >
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                  <div style={{
-                    width: '48px',
-                    height: '48px',
-                    borderRadius: '12px',
-                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 4px 15px rgba(245, 158, 11, 0.4)',
-                    fontSize: '24px'
-                  }}>
-                    💰
-                  </div>
-                  <div>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      marginBottom: '4px'
-                    }}>
-                      <span style={{
-                        fontSize: '17px',
-                        fontWeight: '700',
-                        color: '#fff'
-                      }}>
-                        EarningsGame
-                      </span>
-                      <span style={{
-                        padding: '2px 8px',
-                        background: 'linear-gradient(135deg, #f59e0b, #ef4444)',
-                        borderRadius: '4px',
-                        fontSize: '9px',
-                        fontWeight: '700',
-                        color: '#fff',
-                        textTransform: 'uppercase'
-                      }}>
-                        NEW
-                      </span>
-                    </div>
-                    <span style={{
-                      fontSize: '13px',
-                      color: '#9ca3af'
-                    }}>
-                      Predict earnings with market-informed odds
-                    </span>
-                  </div>
-                </div>
-                <ArrowRight size={20} color="#f59e0b" />
-              </div>
-            </motion.div>
-
 
             {/* Weekly Challenges Panel - Extracted Component */}
             <WeeklyChallengesPanel
