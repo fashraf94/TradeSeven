@@ -9810,7 +9810,8 @@ import {
   Brain,
   Briefcase,
   Settings,
-  BookOpen
+  BookOpen,
+  Bomb
 } from 'lucide-react';
 
 const PERCENTAGE_OPTIONS = [7.5, 10, 12.5, 15, 17.5, 20];
@@ -11416,6 +11417,7 @@ export default function PortfolioDuel() {
   const [showCreateBattleConfirm, setShowCreateBattleConfirm] = useState(false);
   const [showJoinBattleConfirm, setShowJoinBattleConfirm] = useState(false);
   const [showClassicTrainingConfirm, setShowClassicTrainingConfirm] = useState(false);
+  const [showBaggerBombTrainingConfirm, setShowBaggerBombTrainingConfirm] = useState(false); // NEW: Separate BaggerBomb training
   const [showCreateDraftConfirm, setShowCreateDraftConfirm] = useState(false);
   const [showJoinDraftConfirm, setShowJoinDraftConfirm] = useState(false);
   const [showCreateBaggerBombBattleConfirm, setShowCreateBaggerBombBattleConfirm] = useState(false);
@@ -19376,6 +19378,7 @@ export default function PortfolioDuel() {
               setTrainingConfirmType={setTrainingConfirmType}
               setShowTrainingConfirmModal={setShowTrainingConfirmModal}
               setShowClassicTrainingConfirm={setShowClassicTrainingConfirm}
+              setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
               // Screen navigation
               setScreen={setScreen}
               // NEW: Modal handlers for COMPETE games
@@ -21479,12 +21482,10 @@ export default function PortfolioDuel() {
           tutorialModeType="classic"
         />
 
+        {/* Builder Training Modal - Classic Battle Only */}
         <ConfirmationPopup
           show={showClassicTrainingConfirm}
-          onClose={() => {
-            setShowClassicTrainingConfirm(false);
-            setTrainingBattleType('classic'); // Reset on close
-          }}
+          onClose={() => setShowClassicTrainingConfirm(false)}
           onConfirm={() => {
             // Check training battle limit - MUST filter by current user
             const userTrainingBattles = battles.filter(b => {
@@ -21513,164 +21514,67 @@ export default function PortfolioDuel() {
             setSearchTerm('');
             setSelectedCrypto(null);
             setBuilderMode('training');
-
-            // Route based on battle type selection
-            if (trainingBattleType === 'baggerbomb') {
-              setScreen('trainingPortfolioBuilderTD');
-            } else {
-              setScreen('builder');
-            }
+            setScreen('builder'); // Classic training only
           }}
           icon={<GraduationCap size={32} style={{ color: '#ffffff' }} />}
-          iconBgColor="#9333ea"
-          title="Start Training Battle?"
-          subtitle="Practice against a CPU opponent"
-          customContent={
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{
-                fontSize: '12px',
-                color: 'rgba(255,255,255,0.5)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-                marginBottom: '10px',
-                textAlign: 'center'
-              }}>
-                Select Battle Type
-              </div>
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px'
-              }}>
-                {/* Classic Battle Option */}
-                <button
-                  onClick={() => setTrainingBattleType('classic')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '14px',
-                    padding: '14px 16px',
-                    background: trainingBattleType === 'classic'
-                      ? 'rgba(139, 92, 246, 0.15)'
-                      : 'rgba(255,255,255,0.03)',
-                    border: trainingBattleType === 'classic'
-                      ? '2px solid #9333ea'
-                      : '2px solid rgba(255,255,255,0.1)',
-                    borderRadius: '12px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    textAlign: 'left'
-                  }}
-                >
-                  <div style={{
-                    width: '42px',
-                    height: '42px',
-                    borderRadius: '10px',
-                    background: trainingBattleType === 'classic'
-                      ? 'linear-gradient(135deg, #9333ea 0%, #7c3aed 100%)'
-                      : 'rgba(255,255,255,0.05)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '20px'
-                  }}>
-                    📊
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{
-                      fontSize: '15px',
-                      fontWeight: '600',
-                      color: '#fff',
-                      marginBottom: '3px'
-                    }}>
-                      Classic Battle
-                    </div>
-                    <div style={{
-                      fontSize: '12px',
-                      color: 'rgba(255,255,255,0.5)'
-                    }}>
-                      Simple % returns determine the winner
-                    </div>
-                  </div>
-                </button>
-
-                {/* BaggerBomb Battle Option */}
-                <button
-                  onClick={() => setTrainingBattleType('baggerbomb')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '14px',
-                    padding: '14px 16px',
-                    background: trainingBattleType === 'baggerbomb'
-                      ? 'rgba(16, 185, 129, 0.15)'
-                      : 'rgba(255,255,255,0.03)',
-                    border: trainingBattleType === 'baggerbomb'
-                      ? '2px solid #10b981'
-                      : '2px solid rgba(255,255,255,0.1)',
-                    borderRadius: '12px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    textAlign: 'left',
-                    position: 'relative'
-                  }}
-                >
-                  <div style={{
-                    width: '42px',
-                    height: '42px',
-                    borderRadius: '10px',
-                    background: trainingBattleType === 'baggerbomb'
-                      ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                      : 'rgba(255,255,255,0.05)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '20px'
-                  }}>
-                    🏈
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{
-                      fontSize: '15px',
-                      fontWeight: '600',
-                      color: '#fff',
-                      marginBottom: '3px'
-                    }}>
-                      BaggerBomb
-                    </div>
-                    <div style={{
-                      fontSize: '12px',
-                      color: 'rgba(255,255,255,0.5)'
-                    }}>
-                      Score points with breakout bonuses
-                    </div>
-                  </div>
-                  {/* NEW Badge */}
-                  <span style={{
-                    position: 'absolute',
-                    top: '8px',
-                    right: '8px',
-                    padding: '3px 6px',
-                    background: 'linear-gradient(135deg, #f59e0b, #ef4444)',
-                    borderRadius: '4px',
-                    fontSize: '9px',
-                    fontWeight: '700',
-                    color: '#fff',
-                    textTransform: 'uppercase'
-                  }}>
-                    NEW
-                  </span>
-                </button>
-              </div>
-            </div>
-          }
+          iconBgColor="#00ffff"
+          title="Builder Training"
+          subtitle="Practice building Classic Battle portfolios against CPU"
           details={[
             { label: 'Assets Required', value: '7-13 picks' },
             { label: 'Duration', value: '1 hour' },
             { label: 'Rewards', value: '+10 XP (win) / +5 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
           ]}
           confirmText="Start Training"
-          confirmColor="#9333ea"
+          confirmColor="#00ffff"
+          tutorialModeType="training"
+        />
+
+        {/* BaggerBomb Training Modal - Separate from Builder */}
+        <ConfirmationPopup
+          show={showBaggerBombTrainingConfirm}
+          onClose={() => setShowBaggerBombTrainingConfirm(false)}
+          onConfirm={() => {
+            // Check training battle limit - MUST filter by current user
+            const userTrainingBattles = battles.filter(b => {
+              // Must be a training battle
+              if (!b.isTrainingBattle && !b.isTraining) return false;
+
+              // Check if battle is active or waiting
+              const isActiveOrWaiting = b.status === 'waiting' || b.status === 'active' ||
+                                        b.state?.status === 'active' || b.state?.status === 'waiting';
+              if (!isActiveOrWaiting) return false;
+
+              // Check if current user is the creator of this training battle
+              return getUsername(b.creator) === user?.username;
+            });
+
+            if (userTrainingBattles.length >= MAX_TRAINING_BATTLES) {
+              alert(`You've reached the maximum of ${MAX_TRAINING_BATTLES} active training battles. Complete or delete a battle first.`);
+              setShowBaggerBombTrainingConfirm(false);
+              return;
+            }
+            setShowBaggerBombTrainingConfirm(false);
+            setPortfolio([]);
+            setPortfolioType(null);
+            setPortfolioName('');
+            setAssetType('stocks');
+            setSearchTerm('');
+            setSelectedCrypto(null);
+            setBuilderMode('training');
+            setScreen('trainingPortfolioBuilderTD'); // BaggerBomb training
+          }}
+          icon={<Bomb size={32} style={{ color: '#ffffff' }} />}
+          iconBgColor="#dc2626"
+          title="BaggerBomb Training"
+          subtitle="Practice scoring points with breakout bonuses against CPU"
+          details={[
+            { label: 'Assets Required', value: '7-13 picks' },
+            { label: 'Duration', value: '1 hour' },
+            { label: 'Rewards', value: '+10 XP (win) / +5 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
+          ]}
+          confirmText="Start Training"
+          confirmColor="#dc2626"
           tutorialModeType="training"
         />
 
