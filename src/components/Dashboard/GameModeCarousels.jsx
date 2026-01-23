@@ -114,6 +114,7 @@ export default function GameModeCarousels({
   setTrainingConfirmType,
   setShowTrainingConfirmModal,
   setShowClassicTrainingConfirm,
+  setShowBaggerBombTrainingConfirm, // NEW: Separate BaggerBomb training modal
   // Screen navigation
   setScreen,
   // NEW: Modal handlers for COMPETE games
@@ -143,12 +144,24 @@ export default function GameModeCarousels({
       id: 'builder-training',
       theme: 'builder',
       title: 'Builder',
-      description: 'Practice building portfolios against CPU in Classic or BaggerBomb mode',
+      description: 'Practice building Classic Battle portfolios against CPU',
       duration: '~5 min',
       isTraining: true,
       onClick: () => {
-        // Open modal with Classic/BaggerBomb selector
+        // Classic battle training only (no BaggerBomb selector)
         setShowClassicTrainingConfirm(true);
+      },
+    },
+    {
+      id: 'baggerbomb-training',
+      theme: 'baggerBomb',
+      title: 'BaggerBomb',
+      description: 'Practice scoring points with breakout bonuses against CPU',
+      duration: '~5 min',
+      isTraining: true,
+      onClick: () => {
+        // BaggerBomb training modal
+        setShowBaggerBombTrainingConfirm(true);
       },
     },
     {
