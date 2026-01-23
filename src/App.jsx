@@ -71,11 +71,11 @@ import {
   getAvailableSectors,
 } from './services/recommendationEngine';
 // Extracted Screens - Batch 1
-import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen, DashboardScreen } from './screens';
+import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen } from './screens';
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, BattleActionCards, TrainingModePanel, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -18734,107 +18734,7 @@ export default function PortfolioDuel() {
     );
   };
 
-  // DASHBOARD SCREEN - EXTRACTED VERSION DISABLED (crashes with trainingBattles undefined)
-  if (false && screen === 'dashboard_EXTRACTED_DISABLED') {
-    return (
-      <DashboardScreen
-        // Layout
-        isDesktop={isDesktop}
-        containerStyle={containerStyle}
-        colors={colors}
-        // User
-        user={user}
-        logout={logout}
-        setUsername={setUsername}
-        // Screen
-        setScreen={setScreen}
-        // Game mode
-        gameMode={gameMode}
-        setGameMode={setGameMode}
-        // Battles
-        battles={battles}
-        activeBattles={activeBattles}
-        waitingBattles={waitingBattles}
-        completedBattles={completedBattles}
-        trainingBattles={trainingBattles}
-        draftBattles={draftBattles}
-        // Battle state
-        currentBattle={currentBattle}
-        setCurrentBattle={setCurrentBattle}
-        currentDraft={currentDraft}
-        setCurrentDraft={setCurrentDraft}
-        // Challenges
-        weeklyChallenges={weeklyChallenges}
-        challengeProgress={challengeProgress}
-        completedWeeklyChallenges={completedWeeklyChallenges}
-        activeDailyChallenge={activeDailyChallenge}
-        acceptChallenge={acceptChallenge}
-        // Notifications
-        notifications={notifications}
-        unreadCount={unreadCount}
-        // Modals
-        showXPModal={showXPModal}
-        setShowXPModal={setShowXPModal}
-        showSlotMachine={showSlotMachine}
-        setShowSlotMachine={setShowSlotMachine}
-        slotMachineRevealed={slotMachineRevealed}
-        setSlotMachineRevealed={setSlotMachineRevealed}
-        markSlotMachineShown={markSlotMachineShown}
-        // Sidebar
-        sidebarOpen={sidebarOpen}
-        setSidebarOpen={setSidebarOpen}
-        // Tour
-        showSpotlightTour={showSpotlightTour}
-        setShowSpotlightTour={setShowSpotlightTour}
-        tourStep={tourStep}
-        setTourStep={setTourStep}
-        // Portfolio reset
-        setPortfolio={setPortfolio}
-        setPortfolioType={setPortfolioType}
-        setPortfolioName={setPortfolioName}
-        setAssetType={setAssetType}
-        setSearchTerm={setSearchTerm}
-        setSelectedCrypto={setSelectedCrypto}
-        setBuilderMode={setBuilderMode}
-        setBuilderCategory={setBuilderCategory}
-        // Draft banner
-        activeDraftBanner={activeDraftBanner}
-        setActiveDraftBanner={setActiveDraftBanner}
-        // Modal visibility flags
-        showCreateBattleConfirm={showCreateBattleConfirm}
-        setShowCreateBattleConfirm={setShowCreateBattleConfirm}
-        showCreateDraftConfirm={showCreateDraftConfirm}
-        setShowCreateDraftConfirm={setShowCreateDraftConfirm}
-        showTrainingConfirmModal={showTrainingConfirmModal}
-        setShowTrainingConfirmModal={setShowTrainingConfirmModal}
-        trainingConfirmType={trainingConfirmType}
-        setTrainingConfirmType={setTrainingConfirmType}
-        showClassicTrainingConfirm={showClassicTrainingConfirm}
-        setShowClassicTrainingConfirm={setShowClassicTrainingConfirm}
-        showTemplatesModal={showTemplatesModal}
-        setShowTemplatesModal={setShowTemplatesModal}
-        showJoinBattleConfirm={showJoinBattleConfirm}
-        setShowJoinBattleConfirm={setShowJoinBattleConfirm}
-        showJoinDraftConfirm={showJoinDraftConfirm}
-        setShowJoinDraftConfirm={setShowJoinDraftConfirm}
-        showWeeklyChallenges={showWeeklyChallenges}
-        setShowWeeklyChallenges={setShowWeeklyChallenges}
-        // Utility
-        copyToClipboard={copyToClipboard}
-        battleTimer={battleTimer}
-        // Overlay components
-        ChallengeToast={ChallengeToast}
-        MidGameChallengePopup={MidGameChallengePopup}
-        RiskChallengePopup={RiskChallengePopup}
-        RiskChallengeResultPopup={RiskChallengeResultPopup}
-        SlotMachineContent={SlotMachineContent}
-        TutorialModal={TutorialModal}
-        SpotlightTour={SpotlightTour}
-      />
-    );
-  }
-
-  // DASHBOARD SCREEN - Original inline code (restored)
+  // DASHBOARD SCREEN
   if (screen === 'dashboard') {
     // Helper function to calculate battle preview data for any battle
     const calculateBattlePreviewData = (battle) => {
