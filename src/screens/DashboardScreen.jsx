@@ -584,49 +584,54 @@ const DashboardScreen = ({
               <MarketClashLogo size="small" />
             </div>
 
-            {/* Right Side - User Info with Avatar */}
+            {/* Right Side - Balance Pill + User Avatar */}
             <div style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '10px',
+              gap: '8px',
               padding: '4px 8px'
             }}>
+              {/* Coin Balance Pill */}
+              <div
+                onClick={() => setShowXPModal(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '6px 10px',
+                  background: `${colors.gold}15`,
+                  border: `1px solid ${colors.gold}40`,
+                  borderRadius: '20px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <span style={{ fontSize: '14px' }}>🪙</span>
+                <span style={{
+                  color: colors.gold,
+                  fontWeight: '700',
+                  fontSize: '13px',
+                  fontFamily: "'SF Mono', 'Monaco', monospace"
+                }}>
+                  {(user?.xp || 0).toLocaleString()}
+                </span>
+              </div>
+
               {/* Avatar Circle */}
               <div style={{
-                width: '38px',
-                height: '38px',
+                width: '36px',
+                height: '36px',
                 borderRadius: '50%',
                 background: '#1a1f2e',
-                border: '2px solid #00d9ff',
+                border: `2px solid ${colors.cyan}`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '16px',
+                fontSize: '14px',
                 fontWeight: '600',
                 color: '#ffffff'
               }}>
                 {(user?.username || 'P')[0].toUpperCase()}
-              </div>
-              {/* User Text Info */}
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start'
-              }}>
-                <span style={{
-                  color: '#ffffff',
-                  fontWeight: '600',
-                  fontSize: '14px'
-                }}>
-                  {user?.username || 'Player'}
-                </span>
-                <span style={{
-                  color: '#8b949e',
-                  fontSize: '12px',
-                  fontWeight: '500'
-                }}>
-                  {user?.rank || 'Rookie'}
-                </span>
               </div>
             </div>
           </div>
@@ -958,8 +963,123 @@ const DashboardScreen = ({
             </div>
           )}
 
-          {/* Create/Join Battle Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '24px' }}>
+          {/* ═══════════════════════════════════════════════════════════════
+              EARN COINS SECTION - Low-risk ways to build balance
+              ═══════════════════════════════════════════════════════════════ */}
+          <div style={{ marginBottom: '24px' }}>
+            {/* Section Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              marginBottom: '16px',
+              paddingBottom: '12px',
+              borderBottom: `1px solid ${colors.borderSubtle}`
+            }}>
+              <Zap style={{ height: '16px', width: '16px', color: colors.gold }} />
+              <span style={{
+                fontSize: '12px',
+                fontWeight: '600',
+                color: colors.textMuted,
+                textTransform: 'uppercase',
+                letterSpacing: '1.5px'
+              }}>
+                Earn Coins
+              </span>
+              <span style={{
+                fontSize: '11px',
+                color: colors.textMuted,
+                fontWeight: '400'
+              }}>
+                — Low-risk ways to build your balance
+              </span>
+            </div>
+
+            {/* Training Mode Card */}
+            <div
+              onClick={() => {
+                setTrainingConfirmType('stocks');
+                setShowTrainingConfirmModal(true);
+              }}
+              style={{
+                background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%)',
+                border: `1px solid ${colors.purple}50`,
+                borderRadius: '12px',
+                padding: '16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '14px'
+              }}
+            >
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '10px',
+                background: `${colors.purple}20`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '22px',
+                flexShrink: 0
+              }}>
+                🤖
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{
+                  color: colors.purple,
+                  fontWeight: '600',
+                  fontSize: '15px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  <GraduationCap size={14} />
+                  Training Mode
+                </div>
+                <div style={{ color: colors.textMuted, fontSize: '12px', marginTop: '2px' }}>
+                  Practice vs CPU to hone your skills
+                </div>
+              </div>
+              <ArrowRight style={{ height: '16px', width: '16px', color: colors.textMuted }} />
+            </div>
+          </div>
+
+          {/* ═══════════════════════════════════════════════════════════════
+              COMPETE SECTION - Primary game modes (more prominent)
+              ═══════════════════════════════════════════════════════════════ */}
+          <div style={{ marginBottom: '24px' }}>
+            {/* Section Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              marginBottom: '16px',
+              paddingBottom: '12px',
+              borderBottom: `1px solid ${colors.borderSubtle}`
+            }}>
+              <Swords style={{ height: '16px', width: '16px', color: colors.cyan }} />
+              <span style={{
+                fontSize: '12px',
+                fontWeight: '600',
+                color: colors.textMuted,
+                textTransform: 'uppercase',
+                letterSpacing: '1.5px'
+              }}>
+                Compete
+              </span>
+              <span style={{
+                fontSize: '11px',
+                color: colors.textMuted,
+                fontWeight: '400'
+              }}>
+                — Challenge friends or rivals
+              </span>
+            </div>
+
+            {/* Create/Join Battle Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
             {/* Create Battle Card */}
             <div
               onClick={() => {
@@ -1021,46 +1141,6 @@ const DashboardScreen = ({
                 Enter a battle code
               </div>
             </div>
-          </div>
-
-          {/* Training Mode Section */}
-          <div style={{ marginBottom: '24px' }}>
-            <h3 style={{
-              color: '#a855f7',
-              fontSize: '14px',
-              fontWeight: '600',
-              marginBottom: '12px',
-              textTransform: 'uppercase',
-              letterSpacing: '1px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}>
-              <GraduationCap size={16} />
-              Training Mode
-            </h3>
-            <div
-              onClick={() => {
-                setTrainingConfirmType('stocks');
-                setShowTrainingConfirmModal(true);
-              }}
-              style={{
-                background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%)',
-                border: '2px solid #a855f7',
-                borderRadius: '16px',
-                padding: '20px',
-                cursor: 'pointer',
-                textAlign: 'center',
-                transition: 'all 0.2s'
-              }}
-            >
-              <div style={{ fontSize: '32px', marginBottom: '8px' }}>🤖</div>
-              <div style={{ color: '#a855f7', fontWeight: '700', fontSize: '16px' }}>
-                Practice vs CPU
-              </div>
-              <div style={{ color: '#8b949e', fontSize: '12px', marginTop: '4px' }}>
-                Hone your skills against AI
-              </div>
             </div>
           </div>
 
