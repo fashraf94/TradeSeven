@@ -18,27 +18,34 @@ const carouselContainerStyle = {
   WebkitOverflowScrolling: 'touch', // Smooth iOS scroll
 };
 
-// Section header style
+// Section header style - prominent gradient text with italic styling
 const sectionHeaderStyle = {
   display: 'flex',
-  alignItems: 'center',
-  gap: '8px',
+  alignItems: 'baseline',
+  gap: '12px',
   padding: '0 16px',
-  marginBottom: '12px',
+  marginBottom: '16px',
+  marginTop: '24px',
 };
 
-const sectionTitleStyle = {
-  fontSize: '12px',
-  fontWeight: '600',
-  letterSpacing: '1.5px',
+// Gradient text style for section titles
+const getSectionTitleStyle = (accentColor, lighterAccent) => ({
+  fontSize: '18px',
+  fontWeight: '700',
+  letterSpacing: '2px',
   textTransform: 'uppercase',
-  color: HOLO_COLORS.textMuted,
-};
+  fontStyle: 'italic',
+  background: `linear-gradient(90deg, ${accentColor} 0%, ${lighterAccent} 100%)`,
+  WebkitBackgroundClip: 'text',
+  WebkitTextFillColor: 'transparent',
+  backgroundClip: 'text',
+});
 
 const sectionSubtitleStyle = {
-  fontSize: '12px',
+  fontSize: '13px',
   color: HOLO_COLORS.textMuted,
   fontWeight: '400',
+  fontStyle: 'normal',
 };
 
 // Base carousel card style
@@ -329,17 +336,15 @@ export default function GameModeCarousels({
           EARN COINS SECTION - Low-risk ways to build balance
           ═══════════════════════════════════════════════════════════════ */}
       <div style={{ marginBottom: '24px' }}>
-        {/* Section Header */}
-        <div style={{
-          ...sectionHeaderStyle,
-          paddingBottom: '12px',
-          marginLeft: '16px',
-          marginRight: '16px',
-          borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}`,
-        }}>
-          <Zap style={{ height: '16px', width: '16px', color: HOLO_COLORS.gold }} />
-          <span style={sectionTitleStyle}>Earn Coins</span>
-          <span style={sectionSubtitleStyle}>— Low-risk ways to build your balance</span>
+        {/* Section Header - Purple gradient */}
+        <div style={sectionHeaderStyle}>
+          <Zap size={18} color="#8b5cf6" />
+          <span style={getSectionTitleStyle('#8b5cf6', '#a78bfa')}>
+            EARN COINS
+          </span>
+          <span style={sectionSubtitleStyle}>
+            — Low-risk ways to build your balance
+          </span>
         </div>
 
         {/* Carousel */}
@@ -347,7 +352,6 @@ export default function GameModeCarousels({
           className="carousel-scroll"
           style={{
             ...carouselContainerStyle,
-            marginTop: '12px',
           }}
         >
           {earnCoinsCards.map((card, index) => (
@@ -372,17 +376,15 @@ export default function GameModeCarousels({
           COMPETE SECTION - Primary game modes
           ═══════════════════════════════════════════════════════════════ */}
       <div style={{ marginBottom: '24px' }}>
-        {/* Section Header */}
-        <div style={{
-          ...sectionHeaderStyle,
-          paddingBottom: '12px',
-          marginLeft: '16px',
-          marginRight: '16px',
-          borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}`,
-        }}>
-          <Swords style={{ height: '16px', width: '16px', color: HOLO_COLORS.cyan }} />
-          <span style={sectionTitleStyle}>Compete</span>
-          <span style={sectionSubtitleStyle}>— Challenge friends or rivals</span>
+        {/* Section Header - Green gradient */}
+        <div style={sectionHeaderStyle}>
+          <Swords size={18} color="#10b981" />
+          <span style={getSectionTitleStyle('#10b981', '#34d399')}>
+            COMPETE
+          </span>
+          <span style={sectionSubtitleStyle}>
+            — Challenge friends or rivals
+          </span>
         </div>
 
         {/* Carousel */}
@@ -390,7 +392,6 @@ export default function GameModeCarousels({
           className="carousel-scroll"
           style={{
             ...carouselContainerStyle,
-            marginTop: '12px',
           }}
         >
           {competeCards.map((card, index) => (
