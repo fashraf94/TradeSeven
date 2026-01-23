@@ -11420,6 +11420,11 @@ export default function PortfolioDuel() {
   const [showJoinDraftConfirm, setShowJoinDraftConfirm] = useState(false);
   const [showCreateBaggerBombBattleConfirm, setShowCreateBaggerBombBattleConfirm] = useState(false);
   const [showJoinBaggerBombBattleConfirm, setShowJoinBaggerBombBattleConfirm] = useState(false);
+  // NEW: Unified game modals for COMPETE carousel
+  const [showSnakeDraftModal, setShowSnakeDraftModal] = useState(false);
+  const [showBuilderModal, setShowBuilderModal] = useState(false);
+  const [showBaggerBombModal, setShowBaggerBombModal] = useState(false);
+  const [showOptionsArenaModal, setShowOptionsArenaModal] = useState(false);
   // BaggerBomb Scoring battle mode selection in create battle confirmation
   const [battleScoringMode, setBattleScoringMode] = useState('classic'); // 'classic' | 'baggerbomb'
   // Training Mode battle type selection
@@ -15736,7 +15741,13 @@ export default function PortfolioDuel() {
     confirmText,
     confirmColor,
     tutorialModeType,
-    customContent // Optional custom content to render before details
+    customContent, // Optional custom content to render before details
+    // NEW PROPS for secondary action support:
+    secondaryAction,    // function - handler for secondary button (e.g., Join Game)
+    secondaryText,      // string - text for secondary button (e.g., "Join Game")
+    secondaryColor,     // string - color for secondary button (optional)
+    cancelText,         // string - text for cancel button (defaults to "Cancel")
+    hideTutorial,       // boolean - hide the tutorial button
   }) => {
     if (!show) return null;
 
@@ -15849,83 +15860,110 @@ export default function PortfolioDuel() {
           {/* Action Buttons */}
           <div style={{
             display: 'flex',
-            gap: '12px',
-            marginBottom: '16px'
+            flexDirection: 'column',
+            gap: '12px'
           }}>
+            {/* Primary buttons row */}
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={onClose}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  borderRadius: '12px',
+                  border: '1px solid #21262d',
+                  background: 'transparent',
+                  color: '#8b949e',
+                  fontSize: '15px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {cancelText || 'Cancel'}
+              </button>
+              <button
+                onClick={onConfirm}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: confirmColor,
+                  color: '#ffffff',
+                  fontSize: '15px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: `0 4px 12px ${confirmColor}44`
+                }}
+              >
+                {confirmText}
+              </button>
+            </div>
+
+            {/* Secondary Action Button (e.g., Join Game) */}
+            {secondaryAction && secondaryText && (
+              <button
+                onClick={secondaryAction}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  borderRadius: '12px',
+                  border: `1px solid ${secondaryColor || confirmColor || '#21262d'}`,
+                  background: 'transparent',
+                  color: secondaryColor || confirmColor || '#8b949e',
+                  fontSize: '15px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {secondaryText}
+              </button>
+            )}
+          </div>
+
+          {/* Tutorial Button - only show if tutorialModeType provided and not hidden */}
+          {tutorialModeType && !hideTutorial && (
             <button
-              onClick={onClose}
+              onClick={() => {
+                setTutorialMode(tutorialModeType);
+                setTutorialStep(0);
+                setShowTutorial(true);
+              }}
               style={{
-                flex: 1,
-                padding: '14px',
-                borderRadius: '12px',
-                border: '2px solid #21262d',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                width: '100%',
+                marginTop: '12px',
+                padding: '12px 16px',
                 background: 'transparent',
-                color: '#ffffff',
-                fontSize: '16px',
-                fontWeight: '600',
+                border: '1px solid #21262d',
+                borderRadius: '10px',
+                color: '#6e7681',
+                fontSize: '14px',
+                fontWeight: '500',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease'
               }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={onConfirm}
-              style={{
-                flex: 1,
-                padding: '14px',
-                borderRadius: '12px',
-                border: 'none',
-                background: confirmColor,
-                color: '#ffffff',
-                fontSize: '16px',
-                fontWeight: '700',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                boxShadow: `0 4px 12px ${confirmColor}44`
+              onMouseOver={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                e.currentTarget.style.borderColor = '#30363d';
+                e.currentTarget.style.color = '#8b949e';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.borderColor = '#21262d';
+                e.currentTarget.style.color = '#6e7681';
               }}
             >
-              {confirmText}
+              <BookOpen size={16} />
+              <span>How to Play</span>
             </button>
-          </div>
-
-          {/* Tutorial Button */}
-          <button
-            onClick={() => {
-              setTutorialMode(tutorialModeType);
-              setTutorialStep(0);
-              setShowTutorial(true);
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              width: '100%',
-              padding: '12px 16px',
-              background: 'transparent',
-              border: '1px solid #21262d',
-              borderRadius: '10px',
-              color: '#6e7681',
-              fontSize: '14px',
-              fontWeight: '500',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-              e.currentTarget.style.borderColor = '#30363d';
-              e.currentTarget.style.color = '#8b949e';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.borderColor = '#21262d';
-              e.currentTarget.style.color = '#6e7681';
-            }}
-          >
-            <BookOpen size={16} />
-            <span>How to Play</span>
-          </button>
+          )}
         </div>
       </div>
     );
@@ -19299,8 +19337,7 @@ export default function PortfolioDuel() {
 
           {/* Game Mode Toggle - Extracted Component */}
           <GameModeToggle
-            gameMode={gameMode}
-            setGameMode={setGameMode}
+            activeTab="games"
             setShowResearchMode={setShowResearchMode}
             setScreen={setScreen}
             colors={colors}
@@ -19335,23 +19372,17 @@ export default function PortfolioDuel() {
 
             {/* Game Mode Carousels - EARN COINS and COMPETE sections */}
             <GameModeCarousels
-              gameMode={gameMode}
-              colors={colors}
+              // Training handlers
               setTrainingConfirmType={setTrainingConfirmType}
               setShowTrainingConfirmModal={setShowTrainingConfirmModal}
               setShowClassicTrainingConfirm={setShowClassicTrainingConfirm}
-              setPortfolio={setPortfolio}
-              setPortfolioType={setPortfolioType}
-              setPortfolioName={setPortfolioName}
-              setAssetType={setAssetType}
-              setSearchTerm={setSearchTerm}
-              setSelectedCrypto={setSelectedCrypto}
-              setJoinCode={setJoinCode}
-              setShowCreateDraftConfirm={setShowCreateDraftConfirm}
-              setShowCreateBattleConfirm={setShowCreateBattleConfirm}
-              setShowJoinDraftConfirm={setShowJoinDraftConfirm}
-              setShowJoinBattleConfirm={setShowJoinBattleConfirm}
+              // Screen navigation
               setScreen={setScreen}
+              // NEW: Modal handlers for COMPETE games
+              setShowSnakeDraftModal={setShowSnakeDraftModal}
+              setShowBuilderModal={setShowBuilderModal}
+              setShowBaggerBombModal={setShowBaggerBombModal}
+              setShowOptionsArenaModal={setShowOptionsArenaModal}
             />
 
             {/* Weekly Challenges Panel - Extracted Component */}
@@ -21685,6 +21716,140 @@ export default function PortfolioDuel() {
           confirmText="Join Draft"
           confirmColor="#10b981"
           tutorialModeType="draft"
+        />
+
+        {/* ============================================ */}
+        {/* NEW: UNIFIED COMPETE GAME MODALS */}
+        {/* ============================================ */}
+
+        {/* Snake Draft Modal (with Create/Join) */}
+        <ConfirmationPopup
+          show={showSnakeDraftModal}
+          onClose={() => setShowSnakeDraftModal(false)}
+          onConfirm={() => {
+            setShowSnakeDraftModal(false);
+            setScreen('draftSetup');
+          }}
+          secondaryAction={() => {
+            setShowSnakeDraftModal(false);
+            setScreen('draftJoin');
+          }}
+          secondaryText="Join Game"
+          icon={<span style={{ fontSize: '32px' }}>🐍</span>}
+          iconBgColor="#10b981"
+          title="Snake Draft"
+          subtitle="Start a 4-player snake draft lobby"
+          details={[
+            { label: 'Players', value: '4 players' },
+            { label: 'Picks', value: '9 per player' },
+            { label: 'Time per pick', value: '2 minutes' },
+            { label: 'Rewards', value: '+150 XP (1st) / +100 XP (2nd)', highlight: true, highlightColor: '#f59e0b' }
+          ]}
+          confirmText="Create Game"
+          confirmColor="#10b981"
+          tutorialModeType="draft"
+        />
+
+        {/* Builder 1v1 Modal (with Create/Join) */}
+        <ConfirmationPopup
+          show={showBuilderModal}
+          onClose={() => setShowBuilderModal(false)}
+          onConfirm={() => {
+            setShowBuilderModal(false);
+            // Reset portfolio state
+            setPortfolio([]);
+            setPortfolioType(null);
+            setPortfolioName('');
+            setAssetType('stocks');
+            setSearchTerm('');
+            setSelectedCrypto(null);
+            setScreen('builder');
+          }}
+          secondaryAction={() => {
+            setShowBuilderModal(false);
+            // Reset portfolio state
+            setPortfolio([]);
+            setPortfolioType(null);
+            setPortfolioName('');
+            setAssetType('stocks');
+            setSearchTerm('');
+            setJoinCode('');
+            setScreen('join');
+          }}
+          secondaryText="Join Game"
+          icon={<span style={{ fontSize: '32px' }}>🏗️</span>}
+          iconBgColor="#00d9ff"
+          title="Builder 1v1"
+          subtitle="Build a portfolio and battle 1v1"
+          details={[
+            { label: 'Players', value: '2 players' },
+            { label: 'Assets', value: '7-13 picks' },
+            { label: 'Duration', value: '1 hour' },
+            { label: 'Rewards', value: '+10 XP (win) / +5 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
+          ]}
+          confirmText="Create Game"
+          confirmColor="#00d9ff"
+          tutorialModeType="classic"
+        />
+
+        {/* BaggerBomb Modal (with Create/Join) */}
+        <ConfirmationPopup
+          show={showBaggerBombModal}
+          onClose={() => setShowBaggerBombModal(false)}
+          onConfirm={() => {
+            setShowBaggerBombModal(false);
+            // Navigate to BaggerBomb create flow
+            setScreen('baggerBombBuilder');
+          }}
+          secondaryAction={() => {
+            setShowBaggerBombModal(false);
+            // Navigate to BaggerBomb join flow
+            setJoinBattleType('baggerbomb');
+            setScreen('join');
+          }}
+          secondaryText="Join Game"
+          icon={<span style={{ fontSize: '32px' }}>💣</span>}
+          iconBgColor="#dc2626"
+          title="BaggerBomb"
+          subtitle="Score points with breakout bonuses"
+          details={[
+            { label: 'Players', value: '2 players' },
+            { label: 'Assets', value: '7-13 picks' },
+            { label: 'Duration', value: '1 hour' },
+            { label: 'Rewards', value: '+15 XP (win) / +5 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
+          ]}
+          confirmText="Create Game"
+          confirmColor="#dc2626"
+          hideTutorial
+        />
+
+        {/* Options Arena Modal (with Create/Join) */}
+        <ConfirmationPopup
+          show={showOptionsArenaModal}
+          onClose={() => setShowOptionsArenaModal(false)}
+          onConfirm={() => {
+            setShowOptionsArenaModal(false);
+            setScreen('stonkOptionsArena');
+          }}
+          secondaryAction={() => {
+            setShowOptionsArenaModal(false);
+            // For now, same as create - can be updated when join flow exists
+            setScreen('stonkOptionsArena');
+          }}
+          secondaryText="Join Game"
+          icon={<span style={{ fontSize: '32px' }}>🎯</span>}
+          iconBgColor="#10b981"
+          title="Options Arena"
+          subtitle="Pick strikes & win big"
+          details={[
+            { label: 'Players', value: '2 players' },
+            { label: 'Contracts', value: '3 options' },
+            { label: 'Duration', value: '1-4 weeks' },
+            { label: 'Rewards', value: 'Variable based on performance', highlight: true, highlightColor: '#f59e0b' }
+          ]}
+          confirmText="Create Game"
+          confirmColor="#10b981"
+          hideTutorial
         />
 
         {/* Tutorial Modal */}

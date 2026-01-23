@@ -14,3 +14,4 @@ export { default as TrainingModePanel } from './TrainingModePanel';
 export { default as ActiveBattlesSection } from './ActiveBattlesSection';
 export { default as WeeklyChallengesPanel } from './WeeklyChallengesPanel';
 export { default as GameModeCarousels } from './GameModeCarousels';
+export { default as ThemedGameCard, GAME_THEMES } from './ThemedGameCard';

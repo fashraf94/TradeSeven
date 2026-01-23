@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 
-export default function GameModeToggle({ gameMode, setGameMode, setShowResearchMode, setScreen, colors }) {
+export default function GameModeToggle({ activeTab = 'games', setShowResearchMode, setScreen, colors }) {
   // Hover states for navigation buttons
   const [researchHover, setResearchHover] = useState(false);
   const [earningsHover, setEarningsHover] = useState(false);
+
+  // Games tab is always "active" when on dashboard (it's the default view)
+  const isGamesActive = activeTab === 'games';
 
   return (
     <div
@@ -24,16 +27,15 @@ export default function GameModeToggle({ gameMode, setGameMode, setShowResearchM
         overflowX: 'auto',
         WebkitOverflowScrolling: 'touch'
       }}>
-        {/* Snake Draft 4P - Toggle button */}
+        {/* Games - Active tab (shows carousels) */}
         <button
-          id="tour-snake-draft-btn"
-          onClick={() => setGameMode('draft')}
+          id="tour-games-btn"
           style={{
-            padding: '8px 14px',
+            padding: '8px 18px',
             borderRadius: '10px',
-            border: gameMode === 'draft' ? '2px solid #10b981' : '2px solid #21262d',
-            background: gameMode === 'draft' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
-            color: gameMode === 'draft' ? '#10b981' : '#8b949e',
+            border: isGamesActive ? '2px solid #00ffff' : '2px solid #21262d',
+            background: isGamesActive ? 'rgba(0, 255, 255, 0.1)' : 'transparent',
+            color: isGamesActive ? '#00ffff' : '#8b949e',
             fontSize: '14px',
             fontWeight: '600',
             cursor: 'pointer',
@@ -42,27 +44,7 @@ export default function GameModeToggle({ gameMode, setGameMode, setShowResearchM
             flexShrink: 0
           }}
         >
-          Snake Draft 4P
-        </button>
-        {/* Builder 1v1 - Toggle button */}
-        <button
-          id="tour-builder-btn"
-          onClick={() => setGameMode('classic')}
-          style={{
-            padding: '8px 14px',
-            borderRadius: '10px',
-            border: gameMode === 'classic' ? '2px solid #00d9ff' : '2px solid #21262d',
-            background: gameMode === 'classic' ? 'rgba(0, 217, 255, 0.1)' : 'transparent',
-            color: gameMode === 'classic' ? '#00d9ff' : '#8b949e',
-            fontSize: '14px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            whiteSpace: 'nowrap',
-            flexShrink: 0
-          }}
-        >
-          Builder 1v1
+          Games
         </button>
         {/* Research - Navigation button */}
         <button
@@ -71,7 +53,7 @@ export default function GameModeToggle({ gameMode, setGameMode, setShowResearchM
           onMouseEnter={() => setResearchHover(true)}
           onMouseLeave={() => setResearchHover(false)}
           style={{
-            padding: '8px 14px',
+            padding: '8px 18px',
             borderRadius: '10px',
             border: '1px solid rgba(0, 217, 255, 0.4)',
             background: 'rgba(0, 217, 255, 0.08)',
@@ -94,7 +76,7 @@ export default function GameModeToggle({ gameMode, setGameMode, setShowResearchM
           onMouseEnter={() => setEarningsHover(true)}
           onMouseLeave={() => setEarningsHover(false)}
           style={{
-            padding: '8px 14px',
+            padding: '8px 18px',
             borderRadius: '10px',
             border: '1px solid rgba(245, 158, 11, 0.4)',
             background: 'rgba(245, 158, 11, 0.08)',
