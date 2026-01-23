@@ -32,4 +32,3 @@ export { default as EarningsGameScreen } from './EarningsGameScreen';
 
 // Screen exports - Batch 7
 export { default as BuilderScreen } from './BuilderScreen';
-export { default as DashboardScreen } from './DashboardScreen';
