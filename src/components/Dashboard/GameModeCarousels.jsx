@@ -1,8 +1,9 @@
 // /src/components/Dashboard/GameModeCarousels.jsx
 // Horizontal scroll carousels for game modes - EARN COINS and COMPETE sections
 // Major consolidation: unified carousel view with themed cards
+// Features: Infinite/endless carousel with seamless looping
 
-import React from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { Zap, Swords } from 'lucide-react';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import ThemedGameCard from './ThemedGameCard';
@@ -17,6 +18,65 @@ const carouselContainerStyle = {
   scrollbarWidth: 'none',        // Firefox
   msOverflowStyle: 'none',       // IE/Edge
   WebkitOverflowScrolling: 'touch', // Smooth iOS scroll
+};
+
+// Infinite Carousel component with seamless looping
+const InfiniteCarousel = ({ items, renderCard }) => {
+  const carouselRef = useRef(null);
+  const isScrollingRef = useRef(false);
+
+  // Duplicate items 3x for seamless infinite loop
+  const triplicatedItems = [...items, ...items, ...items];
+
+  // Initialize scroll position to middle set
+  useEffect(() => {
+    if (carouselRef.current) {
+      const container = carouselRef.current;
+      // Small delay to ensure layout is complete
+      requestAnimationFrame(() => {
+        const singleSetWidth = container.scrollWidth / 3;
+        container.scrollLeft = singleSetWidth;
+      });
+    }
+  }, [items.length]);
+
+  // Handle scroll for infinite loop effect
+  const handleScroll = useCallback((e) => {
+    if (isScrollingRef.current) return;
+
+    const container = e.target;
+    const singleSetWidth = container.scrollWidth / 3;
+    const scrollLeft = container.scrollLeft;
+    const threshold = 50; // Buffer zone for smoother transitions
+
+    // If scrolled near the end (3rd set), jump back to middle (2nd set)
+    if (scrollLeft >= singleSetWidth * 2 - threshold) {
+      isScrollingRef.current = true;
+      container.scrollLeft = singleSetWidth + (scrollLeft - singleSetWidth * 2);
+      requestAnimationFrame(() => {
+        isScrollingRef.current = false;
+      });
+    }
+    // If scrolled near the beginning (before 1st set), jump to middle (2nd set)
+    else if (scrollLeft <= threshold) {
+      isScrollingRef.current = true;
+      container.scrollLeft = singleSetWidth + scrollLeft;
+      requestAnimationFrame(() => {
+        isScrollingRef.current = false;
+      });
+    }
+  }, []);
+
+  return (
+    <div
+      ref={carouselRef}
+      onScroll={handleScroll}
+      className="carousel-scroll"
+      style={carouselContainerStyle}
+    >
+      {triplicatedItems.map((item, index) => renderCard(item, index))}
+    </div>
+  );
 };
 
 // Section header style - prominent gradient text with italic styling
@@ -179,24 +239,22 @@ export default function GameModeCarousels({
           </span>
         </div>
 
-        {/* Carousel */}
-        <div
-          className="carousel-scroll"
-          style={carouselContainerStyle}
-        >
-          {earnCoinsCards.map((card, index) => (
+        {/* Infinite Carousel */}
+        <InfiniteCarousel
+          items={earnCoinsCards}
+          renderCard={(card, index) => (
             <ThemedGameCard
-              key={card.id}
+              key={`${card.id}-${index}`}
               theme={card.theme}
               title={card.title}
               description={card.description}
               duration={card.duration}
               onClick={card.onClick}
-              index={index}
+              index={index % earnCoinsCards.length}
               isTraining={card.isTraining}
             />
-          ))}
-        </div>
+          )}
+        />
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════
@@ -214,24 +272,22 @@ export default function GameModeCarousels({
           </span>
         </div>
 
-        {/* Carousel */}
-        <div
-          className="carousel-scroll"
-          style={carouselContainerStyle}
-        >
-          {competeCards.map((card, index) => (
+        {/* Infinite Carousel */}
+        <InfiniteCarousel
+          items={competeCards}
+          renderCard={(card, index) => (
             <ThemedGameCard
-              key={card.id}
+              key={`${card.id}-${index}`}
               theme={card.theme}
               title={card.title}
               description={card.description}
               duration={card.duration}
               onClick={card.onClick}
-              index={index}
+              index={index % competeCards.length}
               isTraining={card.isTraining}
             />
-          ))}
-        </div>
+          )}
+        />
       </div>
     </>
   );
