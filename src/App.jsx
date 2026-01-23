@@ -15863,25 +15863,27 @@ export default function PortfolioDuel() {
             flexDirection: 'column',
             gap: '12px'
           }}>
-            {/* Primary buttons row */}
+            {/* Primary buttons row - Join Game + Create Game when secondary exists */}
             <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                onClick={onClose}
-                style={{
-                  flex: 1,
-                  padding: '14px',
-                  borderRadius: '12px',
-                  border: '1px solid #21262d',
-                  background: 'transparent',
-                  color: '#8b949e',
-                  fontSize: '15px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                {cancelText || 'Cancel'}
-              </button>
+              {secondaryAction && secondaryText && (
+                <button
+                  onClick={secondaryAction}
+                  style={{
+                    flex: 1,
+                    padding: '14px',
+                    borderRadius: '12px',
+                    border: `1px solid ${secondaryColor || confirmColor || '#21262d'}`,
+                    background: 'transparent',
+                    color: secondaryColor || confirmColor || '#8b949e',
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  {secondaryText}
+                </button>
+              )}
               <button
                 onClick={onConfirm}
                 style={{
@@ -15902,26 +15904,24 @@ export default function PortfolioDuel() {
               </button>
             </div>
 
-            {/* Secondary Action Button (e.g., Join Game) */}
-            {secondaryAction && secondaryText && (
-              <button
-                onClick={secondaryAction}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  borderRadius: '12px',
-                  border: `1px solid ${secondaryColor || confirmColor || '#21262d'}`,
-                  background: 'transparent',
-                  color: secondaryColor || confirmColor || '#8b949e',
-                  fontSize: '15px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                {secondaryText}
-              </button>
-            )}
+            {/* Cancel button - full width below */}
+            <button
+              onClick={onClose}
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: '12px',
+                border: '1px solid #21262d',
+                background: 'transparent',
+                color: '#8b949e',
+                fontSize: '15px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              {cancelText || 'Cancel'}
+            </button>
           </div>
 
           {/* Tutorial Button - only show if tutorialModeType provided and not hidden */}
