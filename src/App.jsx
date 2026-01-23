@@ -75,7 +75,7 @@ import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, BattleActionCards, TrainingModePanel, ActiveBattlesSection, WeeklyChallengesPanel } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, BattleActionCards, TrainingModePanel, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -19333,80 +19333,13 @@ export default function PortfolioDuel() {
             />
 
 
-            {/* ═══════════════════════════════════════════════════════════════
-                EARN COINS SECTION - Low-risk ways to build balance
-                ═══════════════════════════════════════════════════════════════ */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              margin: '0 16px 16px',
-              paddingBottom: '12px',
-              borderBottom: `1px solid ${colors.borderSubtle}`
-            }}>
-              <Zap style={{ height: '16px', width: '16px', color: colors.gold }} />
-              <span style={{
-                fontSize: '12px',
-                fontWeight: '600',
-                color: colors.textMuted,
-                textTransform: 'uppercase',
-                letterSpacing: '1.5px'
-              }}>
-                Earn Coins
-              </span>
-              <span style={{
-                fontSize: '11px',
-                color: colors.textMuted,
-                fontWeight: '400'
-              }}>
-                — Low-risk ways to build your balance
-              </span>
-            </div>
-
-            {/* Training Mode Panel - Extracted Component */}
-            <TrainingModePanel
+            {/* Game Mode Carousels - EARN COINS and COMPETE sections */}
+            <GameModeCarousels
               gameMode={gameMode}
               colors={colors}
               setTrainingConfirmType={setTrainingConfirmType}
               setShowTrainingConfirmModal={setShowTrainingConfirmModal}
               setShowClassicTrainingConfirm={setShowClassicTrainingConfirm}
-            />
-
-            {/* ═══════════════════════════════════════════════════════════════
-                COMPETE SECTION - Primary game modes
-                ═══════════════════════════════════════════════════════════════ */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              margin: '24px 16px 16px',
-              paddingBottom: '12px',
-              borderBottom: `1px solid ${colors.borderSubtle}`
-            }}>
-              <Swords style={{ height: '16px', width: '16px', color: colors.cyan }} />
-              <span style={{
-                fontSize: '12px',
-                fontWeight: '600',
-                color: colors.textMuted,
-                textTransform: 'uppercase',
-                letterSpacing: '1.5px'
-              }}>
-                Compete
-              </span>
-              <span style={{
-                fontSize: '11px',
-                color: colors.textMuted,
-                fontWeight: '400'
-              }}>
-                — Challenge friends or rivals
-              </span>
-            </div>
-
-            {/* Battle Action Cards - Extracted Component */}
-            <BattleActionCards
-              gameMode={gameMode}
-              hasActiveBattle={hasActiveBattle}
-              colors={colors}
               setPortfolio={setPortfolio}
               setPortfolioType={setPortfolioType}
               setPortfolioName={setPortfolioName}
@@ -19418,91 +19351,8 @@ export default function PortfolioDuel() {
               setShowCreateBattleConfirm={setShowCreateBattleConfirm}
               setShowJoinDraftConfirm={setShowJoinDraftConfirm}
               setShowJoinBattleConfirm={setShowJoinBattleConfirm}
+              setScreen={setScreen}
             />
-
-            {/* Stonk Options Button */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.38 }}
-              onClick={() => setScreen('stonkOptionsArena')}
-              style={{
-                margin: '16px 16px 0',
-                padding: '16px 20px',
-                borderRadius: '14px',
-                cursor: 'pointer',
-                position: 'relative',
-                overflow: 'hidden',
-                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(6, 182, 212, 0.1) 100%)',
-                border: '1px solid rgba(16, 185, 129, 0.4)',
-                transition: 'all 0.3s ease'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = '#10b981';
-                e.currentTarget.style.boxShadow = '0 0 25px rgba(16, 185, 129, 0.3)';
-                e.currentTarget.style.transform = 'translateY(-2px)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-                e.currentTarget.style.boxShadow = 'none';
-                e.currentTarget.style.transform = 'translateY(0)';
-              }}
-            >
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                  <div style={{
-                    width: '48px',
-                    height: '48px',
-                    borderRadius: '12px',
-                    background: 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 4px 15px rgba(16, 185, 129, 0.4)'
-                  }}>
-                    <TrendingUp size={24} color="#fff" />
-                  </div>
-                  <div>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      marginBottom: '4px'
-                    }}>
-                      <span style={{
-                        fontSize: '17px',
-                        fontWeight: '700',
-                        color: '#fff'
-                      }}>
-                        Stonk Options
-                      </span>
-                      <span style={{
-                        padding: '2px 8px',
-                        background: 'linear-gradient(135deg, #f59e0b, #ef4444)',
-                        borderRadius: '4px',
-                        fontSize: '9px',
-                        fontWeight: '700',
-                        color: '#fff',
-                        textTransform: 'uppercase'
-                      }}>
-                        NEW
-                      </span>
-                    </div>
-                    <span style={{
-                      fontSize: '13px',
-                      color: '#9ca3af'
-                    }}>
-                      Binary options trading game • Pick strikes & win big
-                    </span>
-                  </div>
-                </div>
-                <ArrowRight size={20} color="#10b981" />
-              </div>
-            </motion.div>
 
             {/* Weekly Challenges Panel - Extracted Component */}
             <WeeklyChallengesPanel
