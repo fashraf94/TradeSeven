@@ -4,6 +4,7 @@
 import { motion } from 'framer-motion';
 import { Swords, GraduationCap, User, Target, Clock, Copy } from 'lucide-react';
 import { getUsername } from '../../utils/battleHelpers';
+import { HOLO_COLORS } from '../../constants/holoTheme';
 
 const ActiveBattlesSection = ({
   activeBattles,
@@ -243,8 +244,8 @@ const ActiveBattlesSection = ({
                     height: '100%',
                     borderRadius: '9999px',
                     background: previewData.isWinning
-                      ? 'linear-gradient(90deg, #4ADE80 0%, #10B981 100%)'
-                      : 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)'
+                      ? `linear-gradient(90deg, #4ADE80 0%, ${HOLO_COLORS.defensive} 100%)`
+                      : `linear-gradient(90deg, ${HOLO_COLORS.ratingSell} 0%, #DC2626 100%)`
                   }}
                 />
               </div>
@@ -293,7 +294,7 @@ const ActiveBattlesSection = ({
       {activeDraftBattles.length > 0 && (
         <div style={{ marginBottom: '24px' }}>
           <h3 style={{
-            color: '#10b981',
+            color: HOLO_COLORS.defensive,
             fontSize: '16px',
             fontWeight: 'bold',
             marginBottom: '12px',
@@ -339,8 +340,8 @@ const ActiveBattlesSection = ({
                   setScreen('draftBattle');
                 }}
                 style={{
-                  background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%)',
-                  border: '2px solid #10b981',
+                  background: `linear-gradient(135deg, ${HOLO_COLORS.defensive}1a 0%, ${HOLO_COLORS.defensive}0d 100%)`,
+                  border: `2px solid ${HOLO_COLORS.defensive}`,
                   borderRadius: '16px',
                   padding: '16px',
                   marginBottom: '12px',
@@ -359,14 +360,14 @@ const ActiveBattlesSection = ({
                     <span style={{ fontSize: '24px' }}>🐍</span>
                     <div>
                       <div style={{
-                        color: '#10b981',
+                        color: HOLO_COLORS.defensive,
                         fontWeight: 'bold',
                         fontSize: '16px'
                       }}>
                         {battle.code || 'Draft Battle'}
                       </div>
                       <div style={{
-                        color: '#8b949e',
+                        color: HOLO_COLORS.textSecondary,
                         fontSize: '12px'
                       }}>
                         {battle.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'} • {playerCount} Players
@@ -376,10 +377,10 @@ const ActiveBattlesSection = ({
 
                   {/* Time Remaining Badge */}
                   <div style={{
-                    background: 'rgba(16, 185, 129, 0.2)',
+                    background: `${HOLO_COLORS.defensive}33`,
                     padding: '6px 12px',
                     borderRadius: '8px',
-                    color: '#10b981',
+                    color: HOLO_COLORS.defensive,
                     fontSize: '12px',
                     fontWeight: 'bold'
                   }}>
@@ -400,12 +401,12 @@ const ActiveBattlesSection = ({
                       <div
                         key={idx}
                         style={{
-                          background: isMe ? 'rgba(0, 217, 255, 0.2)' : '#21262d',
-                          border: isMe ? '1px solid #00d9ff' : '1px solid #30363d',
+                          background: isMe ? `${HOLO_COLORS.ratingBuy}33` : HOLO_COLORS.borderSubtle,
+                          border: isMe ? `1px solid ${HOLO_COLORS.ratingBuy}` : '1px solid #30363d',
                           borderRadius: '6px',
                           padding: '4px 10px',
                           fontSize: '12px',
-                          color: isMe ? '#00d9ff' : '#8b949e',
+                          color: isMe ? HOLO_COLORS.ratingBuy : HOLO_COLORS.textSecondary,
                           display: 'flex',
                           alignItems: 'center',
                           gap: '4px'
@@ -425,13 +426,13 @@ const ActiveBattlesSection = ({
                   justifyContent: 'space-between'
                 }}>
                   <div style={{
-                    color: '#6e7681',
+                    color: HOLO_COLORS.textMuted,
                     fontSize: '11px'
                   }}>
                     {humanCount} human{humanCount !== 1 ? 's' : ''} • {cpuCount} CPU{cpuCount !== 1 ? 's' : ''}
                   </div>
                   <div style={{
-                    color: '#10b981',
+                    color: HOLO_COLORS.defensive,
                     fontWeight: 'bold',
                     fontSize: '14px',
                     display: 'flex',
@@ -459,6 +460,7 @@ const ActiveBattlesSection = ({
             alignItems: 'center',
             gap: '8px'
           }}>
+            {/* Note: #a855f7 is a distinct purple not in tokens, keeping as-is */}
             <span style={{ fontSize: '20px' }}>🤖</span> Training Battles
           </h3>
 
@@ -578,7 +580,7 @@ const ActiveBattlesSection = ({
                         {battle.player1?.portfolioName || 'Training Battle'}
                       </div>
                       <div style={{
-                        color: '#8b949e',
+                        color: HOLO_COLORS.textSecondary,
                         fontSize: '12px'
                       }}>
                         vs CPU Opponent • {battle.player1?.portfolioType === 'crypto' ? '🪙 Crypto' : '📈 Stocks'}
@@ -612,16 +614,16 @@ const ActiveBattlesSection = ({
                     gap: '12px'
                   }}>
                     <div style={{
-                      background: isWinning ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                      background: isWinning ? `${HOLO_COLORS.sectorFinancials}26` : `${HOLO_COLORS.ratingSell}26`,
                       padding: '6px 12px',
                       borderRadius: '8px',
-                      color: isWinning ? '#22c55e' : '#ef4444',
+                      color: isWinning ? HOLO_COLORS.sectorFinancials : HOLO_COLORS.ratingSell,
                       fontSize: '14px',
                       fontWeight: 'bold'
                     }}>
                       {myGain >= 0 ? '+' : ''}{myGain.toFixed(2)}%
                     </div>
-                    <span style={{ color: '#6e7681', fontSize: '12px' }}>
+                    <span style={{ color: HOLO_COLORS.textMuted, fontSize: '12px' }}>
                       {isWinning ? 'Leading' : myGain === cpuGain ? 'Tied' : 'Behind'}
                     </span>
                   </div>

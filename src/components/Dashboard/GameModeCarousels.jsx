@@ -243,8 +243,8 @@ export default function GameModeCarousels({
       <div style={{ marginBottom: '24px' }}>
         {/* Section Header - Purple gradient */}
         <div style={sectionHeaderStyle}>
-          <Zap size={18} color="#8b5cf6" />
-          <span style={getSectionTitleStyle('#8b5cf6', '#a78bfa')}>
+          <Zap size={18} color={HOLO_COLORS.purple} />
+          <span style={getSectionTitleStyle(HOLO_COLORS.purple, '#a78bfa')}>
             EARN COINS
           </span>
           <span style={sectionSubtitleStyle}>
@@ -276,8 +276,8 @@ export default function GameModeCarousels({
       <div style={{ marginBottom: '24px' }}>
         {/* Section Header - Green gradient */}
         <div style={sectionHeaderStyle}>
-          <Swords size={18} color="#10b981" />
-          <span style={getSectionTitleStyle('#10b981', '#34d399')}>
+          <Swords size={18} color={HOLO_COLORS.defensive} />
+          <span style={getSectionTitleStyle(HOLO_COLORS.defensive, '#34d399')}>
             COMPETE
           </span>
           <span style={sectionSubtitleStyle}>
