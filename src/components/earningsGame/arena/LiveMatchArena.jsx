@@ -56,15 +56,22 @@ export default function LiveMatchArena({
               flexDirection: 'column',
               gap: '16px',
             }}>
-              {predictions.map((prediction, index) => (
-                <MagnitudeGaugeCard
-                  key={prediction.eventId}
-                  prediction={prediction}
-                  actualMove={resultsData[prediction.eventId]?.actualMove}
-                  outcomeCorrect={resultsData[prediction.eventId]?.outcomeCorrect}
-                  index={index}
-                />
-              ))}
+              {predictions.map((prediction, index) => {
+                // Use resultsData if available, otherwise fall back to prediction's own resolved data
+                const result = resultsData[prediction.eventId] || {};
+                const actualMove = result.actualMove ?? prediction.actualMove ?? null;
+                const outcomeCorrect = result.outcomeCorrect ?? prediction.outcomeCorrect ?? null;
+
+                return (
+                  <MagnitudeGaugeCard
+                    key={prediction.eventId}
+                    prediction={prediction}
+                    actualMove={actualMove}
+                    outcomeCorrect={outcomeCorrect}
+                    index={index}
+                  />
+                );
+              })}
             </div>
           </div>
 
@@ -147,15 +154,22 @@ export default function LiveMatchArena({
       <PositionBanner {...userPosition} totalPlayers={tournament?.participantCount} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '0 16px' }}>
-        {predictions.map((prediction, index) => (
-          <MagnitudeGaugeCard
-            key={prediction.eventId}
-            prediction={prediction}
-            actualMove={resultsData[prediction.eventId]?.actualMove}
-            outcomeCorrect={resultsData[prediction.eventId]?.outcomeCorrect}
-            index={index}
-          />
-        ))}
+        {predictions.map((prediction, index) => {
+          // Use resultsData if available, otherwise fall back to prediction's own resolved data
+          const result = resultsData[prediction.eventId] || {};
+          const actualMove = result.actualMove ?? prediction.actualMove ?? null;
+          const outcomeCorrect = result.outcomeCorrect ?? prediction.outcomeCorrect ?? null;
+
+          return (
+            <MagnitudeGaugeCard
+              key={prediction.eventId}
+              prediction={prediction}
+              actualMove={actualMove}
+              outcomeCorrect={outcomeCorrect}
+              index={index}
+            />
+          );
+        })}
       </div>
 
       <div style={{

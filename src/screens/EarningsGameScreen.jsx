@@ -130,21 +130,6 @@ const EarningsGameScreen = ({
     }));
   }, [tournamentLeaderboard]);
 
-  // Mock results data - simulates completed predictions
-  const mockResultsData = useMemo(() => {
-    const results = {};
-    predictions.forEach((pred, index) => {
-      // Simulate some wins and losses for demo
-      const isCorrect = index % 3 !== 2; // 2/3 correct rate
-      results[pred.eventId] = {
-        isCorrect,
-        pointsEarned: isCorrect ? pred.potentialPoints : 0,
-        actualMove: isCorrect ? 3.5 : -1.2,
-        outcomeCorrect: isCorrect,
-      };
-    });
-    return results;
-  }, [predictions]);
 
   // Load earnings data
   console.log('[EarningsGame] Registering useEffect for data load...');
@@ -1038,7 +1023,7 @@ const EarningsGameScreen = ({
         <LiveMatchArena
           predictions={arenaPredictions}
           userPosition={userPosition}
-          resultsData={mockResultsData}
+          resultsData={{}}
           onBack={() => setView('portfolio')}
           onViewLeaderboard={() => setShowLeaderboard(true)}
           leaderboard={isDesktop ? leaderboardData : null}
@@ -1080,7 +1065,7 @@ const EarningsGameScreen = ({
         <NavigationTabs />
         <TournamentResults
           predictions={resultsPredictions}
-          resultsData={mockResultsData}
+          resultsData={{}}
           userPosition={userPosition}
           tournament={{
             week: tournamentInfo.week,
