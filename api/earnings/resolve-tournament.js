@@ -527,6 +527,24 @@ export default async function handler(req, res) {
           const key = `${pred.symbol}_${date}`;
           const result = resultsMap.get(key);
 
+          // Enhanced logging for bot predictions to diagnose 0 pts issue
+          if (isBot) {
+            const rawDateType = typeof rawDate;
+            const rawDateStr = rawDate && typeof rawDate === 'object'
+              ? (rawDate.toDate ? 'FirestoreTimestamp' : (rawDate.seconds ? 'TimestampLike' : JSON.stringify(rawDate)))
+              : String(rawDate);
+            logInfo('BOT_PREDICTION', `${entry.username} | ${pred.symbol}`, {
+              rawDate: rawDateStr,
+              rawDateType,
+              normalizedDate: date,
+              lookupKey: key,
+              resultFound: !!result,
+              predicted: `${pred.outcome}/${pred.magnitude}`,
+              actual: result ? `${result.outcome}/${result.magnitude}` : 'N/A',
+              potentialPayout: pred.potentialPayout || pred.potentialPoints || 0
+            });
+          }
+
           if (!result) {
             // Result not available yet
             pendingCount++;
@@ -547,6 +565,16 @@ export default async function handler(req, res) {
           if (scored.isCorrect) correctCount++;
           else incorrectCount++;
           results.predictionsResolved++;
+
+          // Log bot prediction scoring details
+          if (isBot) {
+            logInfo('BOT_SCORE', `${entry.username} | ${pred.symbol} | ${scored.isCorrect ? 'CORRECT' : 'WRONG'} | earned=${scored.pointsEarned}`, {
+              predicted: `${pred.outcome}/${pred.magnitude}`,
+              actual: `${scored.actualOutcome}/${scored.actualMagnitude}`,
+              outcomeCorrect: scored.outcomeCorrect,
+              magnitudeCorrect: scored.magnitudeCorrect
+            });
+          }
 
           return scored;
         });

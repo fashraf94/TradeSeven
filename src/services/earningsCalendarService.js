@@ -414,9 +414,10 @@ export async function getHybridEarningsCalendar(days = 14) {
       // Use lookup table for company name, fallback to EODHD name or symbol
       const companyName = COMPANY_NAMES[symbolUpper] || event.companyName || symbolUpper;
 
-      // Parse date as LOCAL date to avoid timezone issues
-      const [year, month, day] = event.reportDate.split('-').map(Number);
-      const localDate = new Date(year, month - 1, day);
+      // Keep reportDate as YYYY-MM-DD string to avoid timezone conversion issues
+      // When Date objects are converted to ISO strings (e.g., in Firebase storage),
+      // the date can shift due to timezone differences (UTC vs local)
+      const reportDateStr = event.reportDate.split('T')[0]; // Ensure YYYY-MM-DD format
 
       // Extract historical and momentum info for display
       const historicalRate = breakdown?.historical?.rate;
@@ -429,7 +430,7 @@ export async function getHybridEarningsCalendar(days = 14) {
         id: `eodhd_${symbolUpper}_${event.reportDate}`,
         symbol: symbolUpper,
         companyName: companyName,
-        reportDate: localDate,
+        reportDate: reportDateStr, // Keep as string to avoid timezone issues
         reportTime: event.reportTime || 'TBD',
         beatOdds: beatOdds,
         missOdds: 1 - beatOdds,
