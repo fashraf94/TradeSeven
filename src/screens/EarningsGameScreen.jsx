@@ -924,6 +924,118 @@ const EarningsGameScreen = ({
               🔧 Fix ALL Tournament Bots (Admin)
             </button>
           )}
+
+          {/* Testing: Populate bots with HISTORICAL dates (for testing old tournaments) */}
+          {tournament && (
+            <button
+              onClick={async () => {
+                // Get tournament date range
+                const weekStart = tournament.weekStart;
+                const weekEnd = tournament.weekEnd;
+
+                if (!weekStart || !weekEnd) {
+                  alert('Tournament is missing weekStart/weekEnd dates. Cannot filter events.');
+                  return;
+                }
+
+                if (!confirm(`🧪 TESTING MODE\n\nThis will create bots using ONLY earnings events from:\n${weekStart} to ${weekEnd}\n\nThis is for testing old tournaments. Continue?`)) {
+                  return;
+                }
+
+                try {
+                  const botService = await import('../services/earningsBotService');
+                  const fb = await import('../firebase/firebaseService');
+                  const { enhanceEventWithParlays } = await import('../services/earningsReactionsService');
+                  const { getHybridEarningsCalendar } = await import('../services/earningsCalendarService');
+
+                  // Clear existing bots first
+                  console.log('Clearing existing bot entries...');
+                  const deletedCount = await fb.clearBotEntries(tournament.id);
+                  console.log(`Deleted ${deletedCount} existing bot entries`);
+
+                  // Fetch a larger calendar to include historical dates
+                  console.log('Fetching extended earnings calendar...');
+                  const allEvents = await getHybridEarningsCalendar(60); // 60 days to include past events
+                  console.log(`Fetched ${allEvents?.length || 0} total events`);
+
+                  // Filter events to ONLY those within tournament date range
+                  const filteredEvents = (allEvents || []).filter(event => {
+                    const eventDate = typeof event.reportDate === 'string'
+                      ? event.reportDate.split('T')[0]
+                      : event.reportDate?.toISOString?.()?.split('T')[0];
+
+                    if (!eventDate) return false;
+                    return eventDate >= weekStart && eventDate <= weekEnd;
+                  });
+
+                  console.log(`Filtered to ${filteredEvents.length} events within ${weekStart} to ${weekEnd}`);
+                  console.log('Filtered events:', filteredEvents.map(e => `${e.symbol} (${e.reportDate})`));
+
+                  if (filteredEvents.length === 0) {
+                    alert(`No earnings events found between ${weekStart} and ${weekEnd}.\n\nThe calendar may not have historical data for that period.`);
+                    return;
+                  }
+
+                  // Generate parlays for filtered events
+                  const parlaysByEvent = {};
+                  for (const event of filteredEvents) {
+                    try {
+                      const enhanced = enhanceEventWithParlays(event);
+                      parlaysByEvent[event.symbol] = enhanced.parlays || [];
+                    } catch (e) {
+                      console.warn(`Could not generate parlays for ${event.symbol}:`, e);
+                    }
+                  }
+
+                  console.log('Generated parlays for', Object.keys(parlaysByEvent).length, 'events');
+
+                  // Generate bot entries using ONLY filtered events
+                  const botEntries = botService.generateBotEntries(
+                    filteredEvents,
+                    parlaysByEvent,
+                    12
+                  );
+
+                  console.log('Generated bot entries:', botEntries);
+
+                  if (botEntries.length === 0) {
+                    alert('Could not generate bot entries. Events may not have valid parlays.');
+                    return;
+                  }
+
+                  // Verify bot predictions have correct dates
+                  const samplePred = botEntries[0]?.predictions?.[0];
+                  console.log('Sample bot prediction:', samplePred);
+                  console.log('Sample reportDate:', samplePred?.reportDate);
+
+                  // Save to Firebase
+                  const results = await fb.createBotTournamentEntries(tournament.id, botEntries);
+                  console.log('Bot creation results:', results);
+
+                  // Refresh leaderboard
+                  await refreshLeaderboard();
+
+                  alert(`🧪 Testing bots created!\n\n- Deleted ${deletedCount} old bots\n- Created ${results.filter(r => r.success).length} new bots\n- Using ${filteredEvents.length} events from ${weekStart} to ${weekEnd}`);
+                } catch (error) {
+                  console.error('Error creating historical bots:', error);
+                  alert('Error creating historical bots: ' + error.message);
+                }
+              }}
+              style={{
+                padding: '12px 24px',
+                background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#ffffff',
+                fontWeight: '600',
+                cursor: 'pointer',
+                marginTop: '8px',
+                width: '100%'
+              }}
+            >
+              🧪 Populate Bots (Historical - Testing Only)
+            </button>
+          )}
         </div>
 
         {/* Player Portfolio Modal */}
