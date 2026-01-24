@@ -773,10 +773,17 @@ const EarningsGameScreen = ({
                   const fb = await import('../firebase/firebaseService');
                   const { enhanceEventWithParlays } = await import('../services/earningsReactionsService');
 
+                  // FIRST: Clear existing bot entries to avoid duplicates
+                  console.log('Clearing existing bot entries...');
+                  const deletedCount = await fb.clearBotEntries(tournament.id);
+                  console.log(`Deleted ${deletedCount} existing bot entries`);
+
                   // Generate parlays for each event
                   const parlaysByEvent = {};
                   for (const event of events.slice(0, 20)) { // Limit to first 20 events
                     try {
+                      // Debug: Log the event's reportDate to check format
+                      console.log(`Event ${event.symbol} reportDate:`, event.reportDate, typeof event.reportDate);
                       const enhanced = enhanceEventWithParlays(event);
                       parlaysByEvent[event.symbol] = enhanced.parlays || [];
                     } catch (e) {
@@ -794,6 +801,10 @@ const EarningsGameScreen = ({
                   );
 
                   console.log('Generated bot entries:', botEntries);
+                  // Debug: Log first bot's first prediction to check date format
+                  if (botEntries[0]?.predictions?.[0]) {
+                    console.log('First bot prediction reportDate:', botEntries[0].predictions[0].reportDate);
+                  }
 
                   if (botEntries.length === 0) {
                     alert('Could not generate bot entries. Make sure there are events with parlays.');
@@ -807,7 +818,7 @@ const EarningsGameScreen = ({
                   // Refresh leaderboard
                   await refreshLeaderboard();
 
-                  alert(`Created ${results.filter(r => r.success).length} bot entries!`);
+                  alert(`Cleared ${deletedCount} old bots, created ${results.filter(r => r.success).length} new bot entries!`);
                 } catch (error) {
                   console.error('Error creating bots:', error);
                   alert('Error creating bots: ' + error.message);
