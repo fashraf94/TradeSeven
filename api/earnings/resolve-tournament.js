@@ -1,11 +1,37 @@
 // api/earnings/resolve-tournament.js
 // Triggers resolution for earnings tournaments
-// Called by Vercel cron daily at 6 PM ET, or manually for testing
+// Called by Vercel cron at multiple times daily:
+//   - 23:00 UTC (6 PM ET) - First attempt for pre-market earnings
+//   - 03:00 UTC (10 PM ET) - Retry for after-market announcements
+//   - 14:00 UTC (9 AM ET) - Morning cleanup for overnight data updates
+//
+// Resolution is IDEMPOTENT - safe to run multiple times:
+//   - Already resolved predictions are skipped (unless force=true)
+//   - Already completed tournaments are skipped
+//   - Resolution attempts are tracked for debugging
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getEarningsResult } from './_helpers/getEarningsResult.js';
 import { safeParseDate, toYYYYMMDD } from '../../src/utils/dateUtils.js';
+
+// Structured logging helper with timestamps and consistent prefixes
+const LOG_PREFIX = '[EarningsResolution]';
+
+function log(level, category, message, data = null) {
+  const timestamp = new Date().toISOString();
+  const prefix = `${timestamp} ${LOG_PREFIX} [${category}]`;
+
+  if (data) {
+    console[level](`${prefix} ${message}`, JSON.stringify(data, null, 2));
+  } else {
+    console[level](`${prefix} ${message}`);
+  }
+}
+
+const logInfo = (category, message, data) => log('log', category, message, data);
+const logWarn = (category, message, data) => log('warn', category, message, data);
+const logError = (category, message, data) => log('error', category, message, data);
 
 // Initialize Firebase Admin (server-side)
 function getFirebaseAdmin() {
@@ -128,6 +154,9 @@ function calculateBracket(rank, totalEntries) {
 
 // Main handler
 export default async function handler(req, res) {
+  const startTime = Date.now();
+  const runId = `run_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -151,19 +180,19 @@ export default async function handler(req, res) {
     const isVercelCron = req.headers['x-vercel-cron'] === '1';
     const isTestMode = req.query.testMode === 'true';
     if (!isVercelCron && !isTestMode) {
-      console.warn('Unauthorized resolution attempt');
+      logWarn('AUTH', 'Unauthorized resolution attempt');
       return res.status(401).json({ error: 'Unauthorized' });
     }
     if (isTestMode) {
-      console.log('⚠️ Test mode enabled - auth bypassed');
+      logInfo('AUTH', 'Test mode enabled - auth bypassed');
     }
   }
 
-  console.log('');
-  console.log('========================================');
-  console.log('  TOURNAMENT RESOLUTION STARTED');
-  console.log('  Time:', new Date().toISOString());
-  console.log('========================================');
+  logInfo('START', '========================================');
+  logInfo('START', 'TOURNAMENT RESOLUTION STARTED');
+  logInfo('START', `Run ID: ${runId}`);
+  logInfo('START', `Trigger: ${req.headers['x-vercel-cron'] === '1' ? 'Vercel Cron' : 'Manual'}`);
+  logInfo('START', '========================================');
 
   try {
     const db = getFirebaseAdmin();
@@ -172,7 +201,10 @@ export default async function handler(req, res) {
     const forceResolve = force === 'true';
 
     if (isDryRun) {
-      console.log('*** DRY RUN MODE - No changes will be saved ***');
+      logInfo('CONFIG', '*** DRY RUN MODE - No changes will be saved ***');
+    }
+    if (forceResolve) {
+      logInfo('CONFIG', '*** FORCE MODE - Re-resolving already resolved predictions ***');
     }
 
     // Get tournaments to resolve
@@ -180,9 +212,21 @@ export default async function handler(req, res) {
 
     if (tournamentId) {
       // Specific tournament requested
-      console.log(`Fetching specific tournament: ${tournamentId}`);
+      logInfo('QUERY', `Fetching specific tournament: ${tournamentId}`);
       const doc = await db.collection('earningsTournaments').doc(tournamentId).get();
       if (doc.exists) {
+        const data = doc.data();
+        // Skip if already completed (unless forcing)
+        if (data.status === 'completed' && !forceResolve) {
+          logInfo('SKIP', `Tournament ${tournamentId} already completed - skipping`);
+          return res.status(200).json({
+            success: true,
+            message: 'Tournament already resolved',
+            tournamentId,
+            status: 'completed',
+            completedAt: data.completedAt
+          });
+        }
         tournamentDocs = [doc];
       } else {
         return res.status(404).json({ error: `Tournament ${tournamentId} not found` });
@@ -190,10 +234,13 @@ export default async function handler(req, res) {
     } else {
       // Get all tournaments that need resolution
       // Include 'open' because tournaments may not have been transitioned to 'locked' yet
-      console.log('Fetching tournaments for resolution...');
+      // Explicitly exclude 'completed' to ensure idempotency
+      logInfo('QUERY', 'Fetching tournaments for resolution...');
       const snapshot = await db.collection('earningsTournaments')
         .where('status', 'in', ['open', 'locked', 'in_progress'])
         .get();
+
+      logInfo('QUERY', `Found ${snapshot.docs.length} tournament(s) in open/locked/in_progress status`);
 
       // Filter and auto-transition 'open' tournaments that are past their lock deadline
       const now = new Date();
@@ -202,12 +249,22 @@ export default async function handler(req, res) {
       for (const doc of snapshot.docs) {
         const data = doc.data();
 
+        logInfo('TOURNAMENT', `Checking: ${doc.id}`, {
+          status: data.status,
+          entryCount: data.entryCount,
+          lockDeadline: data.lockDeadline,
+          resolutionAttempts: data.resolutionAttempts || 0
+        });
+
         if (data.status === 'open') {
           // Check if lock deadline has passed
           // Handle both Firestore Timestamps and ISO strings
           const lockDeadline = safeParseDate(data.lockDeadline);
           if (lockDeadline && lockDeadline < now) {
-            console.log(`  Auto-transitioning ${doc.id} from 'open' to 'locked' (deadline: ${lockDeadline.toISOString()})`);
+            logInfo('TRANSITION', `Auto-transitioning ${doc.id} from 'open' to 'locked'`, {
+              deadline: lockDeadline.toISOString(),
+              now: now.toISOString()
+            });
             // Update status to 'locked'
             if (!isDryRun) {
               await db.collection('earningsTournaments').doc(doc.id).update({
@@ -218,7 +275,7 @@ export default async function handler(req, res) {
             tournamentDocs.push(doc);
           } else {
             const deadlineStr = lockDeadline ? lockDeadline.toISOString() : (data.lockDeadline || 'none');
-            console.log(`  Skipping ${doc.id} - still open (deadline: ${deadlineStr})`);
+            logInfo('SKIP', `Skipping ${doc.id} - still open (deadline: ${deadlineStr})`);
           }
         } else {
           // Already locked or in_progress
@@ -227,23 +284,35 @@ export default async function handler(req, res) {
       }
     }
 
-    console.log(`Found ${tournamentDocs.length} tournament(s) to process`);
+    logInfo('QUERY', `Processing ${tournamentDocs.length} tournament(s)`);
 
     if (tournamentDocs.length === 0) {
+      logInfo('COMPLETE', 'No active tournaments to resolve');
       return res.status(200).json({
         success: true,
         message: 'No active tournaments to resolve',
-        tournamentsProcessed: 0
+        tournamentsProcessed: 0,
+        runId
       });
     }
 
-    // Track results
+    // Track results with detailed statistics
     const results = {
+      runId,
       tournamentsProcessed: 0,
+      tournamentsCompleted: 0,
+      tournamentsStillPending: 0,
       entriesProcessed: 0,
       predictionsResolved: 0,
       predictionsAlreadyResolved: 0,
       predictionsPending: 0,
+      predictionsByReason: {
+        success: 0,
+        no_eps_data: 0,
+        date_mismatch: 0,
+        no_price_data: 0,
+        api_error: 0
+      },
       errors: []
     };
 
@@ -254,26 +323,42 @@ export default async function handler(req, res) {
     for (const tournamentDoc of tournamentDocs) {
       const tournament = tournamentDoc.data();
       const tId = tournamentDoc.id;
+      const tournamentStartTime = Date.now();
 
-      console.log('');
-      console.log(`--- Processing Tournament: ${tId} ---`);
-      console.log(`    Name: ${tournament.name || 'Unnamed'}`);
-      console.log(`    Status: ${tournament.status}`);
+      logInfo('TOURNAMENT', '========================================');
+      logInfo('TOURNAMENT', `Processing: ${tId}`);
+      logInfo('TOURNAMENT', `Name: ${tournament.name || 'Unnamed'}`);
+      logInfo('TOURNAMENT', `Status: ${tournament.status}`);
+      logInfo('TOURNAMENT', `Previous resolution attempts: ${tournament.resolutionAttempts || 0}`);
+      if (tournament.lastResolutionAttempt) {
+        logInfo('TOURNAMENT', `Last attempt: ${tournament.lastResolutionAttempt}`);
+      }
+
+      // Track this resolution attempt (update at start)
+      if (!isDryRun) {
+        await db.collection('earningsTournaments').doc(tId).update({
+          resolutionAttempts: FieldValue.increment(1),
+          lastResolutionAttempt: new Date().toISOString(),
+          lastResolutionRunId: runId
+        });
+      }
 
       // Get all entries for this tournament
       const entriesSnapshot = await db.collection('earningsEntries')
         .where('tournamentId', '==', tId)
         .get();
 
-      console.log(`    Entries: ${entriesSnapshot.docs.length}`);
+      logInfo('TOURNAMENT', `Entries: ${entriesSnapshot.docs.length}`);
 
       if (entriesSnapshot.empty) {
-        console.log('    No entries to process');
+        logInfo('TOURNAMENT', 'No entries to process');
         continue;
       }
 
       // Collect all unique symbol/date pairs we need results for
       const symbolDatePairs = new Map();
+      let skippedAlreadyResolved = 0;
+      let skippedBadDate = 0;
 
       entriesSnapshot.docs.forEach(doc => {
         const entry = doc.data();
@@ -281,6 +366,7 @@ export default async function handler(req, res) {
           // Skip already resolved unless forcing
           if (pred.resolved && !forceResolve) {
             results.predictionsAlreadyResolved++;
+            skippedAlreadyResolved++;
             return;
           }
 
@@ -295,7 +381,12 @@ export default async function handler(req, res) {
           const date = toYYYYMMDD(rawDate);
 
           if (!date) {
-            console.warn(`    [WARN] ${symbol}: Could not parse date. rawDate=${JSON.stringify(rawDate)}, type=${rawDateType}, keys=${rawDateKeys.join(',')}`);
+            logWarn('PREDICTION', `${symbol}: Could not parse date`, {
+              rawDate: JSON.stringify(rawDate),
+              type: rawDateType,
+              keys: rawDateKeys
+            });
+            skippedBadDate++;
             return; // Skip this prediction
           }
 
@@ -303,36 +394,70 @@ export default async function handler(req, res) {
 
           if (!symbolDatePairs.has(key)) {
             symbolDatePairs.set(key, { symbol, date, rawDate });
-            console.log(`    [DEBUG] Prediction: ${symbol} | type=${rawDateType} | rawDate=${JSON.stringify(rawDate).substring(0, 50)} | normalized=${date}`);
           }
         });
       });
 
-      console.log(`    Unique earnings events to fetch: ${symbolDatePairs.size}`);
+      logInfo('PREDICTIONS', `Unique earnings events to fetch: ${symbolDatePairs.size}`);
+      logInfo('PREDICTIONS', `Already resolved (skipped): ${skippedAlreadyResolved}`);
+      if (skippedBadDate > 0) {
+        logWarn('PREDICTIONS', `Bad dates (skipped): ${skippedBadDate}`);
+      }
 
       // Fetch all results
       const resultsMap = new Map();
       let fetchCount = 0;
+      const fetchStats = { success: 0, date_mismatch: 0, no_eps_data: 0, no_price_data: 0, api_error: 0 };
+
+      logInfo('FETCH', `Starting to fetch ${symbolDatePairs.size} earnings results from EODHD...`);
 
       for (const [key, { symbol, date, rawDate }] of symbolDatePairs) {
-        console.log(`    [FETCH] ${symbol} | key=${key} | queryDate=${date}`);
+        logInfo('FETCH', `${symbol} | key=${key} | queryDate=${date}`);
         const result = await fetchEarningsResult(symbol, date);
 
         // Determine match status for debug
         let matchStatus = 'unknown';
+        let pendingReason = null;
+
         if (result && result.resolved) {
           resultsMap.set(key, result);
           matchStatus = 'success';
-          console.log(`    ✓ ${symbol}: ${result.outcome} / ${result.magnitude} (${result.priceMove?.toFixed(2)}%) | resultDate=${result.reportDate}`);
+          fetchStats.success++;
+          logInfo('FETCH', `✓ ${symbol}: ${result.outcome} / ${result.magnitude} (${result.priceMove?.toFixed(2)}%)`, {
+            resultDate: result.reportDate,
+            epsActual: result.epsActual,
+            epsEstimate: result.epsEstimate
+          });
         } else if (result && result.availableDates) {
           matchStatus = 'date_mismatch';
-          console.log(`    ✗ ${symbol}: Date mismatch | queried=${date} | available=${result.availableDates.map(d => d.reportDate).join(', ')}`);
+          pendingReason = 'date_mismatch';
+          fetchStats.date_mismatch++;
+          logWarn('FETCH', `✗ ${symbol}: Date mismatch`, {
+            queriedDate: date,
+            availableDates: result.availableDates.map(d => d.reportDate)
+          });
         } else if (result && result.debug?.entriesWithEpsActual === 0) {
-          matchStatus = 'no_data_yet';
-          console.log(`    ✗ ${symbol}: No EPS data yet | response=${JSON.stringify(result || {}).substring(0, 200)}`);
+          matchStatus = 'no_eps_data';
+          pendingReason = 'awaiting_eodhd_eps_data';
+          fetchStats.no_eps_data++;
+          logWarn('FETCH', `✗ ${symbol}: No EPS data yet - EODHD hasn't updated`, {
+            totalHistoryEntries: result.debug?.totalHistoryEntries,
+            pendingEntries: result.debug?.pendingEntries
+          });
+        } else if (result && result.error?.includes('price')) {
+          matchStatus = 'no_price_data';
+          pendingReason = 'awaiting_price_data';
+          fetchStats.no_price_data++;
+          logWarn('FETCH', `✗ ${symbol}: No price data yet`, { error: result.error });
         } else {
-          matchStatus = 'no_result';
-          console.log(`    ✗ ${symbol}: No result | response=${JSON.stringify(result || {}).substring(0, 200)}`);
+          matchStatus = 'api_error';
+          pendingReason = 'api_error';
+          fetchStats.api_error++;
+          logWarn('FETCH', `✗ ${symbol}: No result`, {
+            error: result?.error,
+            success: result?.success,
+            resolved: result?.resolved
+          });
         }
 
         // Collect debug sample (first 10 only)
@@ -352,7 +477,8 @@ export default async function handler(req, res) {
               availableDates: result.availableDates?.slice(0, 3),
               debug: result.debug
             } : null,
-            matchStatus
+            matchStatus,
+            pendingReason
           });
         }
 
@@ -363,11 +489,11 @@ export default async function handler(req, res) {
         }
       }
 
-      console.log(`    Results fetched: ${resultsMap.size} / ${symbolDatePairs.size}`);
+      logInfo('FETCH', `Results fetched: ${resultsMap.size} / ${symbolDatePairs.size}`, fetchStats);
 
       // Debug: Show all keys in resultsMap
       if (resultsMap.size > 0) {
-        console.log(`    [DEBUG] resultsMap keys: ${Array.from(resultsMap.keys()).join(', ')}`);
+        logInfo('FETCH', `resultsMap keys: ${Array.from(resultsMap.keys()).join(', ')}`);
       }
 
       // Score each entry
@@ -401,11 +527,12 @@ export default async function handler(req, res) {
             pendingCount++;
             tournamentPendingCount++;
             results.predictionsPending++;
-            console.log(`    [PENDING] ${pred.symbol} | key=${key} | not in resultsMap`);
+            logInfo('SCORE', `[PENDING] ${pred.symbol} | key=${key} | not in resultsMap - will retry next run`);
             return {
               ...pred,
               resolved: false,
-              status: 'pending'
+              status: 'pending',
+              lastCheckedAt: new Date().toISOString()
             };
           }
 
@@ -440,27 +567,40 @@ export default async function handler(req, res) {
         results.entriesProcessed++;
       }
 
-      // Update tournament status
+      // Update tournament status and resolution tracking
       const allResolved = tournamentPendingCount === 0;
-      if (allResolved && !isDryRun) {
-        batch.update(tournamentDoc.ref, {
-          status: 'completed',
-          completedAt: new Date()
-        });
-        console.log(`    Tournament marked as COMPLETED`);
-      } else if (!allResolved) {
-        console.log(`    Tournament still has ${tournamentPendingCount} pending predictions`);
-        if (!isDryRun) {
-          batch.update(tournamentDoc.ref, { status: 'in_progress' });
+      const tournamentUpdate = {
+        lastResolutionSuccess: new Date().toISOString(),
+        lastResolutionStats: {
+          resolved: results.predictionsResolved,
+          pending: tournamentPendingCount,
+          runId
         }
+      };
+
+      if (allResolved && !isDryRun) {
+        tournamentUpdate.status = 'completed';
+        tournamentUpdate.completedAt = new Date();
+        batch.update(tournamentDoc.ref, tournamentUpdate);
+        results.tournamentsCompleted++;
+        logInfo('TOURNAMENT', `✓ Tournament marked as COMPLETED`);
+      } else if (!allResolved) {
+        tournamentUpdate.status = 'in_progress';
+        tournamentUpdate.pendingReason = `${tournamentPendingCount} predictions awaiting EODHD data`;
+        if (!isDryRun) {
+          batch.update(tournamentDoc.ref, tournamentUpdate);
+        }
+        results.tournamentsStillPending++;
+        logInfo('TOURNAMENT', `Tournament still has ${tournamentPendingCount} pending predictions - will retry next cron run`);
       }
 
       // Commit batch
       if (!isDryRun) {
         await batch.commit();
-        console.log(`    ✓ Batch committed`);
+        const tournamentDuration = Date.now() - tournamentStartTime;
+        logInfo('TOURNAMENT', `✓ Batch committed (${tournamentDuration}ms)`);
       } else {
-        console.log(`    (Dry run - no changes saved)`);
+        logInfo('TOURNAMENT', `(Dry run - no changes saved)`);
       }
 
       results.tournamentsProcessed++;
@@ -468,8 +608,8 @@ export default async function handler(req, res) {
 
     // Calculate final rankings for completed tournaments
     if (!isDryRun) {
-      console.log('');
-      console.log('--- Calculating Final Rankings ---');
+      logInfo('RANKINGS', '========================================');
+      logInfo('RANKINGS', 'Calculating Final Rankings');
 
       for (const tournamentDoc of tournamentDocs) {
         const tId = tournamentDoc.id;
@@ -491,33 +631,40 @@ export default async function handler(req, res) {
           rankBatch.update(doc.ref, { rank, bracket });
 
           const entry = doc.data();
-          console.log(`    #${rank} ${entry.username || entry.odUserId}: ${entry.results?.totalPoints || 0} pts (${bracket})`);
+          if (rank <= 10) {
+            logInfo('RANKINGS', `#${rank} ${entry.username || entry.odUserId}: ${entry.results?.totalPoints || 0} pts (${bracket})`);
+          }
 
           rank++;
         }
 
         await rankBatch.commit();
-        console.log(`    ✓ Rankings saved for ${tId}`);
+        logInfo('RANKINGS', `✓ Rankings saved for ${tId} (${totalEntries} entries)`);
       }
     }
 
-    console.log('');
-    console.log('========================================');
-    console.log('  RESOLUTION COMPLETE');
-    console.log('========================================');
-    console.log('  Tournaments:', results.tournamentsProcessed);
-    console.log('  Entries:', results.entriesProcessed);
-    console.log('  Predictions resolved:', results.predictionsResolved);
-    console.log('  Already resolved:', results.predictionsAlreadyResolved);
-    console.log('  Still pending:', results.predictionsPending);
-    console.log('========================================');
-    console.log('');
+    const totalDuration = Date.now() - startTime;
+
+    logInfo('COMPLETE', '========================================');
+    logInfo('COMPLETE', 'RESOLUTION COMPLETE');
+    logInfo('COMPLETE', '========================================');
+    logInfo('COMPLETE', `Run ID: ${runId}`);
+    logInfo('COMPLETE', `Duration: ${totalDuration}ms`);
+    logInfo('COMPLETE', `Tournaments processed: ${results.tournamentsProcessed}`);
+    logInfo('COMPLETE', `Tournaments completed: ${results.tournamentsCompleted}`);
+    logInfo('COMPLETE', `Tournaments still pending: ${results.tournamentsStillPending}`);
+    logInfo('COMPLETE', `Entries processed: ${results.entriesProcessed}`);
+    logInfo('COMPLETE', `Predictions resolved: ${results.predictionsResolved}`);
+    logInfo('COMPLETE', `Already resolved (skipped): ${results.predictionsAlreadyResolved}`);
+    logInfo('COMPLETE', `Still pending: ${results.predictionsPending}`);
+    logInfo('COMPLETE', '========================================');
 
     // Build response
     const response = {
       success: true,
       dryRun: isDryRun,
       timestamp: new Date().toISOString(),
+      durationMs: totalDuration,
       ...results
     };
 
@@ -529,8 +676,9 @@ export default async function handler(req, res) {
         byStatus: {
           success: debugSamples.filter(s => s.matchStatus === 'success').length,
           date_mismatch: debugSamples.filter(s => s.matchStatus === 'date_mismatch').length,
-          no_data_yet: debugSamples.filter(s => s.matchStatus === 'no_data_yet').length,
-          no_result: debugSamples.filter(s => s.matchStatus === 'no_result').length,
+          no_eps_data: debugSamples.filter(s => s.matchStatus === 'no_eps_data').length,
+          no_price_data: debugSamples.filter(s => s.matchStatus === 'no_price_data').length,
+          api_error: debugSamples.filter(s => s.matchStatus === 'api_error').length,
           unknown: debugSamples.filter(s => s.matchStatus === 'unknown').length
         }
       };
@@ -539,13 +687,19 @@ export default async function handler(req, res) {
     return res.status(200).json(response);
 
   } catch (error) {
-    console.error('');
-    console.error('!!! RESOLUTION ERROR !!!');
-    console.error(error);
+    const totalDuration = Date.now() - startTime;
+    logError('ERROR', '!!! RESOLUTION ERROR !!!', {
+      error: error.message,
+      stack: error.stack,
+      runId,
+      durationMs: totalDuration
+    });
 
     return res.status(500).json({
       success: false,
       error: error.message,
+      runId,
+      durationMs: totalDuration,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }

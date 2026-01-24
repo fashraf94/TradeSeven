@@ -9,6 +9,24 @@
 import { safeParseDate, toYYYYMMDD } from '../../../src/utils/dateUtils.js';
 import { MAGNITUDE_THRESHOLDS } from '../../../src/config/earningsConfig.js';
 
+// Structured logging helper
+const LOG_PREFIX = '[getEarningsResult]';
+
+function log(level, message, data = null) {
+  const timestamp = new Date().toISOString();
+  const prefix = `${timestamp} ${LOG_PREFIX}`;
+
+  if (data) {
+    console[level](`${prefix} ${message}`, typeof data === 'object' ? JSON.stringify(data) : data);
+  } else {
+    console[level](`${prefix} ${message}`);
+  }
+}
+
+const logInfo = (message, data) => log('log', message, data);
+const logWarn = (message, data) => log('warn', message, data);
+const logError = (message, data) => log('error', message, data);
+
 /**
  * Get magnitude band from price move percentage
  * Uses thresholds from centralized config for consistency
@@ -39,7 +57,7 @@ export async function getEarningsDayMove(symbol, reportDate, timing, apiKey) {
     const reportDateObj = safeParseDate(reportDate);
 
     if (!reportDateObj) {
-      console.warn(`[getEarningsResult] Could not parse reportDate: ${reportDate}`);
+      logWarn(`${symbol}: Could not parse reportDate: ${reportDate}`);
       return null;
     }
 
@@ -53,17 +71,20 @@ export async function getEarningsDayMove(symbol, reportDate, timing, apiKey) {
     const toStr = toYYYYMMDD(toDate);
 
     const priceUrl = `https://eodhd.com/api/eod/${tickerWithExchange}?api_token=${apiKey}&from=${fromStr}&to=${toStr}&fmt=json`;
+    logInfo(`${symbol}: Fetching price data`, { url: priceUrl.replace(apiKey, 'API_KEY_HIDDEN'), from: fromStr, to: toStr });
+
     const priceRes = await fetch(priceUrl);
 
     if (!priceRes.ok) {
-      console.warn(`[getEarningsResult] Price fetch failed: ${priceRes.status}`);
+      logWarn(`${symbol}: Price API failed`, { status: priceRes.status, statusText: priceRes.statusText });
       return null;
     }
 
     const prices = await priceRes.json();
+    logInfo(`${symbol}: Price data received`, { dataPoints: prices?.length || 0 });
 
     if (!Array.isArray(prices) || prices.length < 2) {
-      console.warn(`[getEarningsResult] Insufficient price data for ${symbol}`);
+      logWarn(`${symbol}: Insufficient price data`, { dataPoints: prices?.length || 0, required: 2 });
       return null;
     }
 
@@ -75,41 +96,67 @@ export async function getEarningsDayMove(symbol, reportDate, timing, apiKey) {
     const reportDayIndex = prices.findIndex(p => p.date >= reportDateStr);
 
     if (reportDayIndex < 0) {
-      console.warn(`[getEarningsResult] Could not find report date in price data`);
+      logWarn(`${symbol}: Report date not found in price data`, {
+        reportDate: reportDateStr,
+        availableDates: prices.map(p => p.date)
+      });
       return null;
     }
 
     // Get lock price (day before earnings) and reaction price
     let lockPrice, reactionPrice;
+    let lockDate, reactionDate;
 
     if (timing === 'BeforeMarket') {
       // Pre-market: Lock = previous day close, Reaction = report day close
       if (reportDayIndex === 0) {
-        console.warn(`[getEarningsResult] No previous day data for pre-market earnings`);
+        logWarn(`${symbol}: No previous day data for pre-market earnings`, {
+          timing,
+          reportDate: reportDateStr,
+          firstAvailableDate: prices[0]?.date
+        });
         return null;
       }
       lockPrice = prices[reportDayIndex - 1].adjusted_close || prices[reportDayIndex - 1].close;
       reactionPrice = prices[reportDayIndex].adjusted_close || prices[reportDayIndex].close;
+      lockDate = prices[reportDayIndex - 1].date;
+      reactionDate = prices[reportDayIndex].date;
     } else {
       // After-market: Lock = report day close, Reaction = next day close
       if (reportDayIndex >= prices.length - 1) {
-        console.warn(`[getEarningsResult] No next day data for after-market earnings`);
+        logWarn(`${symbol}: No next day data for after-market earnings - data not available yet`, {
+          timing,
+          reportDate: reportDateStr,
+          lastAvailableDate: prices[prices.length - 1]?.date,
+          message: 'Will retry in next cron run'
+        });
         return null;
       }
       lockPrice = prices[reportDayIndex].adjusted_close || prices[reportDayIndex].close;
       reactionPrice = prices[reportDayIndex + 1].adjusted_close || prices[reportDayIndex + 1].close;
+      lockDate = prices[reportDayIndex].date;
+      reactionDate = prices[reportDayIndex + 1].date;
     }
 
     if (!lockPrice || !reactionPrice) {
-      console.warn(`[getEarningsResult] Missing price data for calculation`);
+      logWarn(`${symbol}: Missing price values for calculation`, { lockPrice, reactionPrice });
       return null;
     }
 
     const percentMove = ((reactionPrice - lockPrice) / lockPrice) * 100;
+    logInfo(`${symbol}: Price move calculated`, {
+      timing,
+      lockDate,
+      lockPrice: lockPrice.toFixed(2),
+      reactionDate,
+      reactionPrice: reactionPrice.toFixed(2),
+      percentMove: percentMove.toFixed(2) + '%'
+    });
+
     return percentMove;
 
   } catch (error) {
-    console.error(`[getEarningsResult] Error getting price move:`, error);
+    logError(`${symbol}: Error getting price move`, { error: error.message, stack: error.stack });
     return null;
   }
 }
@@ -124,7 +171,7 @@ export async function getEarningsDayMove(symbol, reportDate, timing, apiKey) {
 export async function getEarningsResult(symbol, targetDate = null) {
   const apiKey = process.env.EODHD_API_KEY;
   if (!apiKey) {
-    console.error('[getEarningsResult] EODHD_API_KEY not configured');
+    logError('EODHD_API_KEY not configured in environment variables');
     return {
       success: false,
       symbol,
@@ -136,14 +183,22 @@ export async function getEarningsResult(symbol, targetDate = null) {
   const upperSymbol = symbol.toUpperCase();
   const tickerWithExchange = `${upperSymbol}.US`;
 
-  console.log(`[getEarningsResult] Fetching results for ${upperSymbol}${targetDate ? ` (target date: ${targetDate})` : ''}`);
+  logInfo(`${upperSymbol}: Starting earnings result fetch`, { targetDate: targetDate || 'latest' });
 
   try {
     // Fetch earnings history to get the actual result
     const fundamentalsUrl = `https://eodhd.com/api/fundamentals/${tickerWithExchange}?api_token=${apiKey}&fmt=json`;
+    logInfo(`${upperSymbol}: Calling EODHD fundamentals API`, {
+      url: fundamentalsUrl.replace(apiKey, 'API_KEY_HIDDEN')
+    });
+
     const fundamentalsRes = await fetch(fundamentalsUrl);
 
     if (!fundamentalsRes.ok) {
+      logError(`${upperSymbol}: Fundamentals API error`, {
+        status: fundamentalsRes.status,
+        statusText: fundamentalsRes.statusText
+      });
       throw new Error(`Fundamentals API error: ${fundamentalsRes.status}`);
     }
 
@@ -152,12 +207,21 @@ export async function getEarningsResult(symbol, targetDate = null) {
 
     // Diagnostic logging
     const historyKeys = Object.keys(history);
-    console.log(`[getEarningsResult] ${upperSymbol}: Found ${historyKeys.length} earnings entries in history`);
+    logInfo(`${upperSymbol}: EODHD response received`, {
+      totalHistoryEntries: historyKeys.length,
+      hasEarningsData: historyKeys.length > 0
+    });
 
     if (historyKeys.length > 0) {
       const mostRecentKey = historyKeys.sort().reverse()[0];
       const mostRecentEntry = history[mostRecentKey];
-      console.log(`[getEarningsResult] ${upperSymbol}: Most recent entry key=${mostRecentKey}, reportDate=${mostRecentEntry?.reportDate}, epsActual=${mostRecentEntry?.epsActual}`);
+      logInfo(`${upperSymbol}: Most recent earnings entry`, {
+        fiscalPeriodKey: mostRecentKey,
+        reportDate: mostRecentEntry?.reportDate,
+        epsActual: mostRecentEntry?.epsActual,
+        epsEstimate: mostRecentEntry?.epsEstimate,
+        hasActualEps: mostRecentEntry?.epsActual !== null && mostRecentEntry?.epsActual !== undefined
+      });
     }
 
     // Convert to array and sort by date (newest first)
@@ -178,7 +242,12 @@ export async function getEarningsResult(symbol, targetDate = null) {
     // Log filtering diagnostics
     const withActualEps = allEntries.filter(e => e.epsActual !== null && e.epsActual !== undefined);
     const inPast = allEntries.filter(e => new Date(e.reportDate) <= today);
-    console.log(`[getEarningsResult] ${upperSymbol}: ${allEntries.length} total, ${withActualEps.length} have epsActual, ${inPast.length} in past`);
+    logInfo(`${upperSymbol}: Filtering earnings entries`, {
+      totalEntries: allEntries.length,
+      withActualEps: withActualEps.length,
+      inPast: inPast.length,
+      today: today.toISOString().split('T')[0]
+    });
 
     const entries = allEntries
       .filter(e => {
@@ -187,7 +256,7 @@ export async function getEarningsResult(symbol, targetDate = null) {
       })
       .sort((a, b) => new Date(b.reportDate) - new Date(a.reportDate));
 
-    console.log(`[getEarningsResult] ${upperSymbol}: ${entries.length} entries after filtering`);
+    logInfo(`${upperSymbol}: ${entries.length} entries after filtering (with epsActual and in past)`);
 
     if (entries.length === 0) {
       const pendingEntries = allEntries
@@ -195,11 +264,19 @@ export async function getEarningsResult(symbol, targetDate = null) {
         .filter(e => new Date(e.reportDate) <= today)
         .slice(0, 3);
 
+      logWarn(`${upperSymbol}: No earnings results found yet - EODHD hasn't updated epsActual`, {
+        totalHistoryEntries: historyKeys.length,
+        entriesWithEpsActual: withActualEps.length,
+        entriesInPast: inPast.length,
+        pendingEntries: pendingEntries.map(e => ({ reportDate: e.reportDate, epsEstimate: e.epsEstimate })),
+        willRetry: true
+      });
+
       return {
         success: false,
         symbol: upperSymbol,
         resolved: false,
-        error: 'No earnings results found yet',
+        error: 'No earnings results found yet - awaiting EODHD data update',
         debug: {
           totalHistoryEntries: historyKeys.length,
           entriesWithEpsActual: withActualEps.length,
@@ -220,16 +297,22 @@ export async function getEarningsResult(symbol, targetDate = null) {
 
     if (targetDate) {
       const targetDateObj = new Date(targetDate);
-      // Find entry within 5 days of target date
+      // Find entry within 7 days of target date (expanded from 5 for scheduling flexibility)
       const matchedEntry = entries.find(e => {
         const reportDate = new Date(e.reportDate);
         const diffDays = Math.abs((reportDate - targetDateObj) / (1000 * 60 * 60 * 24));
-        return diffDays <= 5;
+        return diffDays <= 7;
       });
 
       if (matchedEntry) {
         result = matchedEntry;
-        console.log(`[getEarningsResult] ${upperSymbol}: Matched entry for ${targetDate} -> ${result.reportDate} (Q${result.fiscalQuarter} ${result.fiscalYear})`);
+        logInfo(`${upperSymbol}: Matched entry for target date`, {
+          targetDate,
+          matchedReportDate: result.reportDate,
+          quarter: `Q${result.fiscalQuarter} ${result.fiscalYear}`,
+          epsActual: result.epsActual,
+          epsEstimate: result.epsEstimate
+        });
       } else {
         const availableDates = entries.slice(0, 5).map(e => ({
           reportDate: e.reportDate,
@@ -237,13 +320,17 @@ export async function getEarningsResult(symbol, targetDate = null) {
           epsActual: e.epsActual
         }));
 
-        console.warn(`[getEarningsResult] ${upperSymbol}: No match for target ${targetDate}. Available: ${availableDates.map(d => d.reportDate).join(', ')}`);
+        logWarn(`${upperSymbol}: No match for target date - date mismatch`, {
+          targetDate,
+          availableDates: availableDates.map(d => d.reportDate),
+          closestDate: entries[0]?.reportDate
+        });
 
         return {
           success: false,
           symbol: upperSymbol,
           resolved: false,
-          error: `No earnings result found near ${targetDate}`,
+          error: `No earnings result found near ${targetDate} (possible date mismatch)`,
           closestResult: entries[0]?.reportDate,
           availableDates,
           checkedAt: new Date().toISOString()
@@ -253,6 +340,11 @@ export async function getEarningsResult(symbol, targetDate = null) {
 
     // Verify we have actual EPS data
     if (result.epsActual === null || result.epsActual === undefined) {
+      logWarn(`${upperSymbol}: Earnings report date found but epsActual is null`, {
+        reportDate: result.reportDate,
+        epsEstimate: result.epsEstimate,
+        message: 'EODHD has the date but not the actual result yet'
+      });
       return {
         success: false,
         symbol: upperSymbol,
@@ -277,9 +369,14 @@ export async function getEarningsResult(symbol, targetDate = null) {
         const calcMiss = result.epsActual < result.epsEstimate;
 
         if ((didBeat && calcMiss) || (didMiss && calcBeat)) {
-          console.warn(`[getEarningsResult] ${upperSymbol}: DATA MISMATCH - ` +
-            `surprisePercent=${result.surprisePercent.toFixed(2)}% suggests ${didBeat ? 'BEAT' : 'MISS'}, ` +
-            `but epsActual(${result.epsActual}) vs epsEstimate(${result.epsEstimate}) suggests ${calcBeat ? 'BEAT' : 'MISS'}`);
+          logWarn(`${upperSymbol}: DATA MISMATCH in EODHD response`, {
+            surprisePercent: result.surprisePercent,
+            suggestedBySurprise: didBeat ? 'BEAT' : 'MISS',
+            epsActual: result.epsActual,
+            epsEstimate: result.epsEstimate,
+            suggestedByCalculation: calcBeat ? 'BEAT' : 'MISS',
+            note: 'Using surprisePercent as source of truth'
+          });
         }
       }
     } else {
@@ -287,7 +384,11 @@ export async function getEarningsResult(symbol, targetDate = null) {
       didMiss = result.epsActual < result.epsEstimate;
       determinationMethod = 'calculated';
 
-      console.log(`[getEarningsResult] ${upperSymbol}: No surprisePercent available, using calculated beat/miss`);
+      logInfo(`${upperSymbol}: No surprisePercent in EODHD data, using calculated beat/miss`, {
+        epsActual: result.epsActual,
+        epsEstimate: result.epsEstimate,
+        calculatedOutcome: didBeat ? 'beat' : (didMiss ? 'miss' : 'meet')
+      });
     }
 
     const outcome = didBeat ? 'beat' : (didMiss ? 'miss' : 'meet');
@@ -296,7 +397,17 @@ export async function getEarningsResult(symbol, targetDate = null) {
     const priceMove = await getEarningsDayMove(upperSymbol, result.reportDate, result.beforeAfterMarket, apiKey);
     const magnitude = getMagnitudeBand(priceMove);
 
-    console.log(`[getEarningsResult] ${upperSymbol}: ${outcome} (EPS: ${result.epsActual} vs ${result.epsEstimate}), Move: ${priceMove?.toFixed(1)}% (${magnitude})`);
+    logInfo(`${upperSymbol}: RESOLUTION COMPLETE`, {
+      outcome,
+      epsActual: result.epsActual,
+      epsEstimate: result.epsEstimate,
+      surprisePercent: result.surprisePercent,
+      priceMove: priceMove !== null ? priceMove.toFixed(2) + '%' : 'N/A',
+      magnitude,
+      reportDate: result.reportDate,
+      quarter: `Q${result.fiscalQuarter} ${result.fiscalYear}`,
+      timing: result.beforeAfterMarket
+    });
 
     return {
       success: true,
@@ -321,7 +432,11 @@ export async function getEarningsResult(symbol, targetDate = null) {
     };
 
   } catch (error) {
-    console.error(`[getEarningsResult] Error for ${upperSymbol}:`, error);
+    logError(`${upperSymbol}: Error during earnings result fetch`, {
+      error: error.message,
+      stack: error.stack,
+      targetDate
+    });
     return {
       success: false,
       symbol: upperSymbol,
