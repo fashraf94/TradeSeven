@@ -62,25 +62,7 @@ const DraftResultsScreen = ({
   return (
     <div style={containerStyle}>
       <div style={{ minHeight: '100vh', background: '#0d1117' }}>
-        {/* Celebration Animation Header - CSS Only */}
-        <style>{`
-          @keyframes confettiFall {
-            0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
-            100% { transform: translateY(250px) rotate(360deg); opacity: 0; }
-          }
-          @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
-          }
-          @keyframes fadeIn {
-            0% { opacity: 0; transform: translateY(20px); }
-            100% { opacity: 1; transform: translateY(0); }
-          }
-          @keyframes sparkle {
-            0%, 100% { opacity: 0.3; }
-            50% { opacity: 1; }
-          }
-        `}</style>
+        {/* Animations consolidated in index.css: confetti-fall, bounce, fade-in-up, sparkle */}
         <div style={{
           position: 'relative',
           width: '100%',
@@ -107,7 +89,7 @@ const DraftResultsScreen = ({
                 backgroundColor: piece.color,
                 borderRadius: piece.id % 2 === 0 ? '50%' : '2px',
                 pointerEvents: 'none',
-                animation: `confettiFall ${piece.duration}s ease-out ${piece.delay}s infinite`
+                animation: `confetti-fall ${piece.duration}s ease-out ${piece.delay}s infinite`
               }}
             />
           ))}
@@ -139,7 +121,7 @@ const DraftResultsScreen = ({
             color: '#ffffff',
             margin: '0 0 8px 0',
             padding: 0,
-            animation: 'fadeIn 0.6s ease-out',
+            animation: 'fade-in-up 0.6s ease-out',
             position: 'relative',
             zIndex: 10,
             width: '100%',
@@ -151,7 +133,7 @@ const DraftResultsScreen = ({
             color: '#8b949e',
             fontSize: '14px',
             margin: '0',
-            animation: 'fadeIn 0.6s ease-out 0.2s both',
+            animation: 'fade-in-up 0.6s ease-out 0.2s both',
             position: 'relative',
             zIndex: 10,
             width: '100%',

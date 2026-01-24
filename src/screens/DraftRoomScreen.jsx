@@ -429,7 +429,7 @@ const DraftRoomScreen = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            animation: 'your-turn-flash-anim 2s ease-out forwards',
+            animation: 'your-turn-flash 2s ease-out forwards',
           }}
         >
           <div
@@ -439,7 +439,7 @@ const DraftRoomScreen = ({
               color: '#00ffff',
               textShadow: '0 0 30px rgba(0, 255, 255, 0.8), 0 0 60px rgba(0, 255, 255, 0.4)',
               letterSpacing: '8px',
-              animation: 'your-turn-text-anim 2s ease-out forwards',
+              animation: 'your-turn-text 2s ease-out forwards',
             }}
           >
             YOUR PICK
@@ -1277,101 +1277,10 @@ const DraftRoomScreen = ({
             }
           }
 
-          /* Autopick warning pulse animation */
-          @keyframes pulse-warning {
-            0%, 100% {
-              opacity: 1;
-              transform: translateX(-50%) scale(1);
-            }
-            50% {
-              opacity: 0.85;
-              transform: translateX(-50%) scale(1.02);
-            }
-          }
-
-          /* Screen edge warning glow pulse */
-          @keyframes screen-edge-pulse {
-            0%, 100% {
-              opacity: 1;
-            }
-            50% {
-              opacity: 0.6;
-            }
-          }
-
-          /* YOUR TURN flash animations */
-          @keyframes your-turn-flash-anim {
-            0% {
-              opacity: 0;
-              background: rgba(0, 255, 255, 0.3);
-            }
-            15% {
-              opacity: 1;
-              background: rgba(0, 255, 255, 0.25);
-            }
-            85% {
-              opacity: 1;
-              background: rgba(0, 255, 255, 0.1);
-            }
-            100% {
-              opacity: 0;
-              background: transparent;
-            }
-          }
-
-          @keyframes your-turn-text-anim {
-            0% {
-              opacity: 0;
-              transform: scale(0.8);
-            }
-            20% {
-              opacity: 1;
-              transform: scale(1.1);
-            }
-            40% {
-              transform: scale(1);
-            }
-            80% {
-              opacity: 1;
-              transform: scale(1);
-            }
-            100% {
-              opacity: 0;
-              transform: scale(0.9);
-            }
-          }
-
-          /* Last pick banner slide-in animation */
-          .last-pick-banner-animate {
-            animation: last-pick-slide-in 0.4s ease-out;
-          }
-
-          @keyframes last-pick-slide-in {
-            0% {
-              opacity: 0;
-              transform: translateY(-20px);
-            }
-            100% {
-              opacity: 1;
-              transform: translateY(0);
-            }
-          }
-
-          /* Category transition animation */
-          .category-transition {
-            animation: category-fade 0.3s ease-out;
-          }
-
-          @keyframes category-fade {
-            0% {
-              opacity: 0.3;
-              transform: translateY(15px);
-            }
-            100% {
-              opacity: 1;
-              transform: translateY(0);
-            }
-          }
+          /* Keyframes and classes consolidated in index.css:
+             pulse-warning, screen-edge-pulse, your-turn-flash, your-turn-text,
+             last-pick-slide-in, category-fade,
+             .last-pick-banner-animate, .category-transition */
 
           /* Mobile roster drawer animations */
           .roster-drawer {

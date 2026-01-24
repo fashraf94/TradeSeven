@@ -9,18 +9,18 @@ import { HOLO_COLORS } from '../../constants/holoTheme';
 // Game theme configurations
 const GAME_THEMES = {
   snakeDraft: {
-    primary: '#10b981',
+    primary: HOLO_COLORS.defensive,
     secondary: '#059669',
-    gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+    gradient: `linear-gradient(135deg, ${HOLO_COLORS.defensive} 0%, #059669 100%)`,
     glowColor: 'rgba(16, 185, 129, 0.4)',
     icon: TrendingUp,
     emoji: '🐍',
     pattern: 'snake',
   },
   builder: {
-    primary: '#00ffff',
-    secondary: '#06b6d4',
-    gradient: 'linear-gradient(135deg, #00ffff 0%, #06b6d4 100%)',
+    primary: HOLO_COLORS.cyan,
+    secondary: HOLO_COLORS.sectorCommunication,
+    gradient: `linear-gradient(135deg, ${HOLO_COLORS.cyan} 0%, ${HOLO_COLORS.sectorCommunication} 100%)`,
     glowColor: 'rgba(0, 255, 255, 0.4)',
     icon: Hammer,
     emoji: '🏗️',
@@ -28,7 +28,7 @@ const GAME_THEMES = {
   },
   baggerBomb: {
     primary: '#dc2626',
-    secondary: '#f97316',
+    secondary: HOLO_COLORS.sectorMaterials,
     gradient: 'linear-gradient(135deg, #dc2626 0%, #f97316 100%)',
     glowColor: 'rgba(220, 38, 38, 0.4)',
     icon: Bomb,
@@ -36,18 +36,18 @@ const GAME_THEMES = {
     pattern: 'explosion',
   },
   optionsArena: {
-    primary: '#10b981',
-    secondary: '#06b6d4',
-    gradient: 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)',
+    primary: HOLO_COLORS.defensive,
+    secondary: HOLO_COLORS.sectorCommunication,
+    gradient: `linear-gradient(135deg, ${HOLO_COLORS.defensive} 0%, ${HOLO_COLORS.sectorCommunication} 100%)`,
     glowColor: 'rgba(16, 185, 129, 0.4)',
     icon: Target,
     emoji: '🎯',
     pattern: 'target',
   },
   training: {
-    primary: '#8b5cf6',
+    primary: HOLO_COLORS.purple,
     secondary: '#6d28d9',
-    gradient: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+    gradient: `linear-gradient(135deg, ${HOLO_COLORS.purple} 0%, #6d28d9 100%)`,
     glowColor: 'rgba(139, 92, 246, 0.4)',
     icon: Trophy,
     emoji: '🎓',
@@ -79,7 +79,7 @@ const BackgroundPattern = ({ theme, isHovered }) => {
           strokeWidth="8"
           strokeLinecap="round"
           style={{
-            animation: isHovered ? 'snakeSlither 2s ease-in-out infinite' : 'none',
+            animation: isHovered ? 'snake-slither 2s ease-in-out infinite' : 'none',
           }}
         />
         <circle cx="90" cy="50" r="6" fill={GAME_THEMES.snakeDraft.primary} />
@@ -112,7 +112,7 @@ const BackgroundPattern = ({ theme, isHovered }) => {
           strokeWidth="4"
           style={{
             transformOrigin: '20px 20px',
-            animation: isHovered ? 'craneSwing 3s ease-in-out infinite' : 'none',
+            animation: isHovered ? 'crane-swing 3s ease-in-out infinite' : 'none',
           }}
         />
         {/* Building blocks */}
@@ -139,7 +139,7 @@ const BackgroundPattern = ({ theme, isHovered }) => {
           fill={GAME_THEMES.baggerBomb.secondary}
           style={{
             transformOrigin: '50px 50px',
-            animation: isHovered ? 'explosionPulse 1.5s ease-in-out infinite' : 'none',
+            animation: isHovered ? 'explosion-pulse 1.5s ease-in-out infinite' : 'none',
           }}
         />
         {/* Spark particles */}
@@ -169,7 +169,7 @@ const BackgroundPattern = ({ theme, isHovered }) => {
           strokeWidth="3"
           style={{
             transformOrigin: '50px 50px',
-            animation: isHovered ? 'targetPulse 2s ease-in-out infinite' : 'none',
+            animation: isHovered ? 'target-pulse 2s ease-in-out infinite' : 'none',
           }}
         />
         <circle cx="50" cy="50" r="25" fill="none" stroke={GAME_THEMES.optionsArena.secondary} strokeWidth="3" />
@@ -201,41 +201,9 @@ const BackgroundPattern = ({ theme, isHovered }) => {
   return patterns[theme] || null;
 };
 
-// CSS keyframe animations
-const AnimationStyles = () => (
-  <style>{`
-    @keyframes snakeSlither {
-      0%, 100% { transform: translateX(0) scaleX(1); }
-      25% { transform: translateX(3px) scaleX(1.02); }
-      75% { transform: translateX(-3px) scaleX(0.98); }
-    }
-
-    @keyframes craneSwing {
-      0%, 100% { transform: rotate(-8deg); }
-      50% { transform: rotate(8deg); }
-    }
-
-    @keyframes explosionPulse {
-      0%, 100% { transform: scale(1); opacity: 0.6; }
-      50% { transform: scale(1.1); opacity: 1; }
-    }
-
-    @keyframes targetPulse {
-      0%, 100% { transform: scale(1); opacity: 0.8; }
-      50% { transform: scale(1.05); opacity: 1; }
-    }
-
-    @keyframes glowPulse {
-      0%, 100% { box-shadow: 0 0 20px var(--glow-color-20); }
-      50% { box-shadow: 0 0 35px var(--glow-color-35); }
-    }
-
-    @keyframes fuseSpark {
-      0%, 100% { opacity: 1; filter: brightness(1); }
-      50% { opacity: 0.7; filter: brightness(1.4); }
-    }
-  `}</style>
-);
+// CSS keyframe animations - consolidated in index.css
+// Available animations: snake-slither, crane-swing, explosion-pulse, target-pulse, glow-pulse, fuse-spark
+const AnimationStyles = () => null;
 
 // Main ThemedGameCard component
 export default function ThemedGameCard({
@@ -323,7 +291,7 @@ export default function ThemedGameCard({
             <span style={{
               marginLeft: '8px',
               padding: '2px 6px',
-              background: 'rgba(139, 92, 246, 0.2)',
+              background: `${HOLO_COLORS.purple}33`,
               borderRadius: '4px',
               fontSize: '10px',
               fontWeight: '600',

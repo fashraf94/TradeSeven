@@ -169,68 +169,7 @@ const HoloTimer = ({
         </div>
       )}
 
-      {/* CSS Animations */}
-      <style>{`
-        @keyframes timer-pulse {
-          0%, 100% {
-            transform: scale(1);
-            opacity: 1;
-          }
-          50% {
-            transform: scale(1.02);
-            opacity: 0.85;
-          }
-        }
-
-        @keyframes timer-pulse-fast {
-          0%, 100% {
-            transform: scale(1);
-            opacity: 1;
-          }
-          50% {
-            transform: scale(1.05);
-            opacity: 0.8;
-          }
-        }
-
-        @keyframes timer-shake {
-          0%, 100% {
-            transform: translateX(0) scale(1);
-          }
-          10%, 30%, 50%, 70%, 90% {
-            transform: translateX(-2px) scale(1.02);
-          }
-          20%, 40%, 60%, 80% {
-            transform: translateX(2px) scale(1.02);
-          }
-        }
-
-        @keyframes pulse-badge {
-          0%, 100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.6;
-          }
-        }
-
-        @keyframes blink {
-          0%, 100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.3;
-          }
-        }
-
-        .timer-critical {
-          animation: timer-pulse 1s ease-in-out infinite;
-        }
-
-        .timer-urgent {
-          animation: timer-shake 0.5s ease-in-out infinite;
-        }
-      `}</style>
+      {/* Animations and classes consolidated in index.css: timer-pulse, timer-pulse-fast, timer-shake, pulse-badge, blink, .timer-critical, .timer-urgent, .timer-final */}
     </div>
   );
 };

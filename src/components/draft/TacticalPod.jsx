@@ -287,20 +287,15 @@ const TacticalPod = ({
         </div>
       )}
 
-      {/* CSS Animation */}
+      {/* Dynamic CSS Animation - uses component-specific colors, kept inline intentionally */}
       <style>{`
         @keyframes holoPulse {
           0%, 100% { filter: drop-shadow(${colors.glow !== 'none' ? colors.glow : '0 0 0 transparent'}); }
           50% { filter: drop-shadow(${colors.glow !== 'none' ? colors.glow.replace('15px', '20px').replace('30px', '40px') : '0 0 0 transparent'}); }
         }
-
         @keyframes scoutedPulse {
-          0%, 100% {
-            filter: drop-shadow(0 0 15px ${HOLO_COLORS.amber}) drop-shadow(0 0 30px rgba(245, 158, 11, 0.4));
-          }
-          50% {
-            filter: drop-shadow(0 0 20px ${HOLO_COLORS.amber}) drop-shadow(0 0 40px rgba(245, 158, 11, 0.6));
-          }
+          0%, 100% { filter: drop-shadow(0 0 15px ${HOLO_COLORS.amber}) drop-shadow(0 0 30px rgba(245, 158, 11, 0.4)); }
+          50% { filter: drop-shadow(0 0 20px ${HOLO_COLORS.amber}) drop-shadow(0 0 40px rgba(245, 158, 11, 0.6)); }
         }
       `}</style>
 

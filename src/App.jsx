@@ -2388,23 +2388,7 @@ const ConvictionCheck = ({
       height: '100%',
       position: 'relative',
     }}>
-      {/* CSS Animations */}
-      <style>
-        {`
-          @keyframes convictionPulseRing {
-            0% { transform: scale(1); opacity: 0.4; }
-            100% { transform: scale(1.15); opacity: 0; }
-          }
-          @keyframes convictionShimmer {
-            0% { left: -100%; }
-            100% { left: 100%; }
-          }
-          @keyframes convictionGlow {
-            0%, 100% { box-shadow: 0 0 5px var(--glow-color), 0 0 10px var(--glow-color); }
-            50% { box-shadow: 0 0 15px var(--glow-color), 0 0 25px var(--glow-color); }
-          }
-        `}
-      </style>
+      {/* Animations use pulse-ring, shimmer-effect, pulse-glow from index.css */}
 
       {/* Back Button + Step Indicator */}
       <div style={{
@@ -2605,7 +2589,7 @@ const ConvictionCheck = ({
                             borderRadius: '20px',
                             border: `2px solid ${group.color}`,
                             opacity: 0.3,
-                            animation: 'convictionPulseRing 2s ease-out infinite'
+                            animation: 'pulse-ring 2s ease-out infinite'
                           }} />
                           <div style={{
                             position: 'absolute',
@@ -2613,7 +2597,7 @@ const ConvictionCheck = ({
                             borderRadius: '24px',
                             border: `1px solid ${group.color}`,
                             opacity: 0.15,
-                            animation: 'convictionPulseRing 2s ease-out infinite 0.5s'
+                            animation: 'pulse-ring 2s ease-out infinite 0.5s'
                           }} />
                         </>
                       )}
@@ -2641,7 +2625,7 @@ const ConvictionCheck = ({
                           width: '100%',
                           height: '100%',
                           background: `linear-gradient(90deg, transparent, ${group.color}15, transparent)`,
-                          animation: 'convictionShimmer 2s infinite',
+                          animation: 'shimmer-effect 2s infinite',
                         }} />
                       )}
 
@@ -3296,19 +3280,7 @@ const DraftPriorityRanker = ({
       height: '100%',
       position: 'relative',
     }}>
-      {/* CSS Animations */}
-      <style>
-        {`
-          @keyframes draftGlow {
-            0%, 100% { box-shadow: 0 0 10px var(--glow-color), 0 0 20px var(--glow-color); }
-            50% { box-shadow: 0 0 20px var(--glow-color), 0 0 35px var(--glow-color); }
-          }
-          @keyframes draftPulse {
-            0%, 100% { opacity: 0.6; }
-            50% { opacity: 1; }
-          }
-        `}
-      </style>
+      {/* Animations use pulse-glow, pulse from index.css */}
 
       {/* Back Button + Step Indicator */}
       <div style={{
@@ -4436,9 +4408,7 @@ const GamePlan = ({
           margin: '0 auto 16px',
           animation: 'spin 1s linear infinite',
         }} />
-        <style>
-          {`@keyframes spin { to { transform: rotate(360deg); } }`}
-        </style>
+        {/* spin animation from index.css */}
         <p style={{ color: '#e6edf3', fontSize: '16px', marginBottom: '8px' }}>
           Analyzing your thesis...
         </p>
@@ -5452,24 +5422,11 @@ const WatchlistNews = ({ colors }) => {
           justifyContent: 'center',
           zIndex: 10000,
           padding: '20px',
-          animation: 'fadeIn 0.2s ease-out',
+          animation: 'fade-in 0.2s ease-out',
         }}
         onClick={() => closeManageModal(true)}
       >
-        <style>{`
-          @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-          }
-          @keyframes slideUp {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-          }
-          @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-8px); }
-          }
-        `}</style>
+        {/* Animations in index.css: fade-in, slide-up, bounce */}
         <div
           style={{
             background: '#1a1f2e',
@@ -5480,7 +5437,7 @@ const WatchlistNews = ({ colors }) => {
             maxHeight: '80vh',
             overflow: 'auto',
             border: '1px solid #2d3548',
-            animation: 'slideUp 0.3s ease-out',
+            animation: 'slide-up 0.3s ease-out',
           }}
           onClick={e => e.stopPropagation()}
         >
@@ -6492,11 +6449,7 @@ const EarningsInsights = ({ symbol, colors }) => {
           <span style={{ color: violetLight, fontSize: '14px' }}>
             Analyzing earnings reports for {symbol}...
           </span>
-          <style>{`
-            @keyframes spin {
-              to { transform: rotate(360deg); }
-            }
-          `}</style>
+          {/* spin animation from index.css */}
         </div>
       ) : error ? (
         <div style={{
@@ -7552,16 +7505,7 @@ const AIMarketSummary = ({ marketData, news, moversData, colors }) => {
         </div>
       )}
 
-      <style>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-      `}</style>
+      {/* Animations consolidated in index.css: spin, pulse */}
     </div>
   );
 };
@@ -7728,7 +7672,7 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
           padding: '3px',
           background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 50%, #15803d 100%)',
           boxShadow: '0 0 30px rgba(34, 197, 94, 0.4), 0 0 60px rgba(34, 197, 94, 0.2), 0 10px 40px rgba(0, 0, 0, 0.3)',
-          animation: 'pulseGlow 2s ease-in-out infinite'
+          animation: 'pulse-glow 2s ease-in-out infinite'
         }}>
           {/* Inner Button */}
           <button
@@ -7754,7 +7698,7 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
               width: '100%',
               height: '100%',
               background: 'linear-gradient(90deg, transparent, rgba(34, 197, 94, 0.2), transparent)',
-              animation: 'shimmerEffect 2.5s infinite'
+              animation: 'shimmer-effect 2.5s infinite'
             }} />
 
             {/* Floating Particles */}
@@ -7771,7 +7715,7 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
                     opacity: 0.4,
                     left: `${15 + i * 14}%`,
                     top: `${25 + (i % 3) * 20}%`,
-                    animation: `floatParticle ${3 + i * 0.4}s ease-in-out infinite`,
+                    animation: `float-particle ${3 + i * 0.4}s ease-in-out infinite`,
                     animationDelay: `${i * 0.25}s`
                   }}
                 />
@@ -7797,7 +7741,7 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
                 alignItems: 'center',
                 justifyContent: 'center',
                 boxShadow: '0 8px 24px rgba(34, 197, 94, 0.4)',
-                animation: 'pulseIcon 2s ease-in-out infinite'
+                animation: 'pulse-icon 2s ease-in-out infinite'
               }}>
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
                   <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" />
@@ -7822,7 +7766,7 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
                   fill="none"
                   stroke="#22c55e"
                   strokeWidth="3"
-                  style={{ animation: 'bounceArrow 1.5s ease-in-out infinite' }}
+                  style={{ animation: 'bounce-arrow 1.5s ease-in-out infinite' }}
                 >
                   <path d="M5 12h14M12 5l7 7-7 7"/>
                 </svg>
@@ -7879,29 +7823,7 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
           pointerEvents: 'none'
         }} />
 
-        {/* CSS Animations */}
-        <style>{`
-          @keyframes pulseGlow {
-            0%, 100% { box-shadow: 0 0 30px rgba(34, 197, 94, 0.4), 0 0 60px rgba(34, 197, 94, 0.2), 0 10px 40px rgba(0, 0, 0, 0.3); }
-            50% { box-shadow: 0 0 40px rgba(34, 197, 94, 0.6), 0 0 80px rgba(34, 197, 94, 0.3), 0 10px 40px rgba(0, 0, 0, 0.3); }
-          }
-          @keyframes shimmerEffect {
-            0% { left: -100%; }
-            100% { left: 100%; }
-          }
-          @keyframes floatParticle {
-            0%, 100% { transform: translateY(0) scale(1); opacity: 0.3; }
-            50% { transform: translateY(-12px) scale(1.2); opacity: 0.6; }
-          }
-          @keyframes pulseIcon {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-          }
-          @keyframes bounceArrow {
-            0%, 100% { transform: translateX(0); }
-            50% { transform: translateX(6px); }
-          }
-        `}</style>
+        {/* Animations consolidated in index.css: pulse-glow, shimmer-effect, float-particle, pulse-icon, bounce-arrow */}
       </div>
 
       {/* Your Watchlist - Personalized news for user's stock picks */}
@@ -8766,7 +8688,7 @@ const AssetDetailView = ({ asset, thesis, pinnedInsights, onPin, onBack, colors 
         </button>
       </div>
 
-      {/* CSS Animation for Pulsing Glow */}
+      {/* Dynamic CSS Animation - uses component-specific colors, kept inline */}
       <style>{`
         @keyframes sectorGlowPulse {
           0%, 100% {
@@ -15753,7 +15675,7 @@ export default function PortfolioDuel() {
           alignItems: 'center',
           justifyContent: 'center',
           padding: '16px',
-          animation: 'fadeIn 0.2s ease'
+          animation: 'fade-in 0.2s ease'
         }}
         onClick={() => setShowTutorial(false)}
       >
@@ -15767,7 +15689,7 @@ export default function PortfolioDuel() {
             maxHeight: '85vh',
             overflow: 'hidden',
             boxShadow: `0 0 60px ${tutorial.color}33`,
-            animation: 'slideUp 0.3s ease'
+            animation: 'slide-up 0.3s ease'
           }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -16911,7 +16833,7 @@ export default function PortfolioDuel() {
                   padding: '16px',
                   marginBottom: '0'
                 }}>
-                  {/* CSS Animation for Pulsing Glow */}
+                  {/* Dynamic CSS Animation - uses component-specific colors, kept inline */}
                   <style>
                     {`
                       @keyframes tickerGlowPulse {

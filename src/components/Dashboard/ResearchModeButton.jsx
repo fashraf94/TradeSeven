@@ -31,23 +31,7 @@ export default function ResearchModeButton({ setShowResearchMode }) {
         e.currentTarget.style.transform = 'translateY(0)';
       }}
     >
-      {/* CSS Animations for Research Button */}
-      <style>{`
-        @keyframes gradientShift {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-        @keyframes scanLine {
-          0% { left: -100%; }
-          50% { left: 100%; }
-          100% { left: 100%; }
-        }
-        @keyframes researchPulse {
-          0%, 100% { opacity: 0.3; transform: scale(1); }
-          50% { opacity: 0.8; transform: scale(1.2); }
-        }
-      `}</style>
+      {/* Animations consolidated in index.css: gradient-shift, scan-line, research-pulse */}
 
       {/* Animated gradient border overlay */}
       <div style={{
@@ -60,7 +44,7 @@ export default function ResearchModeButton({ setShowResearchMode }) {
         padding: '1px',
         background: 'linear-gradient(90deg, #00d9ff, #8b5cf6, #00d9ff)',
         backgroundSize: '200% 100%',
-        animation: 'gradientShift 3s ease infinite',
+        animation: 'gradient-shift 3s ease infinite',
         mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
         maskComposite: 'exclude',
         WebkitMaskComposite: 'xor',
@@ -75,7 +59,7 @@ export default function ResearchModeButton({ setShowResearchMode }) {
         width: '100%',
         height: '100%',
         background: 'linear-gradient(90deg, transparent, rgba(0, 217, 255, 0.1), transparent)',
-        animation: 'scanLine 3s ease-in-out infinite',
+        animation: 'scan-line 3s ease-in-out infinite',
         pointerEvents: 'none',
       }} />
 
@@ -170,7 +154,7 @@ export default function ResearchModeButton({ setShowResearchMode }) {
         borderRadius: '50%',
         background: '#00d9ff',
         opacity: 0.5,
-        animation: 'researchPulse 2s ease infinite',
+        animation: 'research-pulse 2s ease infinite',
       }} />
       <div style={{
         position: 'absolute',
@@ -181,7 +165,7 @@ export default function ResearchModeButton({ setShowResearchMode }) {
         borderRadius: '50%',
         background: '#8b5cf6',
         opacity: 0.4,
-        animation: 'researchPulse 2.5s ease infinite 0.5s',
+        animation: 'research-pulse 2.5s ease infinite 0.5s',
       }} />
     </motion.div>
   );

@@ -181,7 +181,7 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
           padding: '3px',
           background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 50%, #15803d 100%)',
           boxShadow: '0 0 30px rgba(34, 197, 94, 0.4), 0 0 60px rgba(34, 197, 94, 0.2), 0 10px 40px rgba(0, 0, 0, 0.3)',
-          animation: 'pulseGlow 2s ease-in-out infinite'
+          animation: 'pulse-glow 2s ease-in-out infinite'
         }}>
           {/* Inner Button */}
           <button
@@ -207,7 +207,7 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
               width: '100%',
               height: '100%',
               background: 'linear-gradient(90deg, transparent, rgba(34, 197, 94, 0.2), transparent)',
-              animation: 'shimmerEffect 2.5s infinite'
+              animation: 'shimmer-effect 2.5s infinite'
             }} />
 
             {/* Floating Particles */}
@@ -224,7 +224,7 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
                     opacity: 0.4,
                     left: `${15 + i * 14}%`,
                     top: `${25 + (i % 3) * 20}%`,
-                    animation: `floatParticle ${3 + i * 0.4}s ease-in-out infinite`,
+                    animation: `float-particle ${3 + i * 0.4}s ease-in-out infinite`,
                     animationDelay: `${i * 0.25}s`
                   }}
                 />
@@ -250,7 +250,7 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
                 alignItems: 'center',
                 justifyContent: 'center',
                 boxShadow: '0 8px 24px rgba(34, 197, 94, 0.4)',
-                animation: 'pulseIcon 2s ease-in-out infinite'
+                animation: 'pulse-icon 2s ease-in-out infinite'
               }}>
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
                   <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" />
@@ -275,7 +275,7 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
                   fill="none"
                   stroke="#22c55e"
                   strokeWidth="3"
-                  style={{ animation: 'bounceArrow 1.5s ease-in-out infinite' }}
+                  style={{ animation: 'bounce-arrow 1.5s ease-in-out infinite' }}
                 >
                   <path d="M5 12h14M12 5l7 7-7 7"/>
                 </svg>
@@ -332,29 +332,7 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
           pointerEvents: 'none'
         }} />
 
-        {/* CSS Animations */}
-        <style>{`
-          @keyframes pulseGlow {
-            0%, 100% { box-shadow: 0 0 30px rgba(34, 197, 94, 0.4), 0 0 60px rgba(34, 197, 94, 0.2), 0 10px 40px rgba(0, 0, 0, 0.3); }
-            50% { box-shadow: 0 0 40px rgba(34, 197, 94, 0.6), 0 0 80px rgba(34, 197, 94, 0.3), 0 10px 40px rgba(0, 0, 0, 0.3); }
-          }
-          @keyframes shimmerEffect {
-            0% { left: -100%; }
-            100% { left: 100%; }
-          }
-          @keyframes floatParticle {
-            0%, 100% { transform: translateY(0) scale(1); opacity: 0.3; }
-            50% { transform: translateY(-12px) scale(1.2); opacity: 0.6; }
-          }
-          @keyframes pulseIcon {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-          }
-          @keyframes bounceArrow {
-            0%, 100% { transform: translateX(0); }
-            50% { transform: translateX(6px); }
-          }
-        `}</style>
+        {/* Animations consolidated in index.css: pulse-glow, shimmer-effect, float-particle, pulse-icon, bounce-arrow */}
       </div>
 
       {/* Your Watchlist - Personalized news for user's stock picks */}

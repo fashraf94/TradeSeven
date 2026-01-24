@@ -69,21 +69,7 @@ const TrainingModePanel = ({
             Start drafting now!
           </p>
 
-          {/* CSS Animations for Training Buttons */}
-          <style>{`
-            @keyframes pulse-glow {
-              0%, 100% { opacity: 0.5; transform: scale(1); }
-              50% { opacity: 0.8; transform: scale(1.08); }
-            }
-            @keyframes pulse-ring {
-              0%, 100% { transform: scale(1); opacity: 0.5; }
-              50% { transform: scale(1.12); opacity: 0.2; }
-            }
-            @keyframes rotate-arc {
-              from { transform: rotate(0deg); }
-              to { transform: rotate(360deg); }
-            }
-          `}</style>
+          {/* Animations consolidated in index.css: pulse-glow-training, pulse-ring, rotate-arc */}
 
           {/* Circular Buttons Container */}
           <div style={{
@@ -118,7 +104,7 @@ const TrainingModePanel = ({
                   inset: '-12px',
                   borderRadius: '50%',
                   background: 'radial-gradient(circle, rgba(34, 197, 94, 0.4) 0%, transparent 70%)',
-                  animation: 'pulse-glow 2s ease-in-out infinite'
+                  animation: 'pulse-glow-training 2s ease-in-out infinite'
                 }} />
                 {/* Pulsing ring */}
                 <div style={{
@@ -231,7 +217,7 @@ const TrainingModePanel = ({
                   inset: '-12px',
                   borderRadius: '50%',
                   background: 'radial-gradient(circle, rgba(245, 158, 11, 0.4) 0%, transparent 70%)',
-                  animation: 'pulse-glow 2s ease-in-out infinite'
+                  animation: 'pulse-glow-training 2s ease-in-out infinite'
                 }} />
                 {/* Pulsing ring */}
                 <div style={{
@@ -398,21 +384,7 @@ const TrainingModePanel = ({
             Practice against CPU opponent!
           </p>
 
-          {/* CSS Animations for Classic Training Button */}
-          <style>{`
-            @keyframes classic-pulse-glow {
-              0%, 100% { opacity: 0.5; transform: scale(1); }
-              50% { opacity: 0.8; transform: scale(1.08); }
-            }
-            @keyframes classic-pulse-ring {
-              0%, 100% { transform: scale(1); opacity: 0.5; }
-              50% { transform: scale(1.12); opacity: 0.2; }
-            }
-            @keyframes classic-rotate-arc {
-              from { transform: rotate(0deg); }
-              to { transform: rotate(360deg); }
-            }
-          `}</style>
+          {/* Animations consolidated in index.css: pulse-glow-training, pulse-ring, rotate-arc */}
 
           {/* Single Training Button - Centered */}
           <div style={{
@@ -444,7 +416,7 @@ const TrainingModePanel = ({
                   inset: '-12px',
                   borderRadius: '50%',
                   background: 'radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, transparent 70%)',
-                  animation: 'classic-pulse-glow 2s ease-in-out infinite'
+                  animation: 'pulse-glow-training 2s ease-in-out infinite'
                 }} />
                 {/* Pulsing ring */}
                 <div style={{
@@ -452,7 +424,7 @@ const TrainingModePanel = ({
                   inset: '-4px',
                   borderRadius: '50%',
                   border: '2px solid #8b5cf6',
-                  animation: 'classic-pulse-ring 2s ease-in-out infinite'
+                  animation: 'pulse-ring 2s ease-in-out infinite'
                 }} />
                 {/* Main circle with gradient */}
                 <div style={{
@@ -492,7 +464,7 @@ const TrainingModePanel = ({
                   left: '-6px',
                   width: '102px',
                   height: '102px',
-                  animation: 'classic-rotate-arc 4s linear infinite',
+                  animation: 'rotate-arc 4s linear infinite',
                   pointerEvents: 'none'
                 }}>
                   <circle

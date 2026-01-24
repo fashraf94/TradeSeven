@@ -732,51 +732,18 @@ const HoloAssetCard = ({
       )}
 
       {/* CSS Animations */}
+      {/* Most animations consolidated in index.css: pick-confirm, particle-burst-0/1/2/3 */}
+      {/* Dynamic card-select-pulse kept inline due to accentGlow variable */}
       <style>{`
         .pick-confirming {
           animation: pick-confirm 0.4s ease-out;
         }
-
         .card-selected {
           animation: card-select-pulse 2s ease-in-out infinite;
         }
-
-        @keyframes pick-confirm {
-          0% { transform: scale(1); filter: brightness(1); }
-          30% { transform: scale(1.08); filter: brightness(1.5); }
-          60% { transform: scale(1.03); filter: brightness(1.2); }
-          100% { transform: scale(1.05); filter: brightness(1.3); }
-        }
-
         @keyframes card-select-pulse {
           0%, 100% { box-shadow: 0 0 20px ${accentGlow}, 0 0 40px ${accentGlow}; }
           50% { box-shadow: 0 0 25px ${accentGlow}, 0 0 50px ${accentGlow}; }
-        }
-
-        @keyframes particle-burst-0 {
-          0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-          100% { opacity: 0; transform: translate(calc(-50% + 40px), calc(-50% - 30px)) scale(0.5); }
-        }
-        @keyframes particle-burst-1 {
-          0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-          100% { opacity: 0; transform: translate(calc(-50% - 35px), calc(-50% - 25px)) scale(0.5); }
-        }
-        @keyframes particle-burst-2 {
-          0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-          100% { opacity: 0; transform: translate(calc(-50% + 45px), calc(-50% + 20px)) scale(0.5); }
-        }
-        @keyframes particle-burst-3 {
-          0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-          100% { opacity: 0; transform: translate(calc(-50% - 40px), calc(-50% + 25px)) scale(0.5); }
-        }
-
-        /* Reduced motion support */
-        @media (prefers-reduced-motion: reduce) {
-          .pick-confirming,
-          .card-selected,
-          .particle {
-            animation: none !important;
-          }
         }
       `}</style>
     </div>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { BookOpen } from 'lucide-react';
+import { HOLO_COLORS } from '../../constants/holoTheme';
 
 /**
  * ConfirmationPopup - Reusable modal for confirming actions
@@ -68,7 +69,7 @@ const ConfirmationPopup = ({
         style={{
           background: 'linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%)',
           borderRadius: '24px',
-          border: '1px solid #21262d',
+          border: `1px solid ${HOLO_COLORS.borderSubtle}`,
           maxWidth: '380px',
           width: '100%',
           padding: '32px 24px 24px',
@@ -112,7 +113,7 @@ const ConfirmationPopup = ({
         <p style={{
           margin: '0 0 20px',
           fontSize: '15px',
-          color: '#8b949e',
+          color: HOLO_COLORS.textSecondary,
           textAlign: 'center'
         }}>
           {subtitle}
@@ -123,7 +124,7 @@ const ConfirmationPopup = ({
 
         {/* Details Box */}
         <div style={{
-          background: '#0d1117',
+          background: HOLO_COLORS.bgCard,
           borderRadius: '12px',
           padding: '16px',
           marginBottom: '20px'
@@ -136,12 +137,12 @@ const ConfirmationPopup = ({
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 padding: '8px 0',
-                borderBottom: index < details.length - 1 ? '1px solid #21262d' : 'none'
+                borderBottom: index < details.length - 1 ? `1px solid ${HOLO_COLORS.borderSubtle}` : 'none'
               }}
             >
-              <span style={{ color: '#8b949e', fontSize: '14px' }}>{detail.label}</span>
+              <span style={{ color: HOLO_COLORS.textSecondary, fontSize: '14px' }}>{detail.label}</span>
               <span style={{
-                color: detail.highlight ? detail.highlightColor || '#f59e0b' : '#ffffff',
+                color: detail.highlight ? detail.highlightColor || HOLO_COLORS.amber : '#ffffff',
                 fontSize: '14px',
                 fontWeight: '600'
               }}>
@@ -166,9 +167,9 @@ const ConfirmationPopup = ({
                   flex: 1,
                   padding: '14px',
                   borderRadius: '12px',
-                  border: `1px solid ${secondaryColor || confirmColor || '#21262d'}`,
+                  border: `1px solid ${secondaryColor || confirmColor || HOLO_COLORS.borderSubtle}`,
                   background: 'transparent',
-                  color: secondaryColor || confirmColor || '#8b949e',
+                  color: secondaryColor || confirmColor || HOLO_COLORS.textSecondary,
                   fontSize: '15px',
                   fontWeight: '600',
                   cursor: 'pointer',
@@ -205,9 +206,9 @@ const ConfirmationPopup = ({
               width: '100%',
               padding: '14px',
               borderRadius: '12px',
-              border: '1px solid #21262d',
+              border: `1px solid ${HOLO_COLORS.borderSubtle}`,
               background: 'transparent',
-              color: '#8b949e',
+              color: HOLO_COLORS.textSecondary,
               fontSize: '15px',
               fontWeight: '600',
               cursor: 'pointer',
@@ -231,9 +232,9 @@ const ConfirmationPopup = ({
               marginTop: '12px',
               padding: '12px 16px',
               background: 'transparent',
-              border: '1px solid #21262d',
+              border: `1px solid ${HOLO_COLORS.borderSubtle}`,
               borderRadius: '10px',
-              color: '#6e7681',
+              color: HOLO_COLORS.textMuted,
               fontSize: '14px',
               fontWeight: '500',
               cursor: 'pointer',
@@ -242,12 +243,12 @@ const ConfirmationPopup = ({
             onMouseOver={(e) => {
               e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
               e.currentTarget.style.borderColor = '#30363d';
-              e.currentTarget.style.color = '#8b949e';
+              e.currentTarget.style.color = HOLO_COLORS.textSecondary;
             }}
             onMouseOut={(e) => {
               e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.borderColor = '#21262d';
-              e.currentTarget.style.color = '#6e7681';
+              e.currentTarget.style.borderColor = HOLO_COLORS.borderSubtle;
+              e.currentTarget.style.color = HOLO_COLORS.textMuted;
             }}
           >
             <BookOpen size={16} />
