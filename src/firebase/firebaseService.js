@@ -2142,6 +2142,37 @@ export async function clearBotEntries(tournamentId) {
   return deleted;
 }
 
+/**
+ * Get all active tournaments (open, locked, or in_progress)
+ * Used for admin functions like recreating bots across all tournaments
+ * @returns {Promise<Array>} - Array of tournament objects with id
+ */
+export async function getActiveTournaments() {
+  try {
+    const tournamentsRef = collection(db, 'earningsTournaments');
+    const q = query(
+      tournamentsRef,
+      where('status', 'in', ['open', 'locked', 'in_progress'])
+    );
+
+    const snapshot = await getDocs(q);
+    const tournaments = [];
+
+    snapshot.forEach(docSnap => {
+      tournaments.push({
+        id: docSnap.id,
+        ...docSnap.data()
+      });
+    });
+
+    console.log(`[Firebase] Found ${tournaments.length} active tournaments`);
+    return tournaments;
+  } catch (error) {
+    console.error('[Firebase] Error getting active tournaments:', error);
+    return [];
+  }
+}
+
 // =====================================================
 // MULTI-ENTRY TOURNAMENT SYSTEM
 // =====================================================

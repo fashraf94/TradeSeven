@@ -839,6 +839,91 @@ const EarningsGameScreen = ({
               🤖 Populate Tournament with Bots (Testing)
             </button>
           )}
+
+          {/* Admin: Fix bots for ALL tournaments */}
+          {tournament && (
+            <button
+              onClick={async () => {
+                if (!confirm('This will delete and recreate ALL bot entries across ALL active tournaments. Continue?')) {
+                  return;
+                }
+
+                try {
+                  const botService = await import('../services/earningsBotService');
+                  const fb = await import('../firebase/firebaseService');
+                  const { enhanceEventWithParlays } = await import('../services/earningsReactionsService');
+
+                  // Get all active tournaments
+                  const activeTournaments = await fb.getActiveTournaments();
+                  console.log('Active tournaments:', activeTournaments);
+
+                  if (activeTournaments.length === 0) {
+                    alert('No active tournaments found.');
+                    return;
+                  }
+
+                  let totalDeleted = 0;
+                  let totalCreated = 0;
+
+                  // Generate parlays once (reuse for all tournaments)
+                  const parlaysByEvent = {};
+                  for (const event of events.slice(0, 20)) {
+                    try {
+                      const enhanced = enhanceEventWithParlays(event);
+                      parlaysByEvent[event.symbol] = enhanced.parlays || [];
+                    } catch (e) {
+                      console.warn(`Could not generate parlays for ${event.symbol}:`, e);
+                    }
+                  }
+
+                  // Process each tournament
+                  for (const t of activeTournaments) {
+                    console.log(`Processing tournament: ${t.id} (${t.name || 'unnamed'})`);
+
+                    // Clear existing bots
+                    const deleted = await fb.clearBotEntries(t.id);
+                    totalDeleted += deleted;
+                    console.log(`Deleted ${deleted} bots from ${t.id}`);
+
+                    // Generate new bots
+                    const botEntries = botService.generateBotEntries(
+                      events.slice(0, 20),
+                      parlaysByEvent,
+                      12
+                    );
+
+                    if (botEntries.length > 0) {
+                      const results = await fb.createBotTournamentEntries(t.id, botEntries);
+                      const created = results.filter(r => r.success).length;
+                      totalCreated += created;
+                      console.log(`Created ${created} bots for ${t.id}`);
+                    }
+                  }
+
+                  // Refresh leaderboard
+                  await refreshLeaderboard();
+
+                  alert(`Fixed ${activeTournaments.length} tournaments:\n- Deleted ${totalDeleted} old bots\n- Created ${totalCreated} new bots with proper dates`);
+                } catch (error) {
+                  console.error('Error fixing bots:', error);
+                  alert('Error fixing bots: ' + error.message);
+                }
+              }}
+              style={{
+                padding: '12px 24px',
+                background: 'linear-gradient(90deg, #ef4444 0%, #dc2626 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#ffffff',
+                fontWeight: '600',
+                cursor: 'pointer',
+                marginTop: '8px',
+                width: '100%'
+              }}
+            >
+              🔧 Fix ALL Tournament Bots (Admin)
+            </button>
+          )}
         </div>
 
         {/* Player Portfolio Modal */}
