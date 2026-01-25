@@ -11,6 +11,7 @@ import StonkOptionsOrder from './StonkOptionsOrder';
 import StonkOptionsPosition from './StonkOptionsPosition';
 import {
   calculatePortfolio,
+  calculateLiveValue,
   validateTournamentPortfolio,
   STONK_OPTIONS_CONFIG,
   EXPIRY_TIERS
@@ -738,6 +739,209 @@ const StonkOptionsArenaV2 = ({
     );
   };
 
+  // Position Lock Button Component
+  const PositionLockButton = ({ contract, entryId }) => {
+    const [isLocking, setIsLocking] = useState(false);
+
+    // Only show during in_progress tournament
+    if (!tournament?.tournament || tournament.tournament.status !== 'in_progress') {
+      return null;
+    }
+
+    // Find this contract in user's entries
+    const userEntry = tournament.userEntries.find(e => e.id === entryId);
+    if (!userEntry) return null;
+
+    const entryContract = userEntry.contracts.find(c => c.id === contract.id);
+
+    // Already locked
+    if (entryContract?.lockedValue !== null) {
+      return (
+        <div style={{
+          background: 'rgba(16, 185, 129, 0.1)',
+          border: '1px solid rgba(16, 185, 129, 0.3)',
+          borderRadius: '6px',
+          padding: '8px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '10px', color: '#10b981' }}>🔒 LOCKED</div>
+          <div style={{ fontSize: '14px', fontWeight: '700', color: '#10b981' }}>
+            ${entryContract.lockedValue.toFixed(2)}
+          </div>
+        </div>
+      );
+    }
+
+    // Calculate current value
+    const currentPrice = prices[contract.symbol] || contract.entryPrice;
+    const liveValue = calculateLiveValue(contract, currentPrice, Date.now());
+    const profitLoss = liveValue.currentValue - contract.entryAmount;
+    const percentReturn = (profitLoss / contract.entryAmount) * 100;
+
+    const handleLock = async () => {
+      if (!confirm(
+        `Lock in this position at $${liveValue.currentValue.toFixed(2)}?\n\n` +
+        `P/L: ${profitLoss >= 0 ? '+' : ''}$${profitLoss.toFixed(2)} (${percentReturn.toFixed(1)}%)\n\n` +
+        `This cannot be undone!`
+      )) {
+        return;
+      }
+
+      setIsLocking(true);
+      try {
+        await tournament.lockPosition(entryId, contract.id, liveValue.currentValue);
+      } catch (err) {
+        alert('Error locking position: ' + err.message);
+      } finally {
+        setIsLocking(false);
+      }
+    };
+
+    return (
+      <button
+        onClick={handleLock}
+        disabled={isLocking}
+        style={{
+          width: '100%',
+          padding: '8px',
+          marginTop: '8px',
+          borderRadius: '6px',
+          border: '1px solid #f59e0b',
+          background: 'rgba(245, 158, 11, 0.1)',
+          color: '#f59e0b',
+          cursor: 'pointer',
+          fontSize: '12px',
+          fontWeight: '600',
+          opacity: isLocking ? 0.7 : 1
+        }}
+      >
+        {isLocking ? 'Locking...' : `🔒 Lock In ${profitLoss >= 0 ? 'Gains' : 'Loss'}`}
+      </button>
+    );
+  };
+
+  // User Tournament Entries Component
+  const UserTournamentEntries = () => {
+    if (!tournamentMode || !tournament?.userEntries?.length) return null;
+    if (tournament.tournament?.status === 'open') return null; // Only show after lock deadline
+
+    return (
+      <div style={{
+        background: '#12121a',
+        borderRadius: '12px',
+        padding: '16px',
+        marginTop: '16px',
+        border: '1px solid #2d3748'
+      }}>
+        <h3 style={{
+          color: '#fff',
+          fontSize: '16px',
+          marginBottom: '12px',
+          margin: 0
+        }}>
+          📊 Your Tournament Entries
+        </h3>
+
+        {tournament.userEntries.map(entry => (
+          <div key={entry.id} style={{
+            background: '#1a1a2e',
+            borderRadius: '8px',
+            padding: '12px',
+            marginTop: '12px'
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              marginBottom: '8px'
+            }}>
+              <span style={{ color: '#9ca3af', fontSize: '12px' }}>
+                Entry #{entry.entryNumber}
+              </span>
+              <span style={{ color: '#00d9ff', fontSize: '12px', fontWeight: '600' }}>
+                {entry.contracts.length} positions
+              </span>
+            </div>
+
+            {entry.contracts.map(contract => {
+              const currentPrice = prices[contract.symbol] || contract.entryPrice;
+              const isLocked = contract.lockedValue !== null;
+              const value = isLocked
+                ? contract.lockedValue
+                : calculateLiveValue(contract, currentPrice, Date.now()).currentValue;
+              const pl = value - contract.entryAmount;
+
+              return (
+                <div key={contract.id} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px',
+                  background: '#0d0d12',
+                  borderRadius: '6px',
+                  marginBottom: '6px'
+                }}>
+                  <div>
+                    <span style={{ color: '#fff', fontWeight: '600' }}>
+                      {contract.symbol}
+                    </span>
+                    <span style={{
+                      color: contract.direction === 'call' ? '#10b981' : '#ef4444',
+                      marginLeft: '6px',
+                      fontSize: '12px'
+                    }}>
+                      {contract.direction.toUpperCase()} ${contract.strike}
+                    </span>
+                    <span style={{ color: '#6b7280', marginLeft: '6px', fontSize: '11px' }}>
+                      {contract.daysToExpiry}D
+                    </span>
+                    {isLocked && (
+                      <span style={{
+                        marginLeft: '6px',
+                        fontSize: '10px',
+                        background: '#10b981',
+                        color: '#000',
+                        padding: '2px 4px',
+                        borderRadius: '3px'
+                      }}>
+                        🔒
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{
+                      color: pl >= 0 ? '#10b981' : '#ef4444',
+                      fontWeight: '600',
+                      fontSize: '13px'
+                    }}>
+                      {pl >= 0 ? '+' : ''}${pl.toFixed(2)}
+                    </div>
+                    {!isLocked && tournament.tournament?.status === 'in_progress' && (
+                      <PositionLockButton contract={contract} entryId={entry.id} />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              marginTop: '8px',
+              paddingTop: '8px',
+              borderTop: '1px solid #2d3748'
+            }}>
+              <span style={{ color: '#9ca3af', fontSize: '12px' }}>Portfolio Value</span>
+              <span style={{ color: '#fff', fontWeight: '700' }}>
+                ${entry.results?.totalValue?.toFixed(2) || 'Calculating...'}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div style={{
@@ -1111,6 +1315,9 @@ const StonkOptionsArenaV2 = ({
 
         {/* Tournament Submit Button */}
         <TournamentSubmitButton />
+
+        {/* User Tournament Entries - shows submitted entries with lock buttons */}
+        <UserTournamentEntries />
       </div>
 
       {/* Footer */}
