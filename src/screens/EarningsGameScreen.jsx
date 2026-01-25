@@ -929,16 +929,10 @@ const EarningsGameScreen = ({
           {tournament && (
             <button
               onClick={async () => {
-                // Get tournament date range
-                const weekStart = tournament.weekStart;
-                const weekEnd = tournament.weekEnd;
+                // This approach uses symbols from RESOLVED user predictions
+                // Since those predictions resolved successfully, we know EODHD has data for them
 
-                if (!weekStart || !weekEnd) {
-                  alert('Tournament is missing weekStart/weekEnd dates. Cannot filter events.');
-                  return;
-                }
-
-                if (!confirm(`🧪 TESTING MODE\n\nThis will create bots using HISTORICAL earnings data from:\n${weekStart} to ${weekEnd}\n\nThis fetches actual past earnings from EODHD fundamentals.\nContinue?`)) {
+                if (!confirm(`🧪 TESTING MODE\n\nThis will create bots using symbols from RESOLVED user predictions in this tournament.\n\nThis guarantees bots use stocks that have EODHD results data.\nContinue?`)) {
                   return;
                 }
 
@@ -946,25 +940,67 @@ const EarningsGameScreen = ({
                   const botService = await import('../services/earningsBotService');
                   const fb = await import('../firebase/firebaseService');
                   const { enhanceEventWithParlays } = await import('../services/earningsReactionsService');
-                  const { getHistoricalEarningsForDateRange } = await import('../services/earningsCalendarService');
 
-                  // Clear existing bots first
+                  // Step 1: Get all entries in this tournament
+                  console.log('Fetching tournament entries...');
+                  const allEntries = await fb.getTournamentLeaderboard(tournament.id, 1000);
+                  console.log(`Found ${allEntries.length} entries`);
+
+                  // Step 2: Find resolved predictions from NON-bot entries
+                  const resolvedPredictions = [];
+                  const symbolsWithResults = new Set();
+
+                  for (const entry of allEntries) {
+                    if (entry.isBot) continue; // Skip bot entries
+
+                    const predictions = entry.predictions || [];
+                    for (const pred of predictions) {
+                      if (pred.resolved && pred.actualMove !== undefined && pred.actualMove !== null) {
+                        resolvedPredictions.push(pred);
+                        symbolsWithResults.add(pred.symbol);
+                      }
+                    }
+                  }
+
+                  console.log(`Found ${resolvedPredictions.length} resolved predictions from ${symbolsWithResults.size} unique symbols`);
+                  console.log('Symbols with results:', [...symbolsWithResults]);
+
+                  if (symbolsWithResults.size === 0) {
+                    alert('No resolved user predictions found in this tournament.\n\nRun resolution first, or ensure there are user predictions with results.');
+                    return;
+                  }
+
+                  // Step 3: Build event-like objects from resolved predictions
+                  // Group by symbol to avoid duplicates
+                  const eventsBySymbol = {};
+                  for (const pred of resolvedPredictions) {
+                    if (!eventsBySymbol[pred.symbol]) {
+                      // Create event-like object from the prediction
+                      eventsBySymbol[pred.symbol] = {
+                        id: pred.eventId || `${pred.symbol}_${pred.reportDate}`,
+                        symbol: pred.symbol,
+                        companyName: pred.companyName || pred.symbol,
+                        reportDate: pred.reportDate,
+                        reportTime: pred.reportTime || 'TBD',
+                        // Use sector defaults for beat odds (we don't need perfect odds for bot testing)
+                        beatOdds: 0.65,
+                        missOdds: 0.35,
+                        source: 'resolved_prediction',
+                        sector: pred.sector || 'default'
+                      };
+                    }
+                  }
+
+                  const historicalEvents = Object.values(eventsBySymbol);
+                  console.log(`Built ${historicalEvents.length} events from resolved predictions`);
+                  console.log('Events:', historicalEvents.map(e => `${e.symbol} (${e.reportDate})`));
+
+                  // Step 4: Clear existing bots
                   console.log('Clearing existing bot entries...');
                   const deletedCount = await fb.clearBotEntries(tournament.id);
                   console.log(`Deleted ${deletedCount} existing bot entries`);
 
-                  // Fetch HISTORICAL earnings using fundamentals endpoint
-                  console.log(`Fetching historical earnings from ${weekStart} to ${weekEnd}...`);
-                  const historicalEvents = await getHistoricalEarningsForDateRange(weekStart, weekEnd);
-                  console.log(`Found ${historicalEvents?.length || 0} historical earnings events`);
-                  console.log('Historical events:', historicalEvents.map(e => `${e.symbol} (${e.reportDate})`));
-
-                  if (!historicalEvents || historicalEvents.length === 0) {
-                    alert(`No historical earnings found between ${weekStart} and ${weekEnd}.\n\nMake sure the date range is in the past and has earnings data.`);
-                    return;
-                  }
-
-                  // Generate parlays for historical events
+                  // Step 5: Generate parlays for events
                   const parlaysByEvent = {};
                   for (const event of historicalEvents) {
                     try {
@@ -977,7 +1013,7 @@ const EarningsGameScreen = ({
 
                   console.log('Generated parlays for', Object.keys(parlaysByEvent).length, 'events');
 
-                  // Generate bot entries using historical events
+                  // Step 6: Generate bot entries
                   const botEntries = botService.generateBotEntries(
                     historicalEvents,
                     parlaysByEvent,
@@ -991,19 +1027,19 @@ const EarningsGameScreen = ({
                     return;
                   }
 
-                  // Verify bot predictions have correct dates
+                  // Verify bot predictions have correct data
                   const samplePred = botEntries[0]?.predictions?.[0];
                   console.log('Sample bot prediction:', samplePred);
-                  console.log('Sample reportDate:', samplePred?.reportDate);
+                  console.log('Sample potentialPayout:', samplePred?.potentialPayout);
 
-                  // Save to Firebase
+                  // Step 7: Save to Firebase
                   const results = await fb.createBotTournamentEntries(tournament.id, botEntries);
                   console.log('Bot creation results:', results);
 
                   // Refresh leaderboard
                   await refreshLeaderboard();
 
-                  alert(`🧪 Testing bots created!\n\n- Deleted ${deletedCount} old bots\n- Created ${results.filter(r => r.success).length} new bots\n- Using ${historicalEvents.length} historical events from ${weekStart} to ${weekEnd}`);
+                  alert(`🧪 Testing bots created!\n\n- Deleted ${deletedCount} old bots\n- Created ${results.filter(r => r.success).length} new bots\n- Using ${historicalEvents.length} stocks from resolved predictions\n\nSymbols: ${[...symbolsWithResults].join(', ')}`);
                 } catch (error) {
                   console.error('Error creating historical bots:', error);
                   alert('Error creating historical bots: ' + error.message);
