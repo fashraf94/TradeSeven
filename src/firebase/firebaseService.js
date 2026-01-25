@@ -17,7 +17,8 @@ import {
   limit,
   Timestamp,
   serverTimestamp,
-  increment
+  increment,
+  writeBatch
 } from 'firebase/firestore';
 import { db } from './config';
 import { getVolatilityThresholds } from '../services/volatilityService.js';
@@ -2588,6 +2589,283 @@ export async function getUserBestEntry(tournamentId, userId) {
 }
 
 // =====================================================
+// OPTIONS TOURNAMENT FUNCTIONS
+// =====================================================
+
+export const MAX_OPTIONS_ENTRIES_PER_USER = 3;
+
+// Tournament CRUD
+
+/**
+ * Get active options tournament (open or in_progress)
+ * @returns {Promise<Object|null>} - Tournament object or null
+ */
+export async function getActiveOptionsTournament() {
+  const q = query(
+    collection(db, 'optionsTournaments'),
+    where('status', 'in', ['open', 'in_progress']),
+    limit(1)
+  );
+  const snapshot = await getDocs(q);
+  if (snapshot.empty) return null;
+  return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+}
+
+/**
+ * Get options tournament by ID
+ * @param {string} tournamentId - Tournament ID
+ * @returns {Promise<Object|null>} - Tournament object or null
+ */
+export async function getOptionsTournamentById(tournamentId) {
+  const docRef = doc(db, 'optionsTournaments', tournamentId);
+  const snapshot = await getDoc(docRef);
+  if (!snapshot.exists()) return null;
+  return { id: snapshot.id, ...snapshot.data() };
+}
+
+/**
+ * Create a new options tournament
+ * @param {Object} tournamentData - Tournament data with id
+ * @returns {Promise<Object>} - Created tournament data
+ */
+export async function createOptionsTournament(tournamentData) {
+  const docRef = doc(db, 'optionsTournaments', tournamentData.id);
+  await setDoc(docRef, {
+    ...tournamentData,
+    createdAt: serverTimestamp()
+  });
+  return tournamentData;
+}
+
+/**
+ * Update options tournament status
+ * @param {string} tournamentId - Tournament ID
+ * @param {string} status - New status
+ */
+export async function updateOptionsTournamentStatus(tournamentId, status) {
+  const docRef = doc(db, 'optionsTournaments', tournamentId);
+  await updateDoc(docRef, { status, updatedAt: serverTimestamp() });
+}
+
+// Entry CRUD
+
+/**
+ * Create a new options tournament entry
+ * @param {string} tournamentId - Tournament ID
+ * @param {string} userId - User's odUserId
+ * @param {string} username - Display name
+ * @param {Array} contracts - Array of contract objects
+ * @param {number} totalEntry - Total amount invested
+ * @returns {Promise<Object>} - Created entry with id
+ */
+export async function createOptionsEntry(tournamentId, userId, username, contracts, totalEntry) {
+  // Check entry count
+  const existingEntries = await getUserOptionsEntries(tournamentId, userId);
+  if (existingEntries.length >= MAX_OPTIONS_ENTRIES_PER_USER) {
+    throw new Error(`Maximum ${MAX_OPTIONS_ENTRIES_PER_USER} entries allowed per tournament`);
+  }
+
+  const entryNumber = existingEntries.length + 1;
+  const entryId = `${userId}_${entryNumber}_${tournamentId}`;
+
+  const entry = {
+    odUserId: userId,
+    tournamentId,
+    username,
+    entryNumber,
+    contracts: contracts.map(c => ({
+      ...c,
+      lockedValue: null,  // null = not locked yet
+      lockedAt: null,
+      settled: false,
+      finalValue: null
+    })),
+    totalEntry,
+    virtualCash: 10000 - totalEntry,
+    status: 'locked',
+    isBot: false,
+    results: {
+      totalValue: null,
+      percentReturn: null,
+      settledCount: 0,
+      lockedCount: 0
+    },
+    rank: null,
+    createdAt: serverTimestamp()
+  };
+
+  const docRef = doc(db, 'optionsEntries', entryId);
+  await setDoc(docRef, entry);
+
+  // Increment tournament entry count
+  const tournamentRef = doc(db, 'optionsTournaments', tournamentId);
+  await updateDoc(tournamentRef, { entryCount: increment(1) });
+
+  return { id: entryId, ...entry };
+}
+
+/**
+ * Get all entries for a user in an options tournament
+ * @param {string} tournamentId - Tournament ID
+ * @param {string} userId - User's odUserId
+ * @returns {Promise<Array>} - Array of entry objects
+ */
+export async function getUserOptionsEntries(tournamentId, userId) {
+  const q = query(
+    collection(db, 'optionsEntries'),
+    where('tournamentId', '==', tournamentId),
+    where('odUserId', '==', userId)
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+/**
+ * Get all entries for an options tournament
+ * @param {string} tournamentId - Tournament ID
+ * @returns {Promise<Array>} - Array of entry objects
+ */
+export async function getOptionsEntriesForTournament(tournamentId) {
+  const q = query(
+    collection(db, 'optionsEntries'),
+    where('tournamentId', '==', tournamentId)
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+/**
+ * Lock an individual position mid-tournament
+ * @param {string} entryId - Entry ID
+ * @param {string} contractId - Contract ID to lock
+ * @param {number} lockedValue - Value to lock at
+ * @returns {Promise<Object>} - Lock result
+ */
+export async function lockOptionsPosition(entryId, contractId, lockedValue) {
+  const entryRef = doc(db, 'optionsEntries', entryId);
+  const entrySnap = await getDoc(entryRef);
+
+  if (!entrySnap.exists()) throw new Error('Entry not found');
+
+  const entry = entrySnap.data();
+  const updatedContracts = entry.contracts.map(c => {
+    if (c.id === contractId) {
+      return {
+        ...c,
+        lockedValue,
+        lockedAt: new Date().toISOString()
+      };
+    }
+    return c;
+  });
+
+  const lockedCount = updatedContracts.filter(c => c.lockedValue !== null).length;
+
+  await updateDoc(entryRef, {
+    contracts: updatedContracts,
+    'results.lockedCount': lockedCount,
+    updatedAt: serverTimestamp()
+  });
+
+  return { contractId, lockedValue };
+}
+
+/**
+ * Settle an expired contract (binary payout)
+ * @param {string} entryId - Entry ID
+ * @param {string} contractId - Contract ID to settle
+ * @param {number} settlementPrice - Settlement price
+ * @param {number} finalValue - Final payout value
+ */
+export async function settleOptionsContract(entryId, contractId, settlementPrice, finalValue) {
+  const entryRef = doc(db, 'optionsEntries', entryId);
+  const entrySnap = await getDoc(entryRef);
+
+  if (!entrySnap.exists()) throw new Error('Entry not found');
+
+  const entry = entrySnap.data();
+  const updatedContracts = entry.contracts.map(c => {
+    if (c.id === contractId) {
+      return {
+        ...c,
+        settled: true,
+        settlementPrice,
+        finalValue
+      };
+    }
+    return c;
+  });
+
+  const settledCount = updatedContracts.filter(c => c.settled).length;
+
+  await updateDoc(entryRef, {
+    contracts: updatedContracts,
+    'results.settledCount': settledCount,
+    updatedAt: serverTimestamp()
+  });
+}
+
+/**
+ * Final tournament resolution for an entry
+ * @param {string} entryId - Entry ID
+ * @param {number} totalValue - Final portfolio value
+ * @param {number} percentReturn - Percentage return
+ */
+export async function resolveOptionsEntry(entryId, totalValue, percentReturn) {
+  const entryRef = doc(db, 'optionsEntries', entryId);
+  await updateDoc(entryRef, {
+    'results.totalValue': totalValue,
+    'results.percentReturn': percentReturn,
+    status: 'complete',
+    updatedAt: serverTimestamp()
+  });
+}
+
+/**
+ * Calculate and update rankings for options tournament
+ * @param {string} tournamentId - Tournament ID
+ * @returns {Promise<number>} - Number of entries ranked
+ */
+export async function calculateOptionsRankings(tournamentId) {
+  const entries = await getOptionsEntriesForTournament(tournamentId);
+
+  // Sort by total value descending
+  const sorted = entries
+    .filter(e => e.results?.totalValue !== null)
+    .sort((a, b) => b.results.totalValue - a.results.totalValue);
+
+  // Update ranks using batch
+  const batch = writeBatch(db);
+  sorted.forEach((entry, index) => {
+    const entryRef = doc(db, 'optionsEntries', entry.id);
+    batch.update(entryRef, { rank: index + 1 });
+  });
+
+  await batch.commit();
+  return sorted.length;
+}
+
+/**
+ * Remove all bot entries from an options tournament
+ * @param {string} tournamentId - Tournament ID
+ * @returns {Promise<number>} - Number of entries deleted
+ */
+export async function clearOptionsBotEntries(tournamentId) {
+  const q = query(
+    collection(db, 'optionsEntries'),
+    where('tournamentId', '==', tournamentId),
+    where('isBot', '==', true)
+  );
+  const snapshot = await getDocs(q);
+
+  const batch = writeBatch(db);
+  snapshot.docs.forEach(doc => batch.delete(doc.ref));
+  await batch.commit();
+
+  return snapshot.size;
+}
+
+// =====================================================
 // EXPORTS
 // =====================================================
 
@@ -2654,5 +2932,20 @@ export default {
 
   // Tournament Bots
   createBotTournamentEntries,
-  clearBotEntries
+  clearBotEntries,
+
+  // Options Tournaments
+  MAX_OPTIONS_ENTRIES_PER_USER,
+  getActiveOptionsTournament,
+  getOptionsTournamentById,
+  createOptionsTournament,
+  updateOptionsTournamentStatus,
+  createOptionsEntry,
+  getUserOptionsEntries,
+  getOptionsEntriesForTournament,
+  lockOptionsPosition,
+  settleOptionsContract,
+  resolveOptionsEntry,
+  calculateOptionsRankings,
+  clearOptionsBotEntries
 };

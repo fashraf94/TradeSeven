@@ -43,10 +43,12 @@ export const STONK_OPTIONS_CONFIG = {
 
   // Available expiry durations
   expiryOptions: [
-    { days: 1, label: '1 Day', shortLabel: '1D', timeFactor: 0.38 },
-    { days: 3, label: '3 Days', shortLabel: '3D', timeFactor: 0.65 },
-    { days: 7, label: '1 Week', shortLabel: '7D', timeFactor: 1.0 },
-    { days: 14, label: '2 Weeks', shortLabel: '14D', timeFactor: 1.41 }
+    { days: 1,  label: '1 Day',    shortLabel: '1D',  timeFactor: 0.38, tier: 'short' },
+    { days: 3,  label: '3 Days',   shortLabel: '3D',  timeFactor: 0.65, tier: 'short' },
+    { days: 7,  label: '1 Week',   shortLabel: '7D',  timeFactor: 1.0,  tier: 'medium' },
+    { days: 14, label: '2 Weeks',  shortLabel: '14D', timeFactor: 1.41, tier: 'long' },
+    { days: 21, label: '3 Weeks',  shortLabel: '21D', timeFactor: 1.73, tier: 'long' },
+    { days: 28, label: '4 Weeks',  shortLabel: '28D', timeFactor: 2.0,  tier: 'long' }
   ],
 
   // House edge (added to premium)
@@ -60,6 +62,16 @@ export const STONK_OPTIONS_CONFIG = {
   minPosition: 100,
   maxPosition: 5000,
   maxPositionsPerUser: 10
+};
+
+// ============================================
+// EXPIRY TIER CONFIGURATION
+// ============================================
+
+export const EXPIRY_TIERS = {
+  short:  { expiries: [1, 3],       minRequired: 2, label: 'Short-term (1-3 days)' },
+  medium: { expiries: [7],          minRequired: 3, label: 'Medium-term (1 week)' },
+  long:   { expiries: [14, 21, 28], minRequired: 2, label: 'Long-term (2-4 weeks)' }
 };
 
 // ============================================
@@ -505,11 +517,78 @@ export const validateContract = (params) => {
 };
 
 // ============================================
+// TOURNAMENT PORTFOLIO VALIDATION
+// ============================================
+
+/**
+ * Validate a portfolio for tournament entry
+ * Enforces tier diversification requirements
+ */
+export const validateTournamentPortfolio = (contracts) => {
+  const errors = [];
+  const tierCounts = { short: 0, medium: 0, long: 0 };
+
+  // Count contracts per tier
+  for (const contract of contracts) {
+    const expiry = contract.daysToExpiry;
+    if ([1, 3].includes(expiry)) tierCounts.short++;
+    else if (expiry === 7) tierCounts.medium++;
+    else if ([14, 21, 28].includes(expiry)) tierCounts.long++;
+  }
+
+  // Check minimums
+  if (tierCounts.short < EXPIRY_TIERS.short.minRequired) {
+    errors.push(`Short-term: Need ${EXPIRY_TIERS.short.minRequired - tierCounts.short} more (1D or 3D expiry)`);
+  }
+  if (tierCounts.medium < EXPIRY_TIERS.medium.minRequired) {
+    errors.push(`Medium-term: Need ${EXPIRY_TIERS.medium.minRequired - tierCounts.medium} more (7D expiry)`);
+  }
+  if (tierCounts.long < EXPIRY_TIERS.long.minRequired) {
+    errors.push(`Long-term: Need ${EXPIRY_TIERS.long.minRequired - tierCounts.long} more (14D, 21D, or 28D expiry)`);
+  }
+
+  // Check total (minimum 7 = 2 short + 3 medium + 2 long)
+  const minContracts = EXPIRY_TIERS.short.minRequired + EXPIRY_TIERS.medium.minRequired + EXPIRY_TIERS.long.minRequired;
+  if (contracts.length < minContracts) {
+    errors.push(`Need ${minContracts - contracts.length} more contracts (${minContracts} minimum)`);
+  }
+  if (contracts.length > STONK_OPTIONS_CONFIG.maxPositionsPerUser) {
+    errors.push(`Too many contracts (${STONK_OPTIONS_CONFIG.maxPositionsPerUser} maximum)`);
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    tierCounts,
+    totalContracts: contracts.length,
+    requirements: {
+      short: { required: EXPIRY_TIERS.short.minRequired, current: tierCounts.short },
+      medium: { required: EXPIRY_TIERS.medium.minRequired, current: tierCounts.medium },
+      long: { required: EXPIRY_TIERS.long.minRequired, current: tierCounts.long }
+    }
+  };
+};
+
+/**
+ * Calculate mark-to-market value for a contract
+ * Simplified wrapper around calculateLiveValue for tournament scoring
+ */
+export const calculateMarkToMarket = (contract, currentPrice) => {
+  const liveValue = calculateLiveValue(contract, currentPrice, Date.now());
+  return {
+    currentValue: liveValue.currentValue,
+    profitLoss: liveValue.profitLoss,
+    percentReturn: liveValue.percentReturn
+  };
+};
+
+// ============================================
 // EXPORT
 // ============================================
 
 export default {
   STONK_OPTIONS_CONFIG,
+  EXPIRY_TIERS,
   getVolatilityTier,
   generateStrikes,
   getTimeFactor,
@@ -519,5 +598,7 @@ export default {
   calculateLiveValue,
   settleContract,
   calculatePortfolio,
-  validateContract
+  validateContract,
+  validateTournamentPortfolio,
+  calculateMarkToMarket
 };
