@@ -115,6 +115,12 @@ const EarningsGameScreen = ({
     movement: 0, // TODO: Calculate from previous rank
   }), [userRank, userEntry, totalPotentialPoints, userBracket]);
 
+  // Admin check - only show admin/testing buttons for these users
+  const ADMIN_USERS = ['flash', 'admin', 'test'];
+  const isAdmin = ADMIN_USERS.includes(user?.username?.toLowerCase()) ||
+                  ADMIN_USERS.includes(user?.odId?.toLowerCase()) ||
+                  window.location.search.includes('admin=true');
+
   // Leaderboard data (real from Firebase, with current user highlighted)
   const leaderboardData = useMemo(() => {
     if (!tournamentLeaderboard || tournamentLeaderboard.length === 0) {
@@ -763,8 +769,8 @@ const EarningsGameScreen = ({
             )}
           </div>
 
-          {/* TESTING ONLY - Bot Population Button */}
-          {tournament && (
+          {/* ADMIN ONLY - Bot Population Button */}
+          {isAdmin && tournament && (
             <button
               onClick={async () => {
                 try {
@@ -840,8 +846,8 @@ const EarningsGameScreen = ({
             </button>
           )}
 
-          {/* Admin: Fix bots for ALL tournaments */}
-          {tournament && (
+          {/* ADMIN ONLY - Fix bots for ALL tournaments */}
+          {isAdmin && tournament && (
             <button
               onClick={async () => {
                 if (!confirm('This will delete and recreate ALL bot entries across ALL active tournaments. Continue?')) {
@@ -925,8 +931,8 @@ const EarningsGameScreen = ({
             </button>
           )}
 
-          {/* Testing: Populate bots with HISTORICAL dates (for testing old tournaments) */}
-          {tournament && (
+          {/* ADMIN ONLY - Populate bots with HISTORICAL dates (for testing old tournaments) */}
+          {isAdmin && tournament && (
             <button
               onClick={async () => {
                 // This approach uses symbols from RESOLVED user predictions
