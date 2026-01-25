@@ -414,9 +414,10 @@ export async function getHybridEarningsCalendar(days = 14) {
       // Use lookup table for company name, fallback to EODHD name or symbol
       const companyName = COMPANY_NAMES[symbolUpper] || event.companyName || symbolUpper;
 
-      // Parse date as LOCAL date to avoid timezone issues
-      const [year, month, day] = event.reportDate.split('-').map(Number);
-      const localDate = new Date(year, month - 1, day);
+      // Keep reportDate as YYYY-MM-DD string to avoid timezone conversion issues
+      // When Date objects are converted to ISO strings (e.g., in Firebase storage),
+      // the date can shift due to timezone differences (UTC vs local)
+      const reportDateStr = event.reportDate.split('T')[0]; // Ensure YYYY-MM-DD format
 
       // Extract historical and momentum info for display
       const historicalRate = breakdown?.historical?.rate;
@@ -429,7 +430,7 @@ export async function getHybridEarningsCalendar(days = 14) {
         id: `eodhd_${symbolUpper}_${event.reportDate}`,
         symbol: symbolUpper,
         companyName: companyName,
-        reportDate: localDate,
+        reportDate: reportDateStr, // Keep as string to avoid timezone issues
         reportTime: event.reportTime || 'TBD',
         beatOdds: beatOdds,
         missOdds: 1 - beatOdds,
@@ -487,8 +488,61 @@ export async function getHybridEarningsCalendar(days = 14) {
   }
 }
 
+/**
+ * Get historical earnings events within a date range (for testing old tournaments)
+ *
+ * This calls the backend API which uses EODHD's fundamentals endpoint to get past earnings data,
+ * since the calendar endpoint only returns future events.
+ *
+ * @param {string} startDate - Start date (YYYY-MM-DD)
+ * @param {string} endDate - End date (YYYY-MM-DD)
+ * @returns {Promise<Array>} - Array of event-like objects for bot generation
+ */
+export async function getHistoricalEarningsForDateRange(startDate, endDate) {
+  console.log(`[Historical] Fetching earnings between ${startDate} and ${endDate}`);
+
+  try {
+    // Call our backend API which handles EODHD requests server-side
+    const url = `/api/stocks/earnings-historical-range?startDate=${startDate}&endDate=${endDate}`;
+    console.log(`[Historical] Calling backend: ${url}`);
+
+    const response = await fetch(url);
+    console.log(`[Historical] Response status: ${response.status}`);
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error(`[Historical] API error: ${text}`);
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log(`[Historical] API response:`, data);
+
+    if (!data.success) {
+      console.error(`[Historical] API returned error:`, data.error);
+      return [];
+    }
+
+    const events = data.events || [];
+    console.log(`[Historical] Found ${events.length} events from ${data.stocksChecked} stocks checked`);
+
+    // Log the events found
+    if (events.length > 0) {
+      console.log('[Historical] Events:');
+      events.forEach(e => console.log(`  - ${e.symbol}: ${e.reportDate} (${e.companyName})`));
+    }
+
+    return events;
+
+  } catch (error) {
+    console.error('[Historical] Error fetching historical earnings:', error);
+    return [];
+  }
+}
+
 export default {
   getHybridEarningsCalendar,
+  getHistoricalEarningsForDateRange,
   calculatePredictionMetrics,
   oddsToPrice
 };

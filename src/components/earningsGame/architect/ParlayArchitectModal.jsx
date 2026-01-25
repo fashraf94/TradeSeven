@@ -143,6 +143,7 @@ export default function ParlayArchitectModal({
       eventId: event.id,
       symbol: event.symbol,
       companyName: event.companyName,
+      reportDate: event.reportDate, // Include reportDate for resolution lookup
       outcome: selectedOutcome,
       magnitude: selectedMagnitude,
       price: selectedParlay.price,

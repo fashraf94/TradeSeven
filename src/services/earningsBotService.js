@@ -91,6 +91,40 @@ const selectPrecisionTier = (riskLevel) => {
   return 'bullseye';
 };
 
+// Helper to safely extract date string from various formats
+const safeGetDateString = (date) => {
+  if (!date) return null;
+
+  // Already a YYYY-MM-DD string
+  if (typeof date === 'string') {
+    return date.split('T')[0]; // Handle ISO strings
+  }
+
+  // Date object - convert to YYYY-MM-DD
+  if (date instanceof Date && !isNaN(date.getTime())) {
+    return date.toISOString().split('T')[0];
+  }
+
+  // Empty object {} (corrupted Date) - return null
+  if (typeof date === 'object' && Object.keys(date).length === 0) {
+    console.warn('[BotService] Empty date object detected - date was likely corrupted');
+    return null;
+  }
+
+  // Firestore Timestamp-like
+  if (typeof date?.toDate === 'function') {
+    return date.toDate().toISOString().split('T')[0];
+  }
+
+  // Firestore Timestamp with seconds
+  if (date?.seconds) {
+    return new Date(date.seconds * 1000).toISOString().split('T')[0];
+  }
+
+  console.warn('[BotService] Unrecognized date format:', date);
+  return null;
+};
+
 // Generate a single bot prediction for an event
 const generateBotPrediction = (event, parlays, strategy, riskLevel) => {
   const outcome = selectOutcome(event, strategy);
@@ -104,23 +138,35 @@ const generateBotPrediction = (event, parlays, strategy, riskLevel) => {
 
   if (!parlay) return null;
 
+  // Safely extract reportDate as YYYY-MM-DD string
+  const reportDateStr = safeGetDateString(event.reportDate);
+  if (!reportDateStr) {
+    console.warn(`[BotService] Could not extract valid date for ${event.symbol}`);
+    return null; // Skip this prediction if we can't get a valid date
+  }
+
   // Get precision option with defensive fallbacks
-  const precisionOption = parlay.precisionOptions?.find(p => p.tier === precisionTier)
+  // Note: precisionOptions use 'finalMultiplier' (not 'multiplier') and 'tierId' (not 'tier')
+  const precisionOption = parlay.precisionOptions?.find(p => p.tierId === precisionTier || p.tier === precisionTier)
     || parlay.precisionOptions?.[0]
     || {
-      tier: 'standard',
-      multiplier: parlay.baseMultiplier || 1.5,
+      tierId: 'standard',
+      finalMultiplier: parlay.baseMultiplier || 1.5,
       range: parlay.magnitudeRange || '±2%'
     };
 
-  // Ensure tier is always defined
-  const tierName = precisionOption?.tier || 'standard';
+  // Ensure tier is always defined (check both tierId and tier for backwards compatibility)
+  const tierName = precisionOption?.tierId || precisionOption?.tier || 'standard';
+
+  // Get multiplier - precisionOptions use 'finalMultiplier', fallback uses legacy 'multiplier' field
+  const multiplier = precisionOption.finalMultiplier || precisionOption.multiplier || parlay.baseMultiplier || 1.5;
+  const potentialPayout = Math.round(parlay.price * multiplier);
 
   return {
-    eventId: event.id || `${event.symbol}_${event.reportDate}`,
+    eventId: event.id || `${event.symbol}_${reportDateStr}`,
     symbol: event.symbol,
     companyName: event.companyName,
-    reportDate: event.reportDate,
+    reportDate: reportDateStr, // Always a YYYY-MM-DD string
     outcome: parlay.outcome,
     outcomeLabel: parlay.outcomeLabel,
     magnitude: parlay.magnitude,
@@ -133,9 +179,9 @@ const generateBotPrediction = (event, parlays, strategy, riskLevel) => {
     price: parlay.price,
     priceDisplay: parlay.priceDisplay,
     baseMultiplier: parlay.baseMultiplier,
-    finalMultiplier: precisionOption.multiplier,
-    potentialPayout: Math.round(parlay.price * precisionOption.multiplier),
-    potentialPayoutDisplay: `$${Math.round(parlay.price * precisionOption.multiplier).toLocaleString()}`,
+    finalMultiplier: multiplier,
+    potentialPayout: potentialPayout,
+    potentialPayoutDisplay: `$${potentialPayout.toLocaleString()}`,
     risk: parlay.risk,
     combinedProb: parlay.combinedProb,
     outcomeOdds: parlay.outcomeOdds,

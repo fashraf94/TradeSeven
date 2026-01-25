@@ -499,9 +499,14 @@ export default async function handler(req, res) {
       // Score each entry
       const batch = db.batch();
       let tournamentPendingCount = 0;
+      let botEntriesProcessed = 0;
+      let botPredictionsResolved = 0;
+      let botPredictionsPending = 0;
+      let botTotalPoints = 0;
 
       for (const entryDoc of entriesSnapshot.docs) {
         const entry = entryDoc.data();
+        const isBot = entry.isBot === true;
         let totalPoints = 0;
         let correctCount = 0;
         let incorrectCount = 0;
@@ -521,6 +526,24 @@ export default async function handler(req, res) {
           const date = toYYYYMMDD(rawDate) || rawDate;
           const key = `${pred.symbol}_${date}`;
           const result = resultsMap.get(key);
+
+          // Enhanced logging for bot predictions to diagnose 0 pts issue
+          if (isBot) {
+            const rawDateType = typeof rawDate;
+            const rawDateStr = rawDate && typeof rawDate === 'object'
+              ? (rawDate.toDate ? 'FirestoreTimestamp' : (rawDate.seconds ? 'TimestampLike' : JSON.stringify(rawDate)))
+              : String(rawDate);
+            logInfo('BOT_PREDICTION', `${entry.username} | ${pred.symbol}`, {
+              rawDate: rawDateStr,
+              rawDateType,
+              normalizedDate: date,
+              lookupKey: key,
+              resultFound: !!result,
+              predicted: `${pred.outcome}/${pred.magnitude}`,
+              actual: result ? `${result.outcome}/${result.magnitude}` : 'N/A',
+              potentialPayout: pred.potentialPayout || pred.potentialPoints || 0
+            });
+          }
 
           if (!result) {
             // Result not available yet
@@ -542,6 +565,16 @@ export default async function handler(req, res) {
           if (scored.isCorrect) correctCount++;
           else incorrectCount++;
           results.predictionsResolved++;
+
+          // Log bot prediction scoring details
+          if (isBot) {
+            logInfo('BOT_SCORE', `${entry.username} | ${pred.symbol} | ${scored.isCorrect ? 'CORRECT' : 'WRONG'} | earned=${scored.pointsEarned}`, {
+              predicted: `${pred.outcome}/${pred.magnitude}`,
+              actual: `${scored.actualOutcome}/${scored.actualMagnitude}`,
+              outcomeCorrect: scored.outcomeCorrect,
+              magnitudeCorrect: scored.magnitudeCorrect
+            });
+          }
 
           return scored;
         });
@@ -565,6 +598,28 @@ export default async function handler(req, res) {
         }
 
         results.entriesProcessed++;
+
+        // Track bot-specific stats for debugging
+        if (isBot) {
+          botEntriesProcessed++;
+          botPredictionsResolved += scoredPredictions.filter(p => p.resolved).length;
+          botPredictionsPending += pendingCount;
+          botTotalPoints += totalPoints;
+
+          // Log each bot entry's resolution status
+          logInfo('BOT_ENTRY', `${entry.username} | resolved=${scoredPredictions.filter(p => p.resolved).length}/${scoredPredictions.length} | points=${totalPoints} | correct=${correctCount}/${scoredPredictions.length}`);
+        }
+      }
+
+      // Log bot summary for this tournament
+      if (botEntriesProcessed > 0) {
+        logInfo('BOT_SUMMARY', `Tournament ${tId} bot stats`, {
+          botEntries: botEntriesProcessed,
+          botPredictionsResolved,
+          botPredictionsPending,
+          botTotalPoints,
+          avgPointsPerBot: Math.round(botTotalPoints / botEntriesProcessed)
+        });
       }
 
       // Update tournament status and resolution tracking

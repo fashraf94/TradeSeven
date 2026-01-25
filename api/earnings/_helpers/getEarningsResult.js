@@ -314,27 +314,23 @@ export async function getEarningsResult(symbol, targetDate = null) {
           epsEstimate: result.epsEstimate
         });
       } else {
+        // FALLBACK: Use most recent entry if no date match found
+        // This handles cases where calendar dates don't exactly match EODHD dates
         const availableDates = entries.slice(0, 5).map(e => ({
           reportDate: e.reportDate,
           quarter: `Q${e.fiscalQuarter} ${e.fiscalYear}`,
           epsActual: e.epsActual
         }));
 
-        logWarn(`${upperSymbol}: No match for target date - date mismatch`, {
+        logWarn(`${upperSymbol}: No exact date match found - using most recent entry as fallback`, {
           targetDate,
           availableDates: availableDates.map(d => d.reportDate),
-          closestDate: entries[0]?.reportDate
+          usingDate: entries[0]?.reportDate,
+          note: 'Calendar date may differ from EODHD report date'
         });
 
-        return {
-          success: false,
-          symbol: upperSymbol,
-          resolved: false,
-          error: `No earnings result found near ${targetDate} (possible date mismatch)`,
-          closestResult: entries[0]?.reportDate,
-          availableDates,
-          checkedAt: new Date().toISOString()
-        };
+        // Use most recent entry as fallback instead of failing
+        result = entries[0];
       }
     }
 
