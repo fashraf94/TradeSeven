@@ -64,6 +64,19 @@ const StonkOptionsArenaV2 = ({
   // Always call hook (React rules), hook handles null userId gracefully
   const tournament = useOptionsTournament(user?.odUserId, user?.username);
 
+  // Debug logging for tournament integration verification
+  useEffect(() => {
+    console.log('=== StonkOptionsArenaV2 Debug ===');
+    console.log('user:', user);
+    console.log('user?.odUserId:', user?.odUserId);
+    console.log('user?.username:', user?.username);
+    console.log('tournamentMode:', tournamentMode);
+    console.log('tournament hook data:', tournament);
+    console.log('tournament.tournament:', tournament?.tournament);
+    console.log('tournament.canEnter:', tournament?.canEnter);
+    console.log('================================');
+  }, [user, tournamentMode, tournament]);
+
   // Calculate tier counts from current contracts
   const tierCounts = useMemo(() => {
     const counts = { short: 0, medium: 0, long: 0 };
@@ -72,6 +85,7 @@ const StonkOptionsArenaV2 = ({
       else if (contract.daysToExpiry === 7) counts.medium++;
       else if ([14, 21, 28].includes(contract.daysToExpiry)) counts.long++;
     }
+    console.log('tierCounts:', counts, 'contracts:', contracts.length);
     return counts;
   }, [contracts]);
 
