@@ -61,7 +61,8 @@ const StonkOptionsArenaV2 = ({
   const [showTierProgress, setShowTierProgress] = useState(true);
 
   // Tournament hook (only active if user exists)
-  const tournament = user ? useOptionsTournament(user.odUserId, user.username) : null;
+  // Always call hook (React rules), hook handles null userId gracefully
+  const tournament = useOptionsTournament(user?.odUserId, user?.username);
 
   // Calculate tier counts from current contracts
   const tierCounts = useMemo(() => {
