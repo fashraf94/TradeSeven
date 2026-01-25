@@ -146,16 +146,21 @@ const generateBotPrediction = (event, parlays, strategy, riskLevel) => {
   }
 
   // Get precision option with defensive fallbacks
-  const precisionOption = parlay.precisionOptions?.find(p => p.tier === precisionTier)
+  // Note: precisionOptions use 'finalMultiplier' (not 'multiplier') and 'tierId' (not 'tier')
+  const precisionOption = parlay.precisionOptions?.find(p => p.tierId === precisionTier || p.tier === precisionTier)
     || parlay.precisionOptions?.[0]
     || {
-      tier: 'standard',
-      multiplier: parlay.baseMultiplier || 1.5,
+      tierId: 'standard',
+      finalMultiplier: parlay.baseMultiplier || 1.5,
       range: parlay.magnitudeRange || '±2%'
     };
 
-  // Ensure tier is always defined
-  const tierName = precisionOption?.tier || 'standard';
+  // Ensure tier is always defined (check both tierId and tier for backwards compatibility)
+  const tierName = precisionOption?.tierId || precisionOption?.tier || 'standard';
+
+  // Get multiplier - precisionOptions use 'finalMultiplier', fallback uses legacy 'multiplier' field
+  const multiplier = precisionOption.finalMultiplier || precisionOption.multiplier || parlay.baseMultiplier || 1.5;
+  const potentialPayout = Math.round(parlay.price * multiplier);
 
   return {
     eventId: event.id || `${event.symbol}_${reportDateStr}`,
@@ -174,9 +179,9 @@ const generateBotPrediction = (event, parlays, strategy, riskLevel) => {
     price: parlay.price,
     priceDisplay: parlay.priceDisplay,
     baseMultiplier: parlay.baseMultiplier,
-    finalMultiplier: precisionOption.multiplier,
-    potentialPayout: Math.round(parlay.price * precisionOption.multiplier),
-    potentialPayoutDisplay: `$${Math.round(parlay.price * precisionOption.multiplier).toLocaleString()}`,
+    finalMultiplier: multiplier,
+    potentialPayout: potentialPayout,
+    potentialPayoutDisplay: `$${potentialPayout.toLocaleString()}`,
     risk: parlay.risk,
     combinedProb: parlay.combinedProb,
     outcomeOdds: parlay.outcomeOdds,
