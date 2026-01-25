@@ -488,8 +488,110 @@ export async function getHybridEarningsCalendar(days = 14) {
   }
 }
 
+/**
+ * Get historical earnings events within a date range (for testing old tournaments)
+ *
+ * This uses EODHD's fundamentals endpoint to get past earnings data,
+ * since the calendar endpoint only returns future events.
+ *
+ * @param {string} startDate - Start date (YYYY-MM-DD)
+ * @param {string} endDate - End date (YYYY-MM-DD)
+ * @param {Array<string>} symbols - Optional list of symbols to check (defaults to priority stocks)
+ * @returns {Promise<Array>} - Array of event-like objects for bot generation
+ */
+export async function getHistoricalEarningsForDateRange(startDate, endDate, symbols = null) {
+  console.log(`[Historical] Fetching earnings between ${startDate} and ${endDate}`);
+
+  // Use priority stocks if no symbols provided
+  const stocksToCheck = symbols || Array.from(PRIORITY_STOCKS).slice(0, 30);
+  console.log(`[Historical] Checking ${stocksToCheck.length} symbols`);
+
+  const apiKey = import.meta.env.VITE_EODHD_API_KEY;
+  if (!apiKey) {
+    console.error('[Historical] No EODHD API key configured');
+    return [];
+  }
+
+  const events = [];
+  const startDateObj = new Date(startDate);
+  const endDateObj = new Date(endDate);
+
+  // Process in batches to avoid rate limits
+  for (let i = 0; i < stocksToCheck.length; i += 5) {
+    const batch = stocksToCheck.slice(i, i + 5);
+
+    const batchResults = await Promise.all(batch.map(async (symbol) => {
+      try {
+        const url = `https://eodhd.com/api/fundamentals/${symbol}.US?api_token=${apiKey}&fmt=json`;
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          console.warn(`[Historical] Failed to fetch ${symbol}: ${response.status}`);
+          return null;
+        }
+
+        const data = await response.json();
+        const history = data?.Earnings?.History || {};
+
+        // Find earnings within date range
+        for (const [key, values] of Object.entries(history)) {
+          const reportDate = values.reportDate || key;
+          const reportDateObj = new Date(reportDate);
+
+          // Check if within date range
+          if (reportDateObj >= startDateObj && reportDateObj <= endDateObj) {
+            // Only include if we have EPS data (meaning it's a real past earnings)
+            if (values.epsActual !== null && values.epsActual !== undefined) {
+              const companyName = COMPANY_NAMES[symbol.toUpperCase()] || data?.General?.Name || symbol;
+              const sector = COMPANY_SECTORS[symbol.toUpperCase()] || 'default';
+
+              events.push({
+                id: `historical_${symbol}_${reportDate}`,
+                symbol: symbol.toUpperCase(),
+                companyName,
+                reportDate: reportDate.split('T')[0], // Ensure YYYY-MM-DD format
+                reportTime: values.beforeAfterMarket || 'TBD',
+                beatOdds: SECTOR_BEAT_RATES[sector] || 0.70,
+                missOdds: 1 - (SECTOR_BEAT_RATES[sector] || 0.70),
+                source: 'historical_fundamentals',
+                sector,
+                // Include actual result for reference (won't be used for bot generation)
+                _actual: {
+                  epsActual: values.epsActual,
+                  epsEstimate: values.epsEstimate,
+                  didBeat: values.epsActual > values.epsEstimate
+                }
+              });
+
+              console.log(`[Historical] Found ${symbol} reported on ${reportDate}`);
+            }
+          }
+        }
+
+        return null;
+      } catch (error) {
+        console.warn(`[Historical] Error fetching ${symbol}:`, error.message);
+        return null;
+      }
+    }));
+
+    // Small delay between batches
+    if (i + 5 < stocksToCheck.length) {
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+
+  console.log(`[Historical] Found ${events.length} events in date range`);
+
+  // Sort by date
+  events.sort((a, b) => new Date(a.reportDate) - new Date(b.reportDate));
+
+  return events;
+}
+
 export default {
   getHybridEarningsCalendar,
+  getHistoricalEarningsForDateRange,
   calculatePredictionMetrics,
   oddsToPrice
 };

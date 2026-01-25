@@ -938,7 +938,7 @@ const EarningsGameScreen = ({
                   return;
                 }
 
-                if (!confirm(`🧪 TESTING MODE\n\nThis will create bots using ONLY earnings events from:\n${weekStart} to ${weekEnd}\n\nThis is for testing old tournaments. Continue?`)) {
+                if (!confirm(`🧪 TESTING MODE\n\nThis will create bots using HISTORICAL earnings data from:\n${weekStart} to ${weekEnd}\n\nThis fetches actual past earnings from EODHD fundamentals.\nContinue?`)) {
                   return;
                 }
 
@@ -946,39 +946,27 @@ const EarningsGameScreen = ({
                   const botService = await import('../services/earningsBotService');
                   const fb = await import('../firebase/firebaseService');
                   const { enhanceEventWithParlays } = await import('../services/earningsReactionsService');
-                  const { getHybridEarningsCalendar } = await import('../services/earningsCalendarService');
+                  const { getHistoricalEarningsForDateRange } = await import('../services/earningsCalendarService');
 
                   // Clear existing bots first
                   console.log('Clearing existing bot entries...');
                   const deletedCount = await fb.clearBotEntries(tournament.id);
                   console.log(`Deleted ${deletedCount} existing bot entries`);
 
-                  // Fetch a larger calendar to include historical dates
-                  console.log('Fetching extended earnings calendar...');
-                  const allEvents = await getHybridEarningsCalendar(60); // 60 days to include past events
-                  console.log(`Fetched ${allEvents?.length || 0} total events`);
+                  // Fetch HISTORICAL earnings using fundamentals endpoint
+                  console.log(`Fetching historical earnings from ${weekStart} to ${weekEnd}...`);
+                  const historicalEvents = await getHistoricalEarningsForDateRange(weekStart, weekEnd);
+                  console.log(`Found ${historicalEvents?.length || 0} historical earnings events`);
+                  console.log('Historical events:', historicalEvents.map(e => `${e.symbol} (${e.reportDate})`));
 
-                  // Filter events to ONLY those within tournament date range
-                  const filteredEvents = (allEvents || []).filter(event => {
-                    const eventDate = typeof event.reportDate === 'string'
-                      ? event.reportDate.split('T')[0]
-                      : event.reportDate?.toISOString?.()?.split('T')[0];
-
-                    if (!eventDate) return false;
-                    return eventDate >= weekStart && eventDate <= weekEnd;
-                  });
-
-                  console.log(`Filtered to ${filteredEvents.length} events within ${weekStart} to ${weekEnd}`);
-                  console.log('Filtered events:', filteredEvents.map(e => `${e.symbol} (${e.reportDate})`));
-
-                  if (filteredEvents.length === 0) {
-                    alert(`No earnings events found between ${weekStart} and ${weekEnd}.\n\nThe calendar may not have historical data for that period.`);
+                  if (!historicalEvents || historicalEvents.length === 0) {
+                    alert(`No historical earnings found between ${weekStart} and ${weekEnd}.\n\nMake sure the date range is in the past and has earnings data.`);
                     return;
                   }
 
-                  // Generate parlays for filtered events
+                  // Generate parlays for historical events
                   const parlaysByEvent = {};
-                  for (const event of filteredEvents) {
+                  for (const event of historicalEvents) {
                     try {
                       const enhanced = enhanceEventWithParlays(event);
                       parlaysByEvent[event.symbol] = enhanced.parlays || [];
@@ -989,9 +977,9 @@ const EarningsGameScreen = ({
 
                   console.log('Generated parlays for', Object.keys(parlaysByEvent).length, 'events');
 
-                  // Generate bot entries using ONLY filtered events
+                  // Generate bot entries using historical events
                   const botEntries = botService.generateBotEntries(
-                    filteredEvents,
+                    historicalEvents,
                     parlaysByEvent,
                     12
                   );
@@ -1015,7 +1003,7 @@ const EarningsGameScreen = ({
                   // Refresh leaderboard
                   await refreshLeaderboard();
 
-                  alert(`🧪 Testing bots created!\n\n- Deleted ${deletedCount} old bots\n- Created ${results.filter(r => r.success).length} new bots\n- Using ${filteredEvents.length} events from ${weekStart} to ${weekEnd}`);
+                  alert(`🧪 Testing bots created!\n\n- Deleted ${deletedCount} old bots\n- Created ${results.filter(r => r.success).length} new bots\n- Using ${historicalEvents.length} historical events from ${weekStart} to ${weekEnd}`);
                 } catch (error) {
                   console.error('Error creating historical bots:', error);
                   alert('Error creating historical bots: ' + error.message);
