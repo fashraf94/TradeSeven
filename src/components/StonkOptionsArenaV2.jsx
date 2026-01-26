@@ -1140,15 +1140,43 @@ const StonkOptionsArenaV2 = ({
 
   // Tournament Portfolio View Component - Shows live portfolio after submission
   const TournamentPortfolioView = () => {
-    // Only show if user has tournament entries
-    if (!tournamentMode || !tournament?.userEntries?.length) {
+    // Debug logging
+    console.log('=== TournamentPortfolioView Debug ===');
+    console.log('tournamentMode:', tournamentMode);
+    console.log('tournament?.userEntries:', tournament?.userEntries);
+    console.log('tournament?.userEntries?.length:', tournament?.userEntries?.length);
+    console.log('tournament?.tournament?.status:', tournament?.tournament?.status);
+
+    // Show portfolio whenever user has submitted entries
+    // (entries exist means they've been submitted/locked)
+    if (!tournament?.userEntries?.length) {
+      console.log('TournamentPortfolioView: Not showing - no user entries');
       return null;
     }
 
-    // Only show after entries are locked (tournament in progress or completed)
-    if (tournament.tournament?.status === 'open') {
-      return null;
-    }
+    console.log('TournamentPortfolioView: SHOWING with', tournament.userEntries.length, 'entries');
+
+    // Determine status for display
+    const status = tournament.tournament?.status;
+    const isLive = status === 'in_progress';
+    const isComplete = status === 'completed';
+    const isPending = status === 'open';
+
+    // Status badge configuration
+    const getStatusBadge = () => {
+      if (isLive) {
+        return { text: '🔴 LIVE', color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' };
+      }
+      if (isComplete) {
+        return { text: '✅ COMPLETE', color: '#6b7280', bg: 'rgba(107, 114, 128, 0.1)' };
+      }
+      if (isPending) {
+        return { text: '⏳ PENDING START', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' };
+      }
+      return { text: status?.toUpperCase() || 'UNKNOWN', color: '#6b7280', bg: 'rgba(107, 114, 128, 0.1)' };
+    };
+
+    const statusBadge = getStatusBadge();
 
     return (
       <div style={{
@@ -1169,16 +1197,28 @@ const StonkOptionsArenaV2 = ({
           </h3>
           <span style={{
             fontSize: '12px',
-            color: tournament.tournament?.status === 'in_progress' ? '#10b981' : '#6b7280',
-            background: tournament.tournament?.status === 'in_progress'
-              ? 'rgba(16, 185, 129, 0.1)'
-              : 'rgba(107, 114, 128, 0.1)',
+            color: statusBadge.color,
+            background: statusBadge.bg,
             padding: '4px 8px',
             borderRadius: '4px'
           }}>
-            {tournament.tournament?.status === 'in_progress' ? '🔴 LIVE' : tournament.tournament?.status?.toUpperCase()}
+            {statusBadge.text}
           </span>
         </div>
+
+        {isPending && (
+          <div style={{
+            background: 'rgba(245, 158, 11, 0.1)',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            borderRadius: '8px',
+            padding: '12px',
+            marginBottom: '16px',
+            fontSize: '13px',
+            color: '#f59e0b'
+          }}>
+            ⏳ Your entries are locked! Tournament will start at the lock deadline.
+          </div>
+        )}
 
         {tournament.userEntries.map((entry, entryIndex) => (
           <EntryPortfolioCard
