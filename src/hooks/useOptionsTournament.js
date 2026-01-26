@@ -7,7 +7,9 @@ import {
   query,
   where,
   getDocs,
-  onSnapshot
+  onSnapshot,
+  orderBy,
+  limit
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import {
@@ -38,6 +40,10 @@ export const useOptionsTournament = (userId, username) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Tournament history state
+  const [tournamentHistory, setTournamentHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // Fetch tournament data
   const fetchTournamentData = useCallback(async () => {
@@ -281,6 +287,74 @@ export const useOptionsTournament = (userId, username) => {
     }
   }, [tournament, userId]);
 
+  // Fetch tournament history for past results
+  const fetchTournamentHistory = useCallback(async (historyUserId) => {
+    const targetUserId = historyUserId || userId;
+    if (!targetUserId) return;
+
+    setHistoryLoading(true);
+    try {
+      // Get completed tournaments (last 10)
+      const tournamentsRef = collection(db, 'optionsTournaments');
+      const q = query(
+        tournamentsRef,
+        where('status', '==', 'completed'),
+        orderBy('endDate', 'desc'),
+        limit(10)
+      );
+
+      const tournamentsSnap = await getDocs(q);
+      const tournaments = tournamentsSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      // For each tournament, get user's entry (if any)
+      const historyWithUserData = await Promise.all(
+        tournaments.map(async (tournament) => {
+          // Query user's entries for this tournament
+          const entriesRef = collection(db, 'optionsEntries');
+          const entryQuery = query(
+            entriesRef,
+            where('tournamentId', '==', tournament.id),
+            where('odUserId', '==', targetUserId)
+          );
+
+          const entriesSnap = await getDocs(entryQuery);
+          const userEntries = entriesSnap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+
+          // Get total participants count
+          const allEntriesQuery = query(
+            entriesRef,
+            where('tournamentId', '==', tournament.id)
+          );
+          const allEntriesSnap = await getDocs(allEntriesQuery);
+
+          return {
+            ...tournament,
+            userEntries,
+            totalParticipants: allEntriesSnap.size,
+            userBestRank: userEntries.length > 0
+              ? Math.min(...userEntries.map(e => e.rank || 999))
+              : null,
+            userBestReturn: userEntries.length > 0
+              ? Math.max(...userEntries.map(e => e.results?.percentReturn || 0))
+              : null
+          };
+        })
+      );
+
+      setTournamentHistory(historyWithUserData);
+    } catch (error) {
+      console.error('[useOptionsTournament] Error fetching tournament history:', error);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [userId]);
+
   // Refresh all data
   const refresh = useCallback(() => {
     return fetchTournamentData();
@@ -328,7 +402,12 @@ export const useOptionsTournament = (userId, username) => {
     // Actions
     submitEntry,
     lockPosition,
-    refresh
+    refresh,
+
+    // History
+    tournamentHistory,
+    historyLoading,
+    fetchTournamentHistory
   };
 };
 

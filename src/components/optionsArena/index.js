@@ -11,6 +11,8 @@ export { default as TournamentHeader } from './TournamentHeader';
 export { default as TournamentSubmitSection } from './TournamentSubmitSection';
 export { default as TournamentPortfolioView } from './TournamentPortfolioView';
 export { default as TournamentModeToggle } from './TournamentModeToggle';
+export { default as TournamentHistoryView } from './TournamentHistoryView';
+export { default as TournamentHistoryCard } from './TournamentHistoryCard';
 
 // Portfolio display components
 export { default as EntryPortfolioCard } from './EntryPortfolioCard';

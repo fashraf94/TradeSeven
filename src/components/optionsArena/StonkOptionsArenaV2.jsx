@@ -28,6 +28,7 @@ import TournamentModeToggle from './TournamentModeToggle';
 import TabNavigation from './TabNavigation';
 import AdminControls from './AdminControls';
 import PriceFreshnessIndicator from './PriceFreshnessIndicator';
+import TournamentHistoryView from './TournamentHistoryView';
 import {
   ArrowLeft,
   RefreshCw,
@@ -1212,7 +1213,7 @@ const StonkOptionsArenaV2 = ({
             {/* User Tournament Entries - shows submitted entries with lock buttons */}
             <UserTournamentEntries />
           </>
-        ) : (
+        ) : activeTab === 'portfolios' ? (
           <>
             {/* PORTFOLIOS TAB CONTENT */}
 
@@ -1271,7 +1272,17 @@ const StonkOptionsArenaV2 = ({
               onLockPosition={handleLockPosition}
             />
           </>
-        )}
+        ) : activeTab === 'history' ? (
+          <>
+            {/* HISTORY TAB CONTENT */}
+            <TournamentHistoryView
+              tournamentHistory={tournament?.tournamentHistory || []}
+              historyLoading={tournament?.historyLoading || false}
+              fetchTournamentHistory={tournament?.fetchTournamentHistory || (() => {})}
+              userId={user?.odUserId}
+            />
+          </>
+        ) : null}
       </div>
 
       {/* Footer */}
