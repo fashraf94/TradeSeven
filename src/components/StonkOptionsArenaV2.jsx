@@ -1457,6 +1457,9 @@ const StonkOptionsArenaV2 = ({
         {/* Tier Progress Bar */}
         <TierProgressBar />
 
+        {/* Tournament Submit Section - placed here so users see it after requirements */}
+        <TournamentSubmitSection />
+
         <div style={{
           display: 'grid',
           gridTemplateColumns: (!isMobile && showOrder) ? '1fr 380px' : '1fr',
@@ -1625,9 +1628,6 @@ const StonkOptionsArenaV2 = ({
             </div>
           </div>
         )}
-
-        {/* Tournament Submit Section */}
-        <TournamentSubmitSection />
 
         {/* User Tournament Entries - shows submitted entries with lock buttons */}
         <UserTournamentEntries />
