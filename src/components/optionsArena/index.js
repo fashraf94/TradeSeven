@@ -15,6 +15,7 @@ export { default as TournamentModeToggle } from './TournamentModeToggle';
 // Portfolio display components
 export { default as EntryPortfolioCard } from './EntryPortfolioCard';
 export { default as TierProgressBar } from './TierProgressBar';
+export { default as PriceFreshnessIndicator } from './PriceFreshnessIndicator';
 
 // Modal components
 export { default as PositionDetailModal } from './PositionDetailModal';

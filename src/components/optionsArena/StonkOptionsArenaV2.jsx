@@ -27,6 +27,7 @@ import TierProgressBar from './TierProgressBar';
 import TournamentModeToggle from './TournamentModeToggle';
 import TabNavigation from './TabNavigation';
 import AdminControls from './AdminControls';
+import PriceFreshnessIndicator from './PriceFreshnessIndicator';
 import {
   ArrowLeft,
   RefreshCw,
@@ -933,6 +934,14 @@ const StonkOptionsArenaV2 = ({
               setTournamentMode={setTournamentMode}
             />
 
+            {/* Price Freshness Indicator */}
+            <PriceFreshnessIndicator
+              priceStatus={priceStatus}
+              onRefresh={handleManualRefresh}
+              isRefreshing={isRefreshing}
+              lastManualRefresh={lastManualRefresh}
+            />
+
             {/* Tournament Header - show when tournament mode is on */}
             {tournamentMode && user && (
               <TournamentHeader
@@ -1206,6 +1215,48 @@ const StonkOptionsArenaV2 = ({
         ) : (
           <>
             {/* PORTFOLIOS TAB CONTENT */}
+
+            {/* Price Staleness Warning for Portfolio P/L */}
+            {(priceStatus.isStale || priceStatus.usingFallback) && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                padding: '8px 12px',
+                background: priceStatus.usingFallback
+                  ? 'rgba(239, 68, 68, 0.1)'
+                  : 'rgba(245, 158, 11, 0.1)',
+                border: `1px solid ${priceStatus.usingFallback ? '#ef4444' : '#f59e0b'}`,
+                borderRadius: '8px',
+                fontSize: '11px',
+                color: priceStatus.usingFallback ? '#fca5a5' : '#fcd34d',
+                marginBottom: '12px'
+              }}>
+                <span>
+                  {priceStatus.usingFallback
+                    ? '⚠️ P/L values may be inaccurate - using estimated prices'
+                    : '⏳ P/L values may be based on outdated prices'}
+                </span>
+                <button
+                  onClick={handleManualRefresh}
+                  disabled={isRefreshing}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid currentColor',
+                    borderRadius: '4px',
+                    padding: '2px 8px',
+                    color: 'inherit',
+                    cursor: isRefreshing ? 'not-allowed' : 'pointer',
+                    fontSize: '10px',
+                    opacity: isRefreshing ? 0.5 : 1
+                  }}
+                >
+                  {isRefreshing ? 'Refreshing...' : 'Refresh'}
+                </button>
+              </div>
+            )}
+
             <TournamentPortfolioView
               tournament={tournament}
               prices={prices}
