@@ -1205,6 +1205,7 @@ const StonkOptionsArenaV2 = ({
         onClose={() => setShowLeaderboard(false)}
         leaderboard={tournament?.leaderboard}
         currentUserId={user?.odUserId}
+        tournament={tournament?.tournament}
       />
       <PositionDetailModal
         isOpen={showPositionModal}
