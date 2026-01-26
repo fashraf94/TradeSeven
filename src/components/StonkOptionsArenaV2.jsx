@@ -59,6 +59,7 @@ const StonkOptionsArenaV2 = ({
   const [tournamentMode, setTournamentMode] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showTierProgress, setShowTierProgress] = useState(true);
+  const [activeTab, setActiveTab] = useState('build'); // 'build' | 'portfolios'
 
   // Tournament hook (only active if user exists)
   // Always call hook (React rules), hook handles null userId gracefully
@@ -1142,16 +1143,44 @@ const StonkOptionsArenaV2 = ({
   const TournamentPortfolioView = () => {
     // Debug logging
     console.log('=== TournamentPortfolioView Debug ===');
-    console.log('tournamentMode:', tournamentMode);
     console.log('tournament?.userEntries:', tournament?.userEntries);
     console.log('tournament?.userEntries?.length:', tournament?.userEntries?.length);
     console.log('tournament?.tournament?.status:', tournament?.tournament?.status);
 
-    // Show portfolio whenever user has submitted entries
-    // (entries exist means they've been submitted/locked)
+    // Show empty state if no entries
     if (!tournament?.userEntries?.length) {
-      console.log('TournamentPortfolioView: Not showing - no user entries');
-      return null;
+      console.log('TournamentPortfolioView: Showing empty state - no user entries');
+      return (
+        <div style={{
+          padding: '40px',
+          background: '#1a1a2e',
+          borderRadius: '12px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📭</div>
+          <h3 style={{ color: '#fff', margin: '0 0 8px 0' }}>No Active Portfolios</h3>
+          <p style={{ color: '#6b7280', margin: '0 0 16px 0' }}>
+            Submit an entry in Tournament Mode to see your portfolios here.
+          </p>
+          <button
+            onClick={() => {
+              setActiveTab('build');
+              setTournamentMode(true);
+            }}
+            style={{
+              padding: '12px 24px',
+              background: 'linear-gradient(135deg, #00d9ff, #0066ff)',
+              border: 'none',
+              borderRadius: '8px',
+              color: '#fff',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            Build a Portfolio →
+          </button>
+        </div>
+      );
     }
 
     console.log('TournamentPortfolioView: SHOWING with', tournament.userEntries.length, 'entries');
@@ -1180,7 +1209,6 @@ const StonkOptionsArenaV2 = ({
 
     return (
       <div style={{
-        margin: '16px 0',
         padding: '20px',
         background: 'linear-gradient(135deg, #1a1a2e 0%, #12121a 100%)',
         borderRadius: '12px',
@@ -1441,6 +1469,74 @@ const StonkOptionsArenaV2 = ({
           }}
         >
           🏆 Tournament
+        </button>
+      </div>
+    );
+  };
+
+  // Tab Navigation Component
+  const TabNavigation = () => {
+    const hasEntries = tournament?.userEntries?.length > 0;
+
+    return (
+      <div style={{
+        display: 'flex',
+        gap: '0',
+        marginBottom: '16px',
+        borderBottom: '2px solid #2d3748'
+      }}>
+        <button
+          onClick={() => setActiveTab('build')}
+          style={{
+            flex: 1,
+            padding: '14px 20px',
+            background: 'transparent',
+            border: 'none',
+            borderBottom: activeTab === 'build' ? '2px solid #00d9ff' : '2px solid transparent',
+            marginBottom: '-2px',
+            color: activeTab === 'build' ? '#00d9ff' : '#6b7280',
+            fontWeight: '600',
+            fontSize: '15px',
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
+        >
+          🎯 Build Portfolio
+        </button>
+        <button
+          onClick={() => setActiveTab('portfolios')}
+          style={{
+            flex: 1,
+            padding: '14px 20px',
+            background: 'transparent',
+            border: 'none',
+            borderBottom: activeTab === 'portfolios' ? '2px solid #10b981' : '2px solid transparent',
+            marginBottom: '-2px',
+            color: activeTab === 'portfolios' ? '#10b981' : '#6b7280',
+            fontWeight: '600',
+            fontSize: '15px',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px'
+          }}
+        >
+          📊 Active Portfolios
+          {hasEntries && (
+            <span style={{
+              background: '#10b981',
+              color: '#000',
+              fontSize: '11px',
+              fontWeight: '700',
+              padding: '2px 6px',
+              borderRadius: '10px',
+              minWidth: '20px'
+            }}>
+              {tournament.userEntries.length}
+            </span>
+          )}
         </button>
       </div>
     );
@@ -1844,195 +1940,207 @@ const StonkOptionsArenaV2 = ({
 
       {/* Main Content */}
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '20px' }}>
-        {/* Tournament Mode Toggle */}
-        <TournamentModeToggle />
+        {/* Tab Navigation */}
+        <TabNavigation />
 
-        {/* Tournament Header - show when tournament mode is on */}
-        {tournamentMode && user && <TournamentHeader />}
+        {/* TAB CONTENT */}
+        {activeTab === 'build' ? (
+          <>
+            {/* BUILD TAB CONTENT */}
 
-        {/* Tier Progress Bar */}
-        <TierProgressBar />
+            {/* Tournament Mode Toggle */}
+            <TournamentModeToggle />
 
-        {/* Tournament Submit Section - placed here so users see it after requirements */}
-        <TournamentSubmitSection />
+            {/* Tournament Header - show when tournament mode is on */}
+            {tournamentMode && user && <TournamentHeader />}
 
-        {/* Admin Controls - only visible to admin users */}
-        <AdminControls />
+            {/* Tier Progress Bar */}
+            <TierProgressBar />
 
-        {/* Tournament Portfolio View - shows live positions after submission */}
-        <TournamentPortfolioView />
+            {/* Tournament Submit Section - placed here so users see it after requirements */}
+            <TournamentSubmitSection />
 
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: (!isMobile && showOrder) ? '1fr 380px' : '1fr',
-          gap: 20
-        }}>
-          {/* Left Column: Trading Interface */}
-          <div>
-            {/* Stock Selector */}
-            <StonkOptionsStockSelector
-              stocks={DEFAULT_STOCKS}
-              prices={prices}
-              selectedStock={selectedStock}
-              onSelectStock={handleSelectStock}
-            />
+            {/* Admin Controls - only visible to admin users */}
+            <AdminControls />
 
-            {selectedStock && (
-              <>
-                {/* Expiry Selector */}
-                <div style={{ marginTop: 16 }}>
-                  <StonkOptionsExpirySelector
-                    selectedExpiry={selectedExpiry}
-                    onSelectExpiry={setSelectedExpiry}
-                    tournamentMode={tournamentMode}
-                    tierCounts={tierCounts}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: (!isMobile && showOrder) ? '1fr 380px' : '1fr',
+              gap: 20
+            }}>
+              {/* Left Column: Trading Interface */}
+              <div>
+                {/* Stock Selector */}
+                <StonkOptionsStockSelector
+                  stocks={DEFAULT_STOCKS}
+                  prices={prices}
+                  selectedStock={selectedStock}
+                  onSelectStock={handleSelectStock}
+                />
+
+                {selectedStock && (
+                  <>
+                    {/* Expiry Selector */}
+                    <div style={{ marginTop: 16 }}>
+                      <StonkOptionsExpirySelector
+                        selectedExpiry={selectedExpiry}
+                        onSelectExpiry={setSelectedExpiry}
+                        tournamentMode={tournamentMode}
+                        tierCounts={tierCounts}
+                      />
+                    </div>
+
+                    {/* Options Chain */}
+                    <div style={{ marginTop: 16 }}>
+                      <StonkOptionsChain
+                        symbol={selectedStock}
+                        currentPrice={prices[selectedStock]}
+                        selectedExpiry={selectedExpiry}
+                        selectedStrike={selectedStrike}
+                        onSelectStrike={handleSelectStrike}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {!selectedStock && (
+                  <div style={{
+                    marginTop: 20,
+                    padding: 40,
+                    background: '#0d1117',
+                    borderRadius: 12,
+                    textAlign: 'center',
+                    border: '1px solid #1f2937'
+                  }}>
+                    <TrendingUp size={48} color="#374151" style={{ marginBottom: 16 }} />
+                    <div style={{ color: '#6b7280', fontSize: 16 }}>
+                      Select a stock above to view options
+                    </div>
+                  </div>
+                )}
+
+                {/* Mobile Order Entry (shows below chain on mobile) */}
+                {isMobile && showOrder && selectedStrike && (
+                  <div style={{ marginTop: 16 }}>
+                    <StonkOptionsOrder
+                      selection={selectedStrike}
+                      maxBudget={virtualCash}
+                      onConfirm={handleConfirmOrder}
+                      onCancel={() => {
+                        setSelectedStrike(null);
+                        setShowOrder(false);
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column: Order Entry (desktop only) */}
+              {!isMobile && showOrder && selectedStrike && (
+                <div style={{ position: 'sticky', top: 180, alignSelf: 'flex-start' }}>
+                  <StonkOptionsOrder
+                    selection={selectedStrike}
+                    maxBudget={virtualCash}
+                    onConfirm={handleConfirmOrder}
+                    onCancel={() => {
+                      setSelectedStrike(null);
+                      setShowOrder(false);
+                    }}
                   />
                 </div>
+              )}
+            </div>
 
-                {/* Options Chain */}
-                <div style={{ marginTop: 16 }}>
-                  <StonkOptionsChain
-                    symbol={selectedStock}
-                    currentPrice={prices[selectedStock]}
-                    selectedExpiry={selectedExpiry}
-                    selectedStrike={selectedStrike}
-                    onSelectStrike={handleSelectStrike}
-                  />
-                </div>
-              </>
+            {/* Positions Section */}
+            {contracts.length > 0 && (
+              <div style={{ marginTop: 32 }}>
+                <button
+                  onClick={() => setShowPositions(!showPositions)}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '16px 20px',
+                    background: '#0d1117',
+                    border: '1px solid #1f2937',
+                    borderRadius: showPositions ? '12px 12px 0 0' : '12px',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontSize: 16,
+                    fontWeight: '600'
+                  }}
+                >
+                  <span>
+                    Your Positions ({contracts.length})
+                    <span style={{
+                      marginLeft: 12,
+                      fontSize: 14,
+                      color: portfolio.summary.totalPL >= 0 ? '#10b981' : '#ef4444'
+                    }}>
+                      {portfolio.summary.totalPL >= 0 ? '+' : ''}
+                      ${portfolio.summary.totalPL.toFixed(2)}
+                    </span>
+                  </span>
+                  {showPositions ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                </button>
+
+                {showPositions && (
+                  <div style={{
+                    padding: 16,
+                    background: '#0d1117',
+                    border: '1px solid #1f2937',
+                    borderTop: 'none',
+                    borderRadius: '0 0 12px 12px'
+                  }}>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(340px, 1fr))',
+                      gap: 16
+                    }}>
+                      {portfolio.contracts.map(contract => (
+                        <StonkOptionsPosition
+                          key={contract.id}
+                          contract={contract}
+                          currentPrice={prices[contract.symbol]}
+                          onClose={tournamentMode ? null : handleSellPosition}
+                          onRemove={handleRemovePosition}
+                          showRemoveButton={tournamentMode}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
-            {!selectedStock && (
+            {/* Empty state */}
+            {contracts.length === 0 && selectedStock && (
               <div style={{
-                marginTop: 20,
-                padding: 40,
+                marginTop: 32,
+                padding: 32,
                 background: '#0d1117',
                 borderRadius: 12,
                 textAlign: 'center',
-                border: '1px solid #1f2937'
+                border: '1px dashed #374151'
               }}>
-                <TrendingUp size={48} color="#374151" style={{ marginBottom: 16 }} />
-                <div style={{ color: '#6b7280', fontSize: 16 }}>
-                  Select a stock above to view options
+                <div style={{ fontSize: 32, marginBottom: 12 }}>📊</div>
+                <div style={{ color: '#9ca3af', marginBottom: 8 }}>No positions yet</div>
+                <div style={{ color: '#6b7280', fontSize: 13 }}>
+                  Select a strike from the options chain to place your first trade
                 </div>
               </div>
             )}
 
-            {/* Mobile Order Entry (shows below chain on mobile) */}
-            {isMobile && showOrder && selectedStrike && (
-              <div style={{ marginTop: 16 }}>
-                <StonkOptionsOrder
-                  selection={selectedStrike}
-                  maxBudget={virtualCash}
-                  onConfirm={handleConfirmOrder}
-                  onCancel={() => {
-                    setSelectedStrike(null);
-                    setShowOrder(false);
-                  }}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Right Column: Order Entry (desktop only) */}
-          {!isMobile && showOrder && selectedStrike && (
-            <div style={{ position: 'sticky', top: 180, alignSelf: 'flex-start' }}>
-              <StonkOptionsOrder
-                selection={selectedStrike}
-                maxBudget={virtualCash}
-                onConfirm={handleConfirmOrder}
-                onCancel={() => {
-                  setSelectedStrike(null);
-                  setShowOrder(false);
-                }}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Positions Section */}
-        {contracts.length > 0 && (
-          <div style={{ marginTop: 32 }}>
-            <button
-              onClick={() => setShowPositions(!showPositions)}
-              style={{
-                width: '100%',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '16px 20px',
-                background: '#0d1117',
-                border: '1px solid #1f2937',
-                borderRadius: showPositions ? '12px 12px 0 0' : '12px',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: 16,
-                fontWeight: '600'
-              }}
-            >
-              <span>
-                Your Positions ({contracts.length})
-                <span style={{
-                  marginLeft: 12,
-                  fontSize: 14,
-                  color: portfolio.summary.totalPL >= 0 ? '#10b981' : '#ef4444'
-                }}>
-                  {portfolio.summary.totalPL >= 0 ? '+' : ''}
-                  ${portfolio.summary.totalPL.toFixed(2)}
-                </span>
-              </span>
-              {showPositions ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-            </button>
-
-            {showPositions && (
-              <div style={{
-                padding: 16,
-                background: '#0d1117',
-                border: '1px solid #1f2937',
-                borderTop: 'none',
-                borderRadius: '0 0 12px 12px'
-              }}>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(340px, 1fr))',
-                  gap: 16
-                }}>
-                  {portfolio.contracts.map(contract => (
-                    <StonkOptionsPosition
-                      key={contract.id}
-                      contract={contract}
-                      currentPrice={prices[contract.symbol]}
-                      onClose={tournamentMode ? null : handleSellPosition}
-                      onRemove={handleRemovePosition}
-                      showRemoveButton={tournamentMode}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+            {/* User Tournament Entries - shows submitted entries with lock buttons */}
+            <UserTournamentEntries />
+          </>
+        ) : (
+          <>
+            {/* PORTFOLIOS TAB CONTENT */}
+            <TournamentPortfolioView />
+          </>
         )}
-
-        {/* Empty state */}
-        {contracts.length === 0 && selectedStock && (
-          <div style={{
-            marginTop: 32,
-            padding: 32,
-            background: '#0d1117',
-            borderRadius: 12,
-            textAlign: 'center',
-            border: '1px dashed #374151'
-          }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>📊</div>
-            <div style={{ color: '#9ca3af', marginBottom: 8 }}>No positions yet</div>
-            <div style={{ color: '#6b7280', fontSize: 13 }}>
-              Select a strike from the options chain to place your first trade
-            </div>
-          </div>
-        )}
-
-        {/* User Tournament Entries - shows submitted entries with lock buttons */}
-        <UserTournamentEntries />
       </div>
 
       {/* Footer */}
