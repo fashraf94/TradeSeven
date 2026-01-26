@@ -646,14 +646,32 @@ const StonkOptionsArenaV2 = ({
           <div style={{
             background: 'rgba(245, 158, 11, 0.1)',
             border: '1px solid rgba(245, 158, 11, 0.3)',
-            padding: '12px',
+            padding: '16px',
             borderRadius: '8px',
             marginBottom: '16px',
             textAlign: 'center'
           }}>
-            <span style={{ color: '#f59e0b', fontSize: '13px' }}>
-              ⏳ Loading tournament data...
-            </span>
+            <div style={{ color: '#f59e0b', fontSize: '13px', marginBottom: '12px' }}>
+              ⚠️ No active tournament found
+            </div>
+            <div style={{ color: '#9ca3af', fontSize: '12px', marginBottom: '12px' }}>
+              Tournaments auto-create on weekdays. Click below to create a test tournament.
+            </div>
+            <button
+              onClick={handleCreateTestTournament}
+              style={{
+                padding: '10px 20px',
+                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#000',
+                fontWeight: '600',
+                fontSize: '14px',
+                cursor: 'pointer'
+              }}
+            >
+              🏆 Create Test Tournament
+            </button>
           </div>
         )}
 
@@ -737,6 +755,22 @@ const StonkOptionsArenaV2 = ({
         )}
       </div>
     );
+  };
+
+  // Handler to create a test tournament (for development/testing)
+  const handleCreateTestTournament = async () => {
+    console.log('handleCreateTestTournament called');
+    try {
+      const { createTestOptionsTournament } = await import('../services/optionsTournamentService');
+      const newTournament = await createTestOptionsTournament();
+      console.log('Created test tournament:', newTournament);
+      alert('🏆 Tournament created!\n\nName: ' + newTournament.name + '\n\nRefreshing data...');
+      // Refresh tournament data
+      tournament?.refresh?.();
+    } catch (err) {
+      console.error('Error creating tournament:', err);
+      alert('❌ Error creating tournament:\n\n' + err.message);
+    }
   };
 
   // Submit handler for tournament entry
