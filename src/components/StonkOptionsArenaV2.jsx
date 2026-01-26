@@ -1052,10 +1052,11 @@ const StonkOptionsArenaV2 = ({
           <div style={{ padding: '20px' }}>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
-              gap: '16px',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '12px',
               marginBottom: '20px'
             }}>
+              {/* Entry Price (when bought) */}
               <div style={{
                 background: '#1a1a2e',
                 padding: '16px',
@@ -1063,12 +1064,40 @@ const StonkOptionsArenaV2 = ({
                 textAlign: 'center'
               }}>
                 <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
-                  Current Stock Price
+                  Entry Price
                 </div>
-                <div style={{ fontSize: '24px', fontWeight: '700', color: '#fff' }}>
-                  ${currentPrice.toFixed(2)}
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#9ca3af' }}>
+                  ${position.entryPrice?.toFixed(2) || 'N/A'}
                 </div>
               </div>
+
+              {/* Current Stock Price */}
+              <div style={{
+                background: '#1a1a2e',
+                padding: '16px',
+                borderRadius: '12px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
+                  Current Price
+                </div>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#fff' }}>
+                  ${currentPrice.toFixed(2)}
+                </div>
+                {/* Show price change from entry */}
+                {position.entryPrice && (
+                  <div style={{
+                    fontSize: '11px',
+                    marginTop: '4px',
+                    color: currentPrice >= position.entryPrice ? '#10b981' : '#ef4444'
+                  }}>
+                    {currentPrice >= position.entryPrice ? '▲' : '▼'}
+                    {Math.abs(((currentPrice - position.entryPrice) / position.entryPrice) * 100).toFixed(1)}%
+                  </div>
+                )}
+              </div>
+
+              {/* Strike Price */}
               <div style={{
                 background: '#1a1a2e',
                 padding: '16px',
@@ -1078,7 +1107,7 @@ const StonkOptionsArenaV2 = ({
                 <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
                   Strike Price
                 </div>
-                <div style={{ fontSize: '24px', fontWeight: '700', color: '#00d9ff' }}>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#00d9ff' }}>
                   ${position.strike}
                 </div>
               </div>
@@ -1142,6 +1171,27 @@ const StonkOptionsArenaV2 = ({
                 <span style={{ color: '#6b7280' }}>Max Payout</span>
                 <span style={{ color: '#10b981', fontWeight: '600' }}>${position.potentialPayout}</span>
               </div>
+              {/* Stock Movement from entry */}
+              {position.entryPrice && (
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginBottom: '12px',
+                  paddingBottom: '12px',
+                  borderBottom: '1px solid #2d3748'
+                }}>
+                  <span style={{ color: '#6b7280' }}>Stock Movement</span>
+                  <span style={{
+                    color: currentPrice >= position.entryPrice ? '#10b981' : '#ef4444',
+                    fontWeight: '600'
+                  }}>
+                    {currentPrice >= position.entryPrice ? '+' : ''}
+                    ${(currentPrice - position.entryPrice).toFixed(2)}
+                    ({currentPrice >= position.entryPrice ? '+' : ''}
+                    {(((currentPrice - position.entryPrice) / position.entryPrice) * 100).toFixed(1)}%)
+                  </span>
+                </div>
+              )}
               <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
