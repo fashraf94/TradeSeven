@@ -69,10 +69,11 @@ export const STONK_OPTIONS_CONFIG = {
 // ============================================
 
 export const EXPIRY_TIERS = {
-  short:  { expiries: [1, 3],       minRequired: 2, label: 'Short-term (1-3 days)' },
-  medium: { expiries: [7],          minRequired: 3, label: 'Medium-term (1 week)' },
-  long:   { expiries: [14, 21, 28], minRequired: 2, label: 'Long-term (2-4 weeks)' }
+  short:  { expiries: [1, 3],       minRequired: 2, maxAllowed: 2, label: 'Short-term (1-3 days)' },
+  medium: { expiries: [7],          minRequired: 3, maxAllowed: 3, label: 'Medium-term (1 week)' },
+  long:   { expiries: [14, 21, 28], minRequired: 2, maxAllowed: 2, label: 'Long-term (2-4 weeks)' }
 };
+// Total: exactly 7 contracts required (2+3+2)
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -547,13 +548,25 @@ export const validateTournamentPortfolio = (contracts) => {
     errors.push(`Long-term: Need ${EXPIRY_TIERS.long.minRequired - tierCounts.long} more (14D, 21D, or 28D expiry)`);
   }
 
-  // Check total (minimum 7 = 2 short + 3 medium + 2 long)
-  const minContracts = EXPIRY_TIERS.short.minRequired + EXPIRY_TIERS.medium.minRequired + EXPIRY_TIERS.long.minRequired;
-  if (contracts.length < minContracts) {
-    errors.push(`Need ${minContracts - contracts.length} more contracts (${minContracts} minimum)`);
+  // Check maximums
+  if (tierCounts.short > EXPIRY_TIERS.short.maxAllowed) {
+    errors.push(`Short-term: Maximum ${EXPIRY_TIERS.short.maxAllowed} allowed (have ${tierCounts.short})`);
   }
-  if (contracts.length > STONK_OPTIONS_CONFIG.maxPositionsPerUser) {
-    errors.push(`Too many contracts (${STONK_OPTIONS_CONFIG.maxPositionsPerUser} maximum)`);
+  if (tierCounts.medium > EXPIRY_TIERS.medium.maxAllowed) {
+    errors.push(`Medium-term: Maximum ${EXPIRY_TIERS.medium.maxAllowed} allowed (have ${tierCounts.medium})`);
+  }
+  if (tierCounts.long > EXPIRY_TIERS.long.maxAllowed) {
+    errors.push(`Long-term: Maximum ${EXPIRY_TIERS.long.maxAllowed} allowed (have ${tierCounts.long})`);
+  }
+
+  // Check total (exactly 7 = 2 short + 3 medium + 2 long)
+  const requiredContracts = EXPIRY_TIERS.short.maxAllowed + EXPIRY_TIERS.medium.maxAllowed + EXPIRY_TIERS.long.maxAllowed;
+  const total = tierCounts.short + tierCounts.medium + tierCounts.long;
+  if (total < requiredContracts) {
+    errors.push(`Need ${requiredContracts - total} more contracts (exactly ${requiredContracts} required)`);
+  }
+  if (total > requiredContracts) {
+    errors.push(`Too many contracts: ${total} (exactly ${requiredContracts} required)`);
   }
 
   return {
@@ -562,9 +575,9 @@ export const validateTournamentPortfolio = (contracts) => {
     tierCounts,
     totalContracts: contracts.length,
     requirements: {
-      short: { required: EXPIRY_TIERS.short.minRequired, current: tierCounts.short },
-      medium: { required: EXPIRY_TIERS.medium.minRequired, current: tierCounts.medium },
-      long: { required: EXPIRY_TIERS.long.minRequired, current: tierCounts.long }
+      short: { min: EXPIRY_TIERS.short.minRequired, max: EXPIRY_TIERS.short.maxAllowed, current: tierCounts.short },
+      medium: { min: EXPIRY_TIERS.medium.minRequired, max: EXPIRY_TIERS.medium.maxAllowed, current: tierCounts.medium },
+      long: { min: EXPIRY_TIERS.long.minRequired, max: EXPIRY_TIERS.long.maxAllowed, current: tierCounts.long }
     }
   };
 };

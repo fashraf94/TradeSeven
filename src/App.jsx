@@ -21903,6 +21903,7 @@ export default function PortfolioDuel() {
           stocksData={stocksData}
           stockAPI={stockAPI}
           initialCash={10000}
+          user={user}
         />
       </Suspense>
     );

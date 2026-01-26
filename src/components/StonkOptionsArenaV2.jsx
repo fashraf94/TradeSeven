@@ -61,7 +61,21 @@ const StonkOptionsArenaV2 = ({
   const [showTierProgress, setShowTierProgress] = useState(true);
 
   // Tournament hook (only active if user exists)
-  const tournament = user ? useOptionsTournament(user.odUserId, user.username) : null;
+  // Always call hook (React rules), hook handles null userId gracefully
+  const tournament = useOptionsTournament(user?.odUserId, user?.username);
+
+  // Debug logging for tournament integration verification
+  useEffect(() => {
+    console.log('=== StonkOptionsArenaV2 Debug ===');
+    console.log('user:', user);
+    console.log('user?.odUserId:', user?.odUserId);
+    console.log('user?.username:', user?.username);
+    console.log('tournamentMode:', tournamentMode);
+    console.log('tournament hook data:', tournament);
+    console.log('tournament.tournament:', tournament?.tournament);
+    console.log('tournament.canEnter:', tournament?.canEnter);
+    console.log('================================');
+  }, [user, tournamentMode, tournament]);
 
   // Calculate tier counts from current contracts
   const tierCounts = useMemo(() => {
@@ -71,6 +85,7 @@ const StonkOptionsArenaV2 = ({
       else if (contract.daysToExpiry === 7) counts.medium++;
       else if ([14, 21, 28].includes(contract.daysToExpiry)) counts.long++;
     }
+    console.log('tierCounts:', counts, 'contracts:', contracts.length);
     return counts;
   }, [contracts]);
 
@@ -186,18 +201,66 @@ const StonkOptionsArenaV2 = ({
       return;
     }
 
+    // Tournament mode: check tier limits BEFORE adding
+    if (tournamentMode) {
+      const expiry = contract.daysToExpiry;
+      let tierKey = null;
+      let tierMax = 0;
+      let tierLabel = '';
+
+      if ([1, 3].includes(expiry)) {
+        tierKey = 'short';
+        tierMax = 2;
+        tierLabel = 'short-term';
+      } else if (expiry === 7) {
+        tierKey = 'medium';
+        tierMax = 3;
+        tierLabel = 'medium-term';
+      } else if ([14, 21, 28].includes(expiry)) {
+        tierKey = 'long';
+        tierMax = 2;
+        tierLabel = 'long-term';
+      }
+
+      if (tierKey && tierCounts[tierKey] >= tierMax) {
+        alert(`Cannot add more ${tierLabel} contracts. Maximum ${tierMax} allowed for this tier.`);
+        return;
+      }
+
+      // Also check total (exactly 7 required)
+      if (contracts.length >= 7) {
+        alert('Portfolio complete! You have all 7 required contracts. Submit to tournament or remove a position first.');
+        return;
+      }
+    }
+
     setContracts(prev => [...prev, contract]);
     setVirtualCash(prev => prev - contract.entryAmount);
     setSelectedStrike(null);
     setShowOrder(false);
   };
 
-  // Handle selling a position
+  // Handle selling a position (at current market value)
   const handleSellPosition = (contract, valuation) => {
     if (window.confirm(`Sell ${contract.contractName} for $${valuation.currentValue.toFixed(2)}?`)) {
       setContracts(prev => prev.filter(c => c.id !== contract.id));
       setVirtualCash(prev => prev + valuation.currentValue);
     }
+  };
+
+  // Handle removing a position (refund entry amount - for tournament portfolio building)
+  const handleRemovePosition = (contract) => {
+    if (!contract) return;
+
+    if (!window.confirm(
+      `Remove ${contract.symbol} ${contract.direction.toUpperCase()} $${contract.strike}?\n\n` +
+      `Entry amount ($${contract.entryAmount.toFixed(2)}) will be refunded.`
+    )) {
+      return;
+    }
+
+    setContracts(prev => prev.filter(c => c.id !== contract.id));
+    setVirtualCash(prev => prev + contract.entryAmount);
   };
 
   // Handle reset
@@ -356,19 +419,22 @@ const StonkOptionsArenaV2 = ({
   const TierProgressBar = () => {
     if (!tournamentMode || !showTierProgress) return null;
 
+    // Each tier has exact count required (min = max)
     const tiers = [
-      { key: 'short', label: 'Short (1-3D)', min: 2, count: tierCounts.short, color: '#ef4444' },
-      { key: 'medium', label: 'Medium (7D)', min: 3, count: tierCounts.medium, color: '#f59e0b' },
-      { key: 'long', label: 'Long (14-28D)', min: 2, count: tierCounts.long, color: '#10b981' }
+      { key: 'short', label: 'Short (1-3D)', max: 2, count: tierCounts.short, color: '#ef4444' },
+      { key: 'medium', label: 'Medium (7D)', max: 3, count: tierCounts.medium, color: '#f59e0b' },
+      { key: 'long', label: 'Long (14-28D)', max: 2, count: tierCounts.long, color: '#10b981' }
     ];
+
+    const allComplete = tiers.every(t => t.count === t.max);
 
     return (
       <div style={{
-        background: '#12121a',
+        background: allComplete ? 'rgba(16, 185, 129, 0.1)' : '#12121a',
         borderRadius: '8px',
         padding: '12px',
         marginBottom: '12px',
-        border: '1px solid #2d3748'
+        border: allComplete ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid #2d3748'
       }}>
         <div style={{
           display: 'flex',
@@ -377,18 +443,21 @@ const StonkOptionsArenaV2 = ({
           marginBottom: '8px'
         }}>
           <span style={{ fontSize: '12px', fontWeight: '600', color: '#fff' }}>
-            Tier Requirements
+            📊 Portfolio Requirements
           </span>
           <span style={{
             fontSize: '11px',
-            color: portfolioValidation?.isValid ? '#10b981' : '#f59e0b'
+            fontWeight: '600',
+            color: allComplete ? '#10b981' : '#f59e0b'
           }}>
-            {contracts.length}/7 min contracts
+            {contracts.length}/7 {allComplete ? '✓ Ready!' : 'contracts'}
           </span>
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
-          {tiers.map(tier => (
+          {tiers.map(tier => {
+            const isComplete = tier.count === tier.max;
+            return (
             <div key={tier.key} style={{ flex: 1 }}>
               <div style={{
                 display: 'flex',
@@ -398,10 +467,10 @@ const StonkOptionsArenaV2 = ({
               }}>
                 <span style={{ color: '#9ca3af' }}>{tier.label}</span>
                 <span style={{
-                  color: tier.count >= tier.min ? '#10b981' : '#fff',
+                  color: isComplete ? '#10b981' : '#fff',
                   fontWeight: '600'
                 }}>
-                  {tier.count}/{tier.min}
+                  {tier.count}/{tier.max} {isComplete ? '✓' : ''}
                 </span>
               </div>
               <div style={{
@@ -412,114 +481,473 @@ const StonkOptionsArenaV2 = ({
               }}>
                 <div style={{
                   height: '100%',
-                  width: `${Math.min(100, (tier.count / tier.min) * 100)}%`,
-                  background: tier.count >= tier.min ? '#10b981' : tier.color,
+                  width: `${Math.min(100, (tier.count / tier.max) * 100)}%`,
+                  background: isComplete ? '#10b981' : tier.color,
                   transition: 'width 0.3s ease'
                 }} />
               </div>
             </div>
-          ))}
+          );
+          })}
         </div>
       </div>
     );
   };
 
-  // Tournament Submit Button Component
+  // Tournament Submit Section Component - Always shows in tournament mode
+  const TournamentSubmitSection = () => {
+    // Debug logging
+    console.log('=== TournamentSubmitSection Debug ===');
+    console.log('tournamentMode:', tournamentMode);
+    console.log('tournament:', tournament);
+    console.log('contracts.length:', contracts.length);
+    console.log('tierCounts:', tierCounts);
+
+    if (!tournamentMode) return null;
+
+    // Calculate validation locally for reliability
+    const totalContracts = contracts.length;
+    const allTiersMet = tierCounts.short >= 2 && tierCounts.medium >= 3 && tierCounts.long >= 2;
+    const isPortfolioComplete = totalContracts === 7 && allTiersMet;
+
+    // Tournament state
+    const hasTournament = tournament?.tournament != null;
+    const tournamentStatus = tournament?.tournament?.status;
+    const canEnterTournament = tournament?.canEnter?.canEnter ?? false;
+    const entryCount = tournament?.userEntries?.length || 0;
+    const isSubmitting = tournament?.isSubmitting || false;
+
+    const totalInvested = contracts.reduce((sum, c) => sum + c.entryAmount, 0);
+
+    // Can submit if portfolio is complete AND tournament allows entry
+    const canSubmit = isPortfolioComplete && hasTournament && canEnterTournament && !isSubmitting;
+
+    return (
+      <div style={{
+        marginTop: '24px',
+        padding: '20px',
+        background: isPortfolioComplete
+          ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.05))'
+          : '#12121a',
+        border: isPortfolioComplete
+          ? '2px solid #10b981'
+          : '1px solid #2d3748',
+        borderRadius: '12px'
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '16px'
+        }}>
+          <h3 style={{
+            color: '#fff',
+            fontSize: '18px',
+            margin: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          }}>
+            🏆 Tournament Entry
+          </h3>
+          {isPortfolioComplete && (
+            <span style={{
+              fontSize: '12px',
+              background: '#10b981',
+              color: '#000',
+              padding: '4px 10px',
+              borderRadius: '4px',
+              fontWeight: '700'
+            }}>
+              ✓ READY
+            </span>
+          )}
+        </div>
+
+        {/* Portfolio Summary Grid */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '10px',
+          marginBottom: '16px'
+        }}>
+          <div style={{
+            background: '#0d0d12',
+            padding: '12px',
+            borderRadius: '8px',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '4px' }}>Contracts</div>
+            <div style={{
+              fontSize: '22px',
+              fontWeight: '700',
+              color: totalContracts === 7 ? '#10b981' : '#fff'
+            }}>
+              {totalContracts}/7
+            </div>
+          </div>
+          <div style={{
+            background: '#0d0d12',
+            padding: '12px',
+            borderRadius: '8px',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '4px' }}>Invested</div>
+            <div style={{ fontSize: '22px', fontWeight: '700', color: '#00d9ff' }}>
+              ${totalInvested.toLocaleString()}
+            </div>
+          </div>
+          <div style={{
+            background: '#0d0d12',
+            padding: '12px',
+            borderRadius: '8px',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '4px' }}>Cash Left</div>
+            <div style={{ fontSize: '22px', fontWeight: '700', color: '#fff' }}>
+              ${virtualCash.toLocaleString()}
+            </div>
+          </div>
+        </div>
+
+        {/* Tournament Info */}
+        {hasTournament ? (
+          <div style={{
+            background: '#0d0d12',
+            padding: '12px',
+            borderRadius: '8px',
+            marginBottom: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <span style={{ color: '#9ca3af', fontSize: '13px' }}>Tournament</span>
+              <span style={{ color: '#fff', fontWeight: '600', fontSize: '13px' }}>
+                {tournament.tournament.name}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <span style={{ color: '#9ca3af', fontSize: '13px' }}>Status</span>
+              <span style={{
+                color: tournamentStatus === 'open' ? '#10b981' : '#f59e0b',
+                fontWeight: '600',
+                fontSize: '13px'
+              }}>
+                {tournamentStatus === 'open' ? '🟢 Open for Entries' : tournamentStatus}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#9ca3af', fontSize: '13px' }}>Your Entries</span>
+              <span style={{ color: '#00d9ff', fontWeight: '600', fontSize: '13px' }}>
+                {entryCount}/3
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div style={{
+            background: 'rgba(245, 158, 11, 0.1)',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            padding: '16px',
+            borderRadius: '8px',
+            marginBottom: '16px',
+            textAlign: 'center'
+          }}>
+            <div style={{ color: '#f59e0b', fontSize: '13px', marginBottom: '12px' }}>
+              ⚠️ No active tournament found
+            </div>
+            <div style={{ color: '#9ca3af', fontSize: '12px', marginBottom: '12px' }}>
+              Tournaments auto-create on weekdays. Click below to create a test tournament.
+            </div>
+            <button
+              onClick={handleCreateTestTournament}
+              style={{
+                padding: '10px 20px',
+                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#000',
+                fontWeight: '600',
+                fontSize: '14px',
+                cursor: 'pointer'
+              }}
+            >
+              🏆 Create Test Tournament
+            </button>
+          </div>
+        )}
+
+        {/* Can't Enter Reason */}
+        {hasTournament && !canEnterTournament && tournament?.canEnter?.reason && (
+          <div style={{
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            padding: '12px',
+            borderRadius: '8px',
+            marginBottom: '16px'
+          }}>
+            <span style={{ color: '#ef4444', fontSize: '13px' }}>
+              ⚠️ {tournament.canEnter.reason}
+            </span>
+          </div>
+        )}
+
+        {/* Portfolio Validation Errors */}
+        {!isPortfolioComplete && portfolioValidation?.errors?.length > 0 && (
+          <div style={{
+            background: 'rgba(245, 158, 11, 0.1)',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            padding: '12px',
+            borderRadius: '8px',
+            marginBottom: '16px'
+          }}>
+            <div style={{ fontSize: '12px', color: '#f59e0b', marginBottom: '6px', fontWeight: '600' }}>
+              Requirements not met:
+            </div>
+            {portfolioValidation.errors.map((err, i) => (
+              <div key={i} style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>
+                • {err}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Submit Button */}
+        <button
+          onClick={handleSubmitToTournament}
+          disabled={!canSubmit}
+          style={{
+            width: '100%',
+            padding: '16px',
+            borderRadius: '10px',
+            border: 'none',
+            background: canSubmit
+              ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+              : '#2d3748',
+            color: canSubmit ? '#fff' : '#6b7280',
+            fontSize: '16px',
+            fontWeight: '700',
+            cursor: canSubmit ? 'pointer' : 'not-allowed',
+            opacity: isSubmitting ? 0.7 : 1,
+            transition: 'all 0.2s'
+          }}
+        >
+          {isSubmitting
+            ? '⏳ Submitting...'
+            : canSubmit
+              ? '🚀 Lock Portfolio & Enter Tournament'
+              : !isPortfolioComplete
+                ? '📋 Complete Portfolio to Submit'
+                : !hasTournament
+                  ? '⏳ Loading Tournament...'
+                  : '⏳ Entry Not Available'
+          }
+        </button>
+
+        {canSubmit && (
+          <p style={{
+            textAlign: 'center',
+            marginTop: '10px',
+            marginBottom: 0,
+            fontSize: '12px',
+            color: '#6b7280'
+          }}>
+            ⚠️ Portfolio will be locked and cannot be changed after submission
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  // Handler to create a test tournament (for development/testing)
+  const handleCreateTestTournament = async () => {
+    console.log('handleCreateTestTournament called');
+    try {
+      const { createTestOptionsTournament } = await import('../services/optionsTournamentService');
+      const newTournament = await createTestOptionsTournament();
+      console.log('Created test tournament:', newTournament);
+      alert('🏆 Tournament created!\n\nName: ' + newTournament.name + '\n\nRefreshing data...');
+      // Refresh tournament data
+      tournament?.refresh?.();
+    } catch (err) {
+      console.error('Error creating tournament:', err);
+      alert('❌ Error creating tournament:\n\n' + err.message);
+    }
+  };
+
+  // Submit handler for tournament entry
+  const handleSubmitToTournament = async () => {
+    console.log('handleSubmitToTournament called');
+
+    if (!tournament?.tournament) {
+      alert('No active tournament available');
+      return;
+    }
+
+    if (!tournament.canEnter?.canEnter) {
+      alert(tournament.canEnter?.reason || 'Cannot enter tournament at this time');
+      return;
+    }
+
+    // Validate portfolio
+    const totalContracts = contracts.length;
+    const allTiersMet = tierCounts.short >= 2 && tierCounts.medium >= 3 && tierCounts.long >= 2;
+
+    if (totalContracts !== 7 || !allTiersMet) {
+      alert('Portfolio does not meet requirements.\n\nNeed exactly 7 contracts:\n• 2 short-term (1D or 3D)\n• 3 medium-term (7D)\n• 2 long-term (14D, 21D, or 28D)');
+      return;
+    }
+
+    const totalEntry = contracts.reduce((sum, c) => sum + c.entryAmount, 0);
+
+    const confirmed = confirm(
+      `🏆 Submit Tournament Entry?\n\n` +
+      `Tournament: ${tournament.tournament.name}\n` +
+      `Contracts: ${totalContracts}\n` +
+      `Total Invested: $${totalEntry.toLocaleString()}\n` +
+      `Cash Remaining: $${virtualCash.toLocaleString()}\n\n` +
+      `⚠️ Your portfolio will be LOCKED!\n\n` +
+      `Continue?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      console.log('Submitting entry with contracts:', contracts);
+      await tournament.submitEntry(contracts);
+
+      alert('🎉 Success!\n\nYour entry has been submitted.\n\nGood luck!');
+
+      // Reset local state
+      setContracts([]);
+      setVirtualCash(initialCash);
+
+      // Refresh tournament data
+      tournament.refresh?.();
+
+    } catch (err) {
+      console.error('Tournament submission error:', err);
+      alert('❌ Error submitting entry:\n\n' + err.message);
+    }
+  };
+
+  // Legacy Tournament Submit Button Component (kept for backwards compatibility)
   const TournamentSubmitButton = () => {
-    if (!tournamentMode || !tournament?.tournament || tournament.tournament.status !== 'open') {
+    // Now handled by TournamentSubmitSection
+    return null;
+  };
+
+  // Admin Controls for bot population (only visible to admin users)
+  const AdminControls = () => {
+    const [isPopulating, setIsPopulating] = useState(false);
+    const ADMIN_USERS = ['cam', 'flash', 'admin', 'test'];
+
+    // Only show for admin users
+    if (!user || !ADMIN_USERS.includes(user.username?.toLowerCase())) {
       return null;
     }
 
-    if (!tournament.canEnter.canEnter) {
-      return (
-        <div style={{
-          background: '#1a1a2e',
-          borderRadius: '12px',
-          padding: '16px',
-          textAlign: 'center',
-          border: '1px solid #2d3748'
-        }}>
-          <span style={{ color: '#9ca3af' }}>{tournament.canEnter.reason}</span>
-        </div>
-      );
-    }
-
-    const handleSubmit = async () => {
-      if (!portfolioValidation?.isValid) {
-        alert('Portfolio does not meet requirements:\n' + portfolioValidation.errors.join('\n'));
+    const handlePopulateBots = async () => {
+      if (!tournament?.tournament) {
+        alert('No active tournament');
         return;
       }
 
-      if (!confirm(`Submit entry with ${contracts.length} contracts?\n\nThis cannot be undone.`)) {
+      if (!confirm('Populate tournament with 9 bot competitors?')) {
+        return;
+      }
+
+      setIsPopulating(true);
+      try {
+        const { populateOptionsTournamentBots } = await import('../services/optionsBotService');
+
+        // Get current stock prices for bot portfolio generation
+        const result = await populateOptionsTournamentBots(
+          tournament.tournament.id,
+          prices,  // Current stock prices from component state
+          9  // Number of bots (you + 9 bots = 10 total)
+        );
+
+        console.log('Bot population result:', result);
+        alert(`🤖 Created ${result.botsCreated} bot competitors!\n\nRefresh the leaderboard to see them.`);
+
+        // Refresh leaderboard
+        tournament.refresh?.();
+
+      } catch (err) {
+        console.error('Error populating bots:', err);
+        alert('Error: ' + err.message);
+      } finally {
+        setIsPopulating(false);
+      }
+    };
+
+    const handleClearBots = async () => {
+      if (!tournament?.tournament) return;
+
+      if (!confirm('Remove all bot entries from this tournament?')) {
         return;
       }
 
       try {
-        await tournament.submitEntry(contracts);
-        alert('Entry submitted successfully! 🎉');
-        // Clear contracts after successful submission
-        setContracts([]);
-        setVirtualCash(initialCash);
+        const { clearOptionsBots } = await import('../services/optionsBotService');
+        const count = await clearOptionsBots(tournament.tournament.id);
+        alert(`🗑️ Removed ${count} bot entries`);
+        tournament.refresh?.();
       } catch (err) {
-        alert('Error submitting entry: ' + err.message);
+        alert('Error: ' + err.message);
       }
     };
 
     return (
       <div style={{
-        background: '#12121a',
-        borderRadius: '12px',
-        padding: '16px',
         marginTop: '16px',
-        border: portfolioValidation?.isValid
-          ? '2px solid #10b981'
-          : '1px solid #2d3748'
+        padding: '16px',
+        background: '#1a1a2e',
+        borderRadius: '12px',
+        border: '1px dashed #f59e0b'
       }}>
-        {!portfolioValidation?.isValid && (
-          <div style={{
-            marginBottom: '12px',
-            padding: '8px',
-            background: 'rgba(245, 158, 11, 0.1)',
-            borderRadius: '8px'
-          }}>
-            <div style={{ fontSize: '12px', color: '#f59e0b', marginBottom: '4px' }}>
-              Requirements not met:
-            </div>
-            {portfolioValidation?.errors.map((err, i) => (
-              <div key={i} style={{ fontSize: '11px', color: '#9ca3af' }}>• {err}</div>
-            ))}
-          </div>
-        )}
-
-        <button
-          onClick={handleSubmit}
-          disabled={!portfolioValidation?.isValid || tournament.isSubmitting}
-          style={{
-            width: '100%',
-            padding: '14px',
-            borderRadius: '8px',
-            border: 'none',
-            background: portfolioValidation?.isValid
-              ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-              : '#2d3748',
-            color: portfolioValidation?.isValid ? '#fff' : '#6b7280',
-            fontSize: '16px',
-            fontWeight: '700',
-            cursor: portfolioValidation?.isValid ? 'pointer' : 'not-allowed',
-            opacity: tournament.isSubmitting ? 0.7 : 1
-          }}
-        >
-          {tournament.isSubmitting ? 'Submitting...' : '🏆 Submit Entry to Tournament'}
-        </button>
-
-        <div style={{
-          textAlign: 'center',
-          marginTop: '8px',
+        <h4 style={{ color: '#f59e0b', margin: '0 0 12px 0', fontSize: '14px' }}>
+          ⚙️ Admin Controls
+        </h4>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            onClick={handlePopulateBots}
+            disabled={isPopulating || !tournament?.tournament}
+            style={{
+              padding: '10px 16px',
+              background: '#7c3aed',
+              border: 'none',
+              borderRadius: '8px',
+              color: '#fff',
+              fontWeight: '600',
+              cursor: isPopulating ? 'not-allowed' : 'pointer',
+              opacity: isPopulating || !tournament?.tournament ? 0.7 : 1
+            }}
+          >
+            {isPopulating ? '⏳ Creating Bots...' : '🤖 Add 9 Bots'}
+          </button>
+          <button
+            onClick={handleClearBots}
+            disabled={!tournament?.tournament}
+            style={{
+              padding: '10px 16px',
+              background: 'transparent',
+              border: '1px solid #ef4444',
+              borderRadius: '8px',
+              color: '#ef4444',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            🗑️ Clear Bots
+          </button>
+        </div>
+        <p style={{
+          margin: '10px 0 0 0',
           fontSize: '11px',
           color: '#6b7280'
         }}>
-          Entry {tournament.entryCount + 1} of 3 • Cannot be modified after submission
-        </div>
+          Bots will create varied portfolios with different strategies.
+        </p>
       </div>
     );
   };
@@ -1146,6 +1574,12 @@ const StonkOptionsArenaV2 = ({
         {/* Tier Progress Bar */}
         <TierProgressBar />
 
+        {/* Tournament Submit Section - placed here so users see it after requirements */}
+        <TournamentSubmitSection />
+
+        {/* Admin Controls - only visible to admin users */}
+        <AdminControls />
+
         <div style={{
           display: 'grid',
           gridTemplateColumns: (!isMobile && showOrder) ? '1fr 380px' : '1fr',
@@ -1286,7 +1720,9 @@ const StonkOptionsArenaV2 = ({
                       key={contract.id}
                       contract={contract}
                       currentPrice={prices[contract.symbol]}
-                      onClose={handleSellPosition}
+                      onClose={tournamentMode ? null : handleSellPosition}
+                      onRemove={handleRemovePosition}
+                      showRemoveButton={tournamentMode}
                     />
                   ))}
                 </div>
@@ -1312,9 +1748,6 @@ const StonkOptionsArenaV2 = ({
             </div>
           </div>
         )}
-
-        {/* Tournament Submit Button */}
-        <TournamentSubmitButton />
 
         {/* User Tournament Entries - shows submitted entries with lock buttons */}
         <UserTournamentEntries />

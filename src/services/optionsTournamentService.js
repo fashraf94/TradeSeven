@@ -82,19 +82,65 @@ export const createWeeklyOptionsTournament = async (baseDate = new Date()) => {
  * @returns {Promise<Object|null>} - Current tournament or null
  */
 export const getCurrentOptionsTournament = async () => {
+  console.log('getCurrentOptionsTournament called');
+
   const existing = await getActiveOptionsTournament();
+  console.log('getActiveOptionsTournament returned:', existing);
+
   if (existing) return existing;
 
   // No active tournament - check if we should create one
   const now = new Date();
   const day = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  console.log('No active tournament, day of week:', day, '(0=Sun, 1=Mon, etc)');
 
   // Only auto-create Mon-Fri
   if (day >= 1 && day <= 5) {
-    return await createWeeklyOptionsTournament(now);
+    console.log('Creating new tournament for weekday...');
+    const newTournament = await createWeeklyOptionsTournament(now);
+    console.log('Created tournament:', newTournament);
+    return newTournament;
   }
 
+  console.log('Weekend - not auto-creating tournament');
   return null;
+};
+
+/**
+ * Create a test tournament that works any day (for development/testing)
+ * @returns {Promise<Object>} - Created tournament
+ */
+export const createTestOptionsTournament = async () => {
+  console.log('createTestOptionsTournament called');
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const week = getWeekNumber(now);
+
+  // Set lock deadline to tomorrow
+  const lockDeadline = new Date(now);
+  lockDeadline.setDate(now.getDate() + 1);
+  lockDeadline.setHours(16, 0, 0, 0);
+
+  // Set end date to 5 days from now
+  const endDate = new Date(now);
+  endDate.setDate(now.getDate() + 5);
+  endDate.setHours(16, 0, 0, 0);
+
+  const tournament = {
+    id: `options_test_${year}_W${week}_${Date.now()}`,
+    name: `Options Arena Test Week ${week}`,
+    status: 'open',
+    startDate: now.toISOString(),
+    lockDeadline: lockDeadline.toISOString(),
+    endDate: endDate.toISOString(),
+    entryCount: 0
+  };
+
+  console.log('Creating test tournament:', tournament);
+  const created = await createOptionsTournament(tournament);
+  console.log('Test tournament created:', created);
+  return created;
 };
 
 /**
@@ -214,27 +260,6 @@ export const canUserEnterTournament = async (tournament, userId) => {
   }
 
   return { canEnter: true, entriesRemaining: 3 - entries.length };
-};
-
-/**
- * Create test tournament (for development)
- * @returns {Promise<Object>} - Created test tournament
- */
-export const createTestOptionsTournament = async () => {
-  const now = new Date();
-
-  const tournament = {
-    id: `options_test_${Date.now()}`,
-    name: `Test Options Tournament`,
-    status: 'open',
-    startDate: now.toISOString(),
-    lockDeadline: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(), // 24h from now
-    endDate: new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days from now
-    entryCount: 0,
-    isTest: true
-  };
-
-  return await createOptionsTournament(tournament);
 };
 
 export default {

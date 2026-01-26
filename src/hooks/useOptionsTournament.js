@@ -29,7 +29,11 @@ export const useOptionsTournament = (userId, username) => {
 
   // Fetch tournament data
   const fetchTournamentData = useCallback(async () => {
+    console.log('=== useOptionsTournament.fetchTournamentData ===');
+    console.log('userId:', userId);
+
     if (!userId) {
+      console.log('No userId, returning early');
       setIsLoading(false);
       return;
     }
@@ -39,7 +43,9 @@ export const useOptionsTournament = (userId, username) => {
       setError(null);
 
       // Get current tournament
+      console.log('Calling getCurrentOptionsTournament...');
       let currentTournament = await getCurrentOptionsTournament();
+      console.log('getCurrentOptionsTournament returned:', currentTournament);
 
       if (currentTournament) {
         // Check and update status if needed

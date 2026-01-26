@@ -12,8 +12,10 @@ import { TrendingUp, TrendingDown, Clock, Target, Zap } from 'lucide-react';
 const StonkOptionsPosition = ({
   contract,
   currentPrice,
-  onClose, // Optional: for closing positions early
-  compact = false
+  onClose, // Optional: for closing positions early (sell at current value)
+  onRemove, // Optional: for removing positions (refund entry amount) - used in tournament mode
+  compact = false,
+  showRemoveButton = false // Show remove button in header
 }) => {
   // Calculate current value
   const valuation = useMemo(() => {
@@ -145,16 +147,52 @@ const StonkOptionsPosition = ({
             </div>
           </div>
 
-          {/* Status Badge */}
-          <div style={{
-            padding: '6px 12px',
-            borderRadius: 20,
-            background: statusStyle.color + '20',
-            color: statusStyle.color,
-            fontSize: 12,
-            fontWeight: '600'
-          }}>
-            {statusStyle.label}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Status Badge */}
+            <div style={{
+              padding: '6px 12px',
+              borderRadius: 20,
+              background: statusStyle.color + '20',
+              color: statusStyle.color,
+              fontSize: 12,
+              fontWeight: '600'
+            }}>
+              {statusStyle.label}
+            </div>
+
+            {/* Remove Button (for tournament mode) */}
+            {showRemoveButton && onRemove && !valuation.isExpired && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(contract);
+                }}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: '50%',
+                  border: '1px solid #ef4444',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  color: '#ef4444',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 16,
+                  fontWeight: 'bold',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.3)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+                }}
+                title="Remove position (refund entry)"
+              >
+                ×
+              </button>
+            )}
           </div>
         </div>
       </div>
