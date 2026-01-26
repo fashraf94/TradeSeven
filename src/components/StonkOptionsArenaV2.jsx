@@ -499,13 +499,6 @@ const StonkOptionsArenaV2 = ({
 
   // Tournament Submit Section Component - Always shows in tournament mode
   const TournamentSubmitSection = () => {
-    // Debug logging
-    console.log('=== TournamentSubmitSection Debug ===');
-    console.log('tournamentMode:', tournamentMode);
-    console.log('tournament:', tournament);
-    console.log('contracts.length:', contracts.length);
-    console.log('tierCounts:', tierCounts);
-
     if (!tournamentMode) return null;
 
     // Calculate validation locally for reliability
@@ -527,39 +520,39 @@ const StonkOptionsArenaV2 = ({
 
     return (
       <div style={{
-        marginTop: '24px',
-        padding: '20px',
+        marginTop: '12px',
+        padding: '12px',
         background: isPortfolioComplete
           ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.05))'
           : '#12121a',
         border: isPortfolioComplete
           ? '2px solid #10b981'
           : '1px solid #2d3748',
-        borderRadius: '12px'
+        borderRadius: '10px'
       }}>
-        {/* Header */}
+        {/* Compact Header */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: '16px'
+          marginBottom: '10px'
         }}>
           <h3 style={{
             color: '#fff',
-            fontSize: '18px',
+            fontSize: '15px',
             margin: 0,
             display: 'flex',
             alignItems: 'center',
-            gap: '10px'
+            gap: '8px'
           }}>
             🏆 Tournament Entry
           </h3>
           {isPortfolioComplete && (
             <span style={{
-              fontSize: '12px',
+              fontSize: '11px',
               background: '#10b981',
               color: '#000',
-              padding: '4px 10px',
+              padding: '3px 8px',
               borderRadius: '4px',
               fontWeight: '700'
             }}>
@@ -568,108 +561,98 @@ const StonkOptionsArenaV2 = ({
           )}
         </div>
 
-        {/* Portfolio Summary Grid */}
+        {/* Compact Stats Row */}
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '10px',
-          marginBottom: '16px'
+          display: 'flex',
+          gap: '8px',
+          marginBottom: '10px'
         }}>
           <div style={{
+            flex: 1,
             background: '#0d0d12',
-            padding: '12px',
-            borderRadius: '8px',
+            padding: '8px',
+            borderRadius: '6px',
             textAlign: 'center'
           }}>
-            <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '4px' }}>Contracts</div>
-            <div style={{
-              fontSize: '22px',
-              fontWeight: '700',
-              color: totalContracts === 7 ? '#10b981' : '#fff'
-            }}>
+            <span style={{ fontSize: '10px', color: '#6b7280' }}>Contracts</span>
+            <div style={{ fontSize: '16px', fontWeight: '700', color: totalContracts === 7 ? '#10b981' : '#fff' }}>
               {totalContracts}/7
             </div>
           </div>
           <div style={{
+            flex: 1,
             background: '#0d0d12',
-            padding: '12px',
-            borderRadius: '8px',
+            padding: '8px',
+            borderRadius: '6px',
             textAlign: 'center'
           }}>
-            <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '4px' }}>Invested</div>
-            <div style={{ fontSize: '22px', fontWeight: '700', color: '#00d9ff' }}>
+            <span style={{ fontSize: '10px', color: '#6b7280' }}>Invested</span>
+            <div style={{ fontSize: '16px', fontWeight: '700', color: '#00d9ff' }}>
               ${totalInvested.toLocaleString()}
             </div>
           </div>
           <div style={{
+            flex: 1,
             background: '#0d0d12',
-            padding: '12px',
-            borderRadius: '8px',
+            padding: '8px',
+            borderRadius: '6px',
             textAlign: 'center'
           }}>
-            <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '4px' }}>Cash Left</div>
-            <div style={{ fontSize: '22px', fontWeight: '700', color: '#fff' }}>
+            <span style={{ fontSize: '10px', color: '#6b7280' }}>Cash Left</span>
+            <div style={{ fontSize: '16px', fontWeight: '700', color: '#fff' }}>
               ${virtualCash.toLocaleString()}
             </div>
           </div>
         </div>
 
-        {/* Tournament Info */}
+        {/* Compact Tournament Info - Single Row */}
         {hasTournament ? (
           <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
             background: '#0d0d12',
-            padding: '12px',
-            borderRadius: '8px',
-            marginBottom: '16px'
+            padding: '8px 10px',
+            borderRadius: '6px',
+            marginBottom: '10px',
+            fontSize: '12px'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <span style={{ color: '#9ca3af', fontSize: '13px' }}>Tournament</span>
-              <span style={{ color: '#fff', fontWeight: '600', fontSize: '13px' }}>
-                {tournament.tournament.name}
-              </span>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <span style={{ color: '#6b7280' }}>Tournament</span>
+              <span style={{ color: '#fff', fontWeight: '600' }}>{tournament.tournament.name}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <span style={{ color: '#9ca3af', fontSize: '13px' }}>Status</span>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
               <span style={{
                 color: tournamentStatus === 'open' ? '#10b981' : '#f59e0b',
-                fontWeight: '600',
-                fontSize: '13px'
+                fontWeight: '600'
               }}>
-                {tournamentStatus === 'open' ? '🟢 Open for Entries' : tournamentStatus}
+                {tournamentStatus === 'open' ? '🟢 Open' : tournamentStatus}
               </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#9ca3af', fontSize: '13px' }}>Your Entries</span>
-              <span style={{ color: '#00d9ff', fontWeight: '600', fontSize: '13px' }}>
-                {entryCount}/3
-              </span>
+              <span style={{ color: '#00d9ff' }}>{entryCount}/3 entries</span>
             </div>
           </div>
         ) : (
           <div style={{
             background: 'rgba(245, 158, 11, 0.1)',
-            border: '1px solid rgba(245, 158, 11, 0.3)',
-            padding: '16px',
-            borderRadius: '8px',
-            marginBottom: '16px',
+            border: '1px solid rgba(245, 158, 11, 0.2)',
+            padding: '10px',
+            borderRadius: '6px',
+            marginBottom: '10px',
             textAlign: 'center'
           }}>
-            <div style={{ color: '#f59e0b', fontSize: '13px', marginBottom: '12px' }}>
-              ⚠️ No active tournament found
-            </div>
-            <div style={{ color: '#9ca3af', fontSize: '12px', marginBottom: '12px' }}>
-              Tournaments auto-create on weekdays. Click below to create a test tournament.
+            <div style={{ color: '#f59e0b', fontSize: '12px', marginBottom: '8px' }}>
+              ⚠️ No active tournament
             </div>
             <button
               onClick={handleCreateTestTournament}
               style={{
-                padding: '10px 20px',
+                padding: '6px 12px',
                 background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
                 border: 'none',
-                borderRadius: '8px',
+                borderRadius: '6px',
                 color: '#000',
                 fontWeight: '600',
-                fontSize: '14px',
+                fontSize: '12px',
                 cursor: 'pointer'
               }}
             >
@@ -682,80 +665,61 @@ const StonkOptionsArenaV2 = ({
         {hasTournament && !canEnterTournament && tournament?.canEnter?.reason && (
           <div style={{
             background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            padding: '12px',
-            borderRadius: '8px',
-            marginBottom: '16px'
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+            padding: '8px 10px',
+            borderRadius: '6px',
+            marginBottom: '10px'
           }}>
-            <span style={{ color: '#ef4444', fontSize: '13px' }}>
+            <span style={{ color: '#ef4444', fontSize: '12px' }}>
               ⚠️ {tournament.canEnter.reason}
             </span>
           </div>
         )}
 
-        {/* Portfolio Validation Errors */}
+        {/* Requirements - Collapsed when not needed */}
         {!isPortfolioComplete && portfolioValidation?.errors?.length > 0 && (
           <div style={{
             background: 'rgba(245, 158, 11, 0.1)',
-            border: '1px solid rgba(245, 158, 11, 0.3)',
-            padding: '12px',
-            borderRadius: '8px',
-            marginBottom: '16px'
+            border: '1px solid rgba(245, 158, 11, 0.2)',
+            borderRadius: '6px',
+            padding: '8px 10px',
+            marginBottom: '10px'
           }}>
-            <div style={{ fontSize: '12px', color: '#f59e0b', marginBottom: '6px', fontWeight: '600' }}>
+            <div style={{ fontSize: '11px', color: '#f59e0b', fontWeight: '600', marginBottom: '4px' }}>
               Requirements not met:
             </div>
             {portfolioValidation.errors.map((err, i) => (
-              <div key={i} style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>
-                • {err}
-              </div>
+              <div key={i} style={{ fontSize: '11px', color: '#9ca3af' }}>• {err}</div>
             ))}
           </div>
         )}
 
-        {/* Submit Button */}
+        {/* Compact Submit Button */}
         <button
           onClick={handleSubmitToTournament}
           disabled={!canSubmit}
           style={{
             width: '100%',
-            padding: '16px',
-            borderRadius: '10px',
+            padding: '10px',
+            borderRadius: '8px',
             border: 'none',
             background: canSubmit
               ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
               : '#2d3748',
             color: canSubmit ? '#fff' : '#6b7280',
-            fontSize: '16px',
+            fontSize: '14px',
             fontWeight: '700',
             cursor: canSubmit ? 'pointer' : 'not-allowed',
-            opacity: isSubmitting ? 0.7 : 1,
-            transition: 'all 0.2s'
+            opacity: isSubmitting ? 0.7 : 1
           }}
         >
           {isSubmitting
             ? '⏳ Submitting...'
             : canSubmit
-              ? '🚀 Lock Portfolio & Enter Tournament'
-              : !isPortfolioComplete
-                ? '📋 Complete Portfolio to Submit'
-                : !hasTournament
-                  ? '⏳ Loading Tournament...'
-                  : '⏳ Entry Not Available'
+              ? '🚀 Submit Entry'
+              : '📋 Complete Portfolio to Submit'
           }
         </button>
-
-        {canSubmit && (
-          <p style={{
-            textAlign: 'center',
-            marginTop: '10px',
-            marginBottom: 0,
-            fontSize: '12px',
-            color: '#6b7280'
-          }}>
-            ⚠️ Portfolio will be locked and cannot be changed after submission
-          </p>
-        )}
       </div>
     );
   };
@@ -1056,7 +1020,7 @@ const StonkOptionsArenaV2 = ({
               gap: '12px',
               marginBottom: '20px'
             }}>
-              {/* Entry Price (when bought) */}
+              {/* Entry Premium (what they paid for the option) */}
               <div style={{
                 background: '#1a1a2e',
                 padding: '16px',
@@ -1064,14 +1028,14 @@ const StonkOptionsArenaV2 = ({
                 textAlign: 'center'
               }}>
                 <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
-                  Entry Price
+                  Entry Premium
                 </div>
                 <div style={{ fontSize: '20px', fontWeight: '700', color: '#9ca3af' }}>
-                  ${position.entryPrice?.toFixed(2) || 'N/A'}
+                  ${position.entryAmount?.toFixed(2) || 'N/A'}
                 </div>
               </div>
 
-              {/* Current Stock Price */}
+              {/* Current Option Value */}
               <div style={{
                 background: '#1a1a2e',
                 padding: '16px',
@@ -1079,22 +1043,24 @@ const StonkOptionsArenaV2 = ({
                 textAlign: 'center'
               }}>
                 <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
-                  Current Price
+                  Current Value
                 </div>
-                <div style={{ fontSize: '20px', fontWeight: '700', color: '#fff' }}>
-                  ${currentPrice.toFixed(2)}
+                <div style={{
+                  fontSize: '20px',
+                  fontWeight: '700',
+                  color: position.currentValue >= position.entryAmount ? '#10b981' : '#ef4444'
+                }}>
+                  ${position.currentValue?.toFixed(2)}
                 </div>
-                {/* Show price change from entry */}
-                {position.entryPrice && (
-                  <div style={{
-                    fontSize: '11px',
-                    marginTop: '4px',
-                    color: currentPrice >= position.entryPrice ? '#10b981' : '#ef4444'
-                  }}>
-                    {currentPrice >= position.entryPrice ? '▲' : '▼'}
-                    {Math.abs(((currentPrice - position.entryPrice) / position.entryPrice) * 100).toFixed(1)}%
-                  </div>
-                )}
+                {/* Show P/L % */}
+                <div style={{
+                  fontSize: '11px',
+                  marginTop: '4px',
+                  color: position.profitLoss >= 0 ? '#10b981' : '#ef4444'
+                }}>
+                  {position.profitLoss >= 0 ? '▲' : '▼'}
+                  {Math.abs(position.percentReturn).toFixed(1)}%
+                </div>
               </div>
 
               {/* Strike Price */}
@@ -1151,6 +1117,7 @@ const StonkOptionsArenaV2 = ({
               padding: '16px',
               marginBottom: '20px'
             }}>
+              {/* Stock Price Info */}
               <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -1158,8 +1125,19 @@ const StonkOptionsArenaV2 = ({
                 paddingBottom: '12px',
                 borderBottom: '1px solid #2d3748'
               }}>
-                <span style={{ color: '#6b7280' }}>Entry Amount</span>
-                <span style={{ color: '#fff', fontWeight: '600' }}>${position.entryAmount}</span>
+                <span style={{ color: '#6b7280' }}>Stock Price</span>
+                <span style={{ color: '#fff', fontWeight: '600' }}>
+                  ${currentPrice.toFixed(2)}
+                  {position.entryPrice && (
+                    <span style={{
+                      fontSize: '11px',
+                      marginLeft: '4px',
+                      color: currentPrice >= position.entryPrice ? '#10b981' : '#ef4444'
+                    }}>
+                      (was ${position.entryPrice?.toFixed(2)})
+                    </span>
+                  )}
+                </span>
               </div>
               <div style={{
                 display: 'flex',
@@ -1171,27 +1149,6 @@ const StonkOptionsArenaV2 = ({
                 <span style={{ color: '#6b7280' }}>Max Payout</span>
                 <span style={{ color: '#10b981', fontWeight: '600' }}>${position.potentialPayout}</span>
               </div>
-              {/* Stock Movement from entry */}
-              {position.entryPrice && (
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginBottom: '12px',
-                  paddingBottom: '12px',
-                  borderBottom: '1px solid #2d3748'
-                }}>
-                  <span style={{ color: '#6b7280' }}>Stock Movement</span>
-                  <span style={{
-                    color: currentPrice >= position.entryPrice ? '#10b981' : '#ef4444',
-                    fontWeight: '600'
-                  }}>
-                    {currentPrice >= position.entryPrice ? '+' : ''}
-                    ${(currentPrice - position.entryPrice).toFixed(2)}
-                    ({currentPrice >= position.entryPrice ? '+' : ''}
-                    {(((currentPrice - position.entryPrice) / position.entryPrice) * 100).toFixed(1)}%)
-                  </span>
-                </div>
-              )}
               <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
