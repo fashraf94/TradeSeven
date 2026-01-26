@@ -4,19 +4,19 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import StonkOptionsChain from './StonkOptionsChain';
-import StonkOptionsExpirySelector from './StonkOptionsExpirySelector';
-import StonkOptionsStockSelector from './StonkOptionsStockSelector';
-import StonkOptionsOrder from './StonkOptionsOrder';
-import StonkOptionsPosition from './StonkOptionsPosition';
+import StonkOptionsChain from '../StonkOptionsChain';
+import StonkOptionsExpirySelector from '../StonkOptionsExpirySelector';
+import StonkOptionsStockSelector from '../StonkOptionsStockSelector';
+import StonkOptionsOrder from '../StonkOptionsOrder';
+import StonkOptionsPosition from '../StonkOptionsPosition';
 import {
   calculatePortfolio,
   calculateLiveValue,
   validateTournamentPortfolio,
   STONK_OPTIONS_CONFIG,
   EXPIRY_TIERS
-} from '../services/stonkOptionsEngineV2';
-import { useOptionsTournament } from '../hooks/useOptionsTournament';
+} from '../../services/stonkOptionsEngineV2';
+import { useOptionsTournament } from '../../hooks/useOptionsTournament';
 import {
   ArrowLeft,
   RefreshCw,
@@ -717,7 +717,7 @@ const StonkOptionsArenaV2 = ({
   // Handler to create a test tournament (for development/testing)
   const handleCreateTestTournament = async () => {
     try {
-      const { createTestOptionsTournament } = await import('../services/optionsTournamentService');
+      const { createTestOptionsTournament } = await import('../../services/optionsTournamentService');
       const newTournament = await createTestOptionsTournament();
       alert('🏆 Tournament created!\n\nName: ' + newTournament.name + '\n\nRefreshing data...');
       // Refresh tournament data
@@ -810,7 +810,7 @@ const StonkOptionsArenaV2 = ({
 
       setIsPopulating(true);
       try {
-        const { populateOptionsTournamentBots } = await import('../services/optionsBotService');
+        const { populateOptionsTournamentBots } = await import('../../services/optionsBotService');
 
         // Get current stock prices for bot portfolio generation
         const result = await populateOptionsTournamentBots(
@@ -840,7 +840,7 @@ const StonkOptionsArenaV2 = ({
       }
 
       try {
-        const { clearOptionsBots } = await import('../services/optionsBotService');
+        const { clearOptionsBots } = await import('../../services/optionsBotService');
         const count = await clearOptionsBots(tournament.tournament.id);
         alert(`🗑️ Removed ${count} bot entries`);
         tournament.refresh?.();
