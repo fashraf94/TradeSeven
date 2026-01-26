@@ -72,6 +72,7 @@ const StonkOptionsArenaV2 = ({
   const [activeTab, setActiveTab] = useState('build'); // 'build' | 'portfolios'
   const [selectedPosition, setSelectedPosition] = useState(null);
   const [showPositionModal, setShowPositionModal] = useState(false);
+  const [submissionError, setSubmissionError] = useState(null);
 
   // Tournament hook (only active if user exists)
   // Always call hook (React rules), hook handles null userId gracefully
@@ -344,7 +345,9 @@ const StonkOptionsArenaV2 = ({
 
     } catch (err) {
       console.error('Tournament submission error:', err);
-      alert('❌ Error submitting entry:\n\n' + err.message);
+      setSubmissionError(err.message || 'Failed to submit entry. Please try again.');
+      // Clear error after 5 seconds
+      setTimeout(() => setSubmissionError(null), 5000);
     }
   };
 
@@ -828,6 +831,8 @@ const StonkOptionsArenaV2 = ({
               portfolioValidation={portfolioValidation}
               onCreateTestTournament={handleCreateTestTournament}
               onSubmitToTournament={handleSubmitToTournament}
+              submissionError={submissionError}
+              onClearError={() => setSubmissionError(null)}
             />
 
             {/* Admin Controls - only visible to admin users */}
