@@ -74,6 +74,16 @@ const StonkOptionsArenaV2 = ({
   const [showPositionModal, setShowPositionModal] = useState(false);
   const [submissionError, setSubmissionError] = useState(null);
 
+  // Price freshness tracking
+  const [priceStatus, setPriceStatus] = useState({
+    lastUpdate: null,
+    isStale: false,
+    usingFallback: false,
+    failedSymbols: []
+  });
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastManualRefresh, setLastManualRefresh] = useState(0);
+
   // Tournament hook (only active if user exists)
   // Always call hook (React rules), hook handles null userId gracefully
   const tournament = useOptionsTournament(user?.odUserId, user?.username);
@@ -117,6 +127,9 @@ const StonkOptionsArenaV2 = ({
 
   // Build prices from stocksData or fetch
   const fetchPrices = useCallback(async () => {
+    const failedSymbols = [];
+    let usedFallback = false;
+
     try {
       const newPrices = {};
 
@@ -139,27 +152,48 @@ const StonkOptionsArenaV2 = ({
               newPrices[symbol] = data.price;
             } else {
               newPrices[symbol] = getFallbackPrice(symbol);
+              failedSymbols.push(symbol);
+              usedFallback = true;
             }
           } catch (e) {
             newPrices[symbol] = getFallbackPrice(symbol);
+            failedSymbols.push(symbol);
+            usedFallback = true;
           }
         }
       } else {
         // Use fallbacks for any missing
         for (const symbol of missingSymbols) {
           newPrices[symbol] = getFallbackPrice(symbol);
+          failedSymbols.push(symbol);
+          usedFallback = true;
         }
       }
 
       setPrices(newPrices);
       setLastUpdate(new Date());
+      setPriceStatus({
+        lastUpdate: new Date(),
+        isStale: false,
+        usingFallback: usedFallback,
+        failedSymbols
+      });
       setLoading(false);
     } catch (error) {
       console.error('Price fetch error:', error);
       // Use all fallbacks
       const fallbackPrices = {};
-      DEFAULT_STOCKS.forEach(s => fallbackPrices[s] = getFallbackPrice(s));
+      DEFAULT_STOCKS.forEach(s => {
+        fallbackPrices[s] = getFallbackPrice(s);
+        failedSymbols.push(s);
+      });
       setPrices(fallbackPrices);
+      setPriceStatus({
+        lastUpdate: new Date(),
+        isStale: false,
+        usingFallback: true,
+        failedSymbols
+      });
       setLoading(false);
     }
   }, [stocksData, stockAPI]);
@@ -174,6 +208,64 @@ const StonkOptionsArenaV2 = ({
     const interval = setInterval(fetchPrices, 60000);
     return () => clearInterval(interval);
   }, [fetchPrices]);
+
+  // Check if market is currently open (9:30 AM - 4 PM ET, weekdays)
+  const isMarketOpen = useCallback(() => {
+    const now = new Date();
+    const etOptions = { timeZone: 'America/New_York' };
+    const etTime = new Date(now.toLocaleString('en-US', etOptions));
+    const day = etTime.getDay();
+    const hour = etTime.getHours();
+    const minute = etTime.getMinutes();
+    const timeInMinutes = hour * 60 + minute;
+
+    // Weekdays only (Mon-Fri)
+    if (day === 0 || day === 6) return false;
+
+    // Market hours: 9:30 AM (570 min) to 4:00 PM (960 min) ET
+    return timeInMinutes >= 570 && timeInMinutes < 960;
+  }, []);
+
+  // Check for stale prices every 30 seconds
+  useEffect(() => {
+    const checkStaleness = () => {
+      if (!priceStatus.lastUpdate) return;
+
+      const now = new Date();
+      const ageMinutes = (now - priceStatus.lastUpdate) / 1000 / 60;
+
+      // During market hours, prices > 5 min are stale
+      // Outside market hours, > 15 min is stale
+      const staleThreshold = isMarketOpen() ? 5 : 15;
+
+      setPriceStatus(prev => ({
+        ...prev,
+        isStale: ageMinutes > staleThreshold
+      }));
+    };
+
+    const interval = setInterval(checkStaleness, 30000);
+    checkStaleness(); // Run immediately
+    return () => clearInterval(interval);
+  }, [priceStatus.lastUpdate, isMarketOpen]);
+
+  // Manual refresh handler with rate limiting
+  const handleManualRefresh = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastManualRefresh < 30000) {
+      // Rate limit: once per 30 seconds
+      return;
+    }
+
+    setIsRefreshing(true);
+    setLastManualRefresh(now);
+
+    try {
+      await fetchPrices();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [lastManualRefresh, fetchPrices]);
 
   // Calculate portfolio
   const portfolio = useMemo(() => {
@@ -1051,9 +1143,58 @@ const StonkOptionsArenaV2 = ({
           fontSize: 12,
           color: '#6b7280',
           flexWrap: 'wrap',
-          gap: 8
+          gap: 12
         }}>
-          <span>Last updated: {lastUpdate.toLocaleTimeString()}</span>
+          {/* Price Freshness Indicator */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 12px',
+            background: priceStatus.usingFallback ? 'rgba(239, 68, 68, 0.1)'
+                      : priceStatus.isStale ? 'rgba(245, 158, 11, 0.1)'
+                      : 'rgba(16, 185, 129, 0.1)',
+            border: `1px solid ${
+              priceStatus.usingFallback ? '#ef4444'
+              : priceStatus.isStale ? '#f59e0b'
+              : '#10b981'
+            }`,
+            borderRadius: '6px'
+          }}>
+            <span style={{
+              color: priceStatus.usingFallback ? '#ef4444'
+                    : priceStatus.isStale ? '#f59e0b'
+                    : '#6b7280'
+            }}>
+              {priceStatus.usingFallback && `⚠️ Using estimated prices${priceStatus.failedSymbols.length > 0 ? ` (${priceStatus.failedSymbols.length} symbols)` : ''}`}
+              {!priceStatus.usingFallback && priceStatus.isStale && '⚠️ Prices may be outdated'}
+              {!priceStatus.usingFallback && !priceStatus.isStale && priceStatus.lastUpdate &&
+                `Prices as of ${priceStatus.lastUpdate.toLocaleTimeString()}`}
+              {!priceStatus.lastUpdate && 'Loading prices...'}
+            </span>
+
+            <button
+              onClick={handleManualRefresh}
+              disabled={isRefreshing || Date.now() - lastManualRefresh < 30000}
+              style={{
+                background: 'transparent',
+                border: '1px solid #3d4852',
+                borderRadius: '4px',
+                padding: '3px 8px',
+                color: '#9ca3af',
+                cursor: (isRefreshing || Date.now() - lastManualRefresh < 30000) ? 'not-allowed' : 'pointer',
+                opacity: isRefreshing ? 0.5 : 1,
+                fontSize: '11px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              <RefreshCw size={12} style={{ animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} />
+              {isRefreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
+
           <span>This is a simulation. No real money involved.</span>
         </div>
       </div>
