@@ -32,6 +32,10 @@
     {
       "path": "/api/earnings/verify-batch?batch=4&limit=5",
       "schedule": "0 22 * * *"
+    },
+    {
+      "path": "/api/options/resolve-tournament",
+      "schedule": "0 21 * * 5"
     }
   ]
 }
