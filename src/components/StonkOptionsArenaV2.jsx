@@ -494,84 +494,312 @@ const StonkOptionsArenaV2 = ({
     );
   };
 
-  // Tournament Submit Button Component
-  const TournamentSubmitButton = () => {
-    if (!tournamentMode || !tournament?.tournament || tournament.tournament.status !== 'open') {
-      return null;
-    }
+  // Tournament Submit Section Component - Always shows in tournament mode
+  const TournamentSubmitSection = () => {
+    // Debug logging
+    console.log('=== TournamentSubmitSection Debug ===');
+    console.log('tournamentMode:', tournamentMode);
+    console.log('tournament:', tournament);
+    console.log('contracts.length:', contracts.length);
+    console.log('tierCounts:', tierCounts);
 
-    if (!tournament.canEnter.canEnter) {
-      return (
-        <div style={{
-          background: '#1a1a2e',
-          borderRadius: '12px',
-          padding: '16px',
-          textAlign: 'center',
-          border: '1px solid #2d3748'
-        }}>
-          <span style={{ color: '#9ca3af' }}>{tournament.canEnter.reason}</span>
-        </div>
-      );
-    }
+    if (!tournamentMode) return null;
 
-    const handleSubmit = async () => {
-      if (!portfolioValidation?.isValid) {
-        alert('Portfolio does not meet requirements:\n' + portfolioValidation.errors.join('\n'));
-        return;
-      }
+    // Calculate validation locally for reliability
+    const totalContracts = contracts.length;
+    const allTiersMet = tierCounts.short >= 2 && tierCounts.medium >= 3 && tierCounts.long >= 2;
+    const isPortfolioComplete = totalContracts === 7 && allTiersMet;
 
-      if (!confirm(`Submit entry with ${contracts.length} contracts?\n\nThis cannot be undone.`)) {
-        return;
-      }
+    // Tournament state
+    const hasTournament = tournament?.tournament != null;
+    const tournamentStatus = tournament?.tournament?.status;
+    const canEnterTournament = tournament?.canEnter?.canEnter ?? false;
+    const entryCount = tournament?.userEntries?.length || 0;
+    const isSubmitting = tournament?.isSubmitting || false;
 
-      try {
-        await tournament.submitEntry(contracts);
-        alert('Entry submitted successfully! 🎉');
-        // Clear contracts after successful submission
-        setContracts([]);
-        setVirtualCash(initialCash);
-      } catch (err) {
-        alert('Error submitting entry: ' + err.message);
-      }
-    };
+    const totalInvested = contracts.reduce((sum, c) => sum + c.entryAmount, 0);
+
+    // Can submit if portfolio is complete AND tournament allows entry
+    const canSubmit = isPortfolioComplete && hasTournament && canEnterTournament && !isSubmitting;
 
     return (
       <div style={{
-        background: '#12121a',
-        borderRadius: '12px',
-        padding: '16px',
-        marginTop: '16px',
-        border: portfolioValidation?.isValid
+        marginTop: '24px',
+        padding: '20px',
+        background: isPortfolioComplete
+          ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.05))'
+          : '#12121a',
+        border: isPortfolioComplete
           ? '2px solid #10b981'
-          : '1px solid #2d3748'
+          : '1px solid #2d3748',
+        borderRadius: '12px'
       }}>
-        {!portfolioValidation?.isValid && (
-          <div style={{
-            marginBottom: '12px',
-            padding: '8px',
-            background: 'rgba(245, 158, 11, 0.1)',
-            borderRadius: '8px'
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '16px'
+        }}>
+          <h3 style={{
+            color: '#fff',
+            fontSize: '18px',
+            margin: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
           }}>
-            <div style={{ fontSize: '12px', color: '#f59e0b', marginBottom: '4px' }}>
+            🏆 Tournament Entry
+          </h3>
+          {isPortfolioComplete && (
+            <span style={{
+              fontSize: '12px',
+              background: '#10b981',
+              color: '#000',
+              padding: '4px 10px',
+              borderRadius: '4px',
+              fontWeight: '700'
+            }}>
+              ✓ READY
+            </span>
+          )}
+        </div>
+
+        {/* Portfolio Summary Grid */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '10px',
+          marginBottom: '16px'
+        }}>
+          <div style={{
+            background: '#0d0d12',
+            padding: '12px',
+            borderRadius: '8px',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '4px' }}>Contracts</div>
+            <div style={{
+              fontSize: '22px',
+              fontWeight: '700',
+              color: totalContracts === 7 ? '#10b981' : '#fff'
+            }}>
+              {totalContracts}/7
+            </div>
+          </div>
+          <div style={{
+            background: '#0d0d12',
+            padding: '12px',
+            borderRadius: '8px',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '4px' }}>Invested</div>
+            <div style={{ fontSize: '22px', fontWeight: '700', color: '#00d9ff' }}>
+              ${totalInvested.toLocaleString()}
+            </div>
+          </div>
+          <div style={{
+            background: '#0d0d12',
+            padding: '12px',
+            borderRadius: '8px',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '4px' }}>Cash Left</div>
+            <div style={{ fontSize: '22px', fontWeight: '700', color: '#fff' }}>
+              ${virtualCash.toLocaleString()}
+            </div>
+          </div>
+        </div>
+
+        {/* Tournament Info */}
+        {hasTournament ? (
+          <div style={{
+            background: '#0d0d12',
+            padding: '12px',
+            borderRadius: '8px',
+            marginBottom: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <span style={{ color: '#9ca3af', fontSize: '13px' }}>Tournament</span>
+              <span style={{ color: '#fff', fontWeight: '600', fontSize: '13px' }}>
+                {tournament.tournament.name}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <span style={{ color: '#9ca3af', fontSize: '13px' }}>Status</span>
+              <span style={{
+                color: tournamentStatus === 'open' ? '#10b981' : '#f59e0b',
+                fontWeight: '600',
+                fontSize: '13px'
+              }}>
+                {tournamentStatus === 'open' ? '🟢 Open for Entries' : tournamentStatus}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#9ca3af', fontSize: '13px' }}>Your Entries</span>
+              <span style={{ color: '#00d9ff', fontWeight: '600', fontSize: '13px' }}>
+                {entryCount}/3
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div style={{
+            background: 'rgba(245, 158, 11, 0.1)',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            padding: '12px',
+            borderRadius: '8px',
+            marginBottom: '16px',
+            textAlign: 'center'
+          }}>
+            <span style={{ color: '#f59e0b', fontSize: '13px' }}>
+              ⏳ Loading tournament data...
+            </span>
+          </div>
+        )}
+
+        {/* Can't Enter Reason */}
+        {hasTournament && !canEnterTournament && tournament?.canEnter?.reason && (
+          <div style={{
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            padding: '12px',
+            borderRadius: '8px',
+            marginBottom: '16px'
+          }}>
+            <span style={{ color: '#ef4444', fontSize: '13px' }}>
+              ⚠️ {tournament.canEnter.reason}
+            </span>
+          </div>
+        )}
+
+        {/* Portfolio Validation Errors */}
+        {!isPortfolioComplete && portfolioValidation?.errors?.length > 0 && (
+          <div style={{
+            background: 'rgba(245, 158, 11, 0.1)',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            padding: '12px',
+            borderRadius: '8px',
+            marginBottom: '16px'
+          }}>
+            <div style={{ fontSize: '12px', color: '#f59e0b', marginBottom: '6px', fontWeight: '600' }}>
               Requirements not met:
             </div>
-            {portfolioValidation?.errors.map((err, i) => (
-              <div key={i} style={{ fontSize: '11px', color: '#9ca3af' }}>• {err}</div>
+            {portfolioValidation.errors.map((err, i) => (
+              <div key={i} style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>
+                • {err}
+              </div>
             ))}
           </div>
         )}
 
+        {/* Submit Button */}
         <button
-          onClick={handleSubmit}
-          disabled={!portfolioValidation?.isValid || tournament.isSubmitting}
+          onClick={handleSubmitToTournament}
+          disabled={!canSubmit}
           style={{
             width: '100%',
-            padding: '14px',
-            borderRadius: '8px',
+            padding: '16px',
+            borderRadius: '10px',
             border: 'none',
-            background: portfolioValidation?.isValid
+            background: canSubmit
               ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
               : '#2d3748',
+            color: canSubmit ? '#fff' : '#6b7280',
+            fontSize: '16px',
+            fontWeight: '700',
+            cursor: canSubmit ? 'pointer' : 'not-allowed',
+            opacity: isSubmitting ? 0.7 : 1,
+            transition: 'all 0.2s'
+          }}
+        >
+          {isSubmitting
+            ? '⏳ Submitting...'
+            : canSubmit
+              ? '🚀 Lock Portfolio & Enter Tournament'
+              : !isPortfolioComplete
+                ? '📋 Complete Portfolio to Submit'
+                : !hasTournament
+                  ? '⏳ Loading Tournament...'
+                  : '⏳ Entry Not Available'
+          }
+        </button>
+
+        {canSubmit && (
+          <p style={{
+            textAlign: 'center',
+            marginTop: '10px',
+            marginBottom: 0,
+            fontSize: '12px',
+            color: '#6b7280'
+          }}>
+            ⚠️ Portfolio will be locked and cannot be changed after submission
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  // Submit handler for tournament entry
+  const handleSubmitToTournament = async () => {
+    console.log('handleSubmitToTournament called');
+
+    if (!tournament?.tournament) {
+      alert('No active tournament available');
+      return;
+    }
+
+    if (!tournament.canEnter?.canEnter) {
+      alert(tournament.canEnter?.reason || 'Cannot enter tournament at this time');
+      return;
+    }
+
+    // Validate portfolio
+    const totalContracts = contracts.length;
+    const allTiersMet = tierCounts.short >= 2 && tierCounts.medium >= 3 && tierCounts.long >= 2;
+
+    if (totalContracts !== 7 || !allTiersMet) {
+      alert('Portfolio does not meet requirements.\n\nNeed exactly 7 contracts:\n• 2 short-term (1D or 3D)\n• 3 medium-term (7D)\n• 2 long-term (14D, 21D, or 28D)');
+      return;
+    }
+
+    const totalEntry = contracts.reduce((sum, c) => sum + c.entryAmount, 0);
+
+    const confirmed = confirm(
+      `🏆 Submit Tournament Entry?\n\n` +
+      `Tournament: ${tournament.tournament.name}\n` +
+      `Contracts: ${totalContracts}\n` +
+      `Total Invested: $${totalEntry.toLocaleString()}\n` +
+      `Cash Remaining: $${virtualCash.toLocaleString()}\n\n` +
+      `⚠️ Your portfolio will be LOCKED!\n\n` +
+      `Continue?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      console.log('Submitting entry with contracts:', contracts);
+      await tournament.submitEntry(contracts);
+
+      alert('🎉 Success!\n\nYour entry has been submitted.\n\nGood luck!');
+
+      // Reset local state
+      setContracts([]);
+      setVirtualCash(initialCash);
+
+      // Refresh tournament data
+      tournament.refresh?.();
+
+    } catch (err) {
+      console.error('Tournament submission error:', err);
+      alert('❌ Error submitting entry:\n\n' + err.message);
+    }
+  };
+
+  // Legacy Tournament Submit Button Component (kept for backwards compatibility)
+  const TournamentSubmitButton = () => {
+    // Now handled by TournamentSubmitSection
+    return null;
+  };
             color: portfolioValidation?.isValid ? '#fff' : '#6b7280',
             fontSize: '16px',
             fontWeight: '700',
@@ -1385,8 +1613,8 @@ const StonkOptionsArenaV2 = ({
           </div>
         )}
 
-        {/* Tournament Submit Button */}
-        <TournamentSubmitButton />
+        {/* Tournament Submit Section */}
+        <TournamentSubmitSection />
 
         {/* User Tournament Entries - shows submitted entries with lock buttons */}
         <UserTournamentEntries />
