@@ -59,6 +59,9 @@ const StonkOptionsArenaV2 = ({
   const [tournamentMode, setTournamentMode] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showTierProgress, setShowTierProgress] = useState(true);
+  const [activeTab, setActiveTab] = useState('build'); // 'build' | 'portfolios'
+  const [selectedPosition, setSelectedPosition] = useState(null);
+  const [showPositionModal, setShowPositionModal] = useState(false);
 
   // Tournament hook (only active if user exists)
   // Always call hook (React rules), hook handles null userId gracefully
@@ -496,13 +499,6 @@ const StonkOptionsArenaV2 = ({
 
   // Tournament Submit Section Component - Always shows in tournament mode
   const TournamentSubmitSection = () => {
-    // Debug logging
-    console.log('=== TournamentSubmitSection Debug ===');
-    console.log('tournamentMode:', tournamentMode);
-    console.log('tournament:', tournament);
-    console.log('contracts.length:', contracts.length);
-    console.log('tierCounts:', tierCounts);
-
     if (!tournamentMode) return null;
 
     // Calculate validation locally for reliability
@@ -524,39 +520,39 @@ const StonkOptionsArenaV2 = ({
 
     return (
       <div style={{
-        marginTop: '24px',
-        padding: '20px',
+        marginTop: '12px',
+        padding: '12px',
         background: isPortfolioComplete
           ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.05))'
           : '#12121a',
         border: isPortfolioComplete
           ? '2px solid #10b981'
           : '1px solid #2d3748',
-        borderRadius: '12px'
+        borderRadius: '10px'
       }}>
-        {/* Header */}
+        {/* Compact Header */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: '16px'
+          marginBottom: '10px'
         }}>
           <h3 style={{
             color: '#fff',
-            fontSize: '18px',
+            fontSize: '15px',
             margin: 0,
             display: 'flex',
             alignItems: 'center',
-            gap: '10px'
+            gap: '8px'
           }}>
             🏆 Tournament Entry
           </h3>
           {isPortfolioComplete && (
             <span style={{
-              fontSize: '12px',
+              fontSize: '11px',
               background: '#10b981',
               color: '#000',
-              padding: '4px 10px',
+              padding: '3px 8px',
               borderRadius: '4px',
               fontWeight: '700'
             }}>
@@ -565,108 +561,98 @@ const StonkOptionsArenaV2 = ({
           )}
         </div>
 
-        {/* Portfolio Summary Grid */}
+        {/* Compact Stats Row */}
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '10px',
-          marginBottom: '16px'
+          display: 'flex',
+          gap: '8px',
+          marginBottom: '10px'
         }}>
           <div style={{
+            flex: 1,
             background: '#0d0d12',
-            padding: '12px',
-            borderRadius: '8px',
+            padding: '8px',
+            borderRadius: '6px',
             textAlign: 'center'
           }}>
-            <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '4px' }}>Contracts</div>
-            <div style={{
-              fontSize: '22px',
-              fontWeight: '700',
-              color: totalContracts === 7 ? '#10b981' : '#fff'
-            }}>
+            <span style={{ fontSize: '10px', color: '#6b7280' }}>Contracts</span>
+            <div style={{ fontSize: '16px', fontWeight: '700', color: totalContracts === 7 ? '#10b981' : '#fff' }}>
               {totalContracts}/7
             </div>
           </div>
           <div style={{
+            flex: 1,
             background: '#0d0d12',
-            padding: '12px',
-            borderRadius: '8px',
+            padding: '8px',
+            borderRadius: '6px',
             textAlign: 'center'
           }}>
-            <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '4px' }}>Invested</div>
-            <div style={{ fontSize: '22px', fontWeight: '700', color: '#00d9ff' }}>
+            <span style={{ fontSize: '10px', color: '#6b7280' }}>Invested</span>
+            <div style={{ fontSize: '16px', fontWeight: '700', color: '#00d9ff' }}>
               ${totalInvested.toLocaleString()}
             </div>
           </div>
           <div style={{
+            flex: 1,
             background: '#0d0d12',
-            padding: '12px',
-            borderRadius: '8px',
+            padding: '8px',
+            borderRadius: '6px',
             textAlign: 'center'
           }}>
-            <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '4px' }}>Cash Left</div>
-            <div style={{ fontSize: '22px', fontWeight: '700', color: '#fff' }}>
+            <span style={{ fontSize: '10px', color: '#6b7280' }}>Cash Left</span>
+            <div style={{ fontSize: '16px', fontWeight: '700', color: '#fff' }}>
               ${virtualCash.toLocaleString()}
             </div>
           </div>
         </div>
 
-        {/* Tournament Info */}
+        {/* Compact Tournament Info - Single Row */}
         {hasTournament ? (
           <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
             background: '#0d0d12',
-            padding: '12px',
-            borderRadius: '8px',
-            marginBottom: '16px'
+            padding: '8px 10px',
+            borderRadius: '6px',
+            marginBottom: '10px',
+            fontSize: '12px'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <span style={{ color: '#9ca3af', fontSize: '13px' }}>Tournament</span>
-              <span style={{ color: '#fff', fontWeight: '600', fontSize: '13px' }}>
-                {tournament.tournament.name}
-              </span>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <span style={{ color: '#6b7280' }}>Tournament</span>
+              <span style={{ color: '#fff', fontWeight: '600' }}>{tournament.tournament.name}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <span style={{ color: '#9ca3af', fontSize: '13px' }}>Status</span>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
               <span style={{
                 color: tournamentStatus === 'open' ? '#10b981' : '#f59e0b',
-                fontWeight: '600',
-                fontSize: '13px'
+                fontWeight: '600'
               }}>
-                {tournamentStatus === 'open' ? '🟢 Open for Entries' : tournamentStatus}
+                {tournamentStatus === 'open' ? '🟢 Open' : tournamentStatus}
               </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#9ca3af', fontSize: '13px' }}>Your Entries</span>
-              <span style={{ color: '#00d9ff', fontWeight: '600', fontSize: '13px' }}>
-                {entryCount}/3
-              </span>
+              <span style={{ color: '#00d9ff' }}>{entryCount}/3 entries</span>
             </div>
           </div>
         ) : (
           <div style={{
             background: 'rgba(245, 158, 11, 0.1)',
-            border: '1px solid rgba(245, 158, 11, 0.3)',
-            padding: '16px',
-            borderRadius: '8px',
-            marginBottom: '16px',
+            border: '1px solid rgba(245, 158, 11, 0.2)',
+            padding: '10px',
+            borderRadius: '6px',
+            marginBottom: '10px',
             textAlign: 'center'
           }}>
-            <div style={{ color: '#f59e0b', fontSize: '13px', marginBottom: '12px' }}>
-              ⚠️ No active tournament found
-            </div>
-            <div style={{ color: '#9ca3af', fontSize: '12px', marginBottom: '12px' }}>
-              Tournaments auto-create on weekdays. Click below to create a test tournament.
+            <div style={{ color: '#f59e0b', fontSize: '12px', marginBottom: '8px' }}>
+              ⚠️ No active tournament
             </div>
             <button
               onClick={handleCreateTestTournament}
               style={{
-                padding: '10px 20px',
+                padding: '6px 12px',
                 background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
                 border: 'none',
-                borderRadius: '8px',
+                borderRadius: '6px',
                 color: '#000',
                 fontWeight: '600',
-                fontSize: '14px',
+                fontSize: '12px',
                 cursor: 'pointer'
               }}
             >
@@ -679,80 +665,61 @@ const StonkOptionsArenaV2 = ({
         {hasTournament && !canEnterTournament && tournament?.canEnter?.reason && (
           <div style={{
             background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            padding: '12px',
-            borderRadius: '8px',
-            marginBottom: '16px'
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+            padding: '8px 10px',
+            borderRadius: '6px',
+            marginBottom: '10px'
           }}>
-            <span style={{ color: '#ef4444', fontSize: '13px' }}>
+            <span style={{ color: '#ef4444', fontSize: '12px' }}>
               ⚠️ {tournament.canEnter.reason}
             </span>
           </div>
         )}
 
-        {/* Portfolio Validation Errors */}
+        {/* Requirements - Collapsed when not needed */}
         {!isPortfolioComplete && portfolioValidation?.errors?.length > 0 && (
           <div style={{
             background: 'rgba(245, 158, 11, 0.1)',
-            border: '1px solid rgba(245, 158, 11, 0.3)',
-            padding: '12px',
-            borderRadius: '8px',
-            marginBottom: '16px'
+            border: '1px solid rgba(245, 158, 11, 0.2)',
+            borderRadius: '6px',
+            padding: '8px 10px',
+            marginBottom: '10px'
           }}>
-            <div style={{ fontSize: '12px', color: '#f59e0b', marginBottom: '6px', fontWeight: '600' }}>
+            <div style={{ fontSize: '11px', color: '#f59e0b', fontWeight: '600', marginBottom: '4px' }}>
               Requirements not met:
             </div>
             {portfolioValidation.errors.map((err, i) => (
-              <div key={i} style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>
-                • {err}
-              </div>
+              <div key={i} style={{ fontSize: '11px', color: '#9ca3af' }}>• {err}</div>
             ))}
           </div>
         )}
 
-        {/* Submit Button */}
+        {/* Compact Submit Button */}
         <button
           onClick={handleSubmitToTournament}
           disabled={!canSubmit}
           style={{
             width: '100%',
-            padding: '16px',
-            borderRadius: '10px',
+            padding: '10px',
+            borderRadius: '8px',
             border: 'none',
             background: canSubmit
               ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
               : '#2d3748',
             color: canSubmit ? '#fff' : '#6b7280',
-            fontSize: '16px',
+            fontSize: '14px',
             fontWeight: '700',
             cursor: canSubmit ? 'pointer' : 'not-allowed',
-            opacity: isSubmitting ? 0.7 : 1,
-            transition: 'all 0.2s'
+            opacity: isSubmitting ? 0.7 : 1
           }}
         >
           {isSubmitting
             ? '⏳ Submitting...'
             : canSubmit
-              ? '🚀 Lock Portfolio & Enter Tournament'
-              : !isPortfolioComplete
-                ? '📋 Complete Portfolio to Submit'
-                : !hasTournament
-                  ? '⏳ Loading Tournament...'
-                  : '⏳ Entry Not Available'
+              ? '🚀 Submit Entry'
+              : '📋 Complete Portfolio to Submit'
           }
         </button>
-
-        {canSubmit && (
-          <p style={{
-            textAlign: 'center',
-            marginTop: '10px',
-            marginBottom: 0,
-            fontSize: '12px',
-            color: '#6b7280'
-          }}>
-            ⚠️ Portfolio will be locked and cannot be changed after submission
-          </p>
-        )}
       </div>
     );
   };
@@ -948,6 +915,635 @@ const StonkOptionsArenaV2 = ({
         }}>
           Bots will create varied portfolios with different strategies.
         </p>
+      </div>
+    );
+  };
+
+  // Handle locking a position
+  const handleLockPosition = async (entryId, contract) => {
+    if (!confirm(
+      `Lock in this position?\n\n` +
+      `${contract.symbol} ${contract.direction.toUpperCase()} $${contract.strike}\n` +
+      `Current Value: $${contract.currentValue.toFixed(2)}\n` +
+      `P/L: ${contract.profitLoss >= 0 ? '+' : ''}$${contract.profitLoss.toFixed(2)}\n\n` +
+      `This cannot be undone!`
+    )) {
+      return;
+    }
+
+    try {
+      await tournament.lockPosition(entryId, contract.id, contract.currentValue);
+      alert('Position locked successfully!');
+      setShowPositionModal(false);
+      tournament.refresh?.();
+    } catch (err) {
+      console.error('Error locking position:', err);
+      alert('Error: ' + err.message);
+    }
+  };
+
+  // Position Detail Modal Component
+  const PositionDetailModal = () => {
+    if (!showPositionModal || !selectedPosition) return null;
+
+    const position = selectedPosition;
+    const currentPrice = prices[position.symbol] || position.entryPrice;
+
+    return (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0, 0, 0, 0.85)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: '20px'
+      }}>
+        <div style={{
+          background: '#12121a',
+          borderRadius: '16px',
+          maxWidth: '500px',
+          width: '100%',
+          maxHeight: '80vh',
+          overflow: 'auto',
+          border: '1px solid #2d3748'
+        }}>
+          {/* Header */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '16px 20px',
+            borderBottom: '1px solid #2d3748'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '24px' }}>
+                {position.direction === 'call' ? '📈' : '📉'}
+              </span>
+              <div>
+                <h3 style={{ margin: 0, color: '#fff', fontSize: '20px' }}>
+                  {position.symbol}
+                </h3>
+                <span style={{
+                  fontSize: '12px',
+                  color: position.direction === 'call' ? '#10b981' : '#ef4444'
+                }}>
+                  {position.direction.toUpperCase()} • ${position.strike} Strike
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowPositionModal(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#6b7280',
+                fontSize: '28px',
+                cursor: 'pointer',
+                padding: '0',
+                lineHeight: '1'
+              }}
+            >
+              ×
+            </button>
+          </div>
+
+          {/* Price Info */}
+          <div style={{ padding: '20px' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '12px',
+              marginBottom: '20px'
+            }}>
+              {/* Entry Premium (what they paid for the option) */}
+              <div style={{
+                background: '#1a1a2e',
+                padding: '16px',
+                borderRadius: '12px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
+                  Entry Premium
+                </div>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#9ca3af' }}>
+                  ${position.entryAmount?.toFixed(2) || 'N/A'}
+                </div>
+              </div>
+
+              {/* Current Option Value */}
+              <div style={{
+                background: '#1a1a2e',
+                padding: '16px',
+                borderRadius: '12px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
+                  Current Value
+                </div>
+                <div style={{
+                  fontSize: '20px',
+                  fontWeight: '700',
+                  color: position.currentValue >= position.entryAmount ? '#10b981' : '#ef4444'
+                }}>
+                  ${position.currentValue?.toFixed(2)}
+                </div>
+                {/* Show P/L % */}
+                <div style={{
+                  fontSize: '11px',
+                  marginTop: '4px',
+                  color: position.profitLoss >= 0 ? '#10b981' : '#ef4444'
+                }}>
+                  {position.profitLoss >= 0 ? '▲' : '▼'}
+                  {Math.abs(position.percentReturn).toFixed(1)}%
+                </div>
+              </div>
+
+              {/* Strike Price */}
+              <div style={{
+                background: '#1a1a2e',
+                padding: '16px',
+                borderRadius: '12px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
+                  Strike Price
+                </div>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#00d9ff' }}>
+                  ${position.strike}
+                </div>
+              </div>
+            </div>
+
+            {/* P/L Display */}
+            <div style={{
+              background: position.profitLoss >= 0
+                ? 'rgba(16, 185, 129, 0.1)'
+                : 'rgba(239, 68, 68, 0.1)',
+              border: `1px solid ${position.profitLoss >= 0 ? '#10b981' : '#ef4444'}`,
+              borderRadius: '12px',
+              padding: '20px',
+              textAlign: 'center',
+              marginBottom: '20px'
+            }}>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
+                Current Value
+              </div>
+              <div style={{
+                fontSize: '32px',
+                fontWeight: '700',
+                color: position.profitLoss >= 0 ? '#10b981' : '#ef4444'
+              }}>
+                ${position.currentValue.toFixed(2)}
+              </div>
+              <div style={{
+                fontSize: '16px',
+                color: position.profitLoss >= 0 ? '#10b981' : '#ef4444',
+                marginTop: '4px'
+              }}>
+                {position.profitLoss >= 0 ? '+' : ''}${position.profitLoss.toFixed(2)}
+                ({position.percentReturn.toFixed(1)}%)
+              </div>
+            </div>
+
+            {/* Details */}
+            <div style={{
+              background: '#1a1a2e',
+              borderRadius: '12px',
+              padding: '16px',
+              marginBottom: '20px'
+            }}>
+              {/* Stock Price Info */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                marginBottom: '12px',
+                paddingBottom: '12px',
+                borderBottom: '1px solid #2d3748'
+              }}>
+                <span style={{ color: '#6b7280' }}>Stock Price</span>
+                <span style={{ color: '#fff', fontWeight: '600' }}>
+                  ${currentPrice.toFixed(2)}
+                  {position.entryPrice && (
+                    <span style={{
+                      fontSize: '11px',
+                      marginLeft: '4px',
+                      color: currentPrice >= position.entryPrice ? '#10b981' : '#ef4444'
+                    }}>
+                      (was ${position.entryPrice?.toFixed(2)})
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                marginBottom: '12px',
+                paddingBottom: '12px',
+                borderBottom: '1px solid #2d3748'
+              }}>
+                <span style={{ color: '#6b7280' }}>Max Payout</span>
+                <span style={{ color: '#10b981', fontWeight: '600' }}>${position.potentialPayout}</span>
+              </div>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                marginBottom: '12px',
+                paddingBottom: '12px',
+                borderBottom: '1px solid #2d3748'
+              }}>
+                <span style={{ color: '#6b7280' }}>Expiry</span>
+                <span style={{ color: '#fff', fontWeight: '600' }}>{position.daysToExpiry} days</span>
+              </div>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between'
+              }}>
+                <span style={{ color: '#6b7280' }}>Status</span>
+                <span style={{
+                  color: position.isLocked ? '#10b981' : position.isWinning ? '#10b981' : '#f59e0b',
+                  fontWeight: '600'
+                }}>
+                  {position.isLocked ? '🔒 Locked' : position.isWinning ? '✅ In The Money' : '⏳ Out of Money'}
+                </span>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            {!position.isLocked && tournament?.tournament?.status === 'in_progress' && (
+              <button
+                onClick={() => handleLockPosition(position.entryId, position)}
+                style={{
+                  width: '100%',
+                  padding: '16px',
+                  background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                  border: 'none',
+                  borderRadius: '10px',
+                  color: '#000',
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                🔒 Lock In @ ${position.currentValue.toFixed(2)}
+              </button>
+            )}
+
+            {position.isLocked && (
+              <div style={{
+                textAlign: 'center',
+                padding: '16px',
+                background: 'rgba(16, 185, 129, 0.1)',
+                borderRadius: '10px',
+                color: '#10b981'
+              }}>
+                ✅ Position Locked at ${position.lockedValue?.toFixed(2) || position.currentValue.toFixed(2)}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Entry Portfolio Card Component - Shows individual entry with live P/L
+  const EntryPortfolioCard = ({ entry, entryIndex }) => {
+    // Calculate live values for each contract
+    const contractsWithLiveValues = entry.contracts.map(contract => {
+      const currentPrice = prices[contract.symbol] || contract.entryPrice;
+
+      // If already locked, use locked value
+      if (contract.lockedValue !== null) {
+        return {
+          ...contract,
+          currentValue: contract.lockedValue,
+          profitLoss: contract.lockedValue - contract.entryAmount,
+          percentReturn: ((contract.lockedValue - contract.entryAmount) / contract.entryAmount) * 100,
+          isLocked: true
+        };
+      }
+
+      // Calculate live value using engine
+      // For now, simple calculation (you may want to use calculateLiveValue from engine)
+      const priceMove = (currentPrice - contract.entryPrice) / contract.entryPrice;
+      const isWinning = contract.direction === 'call'
+        ? currentPrice >= contract.strike
+        : currentPrice <= contract.strike;
+
+      // Simplified value calculation
+      let currentValue = contract.entryAmount;
+      if (isWinning) {
+        currentValue = contract.potentialPayout * 0.7; // Partial value if in the money
+      } else {
+        // Out of the money - decaying value
+        const distanceToStrike = Math.abs(currentPrice - contract.strike) / contract.strike;
+        currentValue = contract.entryAmount * Math.max(0.1, 1 - distanceToStrike * 3);
+      }
+
+      return {
+        ...contract,
+        currentPrice,
+        currentValue,
+        profitLoss: currentValue - contract.entryAmount,
+        percentReturn: ((currentValue - contract.entryAmount) / contract.entryAmount) * 100,
+        isLocked: false,
+        isWinning
+      };
+    });
+
+    const totalEntry = contractsWithLiveValues.reduce((sum, c) => sum + c.entryAmount, 0);
+    const totalCurrent = contractsWithLiveValues.reduce((sum, c) => sum + c.currentValue, 0);
+    const totalPL = totalCurrent - totalEntry;
+    const totalReturn = (totalPL / totalEntry) * 100;
+
+    return (
+      <div style={{
+        background: '#0d0d12',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '12px',
+        border: '1px solid #2d3748'
+      }}>
+        {/* Entry Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '16px',
+          paddingBottom: '12px',
+          borderBottom: '1px solid #2d3748'
+        }}>
+          <div>
+            <span style={{ color: '#9ca3af', fontSize: '12px' }}>Entry #{entry.entryNumber}</span>
+            <div style={{
+              fontSize: '24px',
+              fontWeight: '700',
+              color: totalPL >= 0 ? '#10b981' : '#ef4444'
+            }}>
+              {totalPL >= 0 ? '+' : ''}{totalReturn.toFixed(2)}%
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ color: '#9ca3af', fontSize: '11px' }}>Portfolio Value</div>
+            <div style={{
+              fontSize: '20px',
+              fontWeight: '700',
+              color: totalPL >= 0 ? '#10b981' : '#ef4444'
+            }}>
+              ${totalCurrent.toFixed(2)}
+            </div>
+            <div style={{
+              fontSize: '12px',
+              color: totalPL >= 0 ? '#10b981' : '#ef4444'
+            }}>
+              {totalPL >= 0 ? '+' : ''}${totalPL.toFixed(2)}
+            </div>
+          </div>
+        </div>
+
+        {/* Contracts Grid */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+          gap: '8px'
+        }}>
+          {contractsWithLiveValues.map((contract, i) => (
+            <div
+              key={contract.id || i}
+              onClick={() => {
+                setSelectedPosition({ ...contract, entryId: entry.id });
+                setShowPositionModal(true);
+              }}
+              style={{
+                background: '#1a1a2e',
+                borderRadius: '8px',
+                padding: '12px',
+                border: contract.isLocked
+                  ? '1px solid #10b981'
+                  : contract.isWinning
+                    ? '1px solid rgba(16, 185, 129, 0.3)'
+                    : '1px solid #2d3748',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '8px'
+              }}>
+                <span style={{
+                  color: '#fff',
+                  fontWeight: '600',
+                  fontSize: '14px'
+                }}>
+                  {contract.symbol}
+                </span>
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  {contract.isLocked && (
+                    <span style={{
+                      fontSize: '10px',
+                      background: '#10b981',
+                      color: '#000',
+                      padding: '2px 4px',
+                      borderRadius: '3px'
+                    }}>
+                      🔒
+                    </span>
+                  )}
+                  <span style={{
+                    fontSize: '10px',
+                    background: contract.direction === 'call' ? '#10b981' : '#ef4444',
+                    color: '#fff',
+                    padding: '2px 6px',
+                    borderRadius: '3px'
+                  }}>
+                    {contract.direction?.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{
+                fontSize: '11px',
+                color: '#6b7280',
+                marginBottom: '4px'
+              }}>
+                Strike: ${contract.strike} • {contract.daysToExpiry}D
+              </div>
+
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline'
+              }}>
+                <span style={{
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  color: contract.profitLoss >= 0 ? '#10b981' : '#ef4444'
+                }}>
+                  ${contract.currentValue.toFixed(0)}
+                </span>
+                <span style={{
+                  fontSize: '12px',
+                  color: contract.profitLoss >= 0 ? '#10b981' : '#ef4444'
+                }}>
+                  {contract.percentReturn >= 0 ? '+' : ''}{contract.percentReturn.toFixed(1)}%
+                </span>
+              </div>
+
+              {/* Quick Lock Button (only if not locked and tournament in progress) */}
+              {!contract.isLocked && tournament?.tournament?.status === 'in_progress' && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleLockPosition(entry.id, contract);
+                  }}
+                  style={{
+                    width: '100%',
+                    marginTop: '8px',
+                    padding: '8px',
+                    background: 'rgba(245, 158, 11, 0.1)',
+                    border: '1px solid #f59e0b',
+                    borderRadius: '6px',
+                    color: '#f59e0b',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🔒 Lock @ ${contract.currentValue.toFixed(0)}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Tournament Portfolio View Component - Shows live portfolio after submission
+  const TournamentPortfolioView = () => {
+    // Debug logging
+    console.log('=== TournamentPortfolioView Debug ===');
+    console.log('tournament?.userEntries:', tournament?.userEntries);
+    console.log('tournament?.userEntries?.length:', tournament?.userEntries?.length);
+    console.log('tournament?.tournament?.status:', tournament?.tournament?.status);
+
+    // Show empty state if no entries
+    if (!tournament?.userEntries?.length) {
+      console.log('TournamentPortfolioView: Showing empty state - no user entries');
+      return (
+        <div style={{
+          padding: '40px',
+          background: '#1a1a2e',
+          borderRadius: '12px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📭</div>
+          <h3 style={{ color: '#fff', margin: '0 0 8px 0' }}>No Active Portfolios</h3>
+          <p style={{ color: '#6b7280', margin: '0 0 16px 0' }}>
+            Submit an entry in Tournament Mode to see your portfolios here.
+          </p>
+          <button
+            onClick={() => {
+              setActiveTab('build');
+              setTournamentMode(true);
+            }}
+            style={{
+              padding: '12px 24px',
+              background: 'linear-gradient(135deg, #00d9ff, #0066ff)',
+              border: 'none',
+              borderRadius: '8px',
+              color: '#fff',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            Build a Portfolio →
+          </button>
+        </div>
+      );
+    }
+
+    console.log('TournamentPortfolioView: SHOWING with', tournament.userEntries.length, 'entries');
+
+    // Determine status for display
+    const status = tournament.tournament?.status;
+    const isLive = status === 'in_progress';
+    const isComplete = status === 'completed';
+    const isPending = status === 'open';
+
+    // Status badge configuration
+    const getStatusBadge = () => {
+      if (isLive) {
+        return { text: '🔴 LIVE', color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' };
+      }
+      if (isComplete) {
+        return { text: '✅ COMPLETE', color: '#6b7280', bg: 'rgba(107, 114, 128, 0.1)' };
+      }
+      if (isPending) {
+        return { text: '⏳ PENDING START', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' };
+      }
+      return { text: status?.toUpperCase() || 'UNKNOWN', color: '#6b7280', bg: 'rgba(107, 114, 128, 0.1)' };
+    };
+
+    const statusBadge = getStatusBadge();
+
+    return (
+      <div style={{
+        padding: '20px',
+        background: 'linear-gradient(135deg, #1a1a2e 0%, #12121a 100%)',
+        borderRadius: '12px',
+        border: '1px solid #2d3748'
+      }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '16px'
+        }}>
+          <h3 style={{ color: '#fff', margin: 0, fontSize: '18px' }}>
+            📊 Your Tournament Portfolios
+          </h3>
+          <span style={{
+            fontSize: '12px',
+            color: statusBadge.color,
+            background: statusBadge.bg,
+            padding: '4px 8px',
+            borderRadius: '4px'
+          }}>
+            {statusBadge.text}
+          </span>
+        </div>
+
+        {isPending && (
+          <div style={{
+            background: 'rgba(245, 158, 11, 0.1)',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            borderRadius: '8px',
+            padding: '12px',
+            marginBottom: '16px',
+            fontSize: '13px',
+            color: '#f59e0b'
+          }}>
+            ⏳ Your entries are locked! Tournament will start at the lock deadline.
+          </div>
+        )}
+
+        {tournament.userEntries.map((entry, entryIndex) => (
+          <EntryPortfolioCard
+            key={entry.id}
+            entry={entry}
+            entryIndex={entryIndex}
+          />
+        ))}
       </div>
     );
   };
@@ -1162,6 +1758,74 @@ const StonkOptionsArenaV2 = ({
           }}
         >
           🏆 Tournament
+        </button>
+      </div>
+    );
+  };
+
+  // Tab Navigation Component
+  const TabNavigation = () => {
+    const hasEntries = tournament?.userEntries?.length > 0;
+
+    return (
+      <div style={{
+        display: 'flex',
+        gap: '0',
+        marginBottom: '16px',
+        borderBottom: '2px solid #2d3748'
+      }}>
+        <button
+          onClick={() => setActiveTab('build')}
+          style={{
+            flex: 1,
+            padding: '14px 20px',
+            background: 'transparent',
+            border: 'none',
+            borderBottom: activeTab === 'build' ? '2px solid #00d9ff' : '2px solid transparent',
+            marginBottom: '-2px',
+            color: activeTab === 'build' ? '#00d9ff' : '#6b7280',
+            fontWeight: '600',
+            fontSize: '15px',
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
+        >
+          🎯 Build Portfolio
+        </button>
+        <button
+          onClick={() => setActiveTab('portfolios')}
+          style={{
+            flex: 1,
+            padding: '14px 20px',
+            background: 'transparent',
+            border: 'none',
+            borderBottom: activeTab === 'portfolios' ? '2px solid #10b981' : '2px solid transparent',
+            marginBottom: '-2px',
+            color: activeTab === 'portfolios' ? '#10b981' : '#6b7280',
+            fontWeight: '600',
+            fontSize: '15px',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px'
+          }}
+        >
+          📊 Active Portfolios
+          {hasEntries && (
+            <span style={{
+              background: '#10b981',
+              color: '#000',
+              fontSize: '11px',
+              fontWeight: '700',
+              padding: '2px 6px',
+              borderRadius: '10px',
+              minWidth: '20px'
+            }}>
+              {tournament.userEntries.length}
+            </span>
+          )}
         </button>
       </div>
     );
@@ -1565,192 +2229,207 @@ const StonkOptionsArenaV2 = ({
 
       {/* Main Content */}
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '20px' }}>
-        {/* Tournament Mode Toggle */}
-        <TournamentModeToggle />
+        {/* Tab Navigation */}
+        <TabNavigation />
 
-        {/* Tournament Header - show when tournament mode is on */}
-        {tournamentMode && user && <TournamentHeader />}
+        {/* TAB CONTENT */}
+        {activeTab === 'build' ? (
+          <>
+            {/* BUILD TAB CONTENT */}
 
-        {/* Tier Progress Bar */}
-        <TierProgressBar />
+            {/* Tournament Mode Toggle */}
+            <TournamentModeToggle />
 
-        {/* Tournament Submit Section - placed here so users see it after requirements */}
-        <TournamentSubmitSection />
+            {/* Tournament Header - show when tournament mode is on */}
+            {tournamentMode && user && <TournamentHeader />}
 
-        {/* Admin Controls - only visible to admin users */}
-        <AdminControls />
+            {/* Tier Progress Bar */}
+            <TierProgressBar />
 
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: (!isMobile && showOrder) ? '1fr 380px' : '1fr',
-          gap: 20
-        }}>
-          {/* Left Column: Trading Interface */}
-          <div>
-            {/* Stock Selector */}
-            <StonkOptionsStockSelector
-              stocks={DEFAULT_STOCKS}
-              prices={prices}
-              selectedStock={selectedStock}
-              onSelectStock={handleSelectStock}
-            />
+            {/* Tournament Submit Section - placed here so users see it after requirements */}
+            <TournamentSubmitSection />
 
-            {selectedStock && (
-              <>
-                {/* Expiry Selector */}
-                <div style={{ marginTop: 16 }}>
-                  <StonkOptionsExpirySelector
-                    selectedExpiry={selectedExpiry}
-                    onSelectExpiry={setSelectedExpiry}
-                    tournamentMode={tournamentMode}
-                    tierCounts={tierCounts}
+            {/* Admin Controls - only visible to admin users */}
+            <AdminControls />
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: (!isMobile && showOrder) ? '1fr 380px' : '1fr',
+              gap: 20
+            }}>
+              {/* Left Column: Trading Interface */}
+              <div>
+                {/* Stock Selector */}
+                <StonkOptionsStockSelector
+                  stocks={DEFAULT_STOCKS}
+                  prices={prices}
+                  selectedStock={selectedStock}
+                  onSelectStock={handleSelectStock}
+                />
+
+                {selectedStock && (
+                  <>
+                    {/* Expiry Selector */}
+                    <div style={{ marginTop: 16 }}>
+                      <StonkOptionsExpirySelector
+                        selectedExpiry={selectedExpiry}
+                        onSelectExpiry={setSelectedExpiry}
+                        tournamentMode={tournamentMode}
+                        tierCounts={tierCounts}
+                      />
+                    </div>
+
+                    {/* Options Chain */}
+                    <div style={{ marginTop: 16 }}>
+                      <StonkOptionsChain
+                        symbol={selectedStock}
+                        currentPrice={prices[selectedStock]}
+                        selectedExpiry={selectedExpiry}
+                        selectedStrike={selectedStrike}
+                        onSelectStrike={handleSelectStrike}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {!selectedStock && (
+                  <div style={{
+                    marginTop: 20,
+                    padding: 40,
+                    background: '#0d1117',
+                    borderRadius: 12,
+                    textAlign: 'center',
+                    border: '1px solid #1f2937'
+                  }}>
+                    <TrendingUp size={48} color="#374151" style={{ marginBottom: 16 }} />
+                    <div style={{ color: '#6b7280', fontSize: 16 }}>
+                      Select a stock above to view options
+                    </div>
+                  </div>
+                )}
+
+                {/* Mobile Order Entry (shows below chain on mobile) */}
+                {isMobile && showOrder && selectedStrike && (
+                  <div style={{ marginTop: 16 }}>
+                    <StonkOptionsOrder
+                      selection={selectedStrike}
+                      maxBudget={virtualCash}
+                      onConfirm={handleConfirmOrder}
+                      onCancel={() => {
+                        setSelectedStrike(null);
+                        setShowOrder(false);
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column: Order Entry (desktop only) */}
+              {!isMobile && showOrder && selectedStrike && (
+                <div style={{ position: 'sticky', top: 180, alignSelf: 'flex-start' }}>
+                  <StonkOptionsOrder
+                    selection={selectedStrike}
+                    maxBudget={virtualCash}
+                    onConfirm={handleConfirmOrder}
+                    onCancel={() => {
+                      setSelectedStrike(null);
+                      setShowOrder(false);
+                    }}
                   />
                 </div>
+              )}
+            </div>
 
-                {/* Options Chain */}
-                <div style={{ marginTop: 16 }}>
-                  <StonkOptionsChain
-                    symbol={selectedStock}
-                    currentPrice={prices[selectedStock]}
-                    selectedExpiry={selectedExpiry}
-                    selectedStrike={selectedStrike}
-                    onSelectStrike={handleSelectStrike}
-                  />
-                </div>
-              </>
+            {/* Positions Section */}
+            {contracts.length > 0 && (
+              <div style={{ marginTop: 32 }}>
+                <button
+                  onClick={() => setShowPositions(!showPositions)}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '16px 20px',
+                    background: '#0d1117',
+                    border: '1px solid #1f2937',
+                    borderRadius: showPositions ? '12px 12px 0 0' : '12px',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontSize: 16,
+                    fontWeight: '600'
+                  }}
+                >
+                  <span>
+                    Your Positions ({contracts.length})
+                    <span style={{
+                      marginLeft: 12,
+                      fontSize: 14,
+                      color: portfolio.summary.totalPL >= 0 ? '#10b981' : '#ef4444'
+                    }}>
+                      {portfolio.summary.totalPL >= 0 ? '+' : ''}
+                      ${portfolio.summary.totalPL.toFixed(2)}
+                    </span>
+                  </span>
+                  {showPositions ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                </button>
+
+                {showPositions && (
+                  <div style={{
+                    padding: 16,
+                    background: '#0d1117',
+                    border: '1px solid #1f2937',
+                    borderTop: 'none',
+                    borderRadius: '0 0 12px 12px'
+                  }}>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(340px, 1fr))',
+                      gap: 16
+                    }}>
+                      {portfolio.contracts.map(contract => (
+                        <StonkOptionsPosition
+                          key={contract.id}
+                          contract={contract}
+                          currentPrice={prices[contract.symbol]}
+                          onClose={tournamentMode ? null : handleSellPosition}
+                          onRemove={handleRemovePosition}
+                          showRemoveButton={tournamentMode}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
-            {!selectedStock && (
+            {/* Empty state */}
+            {contracts.length === 0 && selectedStock && (
               <div style={{
-                marginTop: 20,
-                padding: 40,
+                marginTop: 32,
+                padding: 32,
                 background: '#0d1117',
                 borderRadius: 12,
                 textAlign: 'center',
-                border: '1px solid #1f2937'
+                border: '1px dashed #374151'
               }}>
-                <TrendingUp size={48} color="#374151" style={{ marginBottom: 16 }} />
-                <div style={{ color: '#6b7280', fontSize: 16 }}>
-                  Select a stock above to view options
+                <div style={{ fontSize: 32, marginBottom: 12 }}>📊</div>
+                <div style={{ color: '#9ca3af', marginBottom: 8 }}>No positions yet</div>
+                <div style={{ color: '#6b7280', fontSize: 13 }}>
+                  Select a strike from the options chain to place your first trade
                 </div>
               </div>
             )}
 
-            {/* Mobile Order Entry (shows below chain on mobile) */}
-            {isMobile && showOrder && selectedStrike && (
-              <div style={{ marginTop: 16 }}>
-                <StonkOptionsOrder
-                  selection={selectedStrike}
-                  maxBudget={virtualCash}
-                  onConfirm={handleConfirmOrder}
-                  onCancel={() => {
-                    setSelectedStrike(null);
-                    setShowOrder(false);
-                  }}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Right Column: Order Entry (desktop only) */}
-          {!isMobile && showOrder && selectedStrike && (
-            <div style={{ position: 'sticky', top: 180, alignSelf: 'flex-start' }}>
-              <StonkOptionsOrder
-                selection={selectedStrike}
-                maxBudget={virtualCash}
-                onConfirm={handleConfirmOrder}
-                onCancel={() => {
-                  setSelectedStrike(null);
-                  setShowOrder(false);
-                }}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Positions Section */}
-        {contracts.length > 0 && (
-          <div style={{ marginTop: 32 }}>
-            <button
-              onClick={() => setShowPositions(!showPositions)}
-              style={{
-                width: '100%',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '16px 20px',
-                background: '#0d1117',
-                border: '1px solid #1f2937',
-                borderRadius: showPositions ? '12px 12px 0 0' : '12px',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: 16,
-                fontWeight: '600'
-              }}
-            >
-              <span>
-                Your Positions ({contracts.length})
-                <span style={{
-                  marginLeft: 12,
-                  fontSize: 14,
-                  color: portfolio.summary.totalPL >= 0 ? '#10b981' : '#ef4444'
-                }}>
-                  {portfolio.summary.totalPL >= 0 ? '+' : ''}
-                  ${portfolio.summary.totalPL.toFixed(2)}
-                </span>
-              </span>
-              {showPositions ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-            </button>
-
-            {showPositions && (
-              <div style={{
-                padding: 16,
-                background: '#0d1117',
-                border: '1px solid #1f2937',
-                borderTop: 'none',
-                borderRadius: '0 0 12px 12px'
-              }}>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(340px, 1fr))',
-                  gap: 16
-                }}>
-                  {portfolio.contracts.map(contract => (
-                    <StonkOptionsPosition
-                      key={contract.id}
-                      contract={contract}
-                      currentPrice={prices[contract.symbol]}
-                      onClose={tournamentMode ? null : handleSellPosition}
-                      onRemove={handleRemovePosition}
-                      showRemoveButton={tournamentMode}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+            {/* User Tournament Entries - shows submitted entries with lock buttons */}
+            <UserTournamentEntries />
+          </>
+        ) : (
+          <>
+            {/* PORTFOLIOS TAB CONTENT */}
+            <TournamentPortfolioView />
+          </>
         )}
-
-        {/* Empty state */}
-        {contracts.length === 0 && selectedStock && (
-          <div style={{
-            marginTop: 32,
-            padding: 32,
-            background: '#0d1117',
-            borderRadius: 12,
-            textAlign: 'center',
-            border: '1px dashed #374151'
-          }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>📊</div>
-            <div style={{ color: '#9ca3af', marginBottom: 8 }}>No positions yet</div>
-            <div style={{ color: '#6b7280', fontSize: 13 }}>
-              Select a strike from the options chain to place your first trade
-            </div>
-          </div>
-        )}
-
-        {/* User Tournament Entries - shows submitted entries with lock buttons */}
-        <UserTournamentEntries />
       </div>
 
       {/* Footer */}
@@ -1777,7 +2456,9 @@ const StonkOptionsArenaV2 = ({
       </div>
 
       {/* Leaderboard Modal */}
+      {/* Modals */}
       <LeaderboardModal />
+      <PositionDetailModal />
     </div>
   );
 };

@@ -95,6 +95,12 @@ export const useOptionsTournament = (userId, username) => {
 
   // Submit entry to tournament
   const submitEntry = useCallback(async (contracts) => {
+    console.log('=== submitEntry called ===');
+    console.log('contracts:', contracts);
+    console.log('tournament:', tournament);
+    console.log('userId:', userId);
+    console.log('username:', username);
+
     if (!tournament || !userId || !username) {
       throw new Error('Missing required data for entry submission');
     }
@@ -115,6 +121,7 @@ export const useOptionsTournament = (userId, username) => {
     try {
       const totalEntry = contracts.reduce((sum, c) => sum + c.entryAmount, 0);
 
+      console.log('Creating entry with totalEntry:', totalEntry);
       const newEntry = await createOptionsEntry(
         tournament.id,
         userId,
@@ -122,9 +129,12 @@ export const useOptionsTournament = (userId, username) => {
         contracts,
         totalEntry
       );
+      console.log('Entry created:', newEntry);
 
-      // Refresh data
+      // Refresh data after submission
+      console.log('Refreshing tournament data...');
       await fetchTournamentData();
+      console.log('Data refreshed. userEntries should now be updated.');
 
       return newEntry;
     } finally {
