@@ -240,12 +240,27 @@ const StonkOptionsArenaV2 = ({
     setShowOrder(false);
   };
 
-  // Handle selling a position
+  // Handle selling a position (at current market value)
   const handleSellPosition = (contract, valuation) => {
     if (window.confirm(`Sell ${contract.contractName} for $${valuation.currentValue.toFixed(2)}?`)) {
       setContracts(prev => prev.filter(c => c.id !== contract.id));
       setVirtualCash(prev => prev + valuation.currentValue);
     }
+  };
+
+  // Handle removing a position (refund entry amount - for tournament portfolio building)
+  const handleRemovePosition = (contract) => {
+    if (!contract) return;
+
+    if (!window.confirm(
+      `Remove ${contract.symbol} ${contract.direction.toUpperCase()} $${contract.strike}?\n\n` +
+      `Entry amount ($${contract.entryAmount.toFixed(2)}) will be refunded.`
+    )) {
+      return;
+    }
+
+    setContracts(prev => prev.filter(c => c.id !== contract.id));
+    setVirtualCash(prev => prev + contract.entryAmount);
   };
 
   // Handle reset
@@ -1341,7 +1356,9 @@ const StonkOptionsArenaV2 = ({
                       key={contract.id}
                       contract={contract}
                       currentPrice={prices[contract.symbol]}
-                      onClose={handleSellPosition}
+                      onClose={tournamentMode ? null : handleSellPosition}
+                      onRemove={handleRemovePosition}
+                      showRemoveButton={tournamentMode}
                     />
                   ))}
                 </div>
