@@ -22,6 +22,11 @@ import TournamentSubmitSection from './TournamentSubmitSection';
 import EntryPortfolioCard from './EntryPortfolioCard';
 import LeaderboardModal from './LeaderboardModal';
 import TournamentHeader from './TournamentHeader';
+import TournamentPortfolioView from './TournamentPortfolioView';
+import TierProgressBar from './TierProgressBar';
+import TournamentModeToggle from './TournamentModeToggle';
+import TabNavigation from './TabNavigation';
+import AdminControls from './AdminControls';
 import {
   ArrowLeft,
   RefreshCw,
@@ -273,84 +278,6 @@ const StonkOptionsArenaV2 = ({
   };
 
 
-  // Tier Progress Bar Component
-  const TierProgressBar = () => {
-    if (!tournamentMode || !showTierProgress) return null;
-
-    // Each tier has exact count required (min = max)
-    const tiers = [
-      { key: 'short', label: 'Short (1-3D)', max: 2, count: tierCounts.short, color: '#ef4444' },
-      { key: 'medium', label: 'Medium (7D)', max: 3, count: tierCounts.medium, color: '#f59e0b' },
-      { key: 'long', label: 'Long (14-28D)', max: 2, count: tierCounts.long, color: '#10b981' }
-    ];
-
-    const allComplete = tiers.every(t => t.count === t.max);
-
-    return (
-      <div style={{
-        background: allComplete ? 'rgba(16, 185, 129, 0.1)' : '#12121a',
-        borderRadius: '8px',
-        padding: '12px',
-        marginBottom: '12px',
-        border: allComplete ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid #2d3748'
-      }}>
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '8px'
-        }}>
-          <span style={{ fontSize: '12px', fontWeight: '600', color: '#fff' }}>
-            📊 Portfolio Requirements
-          </span>
-          <span style={{
-            fontSize: '11px',
-            fontWeight: '600',
-            color: allComplete ? '#10b981' : '#f59e0b'
-          }}>
-            {contracts.length}/7 {allComplete ? '✓ Ready!' : 'contracts'}
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', gap: '8px' }}>
-          {tiers.map(tier => {
-            const isComplete = tier.count === tier.max;
-            return (
-            <div key={tier.key} style={{ flex: 1 }}>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: '10px',
-                marginBottom: '4px'
-              }}>
-                <span style={{ color: '#9ca3af' }}>{tier.label}</span>
-                <span style={{
-                  color: isComplete ? '#10b981' : '#fff',
-                  fontWeight: '600'
-                }}>
-                  {tier.count}/{tier.max} {isComplete ? '✓' : ''}
-                </span>
-              </div>
-              <div style={{
-                height: '4px',
-                background: '#2d3748',
-                borderRadius: '2px',
-                overflow: 'hidden'
-              }}>
-                <div style={{
-                  height: '100%',
-                  width: `${Math.min(100, (tier.count / tier.max) * 100)}%`,
-                  background: isComplete ? '#10b981' : tier.color,
-                  transition: 'width 0.3s ease'
-                }} />
-              </div>
-            </div>
-          );
-          })}
-        </div>
-      </div>
-    );
-  };
 
 
   // Handler to create a test tournament (for development/testing)
@@ -427,121 +354,6 @@ const StonkOptionsArenaV2 = ({
     return null;
   };
 
-  // Admin Controls for bot population (only visible to admin users)
-  const AdminControls = () => {
-    const [isPopulating, setIsPopulating] = useState(false);
-    const ADMIN_USERS = ['cam', 'flash', 'admin', 'test'];
-
-    // Only show for admin users
-    if (!user || !ADMIN_USERS.includes(user.username?.toLowerCase())) {
-      return null;
-    }
-
-    const handlePopulateBots = async () => {
-      if (!tournament?.tournament) {
-        alert('No active tournament');
-        return;
-      }
-
-      if (!confirm('Populate tournament with 9 bot competitors?')) {
-        return;
-      }
-
-      setIsPopulating(true);
-      try {
-        const { populateOptionsTournamentBots } = await import('../../services/optionsBotService');
-
-        // Get current stock prices for bot portfolio generation
-        const result = await populateOptionsTournamentBots(
-          tournament.tournament.id,
-          prices,  // Current stock prices from component state
-          9  // Number of bots (you + 9 bots = 10 total)
-        );
-
-        alert(`🤖 Created ${result.botsCreated} bot competitors!\n\nRefresh the leaderboard to see them.`);
-
-        // Refresh leaderboard
-        tournament.refresh?.();
-
-      } catch (err) {
-        console.error('Error populating bots:', err);
-        alert('Error: ' + err.message);
-      } finally {
-        setIsPopulating(false);
-      }
-    };
-
-    const handleClearBots = async () => {
-      if (!tournament?.tournament) return;
-
-      if (!confirm('Remove all bot entries from this tournament?')) {
-        return;
-      }
-
-      try {
-        const { clearOptionsBots } = await import('../../services/optionsBotService');
-        const count = await clearOptionsBots(tournament.tournament.id);
-        alert(`🗑️ Removed ${count} bot entries`);
-        tournament.refresh?.();
-      } catch (err) {
-        alert('Error: ' + err.message);
-      }
-    };
-
-    return (
-      <div style={{
-        marginTop: '16px',
-        padding: '16px',
-        background: '#1a1a2e',
-        borderRadius: '12px',
-        border: '1px dashed #f59e0b'
-      }}>
-        <h4 style={{ color: '#f59e0b', margin: '0 0 12px 0', fontSize: '14px' }}>
-          ⚙️ Admin Controls
-        </h4>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <button
-            onClick={handlePopulateBots}
-            disabled={isPopulating || !tournament?.tournament}
-            style={{
-              padding: '10px 16px',
-              background: '#7c3aed',
-              border: 'none',
-              borderRadius: '8px',
-              color: '#fff',
-              fontWeight: '600',
-              cursor: isPopulating ? 'not-allowed' : 'pointer',
-              opacity: isPopulating || !tournament?.tournament ? 0.7 : 1
-            }}
-          >
-            {isPopulating ? '⏳ Creating Bots...' : '🤖 Add 9 Bots'}
-          </button>
-          <button
-            onClick={handleClearBots}
-            disabled={!tournament?.tournament}
-            style={{
-              padding: '10px 16px',
-              background: 'transparent',
-              border: '1px solid #ef4444',
-              borderRadius: '8px',
-              color: '#ef4444',
-              fontWeight: '600',
-              cursor: 'pointer'
-            }}
-          >
-            🗑️ Clear Bots
-          </button>
-        </div>
-        <p style={{
-          margin: '10px 0 0 0',
-          fontSize: '11px',
-          color: '#6b7280'
-        }}>
-          Bots will create varied portfolios with different strategies.
-        </p>
-      </div>
-    );
-  };
 
   // Handle locking a position
   const handleLockPosition = async (entryId, contract) => {
@@ -568,253 +380,9 @@ const StonkOptionsArenaV2 = ({
 
 
 
-  // Tournament Portfolio View Component - Shows live portfolio after submission
-  const TournamentPortfolioView = () => {
-    // Debug logging
-
-    // Show empty state if no entries
-    if (!tournament?.userEntries?.length) {
-      return (
-        <div style={{
-          padding: '40px',
-          background: '#1a1a2e',
-          borderRadius: '12px',
-          textAlign: 'center'
-        }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📭</div>
-          <h3 style={{ color: '#fff', margin: '0 0 8px 0' }}>No Active Portfolios</h3>
-          <p style={{ color: '#6b7280', margin: '0 0 16px 0' }}>
-            Submit an entry in Tournament Mode to see your portfolios here.
-          </p>
-          <button
-            onClick={() => {
-              setActiveTab('build');
-              setTournamentMode(true);
-            }}
-            style={{
-              padding: '12px 24px',
-              background: 'linear-gradient(135deg, #00d9ff, #0066ff)',
-              border: 'none',
-              borderRadius: '8px',
-              color: '#fff',
-              fontWeight: '600',
-              cursor: 'pointer'
-            }}
-          >
-            Build a Portfolio →
-          </button>
-        </div>
-      );
-    }
 
 
-    // Determine status for display
-    const status = tournament.tournament?.status;
-    const isLive = status === 'in_progress';
-    const isComplete = status === 'completed';
-    const isPending = status === 'open';
 
-    // Status badge configuration
-    const getStatusBadge = () => {
-      if (isLive) {
-        return { text: '🔴 LIVE', color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' };
-      }
-      if (isComplete) {
-        return { text: '✅ COMPLETE', color: '#6b7280', bg: 'rgba(107, 114, 128, 0.1)' };
-      }
-      if (isPending) {
-        return { text: '⏳ PENDING START', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' };
-      }
-      return { text: status?.toUpperCase() || 'UNKNOWN', color: '#6b7280', bg: 'rgba(107, 114, 128, 0.1)' };
-    };
-
-    const statusBadge = getStatusBadge();
-
-    return (
-      <div style={{
-        padding: '20px',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #12121a 100%)',
-        borderRadius: '12px',
-        border: '1px solid #2d3748'
-      }}>
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '16px'
-        }}>
-          <h3 style={{ color: '#fff', margin: 0, fontSize: '18px' }}>
-            📊 Your Tournament Portfolios
-          </h3>
-          <span style={{
-            fontSize: '12px',
-            color: statusBadge.color,
-            background: statusBadge.bg,
-            padding: '4px 8px',
-            borderRadius: '4px'
-          }}>
-            {statusBadge.text}
-          </span>
-        </div>
-
-        {isPending && (
-          <div style={{
-            background: 'rgba(245, 158, 11, 0.1)',
-            border: '1px solid rgba(245, 158, 11, 0.3)',
-            borderRadius: '8px',
-            padding: '12px',
-            marginBottom: '16px',
-            fontSize: '13px',
-            color: '#f59e0b'
-          }}>
-            ⏳ Your entries are locked! Tournament will start at the lock deadline.
-          </div>
-        )}
-
-        {tournament.userEntries.map((entry, entryIndex) => (
-          <EntryPortfolioCard
-            key={entry.id}
-            entry={entry}
-            entryIndex={entryIndex}
-            prices={prices}
-            tournamentStatus={tournament?.tournament?.status}
-            onPositionClick={(position) => {
-              setSelectedPosition(position);
-              setShowPositionModal(true);
-            }}
-            onLockPosition={handleLockPosition}
-          />
-        ))}
-      </div>
-    );
-  };
-
-
-  // Tournament Mode Toggle Component
-  const TournamentModeToggle = () => {
-    if (!user) {
-      return (
-        <div style={{
-          background: '#1a1a2e',
-          borderRadius: '8px',
-          padding: '12px',
-          marginBottom: '12px',
-          textAlign: 'center'
-        }}>
-          <span style={{ color: '#6b7280', fontSize: '13px' }}>
-            Sign in to compete in tournaments
-          </span>
-        </div>
-      );
-    }
-
-    return (
-      <div style={{
-        display: 'flex',
-        gap: '8px',
-        marginBottom: '12px'
-      }}>
-        <button
-          onClick={() => setTournamentMode(false)}
-          style={{
-            flex: 1,
-            padding: '10px',
-            borderRadius: '8px',
-            border: !tournamentMode ? '2px solid #00d9ff' : '1px solid #2d3748',
-            background: !tournamentMode ? 'rgba(0, 217, 255, 0.1)' : '#1a1a2e',
-            color: !tournamentMode ? '#00d9ff' : '#9ca3af',
-            cursor: 'pointer',
-            fontWeight: '600'
-          }}
-        >
-          Practice Mode
-        </button>
-        <button
-          onClick={() => setTournamentMode(true)}
-          style={{
-            flex: 1,
-            padding: '10px',
-            borderRadius: '8px',
-            border: tournamentMode ? '2px solid #10b981' : '1px solid #2d3748',
-            background: tournamentMode ? 'rgba(16, 185, 129, 0.1)' : '#1a1a2e',
-            color: tournamentMode ? '#10b981' : '#9ca3af',
-            cursor: 'pointer',
-            fontWeight: '600'
-          }}
-        >
-          🏆 Tournament
-        </button>
-      </div>
-    );
-  };
-
-  // Tab Navigation Component
-  const TabNavigation = () => {
-    const hasEntries = tournament?.userEntries?.length > 0;
-
-    return (
-      <div style={{
-        display: 'flex',
-        gap: '0',
-        marginBottom: '16px',
-        borderBottom: '2px solid #2d3748'
-      }}>
-        <button
-          onClick={() => setActiveTab('build')}
-          style={{
-            flex: 1,
-            padding: '14px 20px',
-            background: 'transparent',
-            border: 'none',
-            borderBottom: activeTab === 'build' ? '2px solid #00d9ff' : '2px solid transparent',
-            marginBottom: '-2px',
-            color: activeTab === 'build' ? '#00d9ff' : '#6b7280',
-            fontWeight: '600',
-            fontSize: '15px',
-            cursor: 'pointer',
-            transition: 'all 0.2s'
-          }}
-        >
-          🎯 Build Portfolio
-        </button>
-        <button
-          onClick={() => setActiveTab('portfolios')}
-          style={{
-            flex: 1,
-            padding: '14px 20px',
-            background: 'transparent',
-            border: 'none',
-            borderBottom: activeTab === 'portfolios' ? '2px solid #10b981' : '2px solid transparent',
-            marginBottom: '-2px',
-            color: activeTab === 'portfolios' ? '#10b981' : '#6b7280',
-            fontWeight: '600',
-            fontSize: '15px',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px'
-          }}
-        >
-          📊 Active Portfolios
-          {hasEntries && (
-            <span style={{
-              background: '#10b981',
-              color: '#000',
-              fontSize: '11px',
-              fontWeight: '700',
-              padding: '2px 6px',
-              borderRadius: '10px',
-              minWidth: '20px'
-            }}>
-              {tournament.userEntries.length}
-            </span>
-          )}
-        </button>
-      </div>
-    );
-  };
 
   // Position Lock Button Component
   const PositionLockButton = ({ contract, entryId }) => {
@@ -1215,7 +783,12 @@ const StonkOptionsArenaV2 = ({
       {/* Main Content */}
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '20px' }}>
         {/* Tab Navigation */}
-        <TabNavigation />
+        <TabNavigation
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          hasEntries={tournament?.userEntries?.length > 0}
+          entryCount={tournament?.userEntries?.length || 0}
+        />
 
         {/* TAB CONTENT */}
         {activeTab === 'build' ? (
@@ -1223,7 +796,11 @@ const StonkOptionsArenaV2 = ({
             {/* BUILD TAB CONTENT */}
 
             {/* Tournament Mode Toggle */}
-            <TournamentModeToggle />
+            <TournamentModeToggle
+              user={user}
+              tournamentMode={tournamentMode}
+              setTournamentMode={setTournamentMode}
+            />
 
             {/* Tournament Header - show when tournament mode is on */}
             {tournamentMode && user && (
@@ -1234,7 +811,12 @@ const StonkOptionsArenaV2 = ({
             )}
 
             {/* Tier Progress Bar */}
-            <TierProgressBar />
+            <TierProgressBar
+              tournamentMode={tournamentMode}
+              showTierProgress={showTierProgress}
+              tierCounts={tierCounts}
+              totalContracts={contracts.length}
+            />
 
             {/* Tournament Submit Section - placed here so users see it after requirements */}
             <TournamentSubmitSection
@@ -1249,7 +831,12 @@ const StonkOptionsArenaV2 = ({
             />
 
             {/* Admin Controls - only visible to admin users */}
-            <AdminControls />
+            <AdminControls
+              user={user}
+              tournament={tournament}
+              prices={prices}
+              onRefresh={() => tournament?.refresh?.()}
+            />
 
             <div style={{
               display: 'grid',
@@ -1426,7 +1013,19 @@ const StonkOptionsArenaV2 = ({
         ) : (
           <>
             {/* PORTFOLIOS TAB CONTENT */}
-            <TournamentPortfolioView />
+            <TournamentPortfolioView
+              tournament={tournament}
+              prices={prices}
+              onNavigateToBuild={() => {
+                setActiveTab('build');
+                setTournamentMode(true);
+              }}
+              onPositionClick={(position) => {
+                setSelectedPosition(position);
+                setShowPositionModal(true);
+              }}
+              onLockPosition={handleLockPosition}
+            />
           </>
         )}
       </div>
