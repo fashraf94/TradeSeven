@@ -27,6 +27,8 @@ import TierProgressBar from './TierProgressBar';
 import TournamentModeToggle from './TournamentModeToggle';
 import TabNavigation from './TabNavigation';
 import AdminControls from './AdminControls';
+import PriceFreshnessIndicator from './PriceFreshnessIndicator';
+import TournamentHistoryView from './TournamentHistoryView';
 import {
   ArrowLeft,
   RefreshCw,
@@ -73,6 +75,8 @@ const StonkOptionsArenaV2 = ({
   const [selectedPosition, setSelectedPosition] = useState(null);
   const [showPositionModal, setShowPositionModal] = useState(false);
   const [submissionError, setSubmissionError] = useState(null);
+  const [lockError, setLockError] = useState(null);
+  const [orderError, setOrderError] = useState(null);
 
   // Price freshness tracking
   const [priceStatus, setPriceStatus] = useState({
@@ -292,8 +296,12 @@ const StonkOptionsArenaV2 = ({
 
   // Handle order confirmation
   const handleConfirmOrder = (contract) => {
+    // Clear any previous order errors
+    setOrderError(null);
+
     if (contract.entryAmount > virtualCash) {
-      alert('Insufficient funds!');
+      setOrderError('Insufficient funds! You need more virtual cash to add this contract.');
+      setTimeout(() => setOrderError(null), 5000);
       return;
     }
 
@@ -319,13 +327,15 @@ const StonkOptionsArenaV2 = ({
       }
 
       if (tierKey && tierCounts[tierKey] >= tierMax) {
-        alert(`Cannot add more ${tierLabel} contracts. Maximum ${tierMax} allowed for this tier.`);
+        setOrderError(`Cannot add more ${tierLabel} contracts. Maximum ${tierMax} allowed for this tier.`);
+        setTimeout(() => setOrderError(null), 5000);
         return;
       }
 
       // Also check total (exactly 7 required)
       if (contracts.length >= 7) {
-        alert('Portfolio complete! You have all 7 required contracts. Submit to tournament or remove a position first.');
+        setOrderError('Portfolio complete! You have all 7 required contracts. Submit to tournament or remove a position first.');
+        setTimeout(() => setOrderError(null), 5000);
         return;
       }
     }
@@ -389,14 +399,18 @@ const StonkOptionsArenaV2 = ({
 
   // Submit handler for tournament entry
   const handleSubmitToTournament = async () => {
+    // Clear any previous errors
+    setSubmissionError(null);
 
     if (!tournament?.tournament) {
-      alert('No active tournament available');
+      setSubmissionError('No active tournament available');
+      setTimeout(() => setSubmissionError(null), 8000);
       return;
     }
 
     if (!tournament.canEnter?.canEnter) {
-      alert(tournament.canEnter?.reason || 'Cannot enter tournament at this time');
+      setSubmissionError(tournament.canEnter?.reason || 'Cannot enter tournament at this time');
+      setTimeout(() => setSubmissionError(null), 8000);
       return;
     }
 
@@ -405,7 +419,8 @@ const StonkOptionsArenaV2 = ({
     const allTiersMet = tierCounts.short >= 2 && tierCounts.medium >= 3 && tierCounts.long >= 2;
 
     if (totalContracts !== 7 || !allTiersMet) {
-      alert('Portfolio does not meet requirements.\n\nNeed exactly 7 contracts:\n• 2 short-term (1D or 3D)\n• 3 medium-term (7D)\n• 2 long-term (14D, 21D, or 28D)');
+      setSubmissionError('Portfolio does not meet requirements. Need exactly 7 contracts: 2 short-term (1D or 3D), 3 medium-term (7D), 2 long-term (14D, 21D, or 28D)');
+      setTimeout(() => setSubmissionError(null), 8000);
       return;
     }
 
@@ -426,7 +441,8 @@ const StonkOptionsArenaV2 = ({
     try {
       await tournament.submitEntry(contracts);
 
-      alert('🎉 Success!\n\nYour entry has been submitted.\n\nGood luck!');
+      // Clear any errors on success
+      setSubmissionError(null);
 
       // Reset local state
       setContracts([]);
@@ -437,9 +453,21 @@ const StonkOptionsArenaV2 = ({
 
     } catch (err) {
       console.error('Tournament submission error:', err);
-      setSubmissionError(err.message || 'Failed to submit entry. Please try again.');
-      // Clear error after 5 seconds
-      setTimeout(() => setSubmissionError(null), 5000);
+
+      // Determine user-friendly error message
+      let errorMessage = 'Failed to submit entry. Please try again.';
+      if (err.message?.includes('network')) {
+        errorMessage = 'Network error - please check your connection and try again.';
+      } else if (err.message?.includes('permission') || err.message?.includes('unauthorized')) {
+        errorMessage = 'You do not have permission to submit. Please sign in again.';
+      } else if (err.message?.includes('deadline') || err.message?.includes('locked')) {
+        errorMessage = 'Tournament is no longer accepting entries.';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      setSubmissionError(errorMessage);
+      setTimeout(() => setSubmissionError(null), 8000);
     }
   };
 
@@ -452,6 +480,9 @@ const StonkOptionsArenaV2 = ({
 
   // Handle locking a position
   const handleLockPosition = async (entryId, contract) => {
+    // Clear any previous lock errors
+    setLockError(null);
+
     if (!confirm(
       `Lock in this position?\n\n` +
       `${contract.symbol} ${contract.direction.toUpperCase()} $${contract.strike}\n` +
@@ -464,12 +495,13 @@ const StonkOptionsArenaV2 = ({
 
     try {
       await tournament.lockPosition(entryId, contract.id, contract.currentValue);
-      alert('Position locked successfully!');
+      // Success - close modal and refresh
       setShowPositionModal(false);
       tournament.refresh?.();
     } catch (err) {
       console.error('Error locking position:', err);
-      alert('Error: ' + err.message);
+      setLockError(err.message || 'Failed to lock position. Please try again.');
+      setTimeout(() => setLockError(null), 5000);
     }
   };
 
@@ -519,6 +551,9 @@ const StonkOptionsArenaV2 = ({
     const percentReturn = (profitLoss / contract.entryAmount) * 100;
 
     const handleLock = async () => {
+      // Clear any previous lock errors
+      setLockError(null);
+
       if (!confirm(
         `Lock in this position at $${liveValue.currentValue.toFixed(2)}?\n\n` +
         `P/L: ${profitLoss >= 0 ? '+' : ''}$${profitLoss.toFixed(2)} (${percentReturn.toFixed(1)}%)\n\n` +
@@ -530,8 +565,11 @@ const StonkOptionsArenaV2 = ({
       setIsLocking(true);
       try {
         await tournament.lockPosition(entryId, contract.id, liveValue.currentValue);
+        tournament.refresh?.();
       } catch (err) {
-        alert('Error locking position: ' + err.message);
+        console.error('Error locking position:', err);
+        setLockError(err.message || 'Failed to lock position. Please try again.');
+        setTimeout(() => setLockError(null), 5000);
       } finally {
         setIsLocking(false);
       }
@@ -897,6 +935,14 @@ const StonkOptionsArenaV2 = ({
               setTournamentMode={setTournamentMode}
             />
 
+            {/* Price Freshness Indicator */}
+            <PriceFreshnessIndicator
+              priceStatus={priceStatus}
+              onRefresh={handleManualRefresh}
+              isRefreshing={isRefreshing}
+              lastManualRefresh={lastManualRefresh}
+            />
+
             {/* Tournament Header - show when tournament mode is on */}
             {tournamentMode && user && (
               <TournamentHeader
@@ -1003,6 +1049,36 @@ const StonkOptionsArenaV2 = ({
                         setShowOrder(false);
                       }}
                     />
+                    {/* Order Error Display */}
+                    {orderError && (
+                      <div style={{
+                        marginTop: '12px',
+                        background: 'rgba(239, 68, 68, 0.1)',
+                        border: '1px solid #ef4444',
+                        borderRadius: '8px',
+                        padding: '12px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}>
+                        <span style={{ color: '#ef4444', fontSize: '13px' }}>
+                          ⚠️ {orderError}
+                        </span>
+                        <button
+                          onClick={() => setOrderError(null)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#ef4444',
+                            cursor: 'pointer',
+                            fontSize: '16px',
+                            padding: '0 4px'
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1019,6 +1095,36 @@ const StonkOptionsArenaV2 = ({
                       setShowOrder(false);
                     }}
                   />
+                  {/* Order Error Display */}
+                  {orderError && (
+                    <div style={{
+                      marginTop: '12px',
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      border: '1px solid #ef4444',
+                      borderRadius: '8px',
+                      padding: '12px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span style={{ color: '#ef4444', fontSize: '13px' }}>
+                        ⚠️ {orderError}
+                      </span>
+                      <button
+                        onClick={() => setOrderError(null)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#ef4444',
+                          cursor: 'pointer',
+                          fontSize: '16px',
+                          padding: '0 4px'
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1107,9 +1213,51 @@ const StonkOptionsArenaV2 = ({
             {/* User Tournament Entries - shows submitted entries with lock buttons */}
             <UserTournamentEntries />
           </>
-        ) : (
+        ) : activeTab === 'portfolios' ? (
           <>
             {/* PORTFOLIOS TAB CONTENT */}
+
+            {/* Price Staleness Warning for Portfolio P/L */}
+            {(priceStatus.isStale || priceStatus.usingFallback) && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                padding: '8px 12px',
+                background: priceStatus.usingFallback
+                  ? 'rgba(239, 68, 68, 0.1)'
+                  : 'rgba(245, 158, 11, 0.1)',
+                border: `1px solid ${priceStatus.usingFallback ? '#ef4444' : '#f59e0b'}`,
+                borderRadius: '8px',
+                fontSize: '11px',
+                color: priceStatus.usingFallback ? '#fca5a5' : '#fcd34d',
+                marginBottom: '12px'
+              }}>
+                <span>
+                  {priceStatus.usingFallback
+                    ? '⚠️ P/L values may be inaccurate - using estimated prices'
+                    : '⏳ P/L values may be based on outdated prices'}
+                </span>
+                <button
+                  onClick={handleManualRefresh}
+                  disabled={isRefreshing}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid currentColor',
+                    borderRadius: '4px',
+                    padding: '2px 8px',
+                    color: 'inherit',
+                    cursor: isRefreshing ? 'not-allowed' : 'pointer',
+                    fontSize: '10px',
+                    opacity: isRefreshing ? 0.5 : 1
+                  }}
+                >
+                  {isRefreshing ? 'Refreshing...' : 'Refresh'}
+                </button>
+              </div>
+            )}
+
             <TournamentPortfolioView
               tournament={tournament}
               prices={prices}
@@ -1124,7 +1272,17 @@ const StonkOptionsArenaV2 = ({
               onLockPosition={handleLockPosition}
             />
           </>
-        )}
+        ) : activeTab === 'history' ? (
+          <>
+            {/* HISTORY TAB CONTENT */}
+            <TournamentHistoryView
+              tournamentHistory={tournament?.tournamentHistory || []}
+              historyLoading={tournament?.historyLoading || false}
+              fetchTournamentHistory={tournament?.fetchTournamentHistory || (() => {})}
+              userId={user?.odUserId}
+            />
+          </>
+        ) : null}
       </div>
 
       {/* Footer */}
@@ -1205,14 +1363,20 @@ const StonkOptionsArenaV2 = ({
         onClose={() => setShowLeaderboard(false)}
         leaderboard={tournament?.leaderboard}
         currentUserId={user?.odUserId}
+        tournament={tournament?.tournament}
       />
       <PositionDetailModal
         isOpen={showPositionModal}
-        onClose={() => setShowPositionModal(false)}
+        onClose={() => {
+          setShowPositionModal(false);
+          setLockError(null);
+        }}
         position={selectedPosition}
         prices={prices}
         tournamentStatus={tournament?.tournament?.status}
         onLockPosition={handleLockPosition}
+        lockError={lockError}
+        onClearLockError={() => setLockError(null)}
       />
     </div>
   );

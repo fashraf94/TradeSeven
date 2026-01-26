@@ -56,7 +56,7 @@ const TabNavigation = ({
           gap: '8px'
         }}
       >
-        📊 Active Portfolios
+        📊 Active
         {hasEntries && (
           <span style={{
             background: '#10b981',
@@ -70,6 +70,24 @@ const TabNavigation = ({
             {entryCount}
           </span>
         )}
+      </button>
+      <button
+        onClick={() => setActiveTab('history')}
+        style={{
+          flex: 1,
+          padding: '14px 20px',
+          background: 'transparent',
+          border: 'none',
+          borderBottom: activeTab === 'history' ? '2px solid #f59e0b' : '2px solid transparent',
+          marginBottom: '-2px',
+          color: activeTab === 'history' ? '#f59e0b' : '#6b7280',
+          fontWeight: '600',
+          fontSize: '15px',
+          cursor: 'pointer',
+          transition: 'all 0.2s'
+        }}
+      >
+        🏆 History
       </button>
     </div>
   );

@@ -11,7 +11,9 @@ const PositionDetailModal = ({
   position,
   prices,
   tournamentStatus,
-  onLockPosition
+  onLockPosition,
+  lockError,
+  onClearLockError
 }) => {
   if (!isOpen || !position) return null;
 
@@ -240,6 +242,41 @@ const PositionDetailModal = ({
               </span>
             </div>
           </div>
+
+          {/* Lock Error Display */}
+          {lockError && (
+            <div style={{
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid #ef4444',
+              borderRadius: '10px',
+              padding: '12px 16px',
+              marginBottom: '12px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <span style={{ color: '#ef4444', fontSize: '14px' }}>
+                ❌ {lockError}
+              </span>
+              {onClearLockError && (
+                <button
+                  onClick={onClearLockError}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#ef4444',
+                    cursor: 'pointer',
+                    fontSize: '18px',
+                    padding: '0 4px',
+                    lineHeight: 1
+                  }}
+                  aria-label="Dismiss error"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Action Buttons */}
           {!position.isLocked && tournamentStatus === 'in_progress' && (

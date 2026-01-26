@@ -1,7 +1,17 @@
 // src/hooks/useOptionsTournament.js
 // React hook for managing Options Tournament state in the UI
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  limit
+} from 'firebase/firestore';
+import { db } from '../firebase/config';
 import {
   getCurrentOptionsTournament,
   checkAndUpdateTournamentStatus,
@@ -22,10 +32,18 @@ export const useOptionsTournament = (userId, username) => {
   const [leaderboard, setLeaderboard] = useState([]);
   const [canEnter, setCanEnter] = useState({ canEnter: false, reason: 'Loading...' });
 
+  // Track previous ranks for visual change indicators
+  const previousRanksRef = useRef({});
+  const rankChangeClearTimeoutRef = useRef(null);
+
   // UI state
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Tournament history state
+  const [tournamentHistory, setTournamentHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // Fetch tournament data
   const fetchTournamentData = useCallback(async () => {
@@ -74,18 +92,141 @@ export const useOptionsTournament = (userId, username) => {
     fetchTournamentData();
   }, [fetchTournamentData]);
 
-  // Refresh leaderboard periodically during active tournament
+  // Real-time leaderboard subscription using Firebase onSnapshot
   useEffect(() => {
-    if (!tournament || tournament.status === 'completed') return;
+    if (!tournament?.id) {
+      setLeaderboard([]);
+      return;
+    }
 
-    const interval = setInterval(() => {
-      getOptionsTournamentLeaderboard(tournament.id)
-        .then(setLeaderboard)
-        .catch(console.error);
-    }, 30000); // Every 30 seconds
+    // For completed tournaments, use one-time fetch instead of real-time
+    if (tournament.status === 'completed') {
+      fetchLeaderboardOnce(tournament.id);
+      return;
+    }
 
-    return () => clearInterval(interval);
-  }, [tournament]);
+    // Only subscribe when tournament is active or open
+    if (tournament.status !== 'in_progress' && tournament.status !== 'open') {
+      return;
+    }
+
+    console.log('[useOptionsTournament] Setting up real-time leaderboard for:', tournament.id);
+
+    const entriesRef = collection(db, 'optionsEntries');
+    const q = query(
+      entriesRef,
+      where('tournamentId', '==', tournament.id)
+    );
+
+    const unsubscribe = onSnapshot(q,
+      (snapshot) => {
+        const entries = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+
+        // Sort by percentReturn descending, then by entry time (tiebreaker)
+        const sorted = entries.sort((a, b) => {
+          const aReturn = a.results?.percentReturn ?? 0;
+          const bReturn = b.results?.percentReturn ?? 0;
+          if (bReturn !== aReturn) return bReturn - aReturn;
+          // Tiebreaker: earlier entry wins
+          return (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0);
+        });
+
+        // Add rank and detect rank changes
+        const ranked = sorted.map((entry, index) => {
+          const newRank = index + 1;
+          const prevRank = previousRanksRef.current[entry.id];
+
+          let rankChange = 0;
+          if (prevRank !== undefined && prevRank !== newRank) {
+            rankChange = prevRank - newRank; // Positive = moved up, Negative = moved down
+          }
+
+          return {
+            ...entry,
+            rank: newRank,
+            rankChange,
+            isNew: prevRank === undefined && Object.keys(previousRanksRef.current).length > 0,
+            // Map fields for LeaderboardModal compatibility
+            percentReturn: entry.results?.percentReturn ?? 0,
+            totalValue: entry.results?.totalValue ?? null,
+            contractCount: entry.contracts?.length || 0
+          };
+        });
+
+        // Update previous ranks for next comparison
+        const newPreviousRanks = {};
+        ranked.forEach(entry => {
+          newPreviousRanks[entry.id] = entry.rank;
+        });
+        previousRanksRef.current = newPreviousRanks;
+
+        setLeaderboard(ranked);
+
+        // Clear rank change indicators after 3 seconds
+        if (rankChangeClearTimeoutRef.current) {
+          clearTimeout(rankChangeClearTimeoutRef.current);
+        }
+        rankChangeClearTimeoutRef.current = setTimeout(() => {
+          setLeaderboard(prev => prev.map(entry => ({
+            ...entry,
+            rankChange: 0,
+            isNew: false
+          })));
+        }, 3000);
+      },
+      (error) => {
+        console.error('[useOptionsTournament] Leaderboard subscription error:', error);
+        // Fallback to one-time fetch on error
+        fetchLeaderboardOnce(tournament.id);
+      }
+    );
+
+    // Cleanup subscription on unmount or tournament change
+    return () => {
+      console.log('[useOptionsTournament] Cleaning up leaderboard subscription');
+      unsubscribe();
+      if (rankChangeClearTimeoutRef.current) {
+        clearTimeout(rankChangeClearTimeoutRef.current);
+      }
+    };
+  }, [tournament?.id, tournament?.status]);
+
+  // Fallback fetch function for completed tournaments or errors
+  const fetchLeaderboardOnce = async (tournamentId) => {
+    try {
+      const entriesRef = collection(db, 'optionsEntries');
+      const q = query(entriesRef, where('tournamentId', '==', tournamentId));
+      const snapshot = await getDocs(q);
+
+      const entries = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      const sorted = entries.sort((a, b) => {
+        const aReturn = a.results?.percentReturn ?? 0;
+        const bReturn = b.results?.percentReturn ?? 0;
+        return bReturn - aReturn;
+      });
+
+      const ranked = sorted.map((entry, index) => ({
+        ...entry,
+        rank: index + 1,
+        rankChange: 0,
+        isNew: false,
+        percentReturn: entry.results?.percentReturn ?? 0,
+        totalValue: entry.results?.totalValue ?? null,
+        contractCount: entry.contracts?.length || 0
+      }));
+
+      setLeaderboard(ranked);
+    } catch (error) {
+      console.error('[useOptionsTournament] Fallback fetch error:', error);
+    }
+  };
 
   // Submit entry to tournament
   const submitEntry = useCallback(async (contracts) => {
@@ -146,6 +287,74 @@ export const useOptionsTournament = (userId, username) => {
     }
   }, [tournament, userId]);
 
+  // Fetch tournament history for past results
+  const fetchTournamentHistory = useCallback(async (historyUserId) => {
+    const targetUserId = historyUserId || userId;
+    if (!targetUserId) return;
+
+    setHistoryLoading(true);
+    try {
+      // Get completed tournaments (last 10)
+      const tournamentsRef = collection(db, 'optionsTournaments');
+      const q = query(
+        tournamentsRef,
+        where('status', '==', 'completed'),
+        orderBy('endDate', 'desc'),
+        limit(10)
+      );
+
+      const tournamentsSnap = await getDocs(q);
+      const tournaments = tournamentsSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      // For each tournament, get user's entry (if any)
+      const historyWithUserData = await Promise.all(
+        tournaments.map(async (tournament) => {
+          // Query user's entries for this tournament
+          const entriesRef = collection(db, 'optionsEntries');
+          const entryQuery = query(
+            entriesRef,
+            where('tournamentId', '==', tournament.id),
+            where('odUserId', '==', targetUserId)
+          );
+
+          const entriesSnap = await getDocs(entryQuery);
+          const userEntries = entriesSnap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+
+          // Get total participants count
+          const allEntriesQuery = query(
+            entriesRef,
+            where('tournamentId', '==', tournament.id)
+          );
+          const allEntriesSnap = await getDocs(allEntriesQuery);
+
+          return {
+            ...tournament,
+            userEntries,
+            totalParticipants: allEntriesSnap.size,
+            userBestRank: userEntries.length > 0
+              ? Math.min(...userEntries.map(e => e.rank || 999))
+              : null,
+            userBestReturn: userEntries.length > 0
+              ? Math.max(...userEntries.map(e => e.results?.percentReturn || 0))
+              : null
+          };
+        })
+      );
+
+      setTournamentHistory(historyWithUserData);
+    } catch (error) {
+      console.error('[useOptionsTournament] Error fetching tournament history:', error);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [userId]);
+
   // Refresh all data
   const refresh = useCallback(() => {
     return fetchTournamentData();
@@ -193,7 +402,12 @@ export const useOptionsTournament = (userId, username) => {
     // Actions
     submitEntry,
     lockPosition,
-    refresh
+    refresh,
+
+    // History
+    tournamentHistory,
+    historyLoading,
+    fetchTournamentHistory
   };
 };
 
