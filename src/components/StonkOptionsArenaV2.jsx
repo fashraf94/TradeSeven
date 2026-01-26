@@ -201,6 +201,39 @@ const StonkOptionsArenaV2 = ({
       return;
     }
 
+    // Tournament mode: check tier limits BEFORE adding
+    if (tournamentMode) {
+      const expiry = contract.daysToExpiry;
+      let tierKey = null;
+      let tierMax = 0;
+      let tierLabel = '';
+
+      if ([1, 3].includes(expiry)) {
+        tierKey = 'short';
+        tierMax = 2;
+        tierLabel = 'short-term';
+      } else if (expiry === 7) {
+        tierKey = 'medium';
+        tierMax = 3;
+        tierLabel = 'medium-term';
+      } else if ([14, 21, 28].includes(expiry)) {
+        tierKey = 'long';
+        tierMax = 2;
+        tierLabel = 'long-term';
+      }
+
+      if (tierKey && tierCounts[tierKey] >= tierMax) {
+        alert(`Cannot add more ${tierLabel} contracts. Maximum ${tierMax} allowed for this tier.`);
+        return;
+      }
+
+      // Also check total (exactly 7 required)
+      if (contracts.length >= 7) {
+        alert('Portfolio complete! You have all 7 required contracts. Submit to tournament or remove a position first.');
+        return;
+      }
+    }
+
     setContracts(prev => [...prev, contract]);
     setVirtualCash(prev => prev - contract.entryAmount);
     setSelectedStrike(null);
@@ -371,19 +404,22 @@ const StonkOptionsArenaV2 = ({
   const TierProgressBar = () => {
     if (!tournamentMode || !showTierProgress) return null;
 
+    // Each tier has exact count required (min = max)
     const tiers = [
-      { key: 'short', label: 'Short (1-3D)', min: 2, count: tierCounts.short, color: '#ef4444' },
-      { key: 'medium', label: 'Medium (7D)', min: 3, count: tierCounts.medium, color: '#f59e0b' },
-      { key: 'long', label: 'Long (14-28D)', min: 2, count: tierCounts.long, color: '#10b981' }
+      { key: 'short', label: 'Short (1-3D)', max: 2, count: tierCounts.short, color: '#ef4444' },
+      { key: 'medium', label: 'Medium (7D)', max: 3, count: tierCounts.medium, color: '#f59e0b' },
+      { key: 'long', label: 'Long (14-28D)', max: 2, count: tierCounts.long, color: '#10b981' }
     ];
+
+    const allComplete = tiers.every(t => t.count === t.max);
 
     return (
       <div style={{
-        background: '#12121a',
+        background: allComplete ? 'rgba(16, 185, 129, 0.1)' : '#12121a',
         borderRadius: '8px',
         padding: '12px',
         marginBottom: '12px',
-        border: '1px solid #2d3748'
+        border: allComplete ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid #2d3748'
       }}>
         <div style={{
           display: 'flex',
@@ -392,18 +428,21 @@ const StonkOptionsArenaV2 = ({
           marginBottom: '8px'
         }}>
           <span style={{ fontSize: '12px', fontWeight: '600', color: '#fff' }}>
-            Tier Requirements
+            📊 Portfolio Requirements
           </span>
           <span style={{
             fontSize: '11px',
-            color: portfolioValidation?.isValid ? '#10b981' : '#f59e0b'
+            fontWeight: '600',
+            color: allComplete ? '#10b981' : '#f59e0b'
           }}>
-            {contracts.length}/7 min contracts
+            {contracts.length}/7 {allComplete ? '✓ Ready!' : 'contracts'}
           </span>
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
-          {tiers.map(tier => (
+          {tiers.map(tier => {
+            const isComplete = tier.count === tier.max;
+            return (
             <div key={tier.key} style={{ flex: 1 }}>
               <div style={{
                 display: 'flex',
@@ -413,10 +452,10 @@ const StonkOptionsArenaV2 = ({
               }}>
                 <span style={{ color: '#9ca3af' }}>{tier.label}</span>
                 <span style={{
-                  color: tier.count >= tier.min ? '#10b981' : '#fff',
+                  color: isComplete ? '#10b981' : '#fff',
                   fontWeight: '600'
                 }}>
-                  {tier.count}/{tier.min}
+                  {tier.count}/{tier.max} {isComplete ? '✓' : ''}
                 </span>
               </div>
               <div style={{
@@ -427,13 +466,14 @@ const StonkOptionsArenaV2 = ({
               }}>
                 <div style={{
                   height: '100%',
-                  width: `${Math.min(100, (tier.count / tier.min) * 100)}%`,
-                  background: tier.count >= tier.min ? '#10b981' : tier.color,
+                  width: `${Math.min(100, (tier.count / tier.max) * 100)}%`,
+                  background: isComplete ? '#10b981' : tier.color,
                   transition: 'width 0.3s ease'
                 }} />
               </div>
             </div>
-          ))}
+          );
+          })}
         </div>
       </div>
     );

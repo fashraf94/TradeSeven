@@ -20,9 +20,19 @@ const StonkOptionsExpirySelector = ({
   const mediumTerm = expiries.filter(e => e.days === 7);
   const longTerm = expiries.filter(e => [14, 21, 28].includes(e.days));
 
-  const renderTierSection = (tierExpiries, tierKey, tierLabel, minRequired) => {
+  // Check if an expiry's tier is full (tournament mode only)
+  const isExpiryDisabled = (days) => {
+    if (!tournamentMode || !tierCounts) return false;
+    if ([1, 3].includes(days) && tierCounts.short >= EXPIRY_TIERS.short.maxAllowed) return true;
+    if (days === 7 && tierCounts.medium >= EXPIRY_TIERS.medium.maxAllowed) return true;
+    if ([14, 21, 28].includes(days) && tierCounts.long >= EXPIRY_TIERS.long.maxAllowed) return true;
+    return false;
+  };
+
+  const renderTierSection = (tierExpiries, tierKey, tierLabel, maxAllowed) => {
     const count = tierCounts?.[tierKey] || 0;
-    const isMet = count >= minRequired;
+    const isFull = count >= maxAllowed;
+    const isMet = count >= EXPIRY_TIERS[tierKey].minRequired;
 
     return (
       <div style={{ marginBottom: '12px' }}>
@@ -36,18 +46,18 @@ const StonkOptionsExpirySelector = ({
           }}>
             <span style={{
               fontSize: '11px',
-              color: '#9ca3af',
+              color: isFull ? '#6b7280' : '#9ca3af',
               textTransform: 'uppercase',
               letterSpacing: '0.5px'
             }}>
-              {tierLabel}
+              {tierLabel} {isFull ? '(full)' : ''}
             </span>
             <span style={{
               fontSize: '11px',
               fontWeight: '600',
-              color: isMet ? '#10b981' : '#f59e0b'
+              color: isFull ? '#10b981' : (isMet ? '#10b981' : '#f59e0b')
             }}>
-              {count}/{minRequired} {isMet ? '✓' : 'needed'}
+              {count}/{maxAllowed} {isFull ? '✓' : ''}
             </span>
           </div>
         )}
@@ -58,10 +68,12 @@ const StonkOptionsExpirySelector = ({
         }}>
           {tierExpiries.map(expiry => {
             const isSelected = selectedExpiry === expiry.days;
+            const isDisabled = isExpiryDisabled(expiry.days);
             return (
               <button
                 key={expiry.days}
-                onClick={() => onSelectExpiry(expiry.days)}
+                onClick={() => !isDisabled && onSelectExpiry(expiry.days)}
+                disabled={isDisabled}
                 style={{
                   flex: 1,
                   padding: '10px 8px',
@@ -69,26 +81,29 @@ const StonkOptionsExpirySelector = ({
                   border: isSelected
                     ? '2px solid #00d9ff'
                     : '1px solid #2d3748',
-                  background: isSelected
-                    ? 'linear-gradient(135deg, rgba(0, 217, 255, 0.2) 0%, rgba(0, 102, 255, 0.2) 100%)'
-                    : '#1a1f2e',
-                  cursor: 'pointer',
+                  background: isDisabled
+                    ? '#0d0d12'
+                    : isSelected
+                      ? 'linear-gradient(135deg, rgba(0, 217, 255, 0.2) 0%, rgba(0, 102, 255, 0.2) 100%)'
+                      : '#1a1f2e',
+                  cursor: isDisabled ? 'not-allowed' : 'pointer',
+                  opacity: isDisabled ? 0.4 : 1,
                   transition: 'all 0.2s ease'
                 }}
               >
                 <div style={{
                   fontSize: '14px',
                   fontWeight: '700',
-                  color: isSelected ? '#00d9ff' : '#e5e7eb'
+                  color: isDisabled ? '#4b5563' : (isSelected ? '#00d9ff' : '#e5e7eb')
                 }}>
                   {expiry.shortLabel}
                 </div>
                 <div style={{
                   fontSize: '10px',
-                  color: '#9ca3af',
+                  color: isDisabled ? '#374151' : '#9ca3af',
                   marginTop: '2px'
                 }}>
-                  {expiry.label}
+                  {isDisabled ? 'Tier full' : expiry.label}
                 </div>
               </button>
             );
@@ -120,9 +135,9 @@ const StonkOptionsExpirySelector = ({
         </div>
       )}
 
-      {renderTierSection(shortTerm, 'short', 'Short-term', EXPIRY_TIERS.short.minRequired)}
-      {renderTierSection(mediumTerm, 'medium', 'Medium-term', EXPIRY_TIERS.medium.minRequired)}
-      {renderTierSection(longTerm, 'long', 'Long-term', EXPIRY_TIERS.long.minRequired)}
+      {renderTierSection(shortTerm, 'short', 'Short-term', EXPIRY_TIERS.short.maxAllowed)}
+      {renderTierSection(mediumTerm, 'medium', 'Medium-term', EXPIRY_TIERS.medium.maxAllowed)}
+      {renderTierSection(longTerm, 'long', 'Long-term', EXPIRY_TIERS.long.maxAllowed)}
     </div>
   );
 };
