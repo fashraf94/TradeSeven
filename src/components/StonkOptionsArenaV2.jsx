@@ -60,6 +60,8 @@ const StonkOptionsArenaV2 = ({
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showTierProgress, setShowTierProgress] = useState(true);
   const [activeTab, setActiveTab] = useState('build'); // 'build' | 'portfolios'
+  const [selectedPosition, setSelectedPosition] = useState(null);
+  const [showPositionModal, setShowPositionModal] = useState(false);
 
   // Tournament hook (only active if user exists)
   // Always call hook (React rules), hook handles null userId gracefully
@@ -953,6 +955,254 @@ const StonkOptionsArenaV2 = ({
     );
   };
 
+  // Handle locking a position
+  const handleLockPosition = async (entryId, contract) => {
+    if (!confirm(
+      `Lock in this position?\n\n` +
+      `${contract.symbol} ${contract.direction.toUpperCase()} $${contract.strike}\n` +
+      `Current Value: $${contract.currentValue.toFixed(2)}\n` +
+      `P/L: ${contract.profitLoss >= 0 ? '+' : ''}$${contract.profitLoss.toFixed(2)}\n\n` +
+      `This cannot be undone!`
+    )) {
+      return;
+    }
+
+    try {
+      await tournament.lockPosition(entryId, contract.id, contract.currentValue);
+      alert('Position locked successfully!');
+      setShowPositionModal(false);
+      tournament.refresh?.();
+    } catch (err) {
+      console.error('Error locking position:', err);
+      alert('Error: ' + err.message);
+    }
+  };
+
+  // Position Detail Modal Component
+  const PositionDetailModal = () => {
+    if (!showPositionModal || !selectedPosition) return null;
+
+    const position = selectedPosition;
+    const currentPrice = prices[position.symbol] || position.entryPrice;
+
+    return (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0, 0, 0, 0.85)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: '20px'
+      }}>
+        <div style={{
+          background: '#12121a',
+          borderRadius: '16px',
+          maxWidth: '500px',
+          width: '100%',
+          maxHeight: '80vh',
+          overflow: 'auto',
+          border: '1px solid #2d3748'
+        }}>
+          {/* Header */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '16px 20px',
+            borderBottom: '1px solid #2d3748'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '24px' }}>
+                {position.direction === 'call' ? '📈' : '📉'}
+              </span>
+              <div>
+                <h3 style={{ margin: 0, color: '#fff', fontSize: '20px' }}>
+                  {position.symbol}
+                </h3>
+                <span style={{
+                  fontSize: '12px',
+                  color: position.direction === 'call' ? '#10b981' : '#ef4444'
+                }}>
+                  {position.direction.toUpperCase()} • ${position.strike} Strike
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowPositionModal(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#6b7280',
+                fontSize: '28px',
+                cursor: 'pointer',
+                padding: '0',
+                lineHeight: '1'
+              }}
+            >
+              ×
+            </button>
+          </div>
+
+          {/* Price Info */}
+          <div style={{ padding: '20px' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: '16px',
+              marginBottom: '20px'
+            }}>
+              <div style={{
+                background: '#1a1a2e',
+                padding: '16px',
+                borderRadius: '12px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
+                  Current Stock Price
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#fff' }}>
+                  ${currentPrice.toFixed(2)}
+                </div>
+              </div>
+              <div style={{
+                background: '#1a1a2e',
+                padding: '16px',
+                borderRadius: '12px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
+                  Strike Price
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#00d9ff' }}>
+                  ${position.strike}
+                </div>
+              </div>
+            </div>
+
+            {/* P/L Display */}
+            <div style={{
+              background: position.profitLoss >= 0
+                ? 'rgba(16, 185, 129, 0.1)'
+                : 'rgba(239, 68, 68, 0.1)',
+              border: `1px solid ${position.profitLoss >= 0 ? '#10b981' : '#ef4444'}`,
+              borderRadius: '12px',
+              padding: '20px',
+              textAlign: 'center',
+              marginBottom: '20px'
+            }}>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
+                Current Value
+              </div>
+              <div style={{
+                fontSize: '32px',
+                fontWeight: '700',
+                color: position.profitLoss >= 0 ? '#10b981' : '#ef4444'
+              }}>
+                ${position.currentValue.toFixed(2)}
+              </div>
+              <div style={{
+                fontSize: '16px',
+                color: position.profitLoss >= 0 ? '#10b981' : '#ef4444',
+                marginTop: '4px'
+              }}>
+                {position.profitLoss >= 0 ? '+' : ''}${position.profitLoss.toFixed(2)}
+                ({position.percentReturn.toFixed(1)}%)
+              </div>
+            </div>
+
+            {/* Details */}
+            <div style={{
+              background: '#1a1a2e',
+              borderRadius: '12px',
+              padding: '16px',
+              marginBottom: '20px'
+            }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                marginBottom: '12px',
+                paddingBottom: '12px',
+                borderBottom: '1px solid #2d3748'
+              }}>
+                <span style={{ color: '#6b7280' }}>Entry Amount</span>
+                <span style={{ color: '#fff', fontWeight: '600' }}>${position.entryAmount}</span>
+              </div>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                marginBottom: '12px',
+                paddingBottom: '12px',
+                borderBottom: '1px solid #2d3748'
+              }}>
+                <span style={{ color: '#6b7280' }}>Max Payout</span>
+                <span style={{ color: '#10b981', fontWeight: '600' }}>${position.potentialPayout}</span>
+              </div>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                marginBottom: '12px',
+                paddingBottom: '12px',
+                borderBottom: '1px solid #2d3748'
+              }}>
+                <span style={{ color: '#6b7280' }}>Expiry</span>
+                <span style={{ color: '#fff', fontWeight: '600' }}>{position.daysToExpiry} days</span>
+              </div>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between'
+              }}>
+                <span style={{ color: '#6b7280' }}>Status</span>
+                <span style={{
+                  color: position.isLocked ? '#10b981' : position.isWinning ? '#10b981' : '#f59e0b',
+                  fontWeight: '600'
+                }}>
+                  {position.isLocked ? '🔒 Locked' : position.isWinning ? '✅ In The Money' : '⏳ Out of Money'}
+                </span>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            {!position.isLocked && tournament?.tournament?.status === 'in_progress' && (
+              <button
+                onClick={() => handleLockPosition(position.entryId, position)}
+                style={{
+                  width: '100%',
+                  padding: '16px',
+                  background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                  border: 'none',
+                  borderRadius: '10px',
+                  color: '#000',
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                🔒 Lock In @ ${position.currentValue.toFixed(2)}
+              </button>
+            )}
+
+            {position.isLocked && (
+              <div style={{
+                textAlign: 'center',
+                padding: '16px',
+                background: 'rgba(16, 185, 129, 0.1)',
+                borderRadius: '10px',
+                color: '#10b981'
+              }}>
+                ✅ Position Locked at ${position.lockedValue?.toFixed(2) || position.currentValue.toFixed(2)}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Entry Portfolio Card Component - Shows individual entry with live P/L
   const EntryPortfolioCard = ({ entry, entryIndex }) => {
     // Calculate live values for each contract
@@ -1057,6 +1307,10 @@ const StonkOptionsArenaV2 = ({
           {contractsWithLiveValues.map((contract, i) => (
             <div
               key={contract.id || i}
+              onClick={() => {
+                setSelectedPosition({ ...contract, entryId: entry.id });
+                setShowPositionModal(true);
+              }}
               style={{
                 background: '#1a1a2e',
                 borderRadius: '8px',
@@ -1065,8 +1319,12 @@ const StonkOptionsArenaV2 = ({
                   ? '1px solid #10b981'
                   : contract.isWinning
                     ? '1px solid rgba(16, 185, 129, 0.3)'
-                    : '1px solid #2d3748'
+                    : '1px solid #2d3748',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
               }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
             >
               <div style={{
                 display: 'flex',
@@ -1132,6 +1390,30 @@ const StonkOptionsArenaV2 = ({
                   {contract.percentReturn >= 0 ? '+' : ''}{contract.percentReturn.toFixed(1)}%
                 </span>
               </div>
+
+              {/* Quick Lock Button (only if not locked and tournament in progress) */}
+              {!contract.isLocked && tournament?.tournament?.status === 'in_progress' && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleLockPosition(entry.id, contract);
+                  }}
+                  style={{
+                    width: '100%',
+                    marginTop: '8px',
+                    padding: '8px',
+                    background: 'rgba(245, 158, 11, 0.1)',
+                    border: '1px solid #f59e0b',
+                    borderRadius: '6px',
+                    color: '#f59e0b',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🔒 Lock @ ${contract.currentValue.toFixed(0)}
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -2167,7 +2449,9 @@ const StonkOptionsArenaV2 = ({
       </div>
 
       {/* Leaderboard Modal */}
+      {/* Modals */}
       <LeaderboardModal />
+      <PositionDetailModal />
     </div>
   );
 };
