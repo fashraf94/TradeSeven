@@ -262,27 +262,6 @@ export const canUserEnterTournament = async (tournament, userId) => {
   return { canEnter: true, entriesRemaining: 3 - entries.length };
 };
 
-/**
- * Create test tournament (for development)
- * @returns {Promise<Object>} - Created test tournament
- */
-export const createTestOptionsTournament = async () => {
-  const now = new Date();
-
-  const tournament = {
-    id: `options_test_${Date.now()}`,
-    name: `Test Options Tournament`,
-    status: 'open',
-    startDate: now.toISOString(),
-    lockDeadline: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(), // 24h from now
-    endDate: new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days from now
-    entryCount: 0,
-    isTest: true
-  };
-
-  return await createOptionsTournament(tournament);
-};
-
 export default {
   TOURNAMENT_CONFIG,
   createWeeklyOptionsTournament,
