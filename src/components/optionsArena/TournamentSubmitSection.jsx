@@ -13,7 +13,9 @@ const TournamentSubmitSection = ({
   tournament,
   portfolioValidation,
   onCreateTestTournament,
-  onSubmitToTournament
+  onSubmitToTournament,
+  submissionError,
+  onClearError
 }) => {
   if (!tournamentMode) return null;
 
@@ -207,6 +209,37 @@ const TournamentSubmitSection = ({
           {portfolioValidation.errors.map((err, i) => (
             <div key={i} style={{ fontSize: '11px', color: '#9ca3af' }}>• {err}</div>
           ))}
+        </div>
+      )}
+
+      {/* Submission Error - from parent */}
+      {submissionError && (
+        <div style={{
+          background: 'rgba(239, 68, 68, 0.1)',
+          border: '1px solid #ef4444',
+          borderRadius: '8px',
+          padding: '12px',
+          marginBottom: '12px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <span style={{ color: '#ef4444', fontSize: '14px' }}>
+            {submissionError}
+          </span>
+          <button
+            onClick={onClearError}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#ef4444',
+              cursor: 'pointer',
+              fontSize: '16px',
+              padding: '0 4px'
+            }}
+          >
+            ✕
+          </button>
         </div>
       )}
 
