@@ -800,27 +800,6 @@ const StonkOptionsArenaV2 = ({
     // Now handled by TournamentSubmitSection
     return null;
   };
-            color: portfolioValidation?.isValid ? '#fff' : '#6b7280',
-            fontSize: '16px',
-            fontWeight: '700',
-            cursor: portfolioValidation?.isValid ? 'pointer' : 'not-allowed',
-            opacity: tournament.isSubmitting ? 0.7 : 1
-          }}
-        >
-          {tournament.isSubmitting ? 'Submitting...' : '🏆 Submit Entry to Tournament'}
-        </button>
-
-        <div style={{
-          textAlign: 'center',
-          marginTop: '8px',
-          fontSize: '11px',
-          color: '#6b7280'
-        }}>
-          Entry {tournament.entryCount + 1} of 3 • Cannot be modified after submission
-        </div>
-      </div>
-    );
-  };
 
   // Leaderboard Modal Component
   const LeaderboardModal = () => {
