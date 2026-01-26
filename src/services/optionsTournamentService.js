@@ -82,27 +82,20 @@ export const createWeeklyOptionsTournament = async (baseDate = new Date()) => {
  * @returns {Promise<Object|null>} - Current tournament or null
  */
 export const getCurrentOptionsTournament = async () => {
-  console.log('getCurrentOptionsTournament called');
-
   const existing = await getActiveOptionsTournament();
-  console.log('getActiveOptionsTournament returned:', existing);
 
   if (existing) return existing;
 
   // No active tournament - check if we should create one
   const now = new Date();
   const day = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
-  console.log('No active tournament, day of week:', day, '(0=Sun, 1=Mon, etc)');
 
   // Only auto-create Mon-Fri
   if (day >= 1 && day <= 5) {
-    console.log('Creating new tournament for weekday...');
     const newTournament = await createWeeklyOptionsTournament(now);
-    console.log('Created tournament:', newTournament);
     return newTournament;
   }
 
-  console.log('Weekend - not auto-creating tournament');
   return null;
 };
 
@@ -111,8 +104,6 @@ export const getCurrentOptionsTournament = async () => {
  * @returns {Promise<Object>} - Created tournament
  */
 export const createTestOptionsTournament = async () => {
-  console.log('createTestOptionsTournament called');
-
   const now = new Date();
   const year = now.getFullYear();
   const week = getWeekNumber(now);
@@ -137,9 +128,7 @@ export const createTestOptionsTournament = async () => {
     entryCount: 0
   };
 
-  console.log('Creating test tournament:', tournament);
   const created = await createOptionsTournament(tournament);
-  console.log('Test tournament created:', created);
   return created;
 };
 

@@ -69,15 +69,6 @@ const StonkOptionsArenaV2 = ({
 
   // Debug logging for tournament integration verification
   useEffect(() => {
-    console.log('=== StonkOptionsArenaV2 Debug ===');
-    console.log('user:', user);
-    console.log('user?.odUserId:', user?.odUserId);
-    console.log('user?.username:', user?.username);
-    console.log('tournamentMode:', tournamentMode);
-    console.log('tournament hook data:', tournament);
-    console.log('tournament.tournament:', tournament?.tournament);
-    console.log('tournament.canEnter:', tournament?.canEnter);
-    console.log('================================');
   }, [user, tournamentMode, tournament]);
 
   // Calculate tier counts from current contracts
@@ -88,7 +79,6 @@ const StonkOptionsArenaV2 = ({
       else if (contract.daysToExpiry === 7) counts.medium++;
       else if ([14, 21, 28].includes(contract.daysToExpiry)) counts.long++;
     }
-    console.log('tierCounts:', counts, 'contracts:', contracts.length);
     return counts;
   }, [contracts]);
 
@@ -726,11 +716,9 @@ const StonkOptionsArenaV2 = ({
 
   // Handler to create a test tournament (for development/testing)
   const handleCreateTestTournament = async () => {
-    console.log('handleCreateTestTournament called');
     try {
       const { createTestOptionsTournament } = await import('../services/optionsTournamentService');
       const newTournament = await createTestOptionsTournament();
-      console.log('Created test tournament:', newTournament);
       alert('🏆 Tournament created!\n\nName: ' + newTournament.name + '\n\nRefreshing data...');
       // Refresh tournament data
       tournament?.refresh?.();
@@ -742,7 +730,6 @@ const StonkOptionsArenaV2 = ({
 
   // Submit handler for tournament entry
   const handleSubmitToTournament = async () => {
-    console.log('handleSubmitToTournament called');
 
     if (!tournament?.tournament) {
       alert('No active tournament available');
@@ -778,7 +765,6 @@ const StonkOptionsArenaV2 = ({
     if (!confirmed) return;
 
     try {
-      console.log('Submitting entry with contracts:', contracts);
       await tournament.submitEntry(contracts);
 
       alert('🎉 Success!\n\nYour entry has been submitted.\n\nGood luck!');
@@ -833,7 +819,6 @@ const StonkOptionsArenaV2 = ({
           9  // Number of bots (you + 9 bots = 10 total)
         );
 
-        console.log('Bot population result:', result);
         alert(`🤖 Created ${result.botsCreated} bot competitors!\n\nRefresh the leaderboard to see them.`);
 
         // Refresh leaderboard
@@ -1431,14 +1416,9 @@ const StonkOptionsArenaV2 = ({
   // Tournament Portfolio View Component - Shows live portfolio after submission
   const TournamentPortfolioView = () => {
     // Debug logging
-    console.log('=== TournamentPortfolioView Debug ===');
-    console.log('tournament?.userEntries:', tournament?.userEntries);
-    console.log('tournament?.userEntries?.length:', tournament?.userEntries?.length);
-    console.log('tournament?.tournament?.status:', tournament?.tournament?.status);
 
     // Show empty state if no entries
     if (!tournament?.userEntries?.length) {
-      console.log('TournamentPortfolioView: Showing empty state - no user entries');
       return (
         <div style={{
           padding: '40px',
@@ -1472,7 +1452,6 @@ const StonkOptionsArenaV2 = ({
       );
     }
 
-    console.log('TournamentPortfolioView: SHOWING with', tournament.userEntries.length, 'entries');
 
     // Determine status for display
     const status = tournament.tournament?.status;
