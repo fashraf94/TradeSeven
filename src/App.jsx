@@ -76,7 +76,7 @@ import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen
 import DesktopBackground from './components/DesktopBackground';
 import { ConfirmationPopup } from './components/shared';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -11244,6 +11244,7 @@ export default function PortfolioDuel() {
   const { user, login, logout, updateUser, loading: userLoading } = useUser();
 
   const [screen, setScreen] = useState('home');
+  const [dashboardTab, setDashboardTab] = useState('pvp'); // 'pvp' | 'train' - dashboard tab state
   const [historyTab, setHistoryTab] = useState('draft'); // 'classic', 'draft', or 'training'
   const [username, setUsername] = useState('');
   const [portfolioName, setPortfolioName] = useState('');
@@ -18869,13 +18870,33 @@ export default function PortfolioDuel() {
                 <MarketClashLogo size="small" />
               </div>
 
-              {/* Right Side - User Info with Avatar */}
+              {/* Right Side - Token Balance + User Info */}
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
                 padding: '4px 8px'
               }}>
+                {/* Token Balance */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '4px 10px',
+                  background: 'rgba(245, 158, 11, 0.1)',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(245, 158, 11, 0.25)',
+                }}>
+                  <span style={{ fontSize: '14px' }}>🪙</span>
+                  <span style={{
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    color: '#f59e0b',
+                    fontFamily: "'SF Mono', 'Monaco', monospace",
+                  }}>
+                    {user?.tokens || 0}
+                  </span>
+                </div>
                 {/* Avatar Circle */}
                 <div style={{
                   width: '38px',
@@ -18917,11 +18938,11 @@ export default function PortfolioDuel() {
             </div>
           </header>
 
-          {/* Game Mode Toggle - Extracted Component */}
-          <GameModeToggle
-            activeTab="games"
+          {/* Dashboard Tabs - PVP | TRAIN & EARN | RESEARCH */}
+          <DashboardTabs
+            activeTab={dashboardTab}
+            setActiveTab={setDashboardTab}
             setShowResearchMode={setShowResearchMode}
-            setScreen={setScreen}
             colors={colors}
           />
 
@@ -18935,172 +18956,120 @@ export default function PortfolioDuel() {
               margin: '0 auto'
             }}
           >
-            {/* Active Battles Section - Extracted Component */}
-            <ActiveBattlesSection
-              activeBattles={activeBattles}
-              activeDraftBattles={activeDraftBattles}
-              activeTrainingBattles={activeTrainingBattles}
-              waitingBattles={waitingBattles}
-              user={user}
-              colors={colors}
-              setCurrentBattle={setCurrentBattle}
-              setCurrentDraft={setCurrentDraft}
-              setScreen={setScreen}
-              setActiveBattleId={setActiveBattleId}
-              copyToClipboard={copyToClipboard}
-              battleTimer={battleTimer}
-            />
+            {/* ═══════════════════════════════════════════════════════════
+                PVP TAB
+                ═══════════════════════════════════════════════════════════ */}
+            {dashboardTab === 'pvp' && (
+              <>
+                {/* Live Clashes - PVP battles (classic 1v1 + draft) */}
+                <LiveClashesSection
+                  activeBattles={activeBattles}
+                  activeDraftBattles={activeDraftBattles}
+                  activeTrainingBattles={[]}
+                  isTrainingMode={false}
+                  user={user}
+                  colors={colors}
+                  setCurrentBattle={setCurrentBattle}
+                  setCurrentDraft={setCurrentDraft}
+                  setScreen={setScreen}
+                  setActiveBattleId={setActiveBattleId}
+                />
 
+                {/* Enter the Arena - PVP game cards (COMPETE) */}
+                <GameModeCarousels
+                  mode="pvp"
+                  setTrainingConfirmType={setTrainingConfirmType}
+                  setShowTrainingConfirmModal={setShowTrainingConfirmModal}
+                  setShowClassicTrainingConfirm={setShowClassicTrainingConfirm}
+                  setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
+                  setScreen={setScreen}
+                  setShowSnakeDraftModal={setShowSnakeDraftModal}
+                  setShowBuilderModal={setShowBuilderModal}
+                  setShowBaggerBombModal={setShowBaggerBombModal}
+                  setShowOptionsArenaModal={setShowOptionsArenaModal}
+                />
 
-            {/* Game Mode Carousels - EARN COINS and COMPETE sections */}
-            <GameModeCarousels
-              // Training handlers
-              setTrainingConfirmType={setTrainingConfirmType}
-              setShowTrainingConfirmModal={setShowTrainingConfirmModal}
-              setShowClassicTrainingConfirm={setShowClassicTrainingConfirm}
-              setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
-              // Screen navigation
-              setScreen={setScreen}
-              // NEW: Modal handlers for COMPETE games
-              setShowSnakeDraftModal={setShowSnakeDraftModal}
-              setShowBuilderModal={setShowBuilderModal}
-              setShowBaggerBombModal={setShowBaggerBombModal}
-              setShowOptionsArenaModal={setShowOptionsArenaModal}
-            />
+                {/* Weekly Challenges */}
+                <WeeklyChallengesPanel
+                  showWeeklyChallenges={showWeeklyChallenges}
+                  setShowWeeklyChallenges={setShowWeeklyChallenges}
+                  weeklyChallenges={weeklyChallenges}
+                  activeDailyChallenge={activeDailyChallenge}
+                  challengeProgress={challengeProgress}
+                  completedWeeklyChallenges={completedWeeklyChallenges}
+                  expandedChallengeId={expandedChallengeId}
+                  setExpandedChallengeId={setExpandedChallengeId}
+                  acceptChallenge={acceptChallenge}
+                  colors={colors}
+                />
 
-            {/* Weekly Challenges Panel - Extracted Component */}
-            <WeeklyChallengesPanel
-              showWeeklyChallenges={showWeeklyChallenges}
-              setShowWeeklyChallenges={setShowWeeklyChallenges}
-              weeklyChallenges={weeklyChallenges}
-              activeDailyChallenge={activeDailyChallenge}
-              challengeProgress={challengeProgress}
-              completedWeeklyChallenges={completedWeeklyChallenges}
-              expandedChallengeId={expandedChallengeId}
-              setExpandedChallengeId={setExpandedChallengeId}
-              acceptChallenge={acceptChallenge}
-              colors={colors}
-            />
+                {/* Live Feed - community activity */}
+                <LiveFeed
+                  waitingBattles={waitingBattles}
+                  completedBattles={completedBattles}
+                  user={user}
+                  colors={colors}
+                  setCurrentBattle={setCurrentBattle}
+                  setScreen={setScreen}
+                  copyToClipboard={copyToClipboard}
+                />
+              </>
+            )}
 
+            {/* ═══════════════════════════════════════════════════════════
+                TRAIN & EARN TAB
+                ═══════════════════════════════════════════════════════════ */}
+            {dashboardTab === 'train' && (
+              <>
+                {/* Active Training - training battles only */}
+                <LiveClashesSection
+                  activeBattles={[]}
+                  activeDraftBattles={[]}
+                  activeTrainingBattles={activeTrainingBattles}
+                  isTrainingMode={true}
+                  user={user}
+                  colors={colors}
+                  setCurrentBattle={setCurrentBattle}
+                  setCurrentDraft={setCurrentDraft}
+                  setScreen={setScreen}
+                  setActiveBattleId={setActiveBattleId}
+                />
 
-            {/* Completed Battles - Compact List */}
-            {completedBattles.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.5 }}
-                style={{ marginBottom: '24px' }}
-              >
-                <h3 style={{
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: colors.textSecondary,
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                  marginBottom: '12px'
-                }}>
-                  Recent Battles
-                </h3>
-                {completedBattles.slice(0, 3).map(battle => {
-                  const result = battle.result;
-                  if (!result) return null;
-                  const won = result.winner === user.username;
-                  const userReturn = getUsername(battle.creator) === user.username ? result.creatorReturn : result.opponentReturn;
-                  const opponent = getUsername(battle.creator) === user.username ? getUsername(battle.opponent) : getUsername(battle.creator);
+                {/* Quick Play - Training game cards (EARN COINS) */}
+                <GameModeCarousels
+                  mode="train"
+                  setTrainingConfirmType={setTrainingConfirmType}
+                  setShowTrainingConfirmModal={setShowTrainingConfirmModal}
+                  setShowClassicTrainingConfirm={setShowClassicTrainingConfirm}
+                  setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
+                  setScreen={setScreen}
+                  setShowSnakeDraftModal={setShowSnakeDraftModal}
+                  setShowBuilderModal={setShowBuilderModal}
+                  setShowBaggerBombModal={setShowBaggerBombModal}
+                  setShowOptionsArenaModal={setShowOptionsArenaModal}
+                />
 
-                  return (
-                    <div
-                      key={battle.id}
-                      onClick={() => {
-                        setCurrentBattle(battle);
-                        setScreen('battle');
-                      }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '14px 18px',
-                        background: colors.cardBg,
-                        borderRadius: '12px',
-                        marginBottom: '8px',
-                        border: `1px solid ${won ? colors.green : colors.red}30`,
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = colors.cardHover;
-                        e.currentTarget.style.borderColor = won ? colors.green : colors.red;
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = colors.cardBg;
-                        e.currentTarget.style.borderColor = `${won ? colors.green : colors.red}30`;
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{
-                          width: '36px',
-                          height: '36px',
-                          borderRadius: '50%',
-                          background: won ? `${colors.green}20` : `${colors.red}20`,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}>
-                          {won ? (
-                            <Trophy style={{ height: '18px', width: '18px', color: colors.green }} />
-                          ) : (
-                            <Skull style={{ height: '18px', width: '18px', color: colors.red }} />
-                          )}
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '14px', fontWeight: '600', color: colors.textPrimary }}>
-                            vs {opponent}
-                          </div>
-                          <div style={{ fontSize: '12px', color: colors.textSecondary }}>
-                            {battle.isTrainingBattle ? 'Training' : battleTimer.formatDate(battle.completedAt || battle.endDate)}
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{
-                        fontSize: '16px',
-                        fontWeight: 'bold',
-                        color: userReturn >= 0 ? colors.green : colors.red
-                      }}>
-                        {userReturn >= 0 ? '+' : ''}{userReturn}%
-                      </div>
-                    </div>
-                  );
-                })}
-                {completedBattles.length > 3 && (
-                  <button
-                    onClick={() => {
-                      setShowPreviousBattles(true);
-                      setScreen('previousBattles');
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      background: 'transparent',
-                      border: `1px solid ${colors.borderSubtle}`,
-                      borderRadius: '10px',
-                      color: colors.textSecondary,
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = colors.cyan;
-                      e.currentTarget.style.color = colors.cyan;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = colors.borderSubtle;
-                      e.currentTarget.style.color = colors.textSecondary;
-                    }}
-                  >
-                    View All Battles ({completedBattles.length})
-                  </button>
-                )}
-              </motion.div>
+                {/* Weekly Challenges */}
+                <WeeklyChallengesPanel
+                  showWeeklyChallenges={showWeeklyChallenges}
+                  setShowWeeklyChallenges={setShowWeeklyChallenges}
+                  weeklyChallenges={weeklyChallenges}
+                  activeDailyChallenge={activeDailyChallenge}
+                  challengeProgress={challengeProgress}
+                  completedWeeklyChallenges={completedWeeklyChallenges}
+                  expandedChallengeId={expandedChallengeId}
+                  setExpandedChallengeId={setExpandedChallengeId}
+                  acceptChallenge={acceptChallenge}
+                  colors={colors}
+                />
+
+                {/* Your Activity - personal timeline */}
+                <YourActivity
+                  completedBattles={completedBattles}
+                  user={user}
+                  colors={colors}
+                />
+              </>
             )}
           </div>
 

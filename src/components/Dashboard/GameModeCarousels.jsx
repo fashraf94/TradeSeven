@@ -1,83 +1,13 @@
 // /src/components/Dashboard/GameModeCarousels.jsx
-// Horizontal scroll carousels for game modes - EARN COINS and COMPETE sections
-// Major consolidation: unified carousel view with themed cards
+// Horizontal scroll carousels for game modes
+// Supports mode prop: 'pvp' (Enter the Arena), 'train' (Quick Play), 'all' (both)
 // Features: Infinite/endless carousel with seamless looping
 
-import React, { useRef, useEffect, useCallback } from 'react';
+import React from 'react';
 import { Zap, Swords } from 'lucide-react';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import ThemedGameCard from './ThemedGameCard';
-
-// Carousel container style with hidden scrollbar
-const carouselContainerStyle = {
-  display: 'flex',
-  overflowX: 'auto',
-  scrollSnapType: 'x mandatory',
-  gap: '12px',
-  padding: '0 16px 16px 16px',
-  scrollbarWidth: 'none',        // Firefox
-  msOverflowStyle: 'none',       // IE/Edge
-  WebkitOverflowScrolling: 'touch', // Smooth iOS scroll
-};
-
-// Infinite Carousel component with seamless looping
-const InfiniteCarousel = ({ items, renderCard }) => {
-  const carouselRef = useRef(null);
-  const isScrollingRef = useRef(false);
-
-  // Duplicate items 3x for seamless infinite loop
-  const triplicatedItems = [...items, ...items, ...items];
-
-  // Initialize scroll position to middle set
-  useEffect(() => {
-    if (carouselRef.current) {
-      const container = carouselRef.current;
-      // Small delay to ensure layout is complete
-      requestAnimationFrame(() => {
-        const singleSetWidth = container.scrollWidth / 3;
-        container.scrollLeft = singleSetWidth;
-      });
-    }
-  }, [items.length]);
-
-  // Handle scroll for infinite loop effect
-  const handleScroll = useCallback((e) => {
-    if (isScrollingRef.current) return;
-
-    const container = e.target;
-    const singleSetWidth = container.scrollWidth / 3;
-    const scrollLeft = container.scrollLeft;
-    const threshold = 50; // Buffer zone for smoother transitions
-
-    // If scrolled near the end (3rd set), jump back to middle (2nd set)
-    if (scrollLeft >= singleSetWidth * 2 - threshold) {
-      isScrollingRef.current = true;
-      container.scrollLeft = singleSetWidth + (scrollLeft - singleSetWidth * 2);
-      requestAnimationFrame(() => {
-        isScrollingRef.current = false;
-      });
-    }
-    // If scrolled near the beginning (before 1st set), jump to middle (2nd set)
-    else if (scrollLeft <= threshold) {
-      isScrollingRef.current = true;
-      container.scrollLeft = singleSetWidth + scrollLeft;
-      requestAnimationFrame(() => {
-        isScrollingRef.current = false;
-      });
-    }
-  }, []);
-
-  return (
-    <div
-      ref={carouselRef}
-      onScroll={handleScroll}
-      className="carousel-scroll"
-      style={carouselContainerStyle}
-    >
-      {triplicatedItems.map((item, index) => renderCard(item, index))}
-    </div>
-  );
-};
+import InfiniteCarousel from './InfiniteCarousel';
 
 // Section header style - prominent gradient text with italic styling
 const sectionHeaderStyle = {
@@ -110,21 +40,23 @@ const sectionSubtitleStyle = {
 };
 
 export default function GameModeCarousels({
+  // Mode: 'pvp' shows COMPETE only, 'train' shows EARN COINS only, 'all' shows both
+  mode = 'all',
   // Training handlers
   setTrainingConfirmType,
   setShowTrainingConfirmModal,
   setShowClassicTrainingConfirm,
-  setShowBaggerBombTrainingConfirm, // NEW: Separate BaggerBomb training modal
+  setShowBaggerBombTrainingConfirm,
   // Screen navigation
   setScreen,
-  // NEW: Modal handlers for COMPETE games
+  // Modal handlers for COMPETE games
   setShowSnakeDraftModal,
   setShowBuilderModal,
   setShowBaggerBombModal,
   setShowOptionsArenaModal,
 }) {
   // ═══════════════════════════════════════════════════════════════
-  // EARN COINS CARDS (Training)
+  // EARN COINS / QUICK PLAY CARDS (Training)
   // ═══════════════════════════════════════════════════════════════
   const earnCoinsCards = [
     {
@@ -135,7 +67,6 @@ export default function GameModeCarousels({
       duration: '~5 min',
       isTraining: true,
       onClick: () => {
-        // Open modal with Stocks/Crypto selector
         setTrainingConfirmType('stocks');
         setShowTrainingConfirmModal(true);
       },
@@ -148,7 +79,6 @@ export default function GameModeCarousels({
       duration: '~5 min',
       isTraining: true,
       onClick: () => {
-        // Classic battle training only (no BaggerBomb selector)
         setShowClassicTrainingConfirm(true);
       },
     },
@@ -160,7 +90,6 @@ export default function GameModeCarousels({
       duration: '~5 min',
       isTraining: true,
       onClick: () => {
-        // BaggerBomb training modal
         setShowBaggerBombTrainingConfirm(true);
       },
     },
@@ -172,14 +101,13 @@ export default function GameModeCarousels({
       duration: null,
       isTraining: true,
       onClick: () => {
-        // Direct navigation - no modal needed for training
         setScreen('stonkOptionsArena');
       },
     },
   ];
 
   // ═══════════════════════════════════════════════════════════════
-  // COMPETE CARDS (Real Games)
+  // COMPETE / ENTER THE ARENA CARDS (Real Games)
   // ═══════════════════════════════════════════════════════════════
   const competeCards = [
     {
@@ -228,6 +156,15 @@ export default function GameModeCarousels({
     },
   ];
 
+  const showTraining = mode === 'all' || mode === 'train';
+  const showCompete = mode === 'all' || mode === 'pvp';
+
+  // Section labels change based on mode
+  const trainLabel = mode === 'train' ? 'QUICK PLAY' : 'EARN COINS';
+  const trainSubtitle = mode === 'train' ? '— Practice against AI' : '— Low-risk training to build your balance';
+  const competeLabel = mode === 'pvp' ? 'ENTER THE ARENA' : 'COMPETE';
+  const competeSubtitle = mode === 'pvp' ? '— Challenge friends or rivals' : '— Challenge friends or rivals';
+
   return (
     <>
       {/* CSS to hide scrollbar for webkit browsers */}
@@ -238,70 +175,70 @@ export default function GameModeCarousels({
       `}</style>
 
       {/* ═══════════════════════════════════════════════════════════════
-          EARN COINS SECTION - Training modes to build balance
+          TRAINING SECTION
           ═══════════════════════════════════════════════════════════════ */}
-      <div style={{ marginBottom: '24px' }}>
-        {/* Section Header - Purple gradient */}
-        <div style={sectionHeaderStyle}>
-          <Zap size={18} color={HOLO_COLORS.purple} />
-          <span style={getSectionTitleStyle(HOLO_COLORS.purple, '#a78bfa')}>
-            EARN COINS
-          </span>
-          <span style={sectionSubtitleStyle}>
-            — Low-risk training to build your balance
-          </span>
-        </div>
+      {showTraining && (
+        <div style={{ marginBottom: '24px' }}>
+          <div style={sectionHeaderStyle}>
+            <Zap size={18} color={HOLO_COLORS.purple} />
+            <span style={getSectionTitleStyle(HOLO_COLORS.purple, '#a78bfa')}>
+              {trainLabel}
+            </span>
+            <span style={sectionSubtitleStyle}>
+              {trainSubtitle}
+            </span>
+          </div>
 
-        {/* Infinite Carousel */}
-        <InfiniteCarousel
-          items={earnCoinsCards}
-          renderCard={(card, index) => (
-            <ThemedGameCard
-              key={`${card.id}-${index}`}
-              theme={card.theme}
-              title={card.title}
-              description={card.description}
-              duration={card.duration}
-              onClick={card.onClick}
-              index={index % earnCoinsCards.length}
-              isTraining={card.isTraining}
-            />
-          )}
-        />
-      </div>
+          <InfiniteCarousel
+            items={earnCoinsCards}
+            renderCard={(card, index) => (
+              <ThemedGameCard
+                key={`${card.id}-${index}`}
+                theme={card.theme}
+                title={card.title}
+                description={card.description}
+                duration={card.duration}
+                onClick={card.onClick}
+                index={index % earnCoinsCards.length}
+                isTraining={card.isTraining}
+              />
+            )}
+          />
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════
-          COMPETE SECTION - Real games against real opponents
+          COMPETE SECTION
           ═══════════════════════════════════════════════════════════════ */}
-      <div style={{ marginBottom: '24px' }}>
-        {/* Section Header - Green gradient */}
-        <div style={sectionHeaderStyle}>
-          <Swords size={18} color={HOLO_COLORS.defensive} />
-          <span style={getSectionTitleStyle(HOLO_COLORS.defensive, '#34d399')}>
-            COMPETE
-          </span>
-          <span style={sectionSubtitleStyle}>
-            — Challenge friends or rivals
-          </span>
-        </div>
+      {showCompete && (
+        <div style={{ marginBottom: '24px' }}>
+          <div style={sectionHeaderStyle}>
+            <Swords size={18} color={HOLO_COLORS.defensive} />
+            <span style={getSectionTitleStyle(HOLO_COLORS.defensive, '#34d399')}>
+              {competeLabel}
+            </span>
+            <span style={sectionSubtitleStyle}>
+              {competeSubtitle}
+            </span>
+          </div>
 
-        {/* Infinite Carousel */}
-        <InfiniteCarousel
-          items={competeCards}
-          renderCard={(card, index) => (
-            <ThemedGameCard
-              key={`${card.id}-${index}`}
-              theme={card.theme}
-              title={card.title}
-              description={card.description}
-              duration={card.duration}
-              onClick={card.onClick}
-              index={index % competeCards.length}
-              isTraining={card.isTraining}
-            />
-          )}
-        />
-      </div>
+          <InfiniteCarousel
+            items={competeCards}
+            renderCard={(card, index) => (
+              <ThemedGameCard
+                key={`${card.id}-${index}`}
+                theme={card.theme}
+                title={card.title}
+                description={card.description}
+                duration={card.duration}
+                onClick={card.onClick}
+                index={index % competeCards.length}
+                isTraining={card.isTraining}
+              />
+            )}
+          />
+        </div>
+      )}
     </>
   );
 }

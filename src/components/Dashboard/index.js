@@ -15,3 +15,10 @@ export { default as ActiveBattlesSection } from './ActiveBattlesSection';
 export { default as WeeklyChallengesPanel } from './WeeklyChallengesPanel';
 export { default as GameModeCarousels } from './GameModeCarousels';
 export { default as ThemedGameCard, GAME_THEMES } from './ThemedGameCard';
+// New dashboard redesign components
+export { default as DashboardTabs } from './DashboardTabs';
+export { default as ClashCard } from './ClashCard';
+export { default as LiveClashesSection } from './LiveClashesSection';
+export { default as LiveFeed } from './LiveFeed';
+export { default as YourActivity } from './YourActivity';
+export { default as InfiniteCarousel } from './InfiniteCarousel';
