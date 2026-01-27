@@ -76,7 +76,7 @@ import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen
 import DesktopBackground from './components/DesktopBackground';
 import { ConfirmationPopup } from './components/shared';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity, SeasonalBanner } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -18975,6 +18975,13 @@ export default function PortfolioDuel() {
                   setActiveBattleId={setActiveBattleId}
                 />
 
+                {/* Seasonal Banner - EarningsGame Tournament */}
+                <SeasonalBanner
+                  variant="pvp"
+                  setScreen={setScreen}
+                  colors={colors}
+                />
+
                 {/* Enter the Arena - PVP game cards (COMPETE) */}
                 <GameModeCarousels
                   mode="pvp"
@@ -19033,6 +19040,13 @@ export default function PortfolioDuel() {
                   setCurrentDraft={setCurrentDraft}
                   setScreen={setScreen}
                   setActiveBattleId={setActiveBattleId}
+                />
+
+                {/* Seasonal Banner - 2X Practice Drills */}
+                <SeasonalBanner
+                  variant="train"
+                  setScreen={setScreen}
+                  colors={colors}
                 />
 
                 {/* Quick Play - Training game cards (EARN COINS) */}

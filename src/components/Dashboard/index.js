@@ -22,3 +22,4 @@ export { default as LiveClashesSection } from './LiveClashesSection';
 export { default as LiveFeed } from './LiveFeed';
 export { default as YourActivity } from './YourActivity';
 export { default as InfiniteCarousel } from './InfiniteCarousel';
+export { default as SeasonalBanner } from './SeasonalBanner';
