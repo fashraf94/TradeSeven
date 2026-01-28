@@ -19014,6 +19014,7 @@ export default function PortfolioDuel() {
                 <LiveFeed
                   waitingBattles={waitingBattles}
                   completedBattles={completedBattles}
+                  stocksData={stocksData}
                   user={user}
                   colors={colors}
                   setCurrentBattle={setCurrentBattle}
