@@ -13824,6 +13824,23 @@ export default function PortfolioDuel() {
 
     // Update user via context (handles state and persistence)
     updateUser(updates);
+
+    // Update weekly challenge progress
+    const isCreator = getUsername(battle.creator) === user.username;
+    const userReturn = isCreator
+      ? (battle.result.creatorReturn ?? 0)
+      : (battle.result.opponentReturn ?? 0);
+    const battleGameMode = (battle.isSnakeDraft || battle.battleType === 'snake-draft')
+      ? 'snake'
+      : 'classic';
+
+    updateWeeklyChallengeProgress({
+      won,
+      returnPercent: userReturn,
+      greenAssetCount: 0,
+      allAssetsGreen: false,
+      position: won ? 1 : 2,
+    }, battleGameMode);
   }
 
   // Archive a completed battle (move from completed to previous battles)
