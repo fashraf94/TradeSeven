@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* DEBUG: Force SeasonalBanner to column layout on mobile */
+@media (max-width: 480px) {
+  [data-testid="seasonal-banner"] {
+    flex-direction: column !important;
+  }
+  [data-testid="seasonal-banner"] > button {
+    width: 100% !important;
+  }
+}
+
 /* Prevent iOS auto-zoom on input focus */
 input,
 select,
