@@ -1,72 +1,87 @@
-// /src/components/Dashboard/WeeklyChallenges/CardBack.jsx
-// Back face of challenge card - description + ACCEPT button
+// Back face of tarot-style challenge card
+// Description, difficulty, reward, ACCEPT button - tall centered layout
 
 import { motion } from 'framer-motion';
 import { getDifficultyColor } from './challengeDefinitions';
 
-export default function CardBack({ challenge, onAccept }) {
+export default function CardBack({ challenge, accentColor, onAccept }) {
   const diffColor = getDifficultyColor(challenge.difficulty);
 
   return (
     <div style={{
-      padding: '16px',
+      height: '100%',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      minHeight: '72px',
-      gap: '12px',
+      padding: '24px 16px',
+      gap: '16px',
+      textAlign: 'center',
     }}>
+      {/* Challenge icon */}
+      <span style={{ fontSize: '28px' }}>{challenge.icon}</span>
+
+      {/* Description */}
       <p style={{
-        color: 'rgba(255, 255, 255, 0.8)',
+        color: 'rgba(255, 255, 255, 0.85)',
         fontSize: '13px',
         margin: 0,
-        textAlign: 'center',
-        lineHeight: 1.5,
+        lineHeight: 1.6,
+        maxWidth: '140px',
       }}>
         {challenge.description}
       </p>
 
+      {/* Divider */}
       <div style={{
-        fontSize: '11px',
-        color: '#8b949e',
-        textAlign: 'center',
-      }}>
-        Difficulty:{' '}
-        <span style={{
-          color: diffColor,
-          fontWeight: '700',
-          textTransform: 'uppercase',
-        }}>
-          {challenge.difficulty}
-        </span>
-        {' • '}
-        <span style={{ color: '#a78bfa', fontWeight: '700' }}>
-          {challenge.xp} XP
-        </span>
+        width: '60%',
+        height: '1px',
+        background: `linear-gradient(90deg, transparent, ${accentColor}66, transparent)`,
+      }} />
+
+      {/* Difficulty + reward */}
+      <div style={{ fontSize: '11px', color: '#8b949e' }}>
+        <div style={{ marginBottom: '4px' }}>
+          Difficulty:{' '}
+          <span style={{
+            color: diffColor,
+            fontWeight: '700',
+            textTransform: 'uppercase',
+          }}>
+            {challenge.difficulty}
+          </span>
+        </div>
+        <div>
+          Reward:{' '}
+          <span style={{ color: accentColor, fontWeight: '700' }}>
+            +{challenge.xp} XP
+          </span>
+        </div>
       </div>
 
+      {/* Accept button */}
       <motion.button
-        whileHover={{ scale: 1.03 }}
-        whileTap={{ scale: 0.97 }}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
         onClick={(e) => {
           e.stopPropagation();
           onAccept();
         }}
         style={{
-          background: 'linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)',
+          background: `linear-gradient(135deg, ${accentColor}, ${accentColor}cc)`,
           color: '#fff',
           border: 'none',
           padding: '10px 24px',
           borderRadius: '8px',
-          fontSize: '12px',
-          fontWeight: '700',
+          fontSize: '11px',
+          fontWeight: '800',
           cursor: 'pointer',
-          letterSpacing: '0.5px',
+          letterSpacing: '1px',
           textTransform: 'uppercase',
+          boxShadow: `0 0 20px ${accentColor}44`,
         }}
       >
-        ACCEPT CHALLENGE
+        ACCEPT
       </motion.button>
     </div>
   );

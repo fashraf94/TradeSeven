@@ -1,11 +1,11 @@
 // /src/components/Dashboard/WeeklyChallenges/index.jsx
-// Main Weekly Challenges container with card-flip mechanic
+// Weekly Challenges with premium tarot card carousel
 // Drop-in replacement for WeeklyChallengesPanel with same props interface
 
 import React from 'react';
 import { motion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
-import ChallengeCard from './ChallengeCard';
+import ChallengeCarousel from './ChallengeCarousel';
 import WeeklyBonusCard from './WeeklyBonusCard';
 import { getTimeUntilReset } from './challengeDefinitions';
 
@@ -84,52 +84,47 @@ const WeeklyChallengesPanel = ({
         </motion.div>
       </div>
 
-      {/* Expandable content with challenge cards */}
+      {/* Expandable content with tarot card carousel */}
       {showWeeklyChallenges && (
         <motion.div
           initial={{ height: 0, opacity: 0 }}
           animate={{ height: 'auto', opacity: 1 }}
           style={{ overflow: 'hidden' }}
         >
+          {/* Active Challenge Indicator */}
+          {activeDailyChallenge && activeDailyChallenge.acceptedDate === new Date().toISOString().split('T')[0] && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{
+                background: 'rgba(168, 85, 247, 0.2)',
+                border: '1px solid #A855F7',
+                borderRadius: '8px',
+                padding: '10px 12px',
+                margin: '0 16px 8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '13px',
+                color: '#e6edf3',
+              }}
+            >
+              <span style={{ color: '#A855F7', fontSize: '14px' }}>⚡</span>
+              Active Today: <strong>{activeDailyChallenge.name}</strong>
+            </motion.div>
+          )}
+
+          {/* Tarot Card Carousel */}
+          <ChallengeCarousel
+            challenges={weeklyChallenges}
+            activeDailyChallenge={activeDailyChallenge}
+            completedWeeklyChallenges={completedWeeklyChallenges}
+            challengeProgress={challengeProgress}
+            onAccept={acceptChallenge}
+          />
+
+          {/* Weekly Bonus Progress */}
           <div style={{ padding: '0 16px 16px' }}>
-            {/* Active Challenge Indicator */}
-            {activeDailyChallenge && activeDailyChallenge.acceptedDate === new Date().toISOString().split('T')[0] && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                style={{
-                  background: 'rgba(168, 85, 247, 0.2)',
-                  border: '1px solid #A855F7',
-                  borderRadius: '8px',
-                  padding: '10px 12px',
-                  marginBottom: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontSize: '13px',
-                  color: '#e6edf3',
-                }}
-              >
-                <span style={{ color: '#A855F7', fontSize: '14px' }}>⚡</span>
-                Active Today: <strong>{activeDailyChallenge.name}</strong>
-              </motion.div>
-            )}
-
-            {/* Challenge Cards with flip animation */}
-            {weeklyChallenges.map((challenge, index) => (
-              <ChallengeCard
-                key={challenge.id}
-                challenge={challenge}
-                index={index}
-                activeDailyChallenge={activeDailyChallenge}
-                completedWeeklyChallenges={completedWeeklyChallenges}
-                challengeProgress={challengeProgress}
-                onAccept={acceptChallenge}
-                colors={colors}
-              />
-            ))}
-
-            {/* Weekly Bonus Progress */}
             <WeeklyBonusCard
               completedCount={completedCount}
               canClaim={canClaimBonus}

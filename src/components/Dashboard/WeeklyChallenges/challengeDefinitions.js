@@ -16,6 +16,72 @@ export const CHALLENGE_COLORS = {
   completed: '#00d9ff',
 };
 
+// Signature accent colors per challenge slot type (for tarot cards)
+export const SIGNATURE_COLORS = {
+  classic: '#00d9ff',   // Cyan
+  snake: '#10b981',     // Emerald
+  wildcard: '#8b5cf6',  // Purple
+  universal: '#f59e0b', // Gold
+};
+
+// Get signature color from challenge slot
+export const getSignatureColor = (challenge) => {
+  return SIGNATURE_COLORS[challenge.slot] || SIGNATURE_COLORS[challenge.gameMode] || '#8b5cf6';
+};
+
+// Unique flip animation variants per slot type
+export const FLIP_VARIANTS = {
+  // Classic Mode: "Sword Strike Flip" - dips down like a sword swing
+  classic: {
+    front: { rotateY: 0, y: 0 },
+    back: { rotateY: 180, y: [0, 15, 0] },
+    transition: {
+      type: 'spring',
+      stiffness: 300,
+      damping: 25,
+      y: { duration: 0.4 },
+    },
+  },
+  // Snake Draft: "Slither Flip" - serpentine wave
+  snake: {
+    front: { rotateY: 0, skewY: 0 },
+    back: { rotateY: 180, skewY: [0, 3, -3, 0] },
+    transition: {
+      type: 'spring',
+      stiffness: 250,
+      damping: 20,
+      skewY: { duration: 0.5, times: [0, 0.3, 0.6, 1] },
+    },
+  },
+  // Wild Card: "Chaos Flip" - diagonal wobble
+  wildcard: {
+    front: { rotateY: 0, rotateZ: 0, scale: 1 },
+    back: { rotateY: 180, rotateZ: [0, -8, 5, -3, 0], scale: [1, 1.05, 0.98, 1] },
+    transition: {
+      type: 'spring',
+      stiffness: 200,
+      damping: 15,
+      rotateZ: { duration: 0.6 },
+      scale: { duration: 0.6 },
+    },
+  },
+  // Any Mode: "Champion Spin" - full 360 ceremonial spin
+  universal: {
+    front: { rotateY: 0, scale: 1 },
+    back: { rotateY: 360, scale: [1, 1.1, 1] },
+    transition: {
+      duration: 0.8,
+      ease: [0.4, 0, 0.2, 1],
+      scale: { duration: 0.8, times: [0, 0.5, 1] },
+    },
+  },
+};
+
+// Get flip variants for a challenge based on its slot
+export const getFlipVariants = (challenge) => {
+  return FLIP_VARIANTS[challenge.slot] || FLIP_VARIANTS[challenge.gameMode] || FLIP_VARIANTS.classic;
+};
+
 export const getDifficultyColor = (difficulty) => {
   return CHALLENGE_COLORS[difficulty] || '#ffffff';
 };
