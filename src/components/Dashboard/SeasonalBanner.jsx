@@ -70,7 +70,7 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
         borderLeft: '3px solid #f59e0b',
         // ALWAYS stack vertically on mobile for button visibility
         display: 'flex',
-        flexDirection: isMobile ? 'column' : 'row',
+        flexDirection: 'column', // HARDCODED for testing
         alignItems: isMobile ? 'stretch' : 'center',
         gap: '12px',
       }}
@@ -120,7 +120,7 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
         onMouseLeave={() => setIsHovered(false)}
         style={{
           // Full width on mobile, auto on desktop
-          width: isMobile ? '100%' : 'auto',
+          width: '100%', // HARDCODED for testing
           padding: isMobile ? '12px 16px' : '8px 16px',
           background: isHovered
             ? 'linear-gradient(135deg, #d97706 0%, #b45309 100%)'
