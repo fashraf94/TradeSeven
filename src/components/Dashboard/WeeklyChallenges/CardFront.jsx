@@ -35,14 +35,6 @@ export default function CardFront({ challenge, state, progress, accentColor }) {
       opacity: isLocked ? 0.5 : 1,
       transition: 'filter 0.3s, opacity 0.3s',
     }}>
-      {/* Top: Challenge icon emoji */}
-      <div style={{
-        fontSize: '20px',
-        marginBottom: '4px',
-      }}>
-        {challenge.icon}
-      </div>
-
       {/* Center: Silhouette area */}
       <div style={{
         flex: 1,

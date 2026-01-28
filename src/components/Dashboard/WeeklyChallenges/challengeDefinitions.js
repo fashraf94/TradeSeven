@@ -65,10 +65,10 @@ export const FLIP_VARIANTS = {
       scale: { duration: 0.6 },
     },
   },
-  // Any Mode: "Champion Spin" - full 360 ceremonial spin
+  // Any Mode: "Champion Spin" - full 360 + 180 so back face is visible at end
   universal: {
     front: { rotateY: 0, scale: 1 },
-    back: { rotateY: 360, scale: [1, 1.1, 1] },
+    back: { rotateY: 540, scale: [1, 1.1, 1] },
     transition: {
       duration: 0.8,
       ease: [0.4, 0, 0.2, 1],

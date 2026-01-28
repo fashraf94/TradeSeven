@@ -38,22 +38,17 @@ const WeeklyChallengesPanel = ({
       transition={{ duration: 0.4, delay: 0.45 }}
       style={{
         marginBottom: '24px',
-        background: colors?.cardBg || '#0d1117',
-        borderRadius: '16px',
-        border: `1px solid ${colors?.border || '#21262d'}`,
-        overflow: 'hidden',
       }}
     >
       {/* Header - clickable to expand/collapse */}
       <div
         onClick={() => setShowWeeklyChallenges(!showWeeklyChallenges)}
         style={{
-          padding: '16px',
+          padding: '16px 0',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           cursor: 'pointer',
-          background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1), transparent)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -101,7 +96,7 @@ const WeeklyChallengesPanel = ({
                 border: '1px solid #A855F7',
                 borderRadius: '8px',
                 padding: '10px 12px',
-                margin: '0 16px 8px',
+                margin: '0 0 8px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
@@ -124,7 +119,7 @@ const WeeklyChallengesPanel = ({
           />
 
           {/* Weekly Bonus Progress */}
-          <div style={{ padding: '0 16px 16px' }}>
+          <div style={{ padding: '0 0 4px' }}>
             <WeeklyBonusCard
               completedCount={completedCount}
               canClaim={canClaimBonus}
