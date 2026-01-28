@@ -76,6 +76,11 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
         gap: '12px',
       }}
     >
+      {/* DEBUG INDICATOR - REMOVE AFTER TESTING */}
+      <div style={{ color: 'red', fontSize: '20px', fontWeight: 'bold', background: 'yellow', padding: '4px' }}>
+        DEBUG: isMobile = {String(isMobile)} | width = {typeof window !== 'undefined' ? window.innerWidth : 'SSR'}
+      </div>
+
       {/* Top row: Icon + Text */}
       <div style={{
         display: 'flex',
