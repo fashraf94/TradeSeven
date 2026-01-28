@@ -3,8 +3,9 @@
 // PVP variant: EarningsGame Tournament CTA
 // TRAIN variant: 2X Practice Drills promo
 // Hardcoded isSeasonalActive = true for now
+// Mobile: Stacks vertically with full-width button
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
 // Hardcode seasonal active state until backend provides it
@@ -29,11 +30,25 @@ const VARIANTS = {
 
 export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
   const [isHovered, setIsHovered] = useState(false);
+  // Use state for responsive detection
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' && window.innerWidth < 500
+  );
+
+  // Update on resize
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 500);
+    };
+    window.addEventListener('resize', handleResize);
+    // Check on mount
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   if (!isSeasonalActive) return null;
 
   const config = VARIANTS[variant] || VARIANTS.pvp;
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 480;
 
   const handleCTA = () => {
     if (config.action && setScreen) {
@@ -52,8 +67,8 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
         background: 'linear-gradient(135deg, rgba(245,158,11,0.12) 0%, rgba(217,119,6,0.08) 100%)',
         borderRadius: '12px',
         borderLeft: '3px solid #f59e0b',
+        // ALWAYS stack vertically on mobile for button visibility
         display: 'flex',
-        // Stack vertically on mobile, horizontal on desktop
         flexDirection: isMobile ? 'column' : 'row',
         alignItems: isMobile ? 'stretch' : 'center',
         gap: '12px',
@@ -64,12 +79,12 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
         display: 'flex',
         alignItems: 'center',
         gap: '12px',
-        flex: 1,
+        flex: isMobile ? 'none' : 1,
         minWidth: 0,
       }}>
         {/* Icon */}
         <span style={{
-          fontSize: '22px',
+          fontSize: isMobile ? '20px' : '22px',
           flexShrink: 0,
           lineHeight: 1,
         }}>
@@ -97,24 +112,27 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
         </div>
       </div>
 
-      {/* CTA Button - full width on mobile */}
+      {/* CTA Button - FULL WIDTH on mobile, always visible */}
       <button
         onClick={handleCTA}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         style={{
-          padding: isMobile ? '10px 16px' : '8px 16px',
+          // Full width on mobile, auto on desktop
           width: isMobile ? '100%' : 'auto',
+          padding: isMobile ? '12px 16px' : '8px 16px',
           background: isHovered
             ? 'linear-gradient(135deg, #d97706 0%, #b45309 100%)'
             : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
           border: 'none',
           borderRadius: '8px',
           color: '#0d1117',
-          fontSize: '11px',
+          fontSize: isMobile ? '12px' : '11px',
           fontWeight: '800',
           cursor: 'pointer',
+          // Don't shrink or allow overflow
           flexShrink: 0,
+          whiteSpace: 'nowrap',
           letterSpacing: '0.5px',
           transition: 'all 0.2s ease',
           boxShadow: isHovered
