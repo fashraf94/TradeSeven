@@ -1,0 +1,166 @@
+// /src/components/Dashboard/ClashCard/index.jsx
+// Smart wrapper that selects the correct Clash Card variant
+// Handles data extraction from battle objects and delegates to sub-components
+
+import React, { useState, useEffect } from 'react';
+import ClashCard1v1 from './ClashCard1v1';
+import ClashCardDraft from './ClashCardDraft';
+import ClashCardTraining from './ClashCardTraining';
+import { getUsername } from '../../../utils/battleHelpers';
+import { getRemainingTime } from '../../../services/battleTimer';
+
+// Calculate 1v1 battle preview data
+function calculate1v1PreviewData(battle, username) {
+  if (!battle) return null;
+  const isCreator = getUsername(battle.creator) === username;
+  const opponent = isCreator ? getUsername(battle.opponent) : getUsername(battle.creator);
+  const myPortfolio = isCreator ? battle.creatorPortfolio : battle.opponentPortfolio;
+  const theirPortfolio = isCreator ? battle.opponentPortfolio : battle.creatorPortfolio;
+
+  if (!myPortfolio || !theirPortfolio) return null;
+
+  let myValue = 0;
+  myPortfolio.forEach(asset => {
+    const shares = asset.amount / asset.price;
+    myValue += shares * asset.price;
+  });
+
+  let theirValue = 0;
+  theirPortfolio.forEach(asset => {
+    const shares = asset.amount / asset.price;
+    theirValue += shares * asset.price;
+  });
+
+  const myGain = ((myValue - 1000000) / 1000000) * 100;
+  const theirGain = ((theirValue - 1000000) / 1000000) * 100;
+  const isWinning = myGain > theirGain;
+
+  return { opponent, myGain, theirGain, isWinning, myValue, theirValue };
+}
+
+// Get remaining ms from battle object (handles both classic and draft formats)
+function getRemainingMs(battle) {
+  // Classic battle format
+  if (battle.endDate) {
+    return Math.max(0, new Date(battle.endDate).getTime() - Date.now());
+  }
+  // Draft battle format
+  if (battle.battleEndTime) {
+    return Math.max(0, new Date(battle.battleEndTime).getTime() - Date.now());
+  }
+  // Training format
+  if (battle.timeline?.endDate) {
+    return Math.max(0, new Date(battle.timeline.endDate).getTime() - Date.now());
+  }
+  return 0;
+}
+
+// Build standings for draft battles
+function buildDraftStandings(battle, currentUserId) {
+  if (!battle.players || battle.players.length === 0) {
+    return { standings: [], myPosition: 1, myReturn: 0, leaderReturn: 0 };
+  }
+
+  // Map players with basic info
+  const players = battle.players.map((p) => ({
+    name: p.displayName || p.username || 'Player',
+    isCPU: p.isCPU || false,
+    isMe: p.odUserId === currentUserId || p.displayName === currentUserId,
+    return: p.totalGain ?? p.percentChange ?? 0,
+  }));
+
+  // Sort by return descending
+  const sorted = [...players].sort((a, b) => b.return - a.return);
+
+  const myPlayer = sorted.find(p => p.isMe);
+  const myPosition = myPlayer ? sorted.indexOf(myPlayer) + 1 : sorted.length;
+  const myReturn = myPlayer?.return ?? 0;
+  const leaderReturn = sorted.length > 0 ? sorted[0].return : 0;
+
+  return { standings: sorted, myPosition, myReturn, leaderReturn };
+}
+
+export default function ClashCard({
+  battle,
+  battleType, // 'classic' | 'draft' | 'training'
+  user,
+  onPress,
+  isMostUrgent = false,
+}) {
+  // Live timer that ticks every second
+  const [remainingMs, setRemainingMs] = useState(() => getRemainingMs(battle));
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRemainingMs(getRemainingMs(battle));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [battle]);
+
+  const currentUserId = user?.odUserId || user?.username;
+
+  // TRAINING battles (simplified purple variant)
+  if (battleType === 'training') {
+    const myReturn = battle.player1?.percentChange || 0;
+    const cpuReturn = battle.player2?.percentChange || 0;
+
+    // Check if it's a draft-type training (has players array)
+    const isDraftTraining = battle.players && battle.players.length > 2;
+    let position = null;
+    let totalPlayers = null;
+
+    if (isDraftTraining) {
+      const draftData = buildDraftStandings(battle, currentUserId);
+      position = draftData.myPosition;
+      totalPlayers = battle.players.length;
+    }
+
+    return (
+      <ClashCardTraining
+        battle={battle}
+        myReturn={myReturn}
+        opponentReturn={cpuReturn}
+        position={position}
+        totalPlayers={totalPlayers}
+        remainingMs={remainingMs}
+        onPress={onPress}
+      />
+    );
+  }
+
+  // DRAFT battles (4-player leaderboard)
+  if (battleType === 'draft') {
+    const { standings, myPosition, myReturn, leaderReturn } = buildDraftStandings(battle, currentUserId);
+
+    return (
+      <ClashCardDraft
+        battle={battle}
+        standings={standings}
+        myPosition={myPosition}
+        myReturn={myReturn}
+        leaderReturn={leaderReturn}
+        remainingMs={remainingMs}
+        onPress={onPress}
+        isMostUrgent={isMostUrgent}
+        currentUserId={currentUserId}
+      />
+    );
+  }
+
+  // CLASSIC 1v1 battles (Builder, BaggerBomb)
+  const previewData = calculate1v1PreviewData(battle, user.username);
+  if (!previewData) return null;
+
+  // Attach username for avatar display
+  const battleWithUsername = { ...battle, _myUsername: user.username };
+
+  return (
+    <ClashCard1v1
+      battle={battleWithUsername}
+      previewData={previewData}
+      remainingMs={remainingMs}
+      onPress={onPress}
+      isMostUrgent={isMostUrgent}
+    />
+  );
+}
