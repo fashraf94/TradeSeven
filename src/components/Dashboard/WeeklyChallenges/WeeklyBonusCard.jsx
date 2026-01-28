@@ -5,12 +5,14 @@ import { motion } from 'framer-motion';
 import { CHALLENGE_XP } from './challengeDefinitions';
 
 export default function WeeklyBonusCard({ completedCount, canClaim, onClaim }) {
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 400;
+
   return (
     <motion.div
       layout
       style={{
         marginTop: '16px',
-        padding: '16px',
+        padding: isMobile ? '12px' : '16px',
         background: canClaim
           ? 'linear-gradient(135deg, rgba(124, 58, 237, 0.3), rgba(167, 139, 250, 0.15))'
           : 'rgba(168, 85, 247, 0.1)',
@@ -20,36 +22,48 @@ export default function WeeklyBonusCard({ completedCount, canClaim, onClaim }) {
           : '1px solid rgba(168, 85, 247, 0.3)',
       }}
     >
+      {/* Top row: Icon, Title, and XP */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
+        alignItems: 'flex-start',
+        gap: '10px',
       }}>
-        <span style={{ fontSize: '24px' }}>🏆</span>
-        <div style={{ flex: 1 }}>
-          <h4 style={{
-            color: '#e6edf3',
-            fontSize: '13px',
-            fontWeight: '600',
-            margin: 0,
+        <span style={{ fontSize: isMobile ? '20px' : '24px', flexShrink: 0, lineHeight: 1 }}>🏆</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '2px',
           }}>
-            Weekly Bonus
-          </h4>
+            <h4 style={{
+              color: '#e6edf3',
+              fontSize: isMobile ? '12px' : '13px',
+              fontWeight: '600',
+              margin: 0,
+            }}>
+              Weekly Bonus
+            </h4>
+            <span style={{
+              color: '#a78bfa',
+              fontSize: isMobile ? '12px' : '13px',
+              fontWeight: '700',
+              flexShrink: 0,
+            }}>
+              +{CHALLENGE_XP.weeklyBonus} XP
+            </span>
+          </div>
           <p style={{
             color: '#8b949e',
-            fontSize: '12px',
-            margin: '2px 0 0',
+            fontSize: isMobile ? '11px' : '12px',
+            margin: 0,
+            whiteSpace: 'normal',
+            lineHeight: '1.4',
           }}>
             Complete all 4 challenges for bonus XP!
           </p>
         </div>
-        <span style={{
-          color: '#a78bfa',
-          fontSize: '13px',
-          fontWeight: '700',
-        }}>
-          +{CHALLENGE_XP.weeklyBonus} XP
-        </span>
       </div>
 
       {/* Progress segments (4 bars) */}

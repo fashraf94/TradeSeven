@@ -2,17 +2,39 @@
 // 3-tab navigation: PVP | TRAIN & EARN | RESEARCH
 // Active tab: amber fill with dark text. Inactive: dark bg with grey text.
 // RESEARCH tab opens research modal (same behavior as before).
+// Mobile: All 3 tabs fit on 375px screen without scrolling
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+
+// Get responsive tab labels based on screen width
+const getTabLabels = () => {
+  if (typeof window === 'undefined') return { train: 'TRAIN & EARN' };
+  // On small screens, shorten "TRAIN & EARN" to "TRAIN"
+  return {
+    train: window.innerWidth < 400 ? 'TRAIN' : 'TRAIN & EARN',
+  };
+};
 
 const TABS = [
   { id: 'pvp', label: 'PVP', icon: '⚔️' },
-  { id: 'train', label: 'TRAIN & EARN', icon: '🪙' },
+  { id: 'train', label: 'TRAIN & EARN', mobileLabel: 'TRAIN', icon: '🪙' },
   { id: 'research', label: 'RESEARCH', icon: '📊' },
 ];
 
 export default function DashboardTabs({ activeTab, setActiveTab, setShowResearchMode, colors }) {
   const [hoverTab, setHoverTab] = useState(null);
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' && window.innerWidth < 400
+  );
+
+  // Update on resize
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 400);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const handleTabClick = (tabId) => {
     if (tabId === 'research') {
@@ -29,7 +51,7 @@ export default function DashboardTabs({ activeTab, setActiveTab, setShowResearch
       style={{
         background: '#161b22',
         borderBottom: '1px solid #21262d',
-        padding: '10px 16px',
+        padding: '10px 12px',
         marginBottom: '16px',
       }}
     >
@@ -38,13 +60,14 @@ export default function DashboardTabs({ activeTab, setActiveTab, setShowResearch
         margin: '0 auto',
         display: 'flex',
         justifyContent: 'center',
-        gap: '8px',
-        overflowX: 'auto',
-        WebkitOverflowScrolling: 'touch',
+        gap: '6px',
       }}>
         {TABS.map((tab) => {
           const isActive = activeTab === tab.id && tab.id !== 'research';
           const isHovered = hoverTab === tab.id;
+
+          // Use mobile label if available and on small screen
+          const displayLabel = isMobile && tab.mobileLabel ? tab.mobileLabel : tab.label;
 
           return (
             <button
@@ -54,16 +77,20 @@ export default function DashboardTabs({ activeTab, setActiveTab, setShowResearch
               onMouseEnter={() => setHoverTab(tab.id)}
               onMouseLeave={() => setHoverTab(null)}
               style={{
-                padding: '10px 20px',
+                // Responsive padding: tighter on mobile to fit all 3 tabs
+                padding: isMobile ? '10px 12px' : '10px 20px',
                 borderRadius: '10px',
-                fontSize: '13px',
+                // Slightly smaller font on very small screens
+                fontSize: isMobile ? '12px' : '13px',
                 fontWeight: '700',
                 cursor: 'pointer',
                 transition: 'all 0.25s ease',
                 position: 'relative',
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
-                flexShrink: 0,
+                // Allow tabs to shrink slightly if needed, but not collapse
+                flexShrink: 1,
+                minWidth: 0,
                 border: isActive
                   ? '1px solid #f59e0b'
                   : `1px solid ${isHovered ? 'rgba(255, 255, 255, 0.15)' : '#21262d'}`,
@@ -80,7 +107,7 @@ export default function DashboardTabs({ activeTab, setActiveTab, setShowResearch
                 boxShadow: isActive
                   ? '0 0 16px rgba(245, 158, 11, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15)'
                   : 'none',
-                letterSpacing: '0.5px',
+                letterSpacing: isMobile ? '0.3px' : '0.5px',
               }}
             >
               {/* Inner shine for active tab */}
@@ -96,9 +123,9 @@ export default function DashboardTabs({ activeTab, setActiveTab, setShowResearch
                   borderRadius: '10px 10px 0 0',
                 }} />
               )}
-              <span style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '14px' }}>{tab.icon}</span>
-                {tab.label}
+              <span style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: isMobile ? '4px' : '6px' }}>
+                <span style={{ fontSize: isMobile ? '12px' : '14px' }}>{tab.icon}</span>
+                {displayLabel}
               </span>
             </button>
           );
