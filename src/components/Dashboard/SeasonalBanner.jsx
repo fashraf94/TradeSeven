@@ -67,87 +67,47 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
         maxWidth: '100%',
         boxSizing: 'border-box',
         overflowX: 'hidden',
-        background: 'blue', // DEBUG: should be the OUTER container
+        background: 'blue',
         borderRadius: '12px',
         borderLeft: '3px solid #f59e0b',
-        // ALWAYS stack vertically on mobile for button visibility
         display: 'flex',
-        flexDirection: 'column', // HARDCODED for testing
+        flexDirection: 'column',
         alignItems: 'stretch',
         gap: '12px',
       }}
     >
-      {/* DEBUG INDICATOR - REMOVE AFTER TESTING */}
+      {/* DEBUG INDICATOR */}
       <div style={{ color: 'red', fontSize: '20px', fontWeight: 'bold', background: 'yellow', padding: '4px' }}>
-        DEBUG: isMobile = {String(isMobile)} | width = {typeof window !== 'undefined' ? window.innerWidth : 'SSR'}
+        DEBUG: isMobile = {String(isMobile)}
       </div>
 
-      {/* Top row: Icon + Text */}
+      {/* Icon + Text row - ONLY icon and text, NO button */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         gap: '12px',
-        flex: 'none',
-        minWidth: 0,
-        background: 'green', // DEBUG: Icon+Text container
+        background: 'green',
       }}>
-        {/* Icon */}
-        <span style={{
-          fontSize: isMobile ? '20px' : '22px',
-          flexShrink: 0,
-          lineHeight: 1,
-        }}>
-          {config.icon}
-        </span>
-
-        {/* Text content */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontSize: isMobile ? '13px' : '14px',
-            fontWeight: '700',
-            color: '#e6edf3',
-            lineHeight: 1.3,
-            marginBottom: '2px',
-          }}>
-            {config.title}
-          </div>
-          <div style={{
-            fontSize: isMobile ? '11px' : '12px',
-            color: '#8b949e',
-            lineHeight: 1.3,
-          }}>
-            {config.subtitle}
-          </div>
+        <span style={{ fontSize: '20px', flexShrink: 0 }}>{config.icon}</span>
+        <div>
+          <div style={{ fontSize: '13px', fontWeight: '700', color: '#e6edf3' }}>{config.title}</div>
+          <div style={{ fontSize: '11px', color: '#8b949e' }}>{config.subtitle}</div>
         </div>
       </div>
 
-      {/* CTA Button - FULL WIDTH on mobile, always visible */}
+      {/* Button - DIRECT CHILD of outer container, NOT inside green div */}
       <button
         onClick={handleCTA}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
         style={{
-          // Full width on mobile, auto on desktop
           width: '100%',
-          maxWidth: '100%',
-          boxSizing: 'border-box',
-          padding: isMobile ? '12px 16px' : '8px 16px',
-          background: 'red', // DEBUG: button should be SEPARATE from green Icon+Text
+          padding: '12px 16px',
+          background: 'red',
           border: 'none',
           borderRadius: '8px',
           color: '#0d1117',
-          fontSize: isMobile ? '12px' : '11px',
+          fontSize: '12px',
           fontWeight: '800',
           cursor: 'pointer',
-          // Allow button to fit container
-          flexShrink: 1,
-          whiteSpace: 'normal', // Allow text to wrap if needed
-          letterSpacing: '0.5px',
-          transition: 'all 0.2s ease',
-          boxShadow: isHovered
-            ? '0 0 12px rgba(245, 158, 11, 0.4)'
-            : '0 0 8px rgba(245, 158, 11, 0.2)',
-          // Ensure minimum tap target
           minHeight: '44px',
         }}
       >
