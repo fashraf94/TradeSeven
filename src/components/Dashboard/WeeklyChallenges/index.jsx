@@ -42,7 +42,7 @@ const WeeklyChallengesPanel = ({
       {/* Header */}
       <div
         style={{
-          padding: '16px 0',
+          padding: '16px 16px 16px 16px',
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
@@ -77,7 +77,7 @@ const WeeklyChallengesPanel = ({
             border: '1px solid #A855F7',
             borderRadius: '8px',
             padding: '10px 12px',
-            margin: '0 0 8px',
+            margin: '0 16px 8px 16px',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
@@ -100,7 +100,7 @@ const WeeklyChallengesPanel = ({
       />
 
       {/* Weekly Bonus Progress */}
-      <div style={{ padding: '0 0 4px' }}>
+      <div style={{ padding: '0 16px 4px 16px' }}>
         <WeeklyBonusCard
           completedCount={completedCount}
           canClaim={canClaimBonus}

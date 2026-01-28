@@ -24,9 +24,10 @@ export default function WeeklyBonusCard({ completedCount, canClaim, onClaim }) {
         display: 'flex',
         alignItems: 'center',
         gap: '12px',
+        flexWrap: 'wrap',
       }}>
-        <span style={{ fontSize: '24px' }}>🏆</span>
-        <div style={{ flex: 1 }}>
+        <span style={{ fontSize: '24px', flexShrink: 0 }}>🏆</span>
+        <div style={{ flex: 1, minWidth: '120px' }}>
           <h4 style={{
             color: '#e6edf3',
             fontSize: '13px',
@@ -39,6 +40,8 @@ export default function WeeklyBonusCard({ completedCount, canClaim, onClaim }) {
             color: '#8b949e',
             fontSize: '12px',
             margin: '2px 0 0',
+            whiteSpace: 'normal',
+            lineHeight: '1.4',
           }}>
             Complete all 4 challenges for bonus XP!
           </p>
@@ -47,6 +50,7 @@ export default function WeeklyBonusCard({ completedCount, canClaim, onClaim }) {
           color: '#a78bfa',
           fontSize: '13px',
           fontWeight: '700',
+          flexShrink: 0,
         }}>
           +{CHALLENGE_XP.weeklyBonus} XP
         </span>

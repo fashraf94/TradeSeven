@@ -24,6 +24,8 @@ export default function TarotCard({
   challengeProgress,
   onAccept,
   scrollProgress = 0,
+  cardWidth = 160,
+  cardHeight = 320,
 }) {
   const [isFlipped, setIsFlipped] = useState(false);
   const [showSpotlight, setShowSpotlight] = useState(false);
@@ -54,10 +56,10 @@ export default function TarotCard({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ delay: index * 0.08, type: 'spring', stiffness: 200, damping: 20 }}
       style={{
-        // Tarot 1:2 aspect ratio
-        width: '160px',
-        minWidth: '160px',
-        height: '320px',
+        // Responsive tarot card with 1:2 aspect ratio
+        width: `${cardWidth}px`,
+        minWidth: `${cardWidth}px`,
+        height: `${cardHeight}px`,
         perspective: '1200px',
         position: 'relative',
         flexShrink: 0,
@@ -95,7 +97,7 @@ export default function TarotCard({
           onClick={handleClick}
           style={{
             width: '100%',
-            height: '320px',
+            height: `${cardHeight}px`,
             transformStyle: 'preserve-3d',
             cursor: canFlip ? 'pointer' : 'default',
             position: 'relative',
