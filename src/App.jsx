@@ -18966,7 +18966,7 @@ export default function PortfolioDuel() {
           {/* Main Content Area - Mobile-first with responsive padding */}
           <div
             id="tour-dashboard-content"
-            className="pt-4 md:pt-0 pb-28 md:pb-20 md:px-6" /* TEMP: removed px-4 for testing */
+            className="pt-4 md:pt-0 pb-28 md:pb-20 px-4 md:px-6"
             style={{
               flex: 1,
               maxWidth: '900px',

@@ -64,10 +64,11 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
       style={{
         marginBottom: '20px',
         padding: '14px 16px',
-        maxWidth: '100%',
+        width: '100%',
+        maxWidth: 'calc(100vw - 32px)',
         boxSizing: 'border-box',
-        overflowX: 'hidden',
-        background: 'blue',
+        overflow: 'hidden',
+        background: 'linear-gradient(135deg, rgba(245,158,11,0.12) 0%, rgba(217,119,6,0.08) 100%)',
         borderRadius: '12px',
         borderLeft: '3px solid #f59e0b',
         display: 'flex',
@@ -76,17 +77,11 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
         gap: '12px',
       }}
     >
-      {/* DEBUG INDICATOR */}
-      <div style={{ color: 'red', fontSize: '20px', fontWeight: 'bold', background: 'yellow', padding: '4px' }}>
-        DEBUG: isMobile = {String(isMobile)}
-      </div>
-
-      {/* Icon + Text row - ONLY icon and text, NO button */}
+      {/* Icon + Text row */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         gap: '12px',
-        background: 'green',
       }}>
         <span style={{ fontSize: '20px', flexShrink: 0 }}>{config.icon}</span>
         <div>
@@ -95,13 +90,15 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
         </div>
       </div>
 
-      {/* Button - DIRECT CHILD of outer container, NOT inside green div */}
+      {/* Button - DIRECT CHILD of outer container */}
       <button
         onClick={handleCTA}
         style={{
           width: '100%',
+          maxWidth: '100%',
+          boxSizing: 'border-box',
           padding: '12px 16px',
-          background: 'red',
+          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
           border: 'none',
           borderRadius: '8px',
           color: '#0d1117',
