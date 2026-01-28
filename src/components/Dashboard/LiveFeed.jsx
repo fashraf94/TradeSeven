@@ -5,7 +5,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Radio, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { getUsername, isBaggerBombBattle, isTrainingBattle, getUserPortfolio } from '../../utils/battleHelpers';
 
 // Feed item accent colors by type
@@ -521,6 +521,9 @@ export default function LiveFeed({
   copyToClipboard,
   onJoinBattle,
   onViewPortfolio,
+  setJoinCode,
+  setJoinBattleType,
+  setCurrentDraft,
 }) {
   const [selectedBattle, setSelectedBattle] = useState(null);
 
@@ -531,14 +534,41 @@ export default function LiveFeed({
 
   const handleAction = (item) => {
     if (item.type === 'lobby' && item.battle) {
-      // Navigate to join flow
+      const battle = item.battle;
+
+      // If external handler provided, defer to it
       if (onJoinBattle) {
-        onJoinBattle(item.battle);
-      } else if (setCurrentBattle && setScreen) {
-        setCurrentBattle(item.battle);
-        setScreen('join');
-      } else if (item.battle.challengeCode && copyToClipboard) {
-        copyToClipboard(item.battle.challengeCode);
+        onJoinBattle(battle);
+        return;
+      }
+
+      // Snake Draft: navigate directly to draft lobby
+      if (battle.isSnakeDraft || battle.battleType === 'snake-draft') {
+        if (setCurrentDraft && setScreen) {
+          setCurrentDraft(battle);
+          setScreen('draftLobby');
+        }
+        return;
+      }
+
+      // BaggerBomb: pre-fill code + type, navigate to BaggerBomb builder
+      if (isBaggerBombBattle(battle)) {
+        if (setJoinCode && setJoinBattleType && setScreen) {
+          setJoinCode(battle.challengeCode || '');
+          setJoinBattleType('baggerbomb');
+          setScreen('joinPortfolioBuilderTD');
+        }
+        return;
+      }
+
+      // Builder 1v1 (default): pre-fill code + type, navigate to builder
+      if (setJoinCode && setJoinBattleType && setScreen) {
+        setJoinCode(battle.challengeCode || '');
+        setJoinBattleType('classic');
+        setScreen('builder');
+      } else if (battle.challengeCode && copyToClipboard) {
+        // Last-resort fallback: copy code to clipboard
+        copyToClipboard(battle.challengeCode);
       }
     } else if (item.type === 'win' && item.battle) {
       // Open portfolio modal
@@ -557,54 +587,64 @@ export default function LiveFeed({
       style={{ marginBottom: '24px' }}
     >
       {/* Section Header */}
-      <div style={{
+      <h3 style={{
+        fontSize: '14px',
+        fontWeight: '600',
+        color: '#8b949e',
+        textTransform: 'uppercase',
+        letterSpacing: '1px',
+        marginBottom: '16px',
         display: 'flex',
         alignItems: 'center',
-        gap: '10px',
-        marginBottom: '12px',
+        gap: '8px',
+        margin: '0 0 16px 0',
         padding: '0 4px',
       }}>
-        <Radio size={14} style={{ color: '#00d9ff' }} />
-        <span style={{
-          fontSize: '13px',
-          fontWeight: '700',
-          color: '#e6edf3',
-          textTransform: 'uppercase',
-          letterSpacing: '1.5px',
-        }}>
-          📡 LIVE FEED
-        </span>
-      </div>
+        📡 LIVE FEED
+      </h3>
 
       {/* Feed items with peek scroll */}
       {feedItems.length > 0 ? (
         <div
           className="live-feed-scroll"
           style={{
-            maxHeight: '140px',
+            minHeight: 'max(400px, 50vh)',
             overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
-            gap: '8px',
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
+            gap: '12px',
+            paddingRight: '8px',
+            scrollbarWidth: 'thin',
+            scrollbarColor: '#30363d transparent',
           }}
         >
-          <style>{`.live-feed-scroll::-webkit-scrollbar { display: none; }`}</style>
+          <style>{`
+            .live-feed-scroll::-webkit-scrollbar { width: 6px; }
+            .live-feed-scroll::-webkit-scrollbar-track { background: transparent; }
+            .live-feed-scroll::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+            .live-feed-scroll::-webkit-scrollbar-thumb:hover { background: #484f58; }
+          `}</style>
           {feedItems.map((item) => (
             <FeedItem key={item.id} item={item} onAction={handleAction} />
           ))}
         </div>
       ) : (
         <div style={{
-          background: '#161b22',
-          borderRadius: '8px',
-          padding: '24px 16px',
           textAlign: 'center',
-          color: '#6e7681',
-          fontSize: '13px',
+          padding: '40px 20px',
+          color: '#8b949e',
+          minHeight: 'max(400px, 50vh)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
         }}>
-          The arena is quiet... Start a battle to see activity here!
+          <p style={{ fontSize: '18px', marginBottom: '8px', fontWeight: '600' }}>
+            The arena is quiet...
+          </p>
+          <p style={{ fontSize: '14px', color: '#6e7681', margin: 0 }}>
+            Start a battle or check back soon to see activity here!
+          </p>
         </div>
       )}
 
