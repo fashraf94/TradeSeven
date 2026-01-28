@@ -433,26 +433,34 @@ function FeedItem({ item, onAction }) {
     ? (item.returnPct >= 0 ? '#10b981' : '#ff3366')
     : null;
 
+  // Responsive sizing
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 480;
+
   return (
     <div style={{
       background: '#161b22',
       borderLeft: `4px solid ${accent}`,
       borderRadius: '8px',
-      padding: '12px 16px',
+      // Tighter padding on mobile
+      padding: isMobile ? '10px 12px' : '12px 16px',
       display: 'flex',
       alignItems: 'flex-start',
-      gap: '12px',
-      minHeight: '60px',
+      gap: isMobile ? '10px' : '12px',
+      minHeight: isMobile ? '50px' : '60px',
     }}>
       {/* Icon */}
-      <span style={{ fontSize: '18px', flexShrink: 0, lineHeight: '24px' }}>
+      <span style={{
+        fontSize: isMobile ? '16px' : '18px',
+        flexShrink: 0,
+        lineHeight: isMobile ? '20px' : '24px',
+      }}>
         {item.icon}
       </span>
 
       {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
-          fontSize: '13px',
+          fontSize: isMobile ? '12px' : '13px',
           color: '#e6edf3',
           lineHeight: 1.4,
           overflow: 'hidden',
@@ -463,17 +471,20 @@ function FeedItem({ item, onAction }) {
         </div>
         {item.secondaryText && (
           <div style={{
-            fontSize: '12px',
+            fontSize: isMobile ? '11px' : '12px',
             color: returnColor || '#8b949e',
             marginTop: '2px',
             fontWeight: returnColor ? '600' : '400',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
           }}>
             {item.secondaryText}
           </div>
         )}
       </div>
 
-      {/* Action button */}
+      {/* Action button - 44px min tap target */}
       {item.actionButton && (
         <button
           onClick={(e) => {
@@ -481,12 +492,13 @@ function FeedItem({ item, onAction }) {
             onAction(item);
           }}
           style={{
-            padding: '5px 14px',
+            padding: isMobile ? '6px 10px' : '5px 14px',
+            minHeight: '32px',
             background: `${accent}15`,
             border: `1px solid ${accent}40`,
             borderRadius: '6px',
             color: accent,
-            fontSize: '11px',
+            fontSize: isMobile ? '10px' : '11px',
             fontWeight: '700',
             cursor: 'pointer',
             flexShrink: 0,

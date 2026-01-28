@@ -117,6 +117,7 @@ export default function TarotCard({
               state={state}
               progress={progress}
               accentColor={accentColor}
+              cardHeight={cardHeight}
             />
           </div>
 

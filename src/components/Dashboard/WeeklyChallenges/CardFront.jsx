@@ -16,12 +16,17 @@ const SILHOUETTE_MAP = {
   universal: ChampionSilhouette,
 };
 
-export default function CardFront({ challenge, state, progress, accentColor }) {
+export default function CardFront({ challenge, state, progress, accentColor, cardHeight = 320 }) {
   const diffColor = getDifficultyColor(challenge.difficulty);
   const progressValue = progress || 0;
   const SilhouetteComponent = SILHOUETTE_MAP[challenge.slot] || SILHOUETTE_MAP[challenge.gameMode] || WarriorSilhouette;
   const isLocked = state === 'locked';
   const isCompleted = state === 'completed';
+
+  // Scale silhouette based on card height (base is 320px)
+  const silhouetteScale = Math.min(1, cardHeight / 320);
+  // Reduce padding on smaller cards
+  const isMobileCard = cardHeight < 310;
 
   return (
     <div style={{
@@ -30,7 +35,7 @@ export default function CardFront({ challenge, state, progress, accentColor }) {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'space-between',
-      padding: '20px 14px 16px',
+      padding: isMobileCard ? '14px 10px 12px' : '20px 14px 16px',
       filter: isLocked ? 'grayscale(0.7)' : 'none',
       opacity: isLocked ? 0.5 : 1,
       transition: 'filter 0.3s, opacity 0.3s',
@@ -43,10 +48,13 @@ export default function CardFront({ challenge, state, progress, accentColor }) {
         justifyContent: 'center',
         position: 'relative',
         width: '100%',
+        minHeight: 0, // Allow flex shrinking
       }}>
-        {/* Silhouette with glow */}
+        {/* Silhouette with glow - scaled for card size */}
         <div style={{
           filter: isCompleted ? 'brightness(0.6) saturate(0.3)' : 'none',
+          transform: `scale(${silhouetteScale})`,
+          transformOrigin: 'center center',
         }}>
           <SilhouetteComponent color={accentColor} />
         </div>
@@ -128,13 +136,14 @@ export default function CardFront({ challenge, state, progress, accentColor }) {
       <div style={{
         width: '100%',
         textAlign: 'center',
+        flexShrink: 0, // Prevent bottom section from shrinking
       }}>
         {/* Challenge name */}
         <div style={{
-          fontSize: '13px',
+          fontSize: isMobileCard ? '11px' : '13px',
           fontWeight: '700',
           color: isCompleted ? '#10b981' : '#e6edf3',
-          marginBottom: '6px',
+          marginBottom: isMobileCard ? '4px' : '6px',
           lineHeight: 1.2,
         }}>
           {challenge.name}
@@ -147,11 +156,11 @@ export default function CardFront({ challenge, state, progress, accentColor }) {
             background: `${accentColor}22`,
             border: `1px solid ${accentColor}44`,
             color: accentColor,
-            fontSize: '9px',
+            fontSize: isMobileCard ? '8px' : '9px',
             fontWeight: '700',
-            padding: '2px 8px',
+            padding: isMobileCard ? '2px 6px' : '2px 8px',
             borderRadius: '4px',
-            marginBottom: '8px',
+            marginBottom: isMobileCard ? '6px' : '8px',
             textTransform: 'uppercase',
             letterSpacing: '0.5px',
           }}>
@@ -163,7 +172,7 @@ export default function CardFront({ challenge, state, progress, accentColor }) {
         {isCompleted && (
           <div style={{
             color: '#10b981',
-            fontSize: '11px',
+            fontSize: isMobileCard ? '10px' : '11px',
             fontWeight: '700',
             marginBottom: '4px',
           }}>
