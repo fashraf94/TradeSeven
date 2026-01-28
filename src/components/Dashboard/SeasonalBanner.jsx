@@ -81,6 +81,7 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
       <div style={{
         display: 'flex',
         alignItems: 'center',
+        justifyContent: 'center',
         gap: '12px',
       }}>
         <span style={{ fontSize: '20px', flexShrink: 0 }}>{config.icon}</span>
