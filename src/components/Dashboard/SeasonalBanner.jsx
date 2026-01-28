@@ -37,7 +37,7 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
   // Update on resize and mount
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < 500);
+      setIsMobile(window.innerWidth < 480);
     };
     // Check immediately on mount
     checkMobile();
