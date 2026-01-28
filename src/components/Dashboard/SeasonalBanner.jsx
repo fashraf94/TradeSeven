@@ -33,6 +33,7 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
   if (!isSeasonalActive) return null;
 
   const config = VARIANTS[variant] || VARIANTS.pvp;
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 480;
 
   const handleCTA = () => {
     if (config.action && setScreen) {
@@ -52,46 +53,58 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
         borderRadius: '12px',
         borderLeft: '3px solid #f59e0b',
         display: 'flex',
-        alignItems: 'center',
+        // Stack vertically on mobile, horizontal on desktop
+        flexDirection: isMobile ? 'column' : 'row',
+        alignItems: isMobile ? 'stretch' : 'center',
         gap: '12px',
       }}
     >
-      {/* Icon */}
-      <span style={{
-        fontSize: '22px',
-        flexShrink: 0,
-        lineHeight: 1,
+      {/* Top row: Icon + Text */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        flex: 1,
+        minWidth: 0,
       }}>
-        {config.icon}
-      </span>
+        {/* Icon */}
+        <span style={{
+          fontSize: '22px',
+          flexShrink: 0,
+          lineHeight: 1,
+        }}>
+          {config.icon}
+        </span>
 
-      {/* Text content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: '14px',
-          fontWeight: '700',
-          color: '#e6edf3',
-          lineHeight: 1.3,
-          marginBottom: '2px',
-        }}>
-          {config.title}
-        </div>
-        <div style={{
-          fontSize: '12px',
-          color: '#8b949e',
-          lineHeight: 1.3,
-        }}>
-          {config.subtitle}
+        {/* Text content */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: isMobile ? '13px' : '14px',
+            fontWeight: '700',
+            color: '#e6edf3',
+            lineHeight: 1.3,
+            marginBottom: '2px',
+          }}>
+            {config.title}
+          </div>
+          <div style={{
+            fontSize: isMobile ? '11px' : '12px',
+            color: '#8b949e',
+            lineHeight: 1.3,
+          }}>
+            {config.subtitle}
+          </div>
         </div>
       </div>
 
-      {/* CTA Button */}
+      {/* CTA Button - full width on mobile */}
       <button
         onClick={handleCTA}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         style={{
-          padding: '8px 16px',
+          padding: isMobile ? '10px 16px' : '8px 16px',
+          width: isMobile ? '100%' : 'auto',
           background: isHovered
             ? 'linear-gradient(135deg, #d97706 0%, #b45309 100%)'
             : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
@@ -107,6 +120,8 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
           boxShadow: isHovered
             ? '0 0 12px rgba(245, 158, 11, 0.4)'
             : '0 0 8px rgba(245, 158, 11, 0.2)',
+          // Ensure minimum tap target
+          minHeight: '44px',
         }}
       >
         {config.cta}

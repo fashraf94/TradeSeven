@@ -79,14 +79,11 @@ export default function ChallengeCarousel({
     el.scrollTo({ left: idx * cardTotalWidth, behavior: 'smooth' });
   };
 
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-  const horizontalPadding = isMobile ? 16 : 24;
-
   return (
     <div style={{
-      // Negative margins to extend carousel to screen edges
-      marginLeft: `-${horizontalPadding}px`,
-      marginRight: `-${horizontalPadding}px`,
+      // Container with overflow visible to not clip carousel
+      width: '100%',
+      position: 'relative',
     }}>
       {/* Scrollable card track */}
       <div
@@ -95,18 +92,23 @@ export default function ChallengeCarousel({
         style={{
           display: 'flex',
           gap: `${cardDimensions.gap}px`,
-          overflowX: 'auto',
+          // CRITICAL: Use 'scroll' for reliable mobile scrolling
+          overflowX: 'scroll',
           overflowY: 'visible',
           scrollSnapType: 'x mandatory',
           WebkitOverflowScrolling: 'touch',
-          // Padding ensures first/last cards aren't flush with edges
-          paddingLeft: `${horizontalPadding}px`,
-          paddingRight: `${horizontalPadding}px`,
+          // Padding for card spacing from edges
+          paddingLeft: '16px',
+          paddingRight: '16px',
           paddingTop: '12px',
           paddingBottom: '16px',
           // Hide scrollbar - navigation via swipe + dots
           scrollbarWidth: 'none',
           msOverflowStyle: 'none',
+          // Ensure touch scrolling works
+          touchAction: 'pan-x',
+          // Prevent any pointer-events blocking
+          pointerEvents: 'auto',
         }}
       >
         {/* Hide webkit scrollbar */}

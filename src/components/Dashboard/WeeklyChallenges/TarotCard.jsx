@@ -62,8 +62,10 @@ export default function TarotCard({
         height: `${cardHeight}px`,
         perspective: '1200px',
         position: 'relative',
+        // CRITICAL: Prevent cards from shrinking in flex container
         flexShrink: 0,
-        scrollSnapAlign: 'center',
+        // Use 'start' for better mobile scroll positioning
+        scrollSnapAlign: 'start',
       }}
     >
       {/* Spotlight glow on accept */}
