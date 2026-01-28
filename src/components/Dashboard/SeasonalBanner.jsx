@@ -47,6 +47,8 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
 
   if (!isSeasonalActive) return null;
 
+  console.log('SeasonalBanner render - isMobile:', isMobile, 'window.innerWidth:', typeof window !== 'undefined' ? window.innerWidth : 'SSR');
+
   const config = VARIANTS[variant] || VARIANTS.pvp;
 
   const handleCTA = () => {
