@@ -19020,6 +19020,9 @@ export default function PortfolioDuel() {
                   setCurrentBattle={setCurrentBattle}
                   setScreen={setScreen}
                   copyToClipboard={copyToClipboard}
+                  setJoinCode={setJoinCode}
+                  setJoinBattleType={setJoinBattleType}
+                  setCurrentDraft={setCurrentDraft}
                 />
               </>
             )}
