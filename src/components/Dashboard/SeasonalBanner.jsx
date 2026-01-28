@@ -66,6 +66,9 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
       style={{
         marginBottom: '20px',
         padding: '14px 16px',
+        maxWidth: '100%',
+        boxSizing: 'border-box',
+        overflowX: 'hidden',
         background: 'blue', // DEBUG: should be the OUTER container
         borderRadius: '12px',
         borderLeft: '3px solid #f59e0b',
