@@ -19028,10 +19028,10 @@ export default function PortfolioDuel() {
                 ═══════════════════════════════════════════════════════════ */}
             {dashboardTab === 'train' && (
               <>
-                {/* Active Training - training battles only */}
+                {/* Active Training - training battles + training drafts */}
                 <LiveClashesSection
                   activeBattles={[]}
-                  activeDraftBattles={[]}
+                  activeDraftBattles={activeDraftBattles}
                   activeTrainingBattles={activeTrainingBattles}
                   isTrainingMode={true}
                   user={user}

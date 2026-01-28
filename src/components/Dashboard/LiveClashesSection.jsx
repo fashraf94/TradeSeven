@@ -31,14 +31,20 @@ export default function LiveClashesSection({
   // Determine which battles to show based on mode
   const allBattles = useMemo(() => {
     if (isTrainingMode) {
-      // Training tab: only training battles
-      return activeTrainingBattles.map(b => ({ battle: b, type: 'training' }));
+      // Training tab: training battles + training drafts (isTraining: true)
+      const training = activeTrainingBattles.map(b => ({ battle: b, type: 'training' }));
+      const trainingDrafts = activeDraftBattles
+        .filter(b => b.isTraining === true)
+        .map(b => ({ battle: b, type: 'draft' }));
+      return [...training, ...trainingDrafts];
     }
-    // PVP tab: classic 1v1 + draft battles (exclude training)
+    // PVP tab: classic 1v1 + PVP draft battles (exclude training)
     const classic = activeBattles
       .filter(b => !b.isTrainingBattle)
       .map(b => ({ battle: b, type: 'classic' }));
-    const draft = activeDraftBattles.map(b => ({ battle: b, type: 'draft' }));
+    const draft = activeDraftBattles
+      .filter(b => b.isTraining !== true)
+      .map(b => ({ battle: b, type: 'draft' }));
     return [...classic, ...draft];
   }, [activeBattles, activeDraftBattles, activeTrainingBattles, isTrainingMode]);
 
