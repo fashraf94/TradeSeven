@@ -59,11 +59,8 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
   };
 
   return (
-    <motion.div
+    <div
       data-testid="seasonal-banner"
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, delay: 0.15 }}
       style={{
         marginBottom: '20px',
         padding: '14px 16px',
@@ -156,6 +153,6 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
       >
         {config.cta}
       </button>
-    </motion.div>
+    </div>
   );
 }
