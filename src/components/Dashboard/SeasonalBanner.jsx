@@ -127,7 +127,9 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
         onMouseLeave={() => setIsHovered(false)}
         style={{
           // Full width on mobile, auto on desktop
-          width: '100%', // HARDCODED for testing
+          width: '100%',
+          maxWidth: '100%',
+          boxSizing: 'border-box',
           padding: isMobile ? '12px 16px' : '8px 16px',
           background: 'red', // DEBUG: button should be SEPARATE from green Icon+Text
           border: 'none',
@@ -136,9 +138,9 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
           fontSize: isMobile ? '12px' : '11px',
           fontWeight: '800',
           cursor: 'pointer',
-          // Don't shrink or allow overflow
-          flexShrink: 0,
-          whiteSpace: 'nowrap',
+          // Allow button to fit container
+          flexShrink: 1,
+          whiteSpace: 'normal', // Allow text to wrap if needed
           letterSpacing: '0.5px',
           transition: 'all 0.2s ease',
           boxShadow: isHovered
