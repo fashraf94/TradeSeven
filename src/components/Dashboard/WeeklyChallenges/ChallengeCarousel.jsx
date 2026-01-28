@@ -31,8 +31,8 @@ export default function ChallengeCarousel({
     setScrollProgress(progress);
 
     // Determine active card index from scroll position
-    // Each card is 160px wide + 16px gap = 176px per card
-    const cardWidth = 176;
+    // Each card is 160px wide + 20px gap = 180px per card
+    const cardWidth = 180;
     const idx = Math.round(scrollLeft / cardWidth);
     setActiveIndex(Math.min(idx, challenges.length - 1));
   }, [challenges.length]);
@@ -47,7 +47,7 @@ export default function ChallengeCarousel({
   const scrollToIndex = (idx) => {
     const el = scrollRef.current;
     if (!el) return;
-    const cardWidth = 176;
+    const cardWidth = 180;
     el.scrollTo({ left: idx * cardWidth, behavior: 'smooth' });
   };
 
@@ -59,7 +59,7 @@ export default function ChallengeCarousel({
         className="tarot-carousel"
         style={{
           display: 'flex',
-          gap: '16px',
+          gap: '20px',
           overflowX: 'auto',
           overflowY: 'hidden',
           scrollSnapType: 'x mandatory',
