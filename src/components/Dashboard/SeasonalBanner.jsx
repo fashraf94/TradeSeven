@@ -30,17 +30,18 @@ const VARIANTS = {
 
 export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
   const [isHovered, setIsHovered] = useState(false);
-  // MOBILE-FIRST: Default to true so button is always visible on initial render
-  // Then update to false on desktop after mount
-  const [isMobile, setIsMobile] = useState(true);
+  // Initialize with actual window width to prevent flash of wrong layout
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < 480;
+    }
+    return true; // SSR fallback: assume mobile
+  });
 
-  // Update on resize and mount
+  // Update on resize
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 480);
-    };
-    // Check immediately on mount
-    checkMobile();
+    const checkMobile = () => setIsMobile(window.innerWidth < 480);
+    checkMobile(); // Run immediately to sync state
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
