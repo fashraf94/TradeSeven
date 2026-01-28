@@ -66,13 +66,13 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
       style={{
         marginBottom: '20px',
         padding: '14px 16px',
-        background: 'linear-gradient(135deg, rgba(245,158,11,0.12) 0%, rgba(217,119,6,0.08) 100%)',
+        background: 'blue', // DEBUG: should be the OUTER container
         borderRadius: '12px',
         borderLeft: '3px solid #f59e0b',
         // ALWAYS stack vertically on mobile for button visibility
         display: 'flex',
         flexDirection: 'column', // HARDCODED for testing
-        alignItems: isMobile ? 'stretch' : 'center',
+        alignItems: 'stretch',
         gap: '12px',
       }}
     >
@@ -86,8 +86,9 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
         display: 'flex',
         alignItems: 'center',
         gap: '12px',
-        flex: isMobile ? 'none' : 1,
+        flex: 'none',
         minWidth: 0,
+        background: 'green', // DEBUG: Icon+Text container
       }}>
         {/* Icon */}
         <span style={{
@@ -128,9 +129,7 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
           // Full width on mobile, auto on desktop
           width: '100%', // HARDCODED for testing
           padding: isMobile ? '12px 16px' : '8px 16px',
-          background: isHovered
-            ? 'linear-gradient(135deg, #d97706 0%, #b45309 100%)'
-            : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+          background: 'red', // DEBUG: button should be SEPARATE from green Icon+Text
           border: 'none',
           borderRadius: '8px',
           color: '#0d1117',
