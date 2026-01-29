@@ -26,8 +26,8 @@ export default function ClashCardDraft({
   battle,
   standings,
   myPosition,
-  myReturn,
-  leaderReturn,
+  myPoints,
+  leaderPoints,
   remainingMs,
   onPress,
   isMostUrgent = false,
@@ -46,9 +46,9 @@ export default function ClashCardDraft({
     ? `0 0 12px ${borderColor}60, 0 0 24px ${borderColor}30`
     : `0 0 8px ${borderColor}20`;
 
-  // Calculate ladder gap
-  const ladderGap = myPosition > 1 && leaderReturn !== null
-    ? (myReturn - leaderReturn).toFixed(2)
+  // Calculate ladder gap in points
+  const ladderGap = myPosition > 1 && leaderPoints !== null
+    ? Math.round(leaderPoints - myPoints)
     : null;
 
   // Place text
@@ -238,13 +238,13 @@ export default function ClashCardDraft({
           borderLeft: '1px solid #21262d',
         }}>
           <span style={{
-            fontSize: '24px',
+            fontSize: '22px',
             fontWeight: '800',
-            color: myReturn >= 0 ? '#10b981' : '#ef4444',
+            color: myPoints >= 0 ? '#10b981' : '#ef4444',
             fontFamily: "'SF Mono', 'Monaco', monospace",
             lineHeight: 1.1,
           }}>
-            {myReturn >= 0 ? '+' : ''}{myReturn.toFixed(2)}%
+            {Math.round(myPoints)} pts
           </span>
           <span style={{
             fontSize: '10px',
@@ -278,7 +278,7 @@ export default function ClashCardDraft({
                 color: '#ef4444',
                 fontFamily: "'SF Mono', 'Monaco', monospace",
               }}>
-                {parseFloat(ladderGap) >= 0 ? '+' : ''}{ladderGap}% to 1st
+                {ladderGap} pts to 1st
               </span>
             </div>
           )}
