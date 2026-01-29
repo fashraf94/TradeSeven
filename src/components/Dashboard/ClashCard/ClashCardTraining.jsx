@@ -4,8 +4,9 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Timer, Hammer, Bomb, TrendingUp } from 'lucide-react';
+import { Timer } from 'lucide-react';
 import TugOfWarBar from './TugOfWarBar';
+import { formatTrainingTimer } from '../../../utils/timerFormatters';
 
 // Get battle type info for training
 function getTrainingTypeInfo(battle) {
@@ -19,23 +20,6 @@ function getTrainingTypeInfo(battle) {
   return { label: 'BUILDER AI', emoji: '🏗️', isDraft: false };
 }
 
-// Format timer
-function formatClashTimer(remainingMs) {
-  if (remainingMs <= 0) return { text: 'ENDED', color: '#ef4444', pulse: false };
-
-  const hours = Math.floor(remainingMs / (1000 * 60 * 60));
-  const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds = Math.floor((remainingMs % (1000 * 60)) / 1000);
-
-  if (hours >= 1) {
-    return { text: `${hours}h ${minutes}m`, color: '#9333ea', pulse: false };
-  }
-  if (minutes > 5) {
-    return { text: `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`, color: '#ef4444', pulse: true };
-  }
-  return { text: `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}!!`, color: '#ef4444', pulse: true };
-}
-
 export default function ClashCardTraining({
   battle,
   myReturn = 0,
@@ -46,7 +30,7 @@ export default function ClashCardTraining({
   onPress,
 }) {
   const typeInfo = getTrainingTypeInfo(battle);
-  const timer = formatClashTimer(remainingMs);
+  const timer = formatTrainingTimer(remainingMs);
   const isWinning = myReturn > opponentReturn;
 
   return (

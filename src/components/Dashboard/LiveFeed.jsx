@@ -7,6 +7,7 @@ import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { getUsername, isBaggerBombBattle, isTrainingBattle, getUserPortfolio } from '../../utils/battleHelpers';
+import { useIsMobile } from '../../hooks';
 
 // Feed item accent colors by type
 const FEED_ACCENTS = {
@@ -428,13 +429,11 @@ function WinningPortfolioModal({ battle, onClose }) {
 // ============================================
 function FeedItem({ item, onAction }) {
   const accent = FEED_ACCENTS[item.type] || '#00d9ff';
+  const { isMobile } = useIsMobile();
 
   const returnColor = item.type === 'win' && item.returnPct !== undefined
     ? (item.returnPct >= 0 ? '#10b981' : '#ff3366')
     : null;
-
-  // Responsive sizing
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 480;
 
   return (
     <div style={{

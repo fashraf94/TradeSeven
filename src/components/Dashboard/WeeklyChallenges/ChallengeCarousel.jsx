@@ -6,20 +6,20 @@
 // - Shows ~1.3 cards on mobile for peek effect
 // - Responsive card sizing for different screen widths
 
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import TarotCard from './TarotCard';
+import { useIsMobile } from '../../../hooks';
+import { BREAKPOINTS } from '../../../constants/breakpoints';
 
 // Get responsive card dimensions based on screen width
-const getCardDimensions = () => {
-  if (typeof window === 'undefined') return { width: 160, height: 320, gap: 16 };
-  const screenWidth = window.innerWidth;
+const getCardDimensions = (screenWidth) => {
   if (screenWidth < 390) {
     // iPhone SE, small phones - show ~1.3 cards with peek
     return { width: 145, height: 290, gap: 12 };
-  } else if (screenWidth < 430) {
+  } else if (screenWidth <= BREAKPOINTS.mobile) {
     // iPhone 12/13/14 - show ~1.4 cards
     return { width: 150, height: 300, gap: 14 };
-  } else if (screenWidth < 768) {
+  } else if (screenWidth <= BREAKPOINTS.tablet) {
     // Large phones - show ~1.6 cards
     return { width: 155, height: 310, gap: 16 };
   }
@@ -37,16 +37,10 @@ export default function ChallengeCarousel({
   const scrollRef = useRef(null);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [cardDimensions, setCardDimensions] = useState(getCardDimensions());
+  const { width } = useIsMobile();
 
-  // Update card dimensions on window resize
-  useEffect(() => {
-    const handleResize = () => {
-      setCardDimensions(getCardDimensions());
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  // Memoize card dimensions based on window width
+  const cardDimensions = useMemo(() => getCardDimensions(width), [width]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;

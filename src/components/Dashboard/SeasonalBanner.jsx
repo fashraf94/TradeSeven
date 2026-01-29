@@ -5,8 +5,8 @@
 // Hardcoded isSeasonalActive = true for now
 // Mobile: Stacks vertically with full-width button
 
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState } from 'react';
+import { useIsMobile } from '../../hooks';
 
 // Hardcode seasonal active state until backend provides it
 const isSeasonalActive = true;
@@ -30,25 +30,9 @@ const VARIANTS = {
 
 export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
   const [isHovered, setIsHovered] = useState(false);
-  // Initialize with actual window width to prevent flash of wrong layout
-  const [isMobile, setIsMobile] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return window.innerWidth < 480;
-    }
-    return true; // SSR fallback: assume mobile
-  });
-
-  // Update on resize
-  useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 480);
-    checkMobile(); // Run immediately to sync state
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
+  const { isMobile } = useIsMobile();
 
   if (!isSeasonalActive) return null;
-
-  console.log('SeasonalBanner render - isMobile:', isMobile, 'window.innerWidth:', typeof window !== 'undefined' ? window.innerWidth : 'SSR');
 
   const config = VARIANTS[variant] || VARIANTS.pvp;
 
@@ -60,7 +44,6 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
 
   return (
     <div
-      data-testid="seasonal-banner"
       style={{
         marginBottom: '20px',
         padding: '14px 16px',

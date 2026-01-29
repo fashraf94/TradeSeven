@@ -4,16 +4,8 @@
 // RESEARCH tab opens research modal (same behavior as before).
 // Mobile: All 3 tabs fit on 375px screen without scrolling
 
-import React, { useState, useEffect } from 'react';
-
-// Get responsive tab labels based on screen width
-const getTabLabels = () => {
-  if (typeof window === 'undefined') return { train: 'TRAIN & EARN' };
-  // On small screens, shorten "TRAIN & EARN" to "TRAIN"
-  return {
-    train: window.innerWidth < 400 ? 'TRAIN' : 'TRAIN & EARN',
-  };
-};
+import React, { useState } from 'react';
+import { useIsMobile } from '../../hooks';
 
 const TABS = [
   { id: 'pvp', label: 'PVP', icon: '⚔️' },
@@ -23,18 +15,7 @@ const TABS = [
 
 export default function DashboardTabs({ activeTab, setActiveTab, setShowResearchMode, colors }) {
   const [hoverTab, setHoverTab] = useState(null);
-  const [isMobile, setIsMobile] = useState(
-    typeof window !== 'undefined' && window.innerWidth < 400
-  );
-
-  // Update on resize
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 400);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  const { isMobile } = useIsMobile();
 
   const handleTabClick = (tabId) => {
     if (tabId === 'research') {
