@@ -11,6 +11,9 @@ import { useIsMobile } from '../../hooks';
 // Hardcode seasonal active state until backend provides it
 const isSeasonalActive = true;
 
+// Feature flag: Hide training promo until token system is implemented
+const SHOW_TRAINING_PROMO = false;
+
 const VARIANTS = {
   pvp: {
     icon: '🏆',
@@ -32,7 +35,9 @@ export default function SeasonalBanner({ variant = 'pvp', setScreen, colors }) {
   const [isHovered, setIsHovered] = useState(false);
   const { isMobile } = useIsMobile();
 
+  // Hide banner if seasonal is inactive, or if it's the training variant and promo is disabled
   if (!isSeasonalActive) return null;
+  if (variant === 'train' && !SHOW_TRAINING_PROMO) return null;
 
   const config = VARIANTS[variant] || VARIANTS.pvp;
 
