@@ -58,26 +58,26 @@ function getRemainingMs(battle) {
 // Build standings for draft battles
 function buildDraftStandings(battle, currentUserId) {
   if (!battle.players || battle.players.length === 0) {
-    return { standings: [], myPosition: 1, myReturn: 0, leaderReturn: 0 };
+    return { standings: [], myPosition: 1, myPoints: 0, leaderPoints: 0 };
   }
 
-  // Map players with basic info
+  // Map players with basic info - use totalPoints for BaggerBomb scoring
   const players = battle.players.map((p) => ({
     name: p.displayName || p.username || 'Player',
     isCPU: p.isCPU || false,
     isMe: p.odUserId === currentUserId || p.displayName === currentUserId,
-    return: p.totalGain ?? p.percentChange ?? 0,
+    points: p.totalPoints ?? p.cumulativeScore ?? 0,
   }));
 
-  // Sort by return descending
-  const sorted = [...players].sort((a, b) => b.return - a.return);
+  // Sort by points descending (BaggerBomb scoring)
+  const sorted = [...players].sort((a, b) => b.points - a.points);
 
   const myPlayer = sorted.find(p => p.isMe);
   const myPosition = myPlayer ? sorted.indexOf(myPlayer) + 1 : sorted.length;
-  const myReturn = myPlayer?.return ?? 0;
-  const leaderReturn = sorted.length > 0 ? sorted[0].return : 0;
+  const myPoints = myPlayer?.points ?? 0;
+  const leaderPoints = sorted.length > 0 ? sorted[0].points : 0;
 
-  return { standings: sorted, myPosition, myReturn, leaderReturn };
+  return { standings: sorted, myPosition, myPoints, leaderPoints };
 }
 
 export default function ClashCard({
@@ -130,15 +130,15 @@ export default function ClashCard({
 
   // DRAFT battles (4-player leaderboard)
   if (battleType === 'draft') {
-    const { standings, myPosition, myReturn, leaderReturn } = buildDraftStandings(battle, currentUserId);
+    const { standings, myPosition, myPoints, leaderPoints } = buildDraftStandings(battle, currentUserId);
 
     return (
       <ClashCardDraft
         battle={battle}
         standings={standings}
         myPosition={myPosition}
-        myReturn={myReturn}
-        leaderReturn={leaderReturn}
+        myPoints={myPoints}
+        leaderPoints={leaderPoints}
         remainingMs={remainingMs}
         onPress={onPress}
         isMostUrgent={isMostUrgent}

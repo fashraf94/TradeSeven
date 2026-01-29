@@ -425,6 +425,28 @@ const DraftBattleScreenV2 = ({
 
       setStandings(sorted);
 
+      // Save calculated points back to Firebase for ClashCard to display
+      if (currentDraft?.id) {
+        try {
+          const { doc, updateDoc } = await import('firebase/firestore');
+          const { db } = await import('../firebase/config');
+
+          // Update players array with calculated totalPoints
+          const updatedPlayers = currentDraft.players.map(player => {
+            const standing = sorted.find(s => s.odUserId === player.odUserId);
+            return {
+              ...player,
+              totalPoints: standing?.totalPoints ?? 0,
+            };
+          });
+
+          const draftRef = doc(db, 'drafts', currentDraft.id);
+          await updateDoc(draftRef, { players: updatedPlayers });
+        } catch (saveError) {
+          logger.warn('[DraftBattleV2] Failed to save standings to Firebase:', saveError);
+        }
+      }
+
       // Calculate asset comparison
       const myPlayer = sorted.find(p => p.isMe);
       if (myPlayer) {
