@@ -18970,7 +18970,8 @@ export default function PortfolioDuel() {
             style={{
               flex: 1,
               maxWidth: '900px',
-              margin: '0 auto'
+              margin: '0 auto',
+              overflowX: 'hidden',
             }}
           >
             {/* ═══════════════════════════════════════════════════════════

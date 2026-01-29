@@ -37,6 +37,9 @@ const WeeklyChallengesPanel = ({
       transition={{ duration: 0.4, delay: 0.45 }}
       style={{
         marginBottom: '24px',
+        width: '100%',
+        maxWidth: '100%',
+        boxSizing: 'border-box',
         // CRITICAL: Allow carousel to extend beyond bounds for scrolling
         overflow: 'visible',
       }}
