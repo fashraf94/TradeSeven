@@ -18969,8 +18969,10 @@ export default function PortfolioDuel() {
             className="pt-4 md:pt-0 pb-28 md:pb-20 px-4 md:px-6"
             style={{
               flex: 1,
+              width: '100%',
               maxWidth: '900px',
               margin: '0 auto',
+              boxSizing: 'border-box',
               overflowX: 'hidden',
             }}
           >
