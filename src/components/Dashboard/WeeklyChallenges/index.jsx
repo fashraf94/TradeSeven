@@ -102,7 +102,7 @@ const WeeklyChallengesPanel = ({
       />
 
       {/* Weekly Bonus Progress */}
-      <div style={{ padding: '0 16px 4px 16px' }}>
+      <div style={{ padding: '0 16px 4px 16px', overflow: 'hidden', maxWidth: '100%', boxSizing: 'border-box' }}>
         <WeeklyBonusCard
           completedCount={completedCount}
           canClaim={canClaimBonus}

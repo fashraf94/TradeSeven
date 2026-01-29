@@ -446,6 +446,7 @@ function FeedItem({ item, onAction }) {
       alignItems: 'flex-start',
       gap: isMobile ? '10px' : '12px',
       minHeight: isMobile ? '50px' : '60px',
+      width: '100%',
       maxWidth: '100%',
       boxSizing: 'border-box',
     }}>
@@ -599,6 +600,7 @@ export default function LiveFeed({
       transition={{ duration: 0.4, delay: 0.3 }}
       style={{
         marginBottom: '24px',
+        width: '100%',
         maxWidth: '100%',
         boxSizing: 'border-box',
         overflow: 'hidden',
@@ -635,6 +637,7 @@ export default function LiveFeed({
             paddingRight: '8px',
             scrollbarWidth: 'thin',
             scrollbarColor: '#30363d transparent',
+            width: '100%',
             maxWidth: '100%',
             boxSizing: 'border-box',
           }}
