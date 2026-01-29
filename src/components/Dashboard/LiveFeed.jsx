@@ -446,6 +446,9 @@ function FeedItem({ item, onAction }) {
       alignItems: 'flex-start',
       gap: isMobile ? '10px' : '12px',
       minHeight: isMobile ? '50px' : '60px',
+      width: '100%',
+      maxWidth: '100%',
+      boxSizing: 'border-box',
     }}>
       {/* Icon */}
       <span style={{
@@ -595,7 +598,13 @@ export default function LiveFeed({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: 0.3 }}
-      style={{ marginBottom: '24px' }}
+      style={{
+        marginBottom: '24px',
+        width: '100%',
+        maxWidth: '100%',
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+      }}
     >
       {/* Section Header */}
       <h3 style={{
@@ -621,12 +630,16 @@ export default function LiveFeed({
           style={{
             minHeight: 'max(400px, 50vh)',
             overflowY: 'auto',
+            overflowX: 'hidden',
             display: 'flex',
             flexDirection: 'column',
             gap: '12px',
             paddingRight: '8px',
             scrollbarWidth: 'thin',
             scrollbarColor: '#30363d transparent',
+            width: '100%',
+            maxWidth: '100%',
+            boxSizing: 'border-box',
           }}
         >
           <style>{`

@@ -37,6 +37,9 @@ const WeeklyChallengesPanel = ({
       transition={{ duration: 0.4, delay: 0.45 }}
       style={{
         marginBottom: '24px',
+        width: '100%',
+        maxWidth: '100%',
+        boxSizing: 'border-box',
         // CRITICAL: Allow carousel to extend beyond bounds for scrolling
         overflow: 'visible',
       }}
@@ -102,7 +105,7 @@ const WeeklyChallengesPanel = ({
       />
 
       {/* Weekly Bonus Progress */}
-      <div style={{ padding: '0 16px 4px 16px' }}>
+      <div style={{ padding: '0 16px 4px 16px', overflow: 'hidden', maxWidth: '100%', boxSizing: 'border-box' }}>
         <WeeklyBonusCard
           completedCount={completedCount}
           canClaim={canClaimBonus}

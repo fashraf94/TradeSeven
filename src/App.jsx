@@ -18791,8 +18791,7 @@ export default function PortfolioDuel() {
               justifyContent: 'space-between'
             }}>
 
-              {/* Hamburger Menu Button - LEFT */}
-              {/* Left section with hamburger and Get Started */}
+              {/* Left section - Hamburger Menu + Logo */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {/* Hamburger Menu Button */}
                 <button
@@ -18846,44 +18845,7 @@ export default function PortfolioDuel() {
                   )}
                 </button>
 
-                {/* Get Started Button - Opens Spotlight Tour */}
-                <button
-                  onClick={() => {
-                    setTourStep(0);
-                    setShowSpotlightTour(true);
-                  }}
-                  aria-label="Start onboarding tour"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '2px',
-                    padding: '3px 6px',
-                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                    border: 'none',
-                    borderRadius: '4px',
-                    color: '#ffffff',
-                    fontSize: '9px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    marginLeft: '6px',
-                    marginRight: 'auto',
-                    flexShrink: 0
-                  }}
-                >
-                  <Rocket size={8} />
-                  <span>Get Started</span>
-                </button>
-              </div>
-
-              {/* Center - Logo */}
-              <div style={{
-                position: 'absolute',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                display: 'flex',
-                alignItems: 'center'
-              }}>
+                {/* Logo - Left aligned after hamburger */}
                 <MarketClashLogo size="small" />
               </div>
 
@@ -18969,8 +18931,11 @@ export default function PortfolioDuel() {
             className="pt-4 md:pt-0 pb-28 md:pb-20 px-4 md:px-6"
             style={{
               flex: 1,
+              width: '100%',
               maxWidth: '900px',
-              margin: '0 auto'
+              margin: '0 auto',
+              boxSizing: 'border-box',
+              overflowX: 'hidden',
             }}
           >
             {/* ═══════════════════════════════════════════════════════════

@@ -1,16 +1,43 @@
 // /src/components/Dashboard/DashboardTabs.jsx
 // 3-tab navigation: PVP | TRAIN & EARN | RESEARCH
-// Active tab: amber fill with dark text. Inactive: dark bg with grey text.
-// RESEARCH tab opens research modal (same behavior as before).
+// Color-coded glowing tabs inspired by tarot card design
+// PVP: Cyan, TRAIN: Purple, RESEARCH: Amber
 // Mobile: All 3 tabs fit on 375px screen without scrolling
 
 import React, { useState } from 'react';
+import { Swords, Trophy, BarChart3 } from 'lucide-react';
 import { useIsMobile } from '../../hooks';
 
+// Tab configuration with unique theme colors and Lucide icons
 const TABS = [
-  { id: 'pvp', label: 'PVP', icon: '⚔️' },
-  { id: 'train', label: 'TRAIN & EARN', mobileLabel: 'TRAIN', icon: '🪙' },
-  { id: 'research', label: 'RESEARCH', icon: '📊' },
+  {
+    id: 'pvp',
+    label: 'PVP',
+    Icon: Swords,
+    // Cyan theme - competitive
+    color: '#00d9ff',
+    glowColor: 'rgba(0, 217, 255, 0.5)',
+    bgGradient: 'linear-gradient(135deg, rgba(0, 217, 255, 0.15) 0%, rgba(0, 217, 255, 0.05) 100%)',
+  },
+  {
+    id: 'train',
+    label: 'TRAIN & EARN',
+    mobileLabel: 'TRAIN',
+    Icon: Trophy,
+    // Purple theme - training/growth
+    color: '#9333ea',
+    glowColor: 'rgba(147, 51, 234, 0.5)',
+    bgGradient: 'linear-gradient(135deg, rgba(147, 51, 234, 0.15) 0%, rgba(147, 51, 234, 0.05) 100%)',
+  },
+  {
+    id: 'research',
+    label: 'RESEARCH',
+    Icon: BarChart3,
+    // Amber theme - knowledge
+    color: '#f59e0b',
+    glowColor: 'rgba(245, 158, 11, 0.5)',
+    bgGradient: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(245, 158, 11, 0.05) 100%)',
+  },
 ];
 
 export default function DashboardTabs({ activeTab, setActiveTab, setShowResearchMode, colors }) {
@@ -41,7 +68,7 @@ export default function DashboardTabs({ activeTab, setActiveTab, setShowResearch
         margin: '0 auto',
         display: 'flex',
         justifyContent: 'center',
-        gap: '6px',
+        gap: isMobile ? '8px' : '12px',
       }}>
         {TABS.map((tab) => {
           const isActive = activeTab === tab.id && tab.id !== 'research';
@@ -49,6 +76,14 @@ export default function DashboardTabs({ activeTab, setActiveTab, setShowResearch
 
           // Use mobile label if available and on small screen
           const displayLabel = isMobile && tab.mobileLabel ? tab.mobileLabel : tab.label;
+
+          // Dynamic styles based on state
+          const borderOpacity = isActive ? 1 : isHovered ? 0.6 : 0.3;
+          const glowIntensity = isActive ? 1 : isHovered ? 0.4 : 0;
+
+          // Icon color: theme color when active/hovered, muted otherwise
+          const iconColor = isActive ? tab.color : isHovered ? '#e6edf3' : '#6e7681';
+          const iconSize = isMobile ? 14 : 16;
 
           return (
             <button
@@ -58,54 +93,74 @@ export default function DashboardTabs({ activeTab, setActiveTab, setShowResearch
               onMouseEnter={() => setHoverTab(tab.id)}
               onMouseLeave={() => setHoverTab(null)}
               style={{
-                // Responsive padding: tighter on mobile to fit all 3 tabs
-                padding: isMobile ? '10px 12px' : '10px 20px',
-                borderRadius: '10px',
-                // Slightly smaller font on very small screens
-                fontSize: isMobile ? '12px' : '13px',
+                // Responsive sizing
+                padding: isMobile ? '10px 14px' : '12px 20px',
+                borderRadius: '12px',
+                fontSize: isMobile ? '11px' : '13px',
                 fontWeight: '700',
                 cursor: 'pointer',
-                transition: 'all 0.25s ease',
+                transition: 'all 0.3s ease',
                 position: 'relative',
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
-                // Allow tabs to shrink slightly if needed, but not collapse
+                // Flex behavior
                 flexShrink: 1,
                 minWidth: 0,
-                border: isActive
-                  ? '1px solid #f59e0b'
-                  : `1px solid ${isHovered ? 'rgba(255, 255, 255, 0.15)' : '#21262d'}`,
+                // Color-coded border with dynamic opacity
+                border: `2px solid ${tab.color}`,
+                borderColor: isActive
+                  ? tab.color
+                  : `rgba(${tab.id === 'pvp' ? '0, 217, 255' : tab.id === 'train' ? '147, 51, 234' : '245, 158, 11'}, ${borderOpacity})`,
+                // Background: dark base with color tint when active
                 background: isActive
-                  ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
-                  : isHovered
-                    ? 'rgba(22, 27, 34, 1)'
-                    : 'rgba(22, 27, 34, 0.8)',
+                  ? tab.bgGradient
+                  : 'rgba(10, 14, 20, 0.8)',
+                // Text color: theme color when active, muted otherwise
                 color: isActive
-                  ? '#0d1117'
+                  ? tab.color
                   : isHovered
                     ? '#e6edf3'
-                    : '#8b949e',
-                boxShadow: isActive
-                  ? '0 0 16px rgba(245, 158, 11, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15)'
+                    : '#6e7681',
+                // Glow effect
+                boxShadow: glowIntensity > 0
+                  ? `0 0 ${15 * glowIntensity}px ${tab.glowColor}, inset 0 0 ${20 * glowIntensity}px rgba(${tab.id === 'pvp' ? '0, 217, 255' : tab.id === 'train' ? '147, 51, 234' : '245, 158, 11'}, 0.1)`
                   : 'none',
-                letterSpacing: isMobile ? '0.3px' : '0.5px',
+                letterSpacing: isMobile ? '0.3px' : '0.8px',
+                textTransform: 'uppercase',
               }}
             >
-              {/* Inner shine for active tab */}
+              {/* Subtle inner highlight for active state */}
               {isActive && (
                 <div style={{
                   position: 'absolute',
                   top: 0,
                   left: 0,
                   right: 0,
-                  height: '50%',
-                  background: 'linear-gradient(180deg, rgba(255,255,255,0.15) 0%, transparent 100%)',
+                  height: '40%',
+                  background: `linear-gradient(180deg, ${tab.color}15 0%, transparent 100%)`,
                   pointerEvents: 'none',
                   borderRadius: '10px 10px 0 0',
                 }} />
               )}
-              <span style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: isMobile ? '4px' : '6px' }}>
-                <span style={{ fontSize: isMobile ? '12px' : '14px' }}>{tab.icon}</span>
+
+              {/* Tab content */}
+              <span style={{
+                position: 'relative',
+                zIndex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                gap: isMobile ? '5px' : '7px',
+              }}>
+                <tab.Icon
+                  size={iconSize}
+                  color={iconColor}
+                  strokeWidth={2.5}
+                  style={{
+                    // Subtle glow on icon when active
+                    filter: isActive ? `drop-shadow(0 0 4px ${tab.color})` : 'none',
+                    transition: 'all 0.3s ease',
+                  }}
+                />
                 {displayLabel}
               </span>
             </button>

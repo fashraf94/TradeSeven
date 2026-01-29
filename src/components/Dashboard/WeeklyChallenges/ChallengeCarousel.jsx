@@ -86,9 +86,10 @@ export default function ChallengeCarousel({
         style={{
           display: 'flex',
           gap: `${cardDimensions.gap}px`,
-          // CRITICAL: Use 'scroll' for reliable mobile scrolling
+          // CRITICAL: Must use 'scroll' (not 'auto') for reliable mobile scrolling
+          // Note: overflowY must be 'hidden' or 'clip' - CSS doesn't allow 'visible' with scroll
           overflowX: 'scroll',
-          overflowY: 'visible',
+          overflowY: 'clip',
           scrollSnapType: 'x mandatory',
           WebkitOverflowScrolling: 'touch',
           // Padding for card spacing from edges
@@ -99,10 +100,10 @@ export default function ChallengeCarousel({
           // Hide scrollbar - navigation via swipe + dots
           scrollbarWidth: 'none',
           msOverflowStyle: 'none',
-          // Ensure touch scrolling works
-          touchAction: 'pan-x',
-          // Prevent any pointer-events blocking
-          pointerEvents: 'auto',
+          // Ensure touch scrolling works on mobile
+          touchAction: 'pan-x pan-y',
+          WebkitUserSelect: 'none',
+          userSelect: 'none',
         }}
       >
         {/* Hide webkit scrollbar */}

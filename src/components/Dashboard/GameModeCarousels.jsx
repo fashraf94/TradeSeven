@@ -178,7 +178,7 @@ export default function GameModeCarousels({
           TRAINING SECTION
           ═══════════════════════════════════════════════════════════════ */}
       {showTraining && (
-        <div style={{ marginBottom: '24px' }}>
+        <div style={{ marginBottom: '24px', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
           <div style={sectionHeaderStyle}>
             <Zap size={18} color={HOLO_COLORS.purple} />
             <span style={getSectionTitleStyle(HOLO_COLORS.purple, '#a78bfa')}>
@@ -211,7 +211,7 @@ export default function GameModeCarousels({
           COMPETE SECTION
           ═══════════════════════════════════════════════════════════════ */}
       {showCompete && (
-        <div style={{ marginBottom: '24px' }}>
+        <div style={{ marginBottom: '24px', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
           <div style={sectionHeaderStyle}>
             <Swords size={18} color={HOLO_COLORS.defensive} />
             <span style={getSectionTitleStyle(HOLO_COLORS.defensive, '#34d399')}>

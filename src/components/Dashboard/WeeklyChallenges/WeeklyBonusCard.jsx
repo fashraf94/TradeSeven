@@ -14,6 +14,9 @@ export default function WeeklyBonusCard({ completedCount, canClaim, onClaim }) {
       style={{
         marginTop: '16px',
         padding: isMobile ? '12px' : '16px',
+        width: '100%',
+        maxWidth: '100%',
+        boxSizing: 'border-box',
         background: canClaim
           ? 'linear-gradient(135deg, rgba(124, 58, 237, 0.3), rgba(167, 139, 250, 0.15))'
           : 'rgba(168, 85, 247, 0.1)',
