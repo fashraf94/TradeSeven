@@ -19028,16 +19028,6 @@ export default function PortfolioDuel() {
                   setActiveBattleId={setActiveBattleId}
                 />
 
-                {/* Training Live Feed - BaggerBomb events & lead changes */}
-                <TrainingLiveFeed
-                  activeTrainingBattles={activeTrainingBattles}
-                  battlePrices={battlePrices}
-                  user={user}
-                  setCurrentBattle={setCurrentBattle}
-                  setScreen={setScreen}
-                  setActiveBattleId={setActiveBattleId}
-                />
-
                 {/* Quick Play - Training game cards (EARN COINS) */}
                 <GameModeCarousels
                   mode="train"
@@ -19071,6 +19061,16 @@ export default function PortfolioDuel() {
                   completedBattles={completedBattles}
                   user={user}
                   colors={colors}
+                />
+
+                {/* Training Live Feed - BaggerBomb events & lead changes (bottom for endless scroll feel) */}
+                <TrainingLiveFeed
+                  activeTrainingBattles={activeTrainingBattles}
+                  battlePrices={battlePrices}
+                  user={user}
+                  setCurrentBattle={setCurrentBattle}
+                  setScreen={setScreen}
+                  setActiveBattleId={setActiveBattleId}
                 />
               </>
             )}
