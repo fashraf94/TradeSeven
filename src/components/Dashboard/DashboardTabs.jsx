@@ -5,14 +5,15 @@
 // Mobile: All 3 tabs fit on 375px screen without scrolling
 
 import React, { useState } from 'react';
+import { Swords, Trophy, BarChart3 } from 'lucide-react';
 import { useIsMobile } from '../../hooks';
 
-// Tab configuration with unique theme colors
+// Tab configuration with unique theme colors and Lucide icons
 const TABS = [
   {
     id: 'pvp',
     label: 'PVP',
-    icon: '⚔️',
+    Icon: Swords,
     // Cyan theme - competitive
     color: '#00d9ff',
     glowColor: 'rgba(0, 217, 255, 0.5)',
@@ -22,7 +23,7 @@ const TABS = [
     id: 'train',
     label: 'TRAIN & EARN',
     mobileLabel: 'TRAIN',
-    icon: '🪙',
+    Icon: Trophy,
     // Purple theme - training/growth
     color: '#9333ea',
     glowColor: 'rgba(147, 51, 234, 0.5)',
@@ -31,7 +32,7 @@ const TABS = [
   {
     id: 'research',
     label: 'RESEARCH',
-    icon: '📊',
+    Icon: BarChart3,
     // Amber theme - knowledge
     color: '#f59e0b',
     glowColor: 'rgba(245, 158, 11, 0.5)',
@@ -79,6 +80,10 @@ export default function DashboardTabs({ activeTab, setActiveTab, setShowResearch
           // Dynamic styles based on state
           const borderOpacity = isActive ? 1 : isHovered ? 0.6 : 0.3;
           const glowIntensity = isActive ? 1 : isHovered ? 0.4 : 0;
+
+          // Icon color: theme color when active/hovered, muted otherwise
+          const iconColor = isActive ? tab.color : isHovered ? '#e6edf3' : '#6e7681';
+          const iconSize = isMobile ? 14 : 16;
 
           return (
             <button
@@ -144,15 +149,18 @@ export default function DashboardTabs({ activeTab, setActiveTab, setShowResearch
                 zIndex: 1,
                 display: 'flex',
                 alignItems: 'center',
-                gap: isMobile ? '4px' : '6px',
+                gap: isMobile ? '5px' : '7px',
               }}>
-                <span style={{
-                  fontSize: isMobile ? '12px' : '14px',
-                  // Subtle glow on icon when active
-                  filter: isActive ? `drop-shadow(0 0 4px ${tab.color})` : 'none',
-                }}>
-                  {tab.icon}
-                </span>
+                <tab.Icon
+                  size={iconSize}
+                  color={iconColor}
+                  strokeWidth={2.5}
+                  style={{
+                    // Subtle glow on icon when active
+                    filter: isActive ? `drop-shadow(0 0 4px ${tab.color})` : 'none',
+                    transition: 'all 0.3s ease',
+                  }}
+                />
                 {displayLabel}
               </span>
             </button>
