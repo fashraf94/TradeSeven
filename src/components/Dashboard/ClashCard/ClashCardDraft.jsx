@@ -5,23 +5,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Timer } from 'lucide-react';
-
-// Format timer based on urgency level
-function formatClashTimer(remainingMs) {
-  if (remainingMs <= 0) return { text: 'ENDED', color: '#ef4444', pulse: false, urgent: false };
-
-  const hours = Math.floor(remainingMs / (1000 * 60 * 60));
-  const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds = Math.floor((remainingMs % (1000 * 60)) / 1000);
-
-  if (hours >= 1) {
-    return { text: `${hours}h ${minutes}m`, color: '#00d9ff', pulse: false, urgent: false };
-  }
-  if (minutes > 5) {
-    return { text: `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`, color: '#ef4444', pulse: true, urgent: false };
-  }
-  return { text: `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}!!`, color: '#ef4444', pulse: true, urgent: true };
-}
+import { formatClashTimer } from '../../../utils/timerFormatters';
 
 // Get ordinal suffix for position
 function getOrdinal(n) {

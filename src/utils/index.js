@@ -23,3 +23,9 @@ export {
   isSameDay,
   isEmptyDate
 } from './dateUtils';
+
+export {
+  formatClashTimer,
+  formatTrainingTimer,
+  TIMER_COLORS
+} from './timerFormatters';

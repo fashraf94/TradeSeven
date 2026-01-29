@@ -2,10 +2,11 @@
 // Weekly bonus card - complete all 4 daily challenges to claim bonus XP
 
 import { motion } from 'framer-motion';
+import { useIsMobile } from '../../../hooks';
 import { CHALLENGE_XP } from './challengeDefinitions';
 
 export default function WeeklyBonusCard({ completedCount, canClaim, onClaim }) {
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 400;
+  const { isMobile } = useIsMobile();
 
   return (
     <motion.div

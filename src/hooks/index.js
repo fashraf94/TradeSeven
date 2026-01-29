@@ -22,3 +22,6 @@ export { useResearch } from './useResearch';
 export { useBattles } from './useBattles';
 export { usePortfolio } from './usePortfolio';
 export { useChallenges } from './useChallenges';
+
+// Responsive hooks
+export { useIsMobile } from './useIsMobile';
