@@ -2,6 +2,7 @@
 // UI components for the MarketClash BaggerBomb Scoring system
 
 // Battle UI Components
+export { default as ChamberFuse } from './ChamberFuse';
 export { default as SessionScoreCard } from './SessionScoreCard';
 export { default as BreakoutFeed } from './BreakoutFeed';
 export { default as BaggerBombScoreboard } from './BaggerBombScoreboard';
