@@ -1,11 +1,23 @@
 // BaggerBombBattleView - Main battle screen for BaggerBomb mode
 // Sleeper-style side-by-side matchup view with tiers
+// Features: Night mode theme for NIGHT_GAME session (4-8 PM ET)
 
 import React, { useState, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Moon } from 'lucide-react';
 import { HOLO_COLORS } from '../constants/holoTheme';
+
+// Night mode color overrides
+const NIGHT_COLORS = {
+  bgDeep: '#050508',      // Deeper black
+  bgCard: '#0a0a0f',      // Slightly lighter
+  bgElevated: '#12121a',  // Card backgrounds
+  accent: '#3b82f6',      // Blue instead of cyan
+  textPrimary: '#e0e0f0', // Slightly cooler white
+  textMuted: '#6b6b8a',   // Muted purple-grey
+  glow: 'rgba(59, 130, 246, 0.3)', // Blue glow
+};
 
 // Import BaggerBomb components
 import BattleHeader from '../components/BaggerBomb/BattleHeader';
@@ -42,15 +54,22 @@ const TIERS = [
 /**
  * Tab Toggle Component
  */
-function TabToggle({ activeTab, onTabChange }) {
+function TabToggle({ activeTab, onTabChange, nightMode }) {
+  const bgColor = nightMode ? NIGHT_COLORS.bgElevated : HOLO_COLORS.bgElevated;
+  const accentColor = nightMode ? NIGHT_COLORS.accent : HOLO_COLORS.cyan;
+  const mutedColor = nightMode ? NIGHT_COLORS.textMuted : HOLO_COLORS.textMuted;
+  const darkBg = nightMode ? NIGHT_COLORS.bgDeep : HOLO_COLORS.bgDeep;
+
   return (
     <div
       style={{
         display: 'flex',
         margin: '16px',
-        backgroundColor: HOLO_COLORS.bgElevated,
+        backgroundColor: bgColor,
         borderRadius: '8px',
         padding: '4px',
+        position: 'relative',
+        zIndex: 1,
       }}
     >
       <button
@@ -64,8 +83,8 @@ function TabToggle({ activeTab, onTabChange }) {
           fontWeight: 600,
           cursor: 'pointer',
           transition: 'all 0.2s',
-          backgroundColor: activeTab === 'matchups' ? HOLO_COLORS.cyan : 'transparent',
-          color: activeTab === 'matchups' ? HOLO_COLORS.bgDeep : HOLO_COLORS.textMuted,
+          backgroundColor: activeTab === 'matchups' ? accentColor : 'transparent',
+          color: activeTab === 'matchups' ? darkBg : mutedColor,
         }}
       >
         Matchups
@@ -81,8 +100,8 @@ function TabToggle({ activeTab, onTabChange }) {
           fontWeight: 600,
           cursor: 'pointer',
           transition: 'all 0.2s',
-          backgroundColor: activeTab === 'feed' ? HOLO_COLORS.cyan : 'transparent',
-          color: activeTab === 'feed' ? HOLO_COLORS.bgDeep : HOLO_COLORS.textMuted,
+          backgroundColor: activeTab === 'feed' ? accentColor : 'transparent',
+          color: activeTab === 'feed' ? darkBg : mutedColor,
         }}
       >
         Live Feed
@@ -94,17 +113,22 @@ function TabToggle({ activeTab, onTabChange }) {
 TabToggle.propTypes = {
   activeTab: PropTypes.oneOf(['matchups', 'feed']).isRequired,
   onTabChange: PropTypes.func.isRequired,
+  nightMode: PropTypes.bool,
 };
 
 /**
  * Tier Section Header
  */
-function TierHeader({ tier }) {
+function TierHeader({ tier, nightMode }) {
+  const bgColor = nightMode ? NIGHT_COLORS.bgDeep : HOLO_COLORS.bgDeep;
+  const mutedColor = nightMode ? NIGHT_COLORS.textMuted : HOLO_COLORS.textMuted;
+  const elevatedBg = nightMode ? NIGHT_COLORS.bgElevated : HOLO_COLORS.bgElevated;
+
   return (
     <div
       style={{
         padding: '12px 16px 8px',
-        backgroundColor: HOLO_COLORS.bgDeep,
+        backgroundColor: bgColor,
         position: 'sticky',
         top: 0,
         zIndex: 5,
@@ -121,7 +145,7 @@ function TierHeader({ tier }) {
           style={{
             fontSize: '12px',
             fontWeight: 700,
-            color: HOLO_COLORS.textMuted,
+            color: mutedColor,
             textTransform: 'uppercase',
             letterSpacing: '0.5px',
           }}
@@ -131,9 +155,9 @@ function TierHeader({ tier }) {
         <span
           style={{
             fontSize: '11px',
-            color: HOLO_COLORS.textMuted,
+            color: mutedColor,
             padding: '2px 6px',
-            backgroundColor: HOLO_COLORS.bgElevated,
+            backgroundColor: elevatedBg,
             borderRadius: '4px',
           }}
         >
@@ -151,6 +175,7 @@ TierHeader.propTypes = {
     allocation: PropTypes.string.isRequired,
     slots: PropTypes.number.isRequired,
   }).isRequired,
+  nightMode: PropTypes.bool,
 };
 
 /**
@@ -167,8 +192,33 @@ export default function BaggerBombBattleView({
   events,
   onBack,
   onThresholdCross,
+  nightMode = false,
 }) {
   const [activeTab, setActiveTab] = useState('matchups');
+
+  // Apply night mode color scheme when active
+  const colors = useMemo(() => {
+    if (nightMode) {
+      return {
+        bgDeep: NIGHT_COLORS.bgDeep,
+        bgCard: NIGHT_COLORS.bgCard,
+        bgElevated: NIGHT_COLORS.bgElevated,
+        accent: NIGHT_COLORS.accent,
+        textPrimary: NIGHT_COLORS.textPrimary,
+        textMuted: NIGHT_COLORS.textMuted,
+        cyan: NIGHT_COLORS.accent,
+      };
+    }
+    return {
+      bgDeep: HOLO_COLORS.bgDeep,
+      bgCard: HOLO_COLORS.bgCard,
+      bgElevated: HOLO_COLORS.bgElevated,
+      accent: HOLO_COLORS.cyan,
+      textPrimary: HOLO_COLORS.textPrimary,
+      textMuted: HOLO_COLORS.textMuted,
+      cyan: HOLO_COLORS.cyan,
+    };
+  }, [nightMode]);
 
   // Organize player portfolio by tiers
   const playerPortfolio = useMemo(() => {
@@ -208,11 +258,27 @@ export default function BaggerBombBattleView({
     <div
       style={{
         minHeight: '100vh',
-        backgroundColor: HOLO_COLORS.bgDeep,
+        backgroundColor: colors.bgDeep,
         display: 'flex',
         flexDirection: 'column',
+        transition: 'background-color 0.5s ease',
       }}
     >
+      {/* Night Mode Ambient Glow */}
+      {nightMode && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            pointerEvents: 'none',
+            background: `radial-gradient(ellipse at 50% 0%, ${NIGHT_COLORS.glow} 0%, transparent 60%)`,
+            zIndex: 0,
+          }}
+        />
+      )}
+
       {/* Navigation Header */}
       <div
         style={{
@@ -221,6 +287,8 @@ export default function BaggerBombBattleView({
           justifyContent: 'space-between',
           padding: '12px 16px',
           paddingTop: 'max(12px, env(safe-area-inset-top))',
+          position: 'relative',
+          zIndex: 1,
         }}
       >
         <button
@@ -233,21 +301,24 @@ export default function BaggerBombBattleView({
             backgroundColor: 'transparent',
             border: 'none',
             cursor: 'pointer',
-            color: HOLO_COLORS.cyan,
+            color: colors.accent,
           }}
         >
           <ChevronLeft size={24} />
         </button>
-        <h1
-          style={{
-            fontSize: '16px',
-            fontWeight: 700,
-            color: HOLO_COLORS.textPrimary,
-            margin: 0,
-          }}
-        >
-          BaggerBomb Battle
-        </h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {nightMode && <Moon size={16} color={colors.accent} />}
+          <h1
+            style={{
+              fontSize: '16px',
+              fontWeight: 700,
+              color: colors.textPrimary,
+              margin: 0,
+            }}
+          >
+            BaggerBomb Battle
+          </h1>
+        </div>
         <div style={{ width: '40px' }} /> {/* Spacer for centering */}
       </div>
 
@@ -264,10 +335,10 @@ export default function BaggerBombBattleView({
       </div>
 
       {/* Tab Toggle */}
-      <TabToggle activeTab={activeTab} onTabChange={setActiveTab} />
+      <TabToggle activeTab={activeTab} onTabChange={setActiveTab} nightMode={nightMode} />
 
       {/* Main Content */}
-      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '100px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '100px', position: 'relative', zIndex: 1 }}>
         <AnimatePresence mode="wait">
           {activeTab === 'feed' ? (
             <motion.div
@@ -290,7 +361,7 @@ export default function BaggerBombBattleView({
               {/* Tier Sections */}
               {TIERS.map((tier) => (
                 <div key={tier.key}>
-                  <TierHeader tier={tier} />
+                  <TierHeader tier={tier} nightMode={nightMode} />
 
                   {/* Asset Rows for this tier */}
                   {Array.from({ length: tier.slots }).map((_, index) => {
@@ -385,6 +456,8 @@ BaggerBombBattleView.propTypes = {
   onBack: PropTypes.func,
   /** Callback when threshold crossed: (side, symbol, thresholdName, multiplier) */
   onThresholdCross: PropTypes.func,
+  /** Enable night mode theme (auto-enabled during NIGHT_GAME session) */
+  nightMode: PropTypes.bool,
 };
 
 BaggerBombBattleView.defaultProps = {
@@ -398,6 +471,7 @@ BaggerBombBattleView.defaultProps = {
   events: [],
   onBack: () => {},
   onThresholdCross: null,
+  nightMode: false,
 };
 
 // Export tier configuration for use elsewhere

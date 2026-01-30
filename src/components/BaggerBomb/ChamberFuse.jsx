@@ -124,40 +124,59 @@ export default function ChamberFuse({
     meltdown: currentMultiplier <= MULTIPLIERS.meltdown || history.minMultiplier <= MULTIPLIERS.meltdown,
   }), [currentMultiplier, history.maxMultiplier, history.minMultiplier]);
 
-  // Check if primed (within 10% of nearest uncrossed threshold)
-  const isPrimed = useMemo(() => {
-    const proximityThreshold = 0.1; // 10% of multiplier distance
+  // Check if primed and calculate intensity (0-1, where 1 is closest to threshold)
+  const primedState = useMemo(() => {
+    // Calculate distance to nearest uncrossed threshold
+    let nearestDistance = null;
+    let isPositive = true;
 
     // Check proximity to positive thresholds
     if (currentMultiplier > 0 && currentMultiplier < MULTIPLIERS.bagger) {
-      const distanceToBagger = MULTIPLIERS.bagger - currentMultiplier;
-      if (distanceToBagger <= proximityThreshold) return true;
-    }
-    if (currentMultiplier >= MULTIPLIERS.bagger && currentMultiplier < MULTIPLIERS.doubleBagger) {
-      const distanceToDouble = MULTIPLIERS.doubleBagger - currentMultiplier;
-      if (distanceToDouble <= proximityThreshold * 1.5) return true;
-    }
-    if (currentMultiplier >= MULTIPLIERS.doubleBagger && currentMultiplier < MULTIPLIERS.tenBagger) {
-      const distanceToTen = MULTIPLIERS.tenBagger - currentMultiplier;
-      if (distanceToTen <= proximityThreshold * 2) return true;
+      nearestDistance = MULTIPLIERS.bagger - currentMultiplier;
+      isPositive = true;
+    } else if (currentMultiplier >= MULTIPLIERS.bagger && currentMultiplier < MULTIPLIERS.doubleBagger) {
+      nearestDistance = MULTIPLIERS.doubleBagger - currentMultiplier;
+      isPositive = true;
+    } else if (currentMultiplier >= MULTIPLIERS.doubleBagger && currentMultiplier < MULTIPLIERS.tenBagger) {
+      nearestDistance = MULTIPLIERS.tenBagger - currentMultiplier;
+      isPositive = true;
     }
 
     // Check proximity to negative thresholds
     if (currentMultiplier < 0 && currentMultiplier > MULTIPLIERS.bust) {
-      const distanceToBust = currentMultiplier - MULTIPLIERS.bust;
-      if (distanceToBust <= proximityThreshold) return true;
-    }
-    if (currentMultiplier <= MULTIPLIERS.bust && currentMultiplier > MULTIPLIERS.crash) {
-      const distanceToCrash = currentMultiplier - MULTIPLIERS.crash;
-      if (distanceToCrash <= proximityThreshold * 1.5) return true;
-    }
-    if (currentMultiplier <= MULTIPLIERS.crash && currentMultiplier > MULTIPLIERS.meltdown) {
-      const distanceToMeltdown = currentMultiplier - MULTIPLIERS.meltdown;
-      if (distanceToMeltdown <= proximityThreshold * 2) return true;
+      const dist = Math.abs(currentMultiplier - MULTIPLIERS.bust);
+      if (nearestDistance === null || dist < nearestDistance) {
+        nearestDistance = dist;
+        isPositive = false;
+      }
+    } else if (currentMultiplier <= MULTIPLIERS.bust && currentMultiplier > MULTIPLIERS.crash) {
+      const dist = Math.abs(currentMultiplier - MULTIPLIERS.crash);
+      if (nearestDistance === null || dist < nearestDistance) {
+        nearestDistance = dist;
+        isPositive = false;
+      }
+    } else if (currentMultiplier <= MULTIPLIERS.crash && currentMultiplier > MULTIPLIERS.meltdown) {
+      const dist = Math.abs(currentMultiplier - MULTIPLIERS.meltdown);
+      if (nearestDistance === null || dist < nearestDistance) {
+        nearestDistance = dist;
+        isPositive = false;
+      }
     }
 
-    return false;
+    if (nearestDistance === null) {
+      return { isPrimed: false, intensity: 0, isPositive: true };
+    }
+
+    // Primed if within 10% (0.1 multiplier distance)
+    const isPrimed = nearestDistance <= 0.1;
+    // Intensity: 1.0 at 2% distance, 0.3 at 10% distance
+    const intensity = isPrimed ? Math.min(1, Math.max(0.3, 1 - (nearestDistance / 0.1) * 0.7)) : 0;
+
+    return { isPrimed, intensity, isPositive };
   }, [currentMultiplier]);
+
+  const isPrimed = primedState.isPrimed;
+  const primedIntensity = primedState.intensity;
 
   // Detect threshold crossings and fire callback
   useEffect(() => {
@@ -254,15 +273,18 @@ export default function ChamberFuse({
         }}
       />
 
-      {/* Animated Needle */}
+      {/* Animated Needle - intensity-based vibration */}
       <motion.div
         animate={{
           left: `${needlePosition}%`,
-          x: animate && isPrimed ? [-2, 2, -1, 1, 0] : 0,
+          // Vibration amplitude scales with intensity (0.3 = subtle, 1.0 = strong)
+          x: animate && isPrimed ? [-3 * primedIntensity, 3 * primedIntensity, -2 * primedIntensity, 2 * primedIntensity, 0] : 0,
+          scale: isPrimed ? 1 + (0.15 * primedIntensity) : 1,
         }}
         transition={{
           left: { type: 'spring', stiffness: 80, damping: 15 },
-          x: isPrimed ? { duration: 0.3, repeat: Infinity, ease: 'easeInOut' } : { duration: 0 },
+          x: isPrimed ? { duration: 0.2 + (0.15 * (1 - primedIntensity)), repeat: Infinity, ease: 'easeInOut' } : { duration: 0 },
+          scale: { duration: 0.2 },
         }}
         style={{
           position: 'absolute',
@@ -274,7 +296,10 @@ export default function ChamberFuse({
           borderRadius: '50%',
           backgroundColor: isPrimed ? HOLO_COLORS.amber : HOLO_COLORS.cyan,
           border: `2px solid ${HOLO_COLORS.textPrimary}`,
-          boxShadow: isPrimed ? GLOW_EFFECTS.amber : GLOW_EFFECTS.cyan,
+          // Glow intensity scales with proximity
+          boxShadow: isPrimed
+            ? `0 0 ${12 + (8 * primedIntensity)}px ${HOLO_COLORS.amber}, 0 0 ${20 + (15 * primedIntensity)}px ${HOLO_COLORS.amber}40`
+            : GLOW_EFFECTS.cyan,
           zIndex: 10,
         }}
       />

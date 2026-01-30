@@ -18,6 +18,10 @@ export { default as SubstitutionPanel } from './SubstitutionPanel';
 export { default as BaggerBombBattleView } from './BaggerBombBattleView';
 export { default as BaggerBombBattleViewRedesign } from './BaggerBombBattleViewRedesign';
 
+// Phase 5: Animation & Celebration Components
+export { default as TriggerCelebration, ParticleBurst, FloatingPoints, GlowPulse, ChainIndicator, BADGE_CONFIG as TRIGGER_BADGE_CONFIG } from './TriggerCelebration';
+export { default as BattleEndScreen } from './BattleEndScreen';
+
 // Portfolio Builder Components
 export { default as BenchSelector } from './BenchSelector';
 export { default as ThresholdPreview } from './ThresholdPreview';

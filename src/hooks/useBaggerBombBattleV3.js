@@ -51,6 +51,15 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   const [localHistory, setLocalHistory] = useState({});
   const prevMultipliersRef = useRef({});
 
+  // Chain trigger system for staggered celebrations
+  const [triggerQueue, setTriggerQueue] = useState([]);
+  const [activeTrigger, setActiveTrigger] = useState(null);
+  const [chainCount, setChainCount] = useState(0);
+  const [cumulativePoints, setCumulativePoints] = useState(0);
+  const chainTimeoutRef = useRef(null);
+  const CHAIN_WINDOW_MS = 500; // Triggers within 500ms are part of the same chain
+  const TRIGGER_DISPLAY_MS = 800; // How long each trigger displays
+
   // Session state
   const [currentSessionKey, setCurrentSessionKey] = useState(getCurrentSession());
   const [sessionTimeRemaining, setSessionTimeRemaining] = useState(getSessionTimeRemaining());
@@ -211,6 +220,62 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     return getSessionStatuses(currentSessionKey, battle?.state?.completedSessions || []);
   }, [currentSessionKey, battle?.state?.completedSessions]);
 
+  // Process trigger queue with staggered timing
+  useEffect(() => {
+    if (triggerQueue.length === 0 || activeTrigger) return;
+
+    // Pop first trigger from queue
+    const [nextTrigger, ...remaining] = triggerQueue;
+    setTriggerQueue(remaining);
+    setActiveTrigger(nextTrigger);
+    setChainCount((prev) => prev + 1);
+    setCumulativePoints((prev) => prev + nextTrigger.points);
+
+    // Fire callback for each trigger in chain
+    if (onThresholdCross) {
+      onThresholdCross(
+        nextTrigger.name,
+        nextTrigger.symbol,
+        nextTrigger.points,
+        nextTrigger.event
+      );
+    }
+
+    // Auto-clear after display duration (stagger for chain effect)
+    const displayTime = TRIGGER_DISPLAY_MS + (remaining.length > 0 ? 150 : 0);
+    setTimeout(() => {
+      setActiveTrigger(null);
+    }, displayTime);
+  }, [triggerQueue, activeTrigger, onThresholdCross]);
+
+  // Reset chain count when queue is empty and no active trigger
+  useEffect(() => {
+    if (triggerQueue.length === 0 && !activeTrigger && chainCount > 0) {
+      // Wait a bit after last trigger, then reset chain
+      const resetTimeout = setTimeout(() => {
+        setChainCount(0);
+        setCumulativePoints(0);
+      }, 1000);
+      return () => clearTimeout(resetTimeout);
+    }
+  }, [triggerQueue.length, activeTrigger, chainCount]);
+
+  // Queue a new trigger (batches triggers within CHAIN_WINDOW_MS)
+  const queueTrigger = useCallback((trigger) => {
+    // Clear any pending chain timeout
+    if (chainTimeoutRef.current) {
+      clearTimeout(chainTimeoutRef.current);
+    }
+
+    setTriggerQueue((prev) => [...prev, trigger]);
+
+    // Set new chain timeout - if no new triggers arrive within CHAIN_WINDOW_MS,
+    // the chain is complete and will process
+    chainTimeoutRef.current = setTimeout(() => {
+      chainTimeoutRef.current = null;
+    }, CHAIN_WINDOW_MS);
+  }, []);
+
   // Detect threshold crossings when prices update
   useEffect(() => {
     if (!currentPrices || Object.keys(currentPrices).length === 0) return;
@@ -246,7 +311,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
               [asset.symbol]: newHistory,
             }));
 
-            // Create and log event
+            // Create event
             const event = createThresholdEvent(
               'player',
               asset.symbol,
@@ -255,10 +320,13 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
               threshold.points
             );
 
-            // Fire callback
-            if (onThresholdCross) {
-              onThresholdCross(threshold.name, asset.symbol, threshold.points, event);
-            }
+            // Queue trigger for staggered chain animation
+            queueTrigger({
+              name: threshold.name,
+              symbol: asset.symbol,
+              points: threshold.points,
+              event,
+            });
 
             // Persist to Firebase (async, don't await)
             if (battleId && !battleId.startsWith('training_')) {
@@ -272,7 +340,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       // Update prev multiplier ref
       prevMultipliersRef.current[asset.symbol] = currentMultiplier;
     });
-  }, [currentPrices, openPrices, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, onThresholdCross]);
+  }, [currentPrices, openPrices, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger]);
 
   // Fetch prices
   const fetchPrices = useCallback(async () => {
@@ -487,6 +555,12 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
 
     // Actions
     refreshPrices: fetchPrices,
+
+    // Trigger celebration state (for TriggerCelebration component)
+    activeTrigger,
+    chainCount,
+    cumulativePoints,
+    clearTrigger: () => setActiveTrigger(null),
 
     // Formatting helpers
     formatTimeRemaining: () => formatTimeRemaining(sessionTimeRemaining),
