@@ -76,7 +76,7 @@ import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen
 import DesktopBackground from './components/DesktopBackground';
 import { ConfirmationPopup } from './components/shared';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity, SeasonalBanner } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity, SeasonalBanner, TrainingLiveFeed } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -19028,13 +19028,6 @@ export default function PortfolioDuel() {
                   setActiveBattleId={setActiveBattleId}
                 />
 
-                {/* Seasonal Banner - 2X Practice Drills */}
-                <SeasonalBanner
-                  variant="train"
-                  setScreen={setScreen}
-                  colors={colors}
-                />
-
                 {/* Quick Play - Training game cards (EARN COINS) */}
                 <GameModeCarousels
                   mode="train"
@@ -19068,6 +19061,16 @@ export default function PortfolioDuel() {
                   completedBattles={completedBattles}
                   user={user}
                   colors={colors}
+                />
+
+                {/* Training Live Feed - BaggerBomb events & lead changes (bottom for endless scroll feel) */}
+                <TrainingLiveFeed
+                  activeTrainingBattles={activeTrainingBattles}
+                  battlePrices={battlePrices}
+                  user={user}
+                  setCurrentBattle={setCurrentBattle}
+                  setScreen={setScreen}
+                  setActiveBattleId={setActiveBattleId}
                 />
               </>
             )}
