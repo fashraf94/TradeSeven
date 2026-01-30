@@ -1,0 +1,496 @@
+// useBaggerBombBattleV3 - Enhanced hook for tier-based BaggerBomb battles
+// Adds history tracking, threshold crossing detection, and event logging
+
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
+import {
+  addBaggerBombEvent,
+  updateAssetHistoryInBattle,
+} from '../firebase/firebaseService';
+import {
+  updateAssetHistory,
+  detectThresholdCross,
+  getBadgesFromHistory,
+  calculatePoints,
+  getCurrentSession,
+  getCurrentSessionId,
+  getSessionTimeRemaining,
+  formatTimeRemaining,
+  getSessionStatuses,
+  flattenPortfolio,
+  createThresholdEvent,
+  calculateAssetScoreV3,
+  SESSION_CONFIG,
+  SESSION_ORDER,
+  THRESHOLD_POINTS,
+} from '../utils/baggerBombUtils';
+
+// ==================== CONSTANTS ====================
+
+const PRICE_POLL_INTERVAL = 60000; // 60 seconds
+
+const isCrypto = (symbol) => {
+  const cryptoSymbols = ['BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'AVAX', 'MATIC', 'LINK', 'UNI', 'XRP', 'DOGE', 'SHIB', 'LTC', 'AAVE', 'ATOM', 'ALGO', 'XLM'];
+  return cryptoSymbols.includes(symbol) || symbol?.endsWith('-USD') || POPULAR_CRYPTO.some(c => c.symbol === symbol);
+};
+
+// ==================== THE HOOK ====================
+
+export function useBaggerBombBattleV3(battleId, userId, options = {}) {
+  const { onThresholdCross } = options;
+
+  // State
+  const [battle, setBattle] = useState(null);
+  const [currentPrices, setCurrentPrices] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Local history tracking (for real-time updates before Firebase sync)
+  const [localHistory, setLocalHistory] = useState({});
+  const prevMultipliersRef = useRef({});
+
+  // Session state
+  const [currentSessionKey, setCurrentSessionKey] = useState(getCurrentSession());
+  const [sessionTimeRemaining, setSessionTimeRemaining] = useState(getSessionTimeRemaining());
+
+  // Derived state
+  const isCreator = useMemo(() => {
+    if (!battle || !userId) return true;
+    const creatorId = battle?.creator?.odUserId || battle?.creator?.uid;
+    return creatorId === userId;
+  }, [battle, userId]);
+
+  const myData = isCreator ? battle?.creator : battle?.opponent;
+  const oppData = isCreator ? battle?.opponent : battle?.creator;
+
+  // Get portfolios in flat format for price fetching
+  const myPortfolioFlat = useMemo(() => flattenPortfolio(myData?.portfolio), [myData?.portfolio]);
+  const oppPortfolioFlat = useMemo(() => flattenPortfolio(oppData?.portfolio), [oppData?.portfolio]);
+
+  // Get open prices for current session
+  const currentSessionId = getCurrentSessionId();
+  const openPrices = useMemo(() => {
+    if (!battle || !currentSessionId) return battle?.state?.startingPrices || {};
+    return battle?.sessionPrices?.[currentSessionId]?.open || battle?.state?.startingPrices || {};
+  }, [battle, currentSessionId]);
+
+  // Combine battle history with local updates
+  const combinedHistory = useMemo(() => {
+    const battleHistory = isCreator ? battle?.creator?.history : battle?.opponent?.history;
+    return { ...battleHistory, ...localHistory };
+  }, [battle, isCreator, localHistory]);
+
+  // Calculate scores with history
+  const calculateScores = useCallback((portfolio, prices, openPrices, history) => {
+    if (!portfolio || portfolio.length === 0) {
+      return { totalScore: 0, sessionScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
+    }
+
+    let totalBonusPoints = 0;
+    let totalBasePoints = 0;
+    let baggerBombs = 0;
+    let busts = 0;
+    const assetScores = [];
+
+    portfolio.forEach((asset) => {
+      if (!asset) return;
+
+      const openPrice = openPrices[asset.symbol] || asset.price || 0;
+      const currentPrice = prices[asset.symbol] || openPrice;
+
+      if (!openPrice || openPrice === 0) {
+        assetScores.push({
+          symbol: asset.symbol,
+          priceChange: 0,
+          multiplier: 0,
+          baseATR: asset.baseATR || 2.5,
+          basePoints: 0,
+          bonusPoints: 0,
+          totalPoints: 0,
+          badges: [],
+          history: { maxMultiplier: 0, minMultiplier: 0 },
+        });
+        return;
+      }
+
+      const priceChange = ((currentPrice - openPrice) / openPrice) * 100;
+      const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
+
+      const score = calculateAssetScoreV3(asset, priceChange, assetHistory);
+      assetScores.push(score);
+
+      totalBasePoints += score.basePoints;
+      totalBonusPoints += score.bonusPoints;
+
+      // Count badges
+      score.badges.forEach((badge) => {
+        if (['bagger', 'doubleBagger', 'tenBagger'].includes(badge)) baggerBombs++;
+        if (['bust', 'crash', 'meltdown'].includes(badge)) busts++;
+      });
+    });
+
+    return {
+      totalScore: Math.round(totalBasePoints + totalBonusPoints),
+      sessionScore: Math.round(totalBasePoints + totalBonusPoints),
+      assetScores,
+      baggerBombs,
+      busts,
+    };
+  }, []);
+
+  // My scores
+  const myScores = useMemo(() => {
+    return calculateScores(myPortfolioFlat, currentPrices, openPrices, combinedHistory);
+  }, [myPortfolioFlat, currentPrices, openPrices, combinedHistory, calculateScores]);
+
+  // Opponent scores
+  const oppHistory = useMemo(() => {
+    return isCreator ? battle?.opponent?.history : battle?.creator?.history;
+  }, [battle, isCreator]);
+
+  const oppScores = useMemo(() => {
+    return calculateScores(oppPortfolioFlat, currentPrices, openPrices, oppHistory || {});
+  }, [oppPortfolioFlat, currentPrices, openPrices, oppHistory, calculateScores]);
+
+  // Add completed session scores
+  const myTotalScore = useMemo(() => {
+    let total = myScores.sessionScore;
+    const completedSessions = battle?.state?.completedSessions || [];
+    const sessionScores = battle?.sessionScores || {};
+
+    completedSessions.forEach((sessionId) => {
+      const score = sessionScores[sessionId]?.[isCreator ? 'creator' : 'opponent'] || 0;
+      total += score;
+    });
+
+    return Math.round(total);
+  }, [myScores, battle, isCreator]);
+
+  const oppTotalScore = useMemo(() => {
+    let total = oppScores.sessionScore;
+    const completedSessions = battle?.state?.completedSessions || [];
+    const sessionScores = battle?.sessionScores || {};
+
+    completedSessions.forEach((sessionId) => {
+      const score = sessionScores[sessionId]?.[isCreator ? 'opponent' : 'creator'] || 0;
+      total += score;
+    });
+
+    return Math.round(total);
+  }, [oppScores, battle, isCreator]);
+
+  // Build player/opponent objects for BattleHeader
+  const player = useMemo(() => ({
+    id: myData?.uid,
+    username: myData?.username || 'You',
+    avatar: myData?.avatar,
+    totalPoints: myTotalScore,
+    sessionPoints: myScores.sessionScore,
+    baggerBombs: myScores.baggerBombs,
+    busts: myScores.busts,
+    portfolio: myData?.portfolio,
+    bench: myData?.bench,
+  }), [myData, myTotalScore, myScores]);
+
+  const opponent = useMemo(() => ({
+    id: oppData?.uid,
+    username: oppData?.username || 'Opponent',
+    avatar: oppData?.avatar,
+    totalPoints: oppTotalScore,
+    sessionPoints: oppScores.sessionScore,
+    baggerBombs: oppScores.baggerBombs,
+    busts: oppScores.busts,
+    portfolio: oppData?.portfolio,
+    bench: oppData?.bench,
+  }), [oppData, oppTotalScore, oppScores]);
+
+  // Session statuses for SessionHUD
+  const sessionStatuses = useMemo(() => {
+    return getSessionStatuses(currentSessionKey, battle?.state?.completedSessions || []);
+  }, [currentSessionKey, battle?.state?.completedSessions]);
+
+  // Detect threshold crossings when prices update
+  useEffect(() => {
+    if (!currentPrices || Object.keys(currentPrices).length === 0) return;
+    if (!battle || !battleId) return;
+
+    myPortfolioFlat.forEach((asset) => {
+      if (!asset) return;
+
+      const openPrice = openPrices[asset.symbol];
+      const currentPrice = currentPrices[asset.symbol];
+      if (!openPrice || !currentPrice) return;
+
+      const priceChange = ((currentPrice - openPrice) / openPrice) * 100;
+      const baseATR = asset.baseATR || battle?.thresholds?.[asset.symbol]?.threshold || 2.5;
+      const currentMultiplier = priceChange / baseATR;
+
+      const prevMultiplier = prevMultipliersRef.current[asset.symbol] || 0;
+      const assetHistory = combinedHistory[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
+
+      // Check for threshold crossings
+      const crossed = detectThresholdCross(prevMultiplier, currentMultiplier);
+      if (crossed) {
+        crossed.forEach((threshold) => {
+          // Only trigger if not already earned
+          const existingBadges = getBadgesFromHistory(assetHistory);
+          if (!existingBadges.includes(threshold.name)) {
+            console.log(`🎯 Threshold crossed: ${asset.symbol} → ${threshold.name}`);
+
+            // Update local history
+            const newHistory = updateAssetHistory(asset.symbol, currentMultiplier, assetHistory);
+            setLocalHistory((prev) => ({
+              ...prev,
+              [asset.symbol]: newHistory,
+            }));
+
+            // Create and log event
+            const event = createThresholdEvent(
+              'player',
+              asset.symbol,
+              threshold.name,
+              currentMultiplier,
+              threshold.points
+            );
+
+            // Fire callback
+            if (onThresholdCross) {
+              onThresholdCross(threshold.name, asset.symbol, threshold.points, event);
+            }
+
+            // Persist to Firebase (async, don't await)
+            if (battleId && !battleId.startsWith('training_')) {
+              addBaggerBombEvent(battleId, event).catch(console.error);
+              updateAssetHistoryInBattle(battleId, isCreator, asset.symbol, newHistory).catch(console.error);
+            }
+          }
+        });
+      }
+
+      // Update prev multiplier ref
+      prevMultipliersRef.current[asset.symbol] = currentMultiplier;
+    });
+  }, [currentPrices, openPrices, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, onThresholdCross]);
+
+  // Fetch prices
+  const fetchPrices = useCallback(async () => {
+    const allAssets = [...myPortfolioFlat, ...oppPortfolioFlat].filter(Boolean);
+    if (allAssets.length === 0) return;
+
+    try {
+      const allSymbols = [...new Set(allAssets.map((a) => a.symbol))];
+      const stockSymbols = allSymbols.filter((s) => !isCrypto(s));
+      const cryptoSymbols = allSymbols.filter((s) => isCrypto(s));
+
+      const newPrices = {};
+
+      // Fetch stock prices
+      for (const symbol of stockSymbols) {
+        try {
+          const data = await stockAPI.getStockPrice(symbol);
+          if (data?.price) {
+            newPrices[symbol] = data.price;
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch price for ${symbol}:`, err);
+        }
+      }
+
+      // Fetch crypto prices
+      for (const symbol of cryptoSymbols) {
+        try {
+          const data = await stockAPI.getCryptoPrice(symbol);
+          if (data?.price) {
+            newPrices[symbol] = data.price;
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch crypto price for ${symbol}:`, err);
+        }
+      }
+
+      if (Object.keys(newPrices).length > 0) {
+        setCurrentPrices((prev) => ({ ...prev, ...newPrices }));
+      }
+    } catch (err) {
+      console.error('Error fetching prices:', err);
+      // Use starting prices as fallback
+      if (battle?.state?.startingPrices) {
+        setCurrentPrices(battle.state.startingPrices);
+      }
+    }
+  }, [myPortfolioFlat, oppPortfolioFlat, battle]);
+
+  // Subscribe to battle document
+  useEffect(() => {
+    if (!battleId) {
+      setLoading(false);
+      return;
+    }
+
+    // Training battles don't need Firebase subscription
+    if (battleId.startsWith('training_')) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const battleRef = doc(db, 'battles', battleId);
+      const unsubscribe = onSnapshot(
+        battleRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            setBattle({ id: snapshot.id, ...snapshot.data() });
+            setLoading(false);
+          } else {
+            setError('Battle not found');
+            setLoading(false);
+          }
+        },
+        (err) => {
+          console.error('Battle subscription error:', err);
+          setError(err.message);
+          setLoading(false);
+        }
+      );
+
+      return () => unsubscribe();
+    } catch (err) {
+      console.error('Error setting up battle subscription:', err);
+      setLoading(false);
+    }
+  }, [battleId]);
+
+  // Fetch prices on mount and interval
+  useEffect(() => {
+    if (myPortfolioFlat.length === 0 && oppPortfolioFlat.length === 0) return;
+
+    fetchPrices();
+    const interval = setInterval(fetchPrices, PRICE_POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, [fetchPrices, myPortfolioFlat.length, oppPortfolioFlat.length]);
+
+  // Update session timer
+  useEffect(() => {
+    const updateSession = () => {
+      setCurrentSessionKey(getCurrentSession());
+      setSessionTimeRemaining(getSessionTimeRemaining());
+    };
+
+    updateSession();
+    const interval = setInterval(updateSession, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Build asset data for TacticalRow
+  const buildTacticalAsset = useCallback((asset, scores, history) => {
+    if (!asset) return null;
+
+    const scoreData = scores.assetScores.find((s) => s.symbol === asset.symbol);
+    const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
+
+    return {
+      symbol: asset.symbol,
+      name: asset.name,
+      priceChange: scoreData?.priceChange || 0,
+      baseATR: asset.baseATR || scoreData?.baseATR || 2.5,
+      history: assetHistory,
+      points: scoreData?.totalPoints || 0,
+      badges: scoreData?.badges || getBadgesFromHistory(assetHistory),
+      isCrypto: asset.isCrypto,
+    };
+  }, []);
+
+  // Build portfolio data for TacticalRow
+  const playerPortfolio = useMemo(() => {
+    const portfolio = myData?.portfolio;
+    if (!portfolio) return { star: [], core: [], support: [] };
+
+    return {
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory)),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory)),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory)),
+    };
+  }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset]);
+
+  const opponentPortfolio = useMemo(() => {
+    const portfolio = oppData?.portfolio;
+    if (!portfolio) return { star: [], core: [], support: [] };
+
+    return {
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {})),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {})),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {})),
+    };
+  }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset]);
+
+  // Build bench data
+  const playerBench = useMemo(() => {
+    const bench = myData?.bench;
+    if (!bench) return { stocks: [], crypto: null };
+
+    return {
+      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory)),
+      crypto: bench.crypto ? buildTacticalAsset(bench.crypto, myScores, combinedHistory) : null,
+    };
+  }, [myData?.bench, myScores, combinedHistory, buildTacticalAsset]);
+
+  const opponentBench = useMemo(() => {
+    const bench = oppData?.bench;
+    if (!bench) return { stocks: [], crypto: null };
+
+    return {
+      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {})),
+      crypto: bench.crypto ? buildTacticalAsset(bench.crypto, oppScores, oppHistory || {}) : null,
+    };
+  }, [oppData?.bench, oppScores, oppHistory, buildTacticalAsset]);
+
+  return {
+    // Battle data
+    battle,
+    loading,
+    error,
+
+    // User context
+    isCreator,
+
+    // Player/Opponent for BattleHeader
+    player: {
+      ...player,
+      portfolio: playerPortfolio,
+      bench: playerBench,
+    },
+    opponent: {
+      ...opponent,
+      portfolio: opponentPortfolio,
+      bench: opponentBench,
+    },
+
+    // Session
+    currentSession: currentSessionKey,
+    currentSessionId: getCurrentSessionId(),
+    sessionTimeRemaining,
+    sessionStatuses,
+    completedSessions: battle?.state?.completedSessions || [],
+
+    // Session scores for SessionHUD
+    sessionScores: battle?.sessionScores || {},
+
+    // Events for EventFeed
+    events: battle?.events || [],
+
+    // Prices
+    currentPrices,
+    openPrices,
+    thresholds: battle?.thresholds || {},
+
+    // Actions
+    refreshPrices: fetchPrices,
+
+    // Formatting helpers
+    formatTimeRemaining: () => formatTimeRemaining(sessionTimeRemaining),
+  };
+}
+
+export default useBaggerBombBattleV3;

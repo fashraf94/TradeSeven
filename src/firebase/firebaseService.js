@@ -18,7 +18,8 @@ import {
   Timestamp,
   serverTimestamp,
   increment,
-  writeBatch
+  writeBatch,
+  arrayUnion
 } from 'firebase/firestore';
 import { db } from './config';
 import { getVolatilityThresholds } from '../services/volatilityService.js';
@@ -937,6 +938,271 @@ export async function createBaggerBombBattle(battleData) {
   } catch (error) {
     console.error('❌ Error creating BaggerBomb battle:', error);
     throw new Error(`Failed to create BaggerBomb battle: ${error.message}`);
+  }
+}
+
+/**
+ * Create a BaggerBomb V3 battle with tier-based portfolio structure
+ * Uses new slot-based portfolio: star (2x20%), core (2x15%), support (3x10%)
+ *
+ * @param {Object} battleData - Battle creation data
+ * @param {Object} battleData.creator - Creator user info { uid, odUserId, username }
+ * @param {Object} battleData.portfolio - Tier-organized portfolio { star, core, support }
+ * @param {Object} battleData.bench - Bench assets { stocks: [], crypto: {} }
+ * @param {string} battleData.challengeCode - 4-character challenge code
+ * @returns {Promise<Object>} - Created battle with Firestore ID
+ */
+export async function createBaggerBombBattleV3(battleData) {
+  try {
+    console.log('🔥 createBaggerBombBattleV3 called with:', battleData);
+
+    // Validate portfolio structure
+    const { portfolio, bench } = battleData;
+    if (!portfolio || !portfolio.star || !portfolio.core || !portfolio.support) {
+      throw new Error('Portfolio must have star, core, and support tiers');
+    }
+
+    // Collect all symbols for threshold fetching
+    const allAssets = [
+      ...(portfolio.star || []).filter(Boolean),
+      ...(portfolio.core || []).filter(Boolean),
+      ...(portfolio.support || []).filter(Boolean),
+      ...(bench?.stocks || []).filter(Boolean),
+      bench?.crypto,
+    ].filter(Boolean);
+
+    // Fetch volatility thresholds
+    let thresholds = {};
+    try {
+      thresholds = await fetchAllThresholds(allAssets, []);
+    } catch (thresholdError) {
+      console.warn('⚠️ Could not fetch thresholds:', thresholdError.message);
+    }
+
+    // Sanitize portfolio tiers
+    const sanitizeTierAssets = (assets) =>
+      (assets || []).map((asset) =>
+        asset
+          ? {
+              symbol: String(asset.symbol || '').toUpperCase(),
+              name: String(asset.name || asset.symbol || ''),
+              baseATR: Number(asset.baseATR || thresholds[asset.symbol]?.threshold || 2.5),
+              isCrypto: Boolean(asset.isCrypto),
+            }
+          : null
+      );
+
+    const sanitizedPortfolio = {
+      star: sanitizeTierAssets(portfolio.star),
+      core: sanitizeTierAssets(portfolio.core),
+      support: sanitizeTierAssets(portfolio.support),
+    };
+
+    // Sanitize bench
+    const sanitizedBench = {
+      stocks: (bench?.stocks || []).map((asset) =>
+        asset
+          ? {
+              symbol: String(asset.symbol || '').toUpperCase(),
+              name: String(asset.name || asset.symbol || ''),
+              baseATR: Number(asset.baseATR || thresholds[asset.symbol]?.threshold || 2.5),
+              isCrypto: false,
+            }
+          : null
+      ),
+      crypto: bench?.crypto
+        ? {
+            symbol: String(bench.crypto.symbol || '').toUpperCase(),
+            name: String(bench.crypto.name || bench.crypto.symbol || ''),
+            baseATR: Number(bench.crypto.baseATR || thresholds[bench.crypto.symbol]?.threshold || 5.0),
+            isCrypto: true,
+          }
+        : null,
+    };
+
+    // Sanitize thresholds
+    const sanitizedThresholds = {};
+    for (const [symbol, data] of Object.entries(thresholds || {})) {
+      if (data && typeof data === 'object') {
+        sanitizedThresholds[String(symbol)] = {
+          threshold: Number(data.threshold) || 2.5,
+          rallyThreshold: Number(data.rallyThreshold) || 3.75,
+          moonshotThreshold: Number(data.moonshotThreshold) || 5.0,
+        };
+      }
+    }
+
+    // Calculate timing windows
+    const commitmentDeadline = getTodayDeadline();
+    const battleStart = getNextBattleStart();
+    const battleEnd = getBattleEndTime(battleStart);
+
+    // Initialize history tracking per asset
+    const initializeHistory = (portfolio) => {
+      const history = {};
+      const allSymbols = [
+        ...(portfolio.star || []).filter(Boolean).map((a) => a.symbol),
+        ...(portfolio.core || []).filter(Boolean).map((a) => a.symbol),
+        ...(portfolio.support || []).filter(Boolean).map((a) => a.symbol),
+      ];
+      allSymbols.forEach((symbol) => {
+        history[symbol] = { maxMultiplier: 0, minMultiplier: 0, badges: [] };
+      });
+      return history;
+    };
+
+    const battle = {
+      _v: 3, // Schema version for tier-based portfolio
+
+      type: 'baggerbomb_v3',
+      challengeCode: String(battleData.challengeCode || ''),
+
+      creator: {
+        uid: String(battleData.creator?.uid || 'anonymous'),
+        odUserId: String(battleData.creator?.odUserId || battleData.creator?.uid || 'anonymous'),
+        username: String(battleData.creator?.username || 'Player'),
+        avatar: String(battleData.creator?.avatar || ''),
+        portfolio: sanitizedPortfolio,
+        bench: sanitizedBench,
+        history: initializeHistory(sanitizedPortfolio),
+        sessionScores: {
+          MORNING_BELL: 0,
+          MIDDAY: 0,
+          POWER_HOUR: 0,
+          NIGHT_GAME: 0,
+        },
+        totalScore: 0,
+        baggerBombs: 0,
+        busts: 0,
+      },
+
+      opponent: {
+        uid: '',
+        odUserId: '',
+        username: '',
+        avatar: '',
+        portfolio: { star: [null, null], core: [null, null], support: [null, null, null] },
+        bench: { stocks: [null, null, null], crypto: null },
+        history: {},
+        sessionScores: {
+          MORNING_BELL: 0,
+          MIDDAY: 0,
+          POWER_HOUR: 0,
+          NIGHT_GAME: 0,
+        },
+        totalScore: 0,
+        baggerBombs: 0,
+        busts: 0,
+      },
+
+      timing: {
+        createdAt: new Date().toISOString(),
+        commitmentDeadline: commitmentDeadline.toISOString(),
+        baselineLockTime: '',
+        scheduledStart: battleStart.toISOString(),
+        scheduledEnd: battleEnd.toISOString(),
+        actualStart: '',
+        actualEnd: '',
+      },
+
+      state: {
+        status: 'waiting',
+        currentSession: '',
+        completedSessions: [],
+        startingPrices: {},
+        isActive: false,
+      },
+
+      sessionPrices: initializeSessionPrices(),
+      thresholds: sanitizedThresholds,
+
+      // Events array for live feed
+      events: [],
+
+      // Per-session scoring
+      sessionScores: {
+        MORNING_BELL: { creator: 0, opponent: 0, winner: '' },
+        MIDDAY: { creator: 0, opponent: 0, winner: '' },
+        POWER_HOUR: { creator: 0, opponent: 0, winner: '' },
+        NIGHT_GAME: { creator: 0, opponent: 0, winner: '' },
+      },
+
+      substitutions: [],
+      substitutionsRemaining: { creator: 2, opponent: 2 },
+
+      result: {},
+
+      metadata: {
+        spectatorCount: 0,
+        featured: false,
+        tags: ['baggerbomb-v3', 'tier-based', 'slot-portfolio'],
+      },
+
+      archived: false,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Remove any remaining undefined values
+    const cleanedBattle = removeUndefined(battle);
+
+    console.log('📤 V3 Battle object for Firebase:', JSON.stringify(cleanedBattle, null, 2));
+
+    const battleRef = await addDoc(collection(db, 'battles'), cleanedBattle);
+
+    console.log('✅ BaggerBomb V3 battle created:', battleRef.id);
+
+    return {
+      id: battleRef.id,
+      ...cleanedBattle,
+    };
+  } catch (error) {
+    console.error('❌ Error creating BaggerBomb V3 battle:', error);
+    throw new Error(`Failed to create BaggerBomb V3 battle: ${error.message}`);
+  }
+}
+
+/**
+ * Add a threshold crossing event to the battle's events array
+ *
+ * @param {string} battleId - Battle document ID
+ * @param {Object} event - Event object from createThresholdEvent
+ * @returns {Promise<void>}
+ */
+export async function addBaggerBombEvent(battleId, event) {
+  try {
+    const battleRef = doc(db, 'battles', battleId);
+    await updateDoc(battleRef, {
+      events: arrayUnion(event),
+      updatedAt: new Date().toISOString(),
+    });
+    console.log('✅ Event added to battle:', event);
+  } catch (error) {
+    console.error('❌ Error adding event:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update asset history in battle document
+ *
+ * @param {string} battleId - Battle document ID
+ * @param {boolean} isCreator - Whether updating creator or opponent
+ * @param {string} symbol - Asset symbol
+ * @param {Object} history - Updated history object
+ * @returns {Promise<void>}
+ */
+export async function updateAssetHistoryInBattle(battleId, isCreator, symbol, history) {
+  try {
+    const battleRef = doc(db, 'battles', battleId);
+    const field = isCreator ? 'creator.history' : 'opponent.history';
+
+    await updateDoc(battleRef, {
+      [`${field}.${symbol}`]: history,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('❌ Error updating asset history:', error);
+    throw error;
   }
 }
 
@@ -2889,6 +3155,11 @@ export default {
   updateCurrentSession,
   addBreakoutEvent,
   completeBaggerBombBattle,
+
+  // V3 BaggerBomb (Tier-Based Portfolio)
+  createBaggerBombBattleV3,
+  addBaggerBombEvent,
+  updateAssetHistoryInBattle,
 
   // Training Battles
   createTrainingBattle,
