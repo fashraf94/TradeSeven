@@ -360,114 +360,123 @@ export default function AssetPickerModal({
               </button>
             </div>
 
-            {/* Search Bar */}
-            <div style={{ padding: '12px 16px' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '10px 14px',
-                  backgroundColor: HOLO_COLORS.bgElevated,
-                  borderRadius: '8px',
-                  border: `1px solid ${HOLO_COLORS.borderSubtle}`,
-                }}
-              >
-                <Search size={18} color={HOLO_COLORS.textMuted} />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={cryptoOnly ? 'Search crypto...' : stockOnly ? 'Search stocks...' : 'Search assets...'}
-                  style={{
-                    flex: 1,
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    outline: 'none',
-                    fontSize: '14px',
-                    color: HOLO_COLORS.textPrimary,
-                  }}
-                  autoFocus
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    style={{
-                      backgroundColor: 'transparent',
-                      border: 'none',
-                      padding: '4px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                    }}
-                  >
-                    <X size={16} color={HOLO_COLORS.textMuted} />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Sector Tabs (only for stocks) */}
-            {stockOnly && stocks.length > 0 && (
-              <div
-                style={{
-                  padding: '0 16px 12px',
-                  overflowX: 'auto',
-                  WebkitOverflowScrolling: 'touch',
-                }}
-              >
+            {/* Fixed Controls Section (Search + Sector Tabs) */}
+            <div
+              style={{
+                flexShrink: 0,
+                backgroundColor: HOLO_COLORS.bgCard,
+                borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}`,
+              }}
+            >
+              {/* Search Bar */}
+              <div style={{ padding: '12px 16px' }}>
                 <div
                   style={{
                     display: 'flex',
-                    gap: '8px',
-                    paddingBottom: '4px',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '10px 14px',
+                    backgroundColor: HOLO_COLORS.bgElevated,
+                    borderRadius: '8px',
+                    border: `1px solid ${HOLO_COLORS.borderSubtle}`,
                   }}
                 >
-                  {SECTORS.map((sector) => {
-                    const count = getStockCountBySector(sector.id);
-                    // Only show sectors that have stocks
-                    if (sector.id !== 'all' && count === 0) return null;
-                    return (
-                      <SectorTab
-                        key={sector.id}
-                        sector={sector}
-                        isActive={activeSector === sector.id}
-                        onClick={() => setActiveSector(sector.id)}
-                        count={count}
-                      />
-                    );
-                  })}
+                  <Search size={18} color={HOLO_COLORS.textMuted} />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={cryptoOnly ? 'Search crypto...' : stockOnly ? 'Search stocks...' : 'Search assets...'}
+                    style={{
+                      flex: 1,
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      outline: 'none',
+                      fontSize: '14px',
+                      color: HOLO_COLORS.textPrimary,
+                    }}
+                    autoFocus
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      style={{
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        padding: '4px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                      }}
+                    >
+                      <X size={16} color={HOLO_COLORS.textMuted} />
+                    </button>
+                  )}
                 </div>
               </div>
-            )}
 
-            {/* Type Indicator */}
-            {(cryptoOnly || stockOnly) && (
-              <div
-                style={{
-                  padding: '0 16px 8px',
-                  fontSize: '11px',
-                  color: HOLO_COLORS.textMuted,
-                }}
-              >
-                {cryptoOnly && (
-                  <span style={{ color: HOLO_COLORS.purple }}>
-                    🔮 Showing crypto only (required for this slot)
-                  </span>
-                )}
-                {stockOnly && activeSector !== 'all' && (
-                  <span style={{ color: HOLO_COLORS.cyan }}>
-                    📈 Filtered by {SECTORS.find(s => s.id === activeSector)?.label || activeSector}
-                  </span>
-                )}
-              </div>
-            )}
+              {/* Sector Tabs (only for stocks) */}
+              {stockOnly && stocks.length > 0 && (
+                <div
+                  style={{
+                    padding: '0 16px 12px',
+                    overflowX: 'auto',
+                    WebkitOverflowScrolling: 'touch',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '8px',
+                      paddingBottom: '4px',
+                    }}
+                  >
+                    {SECTORS.map((sector) => {
+                      const count = getStockCountBySector(sector.id);
+                      // Only show sectors that have stocks
+                      if (sector.id !== 'all' && count === 0) return null;
+                      return (
+                        <SectorTab
+                          key={sector.id}
+                          sector={sector}
+                          isActive={activeSector === sector.id}
+                          onClick={() => setActiveSector(sector.id)}
+                          count={count}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
-            {/* Asset List */}
+              {/* Type Indicator */}
+              {(cryptoOnly || (stockOnly && activeSector !== 'all')) && (
+                <div
+                  style={{
+                    padding: '0 16px 8px',
+                    fontSize: '11px',
+                    color: HOLO_COLORS.textMuted,
+                  }}
+                >
+                  {cryptoOnly && (
+                    <span style={{ color: HOLO_COLORS.purple }}>
+                      🔮 Showing crypto only (required for this slot)
+                    </span>
+                  )}
+                  {stockOnly && activeSector !== 'all' && (
+                    <span style={{ color: HOLO_COLORS.cyan }}>
+                      📈 Filtered by {SECTORS.find(s => s.id === activeSector)?.label || activeSector}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Scrollable Asset List */}
             <div
               style={{
                 flex: 1,
                 overflowY: 'auto',
-                minHeight: '200px',
+                minHeight: 0, // Important for flex child to scroll properly
               }}
             >
               {filteredAssets.length === 0 ? (
@@ -498,6 +507,7 @@ export default function AssetPickerModal({
             {/* Footer */}
             <div
               style={{
+                flexShrink: 0,
                 padding: '12px 16px',
                 borderTop: `1px solid ${HOLO_COLORS.borderSubtle}`,
                 backgroundColor: HOLO_COLORS.bgElevated,
