@@ -1,11 +1,70 @@
 // AssetPickerModal - Modal for selecting stocks or crypto
-// Shows search, filters, and asset list with threshold info
+// Shows search, sector tabs (stocks only), and asset list with threshold info
 
 import React, { useState, useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Search, Check } from 'lucide-react';
+import {
+  X, Search, Check,
+  Monitor, Building2, Heart, ShoppingBag, ShoppingCart,
+  Zap, Factory, Lightbulb, Home, Radio, Layers
+} from 'lucide-react';
 import { HOLO_COLORS } from '../../constants/holoTheme';
+
+// Sector definitions with Lucide icons
+const SECTORS = [
+  { id: 'all', label: 'All', icon: Layers, color: HOLO_COLORS.cyan },
+  { id: 'Technology', label: 'Tech', icon: Monitor, color: '#8b5cf6' },
+  { id: 'Finance', label: 'Finance', icon: Building2, color: '#3b82f6' },
+  { id: 'Healthcare', label: 'Health', icon: Heart, color: '#10b981' },
+  { id: 'Consumer Discretionary', label: 'Consumer', icon: ShoppingBag, color: '#f59e0b' },
+  { id: 'Consumer Staples', label: 'Staples', icon: ShoppingCart, color: '#6366f1' },
+  { id: 'Energy', label: 'Energy', icon: Zap, color: '#eab308' },
+  { id: 'Industrials', label: 'Industrial', icon: Factory, color: '#64748b' },
+  { id: 'Utilities', label: 'Utilities', icon: Lightbulb, color: '#22c55e' },
+  { id: 'Real Estate', label: 'Real Estate', icon: Home, color: '#ec4899' },
+  { id: 'Telecom', label: 'Telecom', icon: Radio, color: '#06b6d4' },
+];
+
+/**
+ * SectorTab - Single sector filter tab
+ */
+function SectorTab({ sector, isActive, onClick, count }) {
+  const Icon = sector.icon;
+
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '6px 12px',
+        background: isActive ? `${sector.color}20` : 'transparent',
+        border: `1px solid ${isActive ? sector.color : HOLO_COLORS.borderSubtle}`,
+        borderRadius: '16px',
+        color: isActive ? sector.color : HOLO_COLORS.textMuted,
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+      }}
+    >
+      <Icon size={14} color={isActive ? sector.color : HOLO_COLORS.textMuted} />
+      <span style={{ fontSize: '12px', fontWeight: 500 }}>{sector.label}</span>
+      {count !== undefined && (
+        <span style={{ fontSize: '10px', opacity: 0.7 }}>({count})</span>
+      )}
+    </button>
+  );
+}
+
+SectorTab.propTypes = {
+  sector: PropTypes.object.isRequired,
+  isActive: PropTypes.bool.isRequired,
+  onClick: PropTypes.func.isRequired,
+  count: PropTypes.number,
+};
 
 /**
  * AssetRow - Single asset in the picker list
@@ -87,6 +146,9 @@ function AssetRow({ asset, isSelected, isDisabled, onSelect }) {
           }}
         >
           {asset.name}
+          {asset.sector && !asset.isCrypto && (
+            <span style={{ opacity: 0.6 }}> • {asset.sector}</span>
+          )}
         </div>
       </div>
 
@@ -123,6 +185,7 @@ AssetRow.propTypes = {
   asset: PropTypes.shape({
     symbol: PropTypes.string.isRequired,
     name: PropTypes.string,
+    sector: PropTypes.string,
     baseATR: PropTypes.number,
     isCrypto: PropTypes.bool,
   }).isRequired,
@@ -138,23 +201,40 @@ export default function AssetPickerModal({
   isOpen,
   onClose,
   onSelect,
-  assets = [],
+  stocks = [],
+  crypto = [],
   selectedAssets = [],
   cryptoOnly = false,
   stockOnly = false,
   title = 'Select Asset',
 }) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeSector, setActiveSector] = useState('all');
 
-  // Filter assets based on search and type
+  // Debug: Log received data
+  console.log('[AssetPickerModal] Received', stocks?.length || 0, 'stocks,', crypto?.length || 0, 'crypto');
+
+  // Get stock count by sector
+  const getStockCountBySector = useCallback((sectorId) => {
+    if (sectorId === 'all') return stocks.length;
+    return stocks.filter(s => s.sector === sectorId).length;
+  }, [stocks]);
+
+  // Filter assets based on search, type, and sector
   const filteredAssets = useMemo(() => {
-    let filtered = [...assets];
+    let filtered = [];
 
-    // Filter by type
+    // Choose source based on type
     if (cryptoOnly) {
-      filtered = filtered.filter((a) => a.isCrypto);
+      filtered = [...crypto];
     } else if (stockOnly) {
-      filtered = filtered.filter((a) => !a.isCrypto);
+      filtered = [...stocks];
+      // Apply sector filter for stocks
+      if (activeSector !== 'all') {
+        filtered = filtered.filter(s => s.sector === activeSector);
+      }
+    } else {
+      filtered = [...stocks, ...crypto];
     }
 
     // Filter by search query
@@ -171,7 +251,7 @@ export default function AssetPickerModal({
     filtered.sort((a, b) => a.symbol.localeCompare(b.symbol));
 
     return filtered;
-  }, [assets, cryptoOnly, stockOnly, searchQuery]);
+  }, [stocks, crypto, cryptoOnly, stockOnly, activeSector, searchQuery]);
 
   // Check if asset is already selected
   const isAssetSelected = useCallback(
@@ -197,6 +277,13 @@ export default function AssetPickerModal({
     },
     [onClose]
   );
+
+  // Reset sector filter when modal closes
+  const handleClose = useCallback(() => {
+    setSearchQuery('');
+    setActiveSector('all');
+    onClose();
+  }, [onClose]);
 
   if (!isOpen) return null;
 
@@ -227,7 +314,7 @@ export default function AssetPickerModal({
             style={{
               width: '100%',
               maxWidth: '500px',
-              maxHeight: '80vh',
+              maxHeight: '85vh',
               backgroundColor: HOLO_COLORS.bgCard,
               borderRadius: '16px 16px 0 0',
               overflow: 'hidden',
@@ -256,7 +343,7 @@ export default function AssetPickerModal({
                 {title}
               </h2>
               <button
-                onClick={onClose}
+                onClick={handleClose}
                 style={{
                   width: '32px',
                   height: '32px',
@@ -319,6 +406,40 @@ export default function AssetPickerModal({
               </div>
             </div>
 
+            {/* Sector Tabs (only for stocks) */}
+            {stockOnly && stocks.length > 0 && (
+              <div
+                style={{
+                  padding: '0 16px 12px',
+                  overflowX: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '8px',
+                    paddingBottom: '4px',
+                  }}
+                >
+                  {SECTORS.map((sector) => {
+                    const count = getStockCountBySector(sector.id);
+                    // Only show sectors that have stocks
+                    if (sector.id !== 'all' && count === 0) return null;
+                    return (
+                      <SectorTab
+                        key={sector.id}
+                        sector={sector}
+                        isActive={activeSector === sector.id}
+                        onClick={() => setActiveSector(sector.id)}
+                        count={count}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Type Indicator */}
             {(cryptoOnly || stockOnly) && (
               <div
@@ -333,9 +454,9 @@ export default function AssetPickerModal({
                     🔮 Showing crypto only (required for this slot)
                   </span>
                 )}
-                {stockOnly && (
+                {stockOnly && activeSector !== 'all' && (
                   <span style={{ color: HOLO_COLORS.cyan }}>
-                    📈 Showing stocks only
+                    📈 Filtered by {SECTORS.find(s => s.id === activeSector)?.label || activeSector}
                   </span>
                 )}
               </div>
@@ -407,8 +528,18 @@ AssetPickerModal.propTypes = {
   onClose: PropTypes.func.isRequired,
   /** Callback when asset is selected */
   onSelect: PropTypes.func.isRequired,
-  /** Available assets to choose from */
-  assets: PropTypes.arrayOf(
+  /** Available stocks to choose from */
+  stocks: PropTypes.arrayOf(
+    PropTypes.shape({
+      symbol: PropTypes.string.isRequired,
+      name: PropTypes.string,
+      sector: PropTypes.string,
+      baseATR: PropTypes.number,
+      isCrypto: PropTypes.bool,
+    })
+  ),
+  /** Available crypto to choose from */
+  crypto: PropTypes.arrayOf(
     PropTypes.shape({
       symbol: PropTypes.string.isRequired,
       name: PropTypes.string,
@@ -431,7 +562,8 @@ AssetPickerModal.propTypes = {
 };
 
 AssetPickerModal.defaultProps = {
-  assets: [],
+  stocks: [],
+  crypto: [],
   selectedAssets: [],
   cryptoOnly: false,
   stockOnly: false,

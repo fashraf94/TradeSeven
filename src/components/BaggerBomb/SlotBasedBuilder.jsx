@@ -4,9 +4,27 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
+import { ChevronLeft } from 'lucide-react';
 import { HOLO_COLORS } from '../../constants/holoTheme';
+import { STOCKS as STATIC_STOCKS, CRYPTO as STATIC_CRYPTO } from '../../data/assets';
 import PortfolioSlot from './PortfolioSlot';
 import AssetPickerModal from './AssetPickerModal';
+
+// Default ATR values by sector (used if API doesn't provide)
+const SECTOR_DEFAULT_ATR = {
+  'Technology': 2.8,
+  'Finance': 2.0,
+  'Healthcare': 2.2,
+  'Consumer Discretionary': 2.5,
+  'Consumer Staples': 1.5,
+  'Energy': 3.0,
+  'Industrials': 2.2,
+  'Utilities': 1.5,
+  'Real Estate': 2.0,
+  'Telecom': 2.2,
+  'Crypto': 5.0,
+  'Other': 2.5,
+};
 
 // Tier configuration
 const BUILDER_TIERS = [
@@ -125,15 +143,67 @@ TierSection.propTypes = {
  */
 export default function SlotBasedBuilder({
   portfolio: initialPortfolio,
-  availableAssets = [],
+  stocks = [],
+  crypto = [],
   onPortfolioChange,
-  onStartBattle,
+  onComplete,
+  onBack,
   disabled = false,
 }) {
+  // Debug: Log received data
+  console.log('[SlotBasedBuilder] Received', stocks?.length || 0, 'stocks,', crypto?.length || 0, 'crypto');
+
   // Portfolio state
   const [portfolio, setPortfolio] = useState(
     initialPortfolio || createEmptyPortfolio()
   );
+
+  // Build price lookup from API data
+  const stockPrices = useMemo(() => {
+    const prices = {};
+    if (stocks && Array.isArray(stocks)) {
+      stocks.forEach(s => {
+        prices[s.symbol] = s.price || s.currentPrice || 0;
+      });
+    }
+    return prices;
+  }, [stocks]);
+
+  const cryptoPrices = useMemo(() => {
+    const prices = {};
+    if (crypto && Array.isArray(crypto)) {
+      crypto.forEach(c => {
+        prices[c.symbol] = c.price || c.currentPrice || 0;
+      });
+    }
+    return prices;
+  }, [crypto]);
+
+  // Use static asset data enriched with live prices
+  // This ensures we have sector info + consistent structure
+  const formattedStocks = useMemo(() => {
+    return STATIC_STOCKS.map(stock => ({
+      symbol: stock.symbol,
+      name: stock.name,
+      sector: stock.sector,
+      price: stockPrices[stock.symbol] || 0,
+      baseATR: stock.baseATR || SECTOR_DEFAULT_ATR[stock.sector] || 2.5,
+      isCrypto: false,
+    }));
+  }, [stockPrices]);
+
+  const formattedCrypto = useMemo(() => {
+    return STATIC_CRYPTO
+      .filter(c => c.category !== 'Stablecoin') // Exclude stablecoins
+      .map(coin => ({
+        symbol: coin.symbol,
+        name: coin.name,
+        sector: 'Crypto',
+        price: cryptoPrices[coin.symbol] || 0,
+        baseATR: coin.baseATR || SECTOR_DEFAULT_ATR['Crypto'] || 5.0,
+        isCrypto: true,
+      }));
+  }, [cryptoPrices]);
 
   // Modal state
   const [pickerConfig, setPickerConfig] = useState({
@@ -305,10 +375,10 @@ export default function SlotBasedBuilder({
 
   // Handle start battle
   const handleStartBattle = useCallback(() => {
-    if (isValid && onStartBattle) {
-      onStartBattle(portfolio);
+    if (isValid && onComplete) {
+      onComplete(portfolio);
     }
-  }, [isValid, onStartBattle, portfolio]);
+  }, [isValid, onComplete, portfolio]);
 
   return (
     <div
@@ -320,6 +390,26 @@ export default function SlotBasedBuilder({
     >
       {/* Header */}
       <div style={{ marginBottom: '16px' }}>
+        {onBack && (
+          <button
+            onClick={onBack}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '8px 0',
+              marginBottom: '8px',
+              backgroundColor: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: HOLO_COLORS.cyan,
+              fontSize: '14px',
+            }}
+          >
+            <ChevronLeft size={20} />
+            Back
+          </button>
+        )}
         <h2
           style={{
             fontSize: '20px',
@@ -490,7 +580,8 @@ export default function SlotBasedBuilder({
         isOpen={pickerConfig.isOpen}
         onClose={closePicker}
         onSelect={handleAssetSelect}
-        assets={availableAssets}
+        stocks={formattedStocks}
+        crypto={formattedCrypto}
         selectedAssets={selectedAssets}
         cryptoOnly={pickerConfig.cryptoOnly}
         stockOnly={pickerConfig.stockOnly}
@@ -517,28 +608,27 @@ SlotBasedBuilder.propTypes = {
       crypto: PropTypes.object,
     }),
   }),
-  /** Available assets to choose from */
-  availableAssets: PropTypes.arrayOf(
-    PropTypes.shape({
-      symbol: PropTypes.string.isRequired,
-      name: PropTypes.string,
-      baseATR: PropTypes.number,
-      isCrypto: PropTypes.bool,
-    })
-  ),
+  /** Available stocks to choose from */
+  stocks: PropTypes.array,
+  /** Available crypto to choose from */
+  crypto: PropTypes.array,
   /** Callback when portfolio changes */
   onPortfolioChange: PropTypes.func,
-  /** Callback when start battle is clicked (receives portfolio) */
-  onStartBattle: PropTypes.func,
+  /** Callback when portfolio is complete (receives portfolio) */
+  onComplete: PropTypes.func,
+  /** Callback when back button is pressed */
+  onBack: PropTypes.func,
   /** Whether builder is disabled */
   disabled: PropTypes.bool,
 };
 
 SlotBasedBuilder.defaultProps = {
   portfolio: null,
-  availableAssets: [],
+  stocks: [],
+  crypto: [],
   onPortfolioChange: null,
-  onStartBattle: null,
+  onComplete: null,
+  onBack: null,
   disabled: false,
 };
 
