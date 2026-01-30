@@ -24,6 +24,11 @@ export { default as ThresholdPreview } from './ThresholdPreview';
 export { default as PortfolioBuilderBaggerBomb } from './PortfolioBuilderBaggerBomb';
 export { default as StockDetailModal } from './StockDetailModal';
 
+// New Slot-Based Builder (Phase 3)
+export { default as PortfolioSlot, ThresholdPreview as SlotThresholdPreview } from './PortfolioSlot';
+export { default as AssetPickerModal } from './AssetPickerModal';
+export { default as SlotBasedBuilder, BUILDER_TIERS, createEmptyPortfolio } from './SlotBasedBuilder';
+
 // Portfolio Builder Sub-Components (Accordion Style)
 export { default as AccordionSection } from './AccordionSection';
 export { default as RosterAssetCard } from './RosterAssetCard';

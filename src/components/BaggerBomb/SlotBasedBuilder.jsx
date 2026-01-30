@@ -1,0 +1,546 @@
+// SlotBasedBuilder - Main portfolio builder with slot-based layout
+// Organizes assets into tiers: Star (20%), Core (15%), Support (10%), Bench
+
+import React, { useState, useMemo, useCallback } from 'react';
+import PropTypes from 'prop-types';
+import { motion } from 'framer-motion';
+import { HOLO_COLORS } from '../../constants/holoTheme';
+import PortfolioSlot from './PortfolioSlot';
+import AssetPickerModal from './AssetPickerModal';
+
+// Tier configuration
+const BUILDER_TIERS = [
+  {
+    key: 'star',
+    label: '⭐ Star Picks',
+    description: 'Your highest conviction plays',
+    allocation: '20%',
+    slots: 2,
+    cryptoAllowed: false,
+  },
+  {
+    key: 'core',
+    label: '💎 Core Holds',
+    description: 'Solid foundation assets',
+    allocation: '15%',
+    slots: 2,
+    cryptoAllowed: false,
+  },
+  {
+    key: 'support',
+    label: '📊 Support Plays',
+    description: 'Diversified positions (last slot = crypto)',
+    allocation: '10%',
+    slots: 3,
+    cryptoAllowed: true,
+    lastSlotCrypto: true,
+  },
+];
+
+// Initial empty portfolio structure
+const createEmptyPortfolio = () => ({
+  star: [null, null],
+  core: [null, null],
+  support: [null, null, null],
+  bench: {
+    stocks: [null, null, null],
+    crypto: null,
+  },
+});
+
+/**
+ * TierSection - Header for each tier
+ */
+function TierSection({ tier, filledCount }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: '12px',
+        marginTop: '20px',
+      }}
+    >
+      <div>
+        <h3
+          style={{
+            fontSize: '14px',
+            fontWeight: 700,
+            color: HOLO_COLORS.textPrimary,
+            margin: 0,
+          }}
+        >
+          {tier.label}
+        </h3>
+        <p
+          style={{
+            fontSize: '11px',
+            color: HOLO_COLORS.textMuted,
+            margin: '2px 0 0 0',
+          }}
+        >
+          {tier.description}
+        </p>
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}
+      >
+        <span
+          style={{
+            fontSize: '11px',
+            color: HOLO_COLORS.textMuted,
+          }}
+        >
+          {filledCount}/{tier.slots}
+        </span>
+        <span
+          style={{
+            fontSize: '11px',
+            padding: '4px 8px',
+            backgroundColor: HOLO_COLORS.bgElevated,
+            borderRadius: '4px',
+            color: HOLO_COLORS.cyan,
+            fontWeight: 600,
+          }}
+        >
+          {tier.allocation} each
+        </span>
+      </div>
+    </div>
+  );
+}
+
+TierSection.propTypes = {
+  tier: PropTypes.object.isRequired,
+  filledCount: PropTypes.number.isRequired,
+};
+
+/**
+ * SlotBasedBuilder - Main component
+ */
+export default function SlotBasedBuilder({
+  portfolio: initialPortfolio,
+  availableAssets = [],
+  onPortfolioChange,
+  onStartBattle,
+  disabled = false,
+}) {
+  // Portfolio state
+  const [portfolio, setPortfolio] = useState(
+    initialPortfolio || createEmptyPortfolio()
+  );
+
+  // Modal state
+  const [pickerConfig, setPickerConfig] = useState({
+    isOpen: false,
+    tier: null,
+    slotIndex: null,
+    cryptoOnly: false,
+    stockOnly: false,
+  });
+
+  // Get all currently selected assets (for duplicate prevention)
+  const selectedAssets = useMemo(() => {
+    const selected = [];
+
+    // Active slots
+    BUILDER_TIERS.forEach((tier) => {
+      portfolio[tier.key]?.forEach((asset) => {
+        if (asset) selected.push(asset);
+      });
+    });
+
+    // Bench stocks
+    portfolio.bench?.stocks?.forEach((asset) => {
+      if (asset) selected.push(asset);
+    });
+
+    // Bench crypto
+    if (portfolio.bench?.crypto) {
+      selected.push(portfolio.bench.crypto);
+    }
+
+    return selected;
+  }, [portfolio]);
+
+  // Count filled slots per tier
+  const getFilledCount = useCallback(
+    (tierKey) => {
+      if (tierKey === 'bench') {
+        const stockCount = portfolio.bench?.stocks?.filter(Boolean).length || 0;
+        const cryptoCount = portfolio.bench?.crypto ? 1 : 0;
+        return stockCount + cryptoCount;
+      }
+      return portfolio[tierKey]?.filter(Boolean).length || 0;
+    },
+    [portfolio]
+  );
+
+  // Check if portfolio is valid (all required slots filled)
+  const isValid = useMemo(() => {
+    // Check active tiers
+    for (const tier of BUILDER_TIERS) {
+      const filled = getFilledCount(tier.key);
+      if (filled < tier.slots) return false;
+    }
+
+    // Check bench (3 stocks + 1 crypto)
+    const benchStocksFilled = portfolio.bench?.stocks?.filter(Boolean).length || 0;
+    const hasBenchCrypto = !!portfolio.bench?.crypto;
+
+    return benchStocksFilled >= 3 && hasBenchCrypto;
+  }, [portfolio, getFilledCount]);
+
+  // Validation message
+  const validationMessage = useMemo(() => {
+    const missing = [];
+
+    BUILDER_TIERS.forEach((tier) => {
+      const filled = getFilledCount(tier.key);
+      if (filled < tier.slots) {
+        missing.push(`${tier.slots - filled} ${tier.label.split(' ')[1]}`);
+      }
+    });
+
+    const benchStocksFilled = portfolio.bench?.stocks?.filter(Boolean).length || 0;
+    if (benchStocksFilled < 3) {
+      missing.push(`${3 - benchStocksFilled} bench stocks`);
+    }
+
+    if (!portfolio.bench?.crypto) {
+      missing.push('1 bench crypto');
+    }
+
+    if (missing.length === 0) return null;
+    return `Need: ${missing.join(', ')}`;
+  }, [portfolio, getFilledCount]);
+
+  // Open picker for a slot
+  const openPicker = useCallback((tier, slotIndex, cryptoOnly, stockOnly) => {
+    setPickerConfig({
+      isOpen: true,
+      tier,
+      slotIndex,
+      cryptoOnly,
+      stockOnly,
+    });
+  }, []);
+
+  // Close picker
+  const closePicker = useCallback(() => {
+    setPickerConfig({
+      isOpen: false,
+      tier: null,
+      slotIndex: null,
+      cryptoOnly: false,
+      stockOnly: false,
+    });
+  }, []);
+
+  // Handle asset selection from picker
+  const handleAssetSelect = useCallback(
+    (asset) => {
+      const { tier, slotIndex } = pickerConfig;
+
+      setPortfolio((prev) => {
+        const newPortfolio = { ...prev };
+
+        if (tier === 'bench-stock') {
+          const newStocks = [...(prev.bench?.stocks || [null, null, null])];
+          newStocks[slotIndex] = asset;
+          newPortfolio.bench = { ...prev.bench, stocks: newStocks };
+        } else if (tier === 'bench-crypto') {
+          newPortfolio.bench = { ...prev.bench, crypto: asset };
+        } else {
+          const newTier = [...(prev[tier] || [])];
+          newTier[slotIndex] = asset;
+          newPortfolio[tier] = newTier;
+        }
+
+        // Notify parent of change
+        if (onPortfolioChange) {
+          onPortfolioChange(newPortfolio);
+        }
+
+        return newPortfolio;
+      });
+
+      closePicker();
+    },
+    [pickerConfig, onPortfolioChange, closePicker]
+  );
+
+  // Handle asset removal
+  const handleRemove = useCallback(
+    (tier, slotIndex) => {
+      setPortfolio((prev) => {
+        const newPortfolio = { ...prev };
+
+        if (tier === 'bench-stock') {
+          const newStocks = [...(prev.bench?.stocks || [])];
+          newStocks[slotIndex] = null;
+          newPortfolio.bench = { ...prev.bench, stocks: newStocks };
+        } else if (tier === 'bench-crypto') {
+          newPortfolio.bench = { ...prev.bench, crypto: null };
+        } else {
+          const newTier = [...(prev[tier] || [])];
+          newTier[slotIndex] = null;
+          newPortfolio[tier] = newTier;
+        }
+
+        if (onPortfolioChange) {
+          onPortfolioChange(newPortfolio);
+        }
+
+        return newPortfolio;
+      });
+    },
+    [onPortfolioChange]
+  );
+
+  // Handle start battle
+  const handleStartBattle = useCallback(() => {
+    if (isValid && onStartBattle) {
+      onStartBattle(portfolio);
+    }
+  }, [isValid, onStartBattle, portfolio]);
+
+  return (
+    <div
+      style={{
+        padding: '16px',
+        backgroundColor: HOLO_COLORS.bgDeep,
+        minHeight: '100vh',
+      }}
+    >
+      {/* Header */}
+      <div style={{ marginBottom: '16px' }}>
+        <h2
+          style={{
+            fontSize: '20px',
+            fontWeight: 700,
+            color: HOLO_COLORS.textPrimary,
+            margin: 0,
+          }}
+        >
+          Build Your Arsenal
+        </h2>
+        <p
+          style={{
+            fontSize: '13px',
+            color: HOLO_COLORS.textMuted,
+            margin: '4px 0 0 0',
+          }}
+        >
+          Select 7 active positions + 4 bench slots
+        </p>
+      </div>
+
+      {/* Active Tiers */}
+      {BUILDER_TIERS.map((tier) => (
+        <div key={tier.key}>
+          <TierSection tier={tier} filledCount={getFilledCount(tier.key)} />
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: '12px',
+            }}
+          >
+            {Array.from({ length: tier.slots }).map((_, index) => {
+              const asset = portfolio[tier.key]?.[index];
+              const isCryptoSlot = tier.lastSlotCrypto && index === tier.slots - 1;
+
+              return (
+                <PortfolioSlot
+                  key={`${tier.key}-${index}`}
+                  asset={asset}
+                  tier={tier.key}
+                  allocation={tier.allocation}
+                  isCrypto={isCryptoSlot}
+                  onSelect={() =>
+                    openPicker(tier.key, index, isCryptoSlot, !isCryptoSlot)
+                  }
+                  onRemove={() => handleRemove(tier.key, index)}
+                  disabled={disabled}
+                />
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {/* Bench Section */}
+      <div style={{ marginTop: '24px' }}>
+        <TierSection
+          tier={{
+            key: 'bench',
+            label: '📦 Bench',
+            description: '3 stocks + 1 crypto for substitutions',
+            allocation: 'BN',
+            slots: 4,
+          }}
+          filledCount={getFilledCount('bench')}
+        />
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: '8px',
+          }}
+        >
+          {/* Stock bench slots */}
+          {[0, 1, 2].map((index) => (
+            <PortfolioSlot
+              key={`bench-stock-${index}`}
+              asset={portfolio.bench?.stocks?.[index]}
+              tier="bench"
+              allocation="BN"
+              isCrypto={false}
+              onSelect={() => openPicker('bench-stock', index, false, true)}
+              onRemove={() => handleRemove('bench-stock', index)}
+              disabled={disabled}
+            />
+          ))}
+
+          {/* Crypto bench slot */}
+          <PortfolioSlot
+            asset={portfolio.bench?.crypto}
+            tier="bench"
+            allocation="BN"
+            isCrypto={true}
+            onSelect={() => openPicker('bench-crypto', 0, true, false)}
+            onRemove={() => handleRemove('bench-crypto', 0)}
+            disabled={disabled}
+          />
+        </div>
+      </div>
+
+      {/* Validation Status */}
+      <div
+        style={{
+          marginTop: '24px',
+          padding: '12px 16px',
+          backgroundColor: isValid
+            ? `${HOLO_COLORS.green}15`
+            : HOLO_COLORS.bgElevated,
+          borderRadius: '8px',
+          border: `1px solid ${isValid ? HOLO_COLORS.green : HOLO_COLORS.borderSubtle}`,
+        }}
+      >
+        {isValid ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              color: HOLO_COLORS.green,
+              fontSize: '13px',
+              fontWeight: 500,
+            }}
+          >
+            <span>✓</span>
+            <span>Portfolio complete! Ready to battle.</span>
+          </div>
+        ) : (
+          <div
+            style={{
+              fontSize: '12px',
+              color: HOLO_COLORS.textMuted,
+            }}
+          >
+            {validationMessage}
+          </div>
+        )}
+      </div>
+
+      {/* Start Battle Button */}
+      <motion.button
+        whileHover={isValid && !disabled ? { scale: 1.02 } : {}}
+        whileTap={isValid && !disabled ? { scale: 0.98 } : {}}
+        onClick={handleStartBattle}
+        disabled={!isValid || disabled}
+        style={{
+          width: '100%',
+          marginTop: '16px',
+          padding: '16px',
+          borderRadius: '12px',
+          border: 'none',
+          backgroundColor: isValid ? HOLO_COLORS.cyan : HOLO_COLORS.bgElevated,
+          color: isValid ? HOLO_COLORS.bgDeep : HOLO_COLORS.textMuted,
+          fontSize: '16px',
+          fontWeight: 700,
+          cursor: isValid && !disabled ? 'pointer' : 'not-allowed',
+          opacity: isValid ? 1 : 0.5,
+          transition: 'all 0.2s',
+        }}
+      >
+        {isValid ? '🚀 Start Battle' : 'Complete Your Roster'}
+      </motion.button>
+
+      {/* Asset Picker Modal */}
+      <AssetPickerModal
+        isOpen={pickerConfig.isOpen}
+        onClose={closePicker}
+        onSelect={handleAssetSelect}
+        assets={availableAssets}
+        selectedAssets={selectedAssets}
+        cryptoOnly={pickerConfig.cryptoOnly}
+        stockOnly={pickerConfig.stockOnly}
+        title={
+          pickerConfig.cryptoOnly
+            ? 'Select Crypto'
+            : pickerConfig.stockOnly
+              ? 'Select Stock'
+              : 'Select Asset'
+        }
+      />
+    </div>
+  );
+}
+
+SlotBasedBuilder.propTypes = {
+  /** Initial portfolio state */
+  portfolio: PropTypes.shape({
+    star: PropTypes.array,
+    core: PropTypes.array,
+    support: PropTypes.array,
+    bench: PropTypes.shape({
+      stocks: PropTypes.array,
+      crypto: PropTypes.object,
+    }),
+  }),
+  /** Available assets to choose from */
+  availableAssets: PropTypes.arrayOf(
+    PropTypes.shape({
+      symbol: PropTypes.string.isRequired,
+      name: PropTypes.string,
+      baseATR: PropTypes.number,
+      isCrypto: PropTypes.bool,
+    })
+  ),
+  /** Callback when portfolio changes */
+  onPortfolioChange: PropTypes.func,
+  /** Callback when start battle is clicked (receives portfolio) */
+  onStartBattle: PropTypes.func,
+  /** Whether builder is disabled */
+  disabled: PropTypes.bool,
+};
+
+SlotBasedBuilder.defaultProps = {
+  portfolio: null,
+  availableAssets: [],
+  onPortfolioChange: null,
+  onStartBattle: null,
+  disabled: false,
+};
+
+// Export tier config and helper
+export { BUILDER_TIERS, createEmptyPortfolio };
