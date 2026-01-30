@@ -1091,6 +1091,7 @@ export async function createBaggerBombBattleV3(battleData) {
 
       type: 'baggerbomb_v3',
       challengeCode: challengeCode,
+      visibility: battleData.visibility || 'public', // 'public' = appears in lobby, 'private' = code only
 
       creator: {
         uid: String(battleData.creator?.uid || 'anonymous'),
@@ -3334,6 +3335,84 @@ export async function clearOptionsBotEntries(tournamentId) {
 }
 
 // =====================================================
+// BAGGERBOMB V3 LOBBY SYSTEM
+// =====================================================
+
+/**
+ * Get all open BaggerBomb V3 battles (for lobby)
+ * Returns battles with state.status === 'waiting' and visibility === 'public'
+ *
+ * @param {number} maxResults - Maximum number of battles to return
+ * @returns {Promise<Array>} - Array of open battles
+ */
+export async function getOpenBaggerBombBattles(maxResults = 20) {
+  try {
+    const q = query(
+      collection(db, 'battles'),
+      where('_v', '==', 3),
+      where('state.status', '==', 'waiting'),
+      where('visibility', '==', 'public'),
+      where('archived', '==', false),
+      orderBy('timing.createdAt', 'desc'),
+      limit(maxResults)
+    );
+
+    const snapshot = await getDocs(q);
+    const battles = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    console.log(`✅ Found ${battles.length} open BaggerBomb V3 battles`);
+    return battles;
+  } catch (error) {
+    console.error('❌ Error fetching open battles:', error);
+    // Return empty array on error (likely missing index)
+    return [];
+  }
+}
+
+/**
+ * Subscribe to open BaggerBomb V3 battles (real-time lobby updates)
+ *
+ * @param {Function} callback - Callback function (battles) => void
+ * @returns {Function} - Unsubscribe function
+ */
+export function subscribeToLobby(callback) {
+  try {
+    const q = query(
+      collection(db, 'battles'),
+      where('_v', '==', 3),
+      where('state.status', '==', 'waiting'),
+      where('visibility', '==', 'public'),
+      where('archived', '==', false)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const battles = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .sort((a, b) => {
+          const aTime = a?.timing?.createdAt || 0;
+          const bTime = b?.timing?.createdAt || 0;
+          return new Date(bTime) - new Date(aTime);
+        });
+
+      console.log(`📥 Lobby update: ${battles.length} open battles`);
+      callback(battles);
+    }, (error) => {
+      console.error('❌ Lobby subscription error:', error);
+      callback([]);
+    });
+
+    console.log('✅ Subscribed to BaggerBomb lobby');
+    return unsubscribe;
+  } catch (error) {
+    console.error('❌ Error setting up lobby subscription:', error);
+    return () => {};
+  }
+}
+
+// =====================================================
 // EXPORTS
 // =====================================================
 
@@ -3363,6 +3442,10 @@ export default {
   createBaggerBombBattleV3,
   addBaggerBombEvent,
   updateAssetHistoryInBattle,
+
+  // V3 Lobby System
+  getOpenBaggerBombBattles,
+  subscribeToLobby,
 
   // Training Battles
   createTrainingBattle,

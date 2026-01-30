@@ -4,7 +4,7 @@ import { useUser } from './contexts/UserContext';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
-import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, joinBaggerBombBattle, joinBaggerBombBattleV3 } from './firebase/firebaseService';
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, joinBaggerBombBattle, joinBaggerBombBattleV3, subscribeToLobby, getOpenBaggerBombBattles } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
 import './firebase/config';
@@ -35,6 +35,7 @@ import { RiskStyleScreen, SectorSelectionScreen } from './components/GamePlan';
 const PortfolioBuilderBaggerBomb = lazy(() => import('./components/BaggerBomb/PortfolioBuilderBaggerBomb'));
 const BaggerBombBattleViewRedesign = lazy(() => import('./components/BaggerBomb/BaggerBombBattleViewRedesign'));
 const BaggerBombBattleViewConnected = lazy(() => import('./screens/BaggerBombBattleViewConnected'));
+const BaggerBombLobby = lazy(() => import('./screens/BaggerBombLobby'));
 const BaggerBombGamePlanFlow = lazy(() => import('./components/GamePlan/BaggerBombGamePlanFlow'));
 const StonkOptionsArenaV2 = lazy(() => import('./components/optionsArena/StonkOptionsArenaV2'));
 
@@ -11352,6 +11353,10 @@ export default function PortfolioDuel() {
   const [showSnakeDraftModal, setShowSnakeDraftModal] = useState(false);
   const [showBuilderModal, setShowBuilderModal] = useState(false);
   const [showBaggerBombModal, setShowBaggerBombModal] = useState(false);
+  // BaggerBomb Lobby state
+  const [lobbyBattles, setLobbyBattles] = useState([]);
+  const [lobbyLoading, setLobbyLoading] = useState(false);
+  const [battleToJoin, setBattleToJoin] = useState(null); // Battle ID when joining from lobby
   const [showOptionsArenaModal, setShowOptionsArenaModal] = useState(false);
   // BaggerBomb Scoring battle mode selection in create battle confirmation
   const [battleScoringMode, setBattleScoringMode] = useState('classic'); // 'classic' | 'baggerbomb'
@@ -12453,6 +12458,25 @@ export default function PortfolioDuel() {
 
     return () => clearInterval(interval);
   }, [screen, battles]);
+
+  // Subscribe to BaggerBomb lobby when on lobby screen
+  useEffect(() => {
+    if (screen !== 'baggerBombLobby') {
+      setLobbyBattles([]);
+      return;
+    }
+
+    setLobbyLoading(true);
+
+    const unsubscribe = subscribeToLobby((battles) => {
+      setLobbyBattles(battles);
+      setLobbyLoading(false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [screen]);
 
   // Subscribe to Firestore battle updates for real-time sync
   useEffect(() => {
@@ -21316,22 +21340,15 @@ export default function PortfolioDuel() {
           }}
         />
 
-        {/* BaggerBomb Modal (with Create/Join) */}
+        {/* BaggerBomb Modal - Now goes to Lobby */}
         <ConfirmationPopup
           show={showBaggerBombModal}
           onClose={() => setShowBaggerBombModal(false)}
           onConfirm={() => {
             setShowBaggerBombModal(false);
-            // Navigate to BaggerBomb create flow
-            setScreen('baggerBombBuilder');
+            // Navigate to BaggerBomb Lobby
+            setScreen('baggerBombLobby');
           }}
-          secondaryAction={() => {
-            setShowBaggerBombModal(false);
-            // Navigate to BaggerBomb join flow
-            setJoinBattleType('baggerbomb');
-            setScreen('join');
-          }}
-          secondaryText="Join Game"
           icon={<span style={{ fontSize: '32px' }}>💣</span>}
           iconBgColor="#dc2626"
           title="BaggerBomb"
@@ -21342,7 +21359,7 @@ export default function PortfolioDuel() {
             { label: 'Duration', value: '1 hour' },
             { label: 'Rewards', value: '+15 XP (win) / +5 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
           ]}
-          confirmText="Create Game"
+          confirmText="Enter Lobby"
           confirmColor="#dc2626"
           hideTutorial
         />
@@ -21461,6 +21478,38 @@ export default function PortfolioDuel() {
     );
   }
 
+  // BAGGERBOMB LOBBY - Find and join open battles
+  if (screen === 'baggerBombLobby') {
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        <BaggerBombLobby
+          user={user}
+          openBattles={lobbyBattles}
+          loading={lobbyLoading}
+          onCreateBattle={() => {
+            setBattleToJoin(null);
+            setScreen('baggerBombBuilder');
+          }}
+          onJoinBattle={(battle) => {
+            setBattleToJoin(battle);
+            setScreen('baggerBombJoinBuilder');
+          }}
+          onBack={() => setScreen('dashboard')}
+          onRefresh={async () => {
+            setLobbyLoading(true);
+            try {
+              const battles = await getOpenBaggerBombBattles();
+              setLobbyBattles(battles);
+            } catch (err) {
+              console.error('Failed to refresh lobby:', err);
+            }
+            setLobbyLoading(false);
+          }}
+        />
+      </Suspense>
+    );
+  }
+
   // BAGGERBOMB CREATE BATTLE - New SlotBasedBuilder
   if (screen === 'baggerBombBuilder') {
     return (
@@ -21486,9 +21535,9 @@ export default function PortfolioDuel() {
               },
             });
             if (battleData?.id) {
-              showToast(`BaggerBomb battle created! Code: ${battleData.challengeCode}`);
+              showToast(`Battle created! Waiting for opponent...`);
               setCurrentBattle(battleData);
-              setScreen('battle');
+              setScreen('baggerBombLobby'); // Go back to lobby to see pending battle
             }
           } catch (error) {
             console.error('Failed to create BaggerBomb battle:', error);
@@ -21496,13 +21545,60 @@ export default function PortfolioDuel() {
           }
         }}
         onBack={() => {
-          setScreen('dashboard');
+          setScreen('baggerBombLobby');
         }}
       />
     );
   }
 
-  // BAGGERBOMB JOIN BATTLE - New SlotBasedBuilder
+  // BAGGERBOMB JOIN FROM LOBBY - Build portfolio then join selected battle
+  if (screen === 'baggerBombJoinBuilder') {
+    return (
+      <SlotBasedBuilder
+        stocks={stocksData}
+        crypto={cryptoData}
+        onComplete={async (portfolio) => {
+          try {
+            if (!battleToJoin?.id) {
+              showToast('No battle selected. Please select from lobby.');
+              setScreen('baggerBombLobby');
+              return;
+            }
+            console.log('[BaggerBomb] Joining battle from lobby:', battleToJoin.id);
+            // Join using battle's challenge code
+            const result = await joinBaggerBombBattleV3(battleToJoin.challengeCode, {
+              portfolio: {
+                star: portfolio.star,
+                core: portfolio.core,
+                support: portfolio.support,
+              },
+              bench: portfolio.bench,
+              uid: user.uid || user.odUserId || user.username,
+              odUserId: user.odUserId || user.username,
+              username: user.displayName || user.username,
+              avatar: user.avatar || '',
+            });
+            if (result?.success) {
+              showToast(`Joined battle!`);
+              setCurrentBattle(result.battle);
+              setBattleToJoin(null);
+              setScreen('battle');
+            }
+          } catch (error) {
+            console.error('Failed to join BaggerBomb battle:', error);
+            showToast('Failed to join battle. It may have already started.');
+            setScreen('baggerBombLobby');
+          }
+        }}
+        onBack={() => {
+          setBattleToJoin(null);
+          setScreen('baggerBombLobby');
+        }}
+      />
+    );
+  }
+
+  // BAGGERBOMB JOIN BATTLE (Legacy - via code)
   if (screen === 'joinPortfolioBuilderTD') {
     return (
       <SlotBasedBuilder
