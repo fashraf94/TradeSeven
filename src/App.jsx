@@ -21477,7 +21477,7 @@ export default function PortfolioDuel() {
             if (battleData?.id) {
               showToast(`BaggerBomb battle created! Code: ${battleData.challengeCode}`);
               setCurrentBattle(battleData);
-              setScreen('dashboard');
+              setScreen('battle');
             }
           } catch (error) {
             console.error('Failed to create BaggerBomb battle:', error);
@@ -21505,7 +21505,7 @@ export default function PortfolioDuel() {
               showToast(`Joined BaggerBomb battle!`);
               setCurrentBattle(result.battle);
               setJoinCode('');
-              setScreen('dashboard');
+              setScreen('battle');
             }
           } catch (error) {
             console.error('Failed to join BaggerBomb battle:', error);

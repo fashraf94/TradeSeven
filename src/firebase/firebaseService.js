@@ -962,6 +962,10 @@ export async function createBaggerBombBattleV3(battleData) {
       throw new Error('Portfolio must have star, core, and support tiers');
     }
 
+    // Generate challenge code if not provided
+    const challengeCode = battleData.challengeCode ||
+      `BB${Date.now().toString(36).slice(-4).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
     // Collect all symbols for threshold fetching
     const allAssets = [
       ...(portfolio.star || []).filter(Boolean),
@@ -1055,7 +1059,7 @@ export async function createBaggerBombBattleV3(battleData) {
       _v: 3, // Schema version for tier-based portfolio
 
       type: 'baggerbomb_v3',
-      challengeCode: String(battleData.challengeCode || ''),
+      challengeCode: challengeCode,
 
       creator: {
         uid: String(battleData.creator?.uid || 'anonymous'),
