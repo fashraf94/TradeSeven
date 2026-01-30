@@ -1391,18 +1391,21 @@ export async function joinBaggerBombBattle(challengeCode, opponentData) {
 
 /**
  * Join a BaggerBomb V3 battle (tier-based portfolio)
+ * Supports joining by battleId (lobby) or challengeCode (legacy)
  *
- * @param {string} challengeCode - Battle challenge code
+ * @param {string} battleIdOrCode - Battle ID (from lobby) or challenge code
  * @param {Object} opponentData - Opponent's data with tiered portfolio
+ * @param {Object} options - Optional { joinByBattleId: boolean }
  * @returns {Promise<Object>} - Updated battle
  */
-export async function joinBaggerBombBattleV3(challengeCode, opponentData) {
+export async function joinBaggerBombBattleV3(battleIdOrCode, opponentData, options = {}) {
   try {
-    console.log('🔥 joinBaggerBombBattleV3 called with:', { challengeCode, opponentData });
+    const { joinByBattleId = false } = options;
+    console.log('🔥 joinBaggerBombBattleV3 called with:', { battleIdOrCode, opponentData, joinByBattleId });
 
     // Validate input
-    if (!challengeCode || typeof challengeCode !== 'string') {
-      throw new Error('Invalid challenge code');
+    if (!battleIdOrCode || typeof battleIdOrCode !== 'string') {
+      throw new Error('Battle ID or challenge code is required');
     }
 
     if (!opponentData) {
@@ -1414,23 +1417,52 @@ export async function joinBaggerBombBattleV3(challengeCode, opponentData) {
       throw new Error('Portfolio must have star, core, and support tiers');
     }
 
-    // Find V3 battle by challenge code
-    const q = query(
-      collection(db, 'battles'),
-      where('challengeCode', '==', challengeCode.toUpperCase()),
-      where('state.status', '==', 'waiting'),
-      where('_v', '==', 3),
-      where('archived', '==', false)
-    );
+    let battleDoc;
+    let battleData;
 
-    const snapshot = await getDocs(q);
+    // Join by battle ID (from lobby) or by challenge code (legacy)
+    if (joinByBattleId) {
+      // Direct lookup by battle ID
+      const battleRef = doc(db, 'battles', battleIdOrCode);
+      const battleSnap = await getDoc(battleRef);
 
-    if (snapshot.empty) {
-      throw new Error('BaggerBomb V3 battle not found or already started');
+      if (!battleSnap.exists()) {
+        throw new Error('Battle not found');
+      }
+
+      battleData = battleSnap.data();
+      battleDoc = { id: battleSnap.id, ref: battleRef };
+
+      // Validate battle state
+      if (battleData._v !== 3) {
+        throw new Error('Invalid battle version');
+      }
+      if (battleData.state?.status !== 'waiting') {
+        throw new Error('Battle is no longer available');
+      }
+      if (battleData.archived) {
+        throw new Error('Battle has been archived');
+      }
+    } else {
+      // Legacy: Find V3 battle by challenge code
+      const q = query(
+        collection(db, 'battles'),
+        where('challengeCode', '==', battleIdOrCode.toUpperCase()),
+        where('state.status', '==', 'waiting'),
+        where('_v', '==', 3),
+        where('archived', '==', false)
+      );
+
+      const snapshot = await getDocs(q);
+
+      if (snapshot.empty) {
+        throw new Error('BaggerBomb V3 battle not found or already started');
+      }
+
+      const foundDoc = snapshot.docs[0];
+      battleData = foundDoc.data();
+      battleDoc = { id: foundDoc.id, ref: doc(db, 'battles', foundDoc.id) };
     }
-
-    const battleDoc = snapshot.docs[0];
-    const battleData = battleDoc.data();
 
     // Check if user is trying to join their own battle
     const creatorId = battleData.creator?.odUserId || battleData.creator?.uid;
@@ -3456,8 +3488,39 @@ export function subscribeToAllLobbies(callback) {
 }
 
 /**
+ * Validate a BaggerBomb battle is valid for the lobby
+ * @param {Object} battle - Battle data
+ * @returns {boolean} - True if valid
+ */
+function isValidLobbyBattle(battle) {
+  // Must have creator with UID
+  if (!battle.creator?.uid && !battle.creator?.odUserId) {
+    return false;
+  }
+
+  // Must have valid portfolio (at least star tier)
+  const portfolio = battle.creator?.portfolio;
+  if (!portfolio?.star || portfolio.star.length === 0) {
+    return false;
+  }
+
+  // Must be created within last 24 hours
+  const createdAt = battle.timing?.createdAt;
+  if (createdAt) {
+    const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+    const battleTime = new Date(createdAt).getTime();
+    if (battleTime < oneDayAgo) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
  * Get all open BaggerBomb V3 battles (for lobby)
  * Returns battles with state.status === 'waiting' and visibility === 'public'
+ * Filters out stale battles (>24 hours) and invalid data
  *
  * @param {number} maxResults - Maximum number of battles to return
  * @returns {Promise<Array>} - Array of open battles
@@ -3471,14 +3534,14 @@ export async function getOpenBaggerBombBattles(maxResults = 20) {
       where('visibility', '==', 'public'),
       where('archived', '==', false),
       orderBy('timing.createdAt', 'desc'),
-      limit(maxResults)
+      limit(maxResults * 2) // Fetch extra to account for filtering
     );
 
     const snapshot = await getDocs(q);
-    const battles = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    const battles = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(isValidLobbyBattle)
+      .slice(0, maxResults);
 
     console.log(`✅ Found ${battles.length} open BaggerBomb V3 battles`);
     return battles;
@@ -3491,6 +3554,7 @@ export async function getOpenBaggerBombBattles(maxResults = 20) {
 
 /**
  * Subscribe to open BaggerBomb V3 battles (real-time lobby updates)
+ * Filters out stale battles (>24 hours) and invalid data
  *
  * @param {Function} callback - Callback function (battles) => void
  * @returns {Function} - Unsubscribe function
@@ -3508,6 +3572,7 @@ export function subscribeToLobby(callback) {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const battles = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(isValidLobbyBattle) // Filter out stale/invalid battles
         .sort((a, b) => {
           const aTime = a?.timing?.createdAt || 0;
           const bTime = b?.timing?.createdAt || 0;

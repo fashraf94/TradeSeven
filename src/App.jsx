@@ -11335,6 +11335,8 @@ export default function PortfolioDuel() {
 
   // Draft Fixes state
   const [activeDraftBanner, setActiveDraftBanner] = useState(null);
+  // BaggerBomb V3 active battle banner
+  const [activeBaggerBombBanner, setActiveBaggerBombBanner] = useState(null);
   const [autopickCountdown, setAutopickCountdown] = useState(null);
   const [isRosterExpanded, setIsRosterExpanded] = useState(false);
   const [rosterTouchStart, setRosterTouchStart] = useState(null);
@@ -13762,6 +13764,45 @@ export default function PortfolioDuel() {
 
     return () => clearInterval(checkInterval);
   }, [screen, user]);
+
+  // Check for active BaggerBomb V3 battles on dashboard (rejoin functionality)
+  useEffect(() => {
+    if (screen !== 'dashboard') {
+      setActiveBaggerBombBanner(null);
+      return;
+    }
+
+    const userId = user?.odUserId || user?.uid || user?.username;
+    if (!userId) return;
+
+    // Check battles array for user's active or waiting BaggerBomb V3 battles
+    const userBaggerBombBattles = battles.filter(battle => {
+      if (battle._v !== 3) return false;
+      if (battle.archived) return false;
+
+      const status = battle.state?.status;
+      if (status !== 'waiting' && status !== 'active') return false;
+
+      // Check if user is creator or opponent
+      const isCreator = battle.creator?.odUserId === userId || battle.creator?.uid === userId;
+      const isOpponent = battle.opponent?.odUserId === userId || battle.opponent?.uid === userId;
+
+      return isCreator || isOpponent;
+    });
+
+    // Show the most recent active/waiting battle
+    if (userBaggerBombBattles.length > 0) {
+      // Sort by creation time, most recent first
+      const sorted = [...userBaggerBombBattles].sort((a, b) => {
+        const aTime = a.timing?.createdAt || 0;
+        const bTime = b.timing?.createdAt || 0;
+        return new Date(bTime) - new Date(aTime);
+      });
+      setActiveBaggerBombBanner(sorted[0]);
+    } else {
+      setActiveBaggerBombBanner(null);
+    }
+  }, [screen, user, battles]);
 
   // Browser close warning for active draft - Phase 4
   useEffect(() => {
@@ -18833,6 +18874,68 @@ export default function PortfolioDuel() {
             </div>
           )}
 
+          {/* Active BaggerBomb Battle Banner - Show when user has an ongoing V3 battle */}
+          {activeBaggerBombBanner && (
+            <div
+              onClick={() => {
+                setCurrentBattle(activeBaggerBombBanner);
+                setActiveBaggerBombBanner(null);
+                setScreen('battle');
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #ff3366 0%, #dc2626 100%)',
+                padding: '16px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  background: 'rgba(255,255,255,0.2)',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '20px'
+                }}>
+                  💣
+                </div>
+                <div>
+                  <div style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '16px' }}>
+                    {activeBaggerBombBanner.state?.status === 'waiting' ? 'BaggerBomb Lobby Waiting!' : 'Active BaggerBomb Battle!'}
+                  </div>
+                  <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '13px' }}>
+                    {activeBaggerBombBanner.state?.status === 'waiting'
+                      ? `vs ${activeBaggerBombBanner.creator?.username || 'Player'} • Waiting for opponent`
+                      : `vs ${activeBaggerBombBanner.opponent?.username || activeBaggerBombBanner.creator?.username || 'Player'} • Battle in progress`
+                    }
+                  </div>
+                </div>
+              </div>
+
+              <button
+                style={{
+                  padding: '10px 20px',
+                  background: '#ffffff',
+                  color: '#dc2626',
+                  fontWeight: 'bold',
+                  fontSize: '14px',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {activeBaggerBombBanner.state?.status === 'waiting' ? 'VIEW →' : 'REJOIN →'}
+              </button>
+            </div>
+          )}
+
           {/* Dashboard Header with Hamburger Menu and Logo */}
           <header style={{
             background: 'linear-gradient(180deg, #161b22 0%, #0d1117 100%)',
@@ -21605,8 +21708,8 @@ export default function PortfolioDuel() {
               return;
             }
             console.log('[BaggerBomb] Joining battle from lobby:', battleToJoin.id);
-            // Join using battle's challenge code
-            const result = await joinBaggerBombBattleV3(battleToJoin.challengeCode, {
+            // Join using battle ID directly (lobby join)
+            const result = await joinBaggerBombBattleV3(battleToJoin.id, {
               portfolio: {
                 star: portfolio.star,
                 core: portfolio.core,
@@ -21617,7 +21720,7 @@ export default function PortfolioDuel() {
               odUserId: user.odUserId || user.username,
               username: user.displayName || user.username,
               avatar: user.avatar || '',
-            });
+            }, { joinByBattleId: true });
             if (result?.success) {
               showToast(`Joined battle!`);
               setCurrentBattle(result.battle);
