@@ -325,9 +325,11 @@ export async function getUserBattles(userId) {
       ...snapshot2.docs.map(doc => ({ id: doc.id, ...doc.data() }))
     ];
 
-    // Sort by creation date (newest first)
+    // Sort by creation date (newest first) - handle both timeline and timing schemas
     battles.sort((a, b) => {
-      return new Date(b.timeline.createdAt) - new Date(a.timeline.createdAt);
+      const aTime = a?.timing?.createdAt || a?.timeline?.createdAt || a?.createdAt || 0;
+      const bTime = b?.timing?.createdAt || b?.timeline?.createdAt || b?.createdAt || 0;
+      return new Date(bTime) - new Date(aTime);
     });
 
     console.log(`✅ Fetched ${battles.length} battles for user:`, userId);
@@ -418,9 +420,11 @@ export function subscribeToBattles(userId, callback) {
       allBattles.set(doc.id, { id: doc.id, ...doc.data() });
     });
 
-    // Convert map to array and sort by creation date
+    // Convert map to array and sort by creation date - handle both timeline and timing schemas
     const battles = Array.from(allBattles.values()).sort((a, b) => {
-      return new Date(b.timeline.createdAt) - new Date(a.timeline.createdAt);
+      const aTime = a?.timing?.createdAt || a?.timeline?.createdAt || a?.createdAt || 0;
+      const bTime = b?.timing?.createdAt || b?.timeline?.createdAt || b?.createdAt || 0;
+      return new Date(bTime) - new Date(aTime);
     });
 
     callback(battles);
@@ -432,9 +436,11 @@ export function subscribeToBattles(userId, callback) {
       allBattles.set(doc.id, { id: doc.id, ...doc.data() });
     });
 
-    // Convert map to array and sort by creation date
+    // Convert map to array and sort by creation date - handle both timeline and timing schemas
     const battles = Array.from(allBattles.values()).sort((a, b) => {
-      return new Date(b.timeline.createdAt) - new Date(a.timeline.createdAt);
+      const aTime = a?.timing?.createdAt || a?.timeline?.createdAt || a?.createdAt || 0;
+      const bTime = b?.timing?.createdAt || b?.timeline?.createdAt || b?.createdAt || 0;
+      return new Date(bTime) - new Date(aTime);
     });
 
     callback(battles);
