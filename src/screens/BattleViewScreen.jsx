@@ -12,6 +12,7 @@ const BattleViewScreen = ({
   ActiveRiskChallengeIndicator,
   LoadingFallback,
   BaggerBombBattleViewRedesign,
+  BaggerBombBattleViewConnected,
 }) => {
   // Debug: Log battle routing decision
   console.log('🎮 BATTLE ROUTING DEBUG:', {
@@ -23,8 +24,21 @@ const BattleViewScreen = ({
     battleType: currentBattle?.portfolioType
   });
 
-  // Check if this is a BaggerBomb (V2) battle - route to redesigned view
+  // Check if this is a BaggerBomb (V2) battle - route to new connected view
   if (currentBattle._v === 2) {
+    // Use the new connected component for non-training battles
+    if (BaggerBombBattleViewConnected && currentBattle.id && !currentBattle.isTraining) {
+      return (
+        <Suspense fallback={<LoadingFallback />}>
+          <BaggerBombBattleViewConnected
+            battleId={currentBattle.id}
+            userId={user?.odUserId || user?.username}
+            onBack={onBack}
+          />
+        </Suspense>
+      );
+    }
+    // Fall back to redesign view for training battles or when connected component is not available
     return (
       <Suspense fallback={<LoadingFallback />}>
         <BaggerBombBattleViewRedesign

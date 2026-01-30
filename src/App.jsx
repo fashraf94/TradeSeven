@@ -26,6 +26,7 @@ import {
   ThresholdPreview,
   BenchSelector,
   BaggerBombBattleView,
+  SlotBasedBuilder,
 } from './components/BaggerBomb';
 // BaggerBomb Game Plan Flow (non-lazy imports)
 import { RiskStyleScreen, SectorSelectionScreen } from './components/GamePlan';
@@ -33,6 +34,7 @@ import { RiskStyleScreen, SectorSelectionScreen } from './components/GamePlan';
 // Lazy-loaded heavy components (make API calls on mount)
 const PortfolioBuilderBaggerBomb = lazy(() => import('./components/BaggerBomb/PortfolioBuilderBaggerBomb'));
 const BaggerBombBattleViewRedesign = lazy(() => import('./components/BaggerBomb/BaggerBombBattleViewRedesign'));
+const BaggerBombBattleViewConnected = lazy(() => import('./screens/BaggerBombBattleViewConnected'));
 const BaggerBombGamePlanFlow = lazy(() => import('./components/GamePlan/BaggerBombGamePlanFlow'));
 const StonkOptionsArenaV2 = lazy(() => import('./components/optionsArena/StonkOptionsArenaV2'));
 
@@ -21448,6 +21450,62 @@ export default function PortfolioDuel() {
     );
   }
 
+  // BAGGERBOMB CREATE BATTLE - New SlotBasedBuilder
+  if (screen === 'baggerBombBuilder') {
+    return (
+      <SlotBasedBuilder
+        stocks={stocksData}
+        crypto={cryptoData}
+        onComplete={async (portfolio) => {
+          try {
+            // Create BaggerBomb battle with the portfolio
+            const battleData = await createBaggerBombBattle(user, portfolio);
+            if (battleData?.id) {
+              showToast(`BaggerBomb battle created! Code: ${battleData.challengeCode}`);
+              setCurrentBattle(battleData);
+              setScreen('dashboard');
+            }
+          } catch (error) {
+            console.error('Failed to create BaggerBomb battle:', error);
+            showToast('Failed to create battle. Please try again.');
+          }
+        }}
+        onBack={() => {
+          setScreen('dashboard');
+        }}
+      />
+    );
+  }
+
+  // BAGGERBOMB JOIN BATTLE - New SlotBasedBuilder
+  if (screen === 'joinPortfolioBuilderTD') {
+    return (
+      <SlotBasedBuilder
+        stocks={stocksData}
+        crypto={cryptoData}
+        onComplete={async (portfolio) => {
+          try {
+            // Join BaggerBomb battle with the portfolio
+            const result = await joinBaggerBombBattle(joinCode, user, portfolio);
+            if (result?.success) {
+              showToast(`Joined BaggerBomb battle!`);
+              setCurrentBattle(result.battle);
+              setJoinCode('');
+              setScreen('dashboard');
+            }
+          } catch (error) {
+            console.error('Failed to join BaggerBomb battle:', error);
+            showToast('Failed to join battle. Please check the code and try again.');
+          }
+        }}
+        onBack={() => {
+          setJoinCode('');
+          setScreen('join');
+        }}
+      />
+    );
+  }
+
   // JOIN GAME SCREEN - Extracted to JoinScreen component
   if (screen === 'join') {
     return (
@@ -21773,6 +21831,7 @@ export default function PortfolioDuel() {
         ActiveRiskChallengeIndicator={ActiveRiskChallengeIndicator}
         LoadingFallback={LoadingFallback}
         BaggerBombBattleViewRedesign={BaggerBombBattleViewRedesign}
+        BaggerBombBattleViewConnected={BaggerBombBattleViewConnected}
       />
     );
   }
