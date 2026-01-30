@@ -12343,6 +12343,25 @@ export default function PortfolioDuel() {
     }
   }, [user]);
 
+  // ═══════════════════════════════════════════════════════════════
+  // CONSOLIDATION: Redirect Classic modals to BaggerBomb
+  // ═══════════════════════════════════════════════════════════════
+  useEffect(() => {
+    // Redirect Classic training to BaggerBomb training
+    if (showClassicTrainingConfirm) {
+      setShowClassicTrainingConfirm(false);
+      setShowBaggerBombTrainingConfirm(true);
+    }
+  }, [showClassicTrainingConfirm]);
+
+  useEffect(() => {
+    // Redirect Builder modal to BaggerBomb modal
+    if (showBuilderModal) {
+      setShowBuilderModal(false);
+      setShowBaggerBombModal(true);
+    }
+  }, [showBuilderModal]);
+
   // Load market data on mount
   useEffect(() => {
     async function loadMarketData() {
@@ -18969,11 +18988,9 @@ export default function PortfolioDuel() {
                   mode="pvp"
                   setTrainingConfirmType={setTrainingConfirmType}
                   setShowTrainingConfirmModal={setShowTrainingConfirmModal}
-                  setShowClassicTrainingConfirm={setShowClassicTrainingConfirm}
                   setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
                   setScreen={setScreen}
                   setShowSnakeDraftModal={setShowSnakeDraftModal}
-                  setShowBuilderModal={setShowBuilderModal}
                   setShowBaggerBombModal={setShowBaggerBombModal}
                   setShowOptionsArenaModal={setShowOptionsArenaModal}
                 />
@@ -19033,11 +19050,9 @@ export default function PortfolioDuel() {
                   mode="train"
                   setTrainingConfirmType={setTrainingConfirmType}
                   setShowTrainingConfirmModal={setShowTrainingConfirmModal}
-                  setShowClassicTrainingConfirm={setShowClassicTrainingConfirm}
                   setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
                   setScreen={setScreen}
                   setShowSnakeDraftModal={setShowSnakeDraftModal}
-                  setShowBuilderModal={setShowBuilderModal}
                   setShowBaggerBombModal={setShowBaggerBombModal}
                   setShowOptionsArenaModal={setShowOptionsArenaModal}
                 />
