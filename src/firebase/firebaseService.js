@@ -398,52 +398,75 @@ export async function completeBattle(battleId, resultData) {
  * @returns {Function} - Unsubscribe function
  */
 export function subscribeToBattles(userId, callback) {
-  // Query battles where user is creator
+  // Query battles where user is creator (by uid)
   const q1 = query(
     collection(db, 'battles'),
     where('creator.uid', '==', userId),
     where('archived', '==', false)
   );
 
-  // Query battles where user is opponent
+  // Query battles where user is opponent (by uid)
   const q2 = query(
     collection(db, 'battles'),
     where('opponent.uid', '==', userId),
     where('archived', '==', false)
   );
 
+  // Also query by odUserId for V3 battles (since App.jsx may use odUserId as userId)
+  const q3 = query(
+    collection(db, 'battles'),
+    where('creator.odUserId', '==', userId),
+    where('archived', '==', false)
+  );
+
+  const q4 = query(
+    collection(db, 'battles'),
+    where('opponent.odUserId', '==', userId),
+    where('archived', '==', false)
+  );
+
   const allBattles = new Map();
 
-  // Listen to creator battles
+  // Helper to sort and callback
+  const sortAndCallback = () => {
+    const battles = Array.from(allBattles.values()).sort((a, b) => {
+      const aTime = a?.timing?.createdAt || a?.timeline?.createdAt || a?.createdAt || 0;
+      const bTime = b?.timing?.createdAt || b?.timeline?.createdAt || b?.createdAt || 0;
+      return new Date(bTime) - new Date(aTime);
+    });
+    callback(battles);
+  };
+
+  // Listen to creator battles (by uid)
   const unsubscribe1 = onSnapshot(q1, (snapshot) => {
     snapshot.docs.forEach(doc => {
       allBattles.set(doc.id, { id: doc.id, ...doc.data() });
     });
-
-    // Convert map to array and sort by creation date - handle both timeline and timing schemas
-    const battles = Array.from(allBattles.values()).sort((a, b) => {
-      const aTime = a?.timing?.createdAt || a?.timeline?.createdAt || a?.createdAt || 0;
-      const bTime = b?.timing?.createdAt || b?.timeline?.createdAt || b?.createdAt || 0;
-      return new Date(bTime) - new Date(aTime);
-    });
-
-    callback(battles);
+    sortAndCallback();
   });
 
-  // Listen to opponent battles
+  // Listen to opponent battles (by uid)
   const unsubscribe2 = onSnapshot(q2, (snapshot) => {
     snapshot.docs.forEach(doc => {
       allBattles.set(doc.id, { id: doc.id, ...doc.data() });
     });
+    sortAndCallback();
+  });
 
-    // Convert map to array and sort by creation date - handle both timeline and timing schemas
-    const battles = Array.from(allBattles.values()).sort((a, b) => {
-      const aTime = a?.timing?.createdAt || a?.timeline?.createdAt || a?.createdAt || 0;
-      const bTime = b?.timing?.createdAt || b?.timeline?.createdAt || b?.createdAt || 0;
-      return new Date(bTime) - new Date(aTime);
+  // Listen to creator battles (by odUserId for V3)
+  const unsubscribe3 = onSnapshot(q3, (snapshot) => {
+    snapshot.docs.forEach(doc => {
+      allBattles.set(doc.id, { id: doc.id, ...doc.data() });
     });
+    sortAndCallback();
+  });
 
-    callback(battles);
+  // Listen to opponent battles (by odUserId for V3)
+  const unsubscribe4 = onSnapshot(q4, (snapshot) => {
+    snapshot.docs.forEach(doc => {
+      allBattles.set(doc.id, { id: doc.id, ...doc.data() });
+    });
+    sortAndCallback();
   });
 
   console.log('✅ Subscribed to battle updates for user:', userId);
@@ -452,6 +475,8 @@ export function subscribeToBattles(userId, callback) {
   return () => {
     unsubscribe1();
     unsubscribe2();
+    unsubscribe3();
+    unsubscribe4();
     console.log('✅ Unsubscribed from battle updates');
   };
 }
@@ -1359,6 +1384,173 @@ export async function joinBaggerBombBattle(challengeCode, opponentData) {
     return updatedBattle;
   } catch (error) {
     console.error('❌ Error joining BaggerBomb battle:', error);
+    throw error;
+  }
+}
+
+/**
+ * Join a BaggerBomb V3 battle (tier-based portfolio)
+ *
+ * @param {string} challengeCode - Battle challenge code
+ * @param {Object} opponentData - Opponent's data with tiered portfolio
+ * @returns {Promise<Object>} - Updated battle
+ */
+export async function joinBaggerBombBattleV3(challengeCode, opponentData) {
+  try {
+    console.log('🔥 joinBaggerBombBattleV3 called with:', { challengeCode, opponentData });
+
+    // Validate input
+    if (!challengeCode || typeof challengeCode !== 'string') {
+      throw new Error('Invalid challenge code');
+    }
+
+    if (!opponentData) {
+      throw new Error('Opponent data is required');
+    }
+
+    const { portfolio, bench } = opponentData;
+    if (!portfolio || !portfolio.star || !portfolio.core || !portfolio.support) {
+      throw new Error('Portfolio must have star, core, and support tiers');
+    }
+
+    // Find V3 battle by challenge code
+    const q = query(
+      collection(db, 'battles'),
+      where('challengeCode', '==', challengeCode.toUpperCase()),
+      where('state.status', '==', 'waiting'),
+      where('_v', '==', 3),
+      where('archived', '==', false)
+    );
+
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      throw new Error('BaggerBomb V3 battle not found or already started');
+    }
+
+    const battleDoc = snapshot.docs[0];
+    const battleData = battleDoc.data();
+
+    // Check if user is trying to join their own battle
+    const creatorId = battleData.creator?.odUserId || battleData.creator?.uid;
+    const opponentId = opponentData.odUserId || opponentData.uid;
+    if (creatorId === opponentId) {
+      throw new Error('You cannot join your own battle');
+    }
+
+    // Collect all opponent assets for threshold fetching
+    const allOpponentAssets = [
+      ...(portfolio.star || []).filter(Boolean),
+      ...(portfolio.core || []).filter(Boolean),
+      ...(portfolio.support || []).filter(Boolean),
+      ...(bench?.stocks || []).filter(Boolean),
+      bench?.crypto,
+    ].filter(Boolean);
+
+    // Fetch thresholds for opponent's assets
+    let opponentThresholds = {};
+    try {
+      opponentThresholds = await fetchAllThresholds(allOpponentAssets, []);
+    } catch (err) {
+      console.warn('⚠️ Could not fetch opponent thresholds:', err.message);
+    }
+
+    // Merge thresholds
+    const mergedThresholds = {
+      ...battleData.thresholds,
+      ...opponentThresholds
+    };
+
+    // Sanitize opponent portfolio tiers
+    const sanitizeTierAssets = (assets) =>
+      (assets || []).map((asset) =>
+        asset
+          ? {
+              symbol: String(asset.symbol || '').toUpperCase(),
+              name: String(asset.name || asset.symbol || ''),
+              baseATR: Number(asset.baseATR || opponentThresholds[asset.symbol]?.threshold || 2.5),
+              isCrypto: Boolean(asset.isCrypto),
+            }
+          : null
+      );
+
+    const sanitizedPortfolio = {
+      star: sanitizeTierAssets(portfolio.star),
+      core: sanitizeTierAssets(portfolio.core),
+      support: sanitizeTierAssets(portfolio.support),
+    };
+
+    const sanitizedBench = {
+      stocks: (bench?.stocks || []).map((asset) =>
+        asset
+          ? {
+              symbol: String(asset.symbol || '').toUpperCase(),
+              name: String(asset.name || asset.symbol || ''),
+              baseATR: Number(asset.baseATR || opponentThresholds[asset.symbol]?.threshold || 2.5),
+              isCrypto: false,
+            }
+          : null
+      ),
+      crypto: bench?.crypto
+        ? {
+            symbol: String(bench.crypto.symbol || '').toUpperCase(),
+            name: String(bench.crypto.name || bench.crypto.symbol || ''),
+            baseATR: Number(bench.crypto.baseATR || opponentThresholds[bench.crypto.symbol]?.threshold || 5.0),
+            isCrypto: true,
+          }
+        : null,
+    };
+
+    // Initialize opponent history
+    const initializeHistory = (portfolio) => {
+      const history = {};
+      const allSymbols = [
+        ...(portfolio.star || []).filter(Boolean).map((a) => a.symbol),
+        ...(portfolio.core || []).filter(Boolean).map((a) => a.symbol),
+        ...(portfolio.support || []).filter(Boolean).map((a) => a.symbol),
+      ];
+      allSymbols.forEach((symbol) => {
+        history[symbol] = { maxMultiplier: 0, minMultiplier: 0, badges: [] };
+      });
+      return history;
+    };
+
+    // Update battle with opponent
+    const battleRef = doc(db, 'battles', battleDoc.id);
+
+    await updateDoc(battleRef, {
+      'opponent.uid': opponentData.uid || opponentData.odUserId || '',
+      'opponent.odUserId': opponentData.odUserId || opponentData.uid || '',
+      'opponent.username': opponentData.username || opponentData.displayName || '',
+      'opponent.avatar': opponentData.avatar || '',
+      'opponent.portfolio': sanitizedPortfolio,
+      'opponent.bench': sanitizedBench,
+      'opponent.history': initializeHistory(sanitizedPortfolio),
+      'opponent.sessionScores': {
+        MORNING_BELL: 0,
+        MIDDAY: 0,
+        POWER_HOUR: 0,
+        NIGHT_GAME: 0,
+      },
+      'opponent.totalScore': 0,
+      'opponent.baggerBombs': 0,
+      'opponent.busts': 0,
+
+      'state.status': 'active',
+      'state.currentSession': 'MORNING_BELL',
+
+      thresholds: mergedThresholds,
+
+      updatedAt: new Date().toISOString()
+    });
+
+    console.log('✅ BaggerBomb V3 battle joined:', battleDoc.id);
+
+    // Return updated battle
+    const updatedBattle = await getBattle(battleDoc.id);
+    return { success: true, battle: updatedBattle };
+  } catch (error) {
+    console.error('❌ Error joining BaggerBomb V3 battle:', error);
     throw error;
   }
 }
@@ -3160,6 +3352,7 @@ export default {
   calculateBattleTiming,
   createBaggerBombBattle,
   joinBaggerBombBattle,
+  joinBaggerBombBattleV3,
   updateSessionPrices,
   recordSessionScores,
   updateCurrentSession,

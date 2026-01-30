@@ -4,7 +4,7 @@ import { useUser } from './contexts/UserContext';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
-import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, joinBaggerBombBattle } from './firebase/firebaseService';
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, joinBaggerBombBattle, joinBaggerBombBattleV3 } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
 import './firebase/config';
@@ -12479,12 +12479,23 @@ export default function PortfolioDuel() {
         opponent: fb.opponent?.username || fb.opponent,
         opponentPortfolio: fb.opponent?.portfolio || fb.opponentPortfolio,
         status: fb.state?.status || fb.status,
-        startDate: fb.timeline?.startDate || fb.startDate,
-        endDate: fb.timeline?.endDate || fb.endDate,
-        createdAt: fb.timeline?.createdAt || fb.createdAt,
+        startDate: fb.timing?.scheduledStart || fb.timeline?.startDate || fb.startDate,
+        endDate: fb.timing?.scheduledEnd || fb.timeline?.endDate || fb.endDate,
+        createdAt: fb.timing?.createdAt || fb.timeline?.createdAt || fb.createdAt,
         startingPrices: fb.state?.startingPrices || fb.startingPrices,
         firestoreId: fb.id,
         _v: fb._v || 1, // Preserve version marker
+        type: fb.type, // Preserve battle type for V3
+        // Preserve full V3 structure for BaggerBomb battles
+        ...(fb._v >= 2 && {
+          creator: fb.creator,
+          opponent: fb.opponent,
+          timing: fb.timing,
+          state: fb.state,
+          thresholds: fb.thresholds,
+          sessionScores: fb.sessionScores,
+          events: fb.events,
+        }),
         _source: 'firestore' // Mark source for debugging
       }));
 
@@ -21499,8 +21510,20 @@ export default function PortfolioDuel() {
         crypto={cryptoData}
         onComplete={async (portfolio) => {
           try {
-            // Join BaggerBomb battle with the portfolio
-            const result = await joinBaggerBombBattle(joinCode, user, portfolio);
+            console.log('[BaggerBomb] Joining with portfolio:', portfolio);
+            // Join BaggerBomb V3 battle with tiered portfolio structure
+            const result = await joinBaggerBombBattleV3(joinCode, {
+              portfolio: {
+                star: portfolio.star,
+                core: portfolio.core,
+                support: portfolio.support,
+              },
+              bench: portfolio.bench,
+              uid: user.uid || user.odUserId || user.username,
+              odUserId: user.odUserId || user.username,
+              username: user.displayName || user.username,
+              avatar: user.avatar || '',
+            });
             if (result?.success) {
               showToast(`Joined BaggerBomb battle!`);
               setCurrentBattle(result.battle);

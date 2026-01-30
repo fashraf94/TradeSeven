@@ -23,6 +23,30 @@ const ActiveBattlesSection = ({
   // Helper function to calculate battle preview data for any battle
   const calculateBattlePreviewData = (battle) => {
     if (!battle) return null;
+
+    // V3 BaggerBomb battles use tiered portfolios - simplified preview
+    if (battle._v === 3) {
+      const isCreator = (battle.creator?.odUserId || battle.creator?.uid) === (user?.odUserId || user?.username);
+      const opponent = isCreator
+        ? (battle.opponent?.username || 'Waiting...')
+        : (battle.creator?.username || 'Creator');
+
+      // For V3, we use session scores if available
+      const myScore = isCreator ? (battle.creator?.totalScore || 0) : (battle.opponent?.totalScore || 0);
+      const theirScore = isCreator ? (battle.opponent?.totalScore || 0) : (battle.creator?.totalScore || 0);
+
+      return {
+        opponent,
+        myGain: myScore,
+        theirGain: theirScore,
+        isWinning: myScore > theirScore,
+        leadBy: Math.abs(myScore - theirScore),
+        myValue: 1000000 + myScore * 1000,
+        theirValue: 1000000 + theirScore * 1000,
+        isV3: true
+      };
+    }
+
     const isCreator = getUsername(battle.creator) === user.username;
     const opponent = isCreator ? getUsername(battle.opponent) : getUsername(battle.creator);
     const myPortfolio = isCreator ? battle.creatorPortfolio : battle.opponentPortfolio;
@@ -31,13 +55,15 @@ const ActiveBattlesSection = ({
     if (!myPortfolio || !theirPortfolio) return null;
 
     let myValue = 0;
-    myPortfolio.forEach(asset => {
+    (myPortfolio || []).forEach(asset => {
+      if (!asset) return;
       const shares = asset.amount / asset.price;
       myValue += shares * asset.price;
     });
 
     let theirValue = 0;
-    theirPortfolio.forEach(asset => {
+    (theirPortfolio || []).forEach(asset => {
+      if (!asset) return;
       const shares = asset.amount / asset.price;
       theirValue += shares * asset.price;
     });
@@ -134,7 +160,7 @@ const ActiveBattlesSection = ({
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   {battle.isTrainingBattle && <GraduationCap style={{ height: '16px', width: '16px', color: colors.purple }} />}
-                  {battle._v === 2 && (
+                  {(battle._v === 2 || battle._v === 3) && (
                     <span style={{
                       background: `${colors.purple}30`,
                       color: colors.purple,
@@ -143,7 +169,7 @@ const ActiveBattlesSection = ({
                       fontSize: '10px',
                       fontWeight: '700'
                     }}>
-                      BB
+                      BB{battle._v === 3 ? '3' : ''}
                     </span>
                   )}
                   <span style={{
