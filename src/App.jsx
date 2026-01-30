@@ -4,7 +4,7 @@ import { useUser } from './contexts/UserContext';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
-import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, joinBaggerBombBattle } from './firebase/firebaseService';
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, joinBaggerBombBattle } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
 import './firebase/config';
@@ -21458,8 +21458,22 @@ export default function PortfolioDuel() {
         crypto={cryptoData}
         onComplete={async (portfolio) => {
           try {
-            // Create BaggerBomb battle with the portfolio
-            const battleData = await createBaggerBombBattle(user, portfolio);
+            console.log('[BaggerBomb] Portfolio submitted:', portfolio);
+            // Create BaggerBomb V3 battle with tiered portfolio structure
+            const battleData = await createBaggerBombBattleV3({
+              portfolio: {
+                star: portfolio.star,
+                core: portfolio.core,
+                support: portfolio.support,
+              },
+              bench: portfolio.bench,
+              creator: {
+                uid: user.uid || user.odUserId || user.username,
+                odUserId: user.odUserId || user.username,
+                username: user.displayName || user.username,
+                avatar: user.avatar || '',
+              },
+            });
             if (battleData?.id) {
               showToast(`BaggerBomb battle created! Code: ${battleData.challengeCode}`);
               setCurrentBattle(battleData);

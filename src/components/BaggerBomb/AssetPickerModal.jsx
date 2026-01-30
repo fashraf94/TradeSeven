@@ -300,23 +300,24 @@ export default function AssetPickerModal({
             inset: 0,
             backgroundColor: 'rgba(0, 0, 0, 0.8)',
             display: 'flex',
-            alignItems: 'flex-end',
+            alignItems: 'center',
             justifyContent: 'center',
             zIndex: 1000,
             padding: '16px',
           }}
         >
           <motion.div
-            initial={{ y: '100%', opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: '100%', opacity: 0 }}
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
             style={{
               width: '100%',
               maxWidth: '500px',
-              maxHeight: '85vh',
+              height: '70vh',
+              maxHeight: '600px',
               backgroundColor: HOLO_COLORS.bgCard,
-              borderRadius: '16px 16px 0 0',
+              borderRadius: '16px',
               overflow: 'hidden',
               display: 'flex',
               flexDirection: 'column',
