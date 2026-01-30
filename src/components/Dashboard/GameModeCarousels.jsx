@@ -45,13 +45,11 @@ export default function GameModeCarousels({
   // Training handlers
   setTrainingConfirmType,
   setShowTrainingConfirmModal,
-  setShowClassicTrainingConfirm,
   setShowBaggerBombTrainingConfirm,
   // Screen navigation
   setScreen,
   // Modal handlers for COMPETE games
   setShowSnakeDraftModal,
-  setShowBuilderModal,
   setShowBaggerBombModal,
   setShowOptionsArenaModal,
 }) {
@@ -69,17 +67,6 @@ export default function GameModeCarousels({
       onClick: () => {
         setTrainingConfirmType('stocks');
         setShowTrainingConfirmModal(true);
-      },
-    },
-    {
-      id: 'builder-training',
-      theme: 'builder',
-      title: 'Builder',
-      description: 'Practice building Classic Battle portfolios against CPU',
-      duration: '~5 min',
-      isTraining: true,
-      onClick: () => {
-        setShowClassicTrainingConfirm(true);
       },
     },
     {
@@ -119,17 +106,6 @@ export default function GameModeCarousels({
       isTraining: false,
       onClick: () => {
         setShowSnakeDraftModal(true);
-      },
-    },
-    {
-      id: 'builder-1v1',
-      theme: 'builder',
-      title: 'Builder 1v1',
-      description: 'Build a portfolio and battle 1v1 for dominance',
-      duration: null,
-      isTraining: false,
-      onClick: () => {
-        setShowBuilderModal(true);
       },
     },
     {

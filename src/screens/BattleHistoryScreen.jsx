@@ -97,7 +97,7 @@ const BattleHistoryScreen = ({
                 transition: 'all 0.2s ease'
               }}
             >
-              Classic Mode
+              BaggerBomb
             </button>
             <button
               onClick={() => setHistoryTab('draft')}
