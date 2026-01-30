@@ -3,6 +3,9 @@
 
 // Battle UI Components
 export { default as ChamberFuse } from './ChamberFuse';
+export { default as TacticalRow, AssetSide, AllocationBadge } from './TacticalRow';
+export { default as BadgeRow, BADGE_CONFIG } from './BadgeRow';
+export { default as ProximityLabel, THRESHOLDS } from './ProximityLabel';
 export { default as SessionScoreCard } from './SessionScoreCard';
 export { default as BreakoutFeed } from './BreakoutFeed';
 export { default as BaggerBombScoreboard } from './BaggerBombScoreboard';
