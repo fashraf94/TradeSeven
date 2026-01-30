@@ -12,6 +12,27 @@ import { getRemainingTime } from '../../../services/battleTimer';
 // Calculate 1v1 battle preview data
 function calculate1v1PreviewData(battle, username) {
   if (!battle) return null;
+
+  // V3 BaggerBomb battles use totalScore instead of portfolio values
+  if (battle._v === 3) {
+    const isCreator = battle.creator?.username === username;
+    const opponent = isCreator ? battle.opponent?.username : battle.creator?.username;
+
+    // V3 uses totalScore for BaggerBomb scoring
+    const myScore = isCreator ? (battle.creator?.totalScore || 0) : (battle.opponent?.totalScore || 0);
+    const theirScore = isCreator ? (battle.opponent?.totalScore || 0) : (battle.creator?.totalScore || 0);
+    const isWinning = myScore > theirScore;
+
+    return {
+      opponent: opponent || 'Opponent',
+      myGain: myScore,
+      theirGain: theirScore,
+      isWinning,
+      isV3: true,
+      status: battle.state?.status,
+    };
+  }
+
   const isCreator = getUsername(battle.creator) === username;
   const opponent = isCreator ? getUsername(battle.opponent) : getUsername(battle.creator);
   const myPortfolio = isCreator ? battle.creatorPortfolio : battle.opponentPortfolio;
@@ -48,7 +69,11 @@ function getRemainingMs(battle) {
   if (battle.battleEndTime) {
     return Math.max(0, new Date(battle.battleEndTime).getTime() - Date.now());
   }
-  // Training format
+  // V3 BaggerBomb format (uses timing.endDate)
+  if (battle.timing?.endDate) {
+    return Math.max(0, new Date(battle.timing.endDate).getTime() - Date.now());
+  }
+  // Training format (uses timeline.endDate)
   if (battle.timeline?.endDate) {
     return Math.max(0, new Date(battle.timeline.endDate).getTime() - Date.now());
   }

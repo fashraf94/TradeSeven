@@ -18874,68 +18874,6 @@ export default function PortfolioDuel() {
             </div>
           )}
 
-          {/* Active BaggerBomb Battle Banner - Show when user has an ongoing V3 battle */}
-          {activeBaggerBombBanner && (
-            <div
-              onClick={() => {
-                setCurrentBattle(activeBaggerBombBanner);
-                setActiveBaggerBombBanner(null);
-                setScreen('battle');
-              }}
-              style={{
-                background: 'linear-gradient(135deg, #ff3366 0%, #dc2626 100%)',
-                padding: '16px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '12px'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{
-                  width: '40px',
-                  height: '40px',
-                  background: 'rgba(255,255,255,0.2)',
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '20px'
-                }}>
-                  💣
-                </div>
-                <div>
-                  <div style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '16px' }}>
-                    {activeBaggerBombBanner.state?.status === 'waiting' ? 'BaggerBomb Lobby Waiting!' : 'Active BaggerBomb Battle!'}
-                  </div>
-                  <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '13px' }}>
-                    {activeBaggerBombBanner.state?.status === 'waiting'
-                      ? `vs ${activeBaggerBombBanner.creator?.username || 'Player'} • Waiting for opponent`
-                      : `vs ${activeBaggerBombBanner.opponent?.username || activeBaggerBombBanner.creator?.username || 'Player'} • Battle in progress`
-                    }
-                  </div>
-                </div>
-              </div>
-
-              <button
-                style={{
-                  padding: '10px 20px',
-                  background: '#ffffff',
-                  color: '#dc2626',
-                  fontWeight: 'bold',
-                  fontSize: '14px',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                {activeBaggerBombBanner.state?.status === 'waiting' ? 'VIEW →' : 'REJOIN →'}
-              </button>
-            </div>
-          )}
-
           {/* Dashboard Header with Hamburger Menu and Logo */}
           <header style={{
             background: 'linear-gradient(180deg, #161b22 0%, #0d1117 100%)',

@@ -76,7 +76,7 @@ export default function LiveClashesSection({
   if (allBattles.length === 0) return null;
 
   const sectionIcon = isTrainingMode ? GraduationCap : Swords;
-  const sectionLabel = isTrainingMode ? 'ACTIVE TRAINING' : 'LIVE CLASHES';
+  const sectionLabel = isTrainingMode ? 'ACTIVE TRAINING' : 'ACTIVE PVP';
   const accentColor = isTrainingMode ? '#9333ea' : '#00d9ff';
 
   // Handle battle click navigation

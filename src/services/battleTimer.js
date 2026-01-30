@@ -67,17 +67,28 @@ export function isJustCompleted(battle) {
 export function getBattleStatus(battle) {
   if (!battle) return 'waiting';
 
+  // V3 BaggerBomb battles use state.status directly
+  if (battle._v === 3) {
+    const status = battle.state?.status;
+    if (status === 'waiting') return 'waiting';
+    if (status === 'active') return 'active';
+    if (status === 'completed') return 'completed';
+    // Fall through to time-based check if status not set
+  }
+
   // If no opponent yet, still waiting
   if (!battle.opponent) return 'waiting';
 
-  // If startDate not set yet, waiting
-  if (!battle.startDate) return 'waiting';
+  // If startDate not set yet, waiting (check both locations)
+  const startDate = battle.startDate || battle.timeline?.startDate;
+  if (!startDate) return 'waiting';
 
-  // If battle has ended, completed
-  if (hasBattleEnded(battle)) return 'completed';
+  // If battle has ended, completed (check both locations)
+  const endDate = battle.endDate || battle.timeline?.endDate;
+  if (endDate && Date.now() >= new Date(endDate).getTime()) return 'completed';
 
   // If battle has started but not ended, active
-  if (hasBattleStarted(battle)) return 'active';
+  if (Date.now() >= new Date(startDate).getTime()) return 'active';
 
   // Default to waiting
   return 'waiting';
