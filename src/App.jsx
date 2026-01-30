@@ -4,7 +4,7 @@ import { useUser } from './contexts/UserContext';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
-import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, joinBaggerBombBattle, joinBaggerBombBattleV3, subscribeToLobby, getOpenBaggerBombBattles } from './firebase/firebaseService';
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, joinBaggerBombBattle, joinBaggerBombBattleV3, subscribeToLobby, subscribeToAllLobbies, getOpenBaggerBombBattles } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
 import './firebase/config';
@@ -12459,17 +12459,20 @@ export default function PortfolioDuel() {
     return () => clearInterval(interval);
   }, [screen, battles]);
 
-  // Subscribe to BaggerBomb lobby when on lobby screen
+  // Subscribe to all game lobbies (BaggerBomb + Snake Draft) for dashboard and lobby screens
   useEffect(() => {
-    if (screen !== 'baggerBombLobby') {
-      setLobbyBattles([]);
+    // Subscribe on dashboard or lobby screens to show open lobbies in LiveFeed
+    const shouldSubscribe = screen === 'dashboard' || screen === 'baggerBombLobby';
+
+    if (!shouldSubscribe) {
       return;
     }
 
     setLobbyLoading(true);
 
-    const unsubscribe = subscribeToLobby((battles) => {
-      setLobbyBattles(battles);
+    // Use combined subscription for all game types
+    const unsubscribe = subscribeToAllLobbies((lobbies) => {
+      setLobbyBattles(lobbies);
       setLobbyLoading(false);
     });
 
@@ -19051,6 +19054,7 @@ export default function PortfolioDuel() {
                   waitingBattles={waitingBattles}
                   completedBattles={completedBattles}
                   stocksData={stocksData}
+                  lobbyBattles={lobbyBattles}
                   user={user}
                   colors={colors}
                   setCurrentBattle={setCurrentBattle}
@@ -19059,6 +19063,42 @@ export default function PortfolioDuel() {
                   setJoinCode={setJoinCode}
                   setJoinBattleType={setJoinBattleType}
                   setCurrentDraft={setCurrentDraft}
+                  onJoinLobby={async (lobby) => {
+                    // Handle BaggerBomb V3 lobbies
+                    if (lobby._v === 3) {
+                      setBattleToJoin(lobby);
+                      setScreen('baggerBombJoinBuilder');
+                      return;
+                    }
+                    // Handle Snake Draft lobbies - need to join the draft first
+                    if (lobby.isSnakeDraft || lobby.battleType === 'snake-draft') {
+                      try {
+                        const draftService = await import('./services/draftService');
+                        const userId = user?.odUserId || user?.username;
+                        const username = user?.odUsername || user?.username;
+
+                        // Check if user is already in the draft
+                        const existingPlayer = lobby.players?.find(p => p.odUserId === userId);
+                        if (existingPlayer) {
+                          // Already in draft, just navigate
+                          setCurrentDraft(lobby);
+                          setDraftState(lobby);
+                          setScreen('draftLobby');
+                          return;
+                        }
+
+                        // Join the draft by code
+                        const draft = await draftService.joinDraftByCode(lobby.code, userId, username);
+                        setCurrentDraft(draft);
+                        setDraftState(draft);
+                        setScreen('draftLobby');
+                      } catch (error) {
+                        console.error('Failed to join Snake Draft:', error);
+                        alert(error.message || 'Failed to join draft');
+                      }
+                      return;
+                    }
+                  }}
                 />
               </>
             )}

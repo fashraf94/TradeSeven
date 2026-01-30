@@ -35,7 +35,17 @@ function getPlayerCountDisplay(battle) {
     const current = battle.players?.length || 1;
     return `${current}/4 players`;
   }
-  // 1v1 battles: creator is waiting, so 1/2
+
+  // V3 BaggerBomb: check state.status for waiting
+  if (battle._v === 3) {
+    const status = battle.state?.status;
+    if (status === 'waiting') {
+      return '1/2 players • Waiting';
+    }
+    return '2/2 players';
+  }
+
+  // 1v1 battles: check for opponent
   const hasOpponent = battle.opponent && getUsername(battle.opponent);
   return hasOpponent ? '2/2 players' : '1/2 players';
 }
@@ -59,11 +69,87 @@ function getWinnerInfo(battle) {
 }
 
 // Generate feed items from all data sources
-function generateFeedItems(waitingBattles, completedBattles, stocksData, user) {
+function generateFeedItems(waitingBattles, completedBattles, stocksData, user, lobbyBattles) {
   const items = [];
+  const seenIds = new Set(); // Prevent duplicates
 
-  // 1. Open Lobbies from waiting battles
+  // Helper to get creator name for different battle types
+  const getCreatorName = (battle) => {
+    // Snake Draft: host is in players array
+    if (battle.isSnakeDraft || battle.battleType === 'snake-draft') {
+      const host = battle.players?.find(p => p.isHost);
+      return host?.odUsername || host?.displayName || 'Player';
+    }
+    // V3 BaggerBomb: creator object
+    if (battle._v === 3) {
+      return battle.creator?.username || 'Player';
+    }
+    // V1/V2: use getUsername helper
+    return getUsername(battle.creator) || 'Player';
+  };
+
+  // Helper to get user ID for comparison
+  const getUserId = (battle) => {
+    if (battle.isSnakeDraft || battle.battleType === 'snake-draft') {
+      const host = battle.players?.find(p => p.isHost);
+      return host?.odUserId;
+    }
+    if (battle._v === 3) {
+      return battle.creator?.odUserId;
+    }
+    return battle.creator?.odUserId || battle.creator?.uid;
+  };
+
+  // Helper to get creation timestamp
+  const getCreatedAt = (battle) => {
+    // V3 BaggerBomb
+    if (battle.timing?.createdAt) {
+      return new Date(battle.timing.createdAt).getTime();
+    }
+    // Firestore timestamp
+    if (battle.createdAt?.toDate) {
+      return battle.createdAt.toDate().getTime();
+    }
+    // String timestamp
+    if (battle.createdAt) {
+      return new Date(battle.createdAt).getTime();
+    }
+    return Date.now();
+  };
+
+  const currentUserId = user?.odUserId || user?.uid || user?.username;
+
+  // 1. Open Lobbies from lobbyBattles (BaggerBomb V3 + Snake Draft)
+  (lobbyBattles || []).forEach(battle => {
+    const creatorId = getUserId(battle);
+    if (creatorId === currentUserId) return; // Skip own lobbies
+
+    const id = `lobby-${battle.id}`;
+    if (seenIds.has(id)) return;
+    seenIds.add(id);
+
+    const creator = getCreatorName(battle);
+    const typeInfo = getBattleTypeInfo(battle);
+    const playerCount = getPlayerCountDisplay(battle);
+
+    items.push({
+      id,
+      type: 'lobby',
+      icon: typeInfo.icon,
+      primaryText: `${creator} created a ${typeInfo.label} lobby`,
+      secondaryText: playerCount,
+      actionButton: 'JOIN',
+      battle,
+      timestamp: getCreatedAt(battle),
+    });
+  });
+
+  // 2. Fallback: Open Lobbies from waitingBattles (legacy)
   (waitingBattles || []).forEach(battle => {
+    const id = `lobby-${battle.id}`;
+    if (seenIds.has(id)) return; // Skip if already added from lobbyBattles
+    seenIds.add(id);
+
     const creator = getUsername(battle.creator);
     if (creator === user?.username) return; // Skip own lobbies
 
@@ -71,14 +157,14 @@ function generateFeedItems(waitingBattles, completedBattles, stocksData, user) {
     const playerCount = getPlayerCountDisplay(battle);
 
     items.push({
-      id: `lobby-${battle.id}`,
+      id,
       type: 'lobby',
       icon: typeInfo.icon,
       primaryText: `${creator || 'Player'} created a ${typeInfo.label} lobby`,
       secondaryText: playerCount,
       actionButton: 'JOIN',
       battle,
-      timestamp: battle.createdAt ? new Date(battle.createdAt).getTime() : Date.now(),
+      timestamp: getCreatedAt(battle),
     });
   });
 
@@ -528,12 +614,14 @@ export default function LiveFeed({
   waitingBattles = [],
   completedBattles = [],
   stocksData = [],
+  lobbyBattles = [],
   user,
   colors,
   setCurrentBattle,
   setScreen,
   copyToClipboard,
   onJoinBattle,
+  onJoinLobby,
   onViewPortfolio,
   setJoinCode,
   setJoinBattleType,
@@ -542,13 +630,29 @@ export default function LiveFeed({
   const [selectedBattle, setSelectedBattle] = useState(null);
 
   const feedItems = useMemo(
-    () => generateFeedItems(waitingBattles, completedBattles, stocksData, user),
-    [waitingBattles, completedBattles, stocksData, user]
+    () => generateFeedItems(waitingBattles, completedBattles, stocksData, user, lobbyBattles),
+    [waitingBattles, completedBattles, stocksData, user, lobbyBattles]
   );
 
   const handleAction = (item) => {
     if (item.type === 'lobby' && item.battle) {
       const battle = item.battle;
+
+      // V3 BaggerBomb or Snake Draft: use onJoinLobby handler
+      if (battle._v === 3 || battle.isSnakeDraft || battle.battleType === 'snake-draft') {
+        if (onJoinLobby) {
+          onJoinLobby(battle);
+          return;
+        }
+        // Fallback to setCurrentDraft for Snake Draft
+        if (battle.isSnakeDraft || battle.battleType === 'snake-draft') {
+          if (setCurrentDraft && setScreen) {
+            setCurrentDraft(battle);
+            setScreen('draftLobby');
+          }
+          return;
+        }
+      }
 
       // If external handler provided, defer to it
       if (onJoinBattle) {
@@ -556,16 +660,7 @@ export default function LiveFeed({
         return;
       }
 
-      // Snake Draft: navigate directly to draft lobby
-      if (battle.isSnakeDraft || battle.battleType === 'snake-draft') {
-        if (setCurrentDraft && setScreen) {
-          setCurrentDraft(battle);
-          setScreen('draftLobby');
-        }
-        return;
-      }
-
-      // BaggerBomb: pre-fill code + type, navigate to BaggerBomb builder
+      // BaggerBomb V1/V2: pre-fill code + type, navigate to BaggerBomb builder
       if (isBaggerBombBattle(battle)) {
         if (setJoinCode && setJoinBattleType && setScreen) {
           setJoinCode(battle.challengeCode || '');

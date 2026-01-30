@@ -3339,6 +3339,123 @@ export async function clearOptionsBotEntries(tournamentId) {
 // =====================================================
 
 /**
+ * Get all open Snake Draft lobbies (drafts waiting for players)
+ * Returns drafts with status === 'waiting' and isTraining === false
+ *
+ * @param {number} maxResults - Maximum number of drafts to return
+ * @returns {Promise<Array>} - Array of open drafts
+ */
+export async function getOpenSnakeDraftLobbies(maxResults = 20) {
+  try {
+    const q = query(
+      collection(db, 'drafts'),
+      where('status', '==', 'waiting'),
+      where('isTraining', '==', false),
+      orderBy('createdAt', 'desc'),
+      limit(maxResults)
+    );
+
+    const snapshot = await getDocs(q);
+    const drafts = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      // Add markers for LiveFeed handling
+      isSnakeDraft: true,
+      battleType: 'snake-draft',
+    }));
+
+    console.log(`✅ Found ${drafts.length} open Snake Draft lobbies`);
+    return drafts;
+  } catch (error) {
+    console.error('❌ Error fetching open Snake Draft lobbies:', error);
+    return [];
+  }
+}
+
+/**
+ * Subscribe to open Snake Draft lobbies (real-time updates)
+ *
+ * @param {Function} callback - Callback function (drafts) => void
+ * @returns {Function} - Unsubscribe function
+ */
+export function subscribeToSnakeDraftLobby(callback) {
+  try {
+    const q = query(
+      collection(db, 'drafts'),
+      where('status', '==', 'waiting'),
+      where('isTraining', '==', false)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const drafts = snapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          isSnakeDraft: true,
+          battleType: 'snake-draft',
+        }))
+        .sort((a, b) => {
+          const aTime = a?.createdAt?.toDate?.() || new Date(a?.createdAt || 0);
+          const bTime = b?.createdAt?.toDate?.() || new Date(b?.createdAt || 0);
+          return bTime - aTime;
+        });
+
+      console.log(`📥 Snake Draft lobby update: ${drafts.length} open lobbies`);
+      callback(drafts);
+    }, (error) => {
+      console.error('❌ Snake Draft lobby subscription error:', error);
+      callback([]);
+    });
+
+    console.log('✅ Subscribed to Snake Draft lobby');
+    return unsubscribe;
+  } catch (error) {
+    console.error('❌ Error setting up Snake Draft lobby subscription:', error);
+    return () => {};
+  }
+}
+
+/**
+ * Subscribe to ALL open game lobbies (BaggerBomb + Snake Draft)
+ * For unified display in LiveFeed
+ *
+ * @param {Function} callback - Callback function (lobbies) => void
+ * @returns {Function} - Unsubscribe function
+ */
+export function subscribeToAllLobbies(callback) {
+  let baggerBombLobbies = [];
+  let snakeDraftLobbies = [];
+
+  const updateCombined = () => {
+    const combined = [...baggerBombLobbies, ...snakeDraftLobbies];
+    // Sort by creation time, most recent first
+    combined.sort((a, b) => {
+      const aTime = a?.timing?.createdAt || a?.createdAt?.toDate?.() || new Date(a?.createdAt || 0);
+      const bTime = b?.timing?.createdAt || b?.createdAt?.toDate?.() || new Date(b?.createdAt || 0);
+      return new Date(bTime) - new Date(aTime);
+    });
+    callback(combined);
+  };
+
+  // Subscribe to BaggerBomb V3 lobbies
+  const unsubBaggerBomb = subscribeToLobby((battles) => {
+    baggerBombLobbies = battles;
+    updateCombined();
+  });
+
+  // Subscribe to Snake Draft lobbies
+  const unsubSnakeDraft = subscribeToSnakeDraftLobby((drafts) => {
+    snakeDraftLobbies = drafts;
+    updateCombined();
+  });
+
+  return () => {
+    unsubBaggerBomb();
+    unsubSnakeDraft();
+  };
+}
+
+/**
  * Get all open BaggerBomb V3 battles (for lobby)
  * Returns battles with state.status === 'waiting' and visibility === 'public'
  *
@@ -3446,6 +3563,9 @@ export default {
   // V3 Lobby System
   getOpenBaggerBombBattles,
   subscribeToLobby,
+  getOpenSnakeDraftLobbies,
+  subscribeToSnakeDraftLobby,
+  subscribeToAllLobbies,
 
   // Training Battles
   createTrainingBattle,

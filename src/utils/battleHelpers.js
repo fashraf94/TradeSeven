@@ -139,12 +139,12 @@ export const getOpponentPortfolio = (battle, myUsername) => {
 };
 
 /**
- * Determine if a battle is a V2 (BaggerBomb) format battle
+ * Determine if a battle is a BaggerBomb format battle (V2 or V3)
  * @param {object} battle - The battle object
- * @returns {boolean} True if V2 format
+ * @returns {boolean} True if BaggerBomb battle
  */
 export const isBaggerBombBattle = (battle) => {
-  return battle?._v === 2 || battle?.type?.includes('baggerbomb');
+  return battle?._v === 2 || battle?._v === 3 || battle?.type?.includes('baggerbomb');
 };
 
 /**
