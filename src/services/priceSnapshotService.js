@@ -110,6 +110,7 @@ function getNextSessionId(sessionId) {
 /**
  * Get all unique symbols from a battle
  * Extracts from both players' portfolios and benches
+ * Handles both V3 tiered portfolios (object with star/core/support) and V1/V2 flat arrays
  *
  * @param {Object} battle - Battle document
  * @returns {string[]} - Array of unique symbols (uppercase)
@@ -117,41 +118,53 @@ function getNextSessionId(sessionId) {
 export function getBattleSymbols(battle) {
   const symbols = new Set();
 
-  // Creator portfolio
-  if (battle.creator?.portfolio) {
-    battle.creator.portfolio.forEach(asset => {
-      if (asset.symbol) {
-        symbols.add(asset.symbol.toUpperCase());
-      }
-    });
-  }
+  // Helper to extract symbols from a portfolio (handles both array and tiered object formats)
+  const extractFromPortfolio = (portfolio) => {
+    if (!portfolio) return;
 
-  // Creator bench
-  if (battle.creator?.bench) {
-    battle.creator.bench.forEach(asset => {
-      if (asset.symbol) {
-        symbols.add(asset.symbol.toUpperCase());
-      }
-    });
-  }
+    // V3 tiered portfolio: { star: [...], core: [...], support: [...] }
+    if (!Array.isArray(portfolio) && typeof portfolio === 'object') {
+      // Extract from each tier
+      ['star', 'core', 'support'].forEach(tier => {
+        const tierAssets = portfolio[tier];
+        if (Array.isArray(tierAssets)) {
+          tierAssets.forEach(asset => {
+            if (asset?.symbol) {
+              symbols.add(asset.symbol.toUpperCase());
+            }
+          });
+        }
+      });
+      return;
+    }
 
-  // Opponent portfolio
-  if (battle.opponent?.portfolio) {
-    battle.opponent.portfolio.forEach(asset => {
-      if (asset.symbol) {
-        symbols.add(asset.symbol.toUpperCase());
-      }
-    });
-  }
+    // V1/V2 flat array portfolio
+    if (Array.isArray(portfolio)) {
+      portfolio.forEach(asset => {
+        if (asset?.symbol) {
+          symbols.add(asset.symbol.toUpperCase());
+        }
+      });
+    }
+  };
 
-  // Opponent bench
-  if (battle.opponent?.bench) {
-    battle.opponent.bench.forEach(asset => {
-      if (asset.symbol) {
+  // Helper to extract symbols from a bench (always an array)
+  const extractFromBench = (bench) => {
+    if (!Array.isArray(bench)) return;
+    bench.forEach(asset => {
+      if (asset?.symbol) {
         symbols.add(asset.symbol.toUpperCase());
       }
     });
-  }
+  };
+
+  // Creator portfolio and bench
+  extractFromPortfolio(battle.creator?.portfolio);
+  extractFromBench(battle.creator?.bench);
+
+  // Opponent portfolio and bench
+  extractFromPortfolio(battle.opponent?.portfolio);
+  extractFromBench(battle.opponent?.bench);
 
   return Array.from(symbols);
 }

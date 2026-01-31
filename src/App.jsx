@@ -5227,11 +5227,24 @@ const WatchlistNews = ({ colors }) => {
     // 3. Check recent battle data for stocks user has picked
     try {
       const battles = JSON.parse(localStorage.getItem('portfolioDuelBattles') || '[]');
-      battles.slice(0, 5).forEach(battle => {
-        if (battle.player1?.portfolio) {
-          battle.player1.portfolio.forEach(asset => {
-            if (asset.symbol && asset.type !== 'crypto') {
+      (Array.isArray(battles) ? battles : []).slice(0, 5).forEach(battle => {
+        const portfolio = battle.player1?.portfolio;
+        // Handle both flat array and tiered object portfolios
+        if (Array.isArray(portfolio)) {
+          portfolio.forEach(asset => {
+            if (asset?.symbol && asset.type !== 'crypto') {
               symbols.add(asset.symbol.toUpperCase());
+            }
+          });
+        } else if (portfolio && typeof portfolio === 'object') {
+          // V3 tiered portfolio: extract from star/core/support
+          ['star', 'core', 'support'].forEach(tier => {
+            if (Array.isArray(portfolio[tier])) {
+              portfolio[tier].forEach(asset => {
+                if (asset?.symbol && asset.type !== 'crypto') {
+                  symbols.add(asset.symbol.toUpperCase());
+                }
+              });
             }
           });
         }
