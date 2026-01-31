@@ -147,6 +147,28 @@ const sanitizePortfolioName = (name) => {
 };
 
 // ============================================
+// TEMPORARY DEBUG - Remove after finding filter crash
+// ============================================
+const safeFilter = (arr, filterFn, debugLabel = 'unknown') => {
+  if (!Array.isArray(arr)) {
+    console.error(`🔴 DEBUG safeFilter [${debugLabel}]: Expected array but got:`, typeof arr, arr);
+    console.trace('Stack trace for non-array filter');
+    return [];
+  }
+  return arr.filter(filterFn);
+};
+
+// Debug wrapper for map operations
+const safeMap = (arr, mapFn, debugLabel = 'unknown') => {
+  if (!Array.isArray(arr)) {
+    console.error(`🔴 DEBUG safeMap [${debugLabel}]: Expected array but got:`, typeof arr, arr);
+    console.trace('Stack trace for non-array map');
+    return [];
+  }
+  return arr.map(mapFn);
+};
+
+// ============================================
 // LOCALSTORAGE WITH EXPIRY UTILITY
 // ============================================
 const storageWithExpiry = {
@@ -13825,7 +13847,7 @@ export default function PortfolioDuel() {
     if (!userId) return;
 
     // Check battles array for user's active or waiting BaggerBomb V3 battles
-    const userBaggerBombBattles = battles.filter(battle => {
+    const userBaggerBombBattles = safeFilter(battles, battle => {
       if (battle._v !== 3) return false;
       if (battle.archived) return false;
 
@@ -13837,7 +13859,7 @@ export default function PortfolioDuel() {
       const isOpponent = battle.opponent?.odUserId === userId || battle.opponent?.uid === userId;
 
       return isCreator || isOpponent;
-    });
+    }, 'userBaggerBombBattles in V3 banner check');
 
     // Show the most recent active/waiting battle
     if (userBaggerBombBattles.length > 0) {
@@ -15098,19 +15120,23 @@ export default function PortfolioDuel() {
   );
 
   // Get battles for current user (handles both V1 string and V2 object formats)
-  const userBattles = battles.filter(b =>
-    getUsername(b.creator) === user?.username || getUsername(b.opponent) === user?.username
+  const userBattles = safeFilter(battles, b =>
+    getUsername(b.creator) === user?.username || getUsername(b.opponent) === user?.username,
+    'userBattles from battles'
   );
 
   // Separate battles by status
-  const activeBattles = userBattles.filter(b => 
-    battleTimer.getBattleStatus(b) === 'active'
+  const activeBattles = safeFilter(userBattles, b =>
+    battleTimer.getBattleStatus(b) === 'active',
+    'activeBattles from userBattles'
   );
-  const waitingBattles = userBattles.filter(b => 
-    battleTimer.getBattleStatus(b) === 'waiting'
+  const waitingBattles = safeFilter(userBattles, b =>
+    battleTimer.getBattleStatus(b) === 'waiting',
+    'waitingBattles from userBattles'
   );
-  const completedBattles = userBattles.filter(b => 
-    battleTimer.getBattleStatus(b) === 'completed'
+  const completedBattles = safeFilter(userBattles, b =>
+    battleTimer.getBattleStatus(b) === 'completed',
+    'completedBattles from userBattles'
   );
 
   // ============================================
@@ -18594,6 +18620,15 @@ export default function PortfolioDuel() {
 
   // DASHBOARD SCREEN
   if (screen === 'dashboard') {
+    // TEMPORARY DEBUG - Remove after finding filter crash
+    console.log('🔍 DEBUG Dashboard render:', {
+      battlesIsArray: Array.isArray(battles),
+      battlesLength: battles?.length,
+      battlesType: typeof battles,
+      activeDraftBattlesIsArray: Array.isArray(activeDraftBattles),
+      activeTrainingBattlesIsArray: Array.isArray(activeTrainingBattles),
+    });
+
     // Helper to flatten V3 tiered portfolios to arrays
     const flattenPortfolioLocal = (portfolio) => {
       if (!portfolio) return [];
@@ -21164,7 +21199,7 @@ export default function PortfolioDuel() {
           }}
           onConfirm={() => {
             // Check PvP battle limit - MUST filter by current user
-            const userPvPBattles = battles.filter(b => {
+            const userPvPBattles = safeFilter(battles, b => {
               // Skip training battles
               if (b.isTrainingBattle) return false;
 
@@ -21174,7 +21209,7 @@ export default function PortfolioDuel() {
 
               // Check if current user is involved in this battle
               return getUsername(b.creator) === user?.username || getUsername(b.opponent) === user?.username;
-            });
+            }, 'userPvPBattles in create battle confirm');
 
             if (userPvPBattles.length >= MAX_PVP_BATTLES) {
               alert(`You've reached the maximum of ${MAX_PVP_BATTLES} active PvP battles. Complete or delete a battle first.`);
