@@ -38,6 +38,7 @@ import {
 } from '../../services/breakoutDetectionService';
 import { getVolatilityThresholds } from '../../services/volatilityService';
 import { stockAPI, POPULAR_CRYPTO } from '../../services/eodhdAPI';
+import { flattenPortfolio } from '../../utils/baggerBombUtils';
 
 // Constants
 const PRICE_POLL_INTERVAL = 60000; // 60 seconds
@@ -113,10 +114,18 @@ export default function BaggerBombBattleViewRedesign({
 
   const myData = isCreator ? battle?.creator : battle?.opponent;
   const oppData = isCreator ? battle?.opponent : battle?.creator;
-  const myPortfolio = myData?.portfolio || [];
-  const oppPortfolio = oppData?.portfolio || [];
+  // Use flattenPortfolio to handle both V2 arrays and V3 tiered objects
+  const myPortfolio = flattenPortfolio(myData?.portfolio);
+  const oppPortfolio = flattenPortfolio(oppData?.portfolio);
   const playerKey = isCreator ? 'creator' : 'opponent';
   const opponentKey = isCreator ? 'opponent' : 'creator';
+
+  // Helper to flatten bench (handles both array and {stocks: []} formats)
+  const flattenBench = (bench) => {
+    if (!bench) return [];
+    if (Array.isArray(bench)) return bench;
+    return bench.stocks || [];
+  };
 
   const currentSession = useMemo(() => getCurrentSession(), []);
 
@@ -124,10 +133,10 @@ export default function BaggerBombBattleViewRedesign({
   const fetchPrices = useCallback(async () => {
     try {
       const allSymbols = [
-        ...myPortfolio.map(a => a.symbol),
-        ...oppPortfolio.map(a => a.symbol),
-        ...(myData?.bench || []).map(a => a.symbol),
-        ...(oppData?.bench || []).map(a => a.symbol)
+        ...myPortfolio.map(a => a?.symbol).filter(Boolean),
+        ...oppPortfolio.map(a => a?.symbol).filter(Boolean),
+        ...flattenBench(myData?.bench).map(a => a?.symbol).filter(Boolean),
+        ...flattenBench(oppData?.bench).map(a => a?.symbol).filter(Boolean)
       ];
       const uniqueSymbols = [...new Set(allSymbols.filter(Boolean))];
 
