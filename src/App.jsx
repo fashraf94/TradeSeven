@@ -12769,9 +12769,32 @@ export default function PortfolioDuel() {
         const progressPercent = (elapsed / totalDuration) * 100;
 
         // Calculate current portfolio values
-        const isCreator = currentBattle.creator === user?.username;
-        const myPortfolio = isCreator ? currentBattle.creatorPortfolio : currentBattle.opponentPortfolio;
-        const theirPortfolio = isCreator ? currentBattle.opponentPortfolio : currentBattle.creatorPortfolio;
+        const isCreator = currentBattle.creator === user?.username ||
+                          currentBattle.creator?.username === user?.username ||
+                          currentBattle.creator?.odUserId === user?.odUserId;
+
+        // Helper to flatten V3 tiered portfolios for iteration
+        const flattenForIteration = (portfolio) => {
+          if (!portfolio) return [];
+          if (Array.isArray(portfolio)) return portfolio;
+          // V3 tiered: { star: [], core: [], support: [] }
+          return [
+            ...(portfolio.star || []),
+            ...(portfolio.core || []),
+            ...(portfolio.support || []),
+          ].filter(Boolean);
+        };
+
+        // Get portfolios - handle both V1/V2 (top-level) and V3 (nested) formats
+        const rawMyPortfolio = isCreator
+          ? (currentBattle.creatorPortfolio || currentBattle.creator?.portfolio)
+          : (currentBattle.opponentPortfolio || currentBattle.opponent?.portfolio);
+        const rawTheirPortfolio = isCreator
+          ? (currentBattle.opponentPortfolio || currentBattle.opponent?.portfolio)
+          : (currentBattle.creatorPortfolio || currentBattle.creator?.portfolio);
+
+        const myPortfolio = flattenForIteration(rawMyPortfolio);
+        const theirPortfolio = flattenForIteration(rawTheirPortfolio);
 
         // Calculate gains using current battle prices
         let myTotalValue = 0;
@@ -12779,30 +12802,32 @@ export default function PortfolioDuel() {
 
         if (battlePrices && Object.keys(battlePrices).length > 0) {
           // User portfolio value
-          for (const asset of myPortfolio || []) {
-            const startPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
+          for (const asset of myPortfolio) {
+            if (!asset) continue;
+            const startPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price || 1;
             const currentPrice = battlePrices[asset.symbol] || startPrice;
-            const shares = asset.amount / startPrice;
+            const shares = (asset.amount || 0) / startPrice;
             const isShort = asset.position === 'short';
 
             if (isShort) {
               const priceChange = startPrice - currentPrice;
-              myTotalValue += asset.amount + (shares * priceChange);
+              myTotalValue += (asset.amount || 0) + (shares * priceChange);
             } else {
               myTotalValue += shares * currentPrice;
             }
           }
 
           // Opponent portfolio value
-          for (const asset of theirPortfolio || []) {
-            const startPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
+          for (const asset of theirPortfolio) {
+            if (!asset) continue;
+            const startPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price || 1;
             const currentPrice = battlePrices[asset.symbol] || startPrice;
-            const shares = asset.amount / startPrice;
+            const shares = (asset.amount || 0) / startPrice;
             const isShort = asset.position === 'short';
 
             if (isShort) {
               const priceChange = startPrice - currentPrice;
-              theirTotalValue += asset.amount + (shares * priceChange);
+              theirTotalValue += (asset.amount || 0) + (shares * priceChange);
             } else {
               theirTotalValue += shares * currentPrice;
             }
