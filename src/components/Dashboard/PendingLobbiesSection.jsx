@@ -1,5 +1,5 @@
 // /src/components/Dashboard/PendingLobbiesSection.jsx
-// Shows pending lobbies (BaggerBomb V3 + Snake Draft) created by the current user
+// Shows pending lobbies (BaggerBomb V3 + Snake Draft) where user is creator OR participant
 // Uses unified card design matching Snake Draft style
 
 import React, { useMemo } from 'react';
@@ -39,18 +39,23 @@ function getSnakeDraftPlayerCount(draft) {
 }
 
 // Unified Pending Lobby Card - matches Snake Draft style
-function PendingLobbyCard({ lobby, type, onPress, onCopyCode }) {
+function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyCode }) {
   const isBaggerBomb = type === 'baggerbomb';
   const isSnakeDraft = type === 'snakeDraft';
 
-  // Get creator info
-  const creatorName = isBaggerBomb
-    ? (lobby.creator?.username || 'You')
-    : (lobby.players?.find(p => p.isHost)?.odUsername || 'You');
+  // Get host/creator info
+  const hostName = isBaggerBomb
+    ? (lobby.creator?.username || 'Host')
+    : (lobby.players?.find(p => p.isHost)?.odUsername || 'Host');
 
-  const creatorAvatar = isBaggerBomb
+  const hostAvatar = isBaggerBomb
     ? (lobby.creator?.avatar || '')
     : (lobby.players?.find(p => p.isHost)?.avatar || '');
+
+  // Get current user's info in Snake Draft
+  const currentPlayer = isSnakeDraft
+    ? lobby.players?.find(p => p.odUserId === currentUserId)
+    : null;
 
   // Get created time
   const createdAt = isBaggerBomb
@@ -71,6 +76,8 @@ function PendingLobbyCard({ lobby, type, onPress, onCopyCode }) {
   const pendingColor = '#f59e0b';
   // Cyan border like Snake Draft cards
   const borderColor = '#00d9ff';
+  // Host badge is cyan, Joined badge is green
+  const roleBadgeColor = isHost ? '#00d9ff' : '#10b981';
 
   return (
     <motion.div
@@ -90,7 +97,7 @@ function PendingLobbyCard({ lobby, type, onPress, onCopyCode }) {
         boxShadow: `0 0 8px ${borderColor}20`,
       }}
     >
-      {/* Header Row: Game type + PENDING badge + Time */}
+      {/* Header Row: Game type + HOST/JOINED badge + PENDING badge + Time */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
@@ -107,6 +114,18 @@ function PendingLobbyCard({ lobby, type, onPress, onCopyCode }) {
             letterSpacing: '1px',
           }}>
             {gameLabel}
+          </span>
+          {/* HOST/JOINED Badge */}
+          <span style={{
+            padding: '2px 6px',
+            background: `${roleBadgeColor}20`,
+            borderRadius: '4px',
+            fontSize: '9px',
+            fontWeight: '700',
+            color: roleBadgeColor,
+            textTransform: 'uppercase',
+          }}>
+            {isHost ? 'HOST' : 'JOINED'}
           </span>
           {/* PENDING Badge */}
           <span style={{
@@ -151,125 +170,230 @@ function PendingLobbyCard({ lobby, type, onPress, onCopyCode }) {
       }}>
         {/* Players List - Left side */}
         <div style={{ flex: 1 }}>
-          {/* You row */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '6px 8px',
-            marginBottom: '4px',
-            borderRadius: '6px',
-            background: 'rgba(0, 217, 255, 0.1)',
-            border: '1px solid rgba(0, 217, 255, 0.3)',
-          }}>
-            {/* Position number */}
-            <span style={{
-              fontSize: '11px',
-              fontWeight: '700',
-              color: '#ffd700',
-              minWidth: '18px',
-              fontFamily: "'SF Mono', 'Monaco', monospace",
-            }}>
-              [1]
-            </span>
+          {/* Snake Draft: Show all players */}
+          {isSnakeDraft && lobby.players?.map((player, idx) => {
+            const isMe = player.odUserId === currentUserId;
+            const positionColor = idx === 0 ? '#ffd700' : '#6e7681';
 
-            {/* Avatar circle */}
-            <div style={{
-              width: '22px',
-              height: '22px',
-              borderRadius: '50%',
-              background: 'rgba(0, 217, 255, 0.2)',
-              border: '1.5px solid #00d9ff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: creatorAvatar ? '12px' : '10px',
-              fontWeight: '600',
-              color: '#00d9ff',
-              flexShrink: 0,
-            }}>
-              {creatorAvatar || creatorName[0]?.toUpperCase() || 'Y'}
-            </div>
+            return (
+              <div
+                key={player.odUserId || idx}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '5px 8px',
+                  marginBottom: idx < lobby.players.length - 1 ? '2px' : '4px',
+                  borderRadius: '6px',
+                  background: isMe ? 'rgba(0, 217, 255, 0.1)' : 'transparent',
+                  border: isMe ? '1px solid rgba(0, 217, 255, 0.3)' : '1px solid transparent',
+                }}
+              >
+                {/* Position number */}
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  color: positionColor,
+                  minWidth: '18px',
+                  fontFamily: "'SF Mono', 'Monaco', monospace",
+                }}>
+                  [{idx + 1}]
+                </span>
 
-            {/* Name */}
-            <span style={{
-              fontSize: '12px',
-              fontWeight: '700',
-              color: '#00d9ff',
-              flex: 1,
-            }}>
-              YOU
-            </span>
+                {/* Avatar circle */}
+                <div style={{
+                  width: '22px',
+                  height: '22px',
+                  borderRadius: '50%',
+                  background: isMe ? 'rgba(0, 217, 255, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  border: `1.5px solid ${isMe ? '#00d9ff' : '#30363d'}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '10px',
+                  fontWeight: '600',
+                  color: isMe ? '#00d9ff' : '#8b949e',
+                  flexShrink: 0,
+                }}>
+                  {player.avatar || (player.odUsername || 'P')[0].toUpperCase()}
+                </div>
 
-            {/* Status */}
-            <span style={{
-              fontSize: '10px',
-              fontWeight: '600',
-              color: '#10b981',
-            }}>
-              Ready
-            </span>
-          </div>
+                {/* Name */}
+                <span style={{
+                  fontSize: '12px',
+                  fontWeight: isMe ? '700' : '500',
+                  color: isMe ? '#00d9ff' : '#8b949e',
+                  flex: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {isMe ? 'YOU' : (player.odUsername?.slice(0, 10) || 'Player')}
+                </span>
 
-          {/* Waiting opponent row */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '6px 8px',
-            borderRadius: '6px',
-            background: 'transparent',
-            border: '1px solid transparent',
-          }}>
-            {/* Position number */}
-            <span style={{
-              fontSize: '11px',
-              fontWeight: '700',
-              color: '#6e7681',
-              minWidth: '18px',
-              fontFamily: "'SF Mono', 'Monaco', monospace",
-            }}>
-              {isBaggerBomb ? '[2]' : `[${playerCount?.current + 1}]`}
-            </span>
+                {/* Role label */}
+                <span style={{
+                  fontSize: '9px',
+                  color: player.isHost ? '#10b981' : '#6e7681',
+                  fontWeight: player.isHost ? '600' : '400',
+                }}>
+                  {player.isHost ? 'Host' : 'Ready'}
+                </span>
+              </div>
+            );
+          })}
 
-            {/* Waiting avatar */}
-            <div style={{
-              width: '22px',
-              height: '22px',
-              borderRadius: '50%',
-              background: '#21262d',
-              border: '1.5px dashed #30363d',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '10px',
-              color: '#484f58',
-              flexShrink: 0,
-            }}>
-              ?
-            </div>
-
-            {/* Waiting text */}
-            <span style={{
-              fontSize: '12px',
-              fontWeight: '500',
-              color: '#6e7681',
-              fontStyle: 'italic',
-              flex: 1,
-            }}>
-              Waiting...
-            </span>
-
-            {/* Player count for Snake Draft */}
-            {isSnakeDraft && playerCount && (
+          {/* Snake Draft: Show waiting slots */}
+          {isSnakeDraft && playerCount && Array.from({ length: playerCount.max - playerCount.current }).map((_, idx) => (
+            <div
+              key={`waiting-${idx}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '5px 8px',
+                marginBottom: idx < (playerCount.max - playerCount.current - 1) ? '2px' : 0,
+                borderRadius: '6px',
+              }}
+            >
               <span style={{
-                fontSize: '10px',
-                color: pendingColor,
+                fontSize: '11px',
+                fontWeight: '700',
+                color: '#6e7681',
+                minWidth: '18px',
+                fontFamily: "'SF Mono', 'Monaco', monospace",
               }}>
-                {playerCount.current}/{playerCount.max}
+                [{playerCount.current + idx + 1}]
               </span>
-            )}
-          </div>
+              <div style={{
+                width: '22px',
+                height: '22px',
+                borderRadius: '50%',
+                background: '#21262d',
+                border: '1.5px dashed #30363d',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '10px',
+                color: '#484f58',
+                flexShrink: 0,
+              }}>
+                ?
+              </div>
+              <span style={{
+                fontSize: '12px',
+                fontWeight: '500',
+                color: '#6e7681',
+                fontStyle: 'italic',
+                flex: 1,
+              }}>
+                Waiting...
+              </span>
+            </div>
+          ))}
+
+          {/* BaggerBomb: Show host vs opponent layout */}
+          {isBaggerBomb && (
+            <>
+              {/* Host row */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 8px',
+                marginBottom: '4px',
+                borderRadius: '6px',
+                background: isHost ? 'rgba(0, 217, 255, 0.1)' : 'transparent',
+                border: isHost ? '1px solid rgba(0, 217, 255, 0.3)' : '1px solid transparent',
+              }}>
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  color: '#ffd700',
+                  minWidth: '18px',
+                  fontFamily: "'SF Mono', 'Monaco', monospace",
+                }}>
+                  [1]
+                </span>
+                <div style={{
+                  width: '22px',
+                  height: '22px',
+                  borderRadius: '50%',
+                  background: isHost ? 'rgba(0, 217, 255, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  border: `1.5px solid ${isHost ? '#00d9ff' : '#30363d'}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: hostAvatar ? '12px' : '10px',
+                  fontWeight: '600',
+                  color: isHost ? '#00d9ff' : '#8b949e',
+                  flexShrink: 0,
+                }}>
+                  {hostAvatar || hostName[0]?.toUpperCase() || 'H'}
+                </div>
+                <span style={{
+                  fontSize: '12px',
+                  fontWeight: isHost ? '700' : '500',
+                  color: isHost ? '#00d9ff' : '#8b949e',
+                  flex: 1,
+                }}>
+                  {isHost ? 'YOU' : hostName}
+                </span>
+                <span style={{
+                  fontSize: '10px',
+                  fontWeight: '600',
+                  color: '#10b981',
+                }}>
+                  {isHost ? 'Ready' : 'Host'}
+                </span>
+              </div>
+
+              {/* Waiting opponent row */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 8px',
+                borderRadius: '6px',
+                background: 'transparent',
+                border: '1px solid transparent',
+              }}>
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  color: '#6e7681',
+                  minWidth: '18px',
+                  fontFamily: "'SF Mono', 'Monaco', monospace",
+                }}>
+                  [2]
+                </span>
+                <div style={{
+                  width: '22px',
+                  height: '22px',
+                  borderRadius: '50%',
+                  background: '#21262d',
+                  border: '1.5px dashed #30363d',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '10px',
+                  color: '#484f58',
+                  flexShrink: 0,
+                }}>
+                  ?
+                </div>
+                <span style={{
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  color: '#6e7681',
+                  fontStyle: 'italic',
+                  flex: 1,
+                }}>
+                  Waiting...
+                </span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Stats - Right side */}
@@ -307,9 +431,10 @@ function PendingLobbyCard({ lobby, type, onPress, onCopyCode }) {
           {isSnakeDraft && (
             <>
               <span style={{
-                fontSize: '14px',
-                fontWeight: '700',
-                color: pendingColor,
+                fontSize: '18px',
+                fontWeight: '800',
+                color: playerCount?.current === playerCount?.max ? '#10b981' : pendingColor,
+                fontFamily: "'SF Mono', 'Monaco', monospace",
                 lineHeight: 1.1,
               }}>
                 {playerCount?.current}/{playerCount?.max}
@@ -341,7 +466,9 @@ function PendingLobbyCard({ lobby, type, onPress, onCopyCode }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Users size={14} style={{ color: '#8b949e' }} />
           <span style={{ fontSize: '12px', color: '#8b949e' }}>
-            {isBaggerBomb ? 'Waiting for opponent' : 'Waiting for players'}
+            {isBaggerBomb
+              ? 'Waiting for opponent'
+              : `Waiting for ${(playerCount?.max || 4) - (playerCount?.current || 1)} more`}
           </span>
         </div>
 
@@ -395,7 +522,7 @@ export default function PendingLobbiesSection({
 }) {
   const userId = user?.odUserId || user?.username;
 
-  // Filter to only show lobbies created by current user
+  // Filter to show lobbies where user is CREATOR or has JOINED
   const userPendingLobbies = useMemo(() => {
     const pending = [];
 
@@ -403,15 +530,24 @@ export default function PendingLobbiesSection({
       // BaggerBomb V3
       if (lobby._v === 3) {
         const creatorId = lobby.creator?.odUserId || lobby.creator?.uid;
-        if (creatorId === userId && lobby.state?.status === 'waiting') {
-          pending.push({ lobby, type: 'baggerbomb' });
+        const isCreator = creatorId === userId;
+        const isPending = lobby.state?.status === 'waiting';
+
+        // BaggerBomb: only creator can be in pending state (opponent joining starts battle)
+        if (isCreator && isPending) {
+          pending.push({ lobby, type: 'baggerbomb', isHost: true });
         }
       }
       // Snake Draft
       else if (lobby.isSnakeDraft || lobby.battleType === 'snake-draft') {
         const host = lobby.players?.find(p => p.isHost);
-        if (host?.odUserId === userId && lobby.status === 'waiting') {
-          pending.push({ lobby, type: 'snakeDraft' });
+        const isHost = host?.odUserId === userId;
+        const isPlayer = lobby.players?.some(p => p.odUserId === userId);
+        const isPending = lobby.status === 'waiting';
+
+        // Snake Draft: show if user is host OR has joined as player
+        if ((isHost || isPlayer) && isPending) {
+          pending.push({ lobby, type: 'snakeDraft', isHost });
         }
       }
     });
@@ -486,11 +622,13 @@ export default function PendingLobbiesSection({
       </div>
 
       {/* Pending Lobby Cards */}
-      {userPendingLobbies.map(({ lobby, type }) => (
+      {userPendingLobbies.map(({ lobby, type, isHost }) => (
         <PendingLobbyCard
           key={lobby.id}
           lobby={lobby}
           type={type}
+          isHost={isHost}
+          currentUserId={userId}
           onPress={() => handleLobbyPress(lobby, type)}
           onCopyCode={handleCopyCode}
         />
