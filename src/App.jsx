@@ -15336,12 +15336,26 @@ export default function PortfolioDuel() {
     const [timeLeft, setTimeLeft] = useState(300);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Get user's portfolio for double down challenge
-    const isCreator = currentBattle?.creator === user?.username;
-    const userPortfolio = isCreator
-      ? currentBattle?.creatorPortfolio || []
-      : currentBattle?.opponentPortfolio || [];
-    const userStocks = userPortfolio.filter(a => a.position !== 'short').map(a => a.symbol);
+    // Helper to flatten V3 tiered portfolios
+    const flattenPortfolioForRisk = (portfolio) => {
+      if (!portfolio) return [];
+      if (Array.isArray(portfolio)) return portfolio;
+      // V3 tiered format: { star: [], core: [], support: [] }
+      return [
+        ...(portfolio.star || []),
+        ...(portfolio.core || []),
+        ...(portfolio.support || []),
+      ].filter(Boolean);
+    };
+
+    // Get user's portfolio for double down challenge (handles V1/V2/V3)
+    const isCreator = currentBattle?.creator === user?.username ||
+                      currentBattle?.creator?.username === user?.username;
+    const rawPortfolio = isCreator
+      ? (currentBattle?.creatorPortfolio || currentBattle?.creator?.portfolio)
+      : (currentBattle?.opponentPortfolio || currentBattle?.opponent?.portfolio);
+    const userPortfolio = flattenPortfolioForRisk(rawPortfolio);
+    const userStocks = userPortfolio.filter(a => a?.position !== 'short').map(a => a?.symbol).filter(Boolean);
 
     // Countdown timer
     useEffect(() => {
