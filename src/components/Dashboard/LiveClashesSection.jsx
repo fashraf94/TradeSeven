@@ -28,6 +28,14 @@ export default function LiveClashesSection({
   setScreen,
   setActiveBattleId,
 }) {
+  // TEMPORARY DEBUG - Remove after finding filter crash
+  console.log('🔍 DEBUG LiveClashesSection:', {
+    activeBattlesIsArray: Array.isArray(activeBattles),
+    activeBattlesLength: activeBattles?.length,
+    activeDraftBattlesIsArray: Array.isArray(activeDraftBattles),
+    activeTrainingBattlesIsArray: Array.isArray(activeTrainingBattles),
+  });
+
   // Determine which battles to show based on mode
   const allBattles = useMemo(() => {
     if (isTrainingMode) {

@@ -627,6 +627,14 @@ export default function LiveFeed({
   setJoinBattleType,
   setCurrentDraft,
 }) {
+  // TEMPORARY DEBUG - Remove after finding filter crash
+  console.log('🔍 DEBUG LiveFeed:', {
+    waitingBattlesIsArray: Array.isArray(waitingBattles),
+    completedBattlesIsArray: Array.isArray(completedBattles),
+    lobbyBattlesIsArray: Array.isArray(lobbyBattles),
+    stocksDataIsArray: Array.isArray(stocksData),
+  });
+
   const [selectedBattle, setSelectedBattle] = useState(null);
 
   const feedItems = useMemo(

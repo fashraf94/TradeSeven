@@ -18627,6 +18627,17 @@ export default function PortfolioDuel() {
       battlesType: typeof battles,
       activeDraftBattlesIsArray: Array.isArray(activeDraftBattles),
       activeTrainingBattlesIsArray: Array.isArray(activeTrainingBattles),
+      lobbyBattlesIsArray: Array.isArray(lobbyBattles),
+      // Show first battle structure if exists
+      firstBattle: battles?.[0] ? {
+        id: battles[0].id,
+        _v: battles[0]._v,
+        hasCreatorPortfolio: !!battles[0].creatorPortfolio,
+        creatorPortfolioType: typeof battles[0].creatorPortfolio,
+        creatorPortfolioIsArray: Array.isArray(battles[0].creatorPortfolio),
+        hasCreatorObj: !!battles[0].creator,
+        creatorObjPortfolioType: typeof battles[0].creator?.portfolio,
+      } : null,
     });
 
     // Helper to flatten V3 tiered portfolios to arrays
@@ -21327,7 +21338,7 @@ export default function PortfolioDuel() {
           onClose={() => setShowClassicTrainingConfirm(false)}
           onConfirm={() => {
             // Check training battle limit - MUST filter by current user
-            const userTrainingBattles = battles.filter(b => {
+            const userTrainingBattles = safeFilter(battles, b => {
               // Must be a training battle
               if (!b.isTrainingBattle && !b.isTraining) return false;
 
@@ -21338,7 +21349,7 @@ export default function PortfolioDuel() {
 
               // Check if current user is the creator of this training battle
               return getUsername(b.creator) === user?.username;
-            });
+            }, 'userTrainingBattles in classic training confirm');
 
             if (userTrainingBattles.length >= MAX_TRAINING_BATTLES) {
               alert(`You've reached the maximum of ${MAX_TRAINING_BATTLES} active training battles. Complete or delete a battle first.`);
@@ -21380,7 +21391,7 @@ export default function PortfolioDuel() {
           onClose={() => setShowBaggerBombTrainingConfirm(false)}
           onConfirm={() => {
             // Check training battle limit - MUST filter by current user
-            const userTrainingBattles = battles.filter(b => {
+            const userTrainingBattles = safeFilter(battles, b => {
               // Must be a training battle
               if (!b.isTrainingBattle && !b.isTraining) return false;
 
@@ -21391,7 +21402,7 @@ export default function PortfolioDuel() {
 
               // Check if current user is the creator of this training battle
               return getUsername(b.creator) === user?.username;
-            });
+            }, 'userTrainingBattles in BaggerBomb training confirm');
 
             if (userTrainingBattles.length >= MAX_TRAINING_BATTLES) {
               alert(`You've reached the maximum of ${MAX_TRAINING_BATTLES} active training battles. Complete or delete a battle first.`);
