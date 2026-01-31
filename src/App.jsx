@@ -64,6 +64,8 @@ import {
   getUserScore,
   getOpponentScore
 } from './utils/battleHelpers';
+// V3-safe portfolio helpers (handles tiered objects and flat arrays)
+import { safePortfolioArray, getUserPortfolioFlat, getOpponentPortfolioFlat, getBothPortfoliosFlat, getAllBattleSymbols } from './utils/portfolioHelpers';
 // Snake Draft asset pools
 import { STEADY_STOCKS, RISKY_STOCKS, DEFENSIVE_STOCKS, STEADY_CRYPTO, RISKY_CRYPTO, DEFENSIVE_CRYPTO } from './services/draftAssets';
 // Recommendation Engine
@@ -145,28 +147,6 @@ const sanitizePortfolioName = (name) => {
     .trim()
     .slice(0, 50) // Max 50 characters
     .replace(/[<>'"&]/g, ''); // Remove potentially dangerous characters
-};
-
-// ============================================
-// TEMPORARY DEBUG - Remove after finding filter crash
-// ============================================
-const safeFilter = (arr, filterFn, debugLabel = 'unknown') => {
-  if (!Array.isArray(arr)) {
-    console.error(`🔴 DEBUG safeFilter [${debugLabel}]: Expected array but got:`, typeof arr, arr);
-    console.trace('Stack trace for non-array filter');
-    return [];
-  }
-  return arr.filter(filterFn);
-};
-
-// Debug wrapper for map operations
-const safeMap = (arr, mapFn, debugLabel = 'unknown') => {
-  if (!Array.isArray(arr)) {
-    console.error(`🔴 DEBUG safeMap [${debugLabel}]: Expected array but got:`, typeof arr, arr);
-    console.trace('Stack trace for non-array map');
-    return [];
-  }
-  return arr.map(mapFn);
 };
 
 // ============================================
@@ -12821,28 +12801,8 @@ export default function PortfolioDuel() {
                           currentBattle.creator?.username === user?.username ||
                           currentBattle.creator?.odUserId === user?.odUserId;
 
-        // Helper to flatten V3 tiered portfolios for iteration
-        const flattenForIteration = (portfolio) => {
-          if (!portfolio) return [];
-          if (Array.isArray(portfolio)) return portfolio;
-          // V3 tiered: { star: [], core: [], support: [] }
-          return [
-            ...(portfolio.star || []),
-            ...(portfolio.core || []),
-            ...(portfolio.support || []),
-          ].filter(Boolean);
-        };
-
-        // Get portfolios - handle both V1/V2 (top-level) and V3 (nested) formats
-        const rawMyPortfolio = isCreator
-          ? (currentBattle.creatorPortfolio || currentBattle.creator?.portfolio)
-          : (currentBattle.opponentPortfolio || currentBattle.opponent?.portfolio);
-        const rawTheirPortfolio = isCreator
-          ? (currentBattle.opponentPortfolio || currentBattle.opponent?.portfolio)
-          : (currentBattle.creatorPortfolio || currentBattle.creator?.portfolio);
-
-        const myPortfolio = flattenForIteration(rawMyPortfolio);
-        const theirPortfolio = flattenForIteration(rawTheirPortfolio);
+        // Get portfolios as flat arrays (V3-safe via portfolioHelpers)
+        const { myPortfolio, theirPortfolio } = getBothPortfoliosFlat(currentBattle, user?.username);
 
         // Calculate gains using current battle prices
         let myTotalValue = 0;
@@ -13167,8 +13127,8 @@ export default function PortfolioDuel() {
         prediction = challenge.options[Math.floor(Math.random() * challenge.options.length)];
         break;
       case 'double_down':
-        // CPU picks from its portfolio
-        const cpuPortfolio = currentBattle?.opponentPortfolio || [];
+        // CPU picks from its portfolio (V3-safe)
+        const cpuPortfolio = safePortfolioArray(currentBattle?.opponentPortfolio || currentBattle?.opponent?.portfolio);
         const cpuStocks = cpuPortfolio.filter(a => a.position !== 'short').map(a => a.symbol);
         if (cpuStocks.length > 0) {
           prediction = cpuStocks[Math.floor(Math.random() * cpuStocks.length)];
@@ -13521,24 +13481,12 @@ export default function PortfolioDuel() {
         // ⭐ For active battles, fetch current live prices
         console.log('📊 Fetching live prices for active battle');
 
-        // Helper to flatten V3 tiered portfolios
-        const flattenPortfolioForPrices = (portfolio) => {
-          if (!portfolio) return [];
-          if (Array.isArray(portfolio)) return portfolio;
-          // V3 tiered: { star: [], core: [], support: [] }
-          return [
-            ...(portfolio.star || []),
-            ...(portfolio.core || []),
-            ...(portfolio.support || []),
-          ].filter(Boolean);
-        };
-
-        // Get all unique symbols from both portfolios (handle V3 tiered format)
-        const creatorPortfolio = flattenPortfolioForPrices(currentBattle.creatorPortfolio || currentBattle.creator?.portfolio);
-        const opponentPortfolio = flattenPortfolioForPrices(currentBattle.opponentPortfolio || currentBattle.opponent?.portfolio);
+        // Get all unique symbols from both portfolios (V3-safe)
+        const creatorPortfolio = safePortfolioArray(currentBattle.creatorPortfolio || currentBattle.creator?.portfolio);
+        const opponentPortfolio = safePortfolioArray(currentBattle.opponentPortfolio || currentBattle.opponent?.portfolio);
         const allAssets = [...creatorPortfolio, ...opponentPortfolio];
 
-        const uniqueSymbols = [...new Set(allAssets.map(a => a.symbol))];
+        const uniqueSymbols = getAllBattleSymbols(currentBattle);
 
         // Fetch current prices for each asset
         const priceMap = {};
@@ -13873,7 +13821,7 @@ export default function PortfolioDuel() {
     if (!userId) return;
 
     // Check battles array for user's active or waiting BaggerBomb V3 battles
-    const userBaggerBombBattles = safeFilter(battles, battle => {
+    const userBaggerBombBattles = battles.filter(battle => {
       if (battle._v !== 3) return false;
       if (battle.archived) return false;
 
@@ -13958,25 +13906,13 @@ export default function PortfolioDuel() {
   // 3. HELPER FUNCTIONS
   // ============================================
 
-  // Helper to flatten V3 tiered portfolios for price fetching
-  const flattenPortfolioHelper = (portfolio) => {
-    if (!portfolio) return [];
-    if (Array.isArray(portfolio)) return portfolio;
-    // V3 tiered: { star: [], core: [], support: [] }
-    return [
-      ...(portfolio.star || []),
-      ...(portfolio.core || []),
-      ...(portfolio.support || []),
-    ].filter(Boolean);
-  };
-
   // Fetch current prices for all assets in a battle
   async function fetchCurrentPricesForBattle(battle) {
     const prices = {};
 
-    // Get all unique assets from both portfolios (handle V3 tiered format)
-    const creatorPortfolio = flattenPortfolioHelper(battle.creatorPortfolio || battle.creator?.portfolio);
-    const opponentPortfolio = flattenPortfolioHelper(battle.opponentPortfolio || battle.opponent?.portfolio);
+    // Get all unique assets from both portfolios (V3-safe via portfolioHelpers)
+    const creatorPortfolio = safePortfolioArray(battle.creatorPortfolio || battle.creator?.portfolio);
+    const opponentPortfolio = safePortfolioArray(battle.opponentPortfolio || battle.opponent?.portfolio);
     const allAssets = [...creatorPortfolio, ...opponentPortfolio];
     
     for (const asset of allAssets) {
@@ -15146,21 +15082,21 @@ export default function PortfolioDuel() {
   );
 
   // Get battles for current user (handles both V1 string and V2 object formats)
-  const userBattles = safeFilter(battles, b =>
+  const userBattles = battles.filter(b =>
     getUsername(b.creator) === user?.username || getUsername(b.opponent) === user?.username,
     'userBattles from battles'
   );
 
   // Separate battles by status
-  const activeBattles = safeFilter(userBattles, b =>
+  const activeBattles = userBattles.filter(b =>
     battleTimer.getBattleStatus(b) === 'active',
     'activeBattles from userBattles'
   );
-  const waitingBattles = safeFilter(userBattles, b =>
+  const waitingBattles = userBattles.filter(b =>
     battleTimer.getBattleStatus(b) === 'waiting',
     'waitingBattles from userBattles'
   );
-  const completedBattles = safeFilter(userBattles, b =>
+  const completedBattles = userBattles.filter(b =>
     battleTimer.getBattleStatus(b) === 'completed',
     'completedBattles from userBattles'
   );
@@ -15336,25 +15272,8 @@ export default function PortfolioDuel() {
     const [timeLeft, setTimeLeft] = useState(300);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Helper to flatten V3 tiered portfolios
-    const flattenPortfolioForRisk = (portfolio) => {
-      if (!portfolio) return [];
-      if (Array.isArray(portfolio)) return portfolio;
-      // V3 tiered format: { star: [], core: [], support: [] }
-      return [
-        ...(portfolio.star || []),
-        ...(portfolio.core || []),
-        ...(portfolio.support || []),
-      ].filter(Boolean);
-    };
-
-    // Get user's portfolio for double down challenge (handles V1/V2/V3)
-    const isCreator = currentBattle?.creator === user?.username ||
-                      currentBattle?.creator?.username === user?.username;
-    const rawPortfolio = isCreator
-      ? (currentBattle?.creatorPortfolio || currentBattle?.creator?.portfolio)
-      : (currentBattle?.opponentPortfolio || currentBattle?.opponent?.portfolio);
-    const userPortfolio = flattenPortfolioForRisk(rawPortfolio);
+    // Get user's portfolio for double down challenge (V3-safe via portfolioHelpers)
+    const userPortfolio = getUserPortfolioFlat(currentBattle, user?.username);
     const userStocks = userPortfolio.filter(a => a?.position !== 'short').map(a => a?.symbol).filter(Boolean);
 
     // Countdown timer
@@ -18660,38 +18579,6 @@ export default function PortfolioDuel() {
 
   // DASHBOARD SCREEN
   if (screen === 'dashboard') {
-    // TEMPORARY DEBUG - Remove after finding filter crash
-    console.log('🔍 DEBUG Dashboard render:', {
-      battlesIsArray: Array.isArray(battles),
-      battlesLength: battles?.length,
-      battlesType: typeof battles,
-      activeDraftBattlesIsArray: Array.isArray(activeDraftBattles),
-      activeTrainingBattlesIsArray: Array.isArray(activeTrainingBattles),
-      lobbyBattlesIsArray: Array.isArray(lobbyBattles),
-      // Show first battle structure if exists
-      firstBattle: battles?.[0] ? {
-        id: battles[0].id,
-        _v: battles[0]._v,
-        hasCreatorPortfolio: !!battles[0].creatorPortfolio,
-        creatorPortfolioType: typeof battles[0].creatorPortfolio,
-        creatorPortfolioIsArray: Array.isArray(battles[0].creatorPortfolio),
-        hasCreatorObj: !!battles[0].creator,
-        creatorObjPortfolioType: typeof battles[0].creator?.portfolio,
-      } : null,
-    });
-
-    // Helper to flatten V3 tiered portfolios to arrays
-    const flattenPortfolioLocal = (portfolio) => {
-      if (!portfolio) return [];
-      if (Array.isArray(portfolio)) return portfolio;
-      // V3 tiered: { star: [], core: [], support: [] }
-      return [
-        ...(portfolio.star || []),
-        ...(portfolio.core || []),
-        ...(portfolio.support || []),
-      ].filter(Boolean);
-    };
-
     // Helper function to calculate battle preview data for any battle
     const calculateBattlePreviewData = (battle) => {
       if (!battle) return null;
@@ -18721,19 +18608,8 @@ export default function PortfolioDuel() {
       const isCreator = getUsername(battle.creator) === user.username;
       const opponent = isCreator ? getUsername(battle.opponent) : getUsername(battle.creator);
 
-      // Handle both V1/V2 (creatorPortfolio at top level) and V2 (portfolio in creator/opponent objects)
-      let myPortfolio = isCreator ? battle.creatorPortfolio : battle.opponentPortfolio;
-      let theirPortfolio = isCreator ? battle.opponentPortfolio : battle.creatorPortfolio;
-
-      // Fallback to creator/opponent.portfolio for V2 format
-      if (!myPortfolio && battle.creator?.portfolio) {
-        myPortfolio = isCreator ? battle.creator.portfolio : battle.opponent?.portfolio;
-        theirPortfolio = isCreator ? battle.opponent?.portfolio : battle.creator.portfolio;
-      }
-
-      // Flatten in case it's a tiered portfolio (be safe)
-      myPortfolio = flattenPortfolioLocal(myPortfolio);
-      theirPortfolio = flattenPortfolioLocal(theirPortfolio);
+      // Get flattened portfolios (V3-safe via portfolioHelpers)
+      const { myPortfolio, theirPortfolio } = getBothPortfoliosFlat(battle, user.username);
 
       if (!myPortfolio.length || !theirPortfolio.length) return null;
 
@@ -21251,7 +21127,7 @@ export default function PortfolioDuel() {
           }}
           onConfirm={() => {
             // Check PvP battle limit - MUST filter by current user
-            const userPvPBattles = safeFilter(battles, b => {
+            const userPvPBattles = battles.filter(b => {
               // Skip training battles
               if (b.isTrainingBattle) return false;
 
@@ -21379,7 +21255,7 @@ export default function PortfolioDuel() {
           onClose={() => setShowClassicTrainingConfirm(false)}
           onConfirm={() => {
             // Check training battle limit - MUST filter by current user
-            const userTrainingBattles = safeFilter(battles, b => {
+            const userTrainingBattles = battles.filter(b => {
               // Must be a training battle
               if (!b.isTrainingBattle && !b.isTraining) return false;
 
@@ -21432,7 +21308,7 @@ export default function PortfolioDuel() {
           onClose={() => setShowBaggerBombTrainingConfirm(false)}
           onConfirm={() => {
             // Check training battle limit - MUST filter by current user
-            const userTrainingBattles = safeFilter(battles, b => {
+            const userTrainingBattles = battles.filter(b => {
               // Must be a training battle
               if (!b.isTrainingBattle && !b.isTraining) return false;
 

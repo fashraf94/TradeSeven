@@ -7,6 +7,7 @@ import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { getUsername, isBaggerBombBattle, isTrainingBattle, getUserPortfolio } from '../../utils/battleHelpers';
+import { safePortfolioArray } from '../../utils/portfolioHelpers';
 import { useIsMobile } from '../../hooks';
 
 // Feed item accent colors by type
@@ -255,24 +256,19 @@ function getWinnerPortfolio(battle) {
 
   if (!winnerName || winnerName === 'tie') return [];
 
-  // Try getUserPortfolio helper first
-  const portfolio = getUserPortfolio(battle, winnerName);
-  if (portfolio && portfolio.length > 0) return portfolio;
-
-  // Fallback: determine from creator/opponent
+  // Determine from creator/opponent
   const isCreatorWinner = getUsername(battle.creator) === winnerName;
 
+  // Get raw portfolio (could be V3 tiered object or V1/V2 array)
+  let rawPortfolio;
   if (isCreatorWinner) {
-    // V1: creatorPortfolio at top level
-    if (Array.isArray(battle.creatorPortfolio)) return battle.creatorPortfolio;
-    // V2: inside creator object
-    if (typeof battle.creator === 'object' && Array.isArray(battle.creator.portfolio)) return battle.creator.portfolio;
+    rawPortfolio = battle.creatorPortfolio || battle.creator?.portfolio;
   } else {
-    if (Array.isArray(battle.opponentPortfolio)) return battle.opponentPortfolio;
-    if (typeof battle.opponent === 'object' && Array.isArray(battle.opponent.portfolio)) return battle.opponent.portfolio;
+    rawPortfolio = battle.opponentPortfolio || battle.opponent?.portfolio;
   }
 
-  return [];
+  // V3-safe: convert to flat array (handles V3 objects and V1/V2 arrays)
+  return safePortfolioArray(rawPortfolio);
 }
 
 // Calculate individual asset return from starting prices
@@ -627,14 +623,6 @@ export default function LiveFeed({
   setJoinBattleType,
   setCurrentDraft,
 }) {
-  // TEMPORARY DEBUG - Remove after finding filter crash
-  console.log('🔍 DEBUG LiveFeed:', {
-    waitingBattlesIsArray: Array.isArray(waitingBattles),
-    completedBattlesIsArray: Array.isArray(completedBattles),
-    lobbyBattlesIsArray: Array.isArray(lobbyBattles),
-    stocksDataIsArray: Array.isArray(stocksData),
-  });
-
   const [selectedBattle, setSelectedBattle] = useState(null);
 
   const feedItems = useMemo(

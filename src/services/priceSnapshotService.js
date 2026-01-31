@@ -12,6 +12,8 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getMultipleStockPrices, getMultipleCryptoPrices } from './eodhdAPI';
 import { SESSIONS, SESSION_ORDER, isCrypto } from './sessionScoringService';
+// V3-safe portfolio helpers
+import { safePortfolioArray, safeBenchArray } from '../utils/portfolioHelpers';
 
 const IS_DEV = import.meta.env?.DEV ?? false;
 
@@ -118,53 +120,22 @@ function getNextSessionId(sessionId) {
 export function getBattleSymbols(battle) {
   const symbols = new Set();
 
-  // Helper to extract symbols from a portfolio (handles both array and tiered object formats)
-  const extractFromPortfolio = (portfolio) => {
-    if (!portfolio) return;
-
-    // V3 tiered portfolio: { star: [...], core: [...], support: [...] }
-    if (!Array.isArray(portfolio) && typeof portfolio === 'object') {
-      // Extract from each tier
-      ['star', 'core', 'support'].forEach(tier => {
-        const tierAssets = portfolio[tier];
-        if (Array.isArray(tierAssets)) {
-          tierAssets.forEach(asset => {
-            if (asset?.symbol) {
-              symbols.add(asset.symbol.toUpperCase());
-            }
-          });
-        }
-      });
-      return;
-    }
-
-    // V1/V2 flat array portfolio
-    if (Array.isArray(portfolio)) {
-      portfolio.forEach(asset => {
-        if (asset?.symbol) {
-          symbols.add(asset.symbol.toUpperCase());
-        }
-      });
-    }
-  };
-
-  // Helper to extract symbols from a bench (always an array)
-  const extractFromBench = (bench) => {
-    if (!Array.isArray(bench)) return;
-    bench.forEach(asset => {
+  // Helper to add symbols from an asset array to the set
+  const addSymbols = (assets) => {
+    assets.forEach(asset => {
       if (asset?.symbol) {
         symbols.add(asset.symbol.toUpperCase());
       }
     });
   };
 
-  // Creator portfolio and bench
-  extractFromPortfolio(battle.creator?.portfolio);
-  extractFromBench(battle.creator?.bench);
+  // Creator portfolio and bench (V3-safe via portfolioHelpers)
+  addSymbols(safePortfolioArray(battle.creator?.portfolio));
+  addSymbols(safeBenchArray(battle.creator?.bench));
 
   // Opponent portfolio and bench
-  extractFromPortfolio(battle.opponent?.portfolio);
-  extractFromBench(battle.opponent?.bench);
+  addSymbols(safePortfolioArray(battle.opponent?.portfolio));
+  addSymbols(safeBenchArray(battle.opponent?.bench));
 
   return Array.from(symbols);
 }

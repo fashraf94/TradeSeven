@@ -21,15 +21,6 @@ const ActiveBattlesSection = ({
   battleTimer,
   onViewLobby, // New prop for lobby navigation
 }) => {
-  // TEMPORARY DEBUG - Remove after finding filter crash
-  console.log('🔍 DEBUG ActiveBattlesSection:', {
-    activeBattlesIsArray: Array.isArray(activeBattles),
-    activeBattlesLength: activeBattles?.length,
-    activeDraftBattlesIsArray: Array.isArray(activeDraftBattles),
-    activeTrainingBattlesIsArray: Array.isArray(activeTrainingBattles),
-    waitingBattlesIsArray: Array.isArray(waitingBattles),
-  });
-
   // Helper function to calculate battle preview data for any battle
   const calculateBattlePreviewData = (battle) => {
     if (!battle) return null;

@@ -3,6 +3,9 @@
 // Battle timing and completion logic with TEST_MODE
 // =====================================================
 
+// V3-safe portfolio helpers
+import { safePortfolioArray } from '../utils/portfolioHelpers';
+
 /**
  * 🚀 TEST_MODE: Set to true for 24-hour battles (fast testing)
  * Set to false for 5-day battles (production)
@@ -169,18 +172,6 @@ export function formatTime(ms) {
 // WINNER DETERMINATION
 // =====================================================
 
-// Helper to flatten V3 tiered portfolios
-const flattenPortfolio = (portfolio) => {
-  if (!portfolio) return [];
-  if (Array.isArray(portfolio)) return portfolio;
-  // V3 tiered: { star: [], core: [], support: [] }
-  return [
-    ...(portfolio.star || []),
-    ...(portfolio.core || []),
-    ...(portfolio.support || []),
-  ].filter(Boolean);
-};
-
 /**
  * Calculate portfolio return percentage
  * @param {Array|Object} portfolio - Array of portfolio assets or V3 tiered object
@@ -188,8 +179,8 @@ const flattenPortfolio = (portfolio) => {
  * @returns {number} - Return percentage
  */
 export function calculatePortfolioReturn(portfolio, currentPrices) {
-  // Flatten portfolio if it's a V3 tiered object
-  const flatPortfolio = flattenPortfolio(portfolio);
+  // Flatten portfolio if it's a V3 tiered object (V3-safe via portfolioHelpers)
+  const flatPortfolio = safePortfolioArray(portfolio);
 
   if (!flatPortfolio || flatPortfolio.length === 0) {
     return 0;
