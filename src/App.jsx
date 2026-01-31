@@ -13447,12 +13447,23 @@ export default function PortfolioDuel() {
 
         // ⭐ For active battles, fetch current live prices
         console.log('📊 Fetching live prices for active battle');
-        
-        // Get all unique symbols from both portfolios
-        const allAssets = [
-          ...currentBattle.creatorPortfolio,
-          ...(currentBattle.opponentPortfolio || [])
-        ];
+
+        // Helper to flatten V3 tiered portfolios
+        const flattenPortfolioForPrices = (portfolio) => {
+          if (!portfolio) return [];
+          if (Array.isArray(portfolio)) return portfolio;
+          // V3 tiered: { star: [], core: [], support: [] }
+          return [
+            ...(portfolio.star || []),
+            ...(portfolio.core || []),
+            ...(portfolio.support || []),
+          ].filter(Boolean);
+        };
+
+        // Get all unique symbols from both portfolios (handle V3 tiered format)
+        const creatorPortfolio = flattenPortfolioForPrices(currentBattle.creatorPortfolio || currentBattle.creator?.portfolio);
+        const opponentPortfolio = flattenPortfolioForPrices(currentBattle.opponentPortfolio || currentBattle.opponent?.portfolio);
+        const allAssets = [...creatorPortfolio, ...opponentPortfolio];
 
         const uniqueSymbols = [...new Set(allAssets.map(a => a.symbol))];
 
@@ -13874,15 +13885,26 @@ export default function PortfolioDuel() {
   // 3. HELPER FUNCTIONS
   // ============================================
 
+  // Helper to flatten V3 tiered portfolios for price fetching
+  const flattenPortfolioHelper = (portfolio) => {
+    if (!portfolio) return [];
+    if (Array.isArray(portfolio)) return portfolio;
+    // V3 tiered: { star: [], core: [], support: [] }
+    return [
+      ...(portfolio.star || []),
+      ...(portfolio.core || []),
+      ...(portfolio.support || []),
+    ].filter(Boolean);
+  };
+
   // Fetch current prices for all assets in a battle
   async function fetchCurrentPricesForBattle(battle) {
     const prices = {};
-    
-    // Get all unique assets from both portfolios
-    const allAssets = [
-      ...(battle.creatorPortfolio || []),
-      ...(battle.opponentPortfolio || [])
-    ];
+
+    // Get all unique assets from both portfolios (handle V3 tiered format)
+    const creatorPortfolio = flattenPortfolioHelper(battle.creatorPortfolio || battle.creator?.portfolio);
+    const opponentPortfolio = flattenPortfolioHelper(battle.opponentPortfolio || battle.opponent?.portfolio);
+    const allAssets = [...creatorPortfolio, ...opponentPortfolio];
     
     for (const asset of allAssets) {
       if (prices[asset.symbol]) continue; // Skip if already fetched
