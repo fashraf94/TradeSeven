@@ -38,18 +38,54 @@ function calculate1v1PreviewData(battle, username) {
   const myPortfolio = isCreator ? battle.creatorPortfolio : battle.opponentPortfolio;
   const theirPortfolio = isCreator ? battle.opponentPortfolio : battle.creatorPortfolio;
 
-  if (!myPortfolio || !theirPortfolio) return null;
+  // Portfolios must be arrays - V2 BaggerBomb uses object format, handle that
+  if (!Array.isArray(myPortfolio) || !Array.isArray(theirPortfolio)) {
+    // V2 BaggerBomb battles may have portfolio in creator/opponent objects
+    if (battle._v === 2) {
+      const creatorPortfolio = battle.creator?.portfolio;
+      const opponentPortfolio = battle.opponent?.portfolio;
+
+      // If portfolios are arrays in creator/opponent, use those
+      if (Array.isArray(creatorPortfolio) && Array.isArray(opponentPortfolio)) {
+        const myPort = isCreator ? creatorPortfolio : opponentPortfolio;
+        const theirPort = isCreator ? opponentPortfolio : creatorPortfolio;
+
+        let myValue = 0;
+        myPort.forEach(asset => {
+          if (!asset) return;
+          const shares = (asset.amount || 0) / (asset.price || 1);
+          myValue += shares * (asset.price || 0);
+        });
+
+        let theirValue = 0;
+        theirPort.forEach(asset => {
+          if (!asset) return;
+          const shares = (asset.amount || 0) / (asset.price || 1);
+          theirValue += shares * (asset.price || 0);
+        });
+
+        const myGain = myValue > 0 ? ((myValue - 1000000) / 1000000) * 100 : 0;
+        const theirGain = theirValue > 0 ? ((theirValue - 1000000) / 1000000) * 100 : 0;
+        const isWinning = myGain > theirGain;
+
+        return { opponent, myGain, theirGain, isWinning, myValue, theirValue };
+      }
+    }
+    return null;
+  }
 
   let myValue = 0;
   myPortfolio.forEach(asset => {
-    const shares = asset.amount / asset.price;
-    myValue += shares * asset.price;
+    if (!asset) return;
+    const shares = (asset.amount || 0) / (asset.price || 1);
+    myValue += shares * (asset.price || 0);
   });
 
   let theirValue = 0;
   theirPortfolio.forEach(asset => {
-    const shares = asset.amount / asset.price;
-    theirValue += shares * asset.price;
+    if (!asset) return;
+    const shares = (asset.amount || 0) / (asset.price || 1);
+    theirValue += shares * (asset.price || 0);
   });
 
   const myGain = ((myValue - 1000000) / 1000000) * 100;
