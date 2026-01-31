@@ -18547,30 +18547,79 @@ export default function PortfolioDuel() {
 
   // DASHBOARD SCREEN
   if (screen === 'dashboard') {
+    // Helper to flatten V3 tiered portfolios to arrays
+    const flattenPortfolioLocal = (portfolio) => {
+      if (!portfolio) return [];
+      if (Array.isArray(portfolio)) return portfolio;
+      // V3 tiered: { star: [], core: [], support: [] }
+      return [
+        ...(portfolio.star || []),
+        ...(portfolio.core || []),
+        ...(portfolio.support || []),
+      ].filter(Boolean);
+    };
+
     // Helper function to calculate battle preview data for any battle
     const calculateBattlePreviewData = (battle) => {
       if (!battle) return null;
+
+      // V3 BaggerBomb battles use totalScore instead of portfolio values
+      if (battle._v === 3) {
+        const isCreator = (battle.creator?.odUserId || battle.creator?.uid) === (user?.odUserId || user?.username) ||
+                          battle.creator?.username === user?.username;
+        const opponent = isCreator
+          ? (battle.opponent?.username || 'Opponent')
+          : (battle.creator?.username || 'Creator');
+        const myScore = isCreator ? (battle.creator?.totalScore || 0) : (battle.opponent?.totalScore || 0);
+        const theirScore = isCreator ? (battle.opponent?.totalScore || 0) : (battle.creator?.totalScore || 0);
+
+        return {
+          opponent,
+          myGain: myScore,
+          theirGain: theirScore,
+          isWinning: myScore > theirScore,
+          leadBy: Math.abs(myScore - theirScore),
+          myValue: 1000000 + myScore * 1000,
+          theirValue: 1000000 + theirScore * 1000,
+          isV3: true
+        };
+      }
+
       const isCreator = getUsername(battle.creator) === user.username;
       const opponent = isCreator ? getUsername(battle.opponent) : getUsername(battle.creator);
-      const myPortfolio = isCreator ? battle.creatorPortfolio : battle.opponentPortfolio;
-      const theirPortfolio = isCreator ? battle.opponentPortfolio : battle.creatorPortfolio;
 
-      if (!myPortfolio || !theirPortfolio) return null;
+      // Handle both V1/V2 (creatorPortfolio at top level) and V2 (portfolio in creator/opponent objects)
+      let myPortfolio = isCreator ? battle.creatorPortfolio : battle.opponentPortfolio;
+      let theirPortfolio = isCreator ? battle.opponentPortfolio : battle.creatorPortfolio;
+
+      // Fallback to creator/opponent.portfolio for V2 format
+      if (!myPortfolio && battle.creator?.portfolio) {
+        myPortfolio = isCreator ? battle.creator.portfolio : battle.opponent?.portfolio;
+        theirPortfolio = isCreator ? battle.opponent?.portfolio : battle.creator.portfolio;
+      }
+
+      // Flatten in case it's a tiered portfolio (be safe)
+      myPortfolio = flattenPortfolioLocal(myPortfolio);
+      theirPortfolio = flattenPortfolioLocal(theirPortfolio);
+
+      if (!myPortfolio.length || !theirPortfolio.length) return null;
 
       let myValue = 0;
       myPortfolio.forEach(asset => {
-        const shares = asset.amount / asset.price;
-        myValue += shares * asset.price;
+        if (!asset) return;
+        const shares = (asset.amount || 0) / (asset.price || 1);
+        myValue += shares * (asset.price || 0);
       });
 
       let theirValue = 0;
       theirPortfolio.forEach(asset => {
-        const shares = asset.amount / asset.price;
-        theirValue += shares * asset.price;
+        if (!asset) return;
+        const shares = (asset.amount || 0) / (asset.price || 1);
+        theirValue += shares * (asset.price || 0);
       });
 
-      const myGain = ((myValue - 1000000) / 1000000) * 100;
-      const theirGain = ((theirValue - 1000000) / 1000000) * 100;
+      const myGain = myValue > 0 ? ((myValue - 1000000) / 1000000) * 100 : 0;
+      const theirGain = theirValue > 0 ? ((theirValue - 1000000) / 1000000) * 100 : 0;
       const isWinning = myGain > theirGain;
       const leadBy = Math.abs(myGain - theirGain);
 

@@ -169,14 +169,29 @@ export function formatTime(ms) {
 // WINNER DETERMINATION
 // =====================================================
 
+// Helper to flatten V3 tiered portfolios
+const flattenPortfolio = (portfolio) => {
+  if (!portfolio) return [];
+  if (Array.isArray(portfolio)) return portfolio;
+  // V3 tiered: { star: [], core: [], support: [] }
+  return [
+    ...(portfolio.star || []),
+    ...(portfolio.core || []),
+    ...(portfolio.support || []),
+  ].filter(Boolean);
+};
+
 /**
  * Calculate portfolio return percentage
- * @param {Array} portfolio - Array of portfolio assets with amount and price
+ * @param {Array|Object} portfolio - Array of portfolio assets or V3 tiered object
  * @param {Object} currentPrices - Current prices for all assets {symbol: price}
  * @returns {number} - Return percentage
  */
 export function calculatePortfolioReturn(portfolio, currentPrices) {
-  if (!portfolio || portfolio.length === 0) {
+  // Flatten portfolio if it's a V3 tiered object
+  const flatPortfolio = flattenPortfolio(portfolio);
+
+  if (!flatPortfolio || flatPortfolio.length === 0) {
     return 0;
   }
 
@@ -184,12 +199,13 @@ export function calculatePortfolioReturn(portfolio, currentPrices) {
   let initialValue = 0;
   let currentValue = 0;
 
-  portfolio.forEach(asset => {
-    const shares = asset.amount / asset.price; // How many shares/coins bought
-    const currentPrice = currentPrices[asset.symbol] || asset.price; // Current price or fallback
+  flatPortfolio.forEach(asset => {
+    if (!asset) return;
+    const shares = (asset.amount || 0) / (asset.price || 1);
+    const currentPrice = currentPrices?.[asset.symbol] || asset.price || 0;
 
-    initialValue += asset.amount; // Original dollar amount invested
-    currentValue += shares * currentPrice; // Current value of those shares
+    initialValue += asset.amount || 0;
+    currentValue += shares * currentPrice;
   });
 
   if (initialValue === 0) return 0;
