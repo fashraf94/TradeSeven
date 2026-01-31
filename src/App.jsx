@@ -18882,17 +18882,13 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* Active Draft Banner - Show when user has an ongoing draft */}
-          {activeDraftBanner && (
+          {/* Active Draft Banner - Show ONLY when draft is actively in progress (not waiting/pending) */}
+          {activeDraftBanner && activeDraftBanner.status === 'active' && (
             <div
               onClick={() => {
                 setCurrentDraft(activeDraftBanner);
                 setActiveDraftBanner(null);
-                if (activeDraftBanner.status === 'waiting') {
-                  setScreen('draftLobby');
-                } else if (activeDraftBanner.status === 'active') {
-                  setScreen('draftRoom');
-                }
+                setScreen('draftRoom');
               }}
               style={{
                 background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
@@ -18922,8 +18918,7 @@ export default function PortfolioDuel() {
                     Active Draft in Progress!
                   </div>
                   <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '13px' }}>
-                    {activeDraftBanner.code} • {activeDraftBanner.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'} •
-                    {activeDraftBanner.status === 'waiting' ? ' Waiting for players' : ' Draft in progress'}
+                    {activeDraftBanner.code} • {activeDraftBanner.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'} • Draft in progress
                   </div>
                 </div>
               </div>

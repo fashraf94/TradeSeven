@@ -1,10 +1,10 @@
 // /src/components/Dashboard/PendingLobbiesSection.jsx
 // Shows pending lobbies (BaggerBomb V3 + Snake Draft) created by the current user
-// Displayed on dashboard between Live Clashes and other sections
+// Uses unified card design matching Snake Draft style
 
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, Users, Share2, Bomb, Copy } from 'lucide-react';
+import { Clock, Users, Copy } from 'lucide-react';
 
 // Format time elapsed since creation
 function formatTimeAgo(createdAt) {
@@ -38,7 +38,7 @@ function getSnakeDraftPlayerCount(draft) {
   return { current, max };
 }
 
-// Single Pending Lobby Card
+// Unified Pending Lobby Card - matches Snake Draft style
 function PendingLobbyCard({ lobby, type, onPress, onCopyCode }) {
   const isBaggerBomb = type === 'baggerbomb';
   const isSnakeDraft = type === 'snakeDraft';
@@ -64,33 +64,38 @@ function PendingLobbyCard({ lobby, type, onPress, onCopyCode }) {
   // Get lobby code
   const lobbyCode = isBaggerBomb ? lobby.challengeCode : lobby.code;
 
-  const accentColor = '#f59e0b'; // Amber for pending state
   const gameEmoji = isBaggerBomb ? '💣' : '🐍';
-  const gameLabel = isBaggerBomb ? 'BaggerBomb' : 'Snake Draft';
+  const gameLabel = isBaggerBomb ? 'BAGGERBOMB' : 'SNAKE DRAFT';
+
+  // Amber/orange accent for pending state
+  const pendingColor = '#f59e0b';
+  // Cyan border like Snake Draft cards
+  const borderColor = '#00d9ff';
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.3 }}
       onClick={onPress}
       style={{
         background: '#161b22',
         borderRadius: '16px',
-        border: `2px solid ${accentColor}60`,
+        border: `2px solid ${borderColor}60`,
         padding: '16px',
         cursor: 'pointer',
         position: 'relative',
         overflow: 'hidden',
         marginBottom: '12px',
+        boxShadow: `0 0 8px ${borderColor}20`,
       }}
     >
-      {/* Header Row: Game type + Time */}
+      {/* Header Row: Game type + PENDING badge + Time */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: '16px',
+        marginBottom: '14px',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '16px' }}>{gameEmoji}</span>
@@ -103,157 +108,241 @@ function PendingLobbyCard({ lobby, type, onPress, onCopyCode }) {
           }}>
             {gameLabel}
           </span>
-          {/* Pending Badge */}
+          {/* PENDING Badge */}
           <span style={{
             padding: '2px 8px',
-            background: `${accentColor}20`,
+            background: `${pendingColor}20`,
             borderRadius: '4px',
             fontSize: '10px',
             fontWeight: '700',
-            color: accentColor,
+            color: pendingColor,
             textTransform: 'uppercase',
           }}>
             PENDING
           </span>
         </div>
 
-        {/* Time ago */}
+        {/* Time ago badge */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           gap: '4px',
-          color: '#8b949e',
-          fontSize: '12px',
+          padding: '4px 10px',
+          background: 'rgba(139, 148, 158, 0.1)',
+          borderRadius: '8px',
+          border: '1px solid rgba(139, 148, 158, 0.2)',
         }}>
-          <Clock size={12} />
-          {formatTimeAgo(createdAt)}
+          <Clock size={12} style={{ color: '#8b949e' }} />
+          <span style={{
+            fontSize: '12px',
+            fontWeight: '600',
+            color: '#8b949e',
+          }}>
+            {formatTimeAgo(createdAt)}
+          </span>
         </div>
       </div>
 
-      {/* VS Zone: Your side + Waiting side */}
+      {/* Main content: Players Layout */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: '16px',
-        gap: '16px',
+        gap: '12px',
+        alignItems: 'stretch',
       }}>
-        {/* Your Side */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+        {/* Players List - Left side */}
+        <div style={{ flex: 1 }}>
+          {/* You row */}
           <div style={{
-            width: '56px',
-            height: '56px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #10b98130 0%, #00d9ff30 100%)',
-            border: '3px solid #10b981',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: '8px',
-            fontSize: creatorAvatar ? '24px' : '20px',
+            gap: '8px',
+            padding: '6px 8px',
+            marginBottom: '4px',
+            borderRadius: '6px',
+            background: 'rgba(0, 217, 255, 0.1)',
+            border: '1px solid rgba(0, 217, 255, 0.3)',
           }}>
-            {creatorAvatar || '👤'}
+            {/* Position number */}
+            <span style={{
+              fontSize: '11px',
+              fontWeight: '700',
+              color: '#ffd700',
+              minWidth: '18px',
+              fontFamily: "'SF Mono', 'Monaco', monospace",
+            }}>
+              [1]
+            </span>
+
+            {/* Avatar circle */}
+            <div style={{
+              width: '22px',
+              height: '22px',
+              borderRadius: '50%',
+              background: 'rgba(0, 217, 255, 0.2)',
+              border: '1.5px solid #00d9ff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: creatorAvatar ? '12px' : '10px',
+              fontWeight: '600',
+              color: '#00d9ff',
+              flexShrink: 0,
+            }}>
+              {creatorAvatar || creatorName[0]?.toUpperCase() || 'Y'}
+            </div>
+
+            {/* Name */}
+            <span style={{
+              fontSize: '12px',
+              fontWeight: '700',
+              color: '#00d9ff',
+              flex: 1,
+            }}>
+              YOU
+            </span>
+
+            {/* Status */}
+            <span style={{
+              fontSize: '10px',
+              fontWeight: '600',
+              color: '#10b981',
+            }}>
+              Ready
+            </span>
           </div>
-          <span style={{
-            fontSize: '13px',
-            fontWeight: '600',
-            color: '#e6edf3',
-            textAlign: 'center',
+
+          {/* Waiting opponent row */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 8px',
+            borderRadius: '6px',
+            background: 'transparent',
+            border: '1px solid transparent',
           }}>
-            {creatorName}
-          </span>
-          <span style={{
-            fontSize: '10px',
-            fontWeight: '700',
-            color: '#10b981',
-            background: '#10b98120',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            marginTop: '4px',
-          }}>
-            YOU
-          </span>
+            {/* Position number */}
+            <span style={{
+              fontSize: '11px',
+              fontWeight: '700',
+              color: '#6e7681',
+              minWidth: '18px',
+              fontFamily: "'SF Mono', 'Monaco', monospace",
+            }}>
+              {isBaggerBomb ? '[2]' : `[${playerCount?.current + 1}]`}
+            </span>
+
+            {/* Waiting avatar */}
+            <div style={{
+              width: '22px',
+              height: '22px',
+              borderRadius: '50%',
+              background: '#21262d',
+              border: '1.5px dashed #30363d',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '10px',
+              color: '#484f58',
+              flexShrink: 0,
+            }}>
+              ?
+            </div>
+
+            {/* Waiting text */}
+            <span style={{
+              fontSize: '12px',
+              fontWeight: '500',
+              color: '#6e7681',
+              fontStyle: 'italic',
+              flex: 1,
+            }}>
+              Waiting...
+            </span>
+
+            {/* Player count for Snake Draft */}
+            {isSnakeDraft && playerCount && (
+              <span style={{
+                fontSize: '10px',
+                color: pendingColor,
+              }}>
+                {playerCount.current}/{playerCount.max}
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* VS Divider */}
+        {/* Stats - Right side */}
         <div style={{
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
-          gap: '4px',
-        }}>
-          <span style={{
-            fontSize: '14px',
-            fontWeight: '700',
-            color: '#6e7681',
-          }}>
-            VS
-          </span>
-        </div>
-
-        {/* Waiting Side */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
-          <div style={{
-            width: '56px',
-            height: '56px',
-            borderRadius: '50%',
-            background: '#21262d',
-            border: '3px dashed #30363d',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: '8px',
-          }}>
-            <span style={{ fontSize: '24px', color: '#484f58' }}>?</span>
-          </div>
-          <span style={{
-            fontSize: '12px',
-            color: '#8b949e',
-            fontStyle: 'italic',
-            textAlign: 'center',
-          }}>
-            Waiting...
-          </span>
-          {isSnakeDraft && playerCount && (
-            <span style={{
-              fontSize: '10px',
-              color: accentColor,
-              marginTop: '4px',
-            }}>
-              {playerCount.current}/{playerCount.max} players
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Footer: Asset count + Share button */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingTop: '12px',
-        borderTop: '1px solid #21262d',
-      }}>
-        {/* Asset/Info count */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          color: '#8b949e',
-          fontSize: '12px',
+          alignItems: 'flex-end',
+          justifyContent: 'center',
+          minWidth: '90px',
+          paddingLeft: '8px',
+          borderLeft: '1px solid #21262d',
         }}>
           {isBaggerBomb && (
             <>
-              <Users size={14} />
-              <span><strong style={{ color: '#e6edf3' }}>{assetCount}</strong> assets ready</span>
+              <span style={{
+                fontSize: '18px',
+                fontWeight: '800',
+                color: '#00d9ff',
+                fontFamily: "'SF Mono', 'Monaco', monospace",
+                lineHeight: 1.1,
+              }}>
+                {assetCount} assets
+              </span>
+              <span style={{
+                fontSize: '10px',
+                fontWeight: '600',
+                color: '#8b949e',
+                marginTop: '4px',
+                textTransform: 'uppercase',
+              }}>
+                READY
+              </span>
             </>
           )}
           {isSnakeDraft && (
             <>
-              <Users size={14} />
-              <span>Waiting for players to join</span>
+              <span style={{
+                fontSize: '14px',
+                fontWeight: '700',
+                color: pendingColor,
+                lineHeight: 1.1,
+              }}>
+                {playerCount?.current}/{playerCount?.max}
+              </span>
+              <span style={{
+                fontSize: '10px',
+                fontWeight: '600',
+                color: '#8b949e',
+                marginTop: '4px',
+                textTransform: 'uppercase',
+              }}>
+                PLAYERS
+              </span>
             </>
           )}
+        </div>
+      </div>
+
+      {/* Bottom Info Box */}
+      <div style={{
+        marginTop: '12px',
+        padding: '10px 12px',
+        background: 'rgba(33, 38, 45, 0.8)',
+        borderRadius: '8px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Users size={14} style={{ color: '#8b949e' }} />
+          <span style={{ fontSize: '12px', color: '#8b949e' }}>
+            {isBaggerBomb ? 'Waiting for opponent' : 'Waiting for players'}
+          </span>
         </div>
 
         {/* Copy Code Button */}
@@ -267,26 +356,25 @@ function PendingLobbyCard({ lobby, type, onPress, onCopyCode }) {
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '6px 12px',
-              background: '#21262d',
-              border: '1px solid #30363d',
-              borderRadius: '8px',
-              color: '#8b949e',
+              padding: '4px 10px',
+              background: '#00d9ff15',
+              border: '1px solid #00d9ff40',
+              borderRadius: '6px',
+              color: '#00d9ff',
               fontSize: '11px',
-              fontWeight: '600',
+              fontWeight: '700',
               cursor: 'pointer',
               transition: 'all 0.2s',
+              fontFamily: "'SF Mono', 'Monaco', monospace",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = '#30363d';
-              e.currentTarget.style.color = '#e6edf3';
+              e.currentTarget.style.background = '#00d9ff25';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = '#21262d';
-              e.currentTarget.style.color = '#8b949e';
+              e.currentTarget.style.background = '#00d9ff15';
             }}
           >
-            <Copy size={12} />
+            <Copy size={11} />
             {lobbyCode}
           </button>
         )}
