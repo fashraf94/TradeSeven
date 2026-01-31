@@ -118,7 +118,7 @@ function getRemainingMs(battle) {
 
 // Build standings for draft battles
 function buildDraftStandings(battle, currentUserId) {
-  if (!battle.players || battle.players.length === 0) {
+  if (!Array.isArray(battle.players) || battle.players.length === 0) {
     return { standings: [], myPosition: 1, myPoints: 0, leaderPoints: 0 };
   }
 

@@ -264,12 +264,12 @@ function getWinnerPortfolio(battle) {
 
   if (isCreatorWinner) {
     // V1: creatorPortfolio at top level
-    if (battle.creatorPortfolio) return battle.creatorPortfolio;
+    if (Array.isArray(battle.creatorPortfolio)) return battle.creatorPortfolio;
     // V2: inside creator object
-    if (typeof battle.creator === 'object' && battle.creator.portfolio) return battle.creator.portfolio;
+    if (typeof battle.creator === 'object' && Array.isArray(battle.creator.portfolio)) return battle.creator.portfolio;
   } else {
-    if (battle.opponentPortfolio) return battle.opponentPortfolio;
-    if (typeof battle.opponent === 'object' && battle.opponent.portfolio) return battle.opponent.portfolio;
+    if (Array.isArray(battle.opponentPortfolio)) return battle.opponentPortfolio;
+    if (typeof battle.opponent === 'object' && Array.isArray(battle.opponent.portfolio)) return battle.opponent.portfolio;
   }
 
   return [];

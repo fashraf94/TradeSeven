@@ -216,8 +216,12 @@ export default function TrainingLiveFeed({
 
       const myData = isCreator ? battle.creator : battle.opponent;
       const oppData = isCreator ? battle.opponent : battle.creator;
-      const myPortfolio = myData?.portfolio || [];
-      const oppPortfolio = oppData?.portfolio || [];
+
+      // Portfolio could be array (V1/V2) or object with star/core/support (V3)
+      const rawMyPortfolio = myData?.portfolio;
+      const rawOppPortfolio = oppData?.portfolio;
+      const myPortfolio = Array.isArray(rawMyPortfolio) ? rawMyPortfolio : [];
+      const oppPortfolio = Array.isArray(rawOppPortfolio) ? rawOppPortfolio : [];
 
       // Get starting prices
       const startingPrices =
