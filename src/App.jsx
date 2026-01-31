@@ -82,7 +82,7 @@ import DesktopBackground from './components/DesktopBackground';
 import { ConfirmationPopup } from './components/shared';
 import ErrorBoundary from './components/ErrorBoundary';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity, SeasonalBanner, TrainingLiveFeed } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -19127,6 +19127,17 @@ export default function PortfolioDuel() {
                   setCurrentDraft={setCurrentDraft}
                   setScreen={setScreen}
                   setActiveBattleId={setActiveBattleId}
+                />
+
+                {/* Pending Lobbies - BaggerBomb + Snake Draft waiting for opponents */}
+                <PendingLobbiesSection
+                  lobbyBattles={lobbyBattles}
+                  user={user}
+                  setCurrentBattle={setCurrentBattle}
+                  setCurrentDraft={setCurrentDraft}
+                  setScreen={setScreen}
+                  setBattleToJoin={setBattleToJoin}
+                  copyToClipboard={copyToClipboard}
                 />
 
                 {/* Seasonal Banner - EarningsGame Tournament */}

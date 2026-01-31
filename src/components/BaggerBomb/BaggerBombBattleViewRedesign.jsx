@@ -1029,6 +1029,292 @@ export default function BaggerBombBattleViewRedesign({
     );
   }
 
+  // Check if battle is pending (waiting for opponent)
+  const isPending = battle?.state?.status === 'waiting' && !oppData?.uid && !oppData?.odUserId;
+
+  // Pending State - Waiting for Opponent
+  if (isPending) {
+    const lobbyCode = battle?.challengeCode || '';
+    const assetCount = myPortfolio.length;
+
+    return (
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: '#0d1117',
+        color: '#ffffff'
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '16px',
+          borderBottom: '1px solid #21262d'
+        }}>
+          <button
+            onClick={onBack}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              backgroundColor: 'transparent',
+              border: 'none',
+              color: '#00d9ff',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            <ArrowLeft size={18} />
+            Back
+          </button>
+
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <span style={{
+              backgroundColor: '#f59e0b',
+              color: '#0d1117',
+              padding: '4px 10px',
+              borderRadius: '12px',
+              fontSize: '11px',
+              fontWeight: '700'
+            }}>
+              PENDING
+            </span>
+            <span style={{
+              backgroundColor: '#10b981',
+              color: '#ffffff',
+              padding: '4px 10px',
+              borderRadius: '12px',
+              fontSize: '11px',
+              fontWeight: '600'
+            }}>
+              BAGGERBOMB
+            </span>
+          </div>
+
+          <div style={{ width: '60px' }} /> {/* Spacer for alignment */}
+        </div>
+
+        {/* Main Content */}
+        <div style={{ padding: '24px', maxWidth: '500px', margin: '0 auto' }}>
+          {/* VS Section */}
+          <div style={{
+            backgroundColor: '#161b22',
+            borderRadius: '16px',
+            padding: '24px',
+            marginBottom: '24px',
+            border: '2px solid #f59e0b40'
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '24px'
+            }}>
+              {/* Your Side */}
+              <div style={{ flex: 1, textAlign: 'center' }}>
+                <div style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #10b98130 0%, #00d9ff30 100%)',
+                  border: '3px solid #10b981',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 12px',
+                  fontSize: '28px'
+                }}>
+                  {myData?.avatar || '👤'}
+                </div>
+                <div style={{ fontSize: '14px', color: '#e6edf3', fontWeight: '600' }}>
+                  {myData?.username || myData?.odUsername || 'You'}
+                </div>
+                <span style={{
+                  display: 'inline-block',
+                  marginTop: '8px',
+                  padding: '2px 8px',
+                  backgroundColor: '#10b98120',
+                  color: '#10b981',
+                  borderRadius: '4px',
+                  fontSize: '10px',
+                  fontWeight: '700'
+                }}>
+                  YOU
+                </span>
+              </div>
+
+              <div style={{ color: '#6e7681', fontSize: '18px', fontWeight: '700', padding: '0 16px' }}>
+                VS
+              </div>
+
+              {/* Opponent Side - Waiting */}
+              <div style={{ flex: 1, textAlign: 'center' }}>
+                <div style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  backgroundColor: '#21262d',
+                  border: '3px dashed #30363d',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 12px',
+                  animation: 'pulse 2s ease-in-out infinite'
+                }}>
+                  <span style={{ fontSize: '28px', color: '#484f58' }}>?</span>
+                </div>
+                <div style={{ fontSize: '14px', color: '#8b949e', fontStyle: 'italic' }}>
+                  Waiting...
+                </div>
+              </div>
+            </div>
+
+            {/* Portfolio Preview */}
+            <div style={{
+              backgroundColor: '#21262d',
+              borderRadius: '12px',
+              padding: '16px',
+              marginTop: '16px'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '12px'
+              }}>
+                <span style={{ fontSize: '12px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  Your Portfolio
+                </span>
+                <span style={{ fontSize: '14px', color: '#e6edf3', fontWeight: '600' }}>
+                  {assetCount} assets
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {myPortfolio.slice(0, 6).map((asset, idx) => (
+                  <span key={idx} style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#30363d',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    color: '#e6edf3',
+                    fontWeight: '500'
+                  }}>
+                    {asset.symbol}
+                  </span>
+                ))}
+                {assetCount > 6 && (
+                  <span style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#30363d',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    color: '#8b949e'
+                  }}>
+                    +{assetCount - 6} more
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Waiting Message */}
+          <div style={{
+            textAlign: 'center',
+            marginBottom: '24px'
+          }}>
+            <div style={{
+              fontSize: '48px',
+              marginBottom: '16px',
+              animation: 'bounce 2s ease-in-out infinite'
+            }}>
+              ⏳
+            </div>
+            <h2 style={{
+              fontSize: '20px',
+              fontWeight: '700',
+              color: '#e6edf3',
+              marginBottom: '8px'
+            }}>
+              Waiting for Opponent
+            </h2>
+            <p style={{
+              fontSize: '14px',
+              color: '#8b949e',
+              margin: 0
+            }}>
+              Share your lobby code to invite a friend!
+            </p>
+          </div>
+
+          {/* Lobby Code */}
+          {lobbyCode && (
+            <div style={{
+              backgroundColor: '#161b22',
+              borderRadius: '12px',
+              padding: '20px',
+              textAlign: 'center',
+              border: '1px solid #30363d'
+            }}>
+              <div style={{
+                fontSize: '11px',
+                color: '#8b949e',
+                textTransform: 'uppercase',
+                letterSpacing: '1px',
+                marginBottom: '8px'
+              }}>
+                Lobby Code
+              </div>
+              <div style={{
+                fontSize: '32px',
+                fontWeight: '700',
+                color: '#00d9ff',
+                letterSpacing: '4px',
+                fontFamily: "'SF Mono', 'Monaco', monospace",
+                marginBottom: '16px'
+              }}>
+                {lobbyCode}
+              </div>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(lobbyCode);
+                }}
+                style={{
+                  padding: '10px 24px',
+                  backgroundColor: '#00d9ff',
+                  color: '#0d1117',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                COPY CODE
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Pulse animation for waiting indicator */}
+        <style>{`
+          @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(0.98); }
+          }
+          @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   return (
     <div style={{
       minHeight: '100vh',
