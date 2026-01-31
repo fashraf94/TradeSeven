@@ -78,6 +78,7 @@ import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 import { ConfirmationPopup } from './components/shared';
+import ErrorBoundary from './components/ErrorBoundary';
 // Dashboard Components
 import { GameModeToggle, ResearchModeButton, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity, SeasonalBanner, TrainingLiveFeed } from './components/Dashboard';
 
@@ -18768,34 +18769,35 @@ export default function PortfolioDuel() {
     const nextRank = currentRankIndex < ranks.length - 1 ? ranks[currentRankIndex + 1] : 'Max Rank';
 
     return (
-      <div style={containerStyle}>
-        {/* Animated Desktop Background */}
-        <DesktopBackground isDesktop={isDesktop} />
+      <ErrorBoundary>
+        <div style={containerStyle}>
+          {/* Animated Desktop Background */}
+          <DesktopBackground isDesktop={isDesktop} />
 
-        {/* Global Overlays */}
-        <ChallengeToast />
-        <MidGameChallengePopup />
-        <RiskChallengePopup />
-        <RiskChallengeResultPopup />
-        {showSlotMachine && weeklyChallenges.length >= 4 && (
-          <SlotMachineContent
-            challenges={weeklyChallenges}
-            onClose={() => {
-              setShowSlotMachine(false);
-              setSlotMachineRevealed(true);
-              markSlotMachineShown();
-            }}
-          />
-        )}
+          {/* Global Overlays */}
+          <ChallengeToast />
+          <MidGameChallengePopup />
+          <RiskChallengePopup />
+          <RiskChallengeResultPopup />
+          {showSlotMachine && weeklyChallenges.length >= 4 && (
+            <SlotMachineContent
+              challenges={weeklyChallenges}
+              onClose={() => {
+                setShowSlotMachine(false);
+                setSlotMachineRevealed(true);
+                markSlotMachineShown();
+              }}
+            />
+          )}
 
-        <div style={{
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          background: colors.background,
-          position: 'relative',
-          zIndex: 1
-        }}>
+          <div style={{
+            minHeight: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            background: colors.background,
+            position: 'relative',
+            zIndex: 1
+          }}>
           {/* XP Progress Modal */}
           {showXPModal && (
             <div
@@ -21659,7 +21661,8 @@ export default function PortfolioDuel() {
 
         {/* ========== SPOTLIGHT TOUR (Interactive Onboarding) ========== */}
         <SpotlightTour />
-      </div>
+        </div>
+      </ErrorBoundary>
     );
   }
 
