@@ -203,6 +203,31 @@ const storageWithExpiry = {
 };
 
 // ============================================
+// GLOBAL FILTER ERROR INTERCEPTOR
+// ============================================
+// Monkey-patch Array.prototype.filter to catch the crash with context
+const originalFilter = Array.prototype.filter;
+Array.prototype.filter = function(...args) {
+  return originalFilter.apply(this, args);
+};
+
+// Add global error handler for uncaught errors
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (event) => {
+    if (event.message?.includes('filter is not a function')) {
+      console.error('🔴 FILTER CRASH DETECTED:', {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        error: event.error,
+      });
+      console.trace('Stack trace at filter crash');
+    }
+  });
+}
+
+// ============================================
 // SECTOR COLOR DEFINITIONS
 // ============================================
 const SECTOR_COLORS = {
