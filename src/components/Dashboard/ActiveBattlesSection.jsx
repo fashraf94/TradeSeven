@@ -2,7 +2,7 @@
 // Extracted from App.jsx - Active Battles sections (Classic 1v1, Draft, Training, Waiting)
 
 import { motion } from 'framer-motion';
-import { Swords, GraduationCap, User, Target, Clock, Copy } from 'lucide-react';
+import { Swords, GraduationCap, User, Users, Target, Clock, Copy } from 'lucide-react';
 import { getUsername } from '../../utils/battleHelpers';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 
@@ -18,11 +18,36 @@ const ActiveBattlesSection = ({
   setScreen,
   setActiveBattleId,
   copyToClipboard,
-  battleTimer
+  battleTimer,
+  onViewLobby, // New prop for lobby navigation
 }) => {
   // Helper function to calculate battle preview data for any battle
   const calculateBattlePreviewData = (battle) => {
     if (!battle) return null;
+
+    // V3 BaggerBomb battles use tiered portfolios - simplified preview
+    if (battle._v === 3) {
+      const isCreator = (battle.creator?.odUserId || battle.creator?.uid) === (user?.odUserId || user?.username);
+      const opponent = isCreator
+        ? (battle.opponent?.username || 'Waiting...')
+        : (battle.creator?.username || 'Creator');
+
+      // For V3, we use session scores if available
+      const myScore = isCreator ? (battle.creator?.totalScore || 0) : (battle.opponent?.totalScore || 0);
+      const theirScore = isCreator ? (battle.opponent?.totalScore || 0) : (battle.creator?.totalScore || 0);
+
+      return {
+        opponent,
+        myGain: myScore,
+        theirGain: theirScore,
+        isWinning: myScore > theirScore,
+        leadBy: Math.abs(myScore - theirScore),
+        myValue: 1000000 + myScore * 1000,
+        theirValue: 1000000 + theirScore * 1000,
+        isV3: true
+      };
+    }
+
     const isCreator = getUsername(battle.creator) === user.username;
     const opponent = isCreator ? getUsername(battle.opponent) : getUsername(battle.creator);
     const myPortfolio = isCreator ? battle.creatorPortfolio : battle.opponentPortfolio;
@@ -31,13 +56,15 @@ const ActiveBattlesSection = ({
     if (!myPortfolio || !theirPortfolio) return null;
 
     let myValue = 0;
-    myPortfolio.forEach(asset => {
+    (myPortfolio || []).forEach(asset => {
+      if (!asset) return;
       const shares = asset.amount / asset.price;
       myValue += shares * asset.price;
     });
 
     let theirValue = 0;
-    theirPortfolio.forEach(asset => {
+    (theirPortfolio || []).forEach(asset => {
+      if (!asset) return;
       const shares = asset.amount / asset.price;
       theirValue += shares * asset.price;
     });
@@ -134,7 +161,7 @@ const ActiveBattlesSection = ({
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   {battle.isTrainingBattle && <GraduationCap style={{ height: '16px', width: '16px', color: colors.purple }} />}
-                  {battle._v === 2 && (
+                  {(battle._v === 2 || battle._v === 3) && (
                     <span style={{
                       background: `${colors.purple}30`,
                       color: colors.purple,
@@ -143,7 +170,7 @@ const ActiveBattlesSection = ({
                       fontSize: '10px',
                       fontWeight: '700'
                     }}>
-                      BB
+                      BB{battle._v === 3 ? '3' : ''}
                     </span>
                   )}
                   <span style={{
@@ -705,44 +732,89 @@ const ActiveBattlesSection = ({
               borderRadius: '12px',
               marginBottom: waitingBattles.indexOf(battle) < waitingBattles.length - 1 ? '8px' : 0
             }}>
-              <div style={{
-                fontSize: '24px',
-                fontWeight: 'bold',
-                color: colors.cyan,
-                fontFamily: "'SF Mono', monospace",
-                letterSpacing: '3px'
-              }}>
-                {battle.challengeCode}
-              </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  copyToClipboard(battle.challengeCode);
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '8px 14px',
-                  background: 'transparent',
-                  border: `1px solid ${colors.cyan}`,
-                  borderRadius: '8px',
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {/* V3/Lobby Badge */}
+                {battle._v === 3 && (
+                  <span style={{
+                    fontSize: '10px',
+                    fontWeight: '700',
+                    backgroundColor: `${colors.purple}30`,
+                    color: colors.purple,
+                    padding: '3px 6px',
+                    borderRadius: '4px',
+                  }}>
+                    LOBBY
+                  </span>
+                )}
+                <div style={{
+                  fontSize: '18px',
+                  fontWeight: 'bold',
                   color: colors.cyan,
-                  fontSize: '13px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = `${colors.cyan}20`;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                }}
-              >
-                <Copy style={{ height: '14px', width: '14px' }} />
-                Copy
-              </button>
+                  fontFamily: "'SF Mono', monospace",
+                  letterSpacing: '2px'
+                }}>
+                  {battle.challengeCode || 'Waiting...'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {/* View Lobby button for V3 battles */}
+                {battle._v === 3 && onViewLobby && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onViewLobby();
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '8px 12px',
+                      background: `${colors.purple}20`,
+                      border: `1px solid ${colors.purple}`,
+                      borderRadius: '8px',
+                      color: colors.purple,
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Users style={{ height: '12px', width: '12px' }} />
+                    Lobby
+                  </button>
+                )}
+                {/* Copy code button */}
+                {battle.challengeCode && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      copyToClipboard(battle.challengeCode);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 14px',
+                      background: 'transparent',
+                      border: `1px solid ${colors.cyan}`,
+                      borderRadius: '8px',
+                      color: colors.cyan,
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = `${colors.cyan}20`;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent';
+                    }}
+                  >
+                    <Copy style={{ height: '14px', width: '14px' }} />
+                    Copy
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </motion.div>

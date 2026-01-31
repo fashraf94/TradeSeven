@@ -17,6 +17,7 @@ import { checkPortfolioBreakouts } from '../../services/breakoutDetectionService
 import { getCurrentSubstitutionWindow, getRemainingSubstitutions } from '../../services/substitutionService';
 import { getMultipleStockPrices, getMultipleCryptoPrices } from '../../services/eodhdAPI';
 import { isCrypto } from '../../services/sessionScoringService';
+import { flattenPortfolio } from '../../utils/baggerBombUtils';
 
 // Price polling interval (60 seconds)
 const PRICE_POLL_INTERVAL = 60000;
@@ -66,17 +67,32 @@ export default function BaggerBombBattleView({
     [battle, playerKey]
   );
 
+  // Helper to flatten bench (handles both array and {stocks: []} formats)
+  const flattenBench = (bench) => {
+    if (!bench) return [];
+    if (Array.isArray(bench)) return bench;
+    return bench.stocks || [];
+  };
+
   // Collect all symbols for price fetching
   const allSymbols = useMemo(() => {
     const symbols = new Set();
 
-    // Creator's assets
-    battle.creator?.portfolio?.forEach(a => symbols.add(a.symbol));
-    battle.creator?.bench?.forEach(a => symbols.add(a.symbol));
+    // Creator's assets - use flattenPortfolio to handle V3 tiered portfolios
+    flattenPortfolio(battle.creator?.portfolio).forEach(a => {
+      if (a?.symbol) symbols.add(a.symbol);
+    });
+    flattenBench(battle.creator?.bench).forEach(a => {
+      if (a?.symbol) symbols.add(a.symbol);
+    });
 
     // Opponent's assets
-    battle.opponent?.portfolio?.forEach(a => symbols.add(a.symbol));
-    battle.opponent?.bench?.forEach(a => symbols.add(a.symbol));
+    flattenPortfolio(battle.opponent?.portfolio).forEach(a => {
+      if (a?.symbol) symbols.add(a.symbol);
+    });
+    flattenBench(battle.opponent?.bench).forEach(a => {
+      if (a?.symbol) symbols.add(a.symbol);
+    });
 
     return Array.from(symbols);
   }, [battle]);

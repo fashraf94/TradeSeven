@@ -12,6 +12,7 @@ const BattleViewScreen = ({
   ActiveRiskChallengeIndicator,
   LoadingFallback,
   BaggerBombBattleViewRedesign,
+  BaggerBombBattleViewConnected,
 }) => {
   // Debug: Log battle routing decision
   console.log('🎮 BATTLE ROUTING DEBUG:', {
@@ -23,8 +24,21 @@ const BattleViewScreen = ({
     battleType: currentBattle?.portfolioType
   });
 
-  // Check if this is a BaggerBomb (V2) battle - route to redesigned view
-  if (currentBattle._v === 2) {
+  // Check if this is a BaggerBomb (V2 or V3) battle - route to new connected view
+  if (currentBattle._v === 2 || currentBattle._v === 3) {
+    // Use the new connected component for non-training battles
+    if (BaggerBombBattleViewConnected && currentBattle.id && !currentBattle.isTraining) {
+      return (
+        <Suspense fallback={<LoadingFallback />}>
+          <BaggerBombBattleViewConnected
+            battleId={currentBattle.id}
+            userId={user?.odUserId || user?.username}
+            onBack={onBack}
+          />
+        </Suspense>
+      );
+    }
+    // Fall back to redesign view for training battles or when connected component is not available
     return (
       <Suspense fallback={<LoadingFallback />}>
         <BaggerBombBattleViewRedesign
@@ -40,19 +54,21 @@ const BattleViewScreen = ({
   // Classic (V1) battle view continues below...
   const isCreator = currentBattle.creator === user.username;
   const opponent = isCreator ? currentBattle.opponent : currentBattle.creator;
-  const myPortfolio = isCreator ? currentBattle.creatorPortfolio : currentBattle.opponentPortfolio;
-  const theirPortfolio = isCreator ? currentBattle.opponentPortfolio : currentBattle.creatorPortfolio;
+  const myPortfolio = (isCreator ? currentBattle.creatorPortfolio : currentBattle.opponentPortfolio) || [];
+  const theirPortfolio = (isCreator ? currentBattle.opponentPortfolio : currentBattle.creatorPortfolio) || [];
 
   // Calculate current values and gains
   let myValue = 0;
-  myPortfolio.forEach(asset => {
+  (myPortfolio || []).forEach(asset => {
+    if (!asset) return;
     const shares = asset.amount / asset.price;
     const currentPrice = battlePrices[asset.symbol] || asset.price;
     myValue += shares * currentPrice;
   });
 
   let theirValue = 0;
-  theirPortfolio.forEach(asset => {
+  (theirPortfolio || []).forEach(asset => {
+    if (!asset) return;
     const shares = asset.amount / asset.price;
     const currentPrice = battlePrices[asset.symbol] || asset.price;
     theirValue += shares * currentPrice;

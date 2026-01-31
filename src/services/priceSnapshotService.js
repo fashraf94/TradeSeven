@@ -12,6 +12,8 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getMultipleStockPrices, getMultipleCryptoPrices } from './eodhdAPI';
 import { SESSIONS, SESSION_ORDER, isCrypto } from './sessionScoringService';
+// V3-safe portfolio helpers
+import { safePortfolioArray, safeBenchArray } from '../utils/portfolioHelpers';
 
 const IS_DEV = import.meta.env?.DEV ?? false;
 
@@ -110,6 +112,7 @@ function getNextSessionId(sessionId) {
 /**
  * Get all unique symbols from a battle
  * Extracts from both players' portfolios and benches
+ * Handles both V3 tiered portfolios (object with star/core/support) and V1/V2 flat arrays
  *
  * @param {Object} battle - Battle document
  * @returns {string[]} - Array of unique symbols (uppercase)
@@ -117,41 +120,22 @@ function getNextSessionId(sessionId) {
 export function getBattleSymbols(battle) {
   const symbols = new Set();
 
-  // Creator portfolio
-  if (battle.creator?.portfolio) {
-    battle.creator.portfolio.forEach(asset => {
-      if (asset.symbol) {
+  // Helper to add symbols from an asset array to the set
+  const addSymbols = (assets) => {
+    assets.forEach(asset => {
+      if (asset?.symbol) {
         symbols.add(asset.symbol.toUpperCase());
       }
     });
-  }
+  };
 
-  // Creator bench
-  if (battle.creator?.bench) {
-    battle.creator.bench.forEach(asset => {
-      if (asset.symbol) {
-        symbols.add(asset.symbol.toUpperCase());
-      }
-    });
-  }
+  // Creator portfolio and bench (V3-safe via portfolioHelpers)
+  addSymbols(safePortfolioArray(battle.creator?.portfolio));
+  addSymbols(safeBenchArray(battle.creator?.bench));
 
-  // Opponent portfolio
-  if (battle.opponent?.portfolio) {
-    battle.opponent.portfolio.forEach(asset => {
-      if (asset.symbol) {
-        symbols.add(asset.symbol.toUpperCase());
-      }
-    });
-  }
-
-  // Opponent bench
-  if (battle.opponent?.bench) {
-    battle.opponent.bench.forEach(asset => {
-      if (asset.symbol) {
-        symbols.add(asset.symbol.toUpperCase());
-      }
-    });
-  }
+  // Opponent portfolio and bench
+  addSymbols(safePortfolioArray(battle.opponent?.portfolio));
+  addSymbols(safeBenchArray(battle.opponent?.bench));
 
   return Array.from(symbols);
 }

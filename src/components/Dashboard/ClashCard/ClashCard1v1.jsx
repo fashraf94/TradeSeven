@@ -10,10 +10,10 @@ import { formatClashTimer } from '../../../utils/timerFormatters';
 
 // Get battle type label and icon
 function getBattleTypeInfo(battle) {
-  if (battle._v === 2 || battle.type === 'baggerbomb') {
-    return { label: 'BAGGERBOMB 1v1', icon: Bomb, emoji: '💣' };
+  if (battle._v === 3 || battle._v === 2 || battle.type === 'baggerbomb') {
+    return { label: 'BAGGERBOMB', icon: Bomb, emoji: '💣', isBaggerBomb: true };
   }
-  return { label: 'BUILDER 1v1', icon: Hammer, emoji: '🏗️' };
+  return { label: 'BUILDER 1v1', icon: Hammer, emoji: '🏗️', isBaggerBomb: false };
 }
 
 // Truncate username
@@ -29,10 +29,11 @@ export default function ClashCard1v1({
   onPress,
   isMostUrgent = false,
 }) {
-  const { opponent, myGain, theirGain, isWinning, myValue, theirValue } = previewData;
+  const { opponent, myGain, theirGain, isWinning, myValue, theirValue, isV3 } = previewData;
   const typeInfo = getBattleTypeInfo(battle);
   const timer = formatClashTimer(remainingMs);
   const isTraining = battle.isTrainingBattle;
+  const isBaggerBombPoints = isV3 || typeInfo.isBaggerBomb;
 
   // Border color logic
   const borderColor = isTraining
@@ -189,7 +190,10 @@ export default function ClashCard1v1({
             color: myGain >= 0 ? '#10b981' : '#ef4444',
             fontFamily: "'SF Mono', 'Monaco', monospace",
           }}>
-            {myGain >= 0 ? '+' : ''}{myGain.toFixed(1)}%
+            {isBaggerBombPoints
+              ? `${myGain >= 0 ? '+' : ''}${Math.round(myGain)} pts`
+              : `${myGain >= 0 ? '+' : ''}${myGain.toFixed(1)}%`
+            }
           </span>
         </div>
 
@@ -280,7 +284,10 @@ export default function ClashCard1v1({
             color: theirGain >= 0 ? '#10b981' : '#ef4444',
             fontFamily: "'SF Mono', 'Monaco', monospace",
           }}>
-            {theirGain >= 0 ? '+' : ''}{theirGain.toFixed(1)}%
+            {isBaggerBombPoints
+              ? `${theirGain >= 0 ? '+' : ''}${Math.round(theirGain)} pts`
+              : `${theirGain >= 0 ? '+' : ''}${theirGain.toFixed(1)}%`
+            }
           </span>
         </div>
       </div>

@@ -3,6 +3,9 @@
 // Battle timing and completion logic with TEST_MODE
 // =====================================================
 
+// V3-safe portfolio helpers
+import { safePortfolioArray } from '../utils/portfolioHelpers';
+
 /**
  * 🚀 TEST_MODE: Set to true for 24-hour battles (fast testing)
  * Set to false for 5-day battles (production)
@@ -67,17 +70,28 @@ export function isJustCompleted(battle) {
 export function getBattleStatus(battle) {
   if (!battle) return 'waiting';
 
+  // V3 BaggerBomb battles use state.status directly
+  if (battle._v === 3) {
+    const status = battle.state?.status;
+    if (status === 'waiting') return 'waiting';
+    if (status === 'active') return 'active';
+    if (status === 'completed') return 'completed';
+    // Fall through to time-based check if status not set
+  }
+
   // If no opponent yet, still waiting
   if (!battle.opponent) return 'waiting';
 
-  // If startDate not set yet, waiting
-  if (!battle.startDate) return 'waiting';
+  // If startDate not set yet, waiting (check both locations)
+  const startDate = battle.startDate || battle.timeline?.startDate;
+  if (!startDate) return 'waiting';
 
-  // If battle has ended, completed
-  if (hasBattleEnded(battle)) return 'completed';
+  // If battle has ended, completed (check both locations)
+  const endDate = battle.endDate || battle.timeline?.endDate;
+  if (endDate && Date.now() >= new Date(endDate).getTime()) return 'completed';
 
   // If battle has started but not ended, active
-  if (hasBattleStarted(battle)) return 'active';
+  if (Date.now() >= new Date(startDate).getTime()) return 'active';
 
   // Default to waiting
   return 'waiting';
@@ -160,12 +174,15 @@ export function formatTime(ms) {
 
 /**
  * Calculate portfolio return percentage
- * @param {Array} portfolio - Array of portfolio assets with amount and price
+ * @param {Array|Object} portfolio - Array of portfolio assets or V3 tiered object
  * @param {Object} currentPrices - Current prices for all assets {symbol: price}
  * @returns {number} - Return percentage
  */
 export function calculatePortfolioReturn(portfolio, currentPrices) {
-  if (!portfolio || portfolio.length === 0) {
+  // Flatten portfolio if it's a V3 tiered object (V3-safe via portfolioHelpers)
+  const flatPortfolio = safePortfolioArray(portfolio);
+
+  if (!flatPortfolio || flatPortfolio.length === 0) {
     return 0;
   }
 
@@ -173,12 +190,13 @@ export function calculatePortfolioReturn(portfolio, currentPrices) {
   let initialValue = 0;
   let currentValue = 0;
 
-  portfolio.forEach(asset => {
-    const shares = asset.amount / asset.price; // How many shares/coins bought
-    const currentPrice = currentPrices[asset.symbol] || asset.price; // Current price or fallback
+  flatPortfolio.forEach(asset => {
+    if (!asset) return;
+    const shares = (asset.amount || 0) / (asset.price || 1);
+    const currentPrice = currentPrices?.[asset.symbol] || asset.price || 0;
 
-    initialValue += asset.amount; // Original dollar amount invested
-    currentValue += shares * currentPrice; // Current value of those shares
+    initialValue += asset.amount || 0;
+    currentValue += shares * currentPrice;
   });
 
   if (initialValue === 0) return 0;

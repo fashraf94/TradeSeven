@@ -4,7 +4,7 @@ import { useUser } from './contexts/UserContext';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
-import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, joinBaggerBombBattle } from './firebase/firebaseService';
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, joinBaggerBombBattle, joinBaggerBombBattleV3, subscribeToLobby, subscribeToAllLobbies, getOpenBaggerBombBattles } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
 import './firebase/config';
@@ -26,6 +26,7 @@ import {
   ThresholdPreview,
   BenchSelector,
   BaggerBombBattleView,
+  SlotBasedBuilder,
 } from './components/BaggerBomb';
 // BaggerBomb Game Plan Flow (non-lazy imports)
 import { RiskStyleScreen, SectorSelectionScreen } from './components/GamePlan';
@@ -33,6 +34,8 @@ import { RiskStyleScreen, SectorSelectionScreen } from './components/GamePlan';
 // Lazy-loaded heavy components (make API calls on mount)
 const PortfolioBuilderBaggerBomb = lazy(() => import('./components/BaggerBomb/PortfolioBuilderBaggerBomb'));
 const BaggerBombBattleViewRedesign = lazy(() => import('./components/BaggerBomb/BaggerBombBattleViewRedesign'));
+const BaggerBombBattleViewConnected = lazy(() => import('./screens/BaggerBombBattleViewConnected'));
+const BaggerBombLobby = lazy(() => import('./screens/BaggerBombLobby'));
 const BaggerBombGamePlanFlow = lazy(() => import('./components/GamePlan/BaggerBombGamePlanFlow'));
 const StonkOptionsArenaV2 = lazy(() => import('./components/optionsArena/StonkOptionsArenaV2'));
 
@@ -61,6 +64,8 @@ import {
   getUserScore,
   getOpponentScore
 } from './utils/battleHelpers';
+// V3-safe portfolio helpers (handles tiered objects and flat arrays)
+import { safePortfolioArray, getUserPortfolioFlat, getOpponentPortfolioFlat, getBothPortfoliosFlat, getAllBattleSymbols } from './utils/portfolioHelpers';
 // Snake Draft asset pools
 import { STEADY_STOCKS, RISKY_STOCKS, DEFENSIVE_STOCKS, STEADY_CRYPTO, RISKY_CRYPTO, DEFENSIVE_CRYPTO } from './services/draftAssets';
 // Recommendation Engine
@@ -75,6 +80,7 @@ import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 import { ConfirmationPopup } from './components/shared';
+import ErrorBoundary from './components/ErrorBoundary';
 // Dashboard Components
 import { GameModeToggle, ResearchModeButton, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity, SeasonalBanner, TrainingLiveFeed } from './components/Dashboard';
 
@@ -176,6 +182,31 @@ const storageWithExpiry = {
     }
   }
 };
+
+// ============================================
+// GLOBAL FILTER ERROR INTERCEPTOR
+// ============================================
+// Monkey-patch Array.prototype.filter to catch the crash with context
+const originalFilter = Array.prototype.filter;
+Array.prototype.filter = function(...args) {
+  return originalFilter.apply(this, args);
+};
+
+// Add global error handler for uncaught errors
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (event) => {
+    if (event.message?.includes('filter is not a function')) {
+      console.error('🔴 FILTER CRASH DETECTED:', {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        error: event.error,
+      });
+      console.trace('Stack trace at filter crash');
+    }
+  });
+}
 
 // ============================================
 // SECTOR COLOR DEFINITIONS
@@ -5224,11 +5255,24 @@ const WatchlistNews = ({ colors }) => {
     // 3. Check recent battle data for stocks user has picked
     try {
       const battles = JSON.parse(localStorage.getItem('portfolioDuelBattles') || '[]');
-      battles.slice(0, 5).forEach(battle => {
-        if (battle.player1?.portfolio) {
-          battle.player1.portfolio.forEach(asset => {
-            if (asset.symbol && asset.type !== 'crypto') {
+      (Array.isArray(battles) ? battles : []).slice(0, 5).forEach(battle => {
+        const portfolio = battle.player1?.portfolio;
+        // Handle both flat array and tiered object portfolios
+        if (Array.isArray(portfolio)) {
+          portfolio.forEach(asset => {
+            if (asset?.symbol && asset.type !== 'crypto') {
               symbols.add(asset.symbol.toUpperCase());
+            }
+          });
+        } else if (portfolio && typeof portfolio === 'object') {
+          // V3 tiered portfolio: extract from star/core/support
+          ['star', 'core', 'support'].forEach(tier => {
+            if (Array.isArray(portfolio[tier])) {
+              portfolio[tier].forEach(asset => {
+                if (asset?.symbol && asset.type !== 'crypto') {
+                  symbols.add(asset.symbol.toUpperCase());
+                }
+              });
             }
           });
         }
@@ -11332,6 +11376,8 @@ export default function PortfolioDuel() {
 
   // Draft Fixes state
   const [activeDraftBanner, setActiveDraftBanner] = useState(null);
+  // BaggerBomb V3 active battle banner
+  const [activeBaggerBombBanner, setActiveBaggerBombBanner] = useState(null);
   const [autopickCountdown, setAutopickCountdown] = useState(null);
   const [isRosterExpanded, setIsRosterExpanded] = useState(false);
   const [rosterTouchStart, setRosterTouchStart] = useState(null);
@@ -11350,6 +11396,10 @@ export default function PortfolioDuel() {
   const [showSnakeDraftModal, setShowSnakeDraftModal] = useState(false);
   const [showBuilderModal, setShowBuilderModal] = useState(false);
   const [showBaggerBombModal, setShowBaggerBombModal] = useState(false);
+  // BaggerBomb Lobby state
+  const [lobbyBattles, setLobbyBattles] = useState([]);
+  const [lobbyLoading, setLobbyLoading] = useState(false);
+  const [battleToJoin, setBattleToJoin] = useState(null); // Battle ID when joining from lobby
   const [showOptionsArenaModal, setShowOptionsArenaModal] = useState(false);
   // BaggerBomb Scoring battle mode selection in create battle confirmation
   const [battleScoringMode, setBattleScoringMode] = useState('classic'); // 'classic' | 'baggerbomb'
@@ -12452,6 +12502,28 @@ export default function PortfolioDuel() {
     return () => clearInterval(interval);
   }, [screen, battles]);
 
+  // Subscribe to all game lobbies (BaggerBomb + Snake Draft) for dashboard and lobby screens
+  useEffect(() => {
+    // Subscribe on dashboard or lobby screens to show open lobbies in LiveFeed
+    const shouldSubscribe = screen === 'dashboard' || screen === 'baggerBombLobby';
+
+    if (!shouldSubscribe) {
+      return;
+    }
+
+    setLobbyLoading(true);
+
+    // Use combined subscription for all game types
+    const unsubscribe = subscribeToAllLobbies((lobbies) => {
+      setLobbyBattles(lobbies);
+      setLobbyLoading(false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [screen]);
+
   // Subscribe to Firestore battle updates for real-time sync
   useEffect(() => {
     if (!user) return;
@@ -12477,12 +12549,23 @@ export default function PortfolioDuel() {
         opponent: fb.opponent?.username || fb.opponent,
         opponentPortfolio: fb.opponent?.portfolio || fb.opponentPortfolio,
         status: fb.state?.status || fb.status,
-        startDate: fb.timeline?.startDate || fb.startDate,
-        endDate: fb.timeline?.endDate || fb.endDate,
-        createdAt: fb.timeline?.createdAt || fb.createdAt,
+        startDate: fb.timing?.scheduledStart || fb.timeline?.startDate || fb.startDate,
+        endDate: fb.timing?.scheduledEnd || fb.timeline?.endDate || fb.endDate,
+        createdAt: fb.timing?.createdAt || fb.timeline?.createdAt || fb.createdAt,
         startingPrices: fb.state?.startingPrices || fb.startingPrices,
         firestoreId: fb.id,
         _v: fb._v || 1, // Preserve version marker
+        type: fb.type, // Preserve battle type for V3
+        // Preserve full V3 structure for BaggerBomb battles
+        ...(fb._v >= 2 && {
+          creator: fb.creator,
+          opponent: fb.opponent,
+          timing: fb.timing,
+          state: fb.state,
+          thresholds: fb.thresholds,
+          sessionScores: fb.sessionScores,
+          events: fb.events,
+        }),
         _source: 'firestore' // Mark source for debugging
       }));
 
@@ -12714,9 +12797,12 @@ export default function PortfolioDuel() {
         const progressPercent = (elapsed / totalDuration) * 100;
 
         // Calculate current portfolio values
-        const isCreator = currentBattle.creator === user?.username;
-        const myPortfolio = isCreator ? currentBattle.creatorPortfolio : currentBattle.opponentPortfolio;
-        const theirPortfolio = isCreator ? currentBattle.opponentPortfolio : currentBattle.creatorPortfolio;
+        const isCreator = currentBattle.creator === user?.username ||
+                          currentBattle.creator?.username === user?.username ||
+                          currentBattle.creator?.odUserId === user?.odUserId;
+
+        // Get portfolios as flat arrays (V3-safe via portfolioHelpers)
+        const { myPortfolio, theirPortfolio } = getBothPortfoliosFlat(currentBattle, user?.username);
 
         // Calculate gains using current battle prices
         let myTotalValue = 0;
@@ -12724,30 +12810,32 @@ export default function PortfolioDuel() {
 
         if (battlePrices && Object.keys(battlePrices).length > 0) {
           // User portfolio value
-          for (const asset of myPortfolio || []) {
-            const startPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
+          for (const asset of myPortfolio) {
+            if (!asset) continue;
+            const startPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price || 1;
             const currentPrice = battlePrices[asset.symbol] || startPrice;
-            const shares = asset.amount / startPrice;
+            const shares = (asset.amount || 0) / startPrice;
             const isShort = asset.position === 'short';
 
             if (isShort) {
               const priceChange = startPrice - currentPrice;
-              myTotalValue += asset.amount + (shares * priceChange);
+              myTotalValue += (asset.amount || 0) + (shares * priceChange);
             } else {
               myTotalValue += shares * currentPrice;
             }
           }
 
           // Opponent portfolio value
-          for (const asset of theirPortfolio || []) {
-            const startPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price;
+          for (const asset of theirPortfolio) {
+            if (!asset) continue;
+            const startPrice = currentBattle.startingPrices?.[asset.symbol] || asset.price || 1;
             const currentPrice = battlePrices[asset.symbol] || startPrice;
-            const shares = asset.amount / startPrice;
+            const shares = (asset.amount || 0) / startPrice;
             const isShort = asset.position === 'short';
 
             if (isShort) {
               const priceChange = startPrice - currentPrice;
-              theirTotalValue += asset.amount + (shares * priceChange);
+              theirTotalValue += (asset.amount || 0) + (shares * priceChange);
             } else {
               theirTotalValue += shares * currentPrice;
             }
@@ -13039,8 +13127,8 @@ export default function PortfolioDuel() {
         prediction = challenge.options[Math.floor(Math.random() * challenge.options.length)];
         break;
       case 'double_down':
-        // CPU picks from its portfolio
-        const cpuPortfolio = currentBattle?.opponentPortfolio || [];
+        // CPU picks from its portfolio (V3-safe)
+        const cpuPortfolio = safePortfolioArray(currentBattle?.opponentPortfolio || currentBattle?.opponent?.portfolio);
         const cpuStocks = cpuPortfolio.filter(a => a.position !== 'short').map(a => a.symbol);
         if (cpuStocks.length > 0) {
           prediction = cpuStocks[Math.floor(Math.random() * cpuStocks.length)];
@@ -13392,14 +13480,13 @@ export default function PortfolioDuel() {
 
         // ⭐ For active battles, fetch current live prices
         console.log('📊 Fetching live prices for active battle');
-        
-        // Get all unique symbols from both portfolios
-        const allAssets = [
-          ...currentBattle.creatorPortfolio,
-          ...(currentBattle.opponentPortfolio || [])
-        ];
 
-        const uniqueSymbols = [...new Set(allAssets.map(a => a.symbol))];
+        // Get all unique symbols from both portfolios (V3-safe)
+        const creatorPortfolio = safePortfolioArray(currentBattle.creatorPortfolio || currentBattle.creator?.portfolio);
+        const opponentPortfolio = safePortfolioArray(currentBattle.opponentPortfolio || currentBattle.opponent?.portfolio);
+        const allAssets = [...creatorPortfolio, ...opponentPortfolio];
+
+        const uniqueSymbols = getAllBattleSymbols(currentBattle);
 
         // Fetch current prices for each asset
         const priceMap = {};
@@ -13723,6 +13810,45 @@ export default function PortfolioDuel() {
     return () => clearInterval(checkInterval);
   }, [screen, user]);
 
+  // Check for active BaggerBomb V3 battles on dashboard (rejoin functionality)
+  useEffect(() => {
+    if (screen !== 'dashboard') {
+      setActiveBaggerBombBanner(null);
+      return;
+    }
+
+    const userId = user?.odUserId || user?.uid || user?.username;
+    if (!userId) return;
+
+    // Check battles array for user's active or waiting BaggerBomb V3 battles
+    const userBaggerBombBattles = battles.filter(battle => {
+      if (battle._v !== 3) return false;
+      if (battle.archived) return false;
+
+      const status = battle.state?.status;
+      if (status !== 'waiting' && status !== 'active') return false;
+
+      // Check if user is creator or opponent
+      const isCreator = battle.creator?.odUserId === userId || battle.creator?.uid === userId;
+      const isOpponent = battle.opponent?.odUserId === userId || battle.opponent?.uid === userId;
+
+      return isCreator || isOpponent;
+    }, 'userBaggerBombBattles in V3 banner check');
+
+    // Show the most recent active/waiting battle
+    if (userBaggerBombBattles.length > 0) {
+      // Sort by creation time, most recent first
+      const sorted = [...userBaggerBombBattles].sort((a, b) => {
+        const aTime = a.timing?.createdAt || 0;
+        const bTime = b.timing?.createdAt || 0;
+        return new Date(bTime) - new Date(aTime);
+      });
+      setActiveBaggerBombBanner(sorted[0]);
+    } else {
+      setActiveBaggerBombBanner(null);
+    }
+  }, [screen, user, battles]);
+
   // Browser close warning for active draft - Phase 4
   useEffect(() => {
     const handleBeforeUnload = (e) => {
@@ -13783,12 +13909,11 @@ export default function PortfolioDuel() {
   // Fetch current prices for all assets in a battle
   async function fetchCurrentPricesForBattle(battle) {
     const prices = {};
-    
-    // Get all unique assets from both portfolios
-    const allAssets = [
-      ...(battle.creatorPortfolio || []),
-      ...(battle.opponentPortfolio || [])
-    ];
+
+    // Get all unique assets from both portfolios (V3-safe via portfolioHelpers)
+    const creatorPortfolio = safePortfolioArray(battle.creatorPortfolio || battle.creator?.portfolio);
+    const opponentPortfolio = safePortfolioArray(battle.opponentPortfolio || battle.opponent?.portfolio);
+    const allAssets = [...creatorPortfolio, ...opponentPortfolio];
     
     for (const asset of allAssets) {
       if (prices[asset.symbol]) continue; // Skip if already fetched
@@ -14958,18 +15083,22 @@ export default function PortfolioDuel() {
 
   // Get battles for current user (handles both V1 string and V2 object formats)
   const userBattles = battles.filter(b =>
-    getUsername(b.creator) === user?.username || getUsername(b.opponent) === user?.username
+    getUsername(b.creator) === user?.username || getUsername(b.opponent) === user?.username,
+    'userBattles from battles'
   );
 
   // Separate battles by status
-  const activeBattles = userBattles.filter(b => 
-    battleTimer.getBattleStatus(b) === 'active'
+  const activeBattles = userBattles.filter(b =>
+    battleTimer.getBattleStatus(b) === 'active',
+    'activeBattles from userBattles'
   );
-  const waitingBattles = userBattles.filter(b => 
-    battleTimer.getBattleStatus(b) === 'waiting'
+  const waitingBattles = userBattles.filter(b =>
+    battleTimer.getBattleStatus(b) === 'waiting',
+    'waitingBattles from userBattles'
   );
-  const completedBattles = userBattles.filter(b => 
-    battleTimer.getBattleStatus(b) === 'completed'
+  const completedBattles = userBattles.filter(b =>
+    battleTimer.getBattleStatus(b) === 'completed',
+    'completedBattles from userBattles'
   );
 
   // ============================================
@@ -15143,12 +15272,9 @@ export default function PortfolioDuel() {
     const [timeLeft, setTimeLeft] = useState(300);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Get user's portfolio for double down challenge
-    const isCreator = currentBattle?.creator === user?.username;
-    const userPortfolio = isCreator
-      ? currentBattle?.creatorPortfolio || []
-      : currentBattle?.opponentPortfolio || [];
-    const userStocks = userPortfolio.filter(a => a.position !== 'short').map(a => a.symbol);
+    // Get user's portfolio for double down challenge (V3-safe via portfolioHelpers)
+    const userPortfolio = getUserPortfolioFlat(currentBattle, user?.username);
+    const userStocks = userPortfolio.filter(a => a?.position !== 'short').map(a => a?.symbol).filter(Boolean);
 
     // Countdown timer
     useEffect(() => {
@@ -18456,27 +18582,53 @@ export default function PortfolioDuel() {
     // Helper function to calculate battle preview data for any battle
     const calculateBattlePreviewData = (battle) => {
       if (!battle) return null;
+
+      // V3 BaggerBomb battles use totalScore instead of portfolio values
+      if (battle._v === 3) {
+        const isCreator = (battle.creator?.odUserId || battle.creator?.uid) === (user?.odUserId || user?.username) ||
+                          battle.creator?.username === user?.username;
+        const opponent = isCreator
+          ? (battle.opponent?.username || 'Opponent')
+          : (battle.creator?.username || 'Creator');
+        const myScore = isCreator ? (battle.creator?.totalScore || 0) : (battle.opponent?.totalScore || 0);
+        const theirScore = isCreator ? (battle.opponent?.totalScore || 0) : (battle.creator?.totalScore || 0);
+
+        return {
+          opponent,
+          myGain: myScore,
+          theirGain: theirScore,
+          isWinning: myScore > theirScore,
+          leadBy: Math.abs(myScore - theirScore),
+          myValue: 1000000 + myScore * 1000,
+          theirValue: 1000000 + theirScore * 1000,
+          isV3: true
+        };
+      }
+
       const isCreator = getUsername(battle.creator) === user.username;
       const opponent = isCreator ? getUsername(battle.opponent) : getUsername(battle.creator);
-      const myPortfolio = isCreator ? battle.creatorPortfolio : battle.opponentPortfolio;
-      const theirPortfolio = isCreator ? battle.opponentPortfolio : battle.creatorPortfolio;
 
-      if (!myPortfolio || !theirPortfolio) return null;
+      // Get flattened portfolios (V3-safe via portfolioHelpers)
+      const { myPortfolio, theirPortfolio } = getBothPortfoliosFlat(battle, user.username);
+
+      if (!myPortfolio.length || !theirPortfolio.length) return null;
 
       let myValue = 0;
       myPortfolio.forEach(asset => {
-        const shares = asset.amount / asset.price;
-        myValue += shares * asset.price;
+        if (!asset) return;
+        const shares = (asset.amount || 0) / (asset.price || 1);
+        myValue += shares * (asset.price || 0);
       });
 
       let theirValue = 0;
       theirPortfolio.forEach(asset => {
-        const shares = asset.amount / asset.price;
-        theirValue += shares * asset.price;
+        if (!asset) return;
+        const shares = (asset.amount || 0) / (asset.price || 1);
+        theirValue += shares * (asset.price || 0);
       });
 
-      const myGain = ((myValue - 1000000) / 1000000) * 100;
-      const theirGain = ((theirValue - 1000000) / 1000000) * 100;
+      const myGain = myValue > 0 ? ((myValue - 1000000) / 1000000) * 100 : 0;
+      const theirGain = theirValue > 0 ? ((theirValue - 1000000) / 1000000) * 100 : 0;
       const isWinning = myGain > theirGain;
       const leadBy = Math.abs(myGain - theirGain);
 
@@ -18507,34 +18659,35 @@ export default function PortfolioDuel() {
     const nextRank = currentRankIndex < ranks.length - 1 ? ranks[currentRankIndex + 1] : 'Max Rank';
 
     return (
-      <div style={containerStyle}>
-        {/* Animated Desktop Background */}
-        <DesktopBackground isDesktop={isDesktop} />
+      <ErrorBoundary>
+        <div style={containerStyle}>
+          {/* Animated Desktop Background */}
+          <DesktopBackground isDesktop={isDesktop} />
 
-        {/* Global Overlays */}
-        <ChallengeToast />
-        <MidGameChallengePopup />
-        <RiskChallengePopup />
-        <RiskChallengeResultPopup />
-        {showSlotMachine && weeklyChallenges.length >= 4 && (
-          <SlotMachineContent
-            challenges={weeklyChallenges}
-            onClose={() => {
-              setShowSlotMachine(false);
-              setSlotMachineRevealed(true);
-              markSlotMachineShown();
-            }}
-          />
-        )}
+          {/* Global Overlays */}
+          <ChallengeToast />
+          <MidGameChallengePopup />
+          <RiskChallengePopup />
+          <RiskChallengeResultPopup />
+          {showSlotMachine && weeklyChallenges.length >= 4 && (
+            <SlotMachineContent
+              challenges={weeklyChallenges}
+              onClose={() => {
+                setShowSlotMachine(false);
+                setSlotMachineRevealed(true);
+                markSlotMachineShown();
+              }}
+            />
+          )}
 
-        <div style={{
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          background: colors.background,
-          position: 'relative',
-          zIndex: 1
-        }}>
+          <div style={{
+            minHeight: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            background: colors.background,
+            position: 'relative',
+            zIndex: 1
+          }}>
           {/* XP Progress Modal */}
           {showXPModal && (
             <div
@@ -19014,6 +19167,7 @@ export default function PortfolioDuel() {
                   waitingBattles={waitingBattles}
                   completedBattles={completedBattles}
                   stocksData={stocksData}
+                  lobbyBattles={lobbyBattles}
                   user={user}
                   colors={colors}
                   setCurrentBattle={setCurrentBattle}
@@ -19022,6 +19176,42 @@ export default function PortfolioDuel() {
                   setJoinCode={setJoinCode}
                   setJoinBattleType={setJoinBattleType}
                   setCurrentDraft={setCurrentDraft}
+                  onJoinLobby={async (lobby) => {
+                    // Handle BaggerBomb V3 lobbies
+                    if (lobby._v === 3) {
+                      setBattleToJoin(lobby);
+                      setScreen('baggerBombJoinBuilder');
+                      return;
+                    }
+                    // Handle Snake Draft lobbies - need to join the draft first
+                    if (lobby.isSnakeDraft || lobby.battleType === 'snake-draft') {
+                      try {
+                        const draftService = await import('./services/draftService');
+                        const userId = user?.odUserId || user?.username;
+                        const username = user?.odUsername || user?.username;
+
+                        // Check if user is already in the draft
+                        const existingPlayer = lobby.players?.find(p => p.odUserId === userId);
+                        if (existingPlayer) {
+                          // Already in draft, just navigate
+                          setCurrentDraft(lobby);
+                          setDraftState(lobby);
+                          setScreen('draftLobby');
+                          return;
+                        }
+
+                        // Join the draft by code
+                        const draft = await draftService.joinDraftByCode(lobby.code, userId, username);
+                        setCurrentDraft(draft);
+                        setDraftState(draft);
+                        setScreen('draftLobby');
+                      } catch (error) {
+                        console.error('Failed to join Snake Draft:', error);
+                        alert(error.message || 'Failed to join draft');
+                      }
+                      return;
+                    }
+                  }}
                 />
               </>
             )}
@@ -20947,7 +21137,7 @@ export default function PortfolioDuel() {
 
               // Check if current user is involved in this battle
               return getUsername(b.creator) === user?.username || getUsername(b.opponent) === user?.username;
-            });
+            }, 'userPvPBattles in create battle confirm');
 
             if (userPvPBattles.length >= MAX_PVP_BATTLES) {
               alert(`You've reached the maximum of ${MAX_PVP_BATTLES} active PvP battles. Complete or delete a battle first.`);
@@ -21076,7 +21266,7 @@ export default function PortfolioDuel() {
 
               // Check if current user is the creator of this training battle
               return getUsername(b.creator) === user?.username;
-            });
+            }, 'userTrainingBattles in classic training confirm');
 
             if (userTrainingBattles.length >= MAX_TRAINING_BATTLES) {
               alert(`You've reached the maximum of ${MAX_TRAINING_BATTLES} active training battles. Complete or delete a battle first.`);
@@ -21129,7 +21319,7 @@ export default function PortfolioDuel() {
 
               // Check if current user is the creator of this training battle
               return getUsername(b.creator) === user?.username;
-            });
+            }, 'userTrainingBattles in BaggerBomb training confirm');
 
             if (userTrainingBattles.length >= MAX_TRAINING_BATTLES) {
               alert(`You've reached the maximum of ${MAX_TRAINING_BATTLES} active training battles. Complete or delete a battle first.`);
@@ -21303,22 +21493,15 @@ export default function PortfolioDuel() {
           }}
         />
 
-        {/* BaggerBomb Modal (with Create/Join) */}
+        {/* BaggerBomb Modal - Now goes to Lobby */}
         <ConfirmationPopup
           show={showBaggerBombModal}
           onClose={() => setShowBaggerBombModal(false)}
           onConfirm={() => {
             setShowBaggerBombModal(false);
-            // Navigate to BaggerBomb create flow
-            setScreen('baggerBombBuilder');
+            // Navigate to BaggerBomb Lobby
+            setScreen('baggerBombLobby');
           }}
-          secondaryAction={() => {
-            setShowBaggerBombModal(false);
-            // Navigate to BaggerBomb join flow
-            setJoinBattleType('baggerbomb');
-            setScreen('join');
-          }}
-          secondaryText="Join Game"
           icon={<span style={{ fontSize: '32px' }}>💣</span>}
           iconBgColor="#dc2626"
           title="BaggerBomb"
@@ -21329,7 +21512,7 @@ export default function PortfolioDuel() {
             { label: 'Duration', value: '1 hour' },
             { label: 'Rewards', value: '+15 XP (win) / +5 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
           ]}
-          confirmText="Create Game"
+          confirmText="Enter Lobby"
           confirmColor="#dc2626"
           hideTutorial
         />
@@ -21368,7 +21551,8 @@ export default function PortfolioDuel() {
 
         {/* ========== SPOTLIGHT TOUR (Interactive Onboarding) ========== */}
         <SpotlightTour />
-      </div>
+        </div>
+      </ErrorBoundary>
     );
   }
 
@@ -21445,6 +21629,167 @@ export default function PortfolioDuel() {
           }}
         />
       </Suspense>
+    );
+  }
+
+  // BAGGERBOMB LOBBY - Find and join open battles
+  if (screen === 'baggerBombLobby') {
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        <BaggerBombLobby
+          user={user}
+          openBattles={lobbyBattles}
+          loading={lobbyLoading}
+          onCreateBattle={() => {
+            setBattleToJoin(null);
+            setScreen('baggerBombBuilder');
+          }}
+          onJoinBattle={(battle) => {
+            setBattleToJoin(battle);
+            setScreen('baggerBombJoinBuilder');
+          }}
+          onBack={() => setScreen('dashboard')}
+          onRefresh={async () => {
+            setLobbyLoading(true);
+            try {
+              const battles = await getOpenBaggerBombBattles();
+              setLobbyBattles(battles);
+            } catch (err) {
+              console.error('Failed to refresh lobby:', err);
+            }
+            setLobbyLoading(false);
+          }}
+        />
+      </Suspense>
+    );
+  }
+
+  // BAGGERBOMB CREATE BATTLE - New SlotBasedBuilder
+  if (screen === 'baggerBombBuilder') {
+    return (
+      <SlotBasedBuilder
+        stocks={stocksData}
+        crypto={cryptoData}
+        onComplete={async (portfolio) => {
+          try {
+            console.log('[BaggerBomb] Portfolio submitted:', portfolio);
+            // Create BaggerBomb V3 battle with tiered portfolio structure
+            const battleData = await createBaggerBombBattleV3({
+              portfolio: {
+                star: portfolio.star,
+                core: portfolio.core,
+                support: portfolio.support,
+              },
+              bench: portfolio.bench,
+              creator: {
+                uid: user.uid || user.odUserId || user.username,
+                odUserId: user.odUserId || user.username,
+                username: user.displayName || user.username,
+                avatar: user.avatar || '',
+              },
+            });
+            if (battleData?.id) {
+              showToast(`Battle created! Waiting for opponent...`);
+              setCurrentBattle(battleData);
+              setScreen('baggerBombLobby'); // Go back to lobby to see pending battle
+            }
+          } catch (error) {
+            console.error('Failed to create BaggerBomb battle:', error);
+            showToast('Failed to create battle. Please try again.');
+          }
+        }}
+        onBack={() => {
+          setScreen('baggerBombLobby');
+        }}
+      />
+    );
+  }
+
+  // BAGGERBOMB JOIN FROM LOBBY - Build portfolio then join selected battle
+  if (screen === 'baggerBombJoinBuilder') {
+    return (
+      <SlotBasedBuilder
+        stocks={stocksData}
+        crypto={cryptoData}
+        onComplete={async (portfolio) => {
+          try {
+            if (!battleToJoin?.id) {
+              showToast('No battle selected. Please select from lobby.');
+              setScreen('baggerBombLobby');
+              return;
+            }
+            console.log('[BaggerBomb] Joining battle from lobby:', battleToJoin.id);
+            // Join using battle ID directly (lobby join)
+            const result = await joinBaggerBombBattleV3(battleToJoin.id, {
+              portfolio: {
+                star: portfolio.star,
+                core: portfolio.core,
+                support: portfolio.support,
+              },
+              bench: portfolio.bench,
+              uid: user.uid || user.odUserId || user.username,
+              odUserId: user.odUserId || user.username,
+              username: user.displayName || user.username,
+              avatar: user.avatar || '',
+            }, { joinByBattleId: true });
+            if (result?.success) {
+              showToast(`Joined battle!`);
+              setCurrentBattle(result.battle);
+              setBattleToJoin(null);
+              setScreen('battle');
+            }
+          } catch (error) {
+            console.error('Failed to join BaggerBomb battle:', error);
+            showToast('Failed to join battle. It may have already started.');
+            setScreen('baggerBombLobby');
+          }
+        }}
+        onBack={() => {
+          setBattleToJoin(null);
+          setScreen('baggerBombLobby');
+        }}
+      />
+    );
+  }
+
+  // BAGGERBOMB JOIN BATTLE (Legacy - via code)
+  if (screen === 'joinPortfolioBuilderTD') {
+    return (
+      <SlotBasedBuilder
+        stocks={stocksData}
+        crypto={cryptoData}
+        onComplete={async (portfolio) => {
+          try {
+            console.log('[BaggerBomb] Joining with portfolio:', portfolio);
+            // Join BaggerBomb V3 battle with tiered portfolio structure
+            const result = await joinBaggerBombBattleV3(joinCode, {
+              portfolio: {
+                star: portfolio.star,
+                core: portfolio.core,
+                support: portfolio.support,
+              },
+              bench: portfolio.bench,
+              uid: user.uid || user.odUserId || user.username,
+              odUserId: user.odUserId || user.username,
+              username: user.displayName || user.username,
+              avatar: user.avatar || '',
+            });
+            if (result?.success) {
+              showToast(`Joined BaggerBomb battle!`);
+              setCurrentBattle(result.battle);
+              setJoinCode('');
+              setScreen('battle');
+            }
+          } catch (error) {
+            console.error('Failed to join BaggerBomb battle:', error);
+            showToast('Failed to join battle. Please check the code and try again.');
+          }
+        }}
+        onBack={() => {
+          setJoinCode('');
+          setScreen('join');
+        }}
+      />
     );
   }
 
@@ -21773,6 +22118,7 @@ export default function PortfolioDuel() {
         ActiveRiskChallengeIndicator={ActiveRiskChallengeIndicator}
         LoadingFallback={LoadingFallback}
         BaggerBombBattleViewRedesign={BaggerBombBattleViewRedesign}
+        BaggerBombBattleViewConnected={BaggerBombBattleViewConnected}
       />
     );
   }

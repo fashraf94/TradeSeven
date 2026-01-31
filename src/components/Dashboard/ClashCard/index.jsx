@@ -12,23 +12,80 @@ import { getRemainingTime } from '../../../services/battleTimer';
 // Calculate 1v1 battle preview data
 function calculate1v1PreviewData(battle, username) {
   if (!battle) return null;
+
+  // V3 BaggerBomb battles use totalScore instead of portfolio values
+  if (battle._v === 3) {
+    const isCreator = battle.creator?.username === username;
+    const opponent = isCreator ? battle.opponent?.username : battle.creator?.username;
+
+    // V3 uses totalScore for BaggerBomb scoring
+    const myScore = isCreator ? (battle.creator?.totalScore || 0) : (battle.opponent?.totalScore || 0);
+    const theirScore = isCreator ? (battle.opponent?.totalScore || 0) : (battle.creator?.totalScore || 0);
+    const isWinning = myScore > theirScore;
+
+    return {
+      opponent: opponent || 'Opponent',
+      myGain: myScore,
+      theirGain: theirScore,
+      isWinning,
+      isV3: true,
+      status: battle.state?.status,
+    };
+  }
+
   const isCreator = getUsername(battle.creator) === username;
   const opponent = isCreator ? getUsername(battle.opponent) : getUsername(battle.creator);
   const myPortfolio = isCreator ? battle.creatorPortfolio : battle.opponentPortfolio;
   const theirPortfolio = isCreator ? battle.opponentPortfolio : battle.creatorPortfolio;
 
-  if (!myPortfolio || !theirPortfolio) return null;
+  // Portfolios must be arrays - V2 BaggerBomb uses object format, handle that
+  if (!Array.isArray(myPortfolio) || !Array.isArray(theirPortfolio)) {
+    // V2 BaggerBomb battles may have portfolio in creator/opponent objects
+    if (battle._v === 2) {
+      const creatorPortfolio = battle.creator?.portfolio;
+      const opponentPortfolio = battle.opponent?.portfolio;
+
+      // If portfolios are arrays in creator/opponent, use those
+      if (Array.isArray(creatorPortfolio) && Array.isArray(opponentPortfolio)) {
+        const myPort = isCreator ? creatorPortfolio : opponentPortfolio;
+        const theirPort = isCreator ? opponentPortfolio : creatorPortfolio;
+
+        let myValue = 0;
+        myPort.forEach(asset => {
+          if (!asset) return;
+          const shares = (asset.amount || 0) / (asset.price || 1);
+          myValue += shares * (asset.price || 0);
+        });
+
+        let theirValue = 0;
+        theirPort.forEach(asset => {
+          if (!asset) return;
+          const shares = (asset.amount || 0) / (asset.price || 1);
+          theirValue += shares * (asset.price || 0);
+        });
+
+        const myGain = myValue > 0 ? ((myValue - 1000000) / 1000000) * 100 : 0;
+        const theirGain = theirValue > 0 ? ((theirValue - 1000000) / 1000000) * 100 : 0;
+        const isWinning = myGain > theirGain;
+
+        return { opponent, myGain, theirGain, isWinning, myValue, theirValue };
+      }
+    }
+    return null;
+  }
 
   let myValue = 0;
   myPortfolio.forEach(asset => {
-    const shares = asset.amount / asset.price;
-    myValue += shares * asset.price;
+    if (!asset) return;
+    const shares = (asset.amount || 0) / (asset.price || 1);
+    myValue += shares * (asset.price || 0);
   });
 
   let theirValue = 0;
   theirPortfolio.forEach(asset => {
-    const shares = asset.amount / asset.price;
-    theirValue += shares * asset.price;
+    if (!asset) return;
+    const shares = (asset.amount || 0) / (asset.price || 1);
+    theirValue += shares * (asset.price || 0);
   });
 
   const myGain = ((myValue - 1000000) / 1000000) * 100;
@@ -48,7 +105,11 @@ function getRemainingMs(battle) {
   if (battle.battleEndTime) {
     return Math.max(0, new Date(battle.battleEndTime).getTime() - Date.now());
   }
-  // Training format
+  // V3 BaggerBomb format (uses timing.endDate)
+  if (battle.timing?.endDate) {
+    return Math.max(0, new Date(battle.timing.endDate).getTime() - Date.now());
+  }
+  // Training format (uses timeline.endDate)
   if (battle.timeline?.endDate) {
     return Math.max(0, new Date(battle.timeline.endDate).getTime() - Date.now());
   }
@@ -57,7 +118,7 @@ function getRemainingMs(battle) {
 
 // Build standings for draft battles
 function buildDraftStandings(battle, currentUserId) {
-  if (!battle.players || battle.players.length === 0) {
+  if (!Array.isArray(battle.players) || battle.players.length === 0) {
     return { standings: [], myPosition: 1, myPoints: 0, leaderPoints: 0 };
   }
 

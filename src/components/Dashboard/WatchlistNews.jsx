@@ -184,10 +184,11 @@ const WatchlistNews = ({ colors }) => {
     // 3. Check recent battle data for stocks user has picked
     try {
       const battles = JSON.parse(localStorage.getItem('portfolioDuelBattles') || '[]');
-      battles.slice(0, 5).forEach(battle => {
-        if (battle.player1?.portfolio) {
-          battle.player1.portfolio.forEach(asset => {
-            if (asset.symbol && asset.type !== 'crypto') {
+      (Array.isArray(battles) ? battles : []).slice(0, 5).forEach(battle => {
+        const portfolio = battle.player1?.portfolio;
+        if (Array.isArray(portfolio)) {
+          portfolio.forEach(asset => {
+            if (asset?.symbol && asset.type !== 'crypto') {
               symbols.add(asset.symbol.toUpperCase());
             }
           });
