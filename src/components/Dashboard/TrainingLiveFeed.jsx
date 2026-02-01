@@ -394,9 +394,10 @@ export default function TrainingLiveFeed({
     if (!battle) return;
 
     // Convert training battle to unified format for BattleView
+    // Preserve _v from original battle for proper V3 routing
     const convertedBattle = {
       id: battle.id,
-      _v: 2,
+      _v: battle._v || 2,
       challengeCode: 'TRAINING',
       creator: {
         uid: battle.creator?.uid || user?.odUserId,

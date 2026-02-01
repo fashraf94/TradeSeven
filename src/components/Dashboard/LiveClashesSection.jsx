@@ -86,12 +86,14 @@ export default function LiveClashesSection({
       setScreen('draftBattle');
     } else if (type === 'training') {
       // Convert training battle format for battle view
-      const isBaggerBomb = battle._v === 2 || battle.type === 'baggerbomb';
+      const isBaggerBomb = battle._v === 2 || battle._v === 3 || battle.type === 'baggerbomb';
+      const isV3 = battle._v === 3;
       const convertedBattle = {
         id: battle.id,
-        _v: isBaggerBomb ? 2 : 1,
+        _v: isV3 ? 3 : (isBaggerBomb ? 2 : 1), // Preserve V3 for proper routing
         challengeCode: 'TRAINING',
-        creator: isBaggerBomb ? {
+        // V3 uses existing creator/opponent structure, V2 uses player1/player2
+        creator: isBaggerBomb ? (isV3 && battle.creator ? battle.creator : {
           uid: battle.player1?.odUserId || user.odUserId,
           odUserId: battle.player1?.odUserId || user.odUserId,
           username: battle.player1?.username || user.username,
@@ -99,8 +101,8 @@ export default function LiveClashesSection({
           portfolio: battle.player1?.portfolio || [],
           bench: battle.player1?.bench || [],
           portfolioType: battle.player1?.portfolioType || 'baggerbomb'
-        } : undefined,
-        opponent: isBaggerBomb ? {
+        }) : undefined,
+        opponent: isBaggerBomb ? (isV3 && battle.opponent ? battle.opponent : {
           uid: 'cpu',
           odUserId: 'cpu',
           username: 'CPU Opponent',
@@ -108,7 +110,7 @@ export default function LiveClashesSection({
           portfolio: battle.player2?.portfolio || [],
           bench: battle.player2?.bench || [],
           portfolioType: 'baggerbomb'
-        } : undefined,
+        }) : undefined,
         creatorPortfolio: battle.player1?.portfolio || [],
         opponentPortfolio: battle.player2?.portfolio || [],
         portfolioName: battle.player1?.portfolioName || 'Training Portfolio',
