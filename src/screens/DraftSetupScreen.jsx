@@ -1,4 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
+
+// Time options for scheduled start
+const TIME_OPTIONS = [
+  { label: '5 min', value: 5 },
+  { label: '10 min', value: 10 },
+  { label: '30 min', value: 30 },
+  { label: '1 hour', value: 60 },
+  { label: '2 hours', value: 120 },
+  { label: '4 hours', value: 240 },
+  { label: '7 hours', value: 420 },
+  { label: '10 hours', value: 600 },
+];
 
 // Style override to neutralize App.css
 const containerStyle = {
@@ -19,6 +31,11 @@ const DraftSetupScreen = ({
   onBack,
   onCreateDraft
 }) => {
+  const [selectedTime, setSelectedTime] = useState(30); // Default 30 minutes
+
+  // Calculate scheduled start time for preview
+  const scheduledStartTime = new Date(Date.now() + selectedTime * 60000);
+
   return (
     <div style={containerStyle}>
       <div style={{ minHeight: '100vh', background: '#0d1117' }}>
@@ -174,6 +191,66 @@ const DraftSetupScreen = ({
             </div>
           </div>
 
+          {/* Scheduled Start Time */}
+          <div style={{
+            background: '#161b22',
+            border: '1px solid #21262d',
+            borderRadius: '12px',
+            padding: '20px',
+            marginBottom: '24px'
+          }}>
+            <h3 style={{ color: '#ffffff', fontSize: '16px', fontWeight: 'bold', marginBottom: '8px' }}>
+              ⏰ When should the draft start?
+            </h3>
+            <p style={{ color: '#8b949e', fontSize: '13px', marginBottom: '16px' }}>
+              Players have until this time to join. Draft auto-cancels if not full.
+            </p>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: '8px',
+              marginBottom: '12px'
+            }}>
+              {TIME_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  onClick={() => setSelectedTime(option.value)}
+                  style={{
+                    padding: '12px 8px',
+                    background: selectedTime === option.value
+                      ? 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)'
+                      : '#1a1a2e',
+                    border: selectedTime === option.value
+                      ? '2px solid #14b8a6'
+                      : '2px solid #333',
+                    borderRadius: '8px',
+                    color: selectedTime === option.value ? 'white' : '#888',
+                    fontSize: '13px',
+                    fontWeight: selectedTime === option.value ? 'bold' : 'normal',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <div style={{
+              background: 'rgba(20, 184, 166, 0.1)',
+              border: '1px solid rgba(20, 184, 166, 0.3)',
+              borderRadius: '8px',
+              padding: '10px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <span style={{ fontSize: '16px' }}>🚀</span>
+              <span style={{ color: '#14b8a6', fontSize: '14px', fontWeight: '600' }}>
+                Draft starts at: {scheduledStartTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+          </div>
+
           {/* Create Button */}
           <button
             onClick={async () => {
@@ -182,7 +259,8 @@ const DraftSetupScreen = ({
                 const draft = await draftService.createMultiplayerDraft(
                   user.odUserId || user.username,
                   user.username,
-                  assetType
+                  assetType,
+                  selectedTime
                 );
                 onCreateDraft(draft);
               } catch (error) {

@@ -22,6 +22,24 @@ function formatTimeAgo(createdAt) {
   return `${Math.floor(diffHours / 24)}d ago`;
 }
 
+// Format countdown time until scheduled start
+function getTimeUntilStart(scheduledStart) {
+  if (!scheduledStart) return null;
+  const start = new Date(scheduledStart);
+  const now = new Date();
+  const diffMs = start - now;
+
+  if (diffMs <= 0) return 'Starting now!';
+
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 60) return `${diffMins}m`;
+
+  const diffHours = Math.floor(diffMins / 60);
+  const remainingMins = diffMins % 60;
+  if (remainingMins === 0) return `${diffHours}h`;
+  return `${diffHours}h ${remainingMins}m`;
+}
+
 // Get asset count from V3 tiered portfolio
 function getAssetCount(portfolio) {
   if (!portfolio) return 0;
@@ -221,24 +239,49 @@ function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyC
           </span>
         </div>
 
-        {/* Time ago badge */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-          padding: '4px 8px',
-          background: 'rgba(139, 148, 158, 0.1)',
-          borderRadius: '8px',
-          flexShrink: 0,
-        }}>
-          <Clock size={11} style={{ color: '#8b949e' }} />
-          <span style={{
-            fontSize: '11px',
-            fontWeight: '600',
-            color: '#8b949e',
+        {/* Time badges: Countdown (for Snake Draft) + Time ago */}
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
+          {/* Countdown badge for Snake Draft */}
+          {isSnakeDraft && lobby.scheduledStart && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 8px',
+              background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
+              border: '1px solid #14b8a6',
+              borderRadius: '8px',
+              boxShadow: '0 0 8px rgba(20, 184, 166, 0.3)',
+            }}>
+              <span style={{ fontSize: '11px' }}>⏱</span>
+              <span style={{
+                fontSize: '11px',
+                fontWeight: '700',
+                color: 'white',
+              }}>
+                {getTimeUntilStart(lobby.scheduledStart)}
+              </span>
+            </div>
+          )}
+
+          {/* Time ago badge */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '4px 8px',
+            background: 'rgba(139, 148, 158, 0.1)',
+            borderRadius: '8px',
           }}>
-            {formatTimeAgo(createdAt)}
-          </span>
+            <Clock size={11} style={{ color: '#8b949e' }} />
+            <span style={{
+              fontSize: '11px',
+              fontWeight: '600',
+              color: '#8b949e',
+            }}>
+              {formatTimeAgo(createdAt)}
+            </span>
+          </div>
         </div>
       </div>
 

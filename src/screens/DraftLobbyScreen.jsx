@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // Style override to neutralize App.css
 const containerStyle = {
@@ -12,6 +12,24 @@ const containerStyle = {
   overflowX: 'hidden'
 };
 
+// Helper to format countdown time
+const getTimeUntilStart = (scheduledStart) => {
+  if (!scheduledStart) return null;
+  const start = new Date(scheduledStart);
+  const now = new Date();
+  const diffMs = start - now;
+
+  if (diffMs <= 0) return 'Starting now!';
+
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 60) return `${diffMins}m`;
+
+  const diffHours = Math.floor(diffMins / 60);
+  const remainingMins = diffMins % 60;
+  if (remainingMins === 0) return `${diffHours}h`;
+  return `${diffHours}h ${remainingMins}m`;
+};
+
 const DraftLobbyScreen = ({
   user,
   currentDraft,
@@ -21,8 +39,22 @@ const DraftLobbyScreen = ({
   onLeaveLobby
 }) => {
   const [draftCopied, setDraftCopied] = useState(false);
+  const [countdown, setCountdown] = useState('');
 
   const lobbyDraft = draftState || currentDraft;
+
+  // Update countdown every minute
+  useEffect(() => {
+    if (!lobbyDraft?.scheduledStart) return;
+
+    const updateCountdown = () => {
+      setCountdown(getTimeUntilStart(lobbyDraft.scheduledStart));
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 60000);
+    return () => clearInterval(interval);
+  }, [lobbyDraft?.scheduledStart]);
   const isHost = lobbyDraft?.hostId === (user.odUserId || user.username);
   const playerCount = lobbyDraft?.players?.length || 0;
   const canStart = playerCount === 4;
@@ -52,11 +84,8 @@ const DraftLobbyScreen = ({
   const handleLeaveLobby = async () => {
     try {
       const draftService = await import('../services/draftService');
-      if (isHost) {
-        await draftService.cancelDraft(lobbyDraft.id);
-      } else {
-        await draftService.leaveDraft(lobbyDraft.id, user.odUserId || user.username);
-      }
+      // Both host and players just leave - lobby remains active
+      await draftService.leaveDraft(lobbyDraft.id, user.odUserId || user.username);
       onLeaveLobby();
     } catch (error) {
       console.error('Failed to leave:', error);
@@ -100,21 +129,40 @@ const DraftLobbyScreen = ({
         </div>
 
         <div style={{ maxWidth: '600px', margin: '0 auto', padding: '24px 16px' }}>
-          {/* Draft Type Badge */}
+          {/* Draft Type Badge + Countdown */}
           <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-            <span style={{
-              display: 'inline-block',
-              padding: '8px 16px',
-              background: 'rgba(139, 92, 246, 0.2)',
-              border: '1px solid #8b5cf6',
-              borderRadius: '20px',
-              color: '#8b5cf6',
-              fontSize: '14px',
-              fontWeight: '600',
-              textTransform: 'capitalize'
-            }}>
-              {lobbyDraft?.type} Draft
-            </span>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <span style={{
+                display: 'inline-block',
+                padding: '8px 16px',
+                background: 'rgba(139, 92, 246, 0.2)',
+                border: '1px solid #8b5cf6',
+                borderRadius: '20px',
+                color: '#8b5cf6',
+                fontSize: '14px',
+                fontWeight: '600',
+                textTransform: 'capitalize'
+              }}>
+                {lobbyDraft?.type} Draft
+              </span>
+              {countdown && (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 16px',
+                  background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
+                  border: '1px solid #14b8a6',
+                  borderRadius: '20px',
+                  color: 'white',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  boxShadow: '0 0 12px rgba(20, 184, 166, 0.3)'
+                }}>
+                  <span>⏱</span> Starts in {countdown}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Code Display */}
@@ -259,16 +307,27 @@ const DraftLobbyScreen = ({
               onClick={handleLeaveLobby}
               style={{
                 width: '100%',
-                padding: '14px',
-                background: 'transparent',
-                border: '1px solid #21262d',
+                padding: '14px 24px',
+                background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+                border: '2px solid #ef4444',
                 borderRadius: '12px',
-                color: '#8b949e',
+                color: 'white',
                 cursor: 'pointer',
-                fontSize: '14px'
+                fontSize: '16px',
+                fontWeight: 'bold',
+                boxShadow: '0 0 20px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255,255,255,0.2)',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.boxShadow = '0 0 30px rgba(239, 68, 68, 0.6), inset 0 1px 0 rgba(255,255,255,0.2)';
+                e.currentTarget.style.transform = 'scale(1.02)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.boxShadow = '0 0 20px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255,255,255,0.2)';
+                e.currentTarget.style.transform = 'scale(1)';
               }}
             >
-              {isHost ? 'Cancel Draft' : '← Leave Lobby'}
+              ← Leave Lobby
             </button>
           </div>
         </div>

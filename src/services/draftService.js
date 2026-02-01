@@ -57,10 +57,17 @@ const removeUndefined = (obj) => {
 
 /**
  * Create a multiplayer draft lobby (waiting for players)
+ * @param {string} userId - Creator's user ID
+ * @param {string} username - Creator's username
+ * @param {string} type - 'stocks' or 'crypto'
+ * @param {number} startTimeMinutes - Minutes until draft auto-starts (default 30)
  */
-export async function createMultiplayerDraft(userId, username, type) {
+export async function createMultiplayerDraft(userId, username, type, startTimeMinutes = 30) {
   const code = generateDraftCode();
   const draftId = `draft_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  // Calculate scheduled start time
+  const scheduledStart = new Date(Date.now() + startTimeMinutes * 60000).toISOString();
 
   const draft = {
     id: draftId,
@@ -90,6 +97,8 @@ export async function createMultiplayerDraft(userId, username, type) {
     picks: [],
     availableAssets: getAssetPool(type),
     createdAt: serverTimestamp(),
+    scheduledStart, // When the draft should start
+    startTimeMinutes, // Original minutes setting
     startedAt: null,
     completedAt: null,
     battleId: null
@@ -275,19 +284,29 @@ export async function startDraft(draftId) {
 }
 
 /**
- * Leave a draft lobby
+ * Leave a draft lobby (host and players can both leave)
+ * Lobby remains active - only auto-disbands when scheduled time arrives with <4 players
  */
 export async function leaveDraft(draftId, userId) {
   const draft = await getDraft(draftId);
 
   if (!draft) throw new Error('Draft not found');
   if (draft.status !== 'waiting') throw new Error('Cannot leave after draft started');
-  if (draft.hostId === userId) throw new Error('Host cannot leave - cancel instead');
 
   const updatedPlayers = draft.players.filter(p => p.odUserId !== userId);
+  const updatedPlayerIds = draft.playerIds?.filter(id => id !== userId) || [];
+
+  // If host leaves, reassign host to next player (if any remain)
+  let newHostId = draft.hostId;
+  if (draft.hostId === userId && updatedPlayers.length > 0) {
+    newHostId = updatedPlayers[0].odUserId;
+    updatedPlayers[0] = { ...updatedPlayers[0], isHost: true };
+  }
 
   await updateDoc(doc(db, 'drafts', draftId), {
-    players: updatedPlayers
+    players: updatedPlayers,
+    playerIds: updatedPlayerIds,
+    hostId: newHostId
   });
 }
 
