@@ -84,12 +84,19 @@ function AssetSide({
             style={{
               fontWeight: 700,
               fontSize: '14px',
-              color: HOLO_COLORS.textPrimary,
+              color: onSymbolClick ? '#14b8a6' : HOLO_COLORS.textPrimary,
               cursor: onSymbolClick ? 'pointer' : 'default',
-              textDecoration: onSymbolClick ? 'underline' : 'none',
-              textDecorationStyle: 'dotted',
-              textUnderlineOffset: '3px',
               display: 'inline-block',
+              padding: '2px 6px',
+              margin: '-2px -6px',
+              borderRadius: '4px',
+              transition: 'background 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              if (onSymbolClick) e.target.style.background = 'rgba(13, 148, 136, 0.2)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = 'transparent';
             }}
           >
             {symbol}

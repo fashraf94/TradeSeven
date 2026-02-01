@@ -26,7 +26,6 @@ function calculateNextThreshold(priceChange, baseATR, history) {
     return { distance: 0, label: '—', icon: '', direction: 'neutral', isPrimed: false };
   }
 
-  const multiplier = priceChange / baseATR;
   const maxReached = history?.maxMultiplier || 0;
   const minReached = history?.minMultiplier || 0;
 
@@ -38,34 +37,38 @@ function calculateNextThreshold(priceChange, baseATR, history) {
     if (maxReached < THRESHOLDS.bagger.multiplier) {
       const targetPercent = baseATR * THRESHOLDS.bagger.multiplier;
       const distance = targetPercent - priceChange;
+      // isPrimed when within 50% of threshold
+      const isPrimed = distance <= targetPercent * 0.5;
       return {
         distance: Math.max(0, distance),
         label: THRESHOLDS.bagger.label,
         icon: THRESHOLDS.bagger.icon,
         direction: 'positive',
-        isPrimed: distance <= baseATR * 0.1,
+        isPrimed,
       };
     }
     if (maxReached < THRESHOLDS.doubleBagger.multiplier) {
       const targetPercent = baseATR * THRESHOLDS.doubleBagger.multiplier;
       const distance = targetPercent - priceChange;
+      const isPrimed = distance <= targetPercent * 0.5;
       return {
         distance: Math.max(0, distance),
         label: THRESHOLDS.doubleBagger.label,
         icon: THRESHOLDS.doubleBagger.icon,
         direction: 'positive',
-        isPrimed: distance <= baseATR * 0.15,
+        isPrimed,
       };
     }
     if (maxReached < THRESHOLDS.tenBagger.multiplier) {
       const targetPercent = baseATR * THRESHOLDS.tenBagger.multiplier;
       const distance = targetPercent - priceChange;
+      const isPrimed = distance <= targetPercent * 0.5;
       return {
         distance: Math.max(0, distance),
         label: THRESHOLDS.tenBagger.label,
         icon: THRESHOLDS.tenBagger.icon,
         direction: 'positive',
-        isPrimed: distance <= baseATR * 0.2,
+        isPrimed,
       };
     }
     // All positive thresholds reached
@@ -79,36 +82,40 @@ function calculateNextThreshold(priceChange, baseATR, history) {
   } else {
     // Moving negative - find next downward threshold
     if (minReached > THRESHOLDS.bust.multiplier) {
-      const targetPercent = baseATR * THRESHOLDS.bust.multiplier;
-      const distance = priceChange - targetPercent;
+      const targetPercent = Math.abs(baseATR * THRESHOLDS.bust.multiplier);
+      const distance = priceChange - (baseATR * THRESHOLDS.bust.multiplier);
+      // isPrimed when within 50% of threshold
+      const isPrimed = distance <= targetPercent * 0.5;
       return {
         distance: Math.max(0, distance),
         label: THRESHOLDS.bust.label,
         icon: THRESHOLDS.bust.icon,
         direction: 'negative',
-        isPrimed: distance <= baseATR * 0.1,
+        isPrimed,
       };
     }
     if (minReached > THRESHOLDS.crash.multiplier) {
-      const targetPercent = baseATR * THRESHOLDS.crash.multiplier;
-      const distance = priceChange - targetPercent;
+      const targetPercent = Math.abs(baseATR * THRESHOLDS.crash.multiplier);
+      const distance = priceChange - (baseATR * THRESHOLDS.crash.multiplier);
+      const isPrimed = distance <= targetPercent * 0.5;
       return {
         distance: Math.max(0, distance),
         label: THRESHOLDS.crash.label,
         icon: THRESHOLDS.crash.icon,
         direction: 'negative',
-        isPrimed: distance <= baseATR * 0.15,
+        isPrimed,
       };
     }
     if (minReached > THRESHOLDS.meltdown.multiplier) {
-      const targetPercent = baseATR * THRESHOLDS.meltdown.multiplier;
-      const distance = priceChange - targetPercent;
+      const targetPercent = Math.abs(baseATR * THRESHOLDS.meltdown.multiplier);
+      const distance = priceChange - (baseATR * THRESHOLDS.meltdown.multiplier);
+      const isPrimed = distance <= targetPercent * 0.5;
       return {
         distance: Math.max(0, distance),
         label: THRESHOLDS.meltdown.label,
         icon: THRESHOLDS.meltdown.icon,
         direction: 'negative',
-        isPrimed: distance <= baseATR * 0.2,
+        isPrimed,
       };
     }
     // All negative thresholds reached
@@ -132,7 +139,7 @@ export default function ProximityLabel({
   size = 'default',
   align = 'left',
 }) {
-  const { distance, icon, direction, isPrimed } = useMemo(
+  const { distance, label, icon, direction, isPrimed } = useMemo(
     () => calculateNextThreshold(priceChange, baseATR, history),
     [priceChange, baseATR, history]
   );
@@ -145,31 +152,36 @@ export default function ProximityLabel({
     if (direction === 'maxed') {
       return direction === 'positive' ? HOLO_COLORS.green : HOLO_COLORS.red;
     }
-    if (isPrimed) {
-      return HOLO_COLORS.amber;
-    }
-    return HOLO_COLORS.textMuted;
+    // Use amber (#f59e0b) for threshold proximity
+    return '#f59e0b';
   };
 
-  // Format the display text
+  // Format the display text - "💣 X.X% to BaggerBomb" format
   const formatText = () => {
     if (direction === 'maxed') {
-      return `MAX ${icon}`;
+      return `${icon} MAX`;
     }
     if (distance === 0) {
       return `${icon}`;
     }
-    return `${distance.toFixed(1)}% to ${icon}`;
+    return `${icon} ${distance.toFixed(1)}% to ${label}`;
   };
 
   return (
     <motion.span
-      animate={isPrimed ? { opacity: [0.7, 1, 0.7] } : { opacity: 1 }}
-      transition={isPrimed ? { duration: 1.5, repeat: Infinity } : {}}
+      animate={isPrimed ? {
+        opacity: [0.8, 1, 0.8],
+        textShadow: [
+          '0 0 4px rgba(245, 158, 11, 0.3)',
+          '0 0 8px rgba(245, 158, 11, 0.6)',
+          '0 0 4px rgba(245, 158, 11, 0.3)',
+        ],
+      } : { opacity: 1 }}
+      transition={isPrimed ? { duration: 1.2, repeat: Infinity, ease: 'easeInOut' } : {}}
       style={{
         fontSize,
         color: getTextColor(),
-        fontWeight: isPrimed ? 500 : 400,
+        fontWeight: 500,
         textAlign: align,
         display: 'block',
         whiteSpace: 'nowrap',
