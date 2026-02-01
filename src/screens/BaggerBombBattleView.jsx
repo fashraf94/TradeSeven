@@ -193,6 +193,7 @@ export default function BaggerBombBattleView({
   onBack,
   onThresholdCross,
   nightMode = false,
+  isTraining = false,
 }) {
   const [activeTab, setActiveTab] = useState('matchups');
 
@@ -318,6 +319,22 @@ export default function BaggerBombBattleView({
           >
             BaggerBomb Battle
           </h1>
+          {isTraining && (
+            <span
+              style={{
+                backgroundColor: '#8b5cf6',
+                color: '#ffffff',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+              }}
+            >
+              Training
+            </span>
+          )}
         </div>
         <div style={{ width: '40px' }} /> {/* Spacer for centering */}
       </div>
@@ -458,6 +475,8 @@ BaggerBombBattleView.propTypes = {
   onThresholdCross: PropTypes.func,
   /** Enable night mode theme (auto-enabled during NIGHT_GAME session) */
   nightMode: PropTypes.bool,
+  /** Whether this is a training battle (shows Training badge) */
+  isTraining: PropTypes.bool,
 };
 
 BaggerBombBattleView.defaultProps = {
@@ -472,6 +491,7 @@ BaggerBombBattleView.defaultProps = {
   onBack: () => {},
   onThresholdCross: null,
   nightMode: false,
+  isTraining: false,
 };
 
 // Export tier configuration for use elsewhere

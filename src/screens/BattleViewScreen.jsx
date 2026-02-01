@@ -13,6 +13,7 @@ const BattleViewScreen = ({
   LoadingFallback,
   BaggerBombBattleViewRedesign,
   BaggerBombBattleViewConnected,
+  BaggerBombTrainingBattleViewV3,
 }) => {
   // Debug: Log battle routing decision
   console.log('🎮 BATTLE ROUTING DEBUG:', {
@@ -26,7 +27,20 @@ const BattleViewScreen = ({
 
   // Check if this is a BaggerBomb (V2 or V3) battle - route to new connected view
   if (currentBattle._v === 2 || currentBattle._v === 3) {
-    // Use the new connected component for non-training battles
+    // V3 Training battles use the new V3 training view
+    if (currentBattle._v === 3 && currentBattle.isTraining && BaggerBombTrainingBattleViewV3) {
+      return (
+        <Suspense fallback={<LoadingFallback />}>
+          <BaggerBombTrainingBattleViewV3
+            battle={currentBattle}
+            user={user}
+            onBack={onBack}
+          />
+        </Suspense>
+      );
+    }
+
+    // Use the new connected component for non-training PVP battles
     if (BaggerBombBattleViewConnected && currentBattle.id && !currentBattle.isTraining) {
       return (
         <Suspense fallback={<LoadingFallback />}>
@@ -38,7 +52,7 @@ const BattleViewScreen = ({
         </Suspense>
       );
     }
-    // Fall back to redesign view for training battles or when connected component is not available
+    // Fall back to redesign view for V2 training battles or when connected component is not available
     return (
       <Suspense fallback={<LoadingFallback />}>
         <BaggerBombBattleViewRedesign

@@ -35,6 +35,7 @@ import { RiskStyleScreen, SectorSelectionScreen } from './components/GamePlan';
 const PortfolioBuilderBaggerBomb = lazy(() => import('./components/BaggerBomb/PortfolioBuilderBaggerBomb'));
 const BaggerBombBattleViewRedesign = lazy(() => import('./components/BaggerBomb/BaggerBombBattleViewRedesign'));
 const BaggerBombBattleViewConnected = lazy(() => import('./screens/BaggerBombBattleViewConnected'));
+const BaggerBombTrainingBattleViewV3 = lazy(() => import('./screens/BaggerBombTrainingBattleViewV3'));
 const BaggerBombLobby = lazy(() => import('./screens/BaggerBombLobby'));
 const BaggerBombSetupScreen = lazy(() => import('./screens/BaggerBombSetupScreen'));
 const BaggerBombGamePlanFlow = lazy(() => import('./components/GamePlan/BaggerBombGamePlanFlow'));
@@ -22427,6 +22428,7 @@ export default function PortfolioDuel() {
         LoadingFallback={LoadingFallback}
         BaggerBombBattleViewRedesign={BaggerBombBattleViewRedesign}
         BaggerBombBattleViewConnected={BaggerBombBattleViewConnected}
+        BaggerBombTrainingBattleViewV3={BaggerBombTrainingBattleViewV3}
       />
     );
   }
