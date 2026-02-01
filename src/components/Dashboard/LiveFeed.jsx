@@ -708,7 +708,7 @@ export default function LiveFeed({
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
+        gap: '12px',
         marginBottom: '16px',
         padding: '0 4px',
       }}>
@@ -726,7 +726,7 @@ export default function LiveFeed({
           📡 LIVE FEED
         </h3>
 
-        {/* Lobby notifications toggle */}
+        {/* Lobby notifications toggle - now next to title */}
         <button
           onClick={() => setShowLobbyNotifications(!showLobbyNotifications)}
           style={{
