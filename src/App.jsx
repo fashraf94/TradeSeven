@@ -21844,11 +21844,12 @@ export default function PortfolioDuel() {
     );
   }
 
-  // DRAFT JOIN SCREEN - Extracted to DraftJoinScreen component
+  // DRAFT JOIN SCREEN - Snake Draft Lobby Browser
   if (screen === 'draftJoin') {
     return (
       <DraftJoinScreen
         user={user}
+        lobbyBattles={lobbyBattles}
         draftJoinCode={draftJoinCode}
         setDraftJoinCode={setDraftJoinCode}
         onBack={() => setScreen('dashboard')}
@@ -21856,6 +21857,7 @@ export default function PortfolioDuel() {
           setCurrentDraft(draft);
           setScreen('draftLobby');
         }}
+        onCreateDraft={() => setScreen('draftSetup')}
       />
     );
   }
