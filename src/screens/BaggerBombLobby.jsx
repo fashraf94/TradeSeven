@@ -211,12 +211,16 @@ export default function BaggerBombLobby({
 }) {
   const userId = user?.odUserId || user?.username;
 
-  // Separate own battles from others
+  // Filter to only BaggerBomb V3 battles (exclude SnakeDraft and other types)
+  // Then separate own battles from others
   const { ownBattles, otherBattles } = useMemo(() => {
     const own = [];
     const others = [];
 
-    openBattles.forEach(battle => {
+    // Filter: only include BaggerBomb V3 battles (excludes SnakeDraft lobbies)
+    const baggerBombBattles = openBattles.filter(battle => battle._v === 3);
+
+    baggerBombBattles.forEach(battle => {
       const creatorId = battle.creator?.odUserId || battle.creator?.uid;
       if (creatorId === userId) {
         own.push(battle);

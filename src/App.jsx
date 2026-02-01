@@ -82,7 +82,7 @@ import DesktopBackground from './components/DesktopBackground';
 import { ConfirmationPopup } from './components/shared';
 import ErrorBoundary from './components/ErrorBoundary';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity, SeasonalBanner, TrainingLiveFeed } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -18882,17 +18882,13 @@ export default function PortfolioDuel() {
             </div>
           </div>
 
-          {/* Active Draft Banner - Show when user has an ongoing draft */}
-          {activeDraftBanner && (
+          {/* Active Draft Banner - Show ONLY when draft is actively in progress (not waiting/pending) */}
+          {activeDraftBanner && activeDraftBanner.status === 'active' && (
             <div
               onClick={() => {
                 setCurrentDraft(activeDraftBanner);
                 setActiveDraftBanner(null);
-                if (activeDraftBanner.status === 'waiting') {
-                  setScreen('draftLobby');
-                } else if (activeDraftBanner.status === 'active') {
-                  setScreen('draftRoom');
-                }
+                setScreen('draftRoom');
               }}
               style={{
                 background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
@@ -18922,8 +18918,7 @@ export default function PortfolioDuel() {
                     Active Draft in Progress!
                   </div>
                   <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '13px' }}>
-                    {activeDraftBanner.code} • {activeDraftBanner.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'} •
-                    {activeDraftBanner.status === 'waiting' ? ' Waiting for players' : ' Draft in progress'}
+                    {activeDraftBanner.code} • {activeDraftBanner.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'} • Draft in progress
                   </div>
                 </div>
               </div>
@@ -19127,6 +19122,17 @@ export default function PortfolioDuel() {
                   setCurrentDraft={setCurrentDraft}
                   setScreen={setScreen}
                   setActiveBattleId={setActiveBattleId}
+                />
+
+                {/* Pending Lobbies - BaggerBomb + Snake Draft waiting for opponents */}
+                <PendingLobbiesSection
+                  lobbyBattles={lobbyBattles}
+                  user={user}
+                  setCurrentBattle={setCurrentBattle}
+                  setCurrentDraft={setCurrentDraft}
+                  setScreen={setScreen}
+                  setBattleToJoin={setBattleToJoin}
+                  copyToClipboard={copyToClipboard}
                 />
 
                 {/* Seasonal Banner - EarningsGame Tournament */}
@@ -21838,11 +21844,12 @@ export default function PortfolioDuel() {
     );
   }
 
-  // DRAFT JOIN SCREEN - Extracted to DraftJoinScreen component
+  // DRAFT JOIN SCREEN - Snake Draft Lobby Browser
   if (screen === 'draftJoin') {
     return (
       <DraftJoinScreen
         user={user}
+        lobbyBattles={lobbyBattles}
         draftJoinCode={draftJoinCode}
         setDraftJoinCode={setDraftJoinCode}
         onBack={() => setScreen('dashboard')}
@@ -21850,6 +21857,7 @@ export default function PortfolioDuel() {
           setCurrentDraft(draft);
           setScreen('draftLobby');
         }}
+        onCreateDraft={() => setScreen('draftSetup')}
       />
     );
   }

@@ -167,8 +167,8 @@ const ConfirmationPopup = ({
                   flex: 1,
                   padding: '14px',
                   borderRadius: '12px',
-                  border: `1px solid ${secondaryColor || confirmColor || HOLO_COLORS.borderSubtle}`,
-                  background: 'transparent',
+                  border: `2px solid ${secondaryColor || confirmColor || HOLO_COLORS.borderSubtle}`,
+                  background: `${secondaryColor || confirmColor}15`,
                   color: secondaryColor || confirmColor || HOLO_COLORS.textSecondary,
                   fontSize: '15px',
                   fontWeight: '600',
@@ -185,8 +185,8 @@ const ConfirmationPopup = ({
                 flex: 1,
                 padding: '14px',
                 borderRadius: '12px',
-                border: 'none',
-                background: confirmColor,
+                border: `2px solid ${confirmColor}`,
+                background: `linear-gradient(135deg, ${confirmColor} 0%, ${confirmColor}dd 100%)`,
                 color: '#ffffff',
                 fontSize: '15px',
                 fontWeight: '700',
@@ -199,20 +199,28 @@ const ConfirmationPopup = ({
             </button>
           </div>
 
-          {/* Cancel button - full width below */}
+          {/* Cancel button - full width below (muted) */}
           <button
             onClick={onClose}
             style={{
               width: '100%',
               padding: '14px',
               borderRadius: '12px',
-              border: `1px solid ${HOLO_COLORS.borderSubtle}`,
-              background: 'transparent',
-              color: HOLO_COLORS.textSecondary,
-              fontSize: '15px',
-              fontWeight: '600',
+              border: '1px solid #252530',
+              background: '#1a1a24',
+              color: '#6e7681',
+              fontSize: '14px',
+              fontWeight: '500',
               cursor: 'pointer',
               transition: 'all 0.2s ease'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = '#252530';
+              e.currentTarget.style.color = '#8b949e';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = '#1a1a24';
+              e.currentTarget.style.color = '#6e7681';
             }}
           >
             {cancelText || 'Cancel'}
@@ -229,29 +237,29 @@ const ConfirmationPopup = ({
               justifyContent: 'center',
               gap: '8px',
               width: '100%',
-              marginTop: '12px',
+              marginTop: '8px',
               padding: '12px 16px',
               background: 'transparent',
-              border: `1px solid ${HOLO_COLORS.borderSubtle}`,
-              borderRadius: '10px',
-              color: HOLO_COLORS.textMuted,
-              fontSize: '14px',
+              border: '1px solid #1e1e28',
+              borderRadius: '12px',
+              color: '#484f58',
+              fontSize: '13px',
               fontWeight: '500',
               cursor: 'pointer',
               transition: 'all 0.2s ease'
             }}
             onMouseOver={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-              e.currentTarget.style.borderColor = '#30363d';
-              e.currentTarget.style.color = HOLO_COLORS.textSecondary;
+              e.currentTarget.style.background = '#1a1a24';
+              e.currentTarget.style.borderColor = '#252530';
+              e.currentTarget.style.color = '#6e7681';
             }}
             onMouseOut={(e) => {
               e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.borderColor = HOLO_COLORS.borderSubtle;
-              e.currentTarget.style.color = HOLO_COLORS.textMuted;
+              e.currentTarget.style.borderColor = '#1e1e28';
+              e.currentTarget.style.color = '#484f58';
             }}
           >
-            <BookOpen size={16} />
+            <BookOpen size={14} />
             <span>How to Play</span>
           </button>
         )}
