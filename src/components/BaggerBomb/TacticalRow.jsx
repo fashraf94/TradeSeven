@@ -16,6 +16,8 @@ function AssetSide({
   asset,
   isRight = false,
   onThresholdCross,
+  onSymbolClick,
+  onPointsClick,
 }) {
   if (!asset) {
     // Empty slot placeholder
@@ -75,10 +77,19 @@ function AssetSide({
         {/* Symbol and Price Change */}
         <div>
           <div
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onSymbolClick) onSymbolClick(asset);
+            }}
             style={{
               fontWeight: 700,
               fontSize: '14px',
               color: HOLO_COLORS.textPrimary,
+              cursor: onSymbolClick ? 'pointer' : 'default',
+              textDecoration: onSymbolClick ? 'underline' : 'none',
+              textDecorationStyle: 'dotted',
+              textUnderlineOffset: '3px',
+              display: 'inline-block',
             }}
           >
             {symbol}
@@ -105,11 +116,26 @@ function AssetSide({
           }}
         >
           <div
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onPointsClick) onPointsClick(asset);
+            }}
             style={{
               fontSize: '20px',
               fontWeight: 700,
               color: HOLO_COLORS.textPrimary,
               fontVariantNumeric: 'tabular-nums',
+              cursor: onPointsClick ? 'pointer' : 'default',
+              padding: '4px 8px',
+              margin: '-4px -8px',
+              borderRadius: '6px',
+              transition: 'background 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              if (onPointsClick) e.target.style.background = 'rgba(255,255,255,0.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = 'transparent';
             }}
           >
             {points >= 0 ? '+' : ''}{Math.round(points)}
@@ -159,6 +185,10 @@ AssetSide.propTypes = {
   }),
   isRight: PropTypes.bool,
   onThresholdCross: PropTypes.func,
+  /** Callback when symbol is clicked - opens research modal */
+  onSymbolClick: PropTypes.func,
+  /** Callback when points are clicked - opens score breakdown */
+  onPointsClick: PropTypes.func,
 };
 
 /**
@@ -212,6 +242,8 @@ export default function TacticalRow({
   isCryptoSlot = false,
   onLeftThresholdCross,
   onRightThresholdCross,
+  onSymbolClick,
+  onPointsClick,
 }) {
   return (
     <motion.div
@@ -231,6 +263,8 @@ export default function TacticalRow({
         asset={leftAsset}
         isRight={false}
         onThresholdCross={onLeftThresholdCross}
+        onSymbolClick={onSymbolClick}
+        onPointsClick={onPointsClick}
       />
 
       {/* Center Allocation Badge */}
@@ -244,6 +278,8 @@ export default function TacticalRow({
         asset={rightAsset}
         isRight={true}
         onThresholdCross={onRightThresholdCross}
+        onSymbolClick={onSymbolClick}
+        onPointsClick={onPointsClick}
       />
     </motion.div>
   );
@@ -282,6 +318,10 @@ TacticalRow.propTypes = {
   onLeftThresholdCross: PropTypes.func,
   /** Callback when right asset crosses threshold */
   onRightThresholdCross: PropTypes.func,
+  /** Callback when symbol is clicked - opens research modal */
+  onSymbolClick: PropTypes.func,
+  /** Callback when points are clicked - opens score breakdown */
+  onPointsClick: PropTypes.func,
 };
 
 TacticalRow.defaultProps = {
@@ -291,6 +331,8 @@ TacticalRow.defaultProps = {
   isCryptoSlot: false,
   onLeftThresholdCross: null,
   onRightThresholdCross: null,
+  onSymbolClick: null,
+  onPointsClick: null,
 };
 
 // Export sub-components for flexibility
