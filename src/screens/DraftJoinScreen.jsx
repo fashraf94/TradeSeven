@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Users, ChevronRight, Flame, Clock, Calendar, CalendarDays } from 'lucide-react';
+import { Users, ChevronRight, Flame, Clock, Calendar, CalendarDays, TrendingUp, Bitcoin } from 'lucide-react';
 
 // Style override to neutralize App.css
 const containerStyle = {
@@ -11,6 +11,29 @@ const containerStyle = {
   minHeight: '100vh',
   background: '#0d1117',
   overflowX: 'hidden'
+};
+
+// Draft type color schemes
+const DRAFT_TYPE_COLORS = {
+  stocks: {
+    primary: '#3b82f6',      // Blue
+    background: 'rgba(59, 130, 246, 0.08)',
+    border: '#3b82f6',
+    icon: 'stocks',
+    label: 'Stocks',
+  },
+  crypto: {
+    primary: '#f59e0b',      // Amber/Orange
+    background: 'rgba(245, 158, 11, 0.08)',
+    border: '#f59e0b',
+    icon: 'crypto',
+    label: 'Crypto',
+  },
+};
+
+const getDraftTypeColors = (lobby) => {
+  const type = lobby.type || lobby.assetType || lobby.draftType || 'stocks';
+  return DRAFT_TYPE_COLORS[type] || DRAFT_TYPE_COLORS.stocks;
 };
 
 // Get approximate time until start (rounded increments for public display)
@@ -130,12 +153,14 @@ const LobbyCard = ({ lobby, onJoin, currentUserId }) => {
   const maxPlayers = 4;
   const timeUntil = getApproximateTimeUntilStart(lobby.scheduledStart);
   const isUserInLobby = lobby.players?.some(p => p.odUserId === currentUserId);
+  const colors = getDraftTypeColors(lobby);
+  const isStocks = colors.icon === 'stocks';
 
   return (
     <div
       style={{
-        background: '#161b22',
-        border: '2px solid #0d9488',
+        background: colors.background,
+        border: `2px solid ${colors.border}`,
         borderRadius: '12px',
         padding: '16px',
         display: 'flex',
@@ -145,7 +170,23 @@ const LobbyCard = ({ lobby, onJoin, currentUserId }) => {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-        <span style={{ fontSize: '28px' }}>🐍</span>
+        {/* Type-based icon */}
+        <div style={{
+          width: '44px',
+          height: '44px',
+          borderRadius: '10px',
+          background: `${colors.primary}22`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}>
+          {isStocks ? (
+            <TrendingUp size={22} color={colors.primary} />
+          ) : (
+            <Bitcoin size={22} color={colors.primary} />
+          )}
+        </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             color: 'white',
@@ -168,7 +209,7 @@ const LobbyCard = ({ lobby, onJoin, currentUserId }) => {
             <Users size={13} />
             <span>{playerCount}/{maxPlayers} players</span>
             <span style={{ color: '#484f58' }}>•</span>
-            <span style={{ color: '#14b8a6' }}>Starts {timeUntil}</span>
+            <span style={{ color: colors.primary }}>Starts {timeUntil}</span>
           </div>
         </div>
       </div>
@@ -178,10 +219,10 @@ const LobbyCard = ({ lobby, onJoin, currentUserId }) => {
         disabled={isUserInLobby}
         style={{
           padding: '10px 20px',
-          background: isUserInLobby ? 'rgba(20, 184, 166, 0.1)' : 'transparent',
-          border: '2px solid #14b8a6',
+          background: isUserInLobby ? `${colors.primary}15` : 'transparent',
+          border: `2px solid ${colors.primary}`,
           borderRadius: '8px',
-          color: '#14b8a6',
+          color: colors.primary,
           fontWeight: '700',
           fontSize: '13px',
           cursor: isUserInLobby ? 'default' : 'pointer',
@@ -482,29 +523,62 @@ const DraftJoinScreen = ({
             + Create New Draft
           </button>
 
-          {/* Open Drafts Section Header */}
+          {/* Open Drafts Section Header with Legend */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             marginBottom: '16px',
+            flexWrap: 'wrap',
+            gap: '8px',
           }}>
-            <h3 style={{
-              color: '#8b949e',
-              fontSize: '12px',
-              fontWeight: '700',
-              textTransform: 'uppercase',
-              letterSpacing: '1px',
-              margin: 0,
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <h3 style={{
+                color: '#8b949e',
+                fontSize: '12px',
+                fontWeight: '700',
+                textTransform: 'uppercase',
+                letterSpacing: '1px',
+                margin: 0,
+              }}>
+                Open Drafts
+              </h3>
+              <span style={{
+                color: '#6e7681',
+                fontSize: '12px',
+              }}>
+                {snakeDraftLobbies.length} available
+              </span>
+            </div>
+
+            {/* Legend */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              fontSize: '11px',
             }}>
-              Open Drafts
-            </h3>
-            <span style={{
-              color: '#6e7681',
-              fontSize: '12px',
-            }}>
-              {snakeDraftLobbies.length} available
-            </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <div style={{
+                  width: '10px',
+                  height: '10px',
+                  borderRadius: '3px',
+                  background: DRAFT_TYPE_COLORS.stocks.primary,
+                }} />
+                <TrendingUp size={12} color={DRAFT_TYPE_COLORS.stocks.primary} />
+                <span style={{ color: '#6e7681' }}>Stocks</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <div style={{
+                  width: '10px',
+                  height: '10px',
+                  borderRadius: '3px',
+                  background: DRAFT_TYPE_COLORS.crypto.primary,
+                }} />
+                <Bitcoin size={12} color={DRAFT_TYPE_COLORS.crypto.primary} />
+                <span style={{ color: '#6e7681' }}>Crypto</span>
+              </div>
+            </div>
           </div>
 
           {/* Lobby List by Tiers or Empty State */}
