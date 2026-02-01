@@ -8,6 +8,7 @@ import {
   getDoc,
   getDocs,
   updateDoc,
+  deleteDoc,
   query,
   where,
   onSnapshot,
@@ -1066,6 +1067,42 @@ export async function getUserCompletedDraftBattles(userId, limitCount = 20) {
   }
 }
 
+// ============================================
+// CLEANUP UTILITIES
+// ============================================
+
+/**
+ * Delete old lobbies that don't have a scheduledStart time.
+ * These are legacy lobbies created before the scheduled time feature was added.
+ * Run this once to clean up old data.
+ */
+export async function cleanupOldLobbiesWithoutScheduledTime() {
+  const lobbiesRef = collection(db, 'snakeDraftLobbies');
+
+  // Get all waiting lobbies
+  const q = query(lobbiesRef, where('status', '==', 'waiting'));
+  const snapshot = await getDocs(q);
+
+  let deletedCount = 0;
+  const deletedLobbies = [];
+
+  for (const docSnap of snapshot.docs) {
+    const data = docSnap.data();
+
+    // Delete if no scheduledStart field
+    if (!data.scheduledStart) {
+      const hostName = data.host || data.players?.[0]?.username || 'Unknown';
+      console.log(`Deleting lobby: ${docSnap.id} (host: ${hostName})`);
+      deletedLobbies.push({ id: docSnap.id, host: hostName });
+      await deleteDoc(doc(db, 'snakeDraftLobbies', docSnap.id));
+      deletedCount++;
+    }
+  }
+
+  console.log(`✅ Deleted ${deletedCount} old lobbies without scheduled time`);
+  return { deletedCount, deletedLobbies };
+}
+
 export default {
   createMultiplayerDraft,
   createTrainingDraft,
@@ -1089,5 +1126,6 @@ export default {
   shouldAutoPickForPlayer,
   storeDraftLockedPrices,
   completeDraftBattle,
-  getUserCompletedDraftBattles
+  getUserCompletedDraftBattles,
+  cleanupOldLobbiesWithoutScheduledTime
 };
