@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Users, ChevronRight } from 'lucide-react';
+import { Users, ChevronRight, Flame, Clock, Calendar, CalendarDays } from 'lucide-react';
 
 // Style override to neutralize App.css
 const containerStyle = {
@@ -15,34 +15,106 @@ const containerStyle = {
 
 // Get approximate time until start (rounded increments for public display)
 const getApproximateTimeUntilStart = (scheduledStart) => {
-  if (!scheduledStart) return 'Soon';
+  if (!scheduledStart) return 'No time set';
 
   const now = new Date();
   const start = new Date(scheduledStart);
   const diffMs = start - now;
 
-  if (diffMs <= 0) return 'Starting!';
+  if (diffMs <= 0) return 'Starting now!';
 
   const diffMins = Math.floor(diffMs / 60000);
 
   if (diffMins < 10) {
-    // Round to 5 min increments
+    // Round UP to 5-minute increments
     const rounded = Math.ceil(diffMins / 5) * 5;
     return `~${rounded || 5}m`;
   } else if (diffMins < 30) {
-    // Round to 10 min increments
+    // Round UP to 10-minute increments
     const rounded = Math.ceil(diffMins / 10) * 10;
     return `~${rounded}m`;
   } else if (diffMins < 60) {
-    // Round to 30 min increments
-    return '~30m';
+    // Round UP to 30-minute increments
+    const rounded = Math.ceil(diffMins / 30) * 30;
+    return `~${rounded}m`;
   } else {
-    // Round to 30 min increments, show hours
+    // Over 1 hour - round to 30-minute increments, show hours + mins
     const totalMins = Math.ceil(diffMins / 30) * 30;
     const hours = Math.floor(totalMins / 60);
     const mins = totalMins % 60;
     return mins > 0 ? `~${hours}h ${mins}m` : `~${hours}h`;
   }
+};
+
+// Get minutes until start for tier grouping
+const getMinutesUntilStart = (scheduledStart) => {
+  if (!scheduledStart) return 0; // No time set = treat as starting soon
+  const now = new Date();
+  const start = new Date(scheduledStart);
+  return Math.floor((start - now) / 60000);
+};
+
+// Group lobbies by time-based tiers
+const groupLobbiesByTime = (lobbies) => {
+  const tiers = {
+    soon: {
+      key: 'soon',
+      label: 'Starting Soon',
+      sublabel: 'under 30 min',
+      icon: Flame,
+      iconColor: '#f59e0b',
+      lobbies: []
+    },
+    medium: {
+      key: 'medium',
+      label: 'Starting in 30min - 1 hour',
+      sublabel: null,
+      icon: Clock,
+      iconColor: '#8b949e',
+      lobbies: []
+    },
+    later: {
+      key: 'later',
+      label: 'Starting in 1-2 hours',
+      sublabel: null,
+      icon: Calendar,
+      iconColor: '#8b949e',
+      lobbies: []
+    },
+    future: {
+      key: 'future',
+      label: 'Starting in 2+ hours',
+      sublabel: null,
+      icon: CalendarDays,
+      iconColor: '#8b949e',
+      lobbies: []
+    },
+  };
+
+  lobbies.forEach(lobby => {
+    const diffMins = getMinutesUntilStart(lobby.scheduledStart);
+
+    if (diffMins < 30) {
+      tiers.soon.lobbies.push(lobby);
+    } else if (diffMins < 60) {
+      tiers.medium.lobbies.push(lobby);
+    } else if (diffMins < 120) {
+      tiers.later.lobbies.push(lobby);
+    } else {
+      tiers.future.lobbies.push(lobby);
+    }
+  });
+
+  // Sort each tier by soonest first
+  Object.values(tiers).forEach(tier => {
+    tier.lobbies.sort((a, b) => {
+      const aTime = new Date(a.scheduledStart || 0);
+      const bTime = new Date(b.scheduledStart || 0);
+      return aTime - bTime;
+    });
+  });
+
+  return tiers;
 };
 
 // Get host username from draft
@@ -142,6 +214,54 @@ const EmptyState = () => (
   </div>
 );
 
+// Tier Header Component
+const TierHeader = ({ tier }) => {
+  const IconComponent = tier.icon;
+  const isSoon = tier.key === 'soon';
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      marginBottom: '12px',
+      paddingBottom: '8px',
+      borderBottom: `1px solid ${isSoon ? '#f59e0b33' : '#21262d'}`,
+    }}>
+      {isSoon ? (
+        <span style={{
+          background: '#f59e0b22',
+          padding: '4px 10px',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+        }}>
+          <IconComponent size={14} color={tier.iconColor} />
+          <span style={{ color: '#f59e0b', fontSize: '13px', fontWeight: '700' }}>
+            {tier.label}
+          </span>
+        </span>
+      ) : (
+        <>
+          <IconComponent size={14} color={tier.iconColor} />
+          <span style={{ color: '#8b949e', fontSize: '13px', fontWeight: '600' }}>
+            {tier.label}
+          </span>
+        </>
+      )}
+      {tier.sublabel && (
+        <span style={{ color: '#6e7681', fontSize: '12px' }}>
+          ({tier.sublabel})
+        </span>
+      )}
+      <span style={{ color: '#484f58', fontSize: '12px', marginLeft: 'auto' }}>
+        {tier.lobbies.length}
+      </span>
+    </div>
+  );
+};
+
 const DraftJoinScreen = ({
   user,
   lobbyBattles = [],
@@ -154,21 +274,23 @@ const DraftJoinScreen = ({
   const [showCodeEntry, setShowCodeEntry] = useState(false);
   const currentUserId = user?.odUserId || user?.username;
 
-  // Filter and sort Snake Draft lobbies
+  // Filter Snake Draft lobbies
   const snakeDraftLobbies = useMemo(() => {
     return (lobbyBattles || [])
       .filter(lobby =>
         (lobby.isSnakeDraft || lobby.battleType === 'snake-draft') &&
         lobby.status === 'waiting' &&
         !lobby.isTraining
-      )
-      .sort((a, b) => {
-        // Sort by scheduled start time (soonest first)
-        const aTime = a.scheduledStart ? new Date(a.scheduledStart) : new Date();
-        const bTime = b.scheduledStart ? new Date(b.scheduledStart) : new Date();
-        return aTime - bTime;
-      });
+      );
   }, [lobbyBattles]);
+
+  // Group lobbies by time-based tiers
+  const tiers = useMemo(() => {
+    return groupLobbiesByTime(snakeDraftLobbies);
+  }, [snakeDraftLobbies]);
+
+  // Check if any lobbies exist
+  const hasLobbies = snakeDraftLobbies.length > 0;
 
   const handleJoinLobby = async (lobby) => {
     try {
@@ -280,7 +402,7 @@ const DraftJoinScreen = ({
             + Create New Draft
           </button>
 
-          {/* Open Drafts Section */}
+          {/* Open Drafts Section Header */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -305,17 +427,28 @@ const DraftJoinScreen = ({
             </span>
           </div>
 
-          {/* Lobby List or Empty State */}
-          {snakeDraftLobbies.length > 0 ? (
+          {/* Lobby List by Tiers or Empty State */}
+          {hasLobbies ? (
             <div style={{ marginBottom: '24px' }}>
-              {snakeDraftLobbies.map(lobby => (
-                <LobbyCard
-                  key={lobby.id}
-                  lobby={lobby}
-                  onJoin={handleJoinLobby}
-                  currentUserId={currentUserId}
-                />
-              ))}
+              {Object.values(tiers).map(tier => {
+                if (tier.lobbies.length === 0) return null;
+
+                return (
+                  <div key={tier.key} style={{ marginBottom: '20px' }}>
+                    <TierHeader tier={tier} />
+                    <div>
+                      {tier.lobbies.map(lobby => (
+                        <LobbyCard
+                          key={lobby.id}
+                          lobby={lobby}
+                          onJoin={handleJoinLobby}
+                          currentUserId={currentUserId}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div style={{ marginBottom: '24px' }}>
