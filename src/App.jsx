@@ -15108,6 +15108,39 @@ export default function PortfolioDuel() {
       isTraining: true,
       isTrainingBattle: true,
       createdAt: now.toISOString(),
+
+      // For querying (required by fetchTrainingBattles)
+      playerIds: [odUserId, 'cpu'],
+      creatorId: odUserId,
+
+      // Player aliases for ActiveBattlesSection compatibility (expects player1/player2)
+      player1: {
+        odUserId: user.odUserId || user.username,
+        username: user.username,
+        portfolioName: 'Training Battle',
+        portfolio: updateV3PortfolioPrices(portfolioData),
+        bench: updateV3BenchPrices(portfolioData.bench),
+        portfolioType: 'baggerbomb',
+        startValue: 1000000,
+        currentValue: 1000000,
+        percentChange: 0,
+        isCreator: true,
+      },
+      player2: {
+        odUserId: 'cpu',
+        username: 'CPU Opponent',
+        portfolioName: 'CPU Strategy',
+        portfolio: updateV3PortfolioPrices(cpuPortfolioData.portfolio),
+        bench: updateV3BenchPrices(cpuPortfolioData.bench),
+        portfolioType: 'baggerbomb',
+        startValue: 1000000,
+        currentValue: 1000000,
+        percentChange: 0,
+        isCPU: true,
+      },
+
+      // Battle type marker
+      type: 'baggerbomb',
     };
 
     // Save to Firebase for persistence

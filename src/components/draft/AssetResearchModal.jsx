@@ -799,7 +799,7 @@ const AssetResearchModal = ({
           background: 'rgba(0, 0, 0, 0.85)',
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)',
-          zIndex: 100,
+          zIndex: 1100,
           animation: 'fadeIn 0.2s ease-out',
         }}
       />
@@ -818,7 +818,7 @@ const AssetResearchModal = ({
           borderRadius: '16px',
           border: '1px solid rgba(0, 255, 255, 0.3)',
           boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.15)',
-          zIndex: 101,
+          zIndex: 1101,
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
