@@ -67,6 +67,8 @@ import {
 } from './utils/battleHelpers';
 // V3-safe portfolio helpers (handles tiered objects and flat arrays)
 import { safePortfolioArray, getUserPortfolioFlat, getOpponentPortfolioFlat, getBothPortfoliosFlat, getAllBattleSymbols } from './utils/portfolioHelpers';
+// BaggerBomb V3 portfolio utilities
+import { flattenPortfolio, flattenBench } from './utils/baggerBombUtils';
 // Snake Draft asset pools
 import { STEADY_STOCKS, RISKY_STOCKS, DEFENSIVE_STOCKS, STEADY_CRYPTO, RISKY_CRYPTO, DEFENSIVE_CRYPTO } from './services/draftAssets';
 // Recommendation Engine
@@ -14974,6 +14976,172 @@ export default function PortfolioDuel() {
     showToast(`BaggerBomb Training battle started vs CPU! 🤖🏈`);
   };
 
+  // ============================================
+  // BAGGERBOMB TRAINING V3: CREATE V3 TRAINING BATTLE (Tiered Portfolio)
+  // ============================================
+  const handleCreateBaggerBombTrainingBattleV3 = async (portfolioData) => {
+    // portfolioData comes from SlotBasedBuilder: { star, core, support, bench }
+
+    // Generate CPU portfolio with V3 structure
+    const cpuPortfolioData = generateCPUPortfolioBaggerBombV3(stocksData, cryptoData);
+
+    // Calculate start and end dates (1 hour for training)
+    const now = new Date();
+    const startDate = new Date(now);
+    const TRAINING_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
+    const endDate = new Date(startDate.getTime() + TRAINING_DURATION);
+
+    // Flatten portfolios to collect all symbols for price fetching
+    const userAssets = flattenPortfolio(portfolioData);
+    const cpuAssets = flattenPortfolio(cpuPortfolioData.portfolio);
+    const userBenchAssets = flattenBench(portfolioData.bench);
+    const cpuBenchAssets = flattenBench(cpuPortfolioData.bench);
+    const allAssets = [...userAssets, ...cpuAssets, ...userBenchAssets, ...cpuBenchAssets];
+    const uniqueSymbols = [...new Set(allAssets.map(a => a?.symbol).filter(Boolean))];
+
+    // Fetch starting prices for all assets
+    const startingPrices = {};
+    for (const symbol of uniqueSymbols) {
+      const asset = allAssets.find(a => a?.symbol === symbol);
+      try {
+        const isCrypto = asset?.isCrypto || POPULAR_CRYPTO.some(c => c.symbol === symbol);
+
+        if (isCrypto) {
+          const cryptoInfo = POPULAR_CRYPTO.find(c => c.symbol === symbol);
+          const data = await stockAPI.getCryptoPrice(cryptoInfo?.symbol || symbol);
+          startingPrices[symbol] = data.price;
+        } else {
+          const data = await stockAPI.getStockPrice(symbol);
+          startingPrices[symbol] = data.price;
+        }
+      } catch (error) {
+        console.error(`Error fetching price for ${symbol}:`, error);
+        startingPrices[symbol] = asset?.price || 0;
+      }
+    }
+
+    // Helper to update prices in V3 portfolio
+    const updateV3PortfolioPrices = (portfolio) => ({
+      star: (portfolio.star || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price } : null),
+      core: (portfolio.core || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price } : null),
+      support: (portfolio.support || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price } : null),
+    });
+
+    const updateV3BenchPrices = (bench) => ({
+      stocks: (bench.stocks || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price } : null),
+      crypto: bench.crypto ? { ...bench.crypto, price: startingPrices[bench.crypto.symbol] || bench.crypto.price } : null,
+    });
+
+    // Generate unique battle ID
+    const battleId = `training_baggerbomb_v3_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const odUserId = user.odUserId || user.username;
+
+    // Create V3 training battle object
+    const trainingBattle = {
+      id: battleId,
+      challengeCode: 'TRAINING',
+      _v: 3, // V3 version marker (tiered portfolios)
+
+      // Creator object (user)
+      creator: {
+        uid: user.odUserId || user.username,
+        odUserId: user.odUserId || user.username,
+        username: user.username,
+        portfolioName: 'Training Battle',
+        portfolio: updateV3PortfolioPrices(portfolioData),
+        bench: updateV3BenchPrices(portfolioData.bench),
+        history: {},
+      },
+
+      // Opponent object (CPU)
+      opponent: {
+        uid: 'cpu',
+        odUserId: 'cpu',
+        username: 'CPU Opponent',
+        portfolioName: 'CPU Strategy',
+        portfolio: updateV3PortfolioPrices(cpuPortfolioData.portfolio),
+        bench: updateV3BenchPrices(cpuPortfolioData.bench),
+        history: {},
+      },
+
+      // Timeline
+      timeline: {
+        createdAt: now.toISOString(),
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        completedAt: null,
+      },
+
+      // State
+      state: {
+        status: 'active',
+        currentSession: '',
+        completedSessions: [],
+        startingPrices: startingPrices,
+      },
+
+      // Session prices (empty initially)
+      sessionPrices: {
+        MORNING_BELL: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
+        MIDDAY: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
+        POWER_HOUR: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
+        NIGHT_GAME: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
+      },
+
+      // BaggerBomb specific
+      breakouts: { creator: [], opponent: [] },
+      substitutions: [],
+      sessionScores: {
+        MORNING_BELL: { creator: 0, opponent: 0, winner: '' },
+        MIDDAY: { creator: 0, opponent: 0, winner: '' },
+        POWER_HOUR: { creator: 0, opponent: 0, winner: '' },
+        NIGHT_GAME: { creator: 0, opponent: 0, winner: '' },
+      },
+
+      // Legacy fields
+      status: 'active',
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      startingPrices: startingPrices,
+
+      // Training flags
+      isTraining: true,
+      isTrainingBattle: true,
+      createdAt: now.toISOString(),
+    };
+
+    // Save to Firebase for persistence
+    try {
+      const { doc, setDoc } = await import('firebase/firestore');
+      const { db } = await import('./firebase/config');
+
+      await setDoc(doc(db, 'trainingBattles', battleId), trainingBattle);
+      console.log('✅ BaggerBomb Training V3 battle saved to Firebase:', battleId);
+    } catch (firebaseError) {
+      console.error('⚠️ Failed to save BaggerBomb training V3 battle to Firebase:', firebaseError);
+    }
+
+    // Update component state
+    setBattles(prevBattles => {
+      const exists = prevBattles.some(b => b.id === trainingBattle.id);
+      if (exists) {
+        console.log('⚠️ BaggerBomb Training V3 battle already exists, skipping add');
+        return prevBattles;
+      }
+      const updatedBattles = [...prevBattles, trainingBattle];
+      saveBattlesSafe(updatedBattles);
+      return updatedBattles;
+    });
+
+    setActiveBattleId(trainingBattle.id);
+    setBuilderMode('create');
+    setTrainingBattleType('classic');
+
+    // Navigate to dashboard
+    setScreen('dashboard');
+    showToast(`BaggerBomb Training V3 started vs CPU! 🤖💣`);
+  };
+
   // Generate CPU portfolio for BaggerBomb mode
   const generateCPUPortfolioBaggerBomb = (stocks, crypto) => {
     // Select random stocks with varied thresholds from different sectors
@@ -15061,6 +15229,89 @@ export default function PortfolioDuel() {
         position: 'long'
       });
     }
+
+    return { portfolio, bench };
+  };
+
+  // Generate V3 CPU portfolio for BaggerBomb Training mode (tiered structure)
+  const generateCPUPortfolioBaggerBombV3 = (stocks, crypto) => {
+    // Select random stocks with varied thresholds from different sectors
+    const sectors = ['Technology', 'Finance', 'Healthcare', 'Energy', 'Consumer Discretionary', 'Industrials'];
+    const cpuStocks = [];
+    const usedSymbols = new Set();
+
+    // Pick stocks from different sectors
+    sectors.forEach(sector => {
+      const sectorStocks = stocks.filter(s =>
+        (s.sector === sector || s.category === sector) && !usedSymbols.has(s.symbol)
+      );
+      if (sectorStocks.length > 0) {
+        const randomStock = sectorStocks[Math.floor(Math.random() * sectorStocks.length)];
+        cpuStocks.push(randomStock);
+        usedSymbols.add(randomStock.symbol);
+      }
+    });
+
+    // Fill to 6 stocks if needed (2 star + 2 core + 2 support stocks)
+    while (cpuStocks.length < 6) {
+      const randomStock = stocks[Math.floor(Math.random() * stocks.length)];
+      if (!usedSymbols.has(randomStock.symbol)) {
+        cpuStocks.push(randomStock);
+        usedSymbols.add(randomStock.symbol);
+      }
+    }
+
+    // Helper to format asset for V3 structure
+    const formatV3Asset = (asset, isCrypto = false) => ({
+      symbol: asset.symbol,
+      name: asset.name || asset.symbol,
+      price: asset.price || 0,
+      baseATR: asset.baseATR || (isCrypto ? 5.0 : 2.5),
+      isCrypto,
+    });
+
+    // Select crypto for support slot
+    const eligibleCrypto = crypto.filter(c =>
+      (!c.category || c.category !== 'Stablecoin') && !usedSymbols.has(c.symbol)
+    ).slice(0, 8);
+    const mainCrypto = eligibleCrypto[Math.floor(Math.random() * eligibleCrypto.length)];
+    if (mainCrypto) usedSymbols.add(mainCrypto.symbol);
+
+    // Build V3 tiered portfolio
+    const portfolio = {
+      star: [
+        formatV3Asset(cpuStocks[0]),
+        formatV3Asset(cpuStocks[1]),
+      ],
+      core: [
+        formatV3Asset(cpuStocks[2]),
+        formatV3Asset(cpuStocks[3]),
+      ],
+      support: [
+        formatV3Asset(cpuStocks[4]),
+        formatV3Asset(cpuStocks[5]),
+        mainCrypto ? formatV3Asset(mainCrypto, true) : null,
+      ],
+    };
+
+    // Generate bench (3 stocks + 1 crypto)
+    const benchStocks = [];
+    for (let i = 0; i < 3; i++) {
+      const remaining = stocks.filter(s => !usedSymbols.has(s.symbol));
+      if (remaining.length > 0) {
+        const randomStock = remaining[Math.floor(Math.random() * remaining.length)];
+        benchStocks.push(formatV3Asset(randomStock));
+        usedSymbols.add(randomStock.symbol);
+      }
+    }
+
+    // Bench crypto (different from main crypto)
+    const benchCrypto = eligibleCrypto.find(c => !usedSymbols.has(c.symbol));
+
+    const bench = {
+      stocks: benchStocks,
+      crypto: benchCrypto ? formatV3Asset(benchCrypto, true) : null,
+    };
 
     return { portfolio, bench };
   };
@@ -21624,21 +21875,18 @@ export default function PortfolioDuel() {
     );
   }
 
-  // BAGGERBOMB TRAINING PORTFOLIO BUILDER SCREEN
+  // BAGGERBOMB TRAINING PORTFOLIO BUILDER SCREEN (V3 - Tiered Portfolio)
   if (screen === 'trainingPortfolioBuilderTD') {
     return (
-      <Suspense fallback={<LoadingFallback />}>
-        <PortfolioBuilderBaggerBomb
-          user={user}
-          stocksData={stocksData}
-          cryptoData={cryptoData}
-          onSubmit={handleCreateBaggerBombTrainingBattle}
-          onBack={() => {
-            setBuilderMode('create');
-            setScreen('dashboard');
-          }}
-        />
-      </Suspense>
+      <SlotBasedBuilder
+        stocks={stocksData}
+        crypto={cryptoData}
+        onComplete={handleCreateBaggerBombTrainingBattleV3}
+        onBack={() => {
+          setBuilderMode('create');
+          setScreen('dashboard');
+        }}
+      />
     );
   }
 
