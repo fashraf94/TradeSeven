@@ -1,6 +1,6 @@
 // /src/components/Dashboard/PendingLobbiesSection.jsx
 // Shows pending lobbies (BaggerBomb V3 + Snake Draft) where user is creator OR participant
-// Uses horizontal carousel layout matching Active PVP section
+// Shows all player slots with detailed status (matching reference design)
 
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
@@ -31,31 +31,85 @@ function getAssetCount(portfolio) {
   return starCount + coreCount + supportCount;
 }
 
-// Get player count for Snake Draft
-function getSnakeDraftPlayerCount(draft) {
-  const current = draft.players?.length || 1;
-  const max = draft.maxPlayers || 4;
-  return { current, max };
+// Individual Player Slot Component
+function PlayerSlot({ rank, player, isCurrentUser, isHost, isEmpty }) {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      padding: '6px 10px',
+      marginBottom: '4px',
+      borderRadius: '8px',
+      background: isCurrentUser ? 'rgba(0, 217, 255, 0.1)' : 'transparent',
+      border: isCurrentUser ? '1px solid rgba(0, 217, 255, 0.3)' : '1px solid transparent',
+    }}>
+      {/* Rank number */}
+      <span style={{
+        fontSize: '12px',
+        fontWeight: '700',
+        color: '#ffd700',
+        minWidth: '22px',
+        fontFamily: "'SF Mono', 'Monaco', monospace",
+      }}>
+        [{rank}]
+      </span>
+
+      {/* Avatar */}
+      <div style={{
+        width: '28px',
+        height: '28px',
+        borderRadius: '50%',
+        background: isEmpty ? '#21262d' : (isCurrentUser ? 'rgba(0, 217, 255, 0.2)' : 'rgba(255, 255, 255, 0.05)'),
+        border: isEmpty ? '2px dashed #30363d' : `2px solid ${isCurrentUser ? '#00d9ff' : '#30363d'}`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: isEmpty ? '12px' : '11px',
+        fontWeight: '600',
+        color: isEmpty ? '#484f58' : (isCurrentUser ? '#00d9ff' : '#8b949e'),
+        flexShrink: 0,
+      }}>
+        {isEmpty ? '?' : (player?.avatar || (player?.odUsername || player?.username || 'P')[0].toUpperCase())}
+      </div>
+
+      {/* Username */}
+      <span style={{
+        flex: 1,
+        fontSize: '13px',
+        fontWeight: isCurrentUser ? '700' : '500',
+        color: isEmpty ? '#484f58' : (isCurrentUser ? '#00d9ff' : '#e6edf3'),
+        fontStyle: isEmpty ? 'italic' : 'normal',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      }}>
+        {isEmpty ? 'Waiting...' : (isCurrentUser ? 'YOU' : (player?.odUsername || player?.username || 'Player'))}
+      </span>
+
+      {/* Role label */}
+      {!isEmpty && (
+        <span style={{
+          fontSize: '10px',
+          fontWeight: '600',
+          color: isHost ? '#10b981' : '#6e7681',
+        }}>
+          {isHost ? 'Host' : 'Ready'}
+        </span>
+      )}
+    </div>
+  );
 }
 
-// Compact Pending Lobby Card - matches ClashCard dimensions
+// Pending Lobby Card with all player slots visible
 function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyCode }) {
   const isBaggerBomb = type === 'baggerbomb';
   const isSnakeDraft = type === 'snakeDraft';
-
-  // Get host/creator info
-  const hostName = isBaggerBomb
-    ? (lobby.creator?.username || 'Host')
-    : (lobby.players?.find(p => p.isHost)?.odUsername || 'Host');
 
   // Get created time
   const createdAt = isBaggerBomb
     ? lobby.timing?.createdAt
     : (lobby.createdAt?.toDate ? lobby.createdAt.toDate() : lobby.createdAt);
-
-  // Get asset/player count
-  const assetCount = isBaggerBomb ? getAssetCount(lobby.creator?.portfolio) : 0;
-  const playerCount = isSnakeDraft ? getSnakeDraftPlayerCount(lobby) : null;
 
   // Get lobby code
   const lobbyCode = isBaggerBomb ? lobby.challengeCode : lobby.code;
@@ -68,6 +122,41 @@ function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyC
   const borderColor = '#00d9ff';
   const roleBadgeColor = isHost ? '#00d9ff' : '#10b981';
 
+  // Build player slots for Snake Draft
+  let slots = [];
+  let currentPlayerCount = 0;
+  let maxPlayers = 4;
+
+  if (isSnakeDraft) {
+    const players = lobby.players || [];
+    maxPlayers = lobby.maxPlayers || 4;
+    currentPlayerCount = players.length;
+
+    // Create array of all slots (filled + empty)
+    slots = Array.from({ length: maxPlayers }, (_, i) => {
+      const player = players[i] || null;
+      const isMe = player?.odUserId === currentUserId;
+      const playerIsHost = player?.isHost || false;
+      return { player, isMe, isHost: playerIsHost, isEmpty: !player };
+    });
+  } else if (isBaggerBomb) {
+    // BaggerBomb: 2 slots (creator vs opponent)
+    maxPlayers = 2;
+    const creator = lobby.creator;
+    const opponent = lobby.opponent?.uid ? lobby.opponent : null;
+    currentPlayerCount = opponent ? 2 : 1;
+
+    const creatorIsMe = (creator?.odUserId === currentUserId) || (creator?.uid === currentUserId);
+    const opponentIsMe = opponent && ((opponent?.odUserId === currentUserId) || (opponent?.uid === currentUserId));
+
+    slots = [
+      { player: creator, isMe: creatorIsMe, isHost: true, isEmpty: false },
+      { player: opponent, isMe: opponentIsMe, isHost: false, isEmpty: !opponent },
+    ];
+  }
+
+  const waitingCount = maxPlayers - currentPlayerCount;
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
@@ -75,13 +164,11 @@ function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyC
       transition={{ duration: 0.3 }}
       onClick={onPress}
       style={{
-        // Match ClashCard dimensions exactly
         flex: '0 0 auto',
-        width: 'calc(85vw - 32px)',
-        maxWidth: '340px',
-        minWidth: '280px',
+        width: 'calc(90vw - 32px)',
+        maxWidth: '380px',
+        minWidth: '320px',
         scrollSnapAlign: 'start',
-        // Card styling
         background: '#161b22',
         borderRadius: '16px',
         border: `2px solid ${borderColor}60`,
@@ -97,9 +184,9 @@ function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyC
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: '14px',
+        marginBottom: '12px',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '16px' }}>{gameEmoji}</span>
           <span style={{
             fontSize: '12px',
@@ -112,7 +199,7 @@ function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyC
           </span>
           {/* HOST/JOINED Badge */}
           <span style={{
-            padding: '2px 5px',
+            padding: '2px 6px',
             background: `${roleBadgeColor}20`,
             borderRadius: '4px',
             fontSize: '9px',
@@ -120,6 +207,17 @@ function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyC
             color: roleBadgeColor,
           }}>
             {isHost ? 'HOST' : 'JOINED'}
+          </span>
+          {/* PENDING Badge */}
+          <span style={{
+            padding: '2px 6px',
+            background: `${pendingColor}20`,
+            borderRadius: '4px',
+            fontSize: '9px',
+            fontWeight: '700',
+            color: pendingColor,
+          }}>
+            PENDING
           </span>
         </div>
 
@@ -129,91 +227,73 @@ function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyC
           alignItems: 'center',
           gap: '4px',
           padding: '4px 8px',
-          background: `${pendingColor}15`,
+          background: 'rgba(139, 148, 158, 0.1)',
           borderRadius: '8px',
-          border: `1px solid ${pendingColor}40`,
+          flexShrink: 0,
         }}>
-          <Clock size={11} style={{ color: pendingColor }} />
+          <Clock size={11} style={{ color: '#8b949e' }} />
           <span style={{
             fontSize: '11px',
             fontWeight: '600',
-            color: pendingColor,
+            color: '#8b949e',
           }}>
             {formatTimeAgo(createdAt)}
           </span>
         </div>
       </div>
 
-      {/* Compact VS Layout */}
+      {/* Main content: Player slots + Stats */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: '12px',
+        gap: '12px',
       }}>
-        {/* Your side */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '50%',
-            background: 'rgba(0, 217, 255, 0.15)',
-            border: '2px solid #00d9ff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '18px',
-          }}>
-            👤
-          </div>
-          <div>
-            <div style={{ fontSize: '13px', fontWeight: '700', color: '#00d9ff' }}>
-              YOU
-            </div>
-            <div style={{ fontSize: '11px', color: '#10b981' }}>
-              {isBaggerBomb ? `${assetCount} assets` : 'Ready'}
-            </div>
-          </div>
+        {/* Left: Player slots list */}
+        <div style={{ flex: 1 }}>
+          {slots.map((slot, idx) => (
+            <PlayerSlot
+              key={idx}
+              rank={idx + 1}
+              player={slot.player}
+              isCurrentUser={slot.isMe}
+              isHost={slot.isHost}
+              isEmpty={slot.isEmpty}
+            />
+          ))}
         </div>
 
-        {/* VS */}
+        {/* Right: Player count stats */}
         <div style={{
-          fontSize: '12px',
-          fontWeight: '700',
-          color: '#6e7681',
-          padding: '0 8px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minWidth: '70px',
+          paddingLeft: '12px',
+          borderLeft: '1px solid #21262d',
         }}>
-          VS
-        </div>
-
-        {/* Opponent/Waiting side */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexDirection: 'row-reverse' }}>
-          <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '50%',
-            background: '#21262d',
-            border: '2px dashed #30363d',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '16px',
-            color: '#484f58',
+          <span style={{
+            fontSize: '24px',
+            fontWeight: '800',
+            color: currentPlayerCount === maxPlayers ? '#10b981' : pendingColor,
+            fontFamily: "'SF Mono', 'Monaco', monospace",
+            lineHeight: 1,
           }}>
-            ?
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '13px', fontWeight: '600', color: '#6e7681', fontStyle: 'italic' }}>
-              {isSnakeDraft ? `${playerCount?.current}/${playerCount?.max}` : 'Waiting'}
-            </div>
-            <div style={{ fontSize: '11px', color: '#484f58' }}>
-              {isSnakeDraft ? 'players' : 'opponent'}
-            </div>
-          </div>
+            {currentPlayerCount}/{maxPlayers}
+          </span>
+          <span style={{
+            fontSize: '10px',
+            fontWeight: '600',
+            color: '#8b949e',
+            marginTop: '4px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+          }}>
+            PLAYERS
+          </span>
         </div>
       </div>
 
-      {/* Bottom: Status bar with code */}
+      {/* Bottom: Waiting message + Lobby code */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -221,18 +301,15 @@ function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyC
         padding: '10px 12px',
         background: 'rgba(33, 38, 45, 0.8)',
         borderRadius: '8px',
-        marginTop: '4px',
+        marginTop: '12px',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <div style={{
-            width: '8px',
-            height: '8px',
-            borderRadius: '50%',
-            background: pendingColor,
-            animation: 'pulse 2s ease-in-out infinite',
-          }} />
-          <span style={{ fontSize: '11px', color: '#8b949e' }}>
-            Waiting...
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Users size={14} style={{ color: '#8b949e' }} />
+          <span style={{ fontSize: '12px', color: '#8b949e' }}>
+            {waitingCount > 0
+              ? `Waiting for ${waitingCount} more`
+              : 'Ready to start!'
+            }
           </span>
         </div>
 
@@ -247,30 +324,22 @@ function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyC
               display: 'flex',
               alignItems: 'center',
               gap: '5px',
-              padding: '4px 8px',
+              padding: '5px 10px',
               background: '#00d9ff15',
               border: '1px solid #00d9ff40',
               borderRadius: '6px',
               color: '#00d9ff',
-              fontSize: '10px',
+              fontSize: '11px',
               fontWeight: '700',
               cursor: 'pointer',
               fontFamily: "'SF Mono', 'Monaco', monospace",
             }}
           >
-            <Copy size={10} />
+            <Copy size={11} />
             {lobbyCode}
           </button>
         )}
       </div>
-
-      {/* Pulse animation */}
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
-        }
-      `}</style>
     </motion.div>
   );
 }
@@ -305,12 +374,12 @@ export default function PendingLobbiesSection({
       // Snake Draft
       else if (lobby.isSnakeDraft || lobby.battleType === 'snake-draft') {
         const host = lobby.players?.find(p => p.isHost);
-        const isHost = host?.odUserId === userId;
+        const isHostUser = host?.odUserId === userId;
         const isPlayer = lobby.players?.some(p => p.odUserId === userId);
         const isPending = lobby.status === 'waiting';
 
-        if ((isHost || isPlayer) && isPending) {
-          pending.push({ lobby, type: 'snakeDraft', isHost });
+        if ((isHostUser || isPlayer) && isPending) {
+          pending.push({ lobby, type: 'snakeDraft', isHost: isHostUser });
         }
       }
     });
