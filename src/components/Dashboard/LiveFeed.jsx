@@ -624,11 +624,18 @@ export default function LiveFeed({
   setCurrentDraft,
 }) {
   const [selectedBattle, setSelectedBattle] = useState(null);
+  const [showLobbyNotifications, setShowLobbyNotifications] = useState(true);
 
   const feedItems = useMemo(
     () => generateFeedItems(waitingBattles, completedBattles, stocksData, user, lobbyBattles),
     [waitingBattles, completedBattles, stocksData, user, lobbyBattles]
   );
+
+  // Filter feed items based on toggle
+  const filteredFeedItems = useMemo(() => {
+    if (showLobbyNotifications) return feedItems;
+    return feedItems.filter(item => item.type !== 'lobby');
+  }, [feedItems, showLobbyNotifications]);
 
   const handleAction = (item) => {
     if (item.type === 'lobby' && item.battle) {
@@ -698,24 +705,63 @@ export default function LiveFeed({
       }}
     >
       {/* Section Header */}
-      <h3 style={{
-        fontSize: '14px',
-        fontWeight: '600',
-        color: '#8b949e',
-        textTransform: 'uppercase',
-        letterSpacing: '1px',
-        marginBottom: '16px',
+      <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: '8px',
-        margin: '0 0 16px 0',
+        justifyContent: 'space-between',
+        marginBottom: '16px',
         padding: '0 4px',
       }}>
-        📡 LIVE FEED
-      </h3>
+        <h3 style={{
+          fontSize: '14px',
+          fontWeight: '600',
+          color: '#8b949e',
+          textTransform: 'uppercase',
+          letterSpacing: '1px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          margin: 0,
+        }}>
+          📡 LIVE FEED
+        </h3>
+
+        {/* Lobby notifications toggle */}
+        <button
+          onClick={() => setShowLobbyNotifications(!showLobbyNotifications)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '4px 10px',
+            background: showLobbyNotifications ? 'rgba(0, 217, 255, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+            border: `1px solid ${showLobbyNotifications ? 'rgba(0, 217, 255, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+            borderRadius: '6px',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+          }}
+        >
+          <span style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            background: showLobbyNotifications ? '#00d9ff' : '#6e7681',
+            transition: 'background 0.2s',
+          }} />
+          <span style={{
+            fontSize: '10px',
+            fontWeight: '600',
+            color: showLobbyNotifications ? '#00d9ff' : '#6e7681',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+          }}>
+            Lobbies
+          </span>
+        </button>
+      </div>
 
       {/* Feed items with peek scroll */}
-      {feedItems.length > 0 ? (
+      {filteredFeedItems.length > 0 ? (
         <div
           className="live-feed-scroll"
           style={{
@@ -739,7 +785,7 @@ export default function LiveFeed({
             .live-feed-scroll::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
             .live-feed-scroll::-webkit-scrollbar-thumb:hover { background: #484f58; }
           `}</style>
-          {feedItems.map((item) => (
+          {filteredFeedItems.map((item) => (
             <FeedItem key={item.id} item={item} onAction={handleAction} />
           ))}
         </div>

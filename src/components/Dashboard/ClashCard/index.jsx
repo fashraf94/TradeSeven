@@ -160,29 +160,41 @@ export default function ClashCard({
 
   const currentUserId = user?.odUserId || user?.username;
 
-  // TRAINING battles (simplified purple variant)
+  // TRAINING battles
   if (battleType === 'training') {
-    const myReturn = battle.player1?.percentChange || 0;
-    const cpuReturn = battle.player2?.percentChange || 0;
-
     // Check if it's a draft-type training (has players array)
     const isDraftTraining = battle.players && battle.players.length > 2;
-    let position = null;
-    let totalPlayers = null;
 
+    // Draft training: route to ClashCardDraft with training styling (leaderboard view)
     if (isDraftTraining) {
-      const draftData = buildDraftStandings(battle, currentUserId);
-      position = draftData.myPosition;
-      totalPlayers = battle.players.length;
+      const { standings, myPosition, myPoints, leaderPoints } = buildDraftStandings(battle, currentUserId);
+
+      return (
+        <ClashCardDraft
+          battle={{ ...battle, isTrainingBattle: true }}
+          standings={standings}
+          myPosition={myPosition}
+          myPoints={myPoints}
+          leaderPoints={leaderPoints}
+          remainingMs={remainingMs}
+          onPress={onPress}
+          isMostUrgent={false}
+          currentUserId={currentUserId}
+        />
+      );
     }
+
+    // 1v1 training: use simplified ClashCardTraining
+    const myReturn = battle.player1?.percentChange || 0;
+    const cpuReturn = battle.player2?.percentChange || 0;
 
     return (
       <ClashCardTraining
         battle={battle}
         myReturn={myReturn}
         opponentReturn={cpuReturn}
-        position={position}
-        totalPlayers={totalPlayers}
+        position={null}
+        totalPlayers={null}
         remainingMs={remainingMs}
         onPress={onPress}
       />
