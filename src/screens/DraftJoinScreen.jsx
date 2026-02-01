@@ -371,11 +371,91 @@ const DraftJoinScreen = ({
           <p style={{
             color: '#8b949e',
             fontSize: '15px',
-            marginBottom: '20px',
+            marginBottom: '16px',
             textAlign: 'center',
           }}>
             Join an open draft or create your own
           </p>
+
+          {/* Code Entry Section (Collapsible) - AT TOP */}
+          <div style={{
+            background: '#161b22',
+            border: '1px solid #21262d',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            marginBottom: '16px',
+          }}>
+            <button
+              onClick={() => setShowCodeEntry(!showCodeEntry)}
+              style={{
+                width: '100%',
+                padding: '14px 16px',
+                background: 'transparent',
+                border: 'none',
+                color: '#8b949e',
+                fontSize: '14px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span>Have a code? Join private draft</span>
+              <ChevronRight
+                size={18}
+                style={{
+                  transform: showCodeEntry ? 'rotate(90deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.2s ease',
+                }}
+              />
+            </button>
+
+            {showCodeEntry && (
+              <div style={{ padding: '0 16px 16px' }}>
+                <input
+                  type="text"
+                  value={draftJoinCode || ''}
+                  onChange={(e) => setDraftJoinCode(e.target.value.toUpperCase())}
+                  placeholder="e.g., BULL-1234"
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    textAlign: 'center',
+                    letterSpacing: '3px',
+                    background: '#0d1117',
+                    border: '2px solid #21262d',
+                    borderRadius: '8px',
+                    color: '#ffffff',
+                    marginBottom: '12px',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                  maxLength={10}
+                />
+                <button
+                  onClick={handleJoinByCode}
+                  disabled={!draftJoinCode?.trim()}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    background: draftJoinCode?.trim()
+                      ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                      : '#21262d',
+                    color: draftJoinCode?.trim() ? '#ffffff' : '#8b949e',
+                    fontWeight: 'bold',
+                    fontSize: '14px',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: draftJoinCode?.trim() ? 'pointer' : 'not-allowed'
+                  }}
+                >
+                  JOIN WITH CODE
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Create New Draft Button */}
           <button
@@ -451,89 +531,8 @@ const DraftJoinScreen = ({
               })}
             </div>
           ) : (
-            <div style={{ marginBottom: '24px' }}>
-              <EmptyState />
-            </div>
+            <EmptyState />
           )}
-
-          {/* Code Entry Section (Collapsible) */}
-          <div style={{
-            background: '#161b22',
-            border: '1px solid #21262d',
-            borderRadius: '12px',
-            overflow: 'hidden',
-          }}>
-            <button
-              onClick={() => setShowCodeEntry(!showCodeEntry)}
-              style={{
-                width: '100%',
-                padding: '14px 16px',
-                background: 'transparent',
-                border: 'none',
-                color: '#8b949e',
-                fontSize: '14px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <span>Have a code? Join private draft</span>
-              <ChevronRight
-                size={18}
-                style={{
-                  transform: showCodeEntry ? 'rotate(90deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.2s ease',
-                }}
-              />
-            </button>
-
-            {showCodeEntry && (
-              <div style={{ padding: '0 16px 16px' }}>
-                <input
-                  type="text"
-                  value={draftJoinCode || ''}
-                  onChange={(e) => setDraftJoinCode(e.target.value.toUpperCase())}
-                  placeholder="e.g., BULL-1234"
-                  style={{
-                    width: '100%',
-                    padding: '14px',
-                    fontSize: '18px',
-                    fontWeight: 'bold',
-                    textAlign: 'center',
-                    letterSpacing: '3px',
-                    background: '#0d1117',
-                    border: '2px solid #21262d',
-                    borderRadius: '8px',
-                    color: '#ffffff',
-                    marginBottom: '12px',
-                    outline: 'none',
-                    boxSizing: 'border-box'
-                  }}
-                  maxLength={10}
-                />
-                <button
-                  onClick={handleJoinByCode}
-                  disabled={!draftJoinCode?.trim()}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    background: draftJoinCode?.trim()
-                      ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                      : '#21262d',
-                    color: draftJoinCode?.trim() ? '#ffffff' : '#8b949e',
-                    fontWeight: 'bold',
-                    fontSize: '14px',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: draftJoinCode?.trim() ? 'pointer' : 'not-allowed'
-                  }}
-                >
-                  JOIN WITH CODE
-                </button>
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>
