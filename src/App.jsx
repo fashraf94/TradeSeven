@@ -36,6 +36,7 @@ const PortfolioBuilderBaggerBomb = lazy(() => import('./components/BaggerBomb/Po
 const BaggerBombBattleViewRedesign = lazy(() => import('./components/BaggerBomb/BaggerBombBattleViewRedesign'));
 const BaggerBombBattleViewConnected = lazy(() => import('./screens/BaggerBombBattleViewConnected'));
 const BaggerBombLobby = lazy(() => import('./screens/BaggerBombLobby'));
+const BaggerBombSetupScreen = lazy(() => import('./screens/BaggerBombSetupScreen'));
 const BaggerBombGamePlanFlow = lazy(() => import('./components/GamePlan/BaggerBombGamePlanFlow'));
 const StonkOptionsArenaV2 = lazy(() => import('./components/optionsArena/StonkOptionsArenaV2'));
 
@@ -11320,6 +11321,9 @@ export default function PortfolioDuel() {
   const [showRulesModal, setShowRulesModal] = useState(false); // Rules modal state
   const [rulesActiveTab, setRulesActiveTab] = useState('classic'); // Rules modal active tab
 
+  // BaggerBomb lobby time selection
+  const [lobbyTimeMinutes, setLobbyTimeMinutes] = useState(30); // Default 30 minutes
+
   // Battle joining state
   const [joinCode, setJoinCode] = useState('');
 
@@ -21648,7 +21652,7 @@ export default function PortfolioDuel() {
           loading={lobbyLoading}
           onCreateBattle={() => {
             setBattleToJoin(null);
-            setScreen('baggerBombBuilder');
+            setScreen('baggerBombSetup');
           }}
           onJoinBattle={(battle) => {
             setBattleToJoin(battle);
@@ -21664,6 +21668,21 @@ export default function PortfolioDuel() {
               console.error('Failed to refresh lobby:', err);
             }
             setLobbyLoading(false);
+          }}
+        />
+      </Suspense>
+    );
+  }
+
+  // BAGGERBOMB SETUP - Time selection before portfolio builder
+  if (screen === 'baggerBombSetup') {
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        <BaggerBombSetupScreen
+          onBack={() => setScreen('baggerBombLobby')}
+          onContinue={(timeMinutes) => {
+            setLobbyTimeMinutes(timeMinutes);
+            setScreen('baggerBombBuilder');
           }}
         />
       </Suspense>
@@ -21693,7 +21712,7 @@ export default function PortfolioDuel() {
                 username: user.displayName || user.username,
                 avatar: user.avatar || '',
               },
-            });
+            }, lobbyTimeMinutes);
             if (battleData?.id) {
               showToast(`Battle created! Waiting for opponent...`);
               setCurrentBattle(battleData);
@@ -21705,7 +21724,7 @@ export default function PortfolioDuel() {
           }
         }}
         onBack={() => {
-          setScreen('baggerBombLobby');
+          setScreen('baggerBombSetup');
         }}
       />
     );

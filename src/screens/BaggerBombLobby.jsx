@@ -4,9 +4,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, Plus, Users, Clock, Zap, RefreshCw, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, Plus, Users, Clock, Zap, RefreshCw, AlertTriangle, Flame, Calendar, CalendarDays } from 'lucide-react';
 import { HOLO_COLORS } from '../constants/holoTheme';
-import { filterActiveLobbies, getLobbyExpirationStatus, isLobbyFull } from '../utils/lobbyUtils';
+import { filterActiveLobbies, getLobbyExpirationStatus, isLobbyFull, groupBaggerBombLobbiesByTime, getApproximateTimeUntilExpiry } from '../utils/lobbyUtils';
+
+// Icon mapping for tier headers
+const TIER_ICONS = {
+  Flame,
+  Clock,
+  Calendar,
+  CalendarDays,
+};
 
 /**
  * Format time elapsed since battle creation
@@ -24,6 +32,67 @@ function formatTimeAgo(createdAt) {
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   return `${Math.floor(diffHours / 24)}d ago`;
+}
+
+/**
+ * TierHeader - Section header for time-based lobby grouping
+ */
+function TierHeader({ label, sublabel, icon, iconColor, count }) {
+  const IconComponent = TIER_ICONS[icon] || Clock;
+  const isSoon = icon === 'Flame';
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      marginBottom: '12px',
+      marginTop: '8px',
+    }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '32px',
+        height: '32px',
+        borderRadius: '8px',
+        background: isSoon ? 'rgba(245, 158, 11, 0.15)' : HOLO_COLORS.bgElevated,
+        border: `1px solid ${isSoon ? 'rgba(245, 158, 11, 0.3)' : HOLO_COLORS.borderSubtle}`,
+      }}>
+        <IconComponent size={16} color={iconColor || HOLO_COLORS.textSecondary} />
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{
+          fontSize: '13px',
+          fontWeight: 600,
+          color: isSoon ? '#f59e0b' : HOLO_COLORS.textPrimary,
+        }}>
+          {label}
+          {count > 0 && (
+            <span style={{
+              marginLeft: '8px',
+              backgroundColor: isSoon ? 'rgba(245, 158, 11, 0.2)' : HOLO_COLORS.bgElevated,
+              color: isSoon ? '#f59e0b' : HOLO_COLORS.textSecondary,
+              padding: '2px 8px',
+              borderRadius: '10px',
+              fontSize: '11px',
+              fontWeight: 700,
+            }}>
+              {count}
+            </span>
+          )}
+        </div>
+        {sublabel && (
+          <div style={{
+            fontSize: '11px',
+            color: HOLO_COLORS.textMuted,
+          }}>
+            {sublabel}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -74,6 +143,9 @@ function BattleCard({ battle, onJoin, isOwn }) {
   // Get expiration status for warning badges (only for non-full lobbies)
   const isFull = isLobbyFull(battle);
   const expirationStatus = !isFull ? getLobbyExpirationStatus(battle) : null;
+
+  // Get approximate time until expiry for display
+  const expiryCountdown = getApproximateTimeUntilExpiry(battle);
 
   return (
     <motion.div
@@ -147,7 +219,7 @@ function BattleCard({ battle, onJoin, isOwn }) {
               gap: '4px',
             }}>
               <Clock size={12} />
-              {formatTimeAgo(createdAt)}
+              Expires {expiryCountdown}
             </div>
           </div>
         </div>
@@ -250,8 +322,8 @@ export default function BaggerBombLobby({
 
   // Filter to only BaggerBomb V3 battles (exclude SnakeDraft and other types)
   // Also filter out expired lobbies
-  // Then separate own battles from others
-  const { ownBattles, otherBattles } = useMemo(() => {
+  // Then separate own battles from others and group by time tiers
+  const { ownBattles, otherBattlesTiered, totalOtherCount } = useMemo(() => {
     const own = [];
     const others = [];
 
@@ -270,7 +342,14 @@ export default function BaggerBombLobby({
       }
     });
 
-    return { ownBattles: own, otherBattles: others };
+    // Group other battles by expiration time tiers
+    const tiered = groupBaggerBombLobbiesByTime(others);
+
+    return {
+      ownBattles: own,
+      otherBattlesTiered: tiered,
+      totalOtherCount: others.length,
+    };
   }, [openBattles, userId]);
 
   return (
@@ -418,7 +497,7 @@ export default function BaggerBombLobby({
           gap: '8px',
         }}>
           Open Battles
-          {otherBattles.length > 0 && (
+          {totalOtherCount > 0 && (
             <span style={{
               backgroundColor: HOLO_COLORS.cyan,
               color: HOLO_COLORS.bgDeep,
@@ -427,7 +506,7 @@ export default function BaggerBombLobby({
               fontSize: '12px',
               fontWeight: 700,
             }}>
-              {otherBattles.length}
+              {totalOtherCount}
             </span>
           )}
         </h2>
@@ -455,7 +534,7 @@ export default function BaggerBombLobby({
             />
             <span>Loading battles...</span>
           </div>
-        ) : otherBattles.length === 0 ? (
+        ) : totalOtherCount === 0 ? (
           <div style={{
             display: 'flex',
             flexDirection: 'column',
@@ -484,15 +563,31 @@ export default function BaggerBombLobby({
             </span>
           </div>
         ) : (
-          <AnimatePresence>
-            {otherBattles.map(battle => (
-              <BattleCard
-                key={battle.id}
-                battle={battle}
-                onJoin={onJoinBattle}
-              />
+          /* Tiered Display - Group battles by expiration time */
+          <div>
+            {Object.values(otherBattlesTiered).map(tier => (
+              tier.lobbies.length > 0 && (
+                <div key={tier.key} style={{ marginBottom: '16px' }}>
+                  <TierHeader
+                    label={tier.label}
+                    sublabel={tier.sublabel}
+                    icon={tier.icon}
+                    iconColor={tier.iconColor}
+                    count={tier.lobbies.length}
+                  />
+                  <AnimatePresence>
+                    {tier.lobbies.map(battle => (
+                      <BattleCard
+                        key={battle.id}
+                        battle={battle}
+                        onJoin={onJoinBattle}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </div>
+              )
             ))}
-          </AnimatePresence>
+          </div>
         )}
       </div>
     </div>

@@ -158,22 +158,29 @@ export function isLobbyFull(lobby) {
 export function getLobbyExpirationTime(lobby) {
   if (!lobby) return null;
 
-  const scheduledStart = getLobbyScheduledStart(lobby);
-
-  if (scheduledStart) {
-    // Expiration = scheduledStart + grace period
-    return new Date(scheduledStart.getTime() + LOBBY_CONFIG.EXPIRATION_GRACE_PERIOD_MS);
+  // For Snake Draft: use scheduledStart + grace period
+  if (isSnakeDraft(lobby)) {
+    const scheduledStart = getLobbyScheduledStart(lobby);
+    if (scheduledStart) {
+      return new Date(scheduledStart.getTime() + LOBBY_CONFIG.EXPIRATION_GRACE_PERIOD_MS);
+    }
+    return null;
   }
 
-  // BaggerBomb fallback: createdAt + 24 hours if no scheduledStart
+  // For BaggerBomb V3: prefer lobbyExpiresAt field (new), fallback to createdAt + 24h (legacy)
   if (isBaggerBombV3(lobby)) {
+    // NEW: Use lobbyExpiresAt if available (from new time selection feature)
+    if (lobby.timing?.lobbyExpiresAt) {
+      return new Date(lobby.timing.lobbyExpiresAt);
+    }
+
+    // FALLBACK: Legacy lobbies without lobbyExpiresAt - use createdAt + 24 hours
     const createdAt = getLobbyCreatedAt(lobby);
     if (createdAt) {
       return new Date(createdAt.getTime() + LOBBY_CONFIG.BAGGER_BOMB_FALLBACK_EXPIRY_MS);
     }
   }
 
-  // Snake Draft without scheduledStart - skip (should always have scheduledStart)
   return null;
 }
 
@@ -372,4 +379,125 @@ export function formatExpirationTime(timeMs) {
   }
 
   return `${seconds}s`;
+}
+
+/**
+ * Get approximate time until lobby expires (rounded increments for public display)
+ * Used in lobby cards for user-friendly countdown display
+ * @param {Object} lobby - Lobby document
+ * @returns {string} - Formatted time string (~5m, ~30m, ~1h 30m, etc.)
+ */
+export function getApproximateTimeUntilExpiry(lobby) {
+  const expiresAt = getLobbyExpirationTime(lobby);
+  if (!expiresAt) return 'No time set';
+
+  const now = new Date();
+  const diffMs = expiresAt - now;
+
+  if (diffMs <= 0) return 'Expiring now!';
+
+  const diffMins = Math.floor(diffMs / 60000);
+
+  if (diffMins < 10) {
+    // Round UP to 5-minute increments
+    const rounded = Math.ceil(diffMins / 5) * 5;
+    return `~${rounded || 5}m`;
+  } else if (diffMins < 30) {
+    // Round UP to 10-minute increments
+    const rounded = Math.ceil(diffMins / 10) * 10;
+    return `~${rounded}m`;
+  } else if (diffMins < 60) {
+    // Round UP to 30-minute increments
+    const rounded = Math.ceil(diffMins / 30) * 30;
+    return `~${rounded}m`;
+  } else {
+    // Over 1 hour - round to 30-minute increments, show hours + mins
+    const totalMins = Math.ceil(diffMins / 30) * 30;
+    const hours = Math.floor(totalMins / 60);
+    const mins = totalMins % 60;
+    return mins > 0 ? `~${hours}h ${mins}m` : `~${hours}h`;
+  }
+}
+
+/**
+ * Get minutes until lobby expires for tier grouping
+ * @param {Object} lobby - Lobby document
+ * @returns {number} - Minutes until expiration (0 if expired or cannot determine)
+ */
+export function getMinutesUntilExpiry(lobby) {
+  const expiresAt = getLobbyExpirationTime(lobby);
+  if (!expiresAt) return 0;
+  const now = new Date();
+  const diffMs = expiresAt - now;
+  return Math.max(0, Math.floor(diffMs / 60000));
+}
+
+/**
+ * Group BaggerBomb lobbies by expiration time tiers
+ * Matches the Snake Draft pattern for consistent UX
+ * @param {Array} lobbies - Array of BaggerBomb lobby documents
+ * @returns {Object} - Tiers object with lobbies grouped by time
+ */
+export function groupBaggerBombLobbiesByTime(lobbies) {
+  const tiers = {
+    soon: {
+      key: 'soon',
+      label: 'Expiring Soon',
+      sublabel: 'under 30 min',
+      icon: 'Flame',
+      iconColor: '#f59e0b',
+      lobbies: []
+    },
+    medium: {
+      key: 'medium',
+      label: 'Expiring in 30min - 1 hour',
+      sublabel: null,
+      icon: 'Clock',
+      iconColor: '#8b949e',
+      lobbies: []
+    },
+    later: {
+      key: 'later',
+      label: 'Expiring in 1-2 hours',
+      sublabel: null,
+      icon: 'Calendar',
+      iconColor: '#8b949e',
+      lobbies: []
+    },
+    future: {
+      key: 'future',
+      label: 'Expiring in 2+ hours',
+      sublabel: null,
+      icon: 'CalendarDays',
+      iconColor: '#8b949e',
+      lobbies: []
+    },
+  };
+
+  if (!Array.isArray(lobbies)) return tiers;
+
+  lobbies.forEach(lobby => {
+    const diffMins = getMinutesUntilExpiry(lobby);
+
+    if (diffMins < 30) {
+      tiers.soon.lobbies.push(lobby);
+    } else if (diffMins < 60) {
+      tiers.medium.lobbies.push(lobby);
+    } else if (diffMins < 120) {
+      tiers.later.lobbies.push(lobby);
+    } else {
+      tiers.future.lobbies.push(lobby);
+    }
+  });
+
+  // Sort each tier by soonest first
+  Object.values(tiers).forEach(tier => {
+    tier.lobbies.sort((a, b) => {
+      const aTime = getLobbyExpirationTime(a) || new Date(0);
+      const bTime = getLobbyExpirationTime(b) || new Date(0);
+      return aTime - bTime;
+    });
+  });
+
+  return tiers;
 }

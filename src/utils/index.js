@@ -47,5 +47,8 @@ export {
   getLobbyExpirationStatus,
   filterActiveLobbies,
   shouldDeleteDisbandedLobby,
-  formatExpirationTime
+  formatExpirationTime,
+  getApproximateTimeUntilExpiry,
+  getMinutesUntilExpiry,
+  groupBaggerBombLobbiesByTime
 } from './lobbyUtils';
