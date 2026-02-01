@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { AlertTriangle } from 'lucide-react';
+import { getLobbyExpirationStatus, isLobbyFull, LOBBY_CONFIG } from '../utils/lobbyUtils';
 
 // Style override to neutralize App.css
 const containerStyle = {
@@ -40,6 +42,7 @@ const DraftLobbyScreen = ({
 }) => {
   const [draftCopied, setDraftCopied] = useState(false);
   const [countdown, setCountdown] = useState('');
+  const [expirationStatus, setExpirationStatus] = useState(null);
 
   const lobbyDraft = draftState || currentDraft;
 
@@ -55,9 +58,31 @@ const DraftLobbyScreen = ({
     const interval = setInterval(updateCountdown, 60000);
     return () => clearInterval(interval);
   }, [lobbyDraft?.scheduledStart]);
+
+  // Update expiration status every 10 seconds (for real-time warning)
+  useEffect(() => {
+    if (!lobbyDraft) return;
+
+    const updateExpirationStatus = () => {
+      const isFull = isLobbyFull(lobbyDraft);
+      if (!isFull) {
+        setExpirationStatus(getLobbyExpirationStatus(lobbyDraft));
+      } else {
+        setExpirationStatus(null);
+      }
+    };
+
+    updateExpirationStatus();
+    const interval = setInterval(updateExpirationStatus, 10000);
+    return () => clearInterval(interval);
+  }, [lobbyDraft]);
+
   const isHost = lobbyDraft?.hostId === (user.odUserId || user.username);
   const playerCount = lobbyDraft?.players?.length || 0;
-  const canStart = playerCount === 4;
+  const maxPlayers = LOBBY_CONFIG.SNAKE_DRAFT_MIN_PLAYERS;
+  const canStart = playerCount === maxPlayers;
+  const isExpired = expirationStatus?.status === 'expired';
+  const hasWarning = expirationStatus && (expirationStatus.status === 'warning' || expirationStatus.status === 'urgent');
 
   const handleCopyCode = async () => {
     try {
@@ -129,6 +154,43 @@ const DraftLobbyScreen = ({
         </div>
 
         <div style={{ maxWidth: '600px', margin: '0 auto', padding: '24px 16px' }}>
+          {/* Expiration Warning Banner */}
+          {(isExpired || hasWarning) && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '12px 16px',
+              marginBottom: '16px',
+              background: isExpired
+                ? 'rgba(239, 68, 68, 0.15)'
+                : expirationStatus?.status === 'urgent'
+                  ? 'rgba(239, 68, 68, 0.1)'
+                  : 'rgba(245, 158, 11, 0.1)',
+              border: `1px solid ${isExpired ? '#ef4444' : expirationStatus?.status === 'urgent' ? '#ef4444' : '#f59e0b'}`,
+              borderRadius: '12px',
+            }}>
+              <AlertTriangle
+                size={20}
+                color={isExpired || expirationStatus?.status === 'urgent' ? '#ef4444' : '#f59e0b'}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: isExpired || expirationStatus?.status === 'urgent' ? '#ef4444' : '#f59e0b',
+                }}>
+                  {isExpired ? 'Lobby Expired' : 'Lobby Expiring Soon'}
+                </div>
+                <div style={{ fontSize: '12px', color: '#8b949e' }}>
+                  {isExpired
+                    ? 'This lobby did not get enough players and has been disbanded.'
+                    : `Need ${maxPlayers - playerCount} more player${maxPlayers - playerCount !== 1 ? 's' : ''} before expiration. ${expirationStatus?.message}`}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Draft Type Badge + Countdown */}
           <div style={{ textAlign: 'center', marginBottom: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -145,7 +207,7 @@ const DraftLobbyScreen = ({
               }}>
                 {lobbyDraft?.type} Draft
               </span>
-              {countdown && (
+              {countdown && !isExpired && (
                 <span style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -270,7 +332,19 @@ const DraftLobbyScreen = ({
 
           {/* Actions */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {isHost ? (
+            {isExpired ? (
+              <div style={{
+                padding: '18px',
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid #ef4444',
+                borderRadius: '12px',
+                textAlign: 'center',
+                color: '#ef4444',
+                fontWeight: '600'
+              }}>
+                This lobby has expired due to insufficient players
+              </div>
+            ) : isHost ? (
               <button
                 onClick={handleStartDraft}
                 disabled={!canStart}
@@ -288,7 +362,7 @@ const DraftLobbyScreen = ({
                   cursor: canStart ? 'pointer' : 'not-allowed'
                 }}
               >
-                {canStart ? 'START DRAFT' : `Waiting for ${4 - playerCount} more player${4 - playerCount !== 1 ? 's' : ''}...`}
+                {canStart ? 'START DRAFT' : `Waiting for ${maxPlayers - playerCount} more player${maxPlayers - playerCount !== 1 ? 's' : ''}...`}
               </button>
             ) : (
               <div style={{

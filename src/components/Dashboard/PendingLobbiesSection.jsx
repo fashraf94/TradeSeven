@@ -4,7 +4,8 @@
 
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, Users, Copy } from 'lucide-react';
+import { Clock, Users, Copy, AlertTriangle } from 'lucide-react';
+import { getLobbyExpirationStatus, isLobbyFull, filterActiveLobbies } from '../../utils/lobbyUtils';
 
 // Format time elapsed since creation
 function formatTimeAgo(createdAt) {
@@ -119,6 +120,33 @@ function PlayerSlot({ rank, player, isCurrentUser, isHost, isEmpty }) {
   );
 }
 
+// Expiration Warning Badge
+function ExpirationBadge({ expirationStatus }) {
+  if (!expirationStatus || expirationStatus.status === 'active') return null;
+
+  const isUrgent = expirationStatus.status === 'urgent';
+  const isExpired = expirationStatus.status === 'expired';
+  const bgColor = isUrgent || isExpired ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)';
+  const textColor = isUrgent || isExpired ? '#ef4444' : '#f59e0b';
+
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '4px',
+      padding: '2px 6px',
+      background: bgColor,
+      borderRadius: '4px',
+      fontSize: '9px',
+      fontWeight: '700',
+      color: textColor,
+    }}>
+      <AlertTriangle size={9} />
+      {isExpired ? 'EXPIRED' : expirationStatus.message}
+    </span>
+  );
+}
+
 // Pending Lobby Card with all player slots visible
 function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyCode }) {
   const isBaggerBomb = type === 'baggerbomb';
@@ -135,9 +163,13 @@ function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyC
   const gameEmoji = isBaggerBomb ? '💣' : '🐍';
   const gameLabel = isBaggerBomb ? 'BAGGERBOMB' : 'SNAKE DRAFT';
 
+  // Get expiration status for warning badges (only for non-full lobbies)
+  const isFull = isLobbyFull(lobby);
+  const expirationStatus = !isFull ? getLobbyExpirationStatus(lobby) : null;
+
   // Colors
   const pendingColor = '#f59e0b';
-  const borderColor = '#00d9ff';
+  const borderColor = expirationStatus?.status === 'expired' ? '#ef4444' : '#00d9ff';
   const roleBadgeColor = isHost ? '#00d9ff' : '#10b981';
 
   // Build player slots for Snake Draft
@@ -237,6 +269,8 @@ function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyC
           }}>
             PENDING
           </span>
+          {/* Expiration Warning Badge */}
+          <ExpirationBadge expirationStatus={expirationStatus} />
         </div>
 
         {/* Time badges: Countdown (for Snake Draft) + Time ago */}

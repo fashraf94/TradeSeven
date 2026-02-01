@@ -4,8 +4,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, Plus, Users, Clock, Zap, RefreshCw } from 'lucide-react';
+import { ChevronLeft, Plus, Users, Clock, Zap, RefreshCw, AlertTriangle } from 'lucide-react';
 import { HOLO_COLORS } from '../constants/holoTheme';
+import { filterActiveLobbies, getLobbyExpirationStatus, isLobbyFull } from '../utils/lobbyUtils';
 
 /**
  * Format time elapsed since battle creation
@@ -26,6 +27,35 @@ function formatTimeAgo(createdAt) {
 }
 
 /**
+ * Expiration Warning Badge for BaggerBomb
+ */
+function ExpirationBadge({ expirationStatus }) {
+  if (!expirationStatus || expirationStatus.status === 'active') return null;
+
+  const isUrgent = expirationStatus.status === 'urgent';
+  const bgColor = isUrgent ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)';
+  const textColor = isUrgent ? '#ef4444' : '#f59e0b';
+
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '4px',
+      padding: '2px 8px',
+      background: bgColor,
+      borderRadius: '4px',
+      fontSize: '10px',
+      fontWeight: 600,
+      color: textColor,
+      marginLeft: '8px',
+    }}>
+      <AlertTriangle size={10} />
+      {expirationStatus.message}
+    </span>
+  );
+}
+
+/**
  * Battle Card - Shows a single open battle in the lobby
  */
 function BattleCard({ battle, onJoin, isOwn }) {
@@ -40,6 +70,10 @@ function BattleCard({ battle, onJoin, isOwn }) {
     const supportCount = (portfolio.support || []).filter(Boolean).length;
     return starCount + coreCount + supportCount;
   }, [creator.portfolio]);
+
+  // Get expiration status for warning badges (only for non-full lobbies)
+  const isFull = isLobbyFull(battle);
+  const expirationStatus = !isFull ? getLobbyExpirationStatus(battle) : null;
 
   return (
     <motion.div
@@ -86,6 +120,8 @@ function BattleCard({ battle, onJoin, isOwn }) {
               fontSize: '14px',
               fontWeight: 600,
               color: HOLO_COLORS.textPrimary,
+              display: 'flex',
+              alignItems: 'center',
             }}>
               {creator.username || 'Anonymous'}
               {isOwn && (
@@ -101,6 +137,7 @@ function BattleCard({ battle, onJoin, isOwn }) {
                   YOU
                 </span>
               )}
+              <ExpirationBadge expirationStatus={expirationStatus} />
             </div>
             <div style={{
               fontSize: '12px',
@@ -212,6 +249,7 @@ export default function BaggerBombLobby({
   const userId = user?.odUserId || user?.username;
 
   // Filter to only BaggerBomb V3 battles (exclude SnakeDraft and other types)
+  // Also filter out expired lobbies
   // Then separate own battles from others
   const { ownBattles, otherBattles } = useMemo(() => {
     const own = [];
@@ -220,7 +258,10 @@ export default function BaggerBombLobby({
     // Filter: only include BaggerBomb V3 battles (excludes SnakeDraft lobbies)
     const baggerBombBattles = openBattles.filter(battle => battle._v === 3);
 
-    baggerBombBattles.forEach(battle => {
+    // Filter out expired lobbies (client-side filtering for immediate UX)
+    const activeLobbies = filterActiveLobbies(baggerBombBattles);
+
+    activeLobbies.forEach(battle => {
       const creatorId = battle.creator?.odUserId || battle.creator?.uid;
       if (creatorId === userId) {
         own.push(battle);
