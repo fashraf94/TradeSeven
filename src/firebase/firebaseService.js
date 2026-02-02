@@ -1610,8 +1610,6 @@ export async function joinBaggerBombBattleV3(battleIdOrCode, opponentData, optio
     const sessionPrices = initializeSessionPrices();
     sessionPrices.MORNING_BELL.open = { ...startingPrices };
     sessionPrices.MORNING_BELL.capturedAt.open = new Date().toISOString();
-
-    console.log('✅ Captured starting prices for V3 battle:', Object.keys(startingPrices).length, 'symbols');
     // ============ END PRICE CAPTURE ============
 
     // Update battle with opponent

@@ -81,14 +81,6 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   // Get open prices for current session
   const currentSessionId = getCurrentSessionId();
   const openPrices = useMemo(() => {
-    // Debug: Log what price sources are available
-    console.log('[V3 Scoring] Battle price sources:', {
-      currentSessionId,
-      stateStartingPrices: battle?.state?.startingPrices,
-      sessionPricesOpen: battle?.sessionPrices?.MORNING_BELL?.open,
-      battleStateKeys: battle?.state ? Object.keys(battle.state) : [],
-    });
-
     // Get all potential price sources
     const currentSessionPrices = currentSessionId
       ? battle?.sessionPrices?.[currentSessionId]?.open
@@ -106,13 +98,6 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       : hasMorningBellPrices ? morningBellPrices
       : {};
 
-    const source = hasCurrentSessionPrices ? 'currentSession'
-      : hasStartingPrices ? 'startingPrices'
-      : hasMorningBellPrices ? 'morningBell'
-      : 'empty';
-
-    console.log('[V3 Scoring] Using prices from:', { source, count: Object.keys(prices).length });
-
     return prices;
   }, [battle, currentSessionId]);
 
@@ -128,16 +113,6 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       return { totalScore: 0, sessionScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
     }
 
-    // Debug: Log price data for scoring diagnosis
-    if (portfolio.length > 0) {
-      console.log('[V3 Scoring] Price data:', {
-        openPricesCount: Object.keys(openPrices).length,
-        currentPricesCount: Object.keys(prices).length,
-        sampleOpenPrices: Object.entries(openPrices).slice(0, 3),
-        sampleCurrentPrices: Object.entries(prices).slice(0, 3),
-      });
-    }
-
     let totalBonusPoints = 0;
     let totalBasePoints = 0;
     let baggerBombs = 0;
@@ -150,11 +125,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       const openPrice = openPrices[asset.symbol] || asset.price || 0;
       const currentPrice = prices[asset.symbol] || openPrice;
 
-      // Debug: Log per-asset calculation
-      console.log(`[V3 Scoring] ${asset.symbol}: open=${openPrice}, current=${currentPrice}, fromPrices=${!!prices[asset.symbol]}, fromOpenPrices=${!!openPrices[asset.symbol]}`);
-
       if (!openPrice || openPrice === 0) {
-        console.warn(`[V3 Scoring] ${asset.symbol}: Invalid openPrice (${openPrice}), skipping`);
         assetScores.push({
           symbol: asset.symbol,
           priceChange: 0,
@@ -170,12 +141,6 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       }
 
       const priceChange = ((currentPrice - openPrice) / openPrice) * 100;
-
-      // Debug: Log the calculated gain
-      if (Math.abs(priceChange) > 0.001) {
-        console.log(`[V3 Scoring] ${asset.symbol}: gain=${priceChange.toFixed(4)}%`);
-      }
-
       const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
 
       const score = calculateAssetScoreV3(asset, priceChange, assetHistory);

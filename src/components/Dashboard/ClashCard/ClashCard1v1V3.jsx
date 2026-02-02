@@ -29,15 +29,6 @@ export default function ClashCard1v1V3({
     loading,
   } = useBaggerBombBattleV3(battle?.id, currentUserId);
 
-  // Debug logging
-  console.log('[ClashCard1v1V3] Battle:', battle?.id, 'userId:', currentUserId);
-  console.log('[ClashCard1v1V3] Hook results:', {
-    isCreator,
-    loading,
-    playerPoints: player?.totalPoints,
-    opponentPoints: hookOpponent?.totalPoints,
-  });
-
   // Get scores from hook
   const myGain = player?.totalPoints || 0;
   const theirGain = hookOpponent?.totalPoints || 0;

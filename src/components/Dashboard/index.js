@@ -11,7 +11,6 @@ export { default as GameModeToggle } from './GameModeToggle';
 export { default as ResearchModeButton } from './ResearchModeButton';
 export { default as BattleActionCards } from './BattleActionCards';
 export { default as TrainingModePanel } from './TrainingModePanel';
-export { default as ActiveBattlesSection } from './ActiveBattlesSection';
 export { default as WeeklyChallengesPanel } from './WeeklyChallenges';
 export { default as GameModeCarousels } from './GameModeCarousels';
 export { default as ThemedGameCard, GAME_THEMES } from './ThemedGameCard';

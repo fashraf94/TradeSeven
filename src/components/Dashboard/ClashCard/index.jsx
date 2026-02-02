@@ -223,7 +223,6 @@ export default function ClashCard({
 
   // V3 BAGGERBOMB battles - use hook-based component for live scores
   if (battle._v === 3) {
-    console.log('[ClashCard] Routing V3 battle to ClashCard1v1V3:', battle?.id);
     return (
       <ClashCard1v1V3
         battle={battle}
