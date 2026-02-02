@@ -310,12 +310,16 @@ export async function getMultipleCryptoPrices(symbols) {
 
       console.log(`[EODHD] Got ${data.count} crypto prices via proxy`);
 
-      // Fill in missing with fallbacks
+      // Fill in missing with fallbacks (check multiple key formats)
       for (const symbol of symbolsToFetch) {
         if (!result[symbol]) {
           missing.push(symbol);
+          const fallbackPrice = FALLBACK_CRYPTO_PRICES[symbol] ||
+                                FALLBACK_CRYPTO_PRICES[symbol.toLowerCase()] ||
+                                FALLBACK_CRYPTO_PRICES[symbol.toUpperCase()] ||
+                                1;
           result[symbol] = {
-            price: FALLBACK_CRYPTO_PRICES[symbol] || 1,
+            price: fallbackPrice,
             change24h: 0,
             isFallback: true
           };
@@ -334,10 +338,14 @@ export async function getMultipleCryptoPrices(symbols) {
   } catch (error) {
     console.warn('[EODHD] Crypto proxy fetch failed:', error.message);
 
-    // Return fallbacks for symbols we couldn't fetch
+    // Return fallbacks for symbols we couldn't fetch (check multiple key formats)
     for (const symbol of symbolsToFetch) {
+      const fallbackPrice = FALLBACK_CRYPTO_PRICES[symbol] ||
+                            FALLBACK_CRYPTO_PRICES[symbol.toLowerCase()] ||
+                            FALLBACK_CRYPTO_PRICES[symbol.toUpperCase()] ||
+                            1;
       result[symbol] = {
-        price: FALLBACK_CRYPTO_PRICES[symbol] || 1,
+        price: fallbackPrice,
         change24h: 0,
         isFallback: true
       };
@@ -356,11 +364,26 @@ export const getAllCryptoPrices = getMultipleCryptoPrices;
 export async function getCryptoPrice(symbol) {
   const prices = await getMultipleCryptoPrices([symbol]);
   const upper = symbol.toUpperCase();
+  const lower = symbol.toLowerCase();
+
+  // Check multiple key formats for fallback (keys may be lowercase like 'bitcoin' or uppercase like 'BTC')
+  const fallbackPrice = FALLBACK_CRYPTO_PRICES[upper] ||
+                        FALLBACK_CRYPTO_PRICES[lower] ||
+                        FALLBACK_CRYPTO_PRICES[symbol] ||
+                        1;
+
+  const price = prices[upper]?.price || prices[lower]?.price || prices[symbol]?.price || fallbackPrice;
+
+  // Debug: Log crypto price resolution
+  if (price === 1 || price === fallbackPrice) {
+    console.log(`[EODHD] getCryptoPrice(${symbol}): resolved price=${price}, fallback=${fallbackPrice}`);
+  }
+
   return {
-    id: upper.toLowerCase(),
+    id: lower,
     symbol: upper,
-    price: prices[upper]?.price || FALLBACK_CRYPTO_PRICES[upper] || 1,
-    change24h: prices[upper]?.change24h || 0,
+    price,
+    change24h: prices[upper]?.change24h || prices[lower]?.change24h || 0,
     marketCap: 0,
     volume24h: 0
   };

@@ -81,8 +81,24 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   // Get open prices for current session
   const currentSessionId = getCurrentSessionId();
   const openPrices = useMemo(() => {
-    if (!battle || !currentSessionId) return battle?.state?.startingPrices || {};
-    return battle?.sessionPrices?.[currentSessionId]?.open || battle?.state?.startingPrices || {};
+    // Get all potential price sources
+    const currentSessionPrices = currentSessionId
+      ? battle?.sessionPrices?.[currentSessionId]?.open
+      : null;
+    const startingPrices = battle?.state?.startingPrices;
+    const morningBellPrices = battle?.sessionPrices?.MORNING_BELL?.open;
+
+    // Check if objects actually have data (not just exist but are empty)
+    const hasCurrentSessionPrices = currentSessionPrices && Object.keys(currentSessionPrices).length > 0;
+    const hasStartingPrices = startingPrices && Object.keys(startingPrices).length > 0;
+    const hasMorningBellPrices = morningBellPrices && Object.keys(morningBellPrices).length > 0;
+
+    const prices = hasCurrentSessionPrices ? currentSessionPrices
+      : hasStartingPrices ? startingPrices
+      : hasMorningBellPrices ? morningBellPrices
+      : {};
+
+    return prices;
   }, [battle, currentSessionId]);
 
   // Combine battle history with local updates

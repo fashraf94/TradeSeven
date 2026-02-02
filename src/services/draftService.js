@@ -19,6 +19,7 @@ import {
 import { db } from '../firebase/config';
 import { getAssetPool, generateSnakeOrder, generateDraftCode, shuffleArray } from './draftAssets';
 import { initializeFreeAgents, calculateBattleEndTime } from './freeAgencyService';
+import { logDraftToAnalytics } from './draftAnalyticsService';
 // EODHD API - All-in-one provider (replaces Finnhub + CoinGecko)
 import {
   getStockPrice,
@@ -447,6 +448,19 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
   }
 
   await updateDoc(doc(db, 'drafts', draftId), removeUndefined(updateData));
+
+  // Log analytics when draft completes (non-blocking)
+  if (isComplete) {
+    const completedDraft = {
+      ...draft,
+      ...updateData,
+      id: draftId
+    };
+
+    logDraftToAnalytics(completedDraft).catch(err => {
+      console.error('[DraftService] Analytics logging failed (non-blocking):', err);
+    });
+  }
 
   return { pick, isComplete };
 }

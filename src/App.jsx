@@ -88,7 +88,7 @@ import DesktopBackground from './components/DesktopBackground';
 import { ConfirmationPopup } from './components/shared';
 import ErrorBoundary from './components/ErrorBoundary';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, ActiveBattlesSection, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK

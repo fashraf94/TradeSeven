@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import ClashCard1v1 from './ClashCard1v1';
+import ClashCard1v1V3 from './ClashCard1v1V3';
 import ClashCardDraft from './ClashCardDraft';
 import ClashCardTraining from './ClashCardTraining';
 import { getUsername } from '../../../utils/battleHelpers';
@@ -220,7 +221,20 @@ export default function ClashCard({
     );
   }
 
-  // CLASSIC 1v1 battles (Builder, BaggerBomb)
+  // V3 BAGGERBOMB battles - use hook-based component for live scores
+  if (battle._v === 3) {
+    return (
+      <ClashCard1v1V3
+        battle={battle}
+        remainingMs={remainingMs}
+        onPress={onPress}
+        isMostUrgent={isMostUrgent}
+        currentUserId={currentUserId}
+      />
+    );
+  }
+
+  // CLASSIC 1v1 battles (Builder, BaggerBomb V2)
   const previewData = calculate1v1PreviewData(battle, user.username);
   if (!previewData) return null;
 

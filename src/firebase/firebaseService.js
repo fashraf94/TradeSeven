@@ -1555,6 +1555,63 @@ export async function joinBaggerBombBattleV3(battleIdOrCode, opponentData, optio
       return history;
     };
 
+    // ============ CAPTURE STARTING PRICES ============
+    // Collect all symbols from both portfolios
+    const collectSymbols = (portfolio) => {
+      const symbols = [];
+      if (portfolio.star) symbols.push(...portfolio.star.filter(Boolean).map(a => a.symbol));
+      if (portfolio.core) symbols.push(...portfolio.core.filter(Boolean).map(a => a.symbol));
+      if (portfolio.support) symbols.push(...portfolio.support.filter(Boolean).map(a => a.symbol));
+      return symbols;
+    };
+
+    const creatorSymbols = collectSymbols(battleData.creator.portfolio || {});
+    const opponentSymbols = collectSymbols(sanitizedPortfolio);
+    const benchSymbols = [
+      ...(battleData.creator.bench?.stocks || []).filter(Boolean).map(a => a.symbol),
+      battleData.creator.bench?.crypto?.symbol,
+      ...(sanitizedBench.stocks || []).filter(Boolean).map(a => a.symbol),
+      sanitizedBench.crypto?.symbol,
+    ].filter(Boolean);
+
+    const allSymbols = [...new Set([...creatorSymbols, ...opponentSymbols, ...benchSymbols])];
+
+    // Fetch current prices
+    const { getMultipleStockPrices, getMultipleCryptoPrices } = await import('../services/eodhdAPI.js');
+
+    // Separate stocks and crypto
+    const cryptoSymbols = allSymbols.filter(s => isCrypto(s));
+    const stockSymbols = allSymbols.filter(s => !isCrypto(s));
+
+    let stockPrices = {};
+    let cryptoPrices = {};
+
+    try {
+      if (stockSymbols.length > 0) {
+        stockPrices = await getMultipleStockPrices(stockSymbols);
+      }
+      if (cryptoSymbols.length > 0) {
+        cryptoPrices = await getMultipleCryptoPrices(cryptoSymbols);
+      }
+    } catch (priceError) {
+      console.warn('⚠️ Error fetching prices for V3 battle:', priceError.message);
+    }
+
+    // Build starting prices map
+    const startingPrices = {};
+    for (const symbol of allSymbols) {
+      const price = stockPrices[symbol]?.price ||
+                    cryptoPrices[symbol]?.price ||
+                    0;
+      startingPrices[symbol] = price;
+    }
+
+    // Initialize session prices with MORNING_BELL open
+    const sessionPrices = initializeSessionPrices();
+    sessionPrices.MORNING_BELL.open = { ...startingPrices };
+    sessionPrices.MORNING_BELL.capturedAt.open = new Date().toISOString();
+    // ============ END PRICE CAPTURE ============
+
     // Update battle with opponent
     const battleRef = doc(db, 'battles', battleDoc.id);
 
@@ -1578,7 +1635,9 @@ export async function joinBaggerBombBattleV3(battleIdOrCode, opponentData, optio
 
       'state.status': 'active',
       'state.currentSession': 'MORNING_BELL',
+      'state.startingPrices': startingPrices,
 
+      sessionPrices: sessionPrices,
       thresholds: mergedThresholds,
 
       updatedAt: new Date().toISOString()
