@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { HOLO_COLORS, CATEGORY_CONFIG } from '../../constants/holoTheme';
 import ScoreBreakdownPopover from './ScoreBreakdownPopover';
+import ChamberFuse from '../BaggerBomb/ChamberFuse';
 
 /**
  * AssetTile - Individual asset card for the 3x3 portfolio grid
@@ -21,19 +22,33 @@ const AssetTile = ({
   isScoutMode = false,
   comparisonData = null, // { isLinked, isThreat, isSectorRival, deltaVsYourBest }
   compact = false,
-  expanded = false,   // NEW: Expanded mode for full-screen panel
+  expanded = false,   // Expanded mode for full-screen panel
+  isMobile = false,   // Mobile detection for responsive sizing
 }) => {
-  // Sizing configuration based on mode
-  const sizing = expanded ? {
-    minHeight: '100px',
-    padding: '14px 16px',
-    symbolFontSize: '18px',
-    scoreFontSize: '18px',
-    detailFontSize: '12px',
-    badgeSize: '22px',
-    badgeFontSize: '12px',
-    marginBottom: '6px',
-  } : compact ? {
+  // Sizing configuration based on mode (with mobile-specific expanded sizing)
+  const sizing = expanded ? (
+    isMobile ? {
+      // Mobile expanded - smaller for 2-column grid
+      minHeight: '90px',
+      padding: '10px 12px',
+      symbolFontSize: '14px',
+      scoreFontSize: '14px',
+      detailFontSize: '10px',
+      badgeSize: '18px',
+      badgeFontSize: '10px',
+      marginBottom: '4px',
+    } : {
+      // Desktop expanded - original sizes for 4-column grid
+      minHeight: '100px',
+      padding: '14px 16px',
+      symbolFontSize: '18px',
+      scoreFontSize: '18px',
+      detailFontSize: '12px',
+      badgeSize: '22px',
+      badgeFontSize: '12px',
+      marginBottom: '6px',
+    }
+  ) : compact ? {
     minHeight: '52px',
     padding: '8px 10px',
     symbolFontSize: '12px',
@@ -80,6 +95,14 @@ const AssetTile = ({
   const isPositive = gainValue >= 0;
   const totalScore = asset?.totalScore ?? 0;
   const isScorePositive = totalScore >= 0;
+
+  // Calculate baseATR for ChamberFuse threshold meter
+  // For stocks: threshold / 1.5, for crypto: threshold / 2.0
+  const baseATR = useMemo(() => {
+    if (!asset?.threshold) return null;
+    const isCrypto = asset.isCrypto || asset.category === 'crypto';
+    return asset.threshold / (isCrypto ? 2.0 : 1.5);
+  }, [asset?.threshold, asset?.isCrypto, asset?.category]);
 
   if (!asset || !asset.symbol) {
     return (
@@ -227,6 +250,22 @@ const AssetTile = ({
             </span>
           </div>
         </div>
+
+        {/* ROW 1.5: ChamberFuse threshold meter (expanded only) */}
+        {expanded && baseATR && (
+          <div style={{
+            marginBottom: isMobile ? '6px' : '8px',
+            marginTop: isMobile ? '2px' : '4px',
+          }}>
+            <ChamberFuse
+              priceChange={gainValue}
+              baseATR={baseATR}
+              compact={true}
+              showLabels={false}
+              animate={true}
+            />
+          </div>
+        )}
 
         {/* ROW 2: Threshold + BaggerBombs/Busts + % Change */}
         <div style={{

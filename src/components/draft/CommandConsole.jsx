@@ -434,7 +434,7 @@ const CommandConsole = ({
             display: 'grid',
             gridTemplateColumns: gridConfig.columns,
             gap: gridConfig.gap,
-            paddingBottom: '8px',
+            paddingBottom: '4px',
             perspective: '1000px',
           }}>
             <div style={{
@@ -467,6 +467,7 @@ const CommandConsole = ({
                     comparisonData={getComparisonData(asset)}
                     compact={!isExpanded}
                     expanded={isExpanded}
+                    isMobile={isMobile}
                   />
                   {/* Tap hint for filled slots (hide in expanded) */}
                   {asset?.symbol && !isExpanded && (
@@ -498,6 +499,7 @@ const CommandConsole = ({
                     asset={null}
                     compact={!isExpanded}
                     expanded={isExpanded}
+                    isMobile={isMobile}
                   />
                 </div>
               ))}
@@ -512,7 +514,7 @@ const CommandConsole = ({
               padding: '6px 10px',
               background: 'rgba(245, 158, 11, 0.1)',
               borderRadius: '6px',
-              marginBottom: '8px',
+              marginBottom: '4px',
               fontSize: '10px',
               flexWrap: 'wrap',
               gap: '6px',
