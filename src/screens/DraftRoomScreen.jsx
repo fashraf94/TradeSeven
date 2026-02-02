@@ -72,6 +72,9 @@ const DraftRoomScreen = ({
   const prevLastPickRef = useRef(null);
   const prevCategoryRef = useRef(selectedDraftCategory);
 
+  // Roster drawer state (slide-up panel showing user's picks)
+  const [rosterDrawerOpen, setRosterDrawerOpen] = useState(false);
+
   // Mobile roster drawer state
   const [drawerDragY, setDrawerDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -544,14 +547,14 @@ const DraftRoomScreen = ({
             background: 'rgba(10, 14, 20, 0.5)',
           }}
         >
-          {/* Desktop: Horizontal arc layout with SnakeConduit */}
+          {/* Desktop: Horizontal arc layout with SnakeConduit - Shows ALL 4 players */}
           <div
             className="opponent-arc-desktop"
             style={{
               display: 'none', // Will show on desktop via media query
               justifyContent: 'center',
               alignItems: 'center',
-              gap: '16px',
+              gap: '12px',
               position: 'relative',
               minHeight: '140px',
               padding: '20px 0',
@@ -560,130 +563,73 @@ const DraftRoomScreen = ({
             {/* SnakeConduit - Animated wave snake flowing around players */}
             <SnakeConduit />
 
-            {/* Left opponent - uses sideOpponents to avoid duplicate with center */}
-            <PlayerPanel
-              username={sideOpponents[0]?.displayName || 'Waiting...'}
-              isCurrentPicker={false}
-              isNextPicker={sideOpponents[0]?.odUserId === nextPickerId}
-              isYou={false}
-              isCPU={sideOpponents[0]?.isCPU || false}
-              stats={{
-                steadyPicked: sideOpponents[0]?.categories?.steady || 0,
-                riskyPicked: sideOpponents[0]?.categories?.risky || 0,
-                defensivePicked: sideOpponents[0]?.categories?.defensive || 0,
-              }}
-              lastPick={lastPick?.playerId === sideOpponents[0]?.odUserId ? lastPick?.symbol : null}
-            />
+            {/* Map ALL 4 players in draft order */}
+            {roomDraft?.players?.map((player, index) => {
+              const isCurrentPicker = player.odUserId === roomDraft?.currentPlayerId;
+              const isNext = player.odUserId === nextPickerId;
+              const isYou = player.odUserId === currentUserId;
 
-            {/* Connection line */}
-            <SnakeConnector glowing={false} />
-
-            {/* Current Picker (Center) - shows whoever is currently picking */}
-            {(() => {
-              const currentPicker = roomDraft?.players?.find(p => p.odUserId === roomDraft?.currentPlayerId);
-              const isCurrentUserPicking = currentPicker?.odUserId === currentUserId;
               return (
-                <PlayerPanel
-                  username={isCurrentUserPicking ? 'YOU' : currentPicker?.displayName || 'Unknown'}
-                  isCurrentPicker={true}
-                  isNextPicker={false}
-                  isYou={isCurrentUserPicking}
-                  isCPU={currentPicker?.isCPU || false}
-                  stats={{
-                    steadyPicked: currentPicker?.categories?.steady || 0,
-                    riskyPicked: currentPicker?.categories?.risky || 0,
-                    defensivePicked: currentPicker?.categories?.defensive || 0,
-                  }}
-                  pickProgress={draftTimeRemaining > 0 ? 1 - (draftTimeRemaining / 120) : 0}
-                />
+                <React.Fragment key={player.odUserId || index}>
+                  {/* Connection line between players (except before first) */}
+                  {index > 0 && <SnakeConnector glowing={isCurrentPicker} />}
+
+                  <PlayerPanel
+                    username={isYou ? 'YOU' : player.displayName || 'Waiting...'}
+                    isCurrentPicker={isCurrentPicker}
+                    isNextPicker={isNext}
+                    isYou={isYou}
+                    isCPU={player.isCPU || false}
+                    stats={{
+                      steadyPicked: player.categories?.steady || 0,
+                      riskyPicked: player.categories?.risky || 0,
+                      defensivePicked: player.categories?.defensive || 0,
+                    }}
+                    lastPick={lastPick?.playerId === player.odUserId ? lastPick?.symbol : null}
+                    pickProgress={isCurrentPicker && draftTimeRemaining > 0 ? 1 - (draftTimeRemaining / 120) : 0}
+                  />
+                </React.Fragment>
               );
-            })()}
-
-            {/* Connection line */}
-            <SnakeConnector glowing={false} />
-
-            {/* Right opponent - uses sideOpponents to avoid duplicate with center */}
-            <PlayerPanel
-              username={sideOpponents[1]?.displayName || 'Waiting...'}
-              isCurrentPicker={false}
-              isNextPicker={sideOpponents[1]?.odUserId === nextPickerId}
-              isYou={false}
-              isCPU={sideOpponents[1]?.isCPU || false}
-              stats={{
-                steadyPicked: sideOpponents[1]?.categories?.steady || 0,
-                riskyPicked: sideOpponents[1]?.categories?.risky || 0,
-                defensivePicked: sideOpponents[1]?.categories?.defensive || 0,
-              }}
-              lastPick={lastPick?.playerId === sideOpponents[1]?.odUserId ? lastPick?.symbol : null}
-            />
+            })}
           </div>
 
-          {/* Mobile: Vertical stack layout */}
+          {/* Mobile/Tablet: Vertical stack layout - Shows ALL 4 players */}
           <div
             className="opponent-arc-mobile"
             style={{
               display: 'flex', // Will hide on desktop via media query
               flexDirection: 'column',
               alignItems: 'center',
-              gap: '6px',
+              gap: '4px',
             }}
           >
-            {/* Top opponent - uses sideOpponents to avoid duplicate with center */}
-            <PlayerPanel
-              username={sideOpponents[0]?.displayName || 'Waiting...'}
-              isCurrentPicker={false}
-              isNextPicker={sideOpponents[0]?.odUserId === nextPickerId}
-              isYou={false}
-              isCPU={sideOpponents[0]?.isCPU || false}
-              stats={{
-                steadyPicked: sideOpponents[0]?.categories?.steady || 0,
-                riskyPicked: sideOpponents[0]?.categories?.risky || 0,
-                defensivePicked: sideOpponents[0]?.categories?.defensive || 0,
-              }}
-              compact={true}
-            />
+            {/* Map ALL 4 players in draft order */}
+            {roomDraft?.players?.map((player, index) => {
+              const isCurrentPicker = player.odUserId === roomDraft?.currentPlayerId;
+              const isNext = player.odUserId === nextPickerId;
+              const isYou = player.odUserId === currentUserId;
 
-            {/* Vertical connector */}
-            <SnakeConnectorVertical glowing={false} />
-
-            {/* Current Picker (Center) */}
-            {(() => {
-              const currentPicker = roomDraft?.players?.find(p => p.odUserId === roomDraft?.currentPlayerId);
-              const isCurrentUserPicking = currentPicker?.odUserId === currentUserId;
               return (
-                <PlayerPanel
-                  username={isCurrentUserPicking ? 'YOU' : currentPicker?.displayName || 'Unknown'}
-                  isCurrentPicker={true}
-                  isNextPicker={false}
-                  isYou={isCurrentUserPicking}
-                  isCPU={currentPicker?.isCPU || false}
-                  stats={{
-                    steadyPicked: currentPicker?.categories?.steady || 0,
-                    riskyPicked: currentPicker?.categories?.risky || 0,
-                    defensivePicked: currentPicker?.categories?.defensive || 0,
-                  }}
-                  compact={true}
-                />
+                <React.Fragment key={player.odUserId || index}>
+                  {/* Vertical connector between players (except before first) */}
+                  {index > 0 && <SnakeConnectorVertical glowing={isCurrentPicker} />}
+
+                  <PlayerPanel
+                    username={isYou ? 'YOU' : player.displayName || 'Waiting...'}
+                    isCurrentPicker={isCurrentPicker}
+                    isNextPicker={isNext}
+                    isYou={isYou}
+                    isCPU={player.isCPU || false}
+                    stats={{
+                      steadyPicked: player.categories?.steady || 0,
+                      riskyPicked: player.categories?.risky || 0,
+                      defensivePicked: player.categories?.defensive || 0,
+                    }}
+                    compact={true}
+                  />
+                </React.Fragment>
               );
-            })()}
-
-            {/* Vertical connector */}
-            <SnakeConnectorVertical glowing={false} />
-
-            {/* Bottom opponent - uses sideOpponents to avoid duplicate with center */}
-            <PlayerPanel
-              username={sideOpponents[1]?.displayName || 'Waiting...'}
-              isCurrentPicker={false}
-              isNextPicker={sideOpponents[1]?.odUserId === nextPickerId}
-              isYou={false}
-              isCPU={sideOpponents[1]?.isCPU || false}
-              stats={{
-                steadyPicked: sideOpponents[1]?.categories?.steady || 0,
-                riskyPicked: sideOpponents[1]?.categories?.risky || 0,
-                defensivePicked: sideOpponents[1]?.categories?.defensive || 0,
-              }}
-              compact={true}
-            />
+            })}
           </div>
 
           {/* Phone: Horizontal mini-arc layout (< 768px) */}
@@ -932,55 +878,51 @@ const DraftRoomScreen = ({
             background: 'rgba(10, 14, 20, 0.98)',
             backdropFilter: 'blur(10px)',
             display: 'grid',
-            gridTemplateColumns: 'auto 1fr auto',
+            gridTemplateColumns: 'auto 1fr',
             gap: '16px',
             alignItems: 'center',
             boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.5)',
             zIndex: 10,
           }}
         >
-          {/* Left: Roster Power Cores - Use compact on phone */}
-          {isPhone ? (
-            <RosterGaugesCompact
-              steady={{
-                picked: myPlayer?.categories?.steady || 0,
-                required: 3,
-              }}
-              risky={{
-                picked: myPlayer?.categories?.risky || 0,
-                required: 3,
-              }}
-              defensive={{
-                picked: myPlayer?.categories?.defensive || 0,
-                required: 3,
-              }}
-              onGaugeClick={(category) => {
-                if (canPickFromCategory(category)) {
-                  setSelectedDraftCategory(category);
-                }
-              }}
-            />
-          ) : (
-            <RosterGauges
-              steady={{
-                picked: myPlayer?.categories?.steady || 0,
-                required: 3,
-              }}
-              risky={{
-                picked: myPlayer?.categories?.risky || 0,
-                required: 3,
-              }}
-              defensive={{
-                picked: myPlayer?.categories?.defensive || 0,
-                required: 3,
-              }}
-              onGaugeClick={(category) => {
-                if (canPickFromCategory(category)) {
-                  setSelectedDraftCategory(category);
-                }
-              }}
-            />
-          )}
+          {/* Left: Roster Power Cores - Tap to open roster drawer */}
+          <div
+            onClick={() => setRosterDrawerOpen(true)}
+            style={{ cursor: 'pointer' }}
+            title="View your roster"
+          >
+            {isPhone ? (
+              <RosterGaugesCompact
+                steady={{
+                  picked: myPlayer?.categories?.steady || 0,
+                  required: 3,
+                }}
+                risky={{
+                  picked: myPlayer?.categories?.risky || 0,
+                  required: 3,
+                }}
+                defensive={{
+                  picked: myPlayer?.categories?.defensive || 0,
+                  required: 3,
+                }}
+              />
+            ) : (
+              <RosterGauges
+                steady={{
+                  picked: myPlayer?.categories?.steady || 0,
+                  required: 3,
+                }}
+                risky={{
+                  picked: myPlayer?.categories?.risky || 0,
+                  required: 3,
+                }}
+                defensive={{
+                  picked: myPlayer?.categories?.defensive || 0,
+                  required: 3,
+                }}
+              />
+            )}
+          </div>
 
           {/* Center: Confirm Pick Button */}
           <div style={{
@@ -1000,40 +942,7 @@ const DraftRoomScreen = ({
             />
           </div>
 
-          {/* Right: Integrated Tool Buttons - Use compact on phone */}
-          {isPhone ? (
-            <DraftToolButtonsCompact
-              onAnalyze={() => {
-                setDraftAdvisorAction('analyze');
-                setShowDraftAdvisor(true);
-              }}
-              onCompare={() => {
-                setDraftAdvisorAction('compare');
-                setShowDraftAdvisor(true);
-              }}
-              onNotes={() => {
-                setDraftAdvisorAction('notes');
-                setShowDraftAdvisor(true);
-              }}
-              disabled={false}
-            />
-          ) : (
-            <DraftToolButtons
-              onAnalyze={() => {
-                setDraftAdvisorAction('analyze');
-                setShowDraftAdvisor(true);
-              }}
-              onCompare={() => {
-                setDraftAdvisorAction('compare');
-                setShowDraftAdvisor(true);
-              }}
-              onNotes={() => {
-                setDraftAdvisorAction('notes');
-                setShowDraftAdvisor(true);
-              }}
-              disabled={false}
-            />
-          )}
+          {/* AI Tools removed - keeping research modals only */}
         </footer>
 
         {/* Autopick Warning Banner */}
@@ -1129,6 +1038,250 @@ const DraftRoomScreen = ({
             onAcquire={(asset) => handlePick(asset)}
             onClose={() => setDraftAssetInfoModal(null)}
           />
+        )}
+
+        {/* Roster Drawer - Slide-up panel showing user's picks */}
+        {rosterDrawerOpen && (
+          <>
+            {/* Backdrop */}
+            <div
+              className="roster-drawer-backdrop"
+              onClick={() => setRosterDrawerOpen(false)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0, 0, 0, 0.6)',
+                backdropFilter: 'blur(4px)',
+                zIndex: 500,
+              }}
+            />
+            {/* Drawer */}
+            <div
+              className="roster-drawer"
+              style={{
+                position: 'fixed',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                maxHeight: '60vh',
+                minHeight: '40vh',
+                background: 'var(--holo-bg-dark, #0a0e14)',
+                borderTopLeftRadius: '16px',
+                borderTopRightRadius: '16px',
+                border: '1px solid var(--holo-border, rgba(0, 255, 255, 0.3))',
+                borderBottom: 'none',
+                boxShadow: '0 -8px 40px rgba(0, 0, 0, 0.5)',
+                zIndex: 501,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                animation: 'roster-drawer-slide-up 0.3s ease-out',
+              }}
+            >
+              {/* Drag Handle */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  padding: '12px',
+                  cursor: 'grab',
+                }}
+                onTouchStart={(e) => {
+                  const startY = e.touches[0].clientY;
+                  const handleTouchMove = (moveEvent) => {
+                    const deltaY = moveEvent.touches[0].clientY - startY;
+                    if (deltaY > 80) {
+                      setRosterDrawerOpen(false);
+                      document.removeEventListener('touchmove', handleTouchMove);
+                    }
+                  };
+                  document.addEventListener('touchmove', handleTouchMove, { passive: true });
+                  document.addEventListener('touchend', () => {
+                    document.removeEventListener('touchmove', handleTouchMove);
+                  }, { once: true });
+                }}
+              >
+                <div style={{
+                  width: '40px',
+                  height: '4px',
+                  background: 'rgba(255, 255, 255, 0.3)',
+                  borderRadius: '2px',
+                }} />
+              </div>
+
+              {/* Header */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '0 20px 16px',
+                borderBottom: '1px solid var(--holo-border)',
+              }}>
+                <h2 style={{
+                  color: '#e6edf3',
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  margin: 0,
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px',
+                }}>
+                  Your Roster ({(myPlayer?.picks?.length || 0)}/9 picks)
+                </h2>
+                <button
+                  onClick={() => setRosterDrawerOpen(false)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#8b949e',
+                    fontSize: '24px',
+                    cursor: 'pointer',
+                    padding: '4px 8px',
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Roster Content */}
+              <div style={{
+                flex: 1,
+                overflow: 'auto',
+                padding: '16px 20px',
+              }}>
+                {/* Render each category */}
+                {['steady', 'risky', 'defensive'].map(category => {
+                  const categoryColors = {
+                    steady: { color: '#10b981', label: 'STEADY' },
+                    risky: { color: '#f59e0b', label: 'RISKY' },
+                    defensive: { color: '#3b82f6', label: 'DEFENSIVE' },
+                  };
+                  const { color, label } = categoryColors[category];
+                  const count = myPlayer?.categories?.[category] || 0;
+
+                  // Get picks for this category
+                  const categoryPicks = [];
+                  if (myPlayer?.picks && myPlayer?.pickCategories) {
+                    myPlayer.picks.forEach((symbol, idx) => {
+                      if (myPlayer.pickCategories[idx] === category) {
+                        categoryPicks.push(symbol);
+                      }
+                    });
+                  }
+
+                  return (
+                    <div key={category} style={{ marginBottom: '20px' }}>
+                      {/* Category Header */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        marginBottom: '10px',
+                      }}>
+                        <span style={{
+                          color,
+                          fontWeight: '700',
+                          fontSize: '13px',
+                          letterSpacing: '0.5px',
+                        }}>
+                          {label}
+                        </span>
+                        <span style={{
+                          color: '#6e7681',
+                          fontSize: '12px',
+                        }}>
+                          ({count}/3)
+                        </span>
+                      </div>
+
+                      {/* Pick Slots */}
+                      <div style={{
+                        display: 'flex',
+                        gap: '10px',
+                      }}>
+                        {[0, 1, 2].map(slotIndex => {
+                          const symbol = categoryPicks[slotIndex];
+                          const hasAsset = !!symbol;
+
+                          // Get sector for the symbol if available
+                          let sector = null;
+                          if (hasAsset && roomDraft?.availableAssets) {
+                            // Check all categories in availableAssets
+                            for (const cat of ['steady', 'risky', 'defensive']) {
+                              const assets = roomDraft.availableAssets[cat] || [];
+                              const found = assets.find(a => a.symbol === symbol);
+                              if (found?.sector) {
+                                sector = found.sector;
+                                break;
+                              }
+                            }
+                            // Also check draft.picks for sector info
+                            if (!sector && roomDraft.picks) {
+                              const pickEntry = roomDraft.picks.find(p => p.asset?.symbol === symbol);
+                              sector = pickEntry?.asset?.sector;
+                            }
+                          }
+
+                          return (
+                            <div
+                              key={slotIndex}
+                              style={{
+                                flex: 1,
+                                minWidth: '80px',
+                                maxWidth: '100px',
+                                aspectRatio: '1',
+                                borderRadius: '8px',
+                                border: hasAsset
+                                  ? `2px solid ${color}`
+                                  : '2px dashed rgba(255, 255, 255, 0.2)',
+                                background: hasAsset
+                                  ? `${color}10`
+                                  : 'rgba(255, 255, 255, 0.02)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '4px',
+                                transition: 'all 0.2s',
+                              }}
+                            >
+                              {hasAsset ? (
+                                <>
+                                  <span style={{
+                                    color: '#e6edf3',
+                                    fontWeight: '700',
+                                    fontSize: '14px',
+                                  }}>
+                                    {symbol}
+                                  </span>
+                                  {sector && (
+                                    <span style={{
+                                      color: '#8b949e',
+                                      fontSize: '10px',
+                                      textTransform: 'uppercase',
+                                    }}>
+                                      {sector.length > 8 ? sector.slice(0, 6) + '...' : sector}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <span style={{
+                                  color: 'rgba(255, 255, 255, 0.2)',
+                                  fontSize: '20px',
+                                }}>
+                                  --
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
         )}
 
         {/* Responsive Styles & Animations */}
@@ -1266,7 +1419,7 @@ const DraftRoomScreen = ({
             }
 
             footer {
-              grid-template-columns: auto 1fr auto !important;
+              grid-template-columns: auto 1fr !important;
               gap: 4px !important;
               padding: 6px 8px !important;
             }
@@ -1281,6 +1434,18 @@ const DraftRoomScreen = ({
              pulse-warning, screen-edge-pulse, your-turn-flash, your-turn-text,
              last-pick-slide-in, category-fade,
              .last-pick-banner-animate, .category-transition */
+
+          /* Roster drawer slide-up animation */
+          @keyframes roster-drawer-slide-up {
+            from {
+              transform: translateY(100%);
+              opacity: 0;
+            }
+            to {
+              transform: translateY(0);
+              opacity: 1;
+            }
+          }
 
           /* Mobile roster drawer animations */
           .roster-drawer {
