@@ -81,8 +81,29 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   // Get open prices for current session
   const currentSessionId = getCurrentSessionId();
   const openPrices = useMemo(() => {
-    if (!battle || !currentSessionId) return battle?.state?.startingPrices || {};
-    return battle?.sessionPrices?.[currentSessionId]?.open || battle?.state?.startingPrices || {};
+    // Debug: Log what price sources are available
+    console.log('[V3 Scoring] Battle price sources:', {
+      currentSessionId,
+      stateStartingPrices: battle?.state?.startingPrices,
+      sessionPricesOpen: battle?.sessionPrices?.MORNING_BELL?.open,
+      battleStateKeys: battle?.state ? Object.keys(battle.state) : [],
+    });
+
+    // Try session-specific prices first, then fallback to startingPrices or MORNING_BELL open
+    const sessionPrices = currentSessionId
+      ? battle?.sessionPrices?.[currentSessionId]?.open
+      : null;
+    const startingPrices = battle?.state?.startingPrices;
+    const morningBellPrices = battle?.sessionPrices?.MORNING_BELL?.open;
+
+    const prices = sessionPrices || startingPrices || morningBellPrices || {};
+
+    console.log('[V3 Scoring] Using prices from:', {
+      source: sessionPrices ? 'sessionPrices' : startingPrices ? 'startingPrices' : morningBellPrices ? 'morningBellPrices' : 'empty',
+      count: Object.keys(prices).length,
+    });
+
+    return prices;
   }, [battle, currentSessionId]);
 
   // Combine battle history with local updates
