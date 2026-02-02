@@ -521,16 +521,17 @@ const ActiveBattlesSection = ({
                 key={battle.id}
                 onClick={() => {
                   // Convert Firebase format to localStorage format for battle view
-                  // Check if this is a BaggerBomb (V2) battle
-                  const isBaggerBomb = battle._v === 2 || battle.type === 'baggerbomb';
+                  // Check if this is a BaggerBomb (V2 or V3) battle
+                  const isBaggerBomb = battle._v === 2 || battle._v === 3 || battle.type === 'baggerbomb';
+                  const isV3 = battle._v === 3;
 
                   const convertedBattle = {
                     id: battle.id,
-                    _v: isBaggerBomb ? 2 : 1, // Preserve version for routing
+                    _v: isV3 ? 3 : (isBaggerBomb ? 2 : 1), // Preserve actual version for routing
                     challengeCode: 'TRAINING',
 
-                    // V2 format: creator/opponent objects for BaggerBombBattleViewRedesign
-                    creator: isBaggerBomb ? {
+                    // V3 format uses existing creator/opponent, V2 constructs from player1/player2
+                    creator: isBaggerBomb ? (isV3 && battle.creator ? battle.creator : {
                       uid: battle.player1?.odUserId || user.odUserId,
                       odUserId: battle.player1?.odUserId || user.odUserId,
                       username: battle.player1?.username || user.username,
@@ -538,8 +539,8 @@ const ActiveBattlesSection = ({
                       portfolio: battle.player1?.portfolio || [],
                       bench: battle.player1?.bench || [],
                       portfolioType: battle.player1?.portfolioType || 'baggerbomb'
-                    } : undefined,
-                    opponent: isBaggerBomb ? {
+                    }) : undefined,
+                    opponent: isBaggerBomb ? (isV3 && battle.opponent ? battle.opponent : {
                       uid: 'cpu',
                       odUserId: 'cpu',
                       username: 'CPU Opponent',
@@ -547,7 +548,7 @@ const ActiveBattlesSection = ({
                       portfolio: battle.player2?.portfolio || [],
                       bench: battle.player2?.bench || [],
                       portfolioType: 'baggerbomb'
-                    } : undefined,
+                    }) : undefined,
 
                     // Legacy fields for Classic view compatibility
                     creatorPortfolio: battle.player1?.portfolio || [],

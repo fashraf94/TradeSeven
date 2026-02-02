@@ -4,41 +4,9 @@
 
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, Users, Copy } from 'lucide-react';
-
-// Format time elapsed since creation
-function formatTimeAgo(createdAt) {
-  if (!createdAt) return 'Just now';
-
-  const created = new Date(createdAt);
-  const now = new Date();
-  const diffMs = now - created;
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return `${Math.floor(diffHours / 24)}d ago`;
-}
-
-// Format countdown time until scheduled start
-function getTimeUntilStart(scheduledStart) {
-  if (!scheduledStart) return null;
-  const start = new Date(scheduledStart);
-  const now = new Date();
-  const diffMs = start - now;
-
-  if (diffMs <= 0) return 'Starting now!';
-
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 60) return `${diffMins}m`;
-
-  const diffHours = Math.floor(diffMins / 60);
-  const remainingMins = diffMins % 60;
-  if (remainingMins === 0) return `${diffHours}h`;
-  return `${diffHours}h ${remainingMins}m`;
-}
+import { Clock, Users, Copy, AlertTriangle } from 'lucide-react';
+import { getLobbyExpirationStatus, isLobbyFull, filterActiveLobbies } from '../../utils/lobbyUtils';
+import { formatTimeAgo, getTimeUntilStart } from '../../utils/timerFormatters';
 
 // Get asset count from V3 tiered portfolio
 function getAssetCount(portfolio) {
@@ -119,6 +87,33 @@ function PlayerSlot({ rank, player, isCurrentUser, isHost, isEmpty }) {
   );
 }
 
+// Expiration Warning Badge
+function ExpirationBadge({ expirationStatus }) {
+  if (!expirationStatus || expirationStatus.status === 'active') return null;
+
+  const isUrgent = expirationStatus.status === 'urgent';
+  const isExpired = expirationStatus.status === 'expired';
+  const bgColor = isUrgent || isExpired ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)';
+  const textColor = isUrgent || isExpired ? '#ef4444' : '#f59e0b';
+
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '4px',
+      padding: '2px 6px',
+      background: bgColor,
+      borderRadius: '4px',
+      fontSize: '9px',
+      fontWeight: '700',
+      color: textColor,
+    }}>
+      <AlertTriangle size={9} />
+      {isExpired ? 'EXPIRED' : expirationStatus.message}
+    </span>
+  );
+}
+
 // Pending Lobby Card with all player slots visible
 function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyCode }) {
   const isBaggerBomb = type === 'baggerbomb';
@@ -135,9 +130,13 @@ function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyC
   const gameEmoji = isBaggerBomb ? '💣' : '🐍';
   const gameLabel = isBaggerBomb ? 'BAGGERBOMB' : 'SNAKE DRAFT';
 
+  // Get expiration status for warning badges (only for non-full lobbies)
+  const isFull = isLobbyFull(lobby);
+  const expirationStatus = !isFull ? getLobbyExpirationStatus(lobby) : null;
+
   // Colors
   const pendingColor = '#f59e0b';
-  const borderColor = '#00d9ff';
+  const borderColor = expirationStatus?.status === 'expired' ? '#ef4444' : '#00d9ff';
   const roleBadgeColor = isHost ? '#00d9ff' : '#10b981';
 
   // Build player slots for Snake Draft
@@ -237,6 +236,8 @@ function PendingLobbyCard({ lobby, type, isHost, currentUserId, onPress, onCopyC
           }}>
             PENDING
           </span>
+          {/* Expiration Warning Badge */}
+          <ExpirationBadge expirationStatus={expirationStatus} />
         </div>
 
         {/* Time badges: Countdown (for Snake Draft) + Time ago */}

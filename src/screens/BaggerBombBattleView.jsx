@@ -25,6 +25,10 @@ import TacticalRow from '../components/BaggerBomb/TacticalRow';
 import BenchSection from '../components/BaggerBomb/BenchSection';
 import EventFeed from '../components/BaggerBomb/EventFeed';
 
+// Import modals for research and score breakdown
+import AssetResearchModal from '../components/draft/AssetResearchModal';
+import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
+
 // Tier configuration
 const TIERS = [
   {
@@ -193,8 +197,11 @@ export default function BaggerBombBattleView({
   onBack,
   onThresholdCross,
   nightMode = false,
+  isTraining = false,
 }) {
   const [activeTab, setActiveTab] = useState('matchups');
+  const [researchAsset, setResearchAsset] = useState(null);
+  const [breakdownAsset, setBreakdownAsset] = useState(null);
 
   // Apply night mode color scheme when active
   const colors = useMemo(() => {
@@ -318,6 +325,22 @@ export default function BaggerBombBattleView({
           >
             BaggerBomb Battle
           </h1>
+          {isTraining && (
+            <span
+              style={{
+                backgroundColor: '#8b5cf6',
+                color: '#ffffff',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+              }}
+            >
+              Training
+            </span>
+          )}
         </div>
         <div style={{ width: '40px' }} /> {/* Spacer for centering */}
       </div>
@@ -388,6 +411,8 @@ export default function BaggerBombBattleView({
                                 onThresholdCross('opponent', opponentAsset?.symbol, name, mult)
                             : undefined
                         }
+                        onSymbolClick={(asset) => setResearchAsset(asset)}
+                        onPointsClick={(asset) => setBreakdownAsset(asset)}
                       />
                     );
                   })}
@@ -404,6 +429,47 @@ export default function BaggerBombBattleView({
           )}
         </AnimatePresence>
       </div>
+
+      {/* Research Modal - opens when stock symbol is tapped */}
+      {researchAsset && (
+        <AssetResearchModal
+          asset={{
+            symbol: researchAsset.symbol,
+            name: researchAsset.name || researchAsset.symbol,
+            price: researchAsset.currentPrice || researchAsset.price || 0,
+            percentChange: researchAsset.priceChange || 0,
+            threshold: researchAsset.baseATR || 2.5,
+          }}
+          onClose={() => setResearchAsset(null)}
+          showActionButton={false}
+        />
+      )}
+
+      {/* Score Breakdown Modal - opens when points are tapped */}
+      {breakdownAsset && (
+        <ScoreBreakdownPopover
+          asset={{
+            symbol: breakdownAsset.symbol,
+            gain: breakdownAsset.priceChange || 0,
+            threshold: breakdownAsset.baseATR || 2.5,
+            baggerBombs: breakdownAsset.badges?.filter(b =>
+              b === 'bagger' || b === 'rally' || b === 'moonshot'
+            ).length || 0,
+            busts: breakdownAsset.badges?.filter(b =>
+              b === 'bust' || b === 'crash' || b === 'meltdown'
+            ).length || 0,
+            basePoints: (breakdownAsset.priceChange || 0) * 10,
+            baggerBombPoints: (breakdownAsset.badges?.filter(b =>
+              b === 'bagger' || b === 'rally' || b === 'moonshot'
+            ).length || 0) * 15,
+            bustPoints: (breakdownAsset.badges?.filter(b =>
+              b === 'bust' || b === 'crash' || b === 'meltdown'
+            ).length || 0) * -7.5,
+            totalScore: breakdownAsset.points || 0,
+          }}
+          onClose={() => setBreakdownAsset(null)}
+        />
+      )}
     </div>
   );
 }
@@ -458,6 +524,8 @@ BaggerBombBattleView.propTypes = {
   onThresholdCross: PropTypes.func,
   /** Enable night mode theme (auto-enabled during NIGHT_GAME session) */
   nightMode: PropTypes.bool,
+  /** Whether this is a training battle (shows Training badge) */
+  isTraining: PropTypes.bool,
 };
 
 BaggerBombBattleView.defaultProps = {
@@ -472,6 +540,7 @@ BaggerBombBattleView.defaultProps = {
   onBack: () => {},
   onThresholdCross: null,
   nightMode: false,
+  isTraining: false,
 };
 
 // Export tier configuration for use elsewhere

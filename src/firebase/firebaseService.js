@@ -983,9 +983,9 @@ export async function createBaggerBombBattle(battleData) {
  * @param {string} battleData.challengeCode - 4-character challenge code
  * @returns {Promise<Object>} - Created battle with Firestore ID
  */
-export async function createBaggerBombBattleV3(battleData) {
+export async function createBaggerBombBattleV3(battleData, lobbyTimeMinutes = 30) {
   try {
-    console.log('🔥 createBaggerBombBattleV3 called with:', battleData);
+    console.log('🔥 createBaggerBombBattleV3 called with:', battleData, 'lobbyTimeMinutes:', lobbyTimeMinutes);
 
     // Validate portfolio structure
     const { portfolio, bench } = battleData;
@@ -1072,6 +1072,9 @@ export async function createBaggerBombBattleV3(battleData) {
     const battleStart = getNextBattleStart();
     const battleEnd = getBattleEndTime(battleStart);
 
+    // Calculate lobby expiration time (when lobby auto-disbands if no opponent joins)
+    const lobbyExpiresAt = new Date(Date.now() + lobbyTimeMinutes * 60000);
+
     // Initialize history tracking per asset
     const initializeHistory = (portfolio) => {
       const history = {};
@@ -1139,7 +1142,11 @@ export async function createBaggerBombBattleV3(battleData) {
         scheduledEnd: battleEnd.toISOString(),
         actualStart: '',
         actualEnd: '',
+        lobbyExpiresAt: lobbyExpiresAt.toISOString(), // When lobby auto-disbands if no opponent
       },
+
+      // Lobby time selection (for display and reference)
+      lobbyTimeMinutes: lobbyTimeMinutes,
 
       state: {
         status: 'waiting',

@@ -150,9 +150,6 @@ export default function SlotBasedBuilder({
   onBack,
   disabled = false,
 }) {
-  // Debug: Log received data
-  console.log('[SlotBasedBuilder] Received', stocks?.length || 0, 'stocks,', crypto?.length || 0, 'crypto');
-
   // Portfolio state
   const [portfolio, setPortfolio] = useState(
     initialPortfolio || createEmptyPortfolio()

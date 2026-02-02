@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Users, ChevronRight, Flame, Clock, Calendar, CalendarDays, TrendingUp, Bitcoin } from 'lucide-react';
+import { Users, ChevronRight, Flame, Clock, Calendar, CalendarDays, TrendingUp, Bitcoin, AlertTriangle } from 'lucide-react';
+import { filterActiveLobbies, getLobbyExpirationStatus, LOBBY_CONFIG } from '../utils/lobbyUtils';
 
 // Style override to neutralize App.css
 const containerStyle = {
@@ -146,15 +147,46 @@ const getHostUsername = (draft) => {
   return host?.odUsername || host?.displayName || 'Player';
 };
 
+// Expiration Warning Badge Component
+const ExpirationBadge = ({ expirationStatus }) => {
+  if (!expirationStatus || expirationStatus.status === 'active') return null;
+
+  const isUrgent = expirationStatus.status === 'urgent';
+  const bgColor = isUrgent ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)';
+  const textColor = isUrgent ? '#ef4444' : '#f59e0b';
+
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '4px',
+      padding: '2px 8px',
+      background: bgColor,
+      borderRadius: '4px',
+      fontSize: '11px',
+      fontWeight: '600',
+      color: textColor,
+      marginLeft: '6px',
+    }}>
+      <AlertTriangle size={10} />
+      {expirationStatus.message}
+    </span>
+  );
+};
+
 // Lobby Card Component
 const LobbyCard = ({ lobby, onJoin, currentUserId }) => {
   const hostName = getHostUsername(lobby);
   const playerCount = lobby.players?.length || 1;
-  const maxPlayers = 4;
+  const maxPlayers = LOBBY_CONFIG.SNAKE_DRAFT_MIN_PLAYERS;
   const timeUntil = getApproximateTimeUntilStart(lobby.scheduledStart);
   const isUserInLobby = lobby.players?.some(p => p.odUserId === currentUserId);
   const colors = getDraftTypeColors(lobby);
   const isStocks = colors.icon === 'stocks';
+  const isFull = playerCount >= maxPlayers;
+
+  // Get expiration status for warning badges (only for non-full lobbies)
+  const expirationStatus = !isFull ? getLobbyExpirationStatus(lobby) : null;
 
   return (
     <div
@@ -196,8 +228,11 @@ const LobbyCard = ({ lobby, onJoin, currentUserId }) => {
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
           }}>
             {hostName} created a draft
+            <ExpirationBadge expirationStatus={expirationStatus} />
           </div>
           <div style={{
             color: '#8b949e',
@@ -315,14 +350,16 @@ const DraftJoinScreen = ({
   const [showCodeEntry, setShowCodeEntry] = useState(false);
   const currentUserId = user?.odUserId || user?.username;
 
-  // Filter Snake Draft lobbies
+  // Filter Snake Draft lobbies and exclude expired ones
   const snakeDraftLobbies = useMemo(() => {
-    return (lobbyBattles || [])
+    const waitingLobbies = (lobbyBattles || [])
       .filter(lobby =>
         (lobby.isSnakeDraft || lobby.battleType === 'snake-draft') &&
         lobby.status === 'waiting' &&
         !lobby.isTraining
       );
+    // Filter out expired lobbies (client-side filtering for immediate UX)
+    return filterActiveLobbies(waitingLobbies);
   }, [lobbyBattles]);
 
   // Group lobbies by time-based tiers

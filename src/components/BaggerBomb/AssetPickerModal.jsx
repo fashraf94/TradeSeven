@@ -5,11 +5,12 @@ import React, { useState, useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, Search, Check,
+  X, Search, Check, Info,
   Monitor, Building2, Heart, ShoppingBag, ShoppingCart,
   Zap, Factory, Lightbulb, Home, Radio, Layers
 } from 'lucide-react';
 import { HOLO_COLORS } from '../../constants/holoTheme';
+import AssetResearchModal from '../draft/AssetResearchModal';
 
 // Sector definitions with Lucide icons
 const SECTORS = [
@@ -69,7 +70,7 @@ SectorTab.propTypes = {
 /**
  * AssetRow - Single asset in the picker list
  */
-function AssetRow({ asset, isSelected, isDisabled, onSelect }) {
+function AssetRow({ asset, isSelected, isDisabled, onSelect, onShowResearch }) {
   const accentColor = asset.isCrypto ? HOLO_COLORS.purple : HOLO_COLORS.cyan;
 
   return (
@@ -152,6 +153,39 @@ function AssetRow({ asset, isSelected, isDisabled, onSelect }) {
         </div>
       </div>
 
+      {/* Info Button */}
+      {onShowResearch && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onShowResearch(asset);
+          }}
+          style={{
+            width: '28px',
+            height: '28px',
+            borderRadius: '50%',
+            background: 'rgba(255,255,255,0.08)',
+            border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            flexShrink: 0,
+            transition: 'all 0.2s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.15)';
+            e.currentTarget.style.borderColor = accentColor;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+            e.currentTarget.style.borderColor = HOLO_COLORS.borderSubtle;
+          }}
+        >
+          <Info size={14} color={HOLO_COLORS.textMuted} />
+        </button>
+      )}
+
       {/* Threshold Info */}
       <div
         style={{
@@ -192,6 +226,7 @@ AssetRow.propTypes = {
   isSelected: PropTypes.bool,
   isDisabled: PropTypes.bool,
   onSelect: PropTypes.func.isRequired,
+  onShowResearch: PropTypes.func,
 };
 
 /**
@@ -210,9 +245,7 @@ export default function AssetPickerModal({
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSector, setActiveSector] = useState('all');
-
-  // Debug: Log received data
-  console.log('[AssetPickerModal] Received', stocks?.length || 0, 'stocks,', crypto?.length || 0, 'crypto');
+  const [researchAsset, setResearchAsset] = useState(null);
 
   // Get stock count by sector
   const getStockCountBySector = useCallback((sectorId) => {
@@ -500,6 +533,7 @@ export default function AssetPickerModal({
                     isSelected={false}
                     isDisabled={isAssetSelected(asset)}
                     onSelect={handleSelect}
+                    onShowResearch={(a) => setResearchAsset(a)}
                   />
                 ))
               )}
@@ -527,6 +561,33 @@ export default function AssetPickerModal({
             </div>
           </motion.div>
         </motion.div>
+      )}
+
+      {/* Research Modal */}
+      {researchAsset && (
+        <AssetResearchModal
+          asset={{
+            symbol: researchAsset.symbol,
+            name: researchAsset.name,
+            price: researchAsset.price || 0,
+            percentChange: 0,
+            threshold: researchAsset.baseATR,
+          }}
+          sector={researchAsset.sector}
+          onClose={() => setResearchAsset(null)}
+          actionConfig={{
+            label: isAssetSelected(researchAsset) ? 'Already Selected' : 'Add to Portfolio',
+            onClick: () => {
+              if (!isAssetSelected(researchAsset)) {
+                handleSelect(researchAsset);
+              }
+              setResearchAsset(null);
+            },
+            variant: isAssetSelected(researchAsset) ? 'secondary' : 'primary',
+            disabled: isAssetSelected(researchAsset),
+          }}
+          showActionButton={true}
+        />
       )}
     </AnimatePresence>
   );
