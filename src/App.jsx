@@ -81,6 +81,8 @@ import {
 } from './services/recommendationEngine';
 // Extracted Screens - Batch 1
 import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen } from './screens';
+// Snake Draft Components
+import DraftCompleteScreen from './screens/SnakeDraft/DraftCompleteScreen';
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 import { ConfirmationPopup } from './components/shared';
@@ -22231,110 +22233,10 @@ export default function PortfolioDuel() {
     );
   }
 
-  // DRAFT RESULTS SCREEN - Extracted to DraftResultsScreen component
+  // DRAFT RESULTS SCREEN - Using Snake Draft Grid Layout (DraftCompleteScreen)
   if (screen === 'draftResults') {
-    const handleCreateBattleFromDraft = async () => {
-      const draftData = currentDraft;
-      const currentUserId = user?.odUserId || user?.username;
-      const myPlayer = draftData?.players?.find(p => p.odUserId === currentUserId);
-
-      if (!myPlayer || !myPlayer.picks || myPlayer.picks.length !== 9) {
-        alert('Invalid portfolio from draft');
-        return;
-      }
-
-      const equalWeight = 100 / 9;
-      const battlePortfolio = myPlayer.picks.map(symbol => {
-        const allAssets = [
-          ...draftData.availableAssets?.steady || [],
-          ...draftData.availableAssets?.risky || [],
-          ...draftData.availableAssets?.defensive || []
-        ];
-        const assetData = allAssets.find(a => a.symbol === symbol) || { symbol, name: symbol };
-        return {
-          symbol: assetData.symbol,
-          name: assetData.name || assetData.symbol,
-          percentage: equalWeight
-        };
-      });
-
-      setPortfolio(battlePortfolio);
-      setPortfolioType(draftData.type);
-      setPortfolioName(`Draft Portfolio - ${new Date().toLocaleDateString()}`);
-      setScreen('createBattle');
-      setTimeout(() => {
-        alert('Your draft portfolio has been loaded! You can now create a battle or make adjustments.');
-      }, 100);
-    };
-
-    const handleChallengeDraftOpponentFromResults = (opponent) => {
-      if (opponent.isCPU) {
-        alert('Cannot challenge CPU opponents to multiplayer battles. Start a Training battle instead!');
-        return;
-      }
-
-      const draftData = currentDraft;
-      const currentUserId = user?.odUserId || user?.username;
-      const myPlayer = draftData?.players?.find(p => p.odUserId === currentUserId);
-
-      setDraftBattleOpponent(opponent);
-      const equalWeight = 100 / 9;
-
-      const myPortfolio = myPlayer.picks.map(symbol => ({
-        symbol,
-        percentage: equalWeight,
-        amount: (equalWeight / 100) * 1000000
-      }));
-
-      const opponentPortfolio = opponent.picks.map(symbol => ({
-        symbol,
-        percentage: equalWeight,
-        amount: (equalWeight / 100) * 1000000
-      }));
-
-      const battleId = Date.now().toString();
-      const now = new Date();
-      const BATTLE_DURATION = battleTimer.TEST_MODE
-        ? 5 * 60 * 1000
-        : 24 * 60 * 60 * 1000;
-
-      const newBattle = {
-        id: battleId,
-        challengeCode: `DRAFT-${battleId.slice(-4)}`,
-        creator: currentUserId,
-        opponent: opponent.odUserId,
-        creatorPortfolio: myPortfolio,
-        opponentPortfolio: opponentPortfolio,
-        portfolioName: `Draft Battle - ${draftData.code}`,
-        portfolioType: draftData.type,
-        status: 'active',
-        startDate: now.toISOString(),
-        endDate: new Date(now.getTime() + BATTLE_DURATION).toISOString(),
-        isDraftBattle: true,
-        draftId: draftData.id,
-        draftCode: draftData.code,
-        createdAt: now.toISOString()
-      };
-
-      debugBattles('Before draft battle creation', battles);
-      setBattles(prevBattles => {
-        const exists = prevBattles.some(b => b.id === newBattle.id);
-        if (exists) {
-          console.log('Draft battle already exists, skipping add');
-          return prevBattles;
-        }
-        const updatedBattles = [...prevBattles, newBattle];
-        debugBattles('After draft battle creation', updatedBattles);
-        saveBattlesSafe(updatedBattles);
-        return updatedBattles;
-      });
-
-      setScreen('dashboard');
-      setCurrentDraft(null);
-    };
-
     return (
-      <DraftResultsScreen
+      <DraftCompleteScreen
         containerStyle={containerStyle}
         currentDraft={currentDraft}
         user={user}
@@ -22343,8 +22245,6 @@ export default function PortfolioDuel() {
           setScreen('dashboard');
         }}
         onNavigate={setScreen}
-        onCreateBattle={handleCreateBattleFromDraft}
-        onChallengeDraftOpponent={handleChallengeDraftOpponentFromResults}
       />
     );
   }
