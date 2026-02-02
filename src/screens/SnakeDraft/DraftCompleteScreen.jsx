@@ -267,9 +267,12 @@ const PlayerHeader = ({ player, isCurrentUser }) => {
       justifyContent: 'center',
       padding: 'clamp(4px, 1.5vw, 8px) clamp(2px, 1vw, 4px)',
       background: isCurrentUser
-        ? 'rgba(0, 255, 255, 0.08)'
+        ? 'linear-gradient(180deg, rgba(0, 217, 255, 0.15) 0%, rgba(0, 217, 255, 0.05) 100%)'
         : 'transparent',
       borderBottom: `2px solid ${isCurrentUser ? HOLO_COLORS.cyan : HOLO_COLORS.borderSubtle}`,
+      boxShadow: isCurrentUser
+        ? '0 0 20px rgba(0, 217, 255, 0.4), inset 0 0 15px rgba(0, 217, 255, 0.1)'
+        : 'none',
       minHeight: 'clamp(40px, 12vw, 52px)',
       minWidth: '0' // Allow shrinking below content size
     }}>
@@ -284,8 +287,8 @@ const PlayerHeader = ({ player, isCurrentUser }) => {
         fontSize: 'clamp(9px, 2.5vw, 12px)',
         marginTop: 'clamp(2px, 0.5vw, 4px)',
         textAlign: 'center',
-        letterSpacing: isCurrentUser ? '0.5px' : '0',
-        textShadow: isCurrentUser ? `0 0 8px ${HOLO_COLORS.cyan}` : 'none',
+        letterSpacing: isCurrentUser ? '1px' : '0',
+        textShadow: isCurrentUser ? `0 0 12px ${HOLO_COLORS.cyan}, 0 0 20px rgba(0, 217, 255, 0.5)` : 'none',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
@@ -308,10 +311,17 @@ const GridCell = ({ pick, isUserColumn }) => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'rgba(255, 255, 255, 0.02)',
-        border: `1px dashed ${HOLO_COLORS.borderSubtle}`,
+        background: isUserColumn
+          ? 'rgba(0, 217, 255, 0.04)'
+          : 'rgba(255, 255, 255, 0.02)',
+        border: isUserColumn
+          ? '1px dashed rgba(0, 217, 255, 0.3)'
+          : `1px dashed ${HOLO_COLORS.borderSubtle}`,
         borderRadius: 'clamp(4px, 1.5vw, 8px)',
-        minWidth: '0' // Critical: allows grid items to shrink below content size
+        minWidth: '0', // Critical: allows grid items to shrink below content size
+        boxShadow: isUserColumn
+          ? '0 0 15px rgba(0, 217, 255, 0.2)'
+          : 'none'
       }}>
         <span style={{ color: HOLO_COLORS.textMuted, fontSize: 'clamp(8px, 2vw, 10px)' }}>-</span>
       </div>
@@ -329,15 +339,16 @@ const GridCell = ({ pick, isUserColumn }) => {
       justifyContent: 'center',
       padding: 'clamp(2px, 1vw, 8px)',
       background: isUserColumn
-        ? `rgba(0, 255, 255, 0.06)`
+        ? `linear-gradient(135deg, rgba(0, 217, 255, 0.12) 0%, rgba(0, 217, 255, 0.04) 100%)`
         : 'rgba(255, 255, 255, 0.03)',
       border: `${isUserColumn ? '2px' : '1px'} solid ${sectorColor}`,
       borderRadius: 'clamp(4px, 1.5vw, 8px)',
       position: 'relative',
       minWidth: '0', // Critical: allows grid items to shrink below content size
       boxShadow: isUserColumn
-        ? `0 0 12px ${sectorColor}40, inset 0 0 20px ${sectorColor}15`
-        : `inset 0 0 10px ${sectorColor}10`
+        ? `0 0 12px ${sectorColor}60, 0 0 25px rgba(0, 217, 255, 0.4), 0 0 40px rgba(0, 217, 255, 0.15), inset 0 0 15px ${sectorColor}20`
+        : `inset 0 0 10px ${sectorColor}10`,
+      animation: isUserColumn ? 'user-column-pulse 3s ease-in-out infinite' : 'none'
     }}>
       {/* Ticker with superscript pick number */}
       <div style={{
@@ -473,6 +484,17 @@ const DraftCompleteScreen = ({
 
   return (
     <div style={containerStyle}>
+      {/* Keyframes for user column pulse animation */}
+      <style>{`
+        @keyframes user-column-pulse {
+          0%, 100% {
+            filter: brightness(1) drop-shadow(0 0 8px rgba(0, 217, 255, 0.4));
+          }
+          50% {
+            filter: brightness(1.1) drop-shadow(0 0 15px rgba(0, 217, 255, 0.6));
+          }
+        }
+      `}</style>
       <div style={{
         minHeight: '100vh',
         background: HOLO_COLORS.bgDeep,
