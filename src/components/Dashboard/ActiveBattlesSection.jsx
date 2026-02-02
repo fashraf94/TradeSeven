@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Swords, GraduationCap, User, Users, Target, Clock, Copy } from 'lucide-react';
 import { getUsername } from '../../utils/battleHelpers';
 import { HOLO_COLORS } from '../../constants/holoTheme';
+import V3ActiveBattleCard from './V3ActiveBattleCard';
 
 const ActiveBattlesSection = ({
   activeBattles,
@@ -122,7 +123,25 @@ const ActiveBattlesSection = ({
           )}
 
           {/* Render ALL active battle cards */}
-          {activeBattlesWithData.map(({ battle, previewData }, index) => (
+          {activeBattlesWithData.map(({ battle, previewData }, index) => {
+            // Use V3ActiveBattleCard for V3 battles to get live calculated scores
+            if (battle._v === 3) {
+              return (
+                <V3ActiveBattleCard
+                  key={battle.id || battle.firestoreId || index}
+                  battle={battle}
+                  user={user}
+                  colors={colors}
+                  index={index}
+                  setCurrentBattle={setCurrentBattle}
+                  setScreen={setScreen}
+                  battleTimer={battleTimer}
+                />
+              );
+            }
+
+            // Non-V3 battles use the original inline card
+            return (
             <motion.div
               key={battle.id || battle.firestoreId || index}
               initial={{ opacity: 0, y: 20 }}
@@ -313,7 +332,8 @@ const ActiveBattlesSection = ({
                 </button>
               </div>
             </motion.div>
-          ))}
+            );
+          })}
         </div>
       )}
 
