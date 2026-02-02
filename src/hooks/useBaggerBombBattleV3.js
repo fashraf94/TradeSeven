@@ -89,19 +89,29 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       battleStateKeys: battle?.state ? Object.keys(battle.state) : [],
     });
 
-    // Try session-specific prices first, then fallback to startingPrices or MORNING_BELL open
-    const sessionPrices = currentSessionId
+    // Get all potential price sources
+    const currentSessionPrices = currentSessionId
       ? battle?.sessionPrices?.[currentSessionId]?.open
       : null;
     const startingPrices = battle?.state?.startingPrices;
     const morningBellPrices = battle?.sessionPrices?.MORNING_BELL?.open;
 
-    const prices = sessionPrices || startingPrices || morningBellPrices || {};
+    // Check if objects actually have data (not just exist but are empty)
+    const hasCurrentSessionPrices = currentSessionPrices && Object.keys(currentSessionPrices).length > 0;
+    const hasStartingPrices = startingPrices && Object.keys(startingPrices).length > 0;
+    const hasMorningBellPrices = morningBellPrices && Object.keys(morningBellPrices).length > 0;
 
-    console.log('[V3 Scoring] Using prices from:', {
-      source: sessionPrices ? 'sessionPrices' : startingPrices ? 'startingPrices' : morningBellPrices ? 'morningBellPrices' : 'empty',
-      count: Object.keys(prices).length,
-    });
+    const prices = hasCurrentSessionPrices ? currentSessionPrices
+      : hasStartingPrices ? startingPrices
+      : hasMorningBellPrices ? morningBellPrices
+      : {};
+
+    const source = hasCurrentSessionPrices ? 'currentSession'
+      : hasStartingPrices ? 'startingPrices'
+      : hasMorningBellPrices ? 'morningBell'
+      : 'empty';
+
+    console.log('[V3 Scoring] Using prices from:', { source, count: Object.keys(prices).length });
 
     return prices;
   }, [battle, currentSessionId]);
