@@ -296,6 +296,8 @@ export default function AssetPickerModal({
   const handleSelect = useCallback(
     (asset) => {
       onSelect(asset);
+      setSearchQuery('');
+      setActiveSector('all');
       onClose();
     },
     [onSelect, onClose]
@@ -305,6 +307,8 @@ export default function AssetPickerModal({
   const handleBackdropClick = useCallback(
     (e) => {
       if (e.target === e.currentTarget) {
+        setSearchQuery('');
+        setActiveSector('all');
         onClose();
       }
     },

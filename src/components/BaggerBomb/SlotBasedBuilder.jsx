@@ -1,7 +1,7 @@
 // SlotBasedBuilder - Main portfolio builder with slot-based layout
 // Organizes assets into tiers: Star (20%), Core (15%), Support (10%), Bench
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
@@ -154,6 +154,22 @@ export default function SlotBasedBuilder({
   const [portfolio, setPortfolio] = useState(
     initialPortfolio || createEmptyPortfolio()
   );
+
+  // Mobile detection
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(
+        window.matchMedia('(max-width: 768px)').matches ||
+        'ontouchstart' in window ||
+        navigator.maxTouchPoints > 0
+      );
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Build price lookup from API data
   const stockPrices = useMemo(() => {
@@ -479,7 +495,7 @@ export default function SlotBasedBuilder({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
             gap: '8px',
           }}
         >
