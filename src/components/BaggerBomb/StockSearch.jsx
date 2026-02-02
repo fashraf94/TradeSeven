@@ -1,18 +1,20 @@
 // StockSelector - Sector-tabbed grid for selecting stocks in TD Portfolio Builder
 import React, { useState, useMemo } from 'react';
+import { HOLO_COLORS } from '../../constants/holoTheme';
 
+// Color scheme using centralized theme
 const colors = {
-  background: '#0a0a0f',
+  background: HOLO_COLORS.bgDeep,
   cardBg: 'rgba(255,255,255,0.03)',
   cardBgHover: 'rgba(255,255,255,0.06)',
   border: 'rgba(255,255,255,0.1)',
-  primary: '#00d9ff',
-  green: '#10b981',
-  yellow: '#f59e0b',
-  red: '#ef4444',
-  textPrimary: '#ffffff',
-  textSecondary: 'rgba(255,255,255,0.6)',
-  textMuted: 'rgba(255,255,255,0.4)'
+  primary: HOLO_COLORS.primary,
+  green: HOLO_COLORS.greenMuted,
+  yellow: HOLO_COLORS.amber,
+  red: HOLO_COLORS.redMuted,
+  textPrimary: HOLO_COLORS.textPrimary,
+  textSecondary: HOLO_COLORS.textSecondary,
+  textMuted: HOLO_COLORS.textMuted
 };
 
 // Sector definitions with icons

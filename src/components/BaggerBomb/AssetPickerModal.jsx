@@ -247,9 +247,6 @@ export default function AssetPickerModal({
   const [activeSector, setActiveSector] = useState('all');
   const [researchAsset, setResearchAsset] = useState(null);
 
-  // Debug: Log received data
-  console.log('[AssetPickerModal] Received', stocks?.length || 0, 'stocks,', crypto?.length || 0, 'crypto');
-
   // Get stock count by sector
   const getStockCountBySector = useCallback((sectorId) => {
     if (sectorId === 'all') return stocks.length;

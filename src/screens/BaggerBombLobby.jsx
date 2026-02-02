@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, Plus, Users, Clock, Zap, RefreshCw, AlertTriangle, Flame, Calendar, CalendarDays } from 'lucide-react';
 import { HOLO_COLORS } from '../constants/holoTheme';
 import { filterActiveLobbies, getLobbyExpirationStatus, isLobbyFull, groupBaggerBombLobbiesByTime, getApproximateTimeUntilExpiry } from '../utils/lobbyUtils';
+import { formatTimeAgo } from '../utils/timerFormatters';
 
 // Icon mapping for tier headers
 const TIER_ICONS = {
@@ -15,24 +16,6 @@ const TIER_ICONS = {
   Calendar,
   CalendarDays,
 };
-
-/**
- * Format time elapsed since battle creation
- */
-function formatTimeAgo(createdAt) {
-  if (!createdAt) return 'Just now';
-
-  const created = new Date(createdAt);
-  const now = new Date();
-  const diffMs = now - created;
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return `${Math.floor(diffHours / 24)}d ago`;
-}
 
 /**
  * TierHeader - Section header for time-based lobby grouping

@@ -5,20 +5,21 @@ import {
   Target, TrendingUp, Rocket, Building2, DollarSign,
   Percent, BarChart3, Newspaper, ChevronLeft, X
 } from 'lucide-react';
+import { HOLO_COLORS } from '../../constants/holoTheme';
 
-// Color scheme
+// Color scheme using centralized theme
 const colors = {
-  background: '#0a0a0f',
+  background: HOLO_COLORS.bgDeep,
   cardBg: 'rgba(255,255,255,0.03)',
   border: 'rgba(255,255,255,0.1)',
-  primary: '#00d9ff',
-  green: '#10b981',
-  yellow: '#f59e0b',
-  red: '#ef4444',
-  purple: '#8b5cf6',
-  textPrimary: '#ffffff',
-  textSecondary: 'rgba(255,255,255,0.6)',
-  textMuted: 'rgba(255,255,255,0.4)'
+  primary: HOLO_COLORS.primary,
+  green: HOLO_COLORS.greenMuted,
+  yellow: HOLO_COLORS.amber,
+  red: HOLO_COLORS.redMuted,
+  purple: HOLO_COLORS.purple,
+  textPrimary: HOLO_COLORS.textPrimary,
+  textSecondary: HOLO_COLORS.textSecondary,
+  textMuted: HOLO_COLORS.textMuted
 };
 
 // Mock fundamental data (in production, fetch from API)

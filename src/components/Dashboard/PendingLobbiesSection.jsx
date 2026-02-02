@@ -6,40 +6,7 @@ import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Clock, Users, Copy, AlertTriangle } from 'lucide-react';
 import { getLobbyExpirationStatus, isLobbyFull, filterActiveLobbies } from '../../utils/lobbyUtils';
-
-// Format time elapsed since creation
-function formatTimeAgo(createdAt) {
-  if (!createdAt) return 'Just now';
-
-  const created = new Date(createdAt);
-  const now = new Date();
-  const diffMs = now - created;
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return `${Math.floor(diffHours / 24)}d ago`;
-}
-
-// Format countdown time until scheduled start
-function getTimeUntilStart(scheduledStart) {
-  if (!scheduledStart) return null;
-  const start = new Date(scheduledStart);
-  const now = new Date();
-  const diffMs = start - now;
-
-  if (diffMs <= 0) return 'Starting now!';
-
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 60) return `${diffMins}m`;
-
-  const diffHours = Math.floor(diffMins / 60);
-  const remainingMins = diffMins % 60;
-  if (remainingMins === 0) return `${diffHours}h`;
-  return `${diffHours}h ${remainingMins}m`;
-}
+import { formatTimeAgo, getTimeUntilStart } from '../../utils/timerFormatters';
 
 // Get asset count from V3 tiered portfolio
 function getAssetCount(portfolio) {

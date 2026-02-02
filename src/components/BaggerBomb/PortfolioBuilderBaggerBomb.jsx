@@ -15,21 +15,22 @@ import { STOCKS, CRYPTO } from '../../data/assets';
 import StockDetailModal from './StockDetailModal';
 import { NotesTab } from '../GamePlan';
 import { useUser } from '../../contexts';
+import { HOLO_COLORS } from '../../constants/holoTheme';
 
-// Color scheme matching existing app
+// Color scheme using centralized theme
 const colors = {
-  background: '#0a0a0f',
+  background: HOLO_COLORS.bgDeep,
   cardBg: 'rgba(255,255,255,0.03)',
   cardBgHover: 'rgba(255,255,255,0.06)',
   border: 'rgba(255,255,255,0.1)',
   borderHover: 'rgba(255,255,255,0.2)',
-  primary: '#00d9ff',
-  green: '#10b981',
-  yellow: '#f59e0b',
-  red: '#ef4444',
-  textPrimary: '#ffffff',
-  textSecondary: 'rgba(255,255,255,0.6)',
-  textMuted: 'rgba(255,255,255,0.4)'
+  primary: HOLO_COLORS.primary,
+  green: HOLO_COLORS.greenMuted,
+  yellow: HOLO_COLORS.amber,
+  red: HOLO_COLORS.redMuted,
+  textPrimary: HOLO_COLORS.textPrimary,
+  textSecondary: HOLO_COLORS.textSecondary,
+  textMuted: HOLO_COLORS.textMuted
 };
 
 // Sector definitions with Lucide icons
@@ -310,12 +311,6 @@ export default function PortfolioBuilderBaggerBomb({
   const isLoadingThresholds = false; // Always false - using defaults
   const [isCreating, setIsCreating] = useState(false);
 
-  // Log once on mount
-  useEffect(() => {
-    console.log('[BaggerBomb] Using prices from App.jsx, default thresholds');
-    console.log(`[BaggerBomb] Received ${stocksData.length} stocks, ${cryptoData.length} crypto`);
-  }, []); // Empty deps - run only once on mount
-
   // Detect mobile/touch device
   useEffect(() => {
     const checkMobile = () => {
@@ -516,8 +511,6 @@ export default function PortfolioBuilderBaggerBomb({
           position: 'long'
         });
       }
-
-      console.log('Creating TD Battle:', { portfolioName, creatorPortfolio, creatorBench });
 
       await onSubmit({
         portfolioName: portfolioName.trim(),

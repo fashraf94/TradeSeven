@@ -14,10 +14,13 @@ export const HOLO_COLORS = {
   borderBright: 'rgba(0, 255, 255, 0.5)',
 
   // Primary Accents
+  primary: '#00d9ff',  // Standard primary cyan (used across BaggerBomb components)
   cyan: '#00ffff',
   green: '#00ff88',
+  greenMuted: '#10b981',  // Muted green (used in threshold displays)
   amber: '#f59e0b',
   red: '#ff3366',
+  redMuted: '#ef4444',  // Muted red (used in threshold displays)
   purple: '#8b5cf6',
 
   // Rank Colors

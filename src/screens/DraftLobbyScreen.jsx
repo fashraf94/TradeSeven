@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { getLobbyExpirationStatus, isLobbyFull, LOBBY_CONFIG } from '../utils/lobbyUtils';
+import { getTimeUntilStart } from '../utils/timerFormatters';
 
 // Style override to neutralize App.css
 const containerStyle = {
@@ -12,24 +13,6 @@ const containerStyle = {
   minHeight: '100vh',
   background: '#0d1117',
   overflowX: 'hidden'
-};
-
-// Helper to format countdown time
-const getTimeUntilStart = (scheduledStart) => {
-  if (!scheduledStart) return null;
-  const start = new Date(scheduledStart);
-  const now = new Date();
-  const diffMs = start - now;
-
-  if (diffMs <= 0) return 'Starting now!';
-
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 60) return `${diffMins}m`;
-
-  const diffHours = Math.floor(diffMins / 60);
-  const remainingMins = diffMins % 60;
-  if (remainingMins === 0) return `${diffHours}h`;
-  return `${diffHours}h ${remainingMins}m`;
 };
 
 const DraftLobbyScreen = ({
