@@ -124,6 +124,9 @@ const ActiveBattlesSection = ({
 
           {/* Render ALL active battle cards */}
           {activeBattlesWithData.map(({ battle, previewData }, index) => {
+            // Debug: Log battle version
+            console.log('[ActiveBattlesSection] Battle:', battle?.id, 'version:', battle?._v, 'isV3:', battle?._v === 3);
+
             // Use V3ActiveBattleCard for V3 battles to get live calculated scores
             if (battle._v === 3) {
               return (

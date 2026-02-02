@@ -16,20 +16,33 @@ const V3ActiveBattleCard = ({
   battleTimer,
 }) => {
   // Use the V3 hook to get live calculated scores
+  // Hook expects userId (string), not user object
+  const userId = user?.odUserId || user?.username;
   const {
-    myScore,
-    opponentScore,
+    player,
+    opponent: hookOpponent,
     isCreator,
-  } = useBaggerBombBattleV3(battle?.id, user);
+    loading,
+  } = useBaggerBombBattleV3(battle?.id, userId);
 
-  // Determine opponent name
-  const opponent = isCreator
+  // Debug logging
+  console.log('[V3ActiveBattleCard] Rendering for battle:', battle?.id);
+  console.log('[V3ActiveBattleCard] Hook results:', {
+    userId,
+    isCreator,
+    loading,
+    playerTotalPoints: player?.totalPoints,
+    opponentTotalPoints: hookOpponent?.totalPoints,
+  });
+
+  // Determine opponent name from battle data (not hook) for display
+  const opponentName = isCreator
     ? (battle.opponent?.username || 'Waiting...')
     : (battle.creator?.username || 'Creator');
 
-  // Use live calculated scores (these are point scores, not percentages for V3)
-  const myGain = myScore?.totalScore || 0;
-  const theirGain = opponentScore?.totalScore || 0;
+  // Use live calculated scores from the hook
+  const myGain = player?.totalPoints || 0;
+  const theirGain = hookOpponent?.totalPoints || 0;
   const isWinning = myGain > theirGain;
   const leadBy = Math.abs(myGain - theirGain);
 
@@ -91,7 +104,7 @@ const V3ActiveBattleCard = ({
             textTransform: 'uppercase',
             letterSpacing: '1px'
           }}>
-            {battle.isTrainingBattle ? 'TRAINING' : 'BATTLE'}: vs {opponent}
+            {battle.isTrainingBattle ? 'TRAINING' : 'BATTLE'}: vs {opponentName}
           </span>
         </div>
         <span style={{
