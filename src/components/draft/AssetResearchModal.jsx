@@ -1096,26 +1096,45 @@ const AssetResearchModal = ({
               </h2>
             </div>
 
-            {/* Tabs - Compact text-only for mobile (now 5 tabs) */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(5, 1fr)',
-              gap: '3px',
-              marginBottom: '16px',
-            }}>
+            {/* Tabs - Horizontal scroll carousel for mobile */}
+            <div
+              className="ai-tabs-scroll"
+              style={{
+                display: 'flex',
+                gap: '6px',
+                marginBottom: '16px',
+                overflowX: 'auto',
+                overflowY: 'hidden',
+                WebkitOverflowScrolling: 'touch',
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none',
+                marginLeft: '-20px',
+                marginRight: '-20px',
+                paddingLeft: '20px',
+                paddingRight: '20px',
+                paddingBottom: '4px',
+              }}
+            >
+              <style>{`
+                .ai-tabs-scroll::-webkit-scrollbar {
+                  display: none;
+                }
+              `}</style>
               <button
                 onClick={() => setActiveTab('fundamental')}
                 style={{
-                  padding: '8px 3px',
+                  padding: '8px 12px',
                   borderRadius: '6px',
                   border: activeTab === 'fundamental' ? '1px solid #00d9ff' : '1px solid rgba(255, 255, 255, 0.1)',
                   background: activeTab === 'fundamental' ? 'rgba(0, 217, 255, 0.2)' : 'rgba(255, 255, 255, 0.05)',
                   color: activeTab === 'fundamental' ? '#00d9ff' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '9px',
+                  fontSize: '11px',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   textAlign: 'center',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
                 }}
               >
                 Analysis
@@ -1123,16 +1142,18 @@ const AssetResearchModal = ({
               <button
                 onClick={() => setActiveTab('earnings')}
                 style={{
-                  padding: '8px 3px',
+                  padding: '8px 12px',
                   borderRadius: '6px',
                   border: activeTab === 'earnings' ? '1px solid #8b5cf6' : '1px solid rgba(255, 255, 255, 0.1)',
                   background: activeTab === 'earnings' ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
                   color: activeTab === 'earnings' ? '#8b5cf6' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '9px',
+                  fontSize: '11px',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   textAlign: 'center',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
                 }}
               >
                 Earnings
@@ -1140,16 +1161,18 @@ const AssetResearchModal = ({
               <button
                 onClick={() => setActiveTab('technical')}
                 style={{
-                  padding: '8px 3px',
+                  padding: '8px 12px',
                   borderRadius: '6px',
                   border: activeTab === 'technical' ? '1px solid #00d9ff' : '1px solid rgba(255, 255, 255, 0.1)',
                   background: activeTab === 'technical' ? 'rgba(0, 217, 255, 0.2)' : 'rgba(255, 255, 255, 0.05)',
                   color: activeTab === 'technical' ? '#00d9ff' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '9px',
+                  fontSize: '11px',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   textAlign: 'center',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
                 }}
               >
                 Technical
@@ -1157,16 +1180,18 @@ const AssetResearchModal = ({
               <button
                 onClick={() => setActiveTab('baggerbomb')}
                 style={{
-                  padding: '8px 3px',
+                  padding: '8px 12px',
                   borderRadius: '6px',
                   border: activeTab === 'baggerbomb' ? '1px solid #00ff88' : '1px solid rgba(255, 255, 255, 0.1)',
                   background: activeTab === 'baggerbomb' ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255, 255, 255, 0.05)',
                   color: activeTab === 'baggerbomb' ? '#00ff88' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '9px',
+                  fontSize: '11px',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   textAlign: 'center',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
                 }}
               >
                 💣 Bomb
@@ -1174,16 +1199,18 @@ const AssetResearchModal = ({
               <button
                 onClick={() => setActiveTab('news')}
                 style={{
-                  padding: '8px 3px',
+                  padding: '8px 12px',
                   borderRadius: '6px',
                   border: activeTab === 'news' ? '1px solid #00d9ff' : '1px solid rgba(255, 255, 255, 0.1)',
                   background: activeTab === 'news' ? 'rgba(0, 217, 255, 0.2)' : 'rgba(255, 255, 255, 0.05)',
                   color: activeTab === 'news' ? '#00d9ff' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
-                  fontSize: '9px',
+                  fontSize: '11px',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   textAlign: 'center',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
                 }}
               >
                 News
