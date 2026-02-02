@@ -265,26 +265,31 @@ const PlayerHeader = ({ player, isCurrentUser }) => {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '8px 4px',
+      padding: 'clamp(4px, 1.5vw, 8px) clamp(2px, 1vw, 4px)',
       background: isCurrentUser
         ? 'rgba(0, 255, 255, 0.08)'
         : 'transparent',
       borderBottom: `2px solid ${isCurrentUser ? HOLO_COLORS.cyan : HOLO_COLORS.borderSubtle}`,
-      minHeight: '52px'
+      minHeight: 'clamp(40px, 12vw, 52px)',
+      minWidth: '0' // Allow shrinking below content size
     }}>
       {isCurrentUser ? (
         <UserIcon size={18} color={HOLO_COLORS.cyan} />
       ) : (
-        <BotIcon size={16} color={HOLO_COLORS.textMuted} />
+        <BotIcon size={14} color={HOLO_COLORS.textMuted} />
       )}
       <span style={{
         color: isCurrentUser ? HOLO_COLORS.cyan : HOLO_COLORS.textPrimary,
         fontWeight: isCurrentUser ? '700' : '500',
-        fontSize: '12px',
-        marginTop: '4px',
+        fontSize: 'clamp(9px, 2.5vw, 12px)',
+        marginTop: 'clamp(2px, 0.5vw, 4px)',
         textAlign: 'center',
         letterSpacing: isCurrentUser ? '0.5px' : '0',
-        textShadow: isCurrentUser ? `0 0 8px ${HOLO_COLORS.cyan}` : 'none'
+        textShadow: isCurrentUser ? `0 0 8px ${HOLO_COLORS.cyan}` : 'none',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        maxWidth: '100%'
       }}>
         {displayName}
       </span>
@@ -305,9 +310,10 @@ const GridCell = ({ pick, isUserColumn }) => {
         justifyContent: 'center',
         background: 'rgba(255, 255, 255, 0.02)',
         border: `1px dashed ${HOLO_COLORS.borderSubtle}`,
-        borderRadius: '8px'
+        borderRadius: 'clamp(4px, 1.5vw, 8px)',
+        minWidth: '0' // Critical: allows grid items to shrink below content size
       }}>
-        <span style={{ color: HOLO_COLORS.textMuted, fontSize: '10px' }}>-</span>
+        <span style={{ color: HOLO_COLORS.textMuted, fontSize: 'clamp(8px, 2vw, 10px)' }}>-</span>
       </div>
     );
   }
@@ -321,12 +327,14 @@ const GridCell = ({ pick, isUserColumn }) => {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
+      padding: 'clamp(2px, 1vw, 8px)',
       background: isUserColumn
         ? `rgba(0, 255, 255, 0.06)`
         : 'rgba(255, 255, 255, 0.03)',
       border: `${isUserColumn ? '2px' : '1px'} solid ${sectorColor}`,
-      borderRadius: '8px',
+      borderRadius: 'clamp(4px, 1.5vw, 8px)',
       position: 'relative',
+      minWidth: '0', // Critical: allows grid items to shrink below content size
       boxShadow: isUserColumn
         ? `0 0 12px ${sectorColor}40, inset 0 0 20px ${sectorColor}15`
         : `inset 0 0 10px ${sectorColor}10`
@@ -340,14 +348,14 @@ const GridCell = ({ pick, isUserColumn }) => {
         <span style={{
           color: HOLO_COLORS.textPrimary,
           fontWeight: '700',
-          fontSize: '13px',
+          fontSize: 'clamp(11px, 3.2vw, 16px)',
           letterSpacing: '0.3px'
         }}>
           {pick.symbol}
         </span>
         <sup style={{
           color: HOLO_COLORS.textMuted,
-          fontSize: '8px',
+          fontSize: 'clamp(7px, 1.8vw, 10px)',
           marginLeft: '1px',
           marginTop: '-1px',
           fontWeight: '500'
@@ -359,11 +367,11 @@ const GridCell = ({ pick, isUserColumn }) => {
       {/* Sector abbreviation */}
       <span style={{
         color: sectorColor,
-        fontSize: '9px',
+        fontSize: 'clamp(7px, 2vw, 11px)',
         fontWeight: '600',
-        marginTop: '2px',
+        marginTop: 'clamp(1px, 0.5vw, 3px)',
         textTransform: 'uppercase',
-        letterSpacing: '0.3px'
+        letterSpacing: '0.2px'
       }}>
         {pick.sectorAbbrev}
       </span>
@@ -379,15 +387,15 @@ const RoundLabel = ({ roundNumber }) => (
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '8px 2px',
+    padding: 'clamp(4px, 1.5vw, 8px) clamp(2px, 0.5vw, 4px)',
     background: 'transparent',
-    minWidth: '32px'
+    minWidth: 'clamp(24px, 7vw, 36px)'
   }}>
     <span style={{
       color: HOLO_COLORS.textSecondary,
-      fontSize: '11px',
+      fontSize: 'clamp(9px, 2.5vw, 12px)',
       fontWeight: '600',
-      letterSpacing: '0.5px'
+      letterSpacing: '0.3px'
     }}>
       R{roundNumber}
     </span>
@@ -531,22 +539,26 @@ const DraftCompleteScreen = ({
 
         {/* Grid Section */}
         <div style={{
-          maxWidth: '400px',
+          width: '100%',
+          maxWidth: '600px',
           margin: '0 auto',
-          padding: '0 12px'
+          padding: '0 8px',
+          boxSizing: 'border-box'
         }}>
           {/* Grid Container */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: `auto repeat(${playerOrder.length}, 1fr)`,
-            gap: '4px',
+            gap: 'clamp(2px, 1vw, 6px)',
             background: HOLO_COLORS.bgCard,
-            borderRadius: '16px',
-            padding: '12px',
-            border: `1px solid ${HOLO_COLORS.borderSubtle}`
+            borderRadius: 'clamp(10px, 3vw, 16px)',
+            padding: 'clamp(6px, 2vw, 12px)',
+            border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+            width: '100%',
+            boxSizing: 'border-box'
           }}>
             {/* Empty corner cell */}
-            <div style={{ minWidth: '32px' }} />
+            <div style={{ minWidth: 'clamp(24px, 7vw, 36px)' }} />
 
             {/* Player header row */}
             {playerOrder.map((player, colIndex) => (
