@@ -91,9 +91,10 @@ const DraftBattleScreenV2 = ({
   const [dailyData, setDailyData] = useState(null);
   const [dailyOpenPricesCaptured, setDailyOpenPricesCaptured] = useState(false);
 
-  // Refs for cleanup
+  // Refs for cleanup and tracking
   const refreshIntervalRef = useRef(null);
   const timerIntervalRef = useRef(null);
+  const hasInitialLoadRef = useRef(false);
 
   // ============================================
   // DERIVED VALUES - Preserved from original
@@ -292,7 +293,7 @@ const DraftBattleScreenV2 = ({
     }
 
     // Don't show full loading on refresh, just the indicator
-    if (standings.length > 0) {
+    if (hasInitialLoadRef.current) {
       setIsRefreshing(true);
     } else {
       setLoading(true);
@@ -596,6 +597,7 @@ const DraftBattleScreenV2 = ({
 
       setLastUpdated(new Date());
       setError(null);
+      hasInitialLoadRef.current = true;
 
     } catch (err) {
       logger.error('[DraftBattleV2] Error calculating standings:', err);
@@ -604,7 +606,7 @@ const DraftBattleScreenV2 = ({
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, [currentDraft, currentUserId, battleType, standings.length, logger, thresholds]);
+  }, [currentDraft, currentUserId, battleType, logger, thresholds]);
 
   // Effect to run calculateStandings on mount and set up interval
   useEffect(() => {
