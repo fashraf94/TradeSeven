@@ -12,6 +12,9 @@ const MARKET_OPEN_HOUR = 9;
 const MARKET_OPEN_MINUTE = 30;
 const MARKET_CLOSE_HOUR = 16;
 const MARKET_CLOSE_MINUTE = 0;
+const DEFAULT_VOLATILITY_THRESHOLD = 3.0;
+const MIN_TRADING_DAY = 1;
+const MAX_TRADING_DAY = 5;
 
 /**
  * Calculate scores for all players based on price changes
@@ -44,7 +47,7 @@ function calculatePlayerScores(players, openPrices, currentPrices, thresholds) {
       }
 
       // Get threshold (default to 3%)
-      const threshold = thresholds[upperSymbol]?.threshold || thresholds[symbol]?.threshold || 3.0;
+      const threshold = thresholds[upperSymbol]?.threshold || thresholds[symbol]?.threshold || DEFAULT_VOLATILITY_THRESHOLD;
 
       // Calculate BaggerBomb score for this asset
       const assetScore = calculateSnakeDraftAssetScore(dailyGain, threshold);
@@ -143,7 +146,7 @@ export function isAfterMarketClose() {
  * @returns {boolean}
  */
 export function needsDailyOpenCapture(draft, currentDay) {
-  if (!draft || currentDay < 1 || currentDay > 5) return false;
+  if (!draft || currentDay < MIN_TRADING_DAY || currentDay > MAX_TRADING_DAY) return false;
 
   const dayKey = getDayKey(currentDay);
   const dailyData = draft.dailyData || {};
@@ -171,7 +174,7 @@ export async function captureDailyOpenPrices(draftId, currentPrices) {
     const draft = draftSnap.data();
     const currentDay = getCurrentTradingDay(draft.battleStartTime || draft.createdAt);
 
-    if (currentDay < 1 || currentDay > 5) {
+    if (currentDay < MIN_TRADING_DAY || currentDay > MAX_TRADING_DAY) {
       return false;
     }
 
@@ -241,7 +244,7 @@ export async function recordDailyCloseScores(draftId, currentPrices, thresholds 
     const draft = draftSnap.data();
     const currentDay = getCurrentTradingDay(draft.battleStartTime || draft.createdAt);
 
-    if (currentDay < 1 || currentDay > 5) {
+    if (currentDay < MIN_TRADING_DAY || currentDay > MAX_TRADING_DAY) {
       return false;
     }
 
@@ -309,7 +312,7 @@ export async function recalculateDayScores(draftId, targetDay, currentPrices, th
 
     const draft = draftSnap.data();
 
-    if (targetDay < 1 || targetDay > 5) {
+    if (targetDay < MIN_TRADING_DAY || targetDay > MAX_TRADING_DAY) {
       return false;
     }
 
@@ -378,7 +381,7 @@ export function needsDay1Recalculation(dailyData) {
 export function calculateCumulativeScores(dailyData) {
   const cumulativeScores = {};
 
-  for (let day = 1; day <= 5; day++) {
+  for (let day = MIN_TRADING_DAY; day <= MAX_TRADING_DAY; day++) {
     const dayKey = getDayKey(day);
     const dayData = dailyData?.[dayKey];
 
@@ -480,7 +483,7 @@ export function formatDailyScoresForModal(draft) {
 
   const formattedScores = {};
 
-  for (let day = 1; day <= 5; day++) {
+  for (let day = MIN_TRADING_DAY; day <= MAX_TRADING_DAY; day++) {
     const dayKey = getDayKey(day);
     const dayData = draft.dailyData[dayKey];
 
