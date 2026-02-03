@@ -51,7 +51,7 @@ const CommandConsole = ({
     const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
     return {
       collapsed: 60,
-      partial: isMobile ? vh * 0.38 : vh * 0.45,
+      partial: isMobile ? vh * 0.32 : vh * 0.38,
       expanded: vh * 0.85,
     };
   }, [isMobile]);
@@ -163,6 +163,7 @@ const CommandConsole = ({
 
   // State for asset research modal
   const [selectedAssetForResearch, setSelectedAssetForResearch] = useState(null);
+  const [hoveredButton, setHoveredButton] = useState(null); // Track which button is hovered
 
   // Trigger flip animation when scout mode changes
   useEffect(() => {
@@ -585,46 +586,65 @@ const CommandConsole = ({
             </button>
           ) : (
             <>
+              {/* Free Agency Button - Cyan holographic theme */}
               <button
                 onClick={onFreeAgency}
+                onMouseEnter={() => setHoveredButton('freeAgency')}
+                onMouseLeave={() => setHoveredButton(null)}
                 style={{
                   flex: 1,
-                  padding: '10px',
-                  background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.3) 0%, rgba(139, 92, 246, 0.1) 100%)',
-                  border: `1px solid ${HOLO_COLORS.purple}`,
-                  boxShadow: `0 0 15px ${HOLO_COLORS.purple}33`,
-                  borderRadius: '8px',
-                  color: HOLO_COLORS.textPrimary,
+                  padding: '12px 20px',
+                  background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.2) 0%, rgba(0, 217, 255, 0.05) 100%)',
+                  border: '1px solid rgba(0, 217, 255, 0.5)',
+                  boxShadow: hoveredButton === 'freeAgency'
+                    ? '0 0 30px rgba(0, 217, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
+                    : '0 0 20px rgba(0, 217, 255, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+                  borderRadius: '12px',
+                  color: '#00d9ff',
                   fontWeight: 600,
-                  fontSize: '13px',
+                  fontSize: '14px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '6px',
-                  transition: 'all 0.2s ease',
+                  gap: '8px',
+                  transition: 'all 0.3s ease',
+                  backdropFilter: 'blur(8px)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  transform: hoveredButton === 'freeAgency' ? 'translateY(-1px)' : 'none',
                 }}
               >
                 <SwapIcon size={16} />
                 <span>Free Agency</span>
               </button>
+              {/* Top Performers Button - Gold/amber holographic theme */}
               <button
                 onClick={onTopPerformers}
+                onMouseEnter={() => setHoveredButton('topPerformers')}
+                onMouseLeave={() => setHoveredButton(null)}
                 style={{
                   flex: 1,
-                  padding: '10px',
-                  background: 'transparent',
-                  border: `1px solid ${HOLO_COLORS.borderSubtle}`,
-                  borderRadius: '8px',
-                  color: HOLO_COLORS.textSecondary,
+                  padding: '12px 20px',
+                  background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(251, 191, 36, 0.05) 100%)',
+                  border: '1px solid rgba(251, 191, 36, 0.5)',
+                  boxShadow: hoveredButton === 'topPerformers'
+                    ? '0 0 30px rgba(251, 191, 36, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
+                    : '0 0 20px rgba(251, 191, 36, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+                  borderRadius: '12px',
+                  color: '#fbbf24',
                   fontWeight: 600,
-                  fontSize: '13px',
+                  fontSize: '14px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '6px',
-                  transition: 'all 0.2s ease',
+                  gap: '8px',
+                  transition: 'all 0.3s ease',
+                  backdropFilter: 'blur(8px)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  transform: hoveredButton === 'topPerformers' ? 'translateY(-1px)' : 'none',
                 }}
               >
                 <TrophyIcon size={16} />
