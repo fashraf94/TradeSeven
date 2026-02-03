@@ -14,6 +14,67 @@ const MARKET_CLOSE_HOUR = 16;
 const MARKET_CLOSE_MINUTE = 0;
 
 /**
+ * Calculate scores for all players based on price changes
+ * @param {Array} players - Array of player objects with picks
+ * @param {object} openPrices - Baseline prices keyed by symbol
+ * @param {object} currentPrices - Current/close prices keyed by symbol
+ * @param {object} thresholds - Volatility thresholds keyed by symbol
+ * @returns {object} Close scores keyed by player odUserId
+ */
+function calculatePlayerScores(players, openPrices, currentPrices, thresholds) {
+  const closeScores = {};
+
+  for (const player of (players || [])) {
+    const playerAssets = [];
+    let playerTotalPoints = 0;
+
+    for (const symbol of (player.picks || [])) {
+      const upperSymbol = symbol.toUpperCase();
+
+      // Get prices
+      const openPrice = openPrices[symbol] || openPrices[upperSymbol] || 0;
+      const currentPrice = currentPrices[upperSymbol]?.price ||
+                          currentPrices[symbol]?.price ||
+                          (typeof currentPrices[upperSymbol] === 'number' ? currentPrices[upperSymbol] : 0);
+
+      // Calculate daily gain
+      let dailyGain = 0;
+      if (openPrice > 0 && currentPrice > 0) {
+        dailyGain = ((currentPrice - openPrice) / openPrice) * 100;
+      }
+
+      // Get threshold (default to 3%)
+      const threshold = thresholds[upperSymbol]?.threshold || thresholds[symbol]?.threshold || 3.0;
+
+      // Calculate BaggerBomb score for this asset
+      const assetScore = calculateSnakeDraftAssetScore(dailyGain, threshold);
+
+      playerAssets.push({
+        symbol,
+        openPrice,
+        closePrice: currentPrice,
+        gain: parseFloat(dailyGain.toFixed(2)),
+        points: assetScore.totalScore,
+        baggerBombs: assetScore.baggerBombs,
+        busts: assetScore.busts,
+        basePoints: assetScore.basePoints,
+        baggerBombPoints: assetScore.baggerBombPoints,
+        bustPoints: assetScore.bustPoints,
+      });
+
+      playerTotalPoints += assetScore.totalScore;
+    }
+
+    closeScores[player.odUserId] = {
+      totalPoints: parseFloat(playerTotalPoints.toFixed(2)),
+      assets: playerAssets,
+    };
+  }
+
+  return closeScores;
+}
+
+/**
  * Get the current trading day number (1-5) for a battle
  * @param {string|Date} battleStartTime - When the battle started
  * @returns {number} Current trading day (1-5), or 0 if before battle, or 6 if after battle
@@ -209,54 +270,7 @@ export async function recordDailyCloseScores(draftId, currentPrices, thresholds 
       : (dailyData[dayKey]?.openPrices || draft.lockedPrices || {});
 
     // Calculate scores for each player
-    const closeScores = {};
-
-    for (const player of (draft.players || [])) {
-      const playerAssets = [];
-      let playerTotalPoints = 0;
-
-      for (const symbol of (player.picks || [])) {
-        const upperSymbol = symbol.toUpperCase();
-
-        // Get prices
-        const openPrice = openPrices[symbol] || openPrices[upperSymbol] || 0;
-        const currentPrice = currentPrices[upperSymbol]?.price ||
-                            currentPrices[symbol]?.price ||
-                            (typeof currentPrices[upperSymbol] === 'number' ? currentPrices[upperSymbol] : 0);
-
-        // Calculate daily gain
-        let dailyGain = 0;
-        if (openPrice > 0 && currentPrice > 0) {
-          dailyGain = ((currentPrice - openPrice) / openPrice) * 100;
-        }
-
-        // Get threshold (default to 3%)
-        const threshold = thresholds[upperSymbol]?.threshold || thresholds[symbol]?.threshold || 3.0;
-
-        // Calculate BaggerBomb score for this asset
-        const assetScore = calculateSnakeDraftAssetScore(dailyGain, threshold);
-
-        playerAssets.push({
-          symbol,
-          openPrice,
-          closePrice: currentPrice,
-          gain: parseFloat(dailyGain.toFixed(2)),
-          points: assetScore.totalScore,
-          baggerBombs: assetScore.baggerBombs,
-          busts: assetScore.busts,
-          basePoints: assetScore.basePoints,
-          baggerBombPoints: assetScore.baggerBombPoints,
-          bustPoints: assetScore.bustPoints,
-        });
-
-        playerTotalPoints += assetScore.totalScore;
-      }
-
-      closeScores[player.odUserId] = {
-        totalPoints: parseFloat(playerTotalPoints.toFixed(2)),
-        assets: playerAssets,
-      };
-    }
+    const closeScores = calculatePlayerScores(draft.players, openPrices, currentPrices, thresholds);
 
     // Update Firebase with daily scores
     dailyData[dayKey] = {
@@ -329,54 +343,7 @@ export async function recalculateDayScores(draftId, targetDay, currentPrices, th
     }
 
     // Calculate scores for each player
-    const closeScores = {};
-
-    for (const player of (draft.players || [])) {
-      const playerAssets = [];
-      let playerTotalPoints = 0;
-
-      for (const symbol of (player.picks || [])) {
-        const upperSymbol = symbol.toUpperCase();
-
-        // Get prices
-        const openPrice = openPrices[symbol] || openPrices[upperSymbol] || 0;
-        const currentPrice = currentPrices[upperSymbol]?.price ||
-                            currentPrices[symbol]?.price ||
-                            (typeof currentPrices[upperSymbol] === 'number' ? currentPrices[upperSymbol] : 0);
-
-        // Calculate daily gain
-        let dailyGain = 0;
-        if (openPrice > 0 && currentPrice > 0) {
-          dailyGain = ((currentPrice - openPrice) / openPrice) * 100;
-        }
-
-        // Get threshold (default to 3%)
-        const threshold = thresholds[upperSymbol]?.threshold || thresholds[symbol]?.threshold || 3.0;
-
-        // Calculate BaggerBomb score for this asset
-        const assetScore = calculateSnakeDraftAssetScore(dailyGain, threshold);
-
-        playerAssets.push({
-          symbol,
-          openPrice,
-          closePrice: currentPrice,
-          gain: parseFloat(dailyGain.toFixed(2)),
-          points: assetScore.totalScore,
-          baggerBombs: assetScore.baggerBombs,
-          busts: assetScore.busts,
-          basePoints: assetScore.basePoints,
-          baggerBombPoints: assetScore.baggerBombPoints,
-          bustPoints: assetScore.bustPoints,
-        });
-
-        playerTotalPoints += assetScore.totalScore;
-      }
-
-      closeScores[player.odUserId] = {
-        totalPoints: parseFloat(playerTotalPoints.toFixed(2)),
-        assets: playerAssets,
-      };
-    }
+    const closeScores = calculatePlayerScores(draft.players, openPrices, currentPrices, thresholds);
 
     // Update Firebase with recalculated scores
     dailyData[dayKey] = {

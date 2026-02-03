@@ -26,6 +26,19 @@ import {
 } from '../services/snakeDraftDailyService';
 
 /**
+ * Utility to refresh draft data from Firebase
+ * @param {string} draftId - Draft document ID
+ * @returns {Promise<object|null>} Updated draft object or null if not found
+ */
+async function refreshDraftFromFirebase(draftId) {
+  const { doc, getDoc } = await import('firebase/firestore');
+  const { db } = await import('../firebase/config');
+  const draftRef = doc(db, 'drafts', draftId);
+  const draftSnap = await getDoc(draftRef);
+  return draftSnap.exists() ? { id: draftSnap.id, ...draftSnap.data() } : null;
+}
+
+/**
  * DraftBattleScreenV2 - Altitude Map Redesign
  * Phase 5: Polish & Production
  * Phase 5.5: Layout Refinements (pod distribution, compact console, Top Performers modal)
@@ -353,12 +366,8 @@ const DraftBattleScreenV2 = ({
             setDailyOpenPricesCaptured(true);
             // Refresh draft data to get updated dailyData
             try {
-              const { doc, getDoc } = await import('firebase/firestore');
-              const { db } = await import('../firebase/config');
-              const draftRef = doc(db, 'drafts', currentDraft.id);
-              const draftSnap = await getDoc(draftRef);
-              if (draftSnap.exists()) {
-                const updatedDraft = { id: draftSnap.id, ...draftSnap.data() };
+              const updatedDraft = await refreshDraftFromFirebase(currentDraft.id);
+              if (updatedDraft) {
                 setCurrentDraft(updatedDraft);
                 setDailyData(updatedDraft.dailyData || {});
               }
@@ -392,12 +401,8 @@ const DraftBattleScreenV2 = ({
         if (recalculated) {
           // Refresh draft data to get updated dailyData
           try {
-            const { doc, getDoc } = await import('firebase/firestore');
-            const { db } = await import('../firebase/config');
-            const draftRef = doc(db, 'drafts', currentDraft.id);
-            const draftSnap = await getDoc(draftRef);
-            if (draftSnap.exists()) {
-              const updatedDraft = { id: draftSnap.id, ...draftSnap.data() };
+            const updatedDraft = await refreshDraftFromFirebase(currentDraft.id);
+            if (updatedDraft) {
               setCurrentDraft(updatedDraft);
               setDailyData(updatedDraft.dailyData || {});
               // Update the local variable for this calculation cycle
