@@ -18,7 +18,9 @@ const DailyScoresModal = ({
   currentUserId,      // Current user's ID for highlighting
   battleStartTime,    // When the battle started
   battleEndTime,      // When the battle ends
-  dailyScores = null, // Daily score snapshots from Firebase (if available)
+  dailyScores = null, // Daily score snapshots from Firebase (formatted for modal)
+  dailyData = null,   // Full daily data with detailed asset breakdowns
+  currentDay = 0,     // Current trading day (1-5)
 }) => {
   // Calculate battle day info
   const battleDays = useMemo(() => {
@@ -63,87 +65,96 @@ const DailyScoresModal = ({
   }, [battleStartTime, battleEndTime]);
 
   // Calculate daily scores for each day
-  // If dailyScores is provided from Firebase, use that; otherwise estimate from current standings
+  // Uses dailyData for accurate recorded scores, dailyScores for formatted totals
   const dailyStandings = useMemo(() => {
     if (!standings?.length || !battleDays.length) return [];
 
-    // If we have real daily scores from Firebase, use them
-    if (dailyScores && Object.keys(dailyScores).length > 0) {
-      return battleDays.map((day, dayIndex) => {
-        const dayKey = `day${dayIndex + 1}`;
-        const dayData = dailyScores[dayKey];
+    return battleDays.map((day, dayIndex) => {
+      const dayNum = dayIndex + 1;
+      const dayKey = `day${dayNum}`;
+      const dayDataEntry = dailyData?.[dayKey];
+      const dayScoreEntry = dailyScores?.[dayKey];
 
-        if (!dayData) {
-          // No data for this day yet
+      // Determine actual status based on dailyData
+      let actualStatus = day.status;
+      if (dayDataEntry?.recorded) {
+        actualStatus = 'COMPLETE';
+      } else if (dayNum === currentDay && currentDay > 0) {
+        actualStatus = 'IN PROGRESS';
+      } else if (dayNum > currentDay || currentDay === 0) {
+        actualStatus = 'UPCOMING';
+      }
+
+      // If day is recorded (COMPLETE), use the actual scores
+      if (dayDataEntry?.closeScores) {
+        const dayStandings = standings.map(player => {
+          const playerDayScore = dayDataEntry.closeScores[player.odUserId];
           return {
-            ...day,
-            standings: standings.map(player => ({
-              odUserId: player.odUserId,
-              displayName: player.displayName,
-              isMe: player.odUserId === currentUserId,
-              points: 0,
-            })).sort((a, b) => b.points - a.points),
+            odUserId: player.odUserId,
+            displayName: player.displayName,
+            isMe: player.odUserId === currentUserId,
+            points: playerDayScore?.totalPoints ?? 0,
+            assets: playerDayScore?.assets || [],
           };
-        }
+        }).sort((a, b) => b.points - a.points);
 
-        // Use the real daily data
+        return {
+          ...day,
+          status: actualStatus,
+          standings: dayStandings,
+          hasDetailedData: true,
+        };
+      }
+
+      // If we have formatted dailyScores (legacy format), use those
+      if (dayScoreEntry) {
         const dayStandings = standings.map(player => ({
           odUserId: player.odUserId,
           displayName: player.displayName,
           isMe: player.odUserId === currentUserId,
-          points: dayData[player.odUserId] || 0,
+          points: dayScoreEntry[player.odUserId] || 0,
         })).sort((a, b) => b.points - a.points);
 
         return {
           ...day,
+          status: actualStatus,
           standings: dayStandings,
-        };
-      });
-    }
-
-    // Estimate daily scores by distributing current total across days
-    // This is a fallback when daily snapshots aren't available
-    return battleDays.map((day, dayIndex) => {
-      if (day.status === 'UPCOMING') {
-        // No scores for upcoming days
-        return {
-          ...day,
-          standings: standings.map(player => ({
-            odUserId: player.odUserId,
-            displayName: player.displayName,
-            isMe: player.odUserId === currentUserId,
-            points: null, // No score yet
-          })),
+          hasDetailedData: false,
         };
       }
 
-      // For complete/in-progress days, estimate proportional scores
-      const completedDays = battleDays.filter(d => d.status === 'COMPLETE').length;
-      const isCurrentDay = day.status === 'IN PROGRESS';
-      const dayMultiplier = isCurrentDay ? 1 : 1; // Could add variance
-
-      const dayStandings = standings.map(player => {
-        // Estimate this day's score as a portion of total
-        // Add some variance to make it look more realistic
-        const totalPoints = player.totalPoints || 0;
-        const avgPerDay = totalPoints / Math.max(1, completedDays + (isCurrentDay ? 1 : 0));
-        const variance = (Math.random() - 0.5) * Math.abs(avgPerDay) * 0.3; // 30% variance
-        const dayPoints = isCurrentDay ? totalPoints : avgPerDay + variance;
-
-        return {
+      // For current day IN PROGRESS, use live standings (today's points)
+      if (actualStatus === 'IN PROGRESS') {
+        const dayStandings = standings.map(player => ({
           odUserId: player.odUserId,
           displayName: player.displayName,
           isMe: player.odUserId === currentUserId,
-          points: day.status !== 'UPCOMING' ? parseFloat(dayPoints.toFixed(1)) : null,
-        };
-      }).sort((a, b) => (b.points || 0) - (a.points || 0));
+          points: player.todayPoints ?? player.totalPoints ?? 0,
+          isLive: true,
+        })).sort((a, b) => b.points - a.points);
 
+        return {
+          ...day,
+          status: actualStatus,
+          standings: dayStandings,
+          hasDetailedData: false,
+        };
+      }
+
+      // UPCOMING days - no scores yet
       return {
         ...day,
-        standings: dayStandings,
+        status: actualStatus,
+        standings: standings.map(player => ({
+          odUserId: player.odUserId,
+          displayName: player.displayName,
+          isMe: player.odUserId === currentUserId,
+          points: null,
+        })),
+        hasDetailedData: false,
       };
     });
-  }, [standings, battleDays, dailyScores, currentUserId]);
+  }, [standings, battleDays, dailyScores, dailyData, currentUserId, currentDay]);
 
   // Overall standings (cumulative)
   const overallStandings = useMemo(() => {
@@ -302,8 +313,9 @@ const DailyScoresModal = ({
               }}>
                 {day.standings.map((player, rank) => {
                   const isWinner = rank === 0 && player.points !== null && day.status !== 'UPCOMING';
+                  const isLive = player.isLive || day.status === 'IN PROGRESS';
                   const pointsDisplay = player.points !== null
-                    ? `${player.points >= 0 ? '+' : ''}${player.points.toFixed(0)} pts`
+                    ? `${player.points >= 0 ? '+' : ''}${player.points.toFixed(0)} pts${isLive ? '' : ''}`
                     : '—';
 
                   return (
@@ -367,6 +379,19 @@ const DailyScoresModal = ({
                         alignItems: 'center',
                         gap: '8px',
                       }}>
+                        {isLive && (
+                          <span style={{
+                            fontSize: '8px',
+                            fontWeight: 600,
+                            color: HOLO_COLORS.cyan,
+                            background: 'rgba(0, 255, 255, 0.15)',
+                            padding: '2px 4px',
+                            borderRadius: '3px',
+                            textTransform: 'uppercase',
+                          }}>
+                            LIVE
+                          </span>
+                        )}
                         <span style={{
                           fontSize: '13px',
                           fontWeight: 600,

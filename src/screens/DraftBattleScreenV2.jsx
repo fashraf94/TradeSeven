@@ -12,6 +12,16 @@ import {
 } from '../components/draft';
 import { calculateSnakeDraftAssetScore, calculatePortfolioScore } from '../services/scoring/baggerBombCalculator';
 import { getVolatilityThresholds } from '../services/volatilityService';
+import {
+  getCurrentTradingDay,
+  getDayKey,
+  needsDailyOpenCapture,
+  captureDailyOpenPrices,
+  isAfterMarketClose,
+  recordDailyCloseScores,
+  formatDailyScoresForModal,
+  calculateCumulativeScores,
+} from '../services/snakeDraftDailyService';
 
 /**
  * DraftBattleScreenV2 - Altitude Map Redesign
@@ -60,6 +70,11 @@ const DraftBattleScreenV2 = ({
 
   // BaggerBomb scoring state
   const [thresholds, setThresholds] = useState({});
+
+  // Daily scoring state
+  const [currentDay, setCurrentDay] = useState(0);
+  const [dailyData, setDailyData] = useState(null);
+  const [dailyOpenPricesCaptured, setDailyOpenPricesCaptured] = useState(false);
 
   // Refs for cleanup
   const refreshIntervalRef = useRef(null);
@@ -311,6 +326,61 @@ const DraftBattleScreenV2 = ({
         allPrices = await stockAPIModule.getAllStockPrices(symbolList);
       }
 
+      // STEP 3.5: Daily scoring - capture open prices and check current day
+      const tradingDay = getCurrentTradingDay(currentDraft.battleStartTime || currentDraft.createdAt);
+      setCurrentDay(tradingDay);
+
+      // Get daily data from draft
+      const draftDailyData = currentDraft.dailyData || {};
+      setDailyData(draftDailyData);
+
+      // Get today's day key
+      const todayDayKey = getDayKey(tradingDay);
+
+      // Capture daily open prices if needed (first time viewing battle today)
+      if (tradingDay >= 1 && tradingDay <= 5 && !dailyOpenPricesCaptured) {
+        if (needsDailyOpenCapture(currentDraft, tradingDay)) {
+          console.log(`[DraftBattleV2] Capturing daily open prices for day ${tradingDay}`);
+          const openCaptured = await captureDailyOpenPrices(currentDraft.id, allPrices);
+          if (openCaptured) {
+            setDailyOpenPricesCaptured(true);
+            // Refresh draft data to get updated dailyData
+            try {
+              const { doc, getDoc } = await import('firebase/firestore');
+              const { db } = await import('../firebase/config');
+              const draftRef = doc(db, 'drafts', currentDraft.id);
+              const draftSnap = await getDoc(draftRef);
+              if (draftSnap.exists()) {
+                const updatedDraft = { id: draftSnap.id, ...draftSnap.data() };
+                setCurrentDraft(updatedDraft);
+                setDailyData(updatedDraft.dailyData || {});
+              }
+            } catch (refreshError) {
+              console.warn('[DraftBattleV2] Could not refresh draft data:', refreshError);
+            }
+          }
+        } else {
+          setDailyOpenPricesCaptured(true);
+        }
+      }
+
+      // Check if we need to record daily close scores (after market close)
+      if (tradingDay >= 1 && tradingDay <= 5 && isAfterMarketClose()) {
+        const dayData = draftDailyData[todayDayKey];
+        if (dayData?.openPrices && !dayData?.recorded) {
+          console.log(`[DraftBattleV2] Recording daily close scores for day ${tradingDay}`);
+          await recordDailyCloseScores(currentDraft.id, allPrices, symbolThresholds);
+        }
+      }
+
+      // Determine which baseline to use for TODAY's scoring
+      // Use daily open prices if available, otherwise fall back to locked prices
+      const todayOpenPrices = draftDailyData[todayDayKey]?.openPrices || {};
+      const hasOpenPrices = Object.keys(todayOpenPrices).length > 0;
+
+      // Calculate cumulative scores from previous days
+      const previousDayCumulativeScores = calculateCumulativeScores(draftDailyData);
+
       // STEP 4: Calculate each player's BaggerBomb score
       const playerPerformances = currentDraft.players.map((player) => {
         let totalPoints = 0;
@@ -318,6 +388,9 @@ const DraftBattleScreenV2 = ({
         let totalBusts = 0;
         let totalPercentGain = 0;
         const portfolioWithScores = [];
+
+        // Add previous days' points to total
+        const previousPoints = previousDayCumulativeScores[player.odUserId]?.totalPoints || 0;
 
         for (let pickIndex = 0; pickIndex < (player.picks || []).length; pickIndex++) {
           const symbol = player.picks[pickIndex];
@@ -337,15 +410,22 @@ const DraftBattleScreenV2 = ({
           const priceData = allPrices[lookupKey];
           const currentPrice = priceData?.price || 0;
 
-          // Get locked price (from draft completion)
+          // Get baseline price: daily open price (preferred) or locked price (fallback)
+          // This is the KEY change for daily scoring - each day starts fresh
+          const dailyOpenPrice = hasOpenPrices
+            ? (todayOpenPrices[symbol] || todayOpenPrices[lookupKey] || 0)
+            : 0;
           const lockedPrice = Number(currentDraft.lockedPrices?.[symbol] ||
                            currentDraft.lockedPrices?.[lookupKey] ||
                            currentPrice) || 0;
 
-          // Calculate percentage gain
+          // Use daily open price if available, otherwise locked price
+          const baselinePrice = dailyOpenPrice > 0 ? dailyOpenPrice : lockedPrice;
+
+          // Calculate percentage gain vs TODAY's baseline
           let percentGain = 0;
-          if (lockedPrice > 0 && currentPrice > 0) {
-            percentGain = ((currentPrice - lockedPrice) / lockedPrice) * 100;
+          if (baselinePrice > 0 && currentPrice > 0) {
+            percentGain = ((currentPrice - baselinePrice) / baselinePrice) * 100;
 
             // Sanity check - gains over 500% or under -90% are likely data errors
             if (percentGain > 500 || percentGain < -90) {
@@ -372,6 +452,9 @@ const DraftBattleScreenV2 = ({
             lockedPrice,
             currentPrice,
             category,
+            // Daily scoring - baseline price for ChamberFuse
+            baselinePrice,
+            dailyOpenPrice: dailyOpenPrice > 0 ? dailyOpenPrice : null,
             // BaggerBomb scoring data
             threshold,
             baggerBombs: assetScore.baggerBombs,
@@ -382,7 +465,7 @@ const DraftBattleScreenV2 = ({
             totalScore: assetScore.totalScore,
           });
 
-          // Accumulate totals
+          // Accumulate totals (today's points only)
           totalPoints += assetScore.totalScore;
           totalBaggerBombs += assetScore.baggerBombs;
           totalBusts += assetScore.busts;
@@ -393,16 +476,21 @@ const DraftBattleScreenV2 = ({
         const sortedByScore = [...portfolioWithScores].sort((a, b) => b.totalScore - a.totalScore);
         const sortedByGain = [...portfolioWithScores].sort((a, b) => b.gain - a.gain);
 
+        // Calculate cumulative total: previous days + today's live score
+        const cumulativeTotal = previousPoints + totalPoints;
+
         return {
           odUserId: player.odUserId,
           displayName: player.displayName,
           isMe: player.odUserId === currentUserId,
           isCPU: player.isCPU || false,
-          // BaggerBomb scoring - points is primary
-          totalPoints: parseFloat(totalPoints.toFixed(2)),
+          // BaggerBomb scoring - CUMULATIVE points is primary (previous days + today)
+          totalPoints: parseFloat(cumulativeTotal.toFixed(2)),
+          todayPoints: parseFloat(totalPoints.toFixed(2)),  // Today's score only
+          previousPoints,  // Previous days' cumulative
           totalBaggerBombs,
           totalBusts,
-          // Keep percentage as secondary info
+          // Keep percentage as secondary info (today only)
           totalGain: parseFloat(totalPercentGain.toFixed(2)),
           portfolio: portfolioWithScores,
           // Best/worst by score
@@ -912,9 +1000,11 @@ const DraftBattleScreenV2 = ({
         onClose={() => setShowDailyScores(false)}
         standings={standings}
         currentUserId={currentUserId}
-        battleStartTime={currentDraft?.createdAt || currentDraft?.startTime}
+        battleStartTime={currentDraft?.battleStartTime || currentDraft?.createdAt || currentDraft?.startTime}
         battleEndTime={currentDraft?.battleEndTime}
-        dailyScores={currentDraft?.dailyScores}
+        dailyScores={formatDailyScoresForModal(currentDraft)}
+        dailyData={currentDraft?.dailyData}
+        currentDay={currentDay}
       />
 
       {/* Scout Transition Overlay - Phase 4 Enhanced */}

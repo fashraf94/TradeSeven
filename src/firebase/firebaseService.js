@@ -2049,7 +2049,7 @@ export async function createSnakeDraftBattle(draftData) {
  */
 export async function recordSnakeDraftDailyScore(battleId, odUserId, dayKey, scoreData) {
   try {
-    const battleRef = doc(db, 'snakeDraftBattles', battleId);
+    const battleRef = doc(db, 'drafts', battleId);
     const battle = await getDoc(battleRef);
 
     if (!battle.exists()) {
