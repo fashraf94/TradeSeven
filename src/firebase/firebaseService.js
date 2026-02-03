@@ -3658,7 +3658,6 @@ export default {
 
   // Snake Draft Battles
   createSnakeDraftBattle,
-  recordSnakeDraftDailyScore,
 
   // Challenges
   createChallenge,
