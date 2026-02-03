@@ -70,6 +70,8 @@ async function handleCurrentPrices(req, res, symbols, API_KEY) {
       console.log('[EODHD] Response data age:', {
         symbol: sampleItem.code,
         price: sampleItem.close,
+        previousClose: sampleItem.previousClose,
+        open: sampleItem.open,
         eodhTimestamp: eodhTimestamp ? eodhTimestamp.toISOString() : 'N/A',
         fetchedAt: new Date().toISOString(),
         dataAgeSeconds: eodhTimestamp ? Math.round((Date.now() - eodhTimestamp.getTime()) / 1000) : 'unknown'
@@ -82,6 +84,8 @@ async function handleCurrentPrices(req, res, symbols, API_KEY) {
         const symbol = item.code.replace('.US', '');
         prices[symbol] = {
           price: item.close || item.previousClose || 0,
+          previousClose: item.previousClose || 0,
+          open: item.open || 0,
           change: item.change || 0,
           changePercent: item.change_p || 0,
           high: item.high,

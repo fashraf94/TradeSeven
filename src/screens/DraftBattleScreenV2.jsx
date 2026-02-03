@@ -413,11 +413,9 @@ const DraftBattleScreenV2 = ({
         }
       }
 
-      // Determine which baseline to use for TODAY's scoring
-      // Day 1: ALWAYS use lockedPrices (draft completion prices)
-      // Day 2+: Use daily open prices if available, otherwise fall back to locked prices
-      const todayOpenPrices = draftDailyData[todayDayKey]?.openPrices || {};
-      const hasOpenPrices = tradingDay >= 2 && Object.keys(todayOpenPrices).length > 0;
+      // Daily scoring now uses previousClose as baseline
+      // This gives accurate "% change today" matching financial apps
+      // No need to capture separate "open" prices with delayed data
 
       // Use memoized cumulative scores from previous days
       // (Falls back to local calculation if dailyData state hasn't synced yet)
@@ -426,14 +424,16 @@ const DraftBattleScreenV2 = ({
         : calculateCumulativeScores(draftDailyData);
 
       // STEP 4: Calculate each player's BaggerBomb score
-      // DEBUG: Log price sources to diagnose 0% gain issue
+      // DEBUG: Log price sources - now using previousClose from EODHD
       console.log('[DraftBattleV2] Price Debug:', {
         tradingDay,
-        hasOpenPrices,
-        lockedPricesKeys: Object.keys(currentDraft.lockedPrices || {}),
-        lockedPricesSample: Object.entries(currentDraft.lockedPrices || {}).slice(0, 3),
         allPricesKeys: Object.keys(allPrices || {}).slice(0, 5),
-        allPricesSample: Object.entries(allPrices || {}).slice(0, 3),
+        samplePriceData: Object.entries(allPrices || {}).slice(0, 2).map(([k, v]) => ({
+          symbol: k,
+          price: v?.price,
+          previousClose: v?.previousClose,
+          percentChange: v?.percentChange
+        })),
       });
 
       const playerPerformances = currentDraft.players.map((player) => {
@@ -464,35 +464,32 @@ const DraftBattleScreenV2 = ({
           const priceData = allPrices[lookupKey];
           const currentPrice = priceData?.price || 0;
 
-          // Get baseline price: daily open price (preferred) or locked price (fallback)
-          // This is the KEY change for daily scoring - each day starts fresh
-          const dailyOpenPrice = hasOpenPrices
-            ? (todayOpenPrices[symbol] || todayOpenPrices[lookupKey] || 0)
-            : 0;
-          const lockedPrice = Number(currentDraft.lockedPrices?.[symbol] ||
-                           currentDraft.lockedPrices?.[lookupKey] ||
-                           currentPrice) || 0;
+          // Use previousClose as baseline - this is yesterday's closing price
+          // This gives us accurate "% change today" matching financial apps
+          // Much more reliable than trying to capture "open" prices with delayed data
+          const previousClose = priceData?.previousClose || 0;
 
-          // Use daily open price if available, otherwise locked price
-          const baselinePrice = dailyOpenPrice > 0 ? dailyOpenPrice : lockedPrice;
+          // Fallback to lockedPrices only if previousClose not available
+          const lockedPrice = Number(currentDraft.lockedPrices?.[symbol] ||
+                           currentDraft.lockedPrices?.[lookupKey] || 0) || 0;
+
+          // Use previousClose as primary baseline, fall back to lockedPrice
+          const baselinePrice = previousClose > 0 ? previousClose : lockedPrice;
 
           // DEBUG: Log individual symbol calculation
-          if (pickIndex === 0 || symbol.toUpperCase() === 'RTX') {
+          if (pickIndex === 0 || symbol.toUpperCase() === 'RTX' || symbol.toUpperCase() === 'COIN') {
             console.log(`[DraftBattleV2] Symbol ${symbol}:`, {
               lookupKey,
               currentPrice,
+              previousClose,
               lockedPrice,
-              dailyOpenPrice,
               baselinePrice,
-              lockedPricesHas: {
-                symbol: !!currentDraft.lockedPrices?.[symbol],
-                lookupKey: !!currentDraft.lockedPrices?.[lookupKey],
-              },
+              eodhPercentChange: priceData?.percentChange,
               willCalculateGain: baselinePrice > 0 && currentPrice > 0,
             });
           }
 
-          // Calculate percentage gain vs TODAY's baseline
+          // Calculate percentage gain vs previousClose (% change today)
           let percentGain = 0;
           if (baselinePrice > 0 && currentPrice > 0) {
             percentGain = ((currentPrice - baselinePrice) / baselinePrice) * 100;
@@ -522,9 +519,9 @@ const DraftBattleScreenV2 = ({
             lockedPrice,
             currentPrice,
             category,
-            // Daily scoring - baseline price for ChamberFuse
+            // Daily scoring - baseline price (previousClose)
             baselinePrice,
-            dailyOpenPrice: dailyOpenPrice > 0 ? dailyOpenPrice : null,
+            previousClose: previousClose > 0 ? previousClose : null,
             // BaggerBomb scoring data
             threshold,
             baggerBombs: assetScore.baggerBombs,
