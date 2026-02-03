@@ -434,7 +434,6 @@ const CommandConsole = ({
             display: 'grid',
             gridTemplateColumns: gridConfig.columns,
             gap: gridConfig.gap,
-            paddingBottom: '4px',
             perspective: '1000px',
           }}>
             <div style={{
@@ -556,8 +555,8 @@ const CommandConsole = ({
       {!isCollapsed && (
         <div style={{
           flexShrink: 0,
-          padding: '8px 12px',
-          paddingBottom: 'max(10px, env(safe-area-inset-bottom))',
+          padding: '6px 12px',
+          paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
           borderTop: `1px solid ${HOLO_COLORS.borderSubtle}33`,
           background: 'rgba(10, 14, 20, 0.5)',
         }}>
