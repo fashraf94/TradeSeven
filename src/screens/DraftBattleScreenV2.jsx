@@ -19,6 +19,8 @@ import {
   captureDailyOpenPrices,
   isAfterMarketClose,
   recordDailyCloseScores,
+  recalculateDayScores,
+  needsDay1Recalculation,
   formatDailyScoresForModal,
   calculateCumulativeScores,
 } from '../services/snakeDraftDailyService';
@@ -379,6 +381,31 @@ const DraftBattleScreenV2 = ({
         if (dayData?.openPrices && !dayData?.recorded) {
           console.log(`[DraftBattleV2] Recording daily close scores for day ${tradingDay}`);
           await recordDailyCloseScores(currentDraft.id, allPrices, symbolThresholds);
+        }
+      }
+
+      // Check if Day 1 needs recalculation (all zeros due to wrong baseline)
+      // This fixes battles that were recorded before the lockedPrices fix
+      if (needsDay1Recalculation(draftDailyData)) {
+        console.log(`[DraftBattleV2] Day 1 has all zero scores - recalculating with lockedPrices baseline`);
+        const recalculated = await recalculateDayScores(currentDraft.id, 1, allPrices, symbolThresholds);
+        if (recalculated) {
+          // Refresh draft data to get updated dailyData
+          try {
+            const { doc, getDoc } = await import('firebase/firestore');
+            const { db } = await import('../firebase/config');
+            const draftRef = doc(db, 'drafts', currentDraft.id);
+            const draftSnap = await getDoc(draftRef);
+            if (draftSnap.exists()) {
+              const updatedDraft = { id: draftSnap.id, ...draftSnap.data() };
+              setCurrentDraft(updatedDraft);
+              setDailyData(updatedDraft.dailyData || {});
+              // Update the local variable for this calculation cycle
+              Object.assign(draftDailyData, updatedDraft.dailyData || {});
+            }
+          } catch (refreshError) {
+            console.warn('[DraftBattleV2] Could not refresh draft data after Day 1 recalculation:', refreshError);
+          }
         }
       }
 

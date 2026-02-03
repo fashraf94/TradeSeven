@@ -205,9 +205,10 @@ export async function captureDailyOpenPrices(draftId, currentPrices) {
  * @param {string} draftId - Draft document ID
  * @param {object} currentPrices - Current prices keyed by symbol
  * @param {object} thresholds - Volatility thresholds keyed by symbol
+ * @param {boolean} forceRecalculate - Force recalculation even if already recorded
  * @returns {Promise<boolean>} Success status
  */
-export async function recordDailyCloseScores(draftId, currentPrices, thresholds = {}) {
+export async function recordDailyCloseScores(draftId, currentPrices, thresholds = {}, forceRecalculate = false) {
   try {
     const draftRef = doc(db, 'drafts', draftId);
     const draftSnap = await getDoc(draftRef);
@@ -228,10 +229,14 @@ export async function recordDailyCloseScores(draftId, currentPrices, thresholds 
     const dayKey = getDayKey(currentDay);
     const dailyData = draft.dailyData || {};
 
-    // Check if already recorded
-    if (dailyData[dayKey]?.recorded) {
+    // Check if already recorded (skip if forceRecalculate is true)
+    if (dailyData[dayKey]?.recorded && !forceRecalculate) {
       console.log('[SnakeDraftDaily] Scores already recorded for day', currentDay);
       return true;
+    }
+
+    if (forceRecalculate) {
+      console.log(`[SnakeDraftDaily] Force recalculating scores for day ${currentDay}`);
     }
 
     // Get baseline prices for today
@@ -316,6 +321,141 @@ export async function recordDailyCloseScores(draftId, currentPrices, thresholds 
     console.error('[SnakeDraftDaily] Error recording close scores:', error);
     return false;
   }
+}
+
+/**
+ * Recalculate and re-record scores for a specific day
+ * Used to fix Day 1 scores that were recorded with wrong baseline
+ * @param {string} draftId - Draft document ID
+ * @param {number} targetDay - Which day to recalculate (1-5)
+ * @param {object} currentPrices - Current prices keyed by symbol
+ * @param {object} thresholds - Volatility thresholds keyed by symbol
+ * @returns {Promise<boolean>} Success status
+ */
+export async function recalculateDayScores(draftId, targetDay, currentPrices, thresholds = {}) {
+  try {
+    const draftRef = doc(db, 'drafts', draftId);
+    const draftSnap = await getDoc(draftRef);
+
+    if (!draftSnap.exists()) {
+      console.error('[SnakeDraftDaily] Draft not found:', draftId);
+      return false;
+    }
+
+    const draft = draftSnap.data();
+
+    if (targetDay < 1 || targetDay > 5) {
+      console.log('[SnakeDraftDaily] Invalid target day:', targetDay);
+      return false;
+    }
+
+    const dayKey = getDayKey(targetDay);
+    const dailyData = draft.dailyData || {};
+
+    console.log(`[SnakeDraftDaily] Recalculating day ${targetDay} scores for battle ${draftId}`);
+
+    // Get baseline prices for the target day
+    // Day 1: ALWAYS use lockedPrices (draft completion prices)
+    // Day 2+: Use daily open prices, fall back to locked prices if not captured
+    const openPrices = targetDay === 1
+      ? (draft.lockedPrices || {})
+      : (dailyData[dayKey]?.openPrices || draft.lockedPrices || {});
+
+    if (Object.keys(openPrices).length === 0) {
+      console.error('[SnakeDraftDaily] No baseline prices available');
+      return false;
+    }
+
+    // Calculate scores for each player
+    const closeScores = {};
+
+    for (const player of (draft.players || [])) {
+      const playerAssets = [];
+      let playerTotalPoints = 0;
+
+      for (const symbol of (player.picks || [])) {
+        const upperSymbol = symbol.toUpperCase();
+
+        // Get prices
+        const openPrice = openPrices[symbol] || openPrices[upperSymbol] || 0;
+        const currentPrice = currentPrices[upperSymbol]?.price ||
+                            currentPrices[symbol]?.price ||
+                            (typeof currentPrices[upperSymbol] === 'number' ? currentPrices[upperSymbol] : 0);
+
+        // Calculate daily gain
+        let dailyGain = 0;
+        if (openPrice > 0 && currentPrice > 0) {
+          dailyGain = ((currentPrice - openPrice) / openPrice) * 100;
+        }
+
+        // Get threshold (default to 3%)
+        const threshold = thresholds[upperSymbol]?.threshold || thresholds[symbol]?.threshold || 3.0;
+
+        // Calculate BaggerBomb score for this asset
+        const assetScore = calculateSnakeDraftAssetScore(dailyGain, threshold);
+
+        playerAssets.push({
+          symbol,
+          openPrice,
+          closePrice: currentPrice,
+          gain: parseFloat(dailyGain.toFixed(2)),
+          points: assetScore.totalScore,
+          baggerBombs: assetScore.baggerBombs,
+          busts: assetScore.busts,
+          basePoints: assetScore.basePoints,
+          baggerBombPoints: assetScore.baggerBombPoints,
+          bustPoints: assetScore.bustPoints,
+        });
+
+        playerTotalPoints += assetScore.totalScore;
+      }
+
+      closeScores[player.odUserId] = {
+        totalPoints: parseFloat(playerTotalPoints.toFixed(2)),
+        assets: playerAssets,
+      };
+    }
+
+    // Update Firebase with recalculated scores
+    dailyData[dayKey] = {
+      ...dailyData[dayKey],
+      closeScores,
+      recorded: true,
+      recordedAt: new Date().toISOString(),
+      recalculated: true,  // Mark as recalculated
+    };
+
+    await updateDoc(draftRef, {
+      dailyData,
+    });
+
+    console.log(`[SnakeDraftDaily] Recalculated day ${targetDay} scores:`,
+      Object.entries(closeScores).map(([id, data]) => `${id}: ${data.totalPoints}`).join(', '));
+
+    return true;
+  } catch (error) {
+    console.error('[SnakeDraftDaily] Error recalculating day scores:', error);
+    return false;
+  }
+}
+
+/**
+ * Check if Day 1 scores need recalculation (all zeros)
+ * @param {object} dailyData - The dailyData object from the draft
+ * @returns {boolean} Whether Day 1 needs recalculation
+ */
+export function needsDay1Recalculation(dailyData) {
+  const day1Data = dailyData?.day1;
+
+  if (!day1Data?.recorded || !day1Data?.closeScores) {
+    return false; // Not recorded yet, doesn't need recalculation
+  }
+
+  // Check if all players have 0 points
+  const allScores = Object.values(day1Data.closeScores);
+  const allZeros = allScores.every(score => score.totalPoints === 0);
+
+  return allZeros && allScores.length > 0;
 }
 
 /**
@@ -598,6 +738,8 @@ export default {
   needsDailyCloseRecording,
   captureDailyOpenPrices,
   recordDailyCloseScores,
+  recalculateDayScores,
+  needsDay1Recalculation,
   calculateCumulativeScores,
   checkAndCompleteBattle,
   getActiveBattles,
