@@ -2,11 +2,10 @@
 // Snake Draft Daily Scoring Service
 // Handles daily price capture, score recording, and battle completion
 
-import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { getEasternTime, isWeekday } from '../constants/battleTiming';
+import { getEasternTime } from '../constants/battleTiming';
 import { calculateSnakeDraftAssetScore } from './scoring/baggerBombCalculator';
-import { getVolatilityThresholds } from './volatilityService';
 
 // Constants
 const MARKET_OPEN_HOUR = 9;
@@ -58,27 +57,6 @@ export function getDayKey(dayNumber) {
 }
 
 /**
- * Check if market is currently open (for stocks)
- * @returns {boolean}
- */
-export function isMarketOpen() {
-  const et = getEasternTime();
-  const hour = et.getHours();
-  const minute = et.getMinutes();
-  const day = et.getDay();
-
-  // Weekdays only
-  if (day === 0 || day === 6) return false;
-
-  // Market hours: 9:30 AM - 4:00 PM ET
-  const currentMinutes = hour * 60 + minute;
-  const openMinutes = MARKET_OPEN_HOUR * 60 + MARKET_OPEN_MINUTE;
-  const closeMinutes = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE;
-
-  return currentMinutes >= openMinutes && currentMinutes < closeMinutes;
-}
-
-/**
  * Check if it's after market close for the day
  * @returns {boolean}
  */
@@ -111,22 +89,6 @@ export function needsDailyOpenCapture(draft, currentDay) {
 
   // Check if open prices already captured for this day
   return !dailyData[dayKey]?.openPrices;
-}
-
-/**
- * Check if daily close scores need to be recorded for a specific day
- * @param {object} draft - Draft document from Firebase
- * @param {number} dayNumber - Trading day number (1-5)
- * @returns {boolean}
- */
-export function needsDailyCloseRecording(draft, dayNumber) {
-  if (!draft || dayNumber < 1 || dayNumber > 5) return false;
-
-  const dayKey = getDayKey(dayNumber);
-  const dailyData = draft.dailyData || {};
-
-  // Check if close scores already recorded for this day
-  return !dailyData[dayKey]?.recorded;
 }
 
 /**
@@ -560,99 +522,6 @@ export async function checkAndCompleteBattle(draftId) {
 }
 
 /**
- * Get all active Snake Draft battles that need daily score processing
- * @returns {Promise<Array>} Array of draft documents
- */
-export async function getActiveBattles() {
-  try {
-    const draftsRef = collection(db, 'drafts');
-    const q = query(draftsRef, where('status', '==', 'battle'));
-    const snapshot = await getDocs(q);
-
-    const battles = [];
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      // Only include Snake Draft battles (4 players, type is stocks or crypto)
-      if (data.players?.length === 4) {
-        battles.push({ id: doc.id, ...data });
-      }
-    });
-
-    console.log(`[SnakeDraftDaily] Found ${battles.length} active battles`);
-    return battles;
-  } catch (error) {
-    console.error('[SnakeDraftDaily] Error fetching active battles:', error);
-    return [];
-  }
-}
-
-/**
- * Process all active battles for daily scoring
- * Called by cron job at market close
- * @param {function} fetchPrices - Function to fetch current prices
- * @returns {Promise<object>} Summary of processed battles
- */
-export async function processAllBattles(fetchPrices) {
-  const results = {
-    processed: 0,
-    skipped: 0,
-    errors: 0,
-    completed: 0,
-  };
-
-  try {
-    const battles = await getActiveBattles();
-
-    for (const battle of battles) {
-      try {
-        // Collect all symbols
-        const allSymbols = new Set();
-        (battle.players || []).forEach(player => {
-          (player.picks || []).forEach(symbol => allSymbols.add(symbol.toUpperCase()));
-        });
-
-        // Fetch prices
-        const symbolList = Array.from(allSymbols);
-        const prices = await fetchPrices(symbolList, battle.type);
-
-        // Fetch thresholds
-        let thresholds = {};
-        try {
-          thresholds = await getVolatilityThresholds(symbolList, battle.type || 'stock');
-        } catch (e) {
-          console.warn('[SnakeDraftDaily] Could not fetch thresholds, using defaults');
-        }
-
-        // Record daily scores
-        const success = await recordDailyCloseScores(battle.id, prices, thresholds);
-
-        if (success) {
-          results.processed++;
-
-          // Check if battle was completed
-          const updatedDraft = await getDoc(doc(db, 'drafts', battle.id));
-          if (updatedDraft.data()?.status === 'completed') {
-            results.completed++;
-          }
-        } else {
-          results.skipped++;
-        }
-      } catch (battleError) {
-        console.error(`[SnakeDraftDaily] Error processing battle ${battle.id}:`, battleError);
-        results.errors++;
-      }
-    }
-
-    console.log('[SnakeDraftDaily] Processing complete:', results);
-    return results;
-  } catch (error) {
-    console.error('[SnakeDraftDaily] Error in batch processing:', error);
-    results.errors++;
-    return results;
-  }
-}
-
-/**
  * Get daily scores formatted for the DailyScoresModal
  * @param {object} draft - Draft document from Firebase
  * @returns {object} Formatted dailyScores object for the modal
@@ -677,73 +546,16 @@ export function formatDailyScoresForModal(draft) {
   return Object.keys(formattedScores).length > 0 ? formattedScores : null;
 }
 
-/**
- * Get live daily score for a player (for current day before close)
- * @param {object} player - Player object with picks
- * @param {object} dailyData - Daily data from draft
- * @param {object} currentPrices - Current prices
- * @param {object} thresholds - Volatility thresholds
- * @param {number} currentDay - Current trading day
- * @returns {object} Live score data
- */
-export function calculateLiveDailyScore(player, dailyData, currentPrices, thresholds, currentDay, lockedPrices = {}) {
-  const dayKey = getDayKey(currentDay);
-  // Day 1: Use lockedPrices, Day 2+: Use daily open prices
-  const baselinePrices = currentDay === 1
-    ? lockedPrices
-    : (dailyData?.[dayKey]?.openPrices || lockedPrices || {});
-
-  let totalPoints = 0;
-  const assets = [];
-
-  for (const symbol of (player.picks || [])) {
-    const upperSymbol = symbol.toUpperCase();
-
-    const openPrice = baselinePrices[symbol] || baselinePrices[upperSymbol] || 0;
-    const currentPrice = currentPrices[upperSymbol]?.price ||
-                        currentPrices[symbol]?.price ||
-                        (typeof currentPrices[upperSymbol] === 'number' ? currentPrices[upperSymbol] : 0);
-
-    let dailyGain = 0;
-    if (openPrice > 0 && currentPrice > 0) {
-      dailyGain = ((currentPrice - openPrice) / openPrice) * 100;
-    }
-
-    const threshold = thresholds[upperSymbol]?.threshold || thresholds[symbol]?.threshold || 3.0;
-    const assetScore = calculateSnakeDraftAssetScore(dailyGain, threshold);
-
-    assets.push({
-      symbol,
-      gain: dailyGain,
-      points: assetScore.totalScore,
-      ...assetScore,
-    });
-
-    totalPoints += assetScore.totalScore;
-  }
-
-  return {
-    totalPoints: parseFloat(totalPoints.toFixed(2)),
-    assets,
-    isLive: true,
-  };
-}
-
 export default {
   getCurrentTradingDay,
   getDayKey,
-  isMarketOpen,
   isAfterMarketClose,
   needsDailyOpenCapture,
-  needsDailyCloseRecording,
   captureDailyOpenPrices,
   recordDailyCloseScores,
   recalculateDayScores,
   needsDay1Recalculation,
   calculateCumulativeScores,
   checkAndCompleteBattle,
-  getActiveBattles,
-  processAllBattles,
   formatDailyScoresForModal,
-  calculateLiveDailyScore,
 };
