@@ -234,8 +234,12 @@ export async function recordDailyCloseScores(draftId, currentPrices, thresholds 
       return true;
     }
 
-    // Get open prices for today (use locked prices as fallback for day 1)
-    const openPrices = dailyData[dayKey]?.openPrices || draft.lockedPrices || {};
+    // Get baseline prices for today
+    // Day 1: ALWAYS use lockedPrices (draft completion prices)
+    // Day 2+: Use daily open prices, fall back to locked prices if not captured
+    const openPrices = currentDay === 1
+      ? (draft.lockedPrices || {})
+      : (dailyData[dayKey]?.openPrices || draft.lockedPrices || {});
 
     // Calculate scores for each player
     const closeScores = {};
@@ -542,9 +546,12 @@ export function formatDailyScoresForModal(draft) {
  * @param {number} currentDay - Current trading day
  * @returns {object} Live score data
  */
-export function calculateLiveDailyScore(player, dailyData, currentPrices, thresholds, currentDay) {
+export function calculateLiveDailyScore(player, dailyData, currentPrices, thresholds, currentDay, lockedPrices = {}) {
   const dayKey = getDayKey(currentDay);
-  const openPrices = dailyData?.[dayKey]?.openPrices || {};
+  // Day 1: Use lockedPrices, Day 2+: Use daily open prices
+  const baselinePrices = currentDay === 1
+    ? lockedPrices
+    : (dailyData?.[dayKey]?.openPrices || lockedPrices || {});
 
   let totalPoints = 0;
   const assets = [];
@@ -552,7 +559,7 @@ export function calculateLiveDailyScore(player, dailyData, currentPrices, thresh
   for (const symbol of (player.picks || [])) {
     const upperSymbol = symbol.toUpperCase();
 
-    const openPrice = openPrices[symbol] || openPrices[upperSymbol] || 0;
+    const openPrice = baselinePrices[symbol] || baselinePrices[upperSymbol] || 0;
     const currentPrice = currentPrices[upperSymbol]?.price ||
                         currentPrices[symbol]?.price ||
                         (typeof currentPrices[upperSymbol] === 'number' ? currentPrices[upperSymbol] : 0);

@@ -175,8 +175,12 @@ async function recordBattleScores(db, battle, currentPrices) {
     return { status: 'skipped', reason: 'already_recorded' };
   }
 
-  // Get open prices for today (use locked prices as fallback for day 1)
-  const openPrices = dailyData[dayKey]?.openPrices || battle.lockedPrices || {};
+  // Get baseline prices for today
+  // Day 1: ALWAYS use lockedPrices (draft completion prices)
+  // Day 2+: Use daily open prices, fall back to locked prices if not captured
+  const openPrices = currentDay === 1
+    ? (battle.lockedPrices || {})
+    : (dailyData[dayKey]?.openPrices || battle.lockedPrices || {});
 
   if (Object.keys(openPrices).length === 0) {
     logWarn(`Battle ${battleId}: No open prices available for day ${currentDay}`);

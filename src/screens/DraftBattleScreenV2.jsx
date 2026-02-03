@@ -338,7 +338,12 @@ const DraftBattleScreenV2 = ({
       const todayDayKey = getDayKey(tradingDay);
 
       // Capture daily open prices if needed (first time viewing battle today)
-      if (tradingDay >= 1 && tradingDay <= 5 && !dailyOpenPricesCaptured) {
+      // IMPORTANT: For Day 1, use lockedPrices from draft completion as baseline
+      // For Day 2+, capture new open prices at market open
+      const hasLockedPrices = currentDraft.lockedPrices && Object.keys(currentDraft.lockedPrices).length > 0;
+
+      if (tradingDay >= 2 && tradingDay <= 5 && !dailyOpenPricesCaptured) {
+        // Day 2+: Capture new open prices if needed
         if (needsDailyOpenCapture(currentDraft, tradingDay)) {
           console.log(`[DraftBattleV2] Capturing daily open prices for day ${tradingDay}`);
           const openCaptured = await captureDailyOpenPrices(currentDraft.id, allPrices);
@@ -362,6 +367,10 @@ const DraftBattleScreenV2 = ({
         } else {
           setDailyOpenPricesCaptured(true);
         }
+      } else if (tradingDay === 1) {
+        // Day 1: Use lockedPrices as baseline (don't capture new open prices)
+        console.log(`[DraftBattleV2] Day 1 - using lockedPrices as baseline`);
+        setDailyOpenPricesCaptured(true);
       }
 
       // Check if we need to record daily close scores (after market close)
@@ -374,9 +383,10 @@ const DraftBattleScreenV2 = ({
       }
 
       // Determine which baseline to use for TODAY's scoring
-      // Use daily open prices if available, otherwise fall back to locked prices
+      // Day 1: ALWAYS use lockedPrices (draft completion prices)
+      // Day 2+: Use daily open prices if available, otherwise fall back to locked prices
       const todayOpenPrices = draftDailyData[todayDayKey]?.openPrices || {};
-      const hasOpenPrices = Object.keys(todayOpenPrices).length > 0;
+      const hasOpenPrices = tradingDay >= 2 && Object.keys(todayOpenPrices).length > 0;
 
       // Calculate cumulative scores from previous days
       const previousDayCumulativeScores = calculateCumulativeScores(draftDailyData);

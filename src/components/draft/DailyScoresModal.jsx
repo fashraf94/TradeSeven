@@ -22,47 +22,68 @@ const DailyScoresModal = ({
   dailyData = null,   // Full daily data with detailed asset breakdowns
   currentDay = 0,     // Current trading day (1-5)
 }) => {
-  // Calculate battle day info
+  // Calculate battle day info - only trading days (Mon-Fri)
   const battleDays = useMemo(() => {
     if (!battleStartTime) return [];
 
     const startDate = new Date(battleStartTime);
-    const endDate = battleEndTime ? new Date(battleEndTime) : new Date(startDate.getTime() + 5 * 24 * 60 * 60 * 1000);
     const now = new Date();
-    const totalDays = 5; // Snake Draft is 5 days
+    const totalDays = 5; // Snake Draft is 5 trading days
 
     const days = [];
 
-    for (let i = 0; i < totalDays; i++) {
-      const dayDate = new Date(startDate);
-      dayDate.setDate(startDate.getDate() + i);
+    // Find actual trading days starting from battle start
+    let tradingDayCount = 0;
+    let checkDate = new Date(startDate);
+    checkDate.setHours(0, 0, 0, 0);
 
-      // Determine day status
-      let status = 'UPCOMING';
-      const dayEnd = new Date(dayDate);
-      dayEnd.setHours(23, 59, 59, 999);
+    // Find the first trading day (if battle starts on weekend, move to Monday)
+    while (checkDate.getDay() === 0 || checkDate.getDay() === 6) {
+      checkDate.setDate(checkDate.getDate() + 1);
+    }
 
-      if (now > dayEnd) {
-        status = 'COMPLETE';
-      } else if (now >= dayDate && now <= dayEnd) {
-        status = 'IN PROGRESS';
+    // Now iterate to find 5 trading days
+    while (tradingDayCount < totalDays) {
+      const dayOfWeek = checkDate.getDay();
+
+      // Skip weekends
+      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+        tradingDayCount++;
+
+        const dayDate = new Date(checkDate);
+
+        // Determine day status based on current time
+        let status = 'UPCOMING';
+        const dayEnd = new Date(dayDate);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        const dayStart = new Date(dayDate);
+        dayStart.setHours(0, 0, 0, 0);
+
+        if (now > dayEnd) {
+          status = 'COMPLETE';
+        } else if (now >= dayStart && now <= dayEnd) {
+          status = 'IN PROGRESS';
+        }
+
+        // Format date
+        const dayOfWeekNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const formattedDate = `${dayOfWeekNames[dayDate.getDay()]} ${monthNames[dayDate.getMonth()]} ${dayDate.getDate()}`;
+
+        days.push({
+          dayNumber: tradingDayCount,
+          date: dayDate,
+          formattedDate,
+          status,
+        });
       }
 
-      // Format date
-      const dayOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dayDate.getDay()];
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const formattedDate = `${dayOfWeek} ${monthNames[dayDate.getMonth()]} ${dayDate.getDate()}`;
-
-      days.push({
-        dayNumber: i + 1,
-        date: dayDate,
-        formattedDate,
-        status,
-      });
+      checkDate.setDate(checkDate.getDate() + 1);
     }
 
     return days;
-  }, [battleStartTime, battleEndTime]);
+  }, [battleStartTime]);
 
   // Calculate daily scores for each day
   // Uses dailyData for accurate recorded scores, dailyScores for formatted totals
