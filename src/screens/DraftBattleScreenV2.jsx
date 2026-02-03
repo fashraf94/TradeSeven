@@ -426,6 +426,16 @@ const DraftBattleScreenV2 = ({
         : calculateCumulativeScores(draftDailyData);
 
       // STEP 4: Calculate each player's BaggerBomb score
+      // DEBUG: Log price sources to diagnose 0% gain issue
+      console.log('[DraftBattleV2] Price Debug:', {
+        tradingDay,
+        hasOpenPrices,
+        lockedPricesKeys: Object.keys(currentDraft.lockedPrices || {}),
+        lockedPricesSample: Object.entries(currentDraft.lockedPrices || {}).slice(0, 3),
+        allPricesKeys: Object.keys(allPrices || {}).slice(0, 5),
+        allPricesSample: Object.entries(allPrices || {}).slice(0, 3),
+      });
+
       const playerPerformances = currentDraft.players.map((player) => {
         let totalPoints = 0;
         let totalBaggerBombs = 0;
@@ -465,6 +475,22 @@ const DraftBattleScreenV2 = ({
 
           // Use daily open price if available, otherwise locked price
           const baselinePrice = dailyOpenPrice > 0 ? dailyOpenPrice : lockedPrice;
+
+          // DEBUG: Log individual symbol calculation
+          if (pickIndex === 0 || symbol.toUpperCase() === 'RTX') {
+            console.log(`[DraftBattleV2] Symbol ${symbol}:`, {
+              lookupKey,
+              currentPrice,
+              lockedPrice,
+              dailyOpenPrice,
+              baselinePrice,
+              lockedPricesHas: {
+                symbol: !!currentDraft.lockedPrices?.[symbol],
+                lookupKey: !!currentDraft.lockedPrices?.[lookupKey],
+              },
+              willCalculateGain: baselinePrice > 0 && currentPrice > 0,
+            });
+          }
 
           // Calculate percentage gain vs TODAY's baseline
           let percentGain = 0;
