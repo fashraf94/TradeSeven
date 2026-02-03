@@ -106,6 +106,11 @@ const DraftBattleScreenV2 = ({
     Object.values(currentDraft.lockedPrices).length > 0 &&
     Object.values(currentDraft.lockedPrices).every(p => p === 100);
 
+  // Memoize cumulative scores calculation - only recalculate when dailyData changes
+  const memoizedCumulativeScores = useMemo(() => {
+    return calculateCumulativeScores(dailyData || {});
+  }, [dailyData]);
+
   // ============================================
   // FORCE REPAIR - Copied exactly from original (lines 27-115)
   // ============================================
@@ -413,8 +418,11 @@ const DraftBattleScreenV2 = ({
       const todayOpenPrices = draftDailyData[todayDayKey]?.openPrices || {};
       const hasOpenPrices = tradingDay >= 2 && Object.keys(todayOpenPrices).length > 0;
 
-      // Calculate cumulative scores from previous days
-      const previousDayCumulativeScores = calculateCumulativeScores(draftDailyData);
+      // Use memoized cumulative scores from previous days
+      // (Falls back to local calculation if dailyData state hasn't synced yet)
+      const previousDayCumulativeScores = Object.keys(memoizedCumulativeScores).length > 0
+        ? memoizedCumulativeScores
+        : calculateCumulativeScores(draftDailyData);
 
       // STEP 4: Calculate each player's BaggerBomb score
       const playerPerformances = currentDraft.players.map((player) => {
