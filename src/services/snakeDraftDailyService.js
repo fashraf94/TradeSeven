@@ -172,12 +172,10 @@ export async function captureDailyOpenPrices(draftId, currentPrices) {
     const currentDay = getCurrentTradingDay(draft.battleStartTime || draft.createdAt);
 
     if (currentDay < 1 || currentDay > 5) {
-      console.log('[SnakeDraftDaily] Not a valid trading day:', currentDay);
       return false;
     }
 
     if (!needsDailyOpenCapture(draft, currentDay)) {
-      console.log('[SnakeDraftDaily] Open prices already captured for day', currentDay);
       return true;
     }
 
@@ -215,7 +213,6 @@ export async function captureDailyOpenPrices(draftId, currentPrices) {
       currentTradingDay: currentDay,
     });
 
-    console.log(`[SnakeDraftDaily] Captured open prices for ${draftId} day ${currentDay}:`, Object.keys(openPrices).length, 'symbols');
     return true;
   } catch (error) {
     console.error('[SnakeDraftDaily] Error capturing open prices:', error);
@@ -245,7 +242,6 @@ export async function recordDailyCloseScores(draftId, currentPrices, thresholds 
     const currentDay = getCurrentTradingDay(draft.battleStartTime || draft.createdAt);
 
     if (currentDay < 1 || currentDay > 5) {
-      console.log('[SnakeDraftDaily] Not a valid trading day:', currentDay);
       return false;
     }
 
@@ -254,12 +250,7 @@ export async function recordDailyCloseScores(draftId, currentPrices, thresholds 
 
     // Check if already recorded (skip if forceRecalculate is true)
     if (dailyData[dayKey]?.recorded && !forceRecalculate) {
-      console.log('[SnakeDraftDaily] Scores already recorded for day', currentDay);
       return true;
-    }
-
-    if (forceRecalculate) {
-      console.log(`[SnakeDraftDaily] Force recalculating scores for day ${currentDay}`);
     }
 
     // Get baseline prices for today
@@ -284,8 +275,6 @@ export async function recordDailyCloseScores(draftId, currentPrices, thresholds 
       dailyData,
       currentTradingDay: currentDay,
     });
-
-    console.log(`[SnakeDraftDaily] Recorded close scores for ${draftId} day ${currentDay}`);
 
     // Check if battle should auto-complete (after day 5)
     if (currentDay === 5) {
@@ -321,14 +310,11 @@ export async function recalculateDayScores(draftId, targetDay, currentPrices, th
     const draft = draftSnap.data();
 
     if (targetDay < 1 || targetDay > 5) {
-      console.log('[SnakeDraftDaily] Invalid target day:', targetDay);
       return false;
     }
 
     const dayKey = getDayKey(targetDay);
     const dailyData = draft.dailyData || {};
-
-    console.log(`[SnakeDraftDaily] Recalculating day ${targetDay} scores for battle ${draftId}`);
 
     // Get baseline prices for the target day
     // Day 1: ALWAYS use lockedPrices (draft completion prices)
@@ -357,9 +343,6 @@ export async function recalculateDayScores(draftId, targetDay, currentPrices, th
     await updateDoc(draftRef, {
       dailyData,
     });
-
-    console.log(`[SnakeDraftDaily] Recalculated day ${targetDay} scores:`,
-      Object.entries(closeScores).map(([id, data]) => `${id}: ${data.totalPoints}`).join(', '));
 
     return true;
   } catch (error) {
@@ -480,7 +463,6 @@ export async function checkAndCompleteBattle(draftId) {
       completedAt: new Date().toISOString(),
     });
 
-    console.log(`[SnakeDraftDaily] Battle ${draftId} completed. Winner: ${winner?.displayName} with ${winner?.totalPoints} pts`);
     return true;
   } catch (error) {
     console.error('[SnakeDraftDaily] Error completing battle:', error);

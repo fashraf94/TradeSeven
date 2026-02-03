@@ -305,14 +305,12 @@ const DraftBattleScreenV2 = ({
       });
 
       const symbolList = Array.from(allSymbols);
-      console.log(`[DraftBattleV2] Fetching ${symbolList.length} unique assets in 1 batch call`);
 
       // STEP 2: Fetch volatility thresholds for BaggerBomb scoring
       let symbolThresholds = thresholds;
       const missingThresholds = symbolList.filter(s => !symbolThresholds[s]);
 
       if (missingThresholds.length > 0) {
-        console.log(`[DraftBattleV2] Fetching thresholds for ${missingThresholds.length} symbols`);
         try {
           const newThresholds = await getVolatilityThresholds(missingThresholds, 'stock');
           symbolThresholds = { ...symbolThresholds, ...newThresholds };
@@ -330,7 +328,6 @@ const DraftBattleScreenV2 = ({
       // STEP 3: Clear cache to ensure we get FRESH prices
       if (stockAPIModule.clearCache) {
         stockAPIModule.clearCache();
-        console.log('[DraftBattleV2] Cache cleared to fetch fresh prices');
       }
 
       // Batch fetch ALL prices at once
@@ -360,7 +357,6 @@ const DraftBattleScreenV2 = ({
       if (tradingDay >= 2 && tradingDay <= 5 && !dailyOpenPricesCaptured) {
         // Day 2+: Capture new open prices if needed
         if (needsDailyOpenCapture(currentDraft, tradingDay)) {
-          console.log(`[DraftBattleV2] Capturing daily open prices for day ${tradingDay}`);
           const openCaptured = await captureDailyOpenPrices(currentDraft.id, allPrices);
           if (openCaptured) {
             setDailyOpenPricesCaptured(true);
@@ -380,7 +376,6 @@ const DraftBattleScreenV2 = ({
         }
       } else if (tradingDay === 1) {
         // Day 1: Use lockedPrices as baseline (don't capture new open prices)
-        console.log(`[DraftBattleV2] Day 1 - using lockedPrices as baseline`);
         setDailyOpenPricesCaptured(true);
       }
 
@@ -388,7 +383,6 @@ const DraftBattleScreenV2 = ({
       if (tradingDay >= 1 && tradingDay <= 5 && isAfterMarketClose()) {
         const dayData = draftDailyData[todayDayKey];
         if (dayData?.openPrices && !dayData?.recorded) {
-          console.log(`[DraftBattleV2] Recording daily close scores for day ${tradingDay}`);
           await recordDailyCloseScores(currentDraft.id, allPrices, symbolThresholds);
         }
       }
@@ -396,7 +390,6 @@ const DraftBattleScreenV2 = ({
       // Check if Day 1 needs recalculation (all zeros due to wrong baseline)
       // This fixes battles that were recorded before the lockedPrices fix
       if (needsDay1Recalculation(draftDailyData)) {
-        console.log(`[DraftBattleV2] Day 1 has all zero scores - recalculating with lockedPrices baseline`);
         const recalculated = await recalculateDayScores(currentDraft.id, 1, allPrices, symbolThresholds);
         if (recalculated) {
           // Refresh draft data to get updated dailyData
