@@ -4,7 +4,7 @@
  * Provides intelligent caching with different TTLs based on data volatility:
  * - AGGRESSIVE (24h): Static data like fundamentals, historical prices
  * - MODERATE (1h): Semi-static data like news, analyst ratings
- * - LIGHT (5min): Frequently changing data like prices during market hours
+ * - LIGHT (2min): Frequently changing data like prices during market hours
  * - NONE (0): Real-time data that should never be cached
  *
  * Uses a hybrid localStorage + memory cache approach for persistence and speed.
@@ -27,7 +27,7 @@ export const CACHE_TIERS = {
   },
   LIGHT: {
     name: 'LIGHT',
-    ttlMs: 5 * 60 * 1000, // 5 minutes
+    ttlMs: 2 * 60 * 1000, // 2 minutes (reduced from 5 to minimize price delay)
     description: 'Frequently changing - prices during market hours'
   },
   NONE: {

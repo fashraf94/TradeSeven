@@ -63,6 +63,20 @@ async function handleCurrentPrices(req, res, symbols, API_KEY) {
     const prices = {};
     const dataArray = Array.isArray(data) ? data : [data];
 
+    // Log EODHD response timestamp to track data staleness
+    if (dataArray.length > 0) {
+      const sampleItem = dataArray[0];
+      const eodhTimestamp = sampleItem.timestamp ? new Date(sampleItem.timestamp * 1000) : null;
+      console.log('[EODHD] Response data age:', {
+        symbol: sampleItem.code,
+        price: sampleItem.close,
+        eodhTimestamp: eodhTimestamp ? eodhTimestamp.toISOString() : 'N/A',
+        fetchedAt: new Date().toISOString(),
+        dataAgeSeconds: eodhTimestamp ? Math.round((Date.now() - eodhTimestamp.getTime()) / 1000) : 'unknown'
+      });
+    }
+
+    let oldestTimestamp = null;
     dataArray.forEach(item => {
       if (item && item.code) {
         const symbol = item.code.replace('.US', '');
@@ -72,15 +86,22 @@ async function handleCurrentPrices(req, res, symbols, API_KEY) {
           changePercent: item.change_p || 0,
           high: item.high,
           low: item.low,
-          volume: item.volume
+          volume: item.volume,
+          timestamp: item.timestamp || null
         };
+        // Track oldest timestamp for data age reporting
+        if (item.timestamp && (!oldestTimestamp || item.timestamp < oldestTimestamp)) {
+          oldestTimestamp = item.timestamp;
+        }
       }
     });
 
     return res.status(200).json({
       success: true,
       prices,
-      count: Object.keys(prices).length
+      count: Object.keys(prices).length,
+      dataTimestamp: oldestTimestamp ? new Date(oldestTimestamp * 1000).toISOString() : null,
+      fetchedAt: new Date().toISOString()
     });
 
   } catch (error) {
