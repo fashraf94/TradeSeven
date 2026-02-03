@@ -423,7 +423,7 @@ const CommandConsole = ({
       {/* SCROLLABLE Portfolio Grid Area - Hidden when collapsed */}
       {!isCollapsed && gridConfig && (
         <div style={{
-          flex: 1,
+          flex: isExpanded ? 1 : '0 1 auto',
           overflowY: 'auto',
           overflowX: 'hidden',
           padding: '0 12px',
