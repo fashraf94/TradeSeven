@@ -2038,52 +2038,6 @@ export async function createSnakeDraftBattle(draftData) {
   }
 }
 
-/**
- * Record daily score for a Snake Draft player
- *
- * @param {string} battleId - Snake Draft battle ID
- * @param {string} odUserId - Player's user ID
- * @param {string} dayKey - Day key (e.g., 'monday', '2026-01-07')
- * @param {Object} scoreData - Daily score breakdown
- * @returns {Promise<void>}
- */
-export async function recordSnakeDraftDailyScore(battleId, odUserId, dayKey, scoreData) {
-  try {
-    const battleRef = doc(db, 'snakeDraftBattles', battleId);
-    const battle = await getDoc(battleRef);
-
-    if (!battle.exists()) {
-      throw new Error('Snake Draft battle not found');
-    }
-
-    const battleData = battle.data();
-    const playerIndex = battleData.players.findIndex(p => p.odUserId === odUserId);
-
-    if (playerIndex === -1) {
-      throw new Error('Player not found in battle');
-    }
-
-    // Update player's daily score
-    const updatedPlayers = [...battleData.players];
-    updatedPlayers[playerIndex].dailyScores[dayKey] = scoreData;
-    updatedPlayers[playerIndex].cumulativeScore += scoreData.totalScore || 0;
-
-    // Recalculate rankings
-    updatedPlayers.sort((a, b) => b.cumulativeScore - a.cumulativeScore);
-    updatedPlayers.forEach((p, i) => { p.currentRank = i + 1; });
-
-    await updateDoc(battleRef, {
-      players: updatedPlayers,
-      updatedAt: new Date().toISOString()
-    });
-
-    console.log(`Snake Draft daily score recorded for ${odUserId} on ${dayKey}`);
-  } catch (error) {
-    console.error('Error recording Snake Draft daily score:', error);
-    throw error;
-  }
-}
-
 // =====================================================
 // EARNINGS GAME PORTFOLIOS
 // =====================================================
@@ -3704,7 +3658,6 @@ export default {
 
   // Snake Draft Battles
   createSnakeDraftBattle,
-  recordSnakeDraftDailyScore,
 
   // Challenges
   createChallenge,

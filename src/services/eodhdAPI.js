@@ -152,11 +152,13 @@ export async function getMultipleStockPrices(symbols) {
       Object.entries(data.prices).forEach(([symbol, priceData]) => {
         const normalized = {
           price: parseFloat(priceData.price) || 0,
+          previousClose: parseFloat(priceData.previousClose) || 0,
+          open: parseFloat(priceData.open) || 0,
           change: parseFloat(priceData.change) || 0,
           percentChange: parseFloat(priceData.changePercent) || 0
         };
 
-        // Cache with LIGHT tier (5-minute TTL)
+        // Cache with LIGHT tier (2-minute TTL)
         cacheService.set('prices', symbol, normalized);
         result[symbol] = normalized;
       });
@@ -168,6 +170,8 @@ export async function getMultipleStockPrices(symbols) {
         if (!result[symbol]) {
           result[symbol] = {
             price: FALLBACK_STOCK_PRICES[symbol] || 100,
+            previousClose: FALLBACK_STOCK_PRICES[symbol] || 100,
+            open: FALLBACK_STOCK_PRICES[symbol] || 100,
             change: 0,
             percentChange: 0
           };
@@ -184,8 +188,11 @@ export async function getMultipleStockPrices(symbols) {
 
     // Return fallbacks for symbols we couldn't fetch
     for (const symbol of symbolsToFetch) {
+      const fallbackPrice = FALLBACK_STOCK_PRICES[symbol] || 100;
       result[symbol] = {
-        price: FALLBACK_STOCK_PRICES[symbol] || 100,
+        price: fallbackPrice,
+        previousClose: fallbackPrice,
+        open: fallbackPrice,
         change: 0,
         percentChange: 0
       };

@@ -48,6 +48,10 @@
     {
       "path": "/api/lobbies/cleanup-expired",
       "schedule": "*/5 9-23 * * *"
+    },
+    {
+      "path": "/api/cron/snake-draft-daily-scores",
+      "schedule": "15 21 * * 1-5"
     }
   ]
 }

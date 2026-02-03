@@ -12,6 +12,31 @@ import {
 } from '../components/draft';
 import { calculateSnakeDraftAssetScore, calculatePortfolioScore } from '../services/scoring/baggerBombCalculator';
 import { getVolatilityThresholds } from '../services/volatilityService';
+import {
+  getCurrentTradingDay,
+  getDayKey,
+  needsDailyOpenCapture,
+  captureDailyOpenPrices,
+  isAfterMarketClose,
+  recordDailyCloseScores,
+  recalculateDayScores,
+  needsDay1Recalculation,
+  formatDailyScoresForModal,
+  calculateCumulativeScores,
+} from '../services/snakeDraftDailyService';
+
+/**
+ * Utility to refresh draft data from Firebase
+ * @param {string} draftId - Draft document ID
+ * @returns {Promise<object|null>} Updated draft object or null if not found
+ */
+async function refreshDraftFromFirebase(draftId) {
+  const { doc, getDoc } = await import('firebase/firestore');
+  const { db } = await import('../firebase/config');
+  const draftRef = doc(db, 'drafts', draftId);
+  const draftSnap = await getDoc(draftRef);
+  return draftSnap.exists() ? { id: draftSnap.id, ...draftSnap.data() } : null;
+}
 
 /**
  * DraftBattleScreenV2 - Altitude Map Redesign
@@ -61,9 +86,15 @@ const DraftBattleScreenV2 = ({
   // BaggerBomb scoring state
   const [thresholds, setThresholds] = useState({});
 
-  // Refs for cleanup
+  // Daily scoring state
+  const [currentDay, setCurrentDay] = useState(0);
+  const [dailyData, setDailyData] = useState(null);
+  const [dailyOpenPricesCaptured, setDailyOpenPricesCaptured] = useState(false);
+
+  // Refs for cleanup and tracking
   const refreshIntervalRef = useRef(null);
   const timerIntervalRef = useRef(null);
+  const hasInitialLoadRef = useRef(false);
 
   // ============================================
   // DERIVED VALUES - Preserved from original
@@ -75,6 +106,11 @@ const DraftBattleScreenV2 = ({
   const needsPriceRepair = currentDraft?.lockedPrices &&
     Object.values(currentDraft.lockedPrices).length > 0 &&
     Object.values(currentDraft.lockedPrices).every(p => p === 100);
+
+  // Memoize cumulative scores calculation - only recalculate when dailyData changes
+  const memoizedCumulativeScores = useMemo(() => {
+    return calculateCumulativeScores(dailyData || {});
+  }, [dailyData]);
 
   // ============================================
   // FORCE REPAIR - Copied exactly from original (lines 27-115)
@@ -257,7 +293,7 @@ const DraftBattleScreenV2 = ({
     }
 
     // Don't show full loading on refresh, just the indicator
-    if (standings.length > 0) {
+    if (hasInitialLoadRef.current) {
       setIsRefreshing(true);
     } else {
       setLoading(true);
@@ -275,14 +311,12 @@ const DraftBattleScreenV2 = ({
       });
 
       const symbolList = Array.from(allSymbols);
-      console.log(`[DraftBattleV2] Fetching ${symbolList.length} unique assets in 1 batch call`);
 
       // STEP 2: Fetch volatility thresholds for BaggerBomb scoring
       let symbolThresholds = thresholds;
       const missingThresholds = symbolList.filter(s => !symbolThresholds[s]);
 
       if (missingThresholds.length > 0) {
-        console.log(`[DraftBattleV2] Fetching thresholds for ${missingThresholds.length} symbols`);
         try {
           const newThresholds = await getVolatilityThresholds(missingThresholds, 'stock');
           symbolThresholds = { ...symbolThresholds, ...newThresholds };
@@ -300,7 +334,6 @@ const DraftBattleScreenV2 = ({
       // STEP 3: Clear cache to ensure we get FRESH prices
       if (stockAPIModule.clearCache) {
         stockAPIModule.clearCache();
-        console.log('[DraftBattleV2] Cache cleared to fetch fresh prices');
       }
 
       // Batch fetch ALL prices at once
@@ -311,13 +344,107 @@ const DraftBattleScreenV2 = ({
         allPrices = await stockAPIModule.getAllStockPrices(symbolList);
       }
 
+      // STEP 3.5: Daily scoring - capture open prices and check current day
+      const tradingDay = getCurrentTradingDay(currentDraft.battleStartTime || currentDraft.createdAt);
+      setCurrentDay(tradingDay);
+
+      // Get daily data from draft
+      const draftDailyData = currentDraft.dailyData || {};
+      setDailyData(draftDailyData);
+
+      // Get today's day key
+      const todayDayKey = getDayKey(tradingDay);
+
+      // Capture daily open prices if needed (first time viewing battle today)
+      // IMPORTANT: For Day 1, use lockedPrices from draft completion as baseline
+      // For Day 2+, capture new open prices at market open
+      const hasLockedPrices = currentDraft.lockedPrices && Object.keys(currentDraft.lockedPrices).length > 0;
+
+      if (tradingDay >= 2 && tradingDay <= 5 && !dailyOpenPricesCaptured) {
+        // Day 2+: Capture new open prices if needed
+        if (needsDailyOpenCapture(currentDraft, tradingDay)) {
+          const openCaptured = await captureDailyOpenPrices(currentDraft.id, allPrices);
+          if (openCaptured) {
+            setDailyOpenPricesCaptured(true);
+            // Refresh draft data to get updated dailyData
+            try {
+              const updatedDraft = await refreshDraftFromFirebase(currentDraft.id);
+              if (updatedDraft) {
+                setCurrentDraft(updatedDraft);
+                setDailyData(updatedDraft.dailyData || {});
+              }
+            } catch (refreshError) {
+              console.warn('[DraftBattleV2] Could not refresh draft data:', refreshError);
+            }
+          }
+        } else {
+          setDailyOpenPricesCaptured(true);
+        }
+      } else if (tradingDay === 1) {
+        // Day 1: Use lockedPrices as baseline (don't capture new open prices)
+        setDailyOpenPricesCaptured(true);
+      }
+
+      // Check if we need to record daily close scores (after market close)
+      if (tradingDay >= 1 && tradingDay <= 5 && isAfterMarketClose()) {
+        const dayData = draftDailyData[todayDayKey];
+        if (dayData?.openPrices && !dayData?.recorded) {
+          await recordDailyCloseScores(currentDraft.id, allPrices, symbolThresholds);
+        }
+      }
+
+      // Check if Day 1 needs recalculation (all zeros due to wrong baseline)
+      // This fixes battles that were recorded before the lockedPrices fix
+      if (needsDay1Recalculation(draftDailyData)) {
+        const recalculated = await recalculateDayScores(currentDraft.id, 1, allPrices, symbolThresholds);
+        if (recalculated) {
+          // Refresh draft data to get updated dailyData
+          try {
+            const updatedDraft = await refreshDraftFromFirebase(currentDraft.id);
+            if (updatedDraft) {
+              setCurrentDraft(updatedDraft);
+              setDailyData(updatedDraft.dailyData || {});
+              // Update the local variable for this calculation cycle
+              Object.assign(draftDailyData, updatedDraft.dailyData || {});
+            }
+          } catch (refreshError) {
+            console.warn('[DraftBattleV2] Could not refresh draft data after Day 1 recalculation:', refreshError);
+          }
+        }
+      }
+
+      // Daily scoring now uses previousClose as baseline
+      // This gives accurate "% change today" matching financial apps
+      // No need to capture separate "open" prices with delayed data
+
+      // Use memoized cumulative scores from previous days
+      // (Falls back to local calculation if dailyData state hasn't synced yet)
+      const previousDayCumulativeScores = Object.keys(memoizedCumulativeScores).length > 0
+        ? memoizedCumulativeScores
+        : calculateCumulativeScores(draftDailyData);
+
       // STEP 4: Calculate each player's BaggerBomb score
+      // DEBUG: Log price sources - now using previousClose from EODHD
+      console.log('[DraftBattleV2] Price Debug:', {
+        tradingDay,
+        allPricesKeys: Object.keys(allPrices || {}).slice(0, 5),
+        samplePriceData: Object.entries(allPrices || {}).slice(0, 2).map(([k, v]) => ({
+          symbol: k,
+          price: v?.price,
+          previousClose: v?.previousClose,
+          percentChange: v?.percentChange
+        })),
+      });
+
       const playerPerformances = currentDraft.players.map((player) => {
         let totalPoints = 0;
         let totalBaggerBombs = 0;
         let totalBusts = 0;
         let totalPercentGain = 0;
         const portfolioWithScores = [];
+
+        // Add previous days' points to total
+        const previousPoints = previousDayCumulativeScores[player.odUserId]?.totalPoints || 0;
 
         for (let pickIndex = 0; pickIndex < (player.picks || []).length; pickIndex++) {
           const symbol = player.picks[pickIndex];
@@ -337,15 +464,35 @@ const DraftBattleScreenV2 = ({
           const priceData = allPrices[lookupKey];
           const currentPrice = priceData?.price || 0;
 
-          // Get locked price (from draft completion)
-          const lockedPrice = Number(currentDraft.lockedPrices?.[symbol] ||
-                           currentDraft.lockedPrices?.[lookupKey] ||
-                           currentPrice) || 0;
+          // Use previousClose as baseline - this is yesterday's closing price
+          // This gives us accurate "% change today" matching financial apps
+          // Much more reliable than trying to capture "open" prices with delayed data
+          const previousClose = priceData?.previousClose || 0;
 
-          // Calculate percentage gain
+          // Fallback to lockedPrices only if previousClose not available
+          const lockedPrice = Number(currentDraft.lockedPrices?.[symbol] ||
+                           currentDraft.lockedPrices?.[lookupKey] || 0) || 0;
+
+          // Use previousClose as primary baseline, fall back to lockedPrice
+          const baselinePrice = previousClose > 0 ? previousClose : lockedPrice;
+
+          // DEBUG: Log individual symbol calculation
+          if (pickIndex === 0 || symbol.toUpperCase() === 'RTX' || symbol.toUpperCase() === 'COIN') {
+            console.log(`[DraftBattleV2] Symbol ${symbol}:`, {
+              lookupKey,
+              currentPrice,
+              previousClose,
+              lockedPrice,
+              baselinePrice,
+              eodhPercentChange: priceData?.percentChange,
+              willCalculateGain: baselinePrice > 0 && currentPrice > 0,
+            });
+          }
+
+          // Calculate percentage gain vs previousClose (% change today)
           let percentGain = 0;
-          if (lockedPrice > 0 && currentPrice > 0) {
-            percentGain = ((currentPrice - lockedPrice) / lockedPrice) * 100;
+          if (baselinePrice > 0 && currentPrice > 0) {
+            percentGain = ((currentPrice - baselinePrice) / baselinePrice) * 100;
 
             // Sanity check - gains over 500% or under -90% are likely data errors
             if (percentGain > 500 || percentGain < -90) {
@@ -372,6 +519,9 @@ const DraftBattleScreenV2 = ({
             lockedPrice,
             currentPrice,
             category,
+            // Daily scoring - baseline price (previousClose)
+            baselinePrice,
+            previousClose: previousClose > 0 ? previousClose : null,
             // BaggerBomb scoring data
             threshold,
             baggerBombs: assetScore.baggerBombs,
@@ -382,7 +532,7 @@ const DraftBattleScreenV2 = ({
             totalScore: assetScore.totalScore,
           });
 
-          // Accumulate totals
+          // Accumulate totals (today's points only)
           totalPoints += assetScore.totalScore;
           totalBaggerBombs += assetScore.baggerBombs;
           totalBusts += assetScore.busts;
@@ -393,16 +543,21 @@ const DraftBattleScreenV2 = ({
         const sortedByScore = [...portfolioWithScores].sort((a, b) => b.totalScore - a.totalScore);
         const sortedByGain = [...portfolioWithScores].sort((a, b) => b.gain - a.gain);
 
+        // Calculate cumulative total: previous days + today's live score
+        const cumulativeTotal = previousPoints + totalPoints;
+
         return {
           odUserId: player.odUserId,
           displayName: player.displayName,
           isMe: player.odUserId === currentUserId,
           isCPU: player.isCPU || false,
-          // BaggerBomb scoring - points is primary
-          totalPoints: parseFloat(totalPoints.toFixed(2)),
+          // BaggerBomb scoring - CUMULATIVE points is primary (previous days + today)
+          totalPoints: parseFloat(cumulativeTotal.toFixed(2)),
+          todayPoints: parseFloat(totalPoints.toFixed(2)),  // Today's score only
+          previousPoints,  // Previous days' cumulative
           totalBaggerBombs,
           totalBusts,
-          // Keep percentage as secondary info
+          // Keep percentage as secondary info (today only)
           totalGain: parseFloat(totalPercentGain.toFixed(2)),
           portfolio: portfolioWithScores,
           // Best/worst by score
@@ -465,6 +620,7 @@ const DraftBattleScreenV2 = ({
 
       setLastUpdated(new Date());
       setError(null);
+      hasInitialLoadRef.current = true;
 
     } catch (err) {
       logger.error('[DraftBattleV2] Error calculating standings:', err);
@@ -473,7 +629,7 @@ const DraftBattleScreenV2 = ({
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, [currentDraft, currentUserId, battleType, standings.length, logger, thresholds]);
+  }, [currentDraft, currentUserId, battleType, logger, thresholds]);
 
   // Effect to run calculateStandings on mount and set up interval
   useEffect(() => {
@@ -912,9 +1068,11 @@ const DraftBattleScreenV2 = ({
         onClose={() => setShowDailyScores(false)}
         standings={standings}
         currentUserId={currentUserId}
-        battleStartTime={currentDraft?.createdAt || currentDraft?.startTime}
+        battleStartTime={currentDraft?.battleStartTime || currentDraft?.createdAt || currentDraft?.startTime}
         battleEndTime={currentDraft?.battleEndTime}
-        dailyScores={currentDraft?.dailyScores}
+        dailyScores={formatDailyScoresForModal(currentDraft)}
+        dailyData={currentDraft?.dailyData}
+        currentDay={currentDay}
       />
 
       {/* Scout Transition Overlay - Phase 4 Enhanced */}
