@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { HOLO_COLORS, CATEGORY_CONFIG } from '../../constants/holoTheme';
 import ScoreBreakdownPopover from './ScoreBreakdownPopover';
+import ChamberFuse from '../BaggerBomb/ChamberFuse';
 
 /**
  * AssetTile - Individual asset card for the 3x3 portfolio grid
@@ -21,7 +22,51 @@ const AssetTile = ({
   isScoutMode = false,
   comparisonData = null, // { isLinked, isThreat, isSectorRival, deltaVsYourBest }
   compact = false,
+  expanded = false,   // Expanded mode for full-screen panel
+  isMobile = false,   // Mobile detection for responsive sizing
 }) => {
+  // Sizing configuration based on mode (with mobile-specific expanded sizing)
+  const sizing = expanded ? (
+    isMobile ? {
+      // Mobile expanded - smaller for 2-column grid
+      minHeight: '90px',
+      padding: '10px 12px',
+      symbolFontSize: '14px',
+      scoreFontSize: '14px',
+      detailFontSize: '10px',
+      badgeSize: '18px',
+      badgeFontSize: '10px',
+      marginBottom: '4px',
+    } : {
+      // Desktop expanded - original sizes for 4-column grid
+      minHeight: '100px',
+      padding: '14px 16px',
+      symbolFontSize: '18px',
+      scoreFontSize: '18px',
+      detailFontSize: '12px',
+      badgeSize: '22px',
+      badgeFontSize: '12px',
+      marginBottom: '6px',
+    }
+  ) : compact ? {
+    minHeight: '52px',
+    padding: '8px 10px',
+    symbolFontSize: '12px',
+    scoreFontSize: '12px',
+    detailFontSize: '9px',
+    badgeSize: '16px',
+    badgeFontSize: '9px',
+    marginBottom: '4px',
+  } : {
+    minHeight: '64px',
+    padding: '10px 12px',
+    symbolFontSize: '14px',
+    scoreFontSize: '14px',
+    detailFontSize: '10px',
+    badgeSize: '18px',
+    badgeFontSize: '10px',
+    marginBottom: '4px',
+  };
   const [showScoreBreakdown, setShowScoreBreakdown] = useState(false);
 
   // Get category color (fallback to cyan if unknown)
@@ -51,18 +96,26 @@ const AssetTile = ({
   const totalScore = asset?.totalScore ?? 0;
   const isScorePositive = totalScore >= 0;
 
+  // Calculate baseATR for ChamberFuse threshold meter
+  // For stocks: threshold / 1.5, for crypto: threshold / 2.0
+  const baseATR = useMemo(() => {
+    if (!asset?.threshold) return null;
+    const isCrypto = asset.isCrypto || asset.category === 'crypto';
+    return asset.threshold / (isCrypto ? 2.0 : 1.5);
+  }, [asset?.threshold, asset?.isCrypto, asset?.category]);
+
   if (!asset || !asset.symbol) {
     return (
       <div style={{
         background: HOLO_COLORS.bgCard,
         borderRadius: '8px',
         border: `1px dashed ${HOLO_COLORS.borderSubtle}`,
-        minHeight: compact ? '52px' : '64px',
+        minHeight: sizing.minHeight,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
       }}>
-        <span style={{ color: HOLO_COLORS.textMuted, fontSize: '10px' }}>-</span>
+        <span style={{ color: HOLO_COLORS.textMuted, fontSize: sizing.detailFontSize }}>-</span>
       </div>
     );
   }
@@ -75,9 +128,9 @@ const AssetTile = ({
         borderRadius: '8px',
         borderLeft: `3px solid ${borderColor}`,
         boxShadow: glowEffect,
-        padding: compact ? '8px 10px' : '10px 12px',
+        padding: sizing.padding,
         transition: 'all 0.2s ease',
-        minHeight: compact ? '52px' : '64px',
+        minHeight: sizing.minHeight,
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
@@ -130,26 +183,26 @@ const AssetTile = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: '4px',
+          marginBottom: sizing.marginBottom,
         }}>
           {/* Left: Category Badge + Symbol */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
+            gap: expanded ? '8px' : '6px',
           }}>
             {/* Category Badge [S/R/D] */}
             <span style={{
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: compact ? '16px' : '18px',
-              height: compact ? '16px' : '18px',
+              width: sizing.badgeSize,
+              height: sizing.badgeSize,
               borderRadius: '4px',
               background: `${categoryColor}33`,
               border: `1px solid ${categoryColor}66`,
               color: categoryColor,
-              fontSize: compact ? '9px' : '10px',
+              fontSize: sizing.badgeFontSize,
               fontWeight: 700,
             }}>
               {categoryLetter}
@@ -157,7 +210,7 @@ const AssetTile = ({
 
             {/* Symbol */}
             <span style={{
-              fontSize: compact ? '12px' : '14px',
+              fontSize: sizing.symbolFontSize,
               fontWeight: 700,
               color: HOLO_COLORS.textPrimary,
             }}>
@@ -173,7 +226,7 @@ const AssetTile = ({
             }}
             style={{
               cursor: 'pointer',
-              padding: '2px 6px',
+              padding: expanded ? '4px 10px' : '2px 6px',
               borderRadius: '4px',
               background: isScorePositive ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 51, 102, 0.1)',
               transition: 'all 0.15s ease',
@@ -188,7 +241,7 @@ const AssetTile = ({
             }}
           >
             <span style={{
-              fontSize: compact ? '12px' : '14px',
+              fontSize: sizing.scoreFontSize,
               fontWeight: 700,
               fontFamily: 'monospace',
               color: isScorePositive ? HOLO_COLORS.green : HOLO_COLORS.red,
@@ -197,6 +250,22 @@ const AssetTile = ({
             </span>
           </div>
         </div>
+
+        {/* ROW 1.5: ChamberFuse threshold meter (expanded only) */}
+        {expanded && baseATR && (
+          <div style={{
+            marginBottom: isMobile ? '6px' : '8px',
+            marginTop: isMobile ? '2px' : '4px',
+          }}>
+            <ChamberFuse
+              priceChange={gainValue}
+              baseATR={baseATR}
+              compact={true}
+              showLabels={false}
+              animate={true}
+            />
+          </div>
+        )}
 
         {/* ROW 2: Threshold + BaggerBombs/Busts + % Change */}
         <div style={{
@@ -208,8 +277,8 @@ const AssetTile = ({
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: compact ? '6px' : '8px',
-            fontSize: compact ? '9px' : '10px',
+            gap: expanded ? '10px' : (compact ? '6px' : '8px'),
+            fontSize: sizing.detailFontSize,
           }}>
             {/* Threshold */}
             {asset.threshold && (
@@ -260,7 +329,7 @@ const AssetTile = ({
 
           {/* Right: Percentage change */}
           <span style={{
-            fontSize: compact ? '10px' : '11px',
+            fontSize: expanded ? '14px' : (compact ? '10px' : '11px'),
             fontFamily: 'monospace',
             color: isPositive ? HOLO_COLORS.green : HOLO_COLORS.red,
             opacity: 0.8,

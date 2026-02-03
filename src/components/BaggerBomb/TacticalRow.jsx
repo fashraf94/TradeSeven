@@ -216,13 +216,13 @@ function AllocationBadge({ allocation, isCrypto = false }) {
     >
       <div
         style={{
-          padding: '4px 8px',
+          padding: '6px 10px',
           borderRadius: '6px',
-          backgroundColor: isCrypto ? `${HOLO_COLORS.purple}30` : HOLO_COLORS.bgElevated,
-          border: `1px solid ${isCrypto ? HOLO_COLORS.purple : HOLO_COLORS.borderSubtle}`,
-          fontSize: '11px',
-          fontWeight: 600,
-          color: isCrypto ? HOLO_COLORS.purple : HOLO_COLORS.textMuted,
+          backgroundColor: isCrypto ? `${HOLO_COLORS.purple}30` : `${HOLO_COLORS.primary}15`,
+          border: `1px solid ${isCrypto ? HOLO_COLORS.purple : HOLO_COLORS.primary}`,
+          fontSize: '14px',
+          fontWeight: 700,
+          color: isCrypto ? HOLO_COLORS.purple : HOLO_COLORS.primary,
         }}
       >
         {allocation}
