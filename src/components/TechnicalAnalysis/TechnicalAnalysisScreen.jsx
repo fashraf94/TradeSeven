@@ -20,6 +20,8 @@ const TechnicalAnalysisScreen = ({
   onTrackPattern,
   fetchOHLCV,
   analyzeStock,
+  analysisMode = 'quick', // 'quick' or 'deep'
+  onToggleMode,
   colors = {},
 }) => {
   const [ohlcvData, setOhlcvData] = useState(null);
@@ -28,6 +30,7 @@ const TechnicalAnalysisScreen = ({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
+  const [currentMode, setCurrentMode] = useState(analysisMode);
 
   useEffect(() => {
     if (stock?.symbol) {
@@ -64,99 +67,76 @@ const TechnicalAnalysisScreen = ({
     }
   };
 
-  const runAnalysis = async () => {
+  const runAnalysis = async (mode = currentMode) => {
     if (!ohlcvData || ohlcvData.length === 0) return;
 
     setIsAnalyzing(true);
     setError(null);
+    setCurrentMode(mode);
 
     try {
       // Extract closing prices for indicator calculations
       const closingPrices = ohlcvData.map(c => c.close);
       const currentPrice = closingPrices[0];
 
-      // Calculate real technical indicators
-      const rsiValue = calculateRSI(closingPrices, 14);
-      const rsiSignal = getRSISignal(rsiValue);
-      const macdData = calculateMACD(closingPrices);
-      const macdSignal = getMACDSignal(macdData);
-      const sma20 = calculateSMA(closingPrices, 20);
-      const sma50 = calculateSMA(closingPrices, 50);
-      const sma200 = calculateSMA(closingPrices, 200);
-      const atrValue = calculateATR(ohlcvData, 14);
-      const atrPercent = calculateATRPercent(ohlcvData, 14);
-      const trend = detectTrend(closingPrices);
+      // Try AI analysis if available
+      if (analyzeStock) {
+        console.log(`[TechnicalAnalysis] Running ${mode} AI analysis for ${stock.symbol}...`);
+        try {
+          const aiResult = await analyzeStock(stock.symbol, ohlcvData, { mode });
+          console.log(`[TechnicalAnalysis] AI analysis complete (${mode}):`, aiResult?.summary?.substring(0, 100));
 
-      // Calculate SMA50 distance
-      const sma50Distance = sma50 ? ((currentPrice - sma50) / sma50 * 100) : 0;
-      const sma50Position = currentPrice > sma50 ? 'Above' : 'Below';
+          // Merge AI result with local calculations for any missing data
+          setAnalysis({
+            ticker: stock?.symbol,
+            currentPrice,
+            summary: aiResult.summary || generateFallbackSummary(stock.symbol, currentPrice),
+            indicators: aiResult.indicators || calculateLocalIndicators(closingPrices, ohlcvData),
+            trendlines: aiResult.trendlines || {},
+            confluenceZones: aiResult.confluenceZones || generateConfluenceZones(ohlcvData, {}, currentPrice),
+            patterns: aiResult.patterns || [],
+            levels: aiResult.levels || generateLevels(ohlcvData, {}),
+            marketContext: aiResult.marketContext || null,
+            calculatedAt: new Date().toISOString(),
+            analysisMode: mode,
+            aiGenerated: aiResult.aiGenerated !== false,
+          });
+          return;
+        } catch (aiError) {
+          console.warn('[TechnicalAnalysis] AI analysis failed, falling back to local:', aiError);
+          // Fall through to local analysis
+        }
+      }
 
-      // Determine ATR regime
-      const atrRegime = atrPercent > 3 ? 'High Volatility' : atrPercent > 1.5 ? 'Normal' : 'Low Volatility';
-
-      // Get RSI zone description
-      const getRSIZone = (rsi) => {
-        if (rsi >= 70) return 'Overbought';
-        if (rsi >= 60) return 'Bullish';
-        if (rsi >= 40) return 'Neutral';
-        if (rsi >= 30) return 'Bearish';
-        return 'Oversold';
-      };
-
-      // Get MACD state description
-      const getMACDState = (macd) => {
-        if (!macd) return 'N/A';
-        if (macd.histogram > 0.5) return 'Bullish';
-        if (macd.histogram > 0) return 'Neutral-Bullish';
-        if (macd.histogram > -0.5) return 'Neutral-Bearish';
-        return 'Bearish';
-      };
-
-      // Build indicators object
-      const realIndicators = {
-        rsi: {
-          value: rsiValue !== null ? Math.round(rsiValue * 10) / 10 : '--',
-          zone: rsiValue !== null ? getRSIZone(rsiValue) : 'N/A',
-        },
-        macd: {
-          histogram: macdData?.histogram || 0,
-          state: getMACDState(macdData),
-        },
-        sma50: {
-          value: sma50 ? Math.round(sma50 * 100) / 100 : null,
-          distance: `${sma50Distance > 0 ? '+' : ''}${sma50Distance.toFixed(2)}%`,
-          position: sma50Position,
-        },
-        atr: {
-          value: atrValue ? Math.round(atrValue * 100) / 100 : null,
-          percent: atrPercent,
-          regime: atrRegime,
-        },
-        sma20: sma20 ? Math.round(sma20 * 100) / 100 : null,
-        sma200: sma200 ? Math.round(sma200 * 100) / 100 : null,
-        trend,
-      };
+      // Local analysis fallback
+      console.log(`[TechnicalAnalysis] Running local analysis for ${stock.symbol}...`);
+      const localIndicators = calculateLocalIndicators(closingPrices, ohlcvData);
 
       // Generate confluence zones based on real data
-      const confluenceZones = generateConfluenceZones(ohlcvData, realIndicators, currentPrice);
+      const confluenceZones = generateConfluenceZones(ohlcvData, localIndicators, currentPrice);
 
       // Generate support/resistance levels
-      const levels = generateLevels(ohlcvData, realIndicators);
+      const levels = generateLevels(ohlcvData, localIndicators);
 
       // Generate summary
-      const summary = generateSummary(stock.symbol, currentPrice, realIndicators);
+      const summary = generateSummary(stock.symbol, currentPrice, localIndicators);
 
       // Simulate brief analysis time for UX
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       setAnalysis({
         ticker: stock?.symbol,
         currentPrice,
         summary,
-        indicators: realIndicators,
+        indicators: localIndicators,
+        trendlines: {},
         confluenceZones,
+        patterns: [],
         levels,
+        marketContext: null,
         calculatedAt: new Date().toISOString(),
+        analysisMode: 'local',
+        aiGenerated: false,
       });
 
     } catch (err) {
@@ -165,6 +145,68 @@ const TechnicalAnalysisScreen = ({
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  // Helper function to calculate local indicators
+  const calculateLocalIndicators = (closingPrices, ohlcvData) => {
+    const currentPrice = closingPrices[0];
+    const rsiValue = calculateRSI(closingPrices, 14);
+    const macdData = calculateMACD(closingPrices);
+    const sma20 = calculateSMA(closingPrices, 20);
+    const sma50 = calculateSMA(closingPrices, 50);
+    const sma200 = calculateSMA(closingPrices, 200);
+    const atrValue = calculateATR(ohlcvData, 14);
+    const atrPercent = calculateATRPercent(ohlcvData, 14);
+    const trend = detectTrend(closingPrices);
+
+    const sma50Distance = sma50 ? ((currentPrice - sma50) / sma50 * 100) : 0;
+    const sma50Position = currentPrice > sma50 ? 'Above' : 'Below';
+    const atrRegime = atrPercent > 3 ? 'High Volatility' : atrPercent > 1.5 ? 'Normal' : 'Low Volatility';
+
+    const getRSIZone = (rsi) => {
+      if (rsi >= 70) return 'Overbought';
+      if (rsi >= 60) return 'Bullish';
+      if (rsi >= 40) return 'Neutral';
+      if (rsi >= 30) return 'Bearish';
+      return 'Oversold';
+    };
+
+    const getMACDState = (macd) => {
+      if (!macd) return 'N/A';
+      if (macd.histogram > 0.5) return 'Bullish';
+      if (macd.histogram > 0) return 'Neutral-Bullish';
+      if (macd.histogram > -0.5) return 'Neutral-Bearish';
+      return 'Bearish';
+    };
+
+    return {
+      rsi: {
+        value: rsiValue !== null ? Math.round(rsiValue * 10) / 10 : '--',
+        zone: rsiValue !== null ? getRSIZone(rsiValue) : 'N/A',
+      },
+      macd: {
+        histogram: macdData?.histogram || 0,
+        state: getMACDState(macdData),
+      },
+      sma50: {
+        value: sma50 ? Math.round(sma50 * 100) / 100 : null,
+        distance: `${sma50Distance > 0 ? '+' : ''}${sma50Distance.toFixed(2)}%`,
+        position: sma50Position,
+      },
+      atr: {
+        value: atrValue ? Math.round(atrValue * 100) / 100 : null,
+        percent: atrPercent,
+        regime: atrRegime,
+      },
+      sma20: sma20 ? Math.round(sma20 * 100) / 100 : null,
+      sma200: sma200 ? Math.round(sma200 * 100) / 100 : null,
+      trend,
+    };
+  };
+
+  // Helper for fallback summary
+  const generateFallbackSummary = (symbol, price) => {
+    return `Technical analysis for ${symbol} at $${price?.toFixed(2)}. Using calculated indicator values.`;
   };
 
   useEffect(() => {
@@ -250,6 +292,92 @@ const TechnicalAnalysisScreen = ({
         )}
       </div>
 
+      {/* Analysis Mode Toggle */}
+      {!isLoadingData && ohlcvData && (
+        <div style={{
+          display: 'flex',
+          gap: '8px',
+          padding: '12px 20px',
+          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          backgroundColor: '#0d1117',
+        }}>
+          <button
+            onClick={() => !isAnalyzing && runAnalysis('quick')}
+            disabled={isAnalyzing}
+            style={{
+              flex: 1,
+              padding: '10px',
+              backgroundColor: currentMode === 'quick'
+                ? 'rgba(0, 255, 255, 0.1)'
+                : 'rgba(255, 255, 255, 0.05)',
+              border: `1px solid ${currentMode === 'quick' ? 'rgba(0, 255, 255, 0.3)' : 'rgba(255,255,255,0.1)'}`,
+              borderRadius: '8px',
+              color: currentMode === 'quick' ? '#00ffff' : 'rgba(255,255,255,0.6)',
+              fontSize: '13px',
+              cursor: isAnalyzing ? 'wait' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              opacity: isAnalyzing ? 0.6 : 1,
+            }}
+          >
+            <span style={{ fontSize: '14px' }}>&#9889;</span> Quick
+          </button>
+          <button
+            onClick={() => !isAnalyzing && runAnalysis('deep')}
+            disabled={isAnalyzing}
+            style={{
+              flex: 1,
+              padding: '10px',
+              backgroundColor: currentMode === 'deep'
+                ? 'rgba(0, 255, 255, 0.1)'
+                : 'rgba(255, 255, 255, 0.05)',
+              border: `1px solid ${currentMode === 'deep' ? 'rgba(0, 255, 255, 0.3)' : 'rgba(255,255,255,0.1)'}`,
+              borderRadius: '8px',
+              color: currentMode === 'deep' ? '#00ffff' : 'rgba(255,255,255,0.6)',
+              fontSize: '13px',
+              cursor: isAnalyzing ? 'wait' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              opacity: isAnalyzing ? 0.6 : 1,
+            }}
+          >
+            <span style={{ fontSize: '14px' }}>&#128300;</span> Deep Analysis
+          </button>
+        </div>
+      )}
+
+      {/* Analysis Mode Indicator */}
+      {analysis && (
+        <div style={{
+          padding: '8px 20px',
+          backgroundColor: analysis.aiGenerated ? 'rgba(0, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+          borderBottom: '1px solid rgba(255,255,255,0.05)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+          <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>
+            {analysis.aiGenerated ? (
+              <>
+                <span style={{ color: '#00ffff' }}>
+                  {analysis.analysisMode === 'deep' ? '&#128300; Deep' : '&#9889; Quick'}
+                </span>
+                {' AI Analysis'}
+              </>
+            ) : (
+              '&#128202; Local Analysis'
+            )}
+          </span>
+          <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)' }}>
+            {new Date(analysis.calculatedAt).toLocaleTimeString()}
+          </span>
+        </div>
+      )}
+
       {/* Tabs */}
       <div style={{
         display: 'flex',
@@ -282,10 +410,16 @@ const TechnicalAnalysisScreen = ({
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
         {isAnalyzing ? (
           <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>&#128300;</div>
-            <h3 style={{ color: '#fff', margin: '0 0 8px' }}>Analyzing {stock?.symbol}...</h3>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>
+              {currentMode === 'deep' ? '&#128300;' : '&#9889;'}
+            </div>
+            <h3 style={{ color: '#fff', margin: '0 0 8px' }}>
+              {currentMode === 'deep' ? 'Deep Analysis' : 'Quick Analysis'} of {stock?.symbol}...
+            </h3>
             <p style={{ color: 'rgba(255,255,255,0.5)', margin: '0 0 20px' }}>
-              Calculating technical indicators
+              {currentMode === 'deep'
+                ? 'AI analyzing patterns, trendlines & confluences'
+                : 'Calculating technical indicators'}
             </p>
             <div style={{
               width: '200px',
