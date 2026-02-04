@@ -749,6 +749,59 @@ export function clearEarningsCache() {
 }
 
 // ============================================
+// HISTORICAL OHLCV DATA
+// ============================================
+
+/**
+ * Fetch historical OHLCV data for technical analysis
+ * @param {string} symbol - Stock ticker (e.g., 'AAPL')
+ * @param {number} days - Number of days of history (default 90, max 365)
+ * @returns {Promise<Array>} Array of OHLCV candles, newest first
+ */
+export async function fetchHistoricalOHLCV(symbol, days = 90) {
+  const upperSymbol = symbol.toUpperCase();
+  const cacheKey = `ohlcv_${upperSymbol}_${days}`;
+
+  // Check cache (AGGRESSIVE tier - longer TTL for historical data)
+  const cached = cacheService.get('historical', cacheKey);
+  if (cached !== null) {
+    console.log(`[EODHD] Using cached OHLCV for ${upperSymbol}`);
+    return cached;
+  }
+
+  console.log(`[EODHD] Fetching ${days} days of OHLCV for ${upperSymbol}...`);
+
+  try {
+    const response = await fetchWithTimeout(
+      `${API_BASE}/stocks/historical?symbol=${upperSymbol}&days=${days}`
+    );
+
+    if (!response.ok) {
+      throw new Error(`Proxy error: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (result.success && result.data) {
+      // Track API call
+      apiMonitor.track('/api/stocks/historical', { symbol: upperSymbol, days }, 'eodhdAPI.fetchHistoricalOHLCV');
+
+      // Cache with longer TTL (historical data doesn't change)
+      cacheService.set('historical', cacheKey, result.data);
+
+      console.log(`[EODHD] Got ${result.data.length} OHLCV candles for ${upperSymbol}`);
+      return result.data;
+    }
+
+    throw new Error(result.error || 'Failed to fetch historical data');
+
+  } catch (error) {
+    console.warn(`[EODHD] Historical OHLCV fetch failed for ${upperSymbol}:`, error.message);
+    return null;
+  }
+}
+
+// ============================================
 // UTILITY FUNCTIONS
 // ============================================
 
@@ -944,6 +997,8 @@ export const stockAPI = {
   // Earnings functions
   fetchLatestEarnings,
   clearEarningsCache,
+  // Historical OHLCV data
+  fetchHistoricalOHLCV,
   // Cache utilities
   getCacheStats,
   printCacheReport,

@@ -6,7 +6,7 @@ import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
 import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, joinBaggerBombBattle, joinBaggerBombBattleV3, subscribeToLobby, subscribeToAllLobbies, getOpenBaggerBombBattles } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
-import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
+import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings, fetchHistoricalOHLCV } from './services/eodhdAPI';
 import './firebase/config';
 import { motion } from 'framer-motion';
 // Event watchlist configuration for Week Ahead calendar
@@ -9375,8 +9375,8 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
             setPatternToTrack(pattern);
             setShowTrackModal(true);
           }}
-          fetchOHLCV={null} // TODO: Connect to EODHD
-          analyzeStock={null} // TODO: Connect to Claude API
+          fetchOHLCV={fetchHistoricalOHLCV}
+          analyzeStock={null} // AI analysis in demo mode for now
           colors={c}
         />
       );
