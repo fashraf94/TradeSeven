@@ -49,6 +49,15 @@ const TDBattleView = BaggerBombBattleView;
 import { generateGamePlan, enhanceRecommendations, getAssetDeepDive } from './services/researchAdvisor';
 // Snake Draft strategy utilities (consolidated from duplicate code paths)
 import { createSnakeDraftGamePlan } from './utils/draftStrategy';
+// Technical Research components
+import {
+  TechnicalResearchCard,
+  TechnicalAnalysisScreen,
+  StockSearchModal,
+  TrackPatternModal,
+  PatternTrackerDashboard,
+  PatternInsights,
+} from './components/TechnicalAnalysis';
 // Battle helper utilities for V1/V2 format handling
 import {
   getUsername as getPlayerUsername,
@@ -7564,7 +7573,17 @@ const AIMarketSummary = ({ marketData, news, moversData, colors }) => {
 // PHASE 1: MARKET BRIEFING
 // ============================================
 
-const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
+const MarketBriefing = ({
+  stocksData,
+  cryptoData,
+  onContinue,
+  colors,
+  // Technical Research props
+  onAnalyzeStock,
+  onMyPatterns,
+  onInsights,
+  activePatternCount = 0,
+}) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
 
   // News and movers state
@@ -7875,6 +7894,18 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
 
         {/* Animations consolidated in index.css: pulse-glow, shimmer-effect, float-particle, pulse-icon, bounce-arrow */}
       </div>
+
+      {/* Technical Research Card */}
+      {onAnalyzeStock && (
+        <TechnicalResearchCard
+          onAnalyzeStock={onAnalyzeStock}
+          onMyPatterns={onMyPatterns}
+          onInsights={onInsights}
+          activePatternCount={activePatternCount}
+          confirmationRate={null}
+          colors={c}
+        />
+      )}
 
       {/* Your Watchlist - Personalized news for user's stock picks */}
       <WatchlistNews colors={c} />
@@ -8887,6 +8918,14 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
   const [tier2Picks, setTier2Picks] = useState({ steady: [], risky: [], defensive: [] });
   const [draftRankerPhase, setDraftRankerPhase] = useState(null);
 
+  // Technical Research state
+  const [showTechnicalScreen, setShowTechnicalScreen] = useState(null); // 'analysis' | 'patterns' | 'insights' | null
+  const [technicalSymbol, setTechnicalSymbol] = useState(null);
+  const [patternToTrack, setPatternToTrack] = useState(null);
+  const [showStockSearchModal, setShowStockSearchModal] = useState(false);
+  const [showTrackModal, setShowTrackModal] = useState(false);
+  const [trackedPatterns, setTrackedPatterns] = useState([]); // Will connect to Firebase later
+
   // Reset flow
   const resetFlow = () => {
     setFlowPhase(1);
@@ -9323,6 +9362,63 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
       );
     }
 
+    // Technical Research screens
+    if (showTechnicalScreen === 'analysis' && technicalSymbol) {
+      return (
+        <TechnicalAnalysisScreen
+          stock={technicalSymbol}
+          onBack={() => {
+            setShowTechnicalScreen(null);
+            setTechnicalSymbol(null);
+          }}
+          onTrackPattern={(pattern) => {
+            setPatternToTrack(pattern);
+            setShowTrackModal(true);
+          }}
+          fetchOHLCV={null} // TODO: Connect to EODHD
+          analyzeStock={null} // TODO: Connect to Claude API
+          colors={c}
+        />
+      );
+    }
+
+    if (showTechnicalScreen === 'patterns') {
+      return (
+        <PatternTrackerDashboard
+          patterns={trackedPatterns}
+          stats={{
+            totalTracked: trackedPatterns.length,
+            confirmed: trackedPatterns.filter(p => p.outcome === 'CONFIRMED').length,
+            failed: trackedPatterns.filter(p => p.outcome === 'FAILED').length,
+            confirmationRate: trackedPatterns.length > 0
+              ? Math.round((trackedPatterns.filter(p => p.outcome === 'CONFIRMED').length / trackedPatterns.filter(p => p.status === 'RESOLVED').length) * 100) || 0
+              : 0,
+          }}
+          onViewPattern={(pattern) => console.log('View pattern:', pattern)}
+          onCancelPattern={(id) => {
+            setTrackedPatterns(prev => prev.filter(p => p.id !== id));
+          }}
+          onBack={() => setShowTechnicalScreen(null)}
+        />
+      );
+    }
+
+    if (showTechnicalScreen === 'insights') {
+      return (
+        <PatternInsights
+          stats={{
+            totalTracked: trackedPatterns.length,
+            confirmed: trackedPatterns.filter(p => p.outcome === 'CONFIRMED').length,
+            failed: trackedPatterns.filter(p => p.outcome === 'FAILED').length,
+            confirmationRate: trackedPatterns.length > 0
+              ? Math.round((trackedPatterns.filter(p => p.outcome === 'CONFIRMED').length / trackedPatterns.filter(p => p.status === 'RESOLVED').length) * 100) || 0
+              : 0,
+          }}
+          onBack={() => setShowTechnicalScreen(null)}
+        />
+      );
+    }
+
     switch (flowPhase) {
       case 1:
         return (
@@ -9331,6 +9427,11 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
             cryptoData={cryptoData}
             onContinue={() => setFlowPhase(2)}
             colors={c}
+            // Technical Research props
+            onAnalyzeStock={() => setShowStockSearchModal(true)}
+            onMyPatterns={() => setShowTechnicalScreen('patterns')}
+            onInsights={() => setShowTechnicalScreen('insights')}
+            activePatternCount={trackedPatterns.filter(p => p.status === 'WAITING' || p.status === 'TESTING').length}
           />
         );
 
@@ -9434,7 +9535,7 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
   return (
     <div style={{ minHeight: '100vh', background: '#0d1117' }}>
       {/* Progress indicator */}
-      {!selectedAsset && (
+      {!selectedAsset && !showTechnicalScreen && (
         <div style={{
           display: 'flex',
           justifyContent: 'center',
@@ -9458,6 +9559,39 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
       )}
 
       {renderPhase()}
+
+      {/* Technical Research Modals */}
+      <StockSearchModal
+        isOpen={showStockSearchModal}
+        onClose={() => setShowStockSearchModal(false)}
+        onSelectStock={(stock) => {
+          setTechnicalSymbol(stock);
+          setShowStockSearchModal(false);
+          setShowTechnicalScreen('analysis');
+        }}
+        recentSearches={[]}
+        searchStocks={null} // TODO: Connect to EODHD search
+      />
+
+      <TrackPatternModal
+        isOpen={showTrackModal}
+        onClose={() => {
+          setShowTrackModal(false);
+          setPatternToTrack(null);
+        }}
+        pattern={patternToTrack}
+        onStartTracking={async (trackingData) => {
+          // Add pattern to tracked list with unique ID
+          const newPattern = {
+            ...trackingData,
+            id: `pattern_${Date.now()}`,
+          };
+          setTrackedPatterns(prev => [...prev, newPattern]);
+          setShowTrackModal(false);
+          setPatternToTrack(null);
+          // TODO: Save to Firebase
+        }}
+      />
     </div>
   );
 };
