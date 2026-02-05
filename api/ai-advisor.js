@@ -813,7 +813,7 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({
           model: mode === 'deep' ? 'claude-sonnet-4-20250514' : 'claude-3-5-haiku-20241022',
-          max_tokens: techMaxTokens || 1500,
+          max_tokens: techMaxTokens || (mode === 'deep' ? 3000 : 800),
           system: systemPrompt,
           messages: [
             { role: 'user', content: techPrompt }

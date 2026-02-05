@@ -10,52 +10,32 @@
 
 /**
  * QUICK MODE PROMPT
- * Fast analysis focusing on key patterns and confluence zones
- * ~2,000 tokens, suitable for frequent use
+ * Fast, brief analysis - just the essentials
+ * ~800 tokens, suitable for frequent use
  */
-const QUICK_ANALYSIS_PROMPT = `You are a technical analyst for MarketClash, an educational platform. Identify patterns and levels - do NOT give trading advice.
+const QUICK_ANALYSIS_PROMPT = `You are a technical analyst. Provide a brief snapshot only - NOT trading advice.
 
-LANGUAGE RULES:
-- Use: "detected", "identified", "historically indicates", "pattern suggests"
-- Never use: "buy", "sell", "entry", "target", "stop-loss"
+RULES:
+- Use: "showing", "indicates", "near", "at"
+- Never use: "buy", "sell", "entry", "target"
 
 OUTPUT FORMAT (JSON only):
 {
-  "summary": "2-3 sentence overview of current technical state",
+  "summary": "1-2 sentences max describing current price action and trend",
   "indicators": {
-    "rsi": { "value": number, "zone": "Oversold|Bearish|Neutral|Bullish|Overbought" },
-    "macd": { "histogram": number, "state": "Bearish|Neutral|Bullish" },
-    "trend": "Downtrend|Consolidating|Uptrend"
+    "rsi": { "zone": "Oversold|Bearish|Neutral|Bullish|Overbought" },
+    "macd": { "state": "Bearish|Neutral|Bullish" },
+    "trend": "Downtrend|Sideways|Uptrend"
   },
-  "trendlines": {
-    "primary": { "type": "UPTREND|DOWNTREND|NONE", "touches": number, "strength": "Weak|Moderate|Strong" },
-    "pattern": { "type": "TRIANGLE|WEDGE|CHANNEL|NONE", "subtype": "string", "reliability": "X%" }
+  "primaryLevel": {
+    "type": "SUPPORT|RESISTANCE|NONE",
+    "price": number,
+    "source": "brief description (e.g. '50 SMA', '20-day low', 'prior resistance')"
   },
-  "confluenceZones": [{
-    "zoneType": "SUPPORT|RESISTANCE",
-    "strength": "MODERATE|STRONG|VERY_STRONG",
-    "priceLow": number, "priceHigh": number,
-    "indicators": [{ "indicator": "name", "value": number }],
-    "description": "Why this zone matters"
-  }],
-  "levels": {
-    "support": [{ "source": "name", "price": number }],
-    "resistance": [{ "source": "name", "price": number }]
-  }
+  "keyTakeaway": "One sentence: most important observation for this stock right now"
 }
 
-CONFLUENCE RULES:
-- 2 indicators within 1% = MODERATE
-- 3 indicators = STRONG
-- 4+ indicators = VERY_STRONG
-- Trendlines count as indicators
-
-TRENDLINE RULES:
-- Uptrend: Connect swing lows, 3+ touches validates
-- Downtrend: Connect swing highs
-- Patterns: Ascending triangle (83% bullish), Falling wedge (74% bullish), Rising wedge (81% bearish)
-
-Return ONLY valid JSON.`;
+Keep it brief. Identify the single most important level. Return ONLY valid JSON.`;
 
 
 /**
@@ -214,24 +194,20 @@ const safeToFixed = (val, decimals = 2) => {
  * Build user prompt for quick analysis
  */
 const buildQuickUserPrompt = (symbol, currentPrice, high20, low20, indicators, ohlcvSummary, battleType) => {
-  return `Analyze ${symbol} for educational pattern detection.
+  // Only use first 10 days for quick analysis
+  const recentOhlcv = ohlcvSummary.split('\n').slice(0, 10).join('\n');
 
-CURRENT DATA:
-- Price: $${safeToFixed(currentPrice, 2)}
-- 20-Day Range: $${safeToFixed(low20, 2)} - $${safeToFixed(high20, 2)}
+  return `Quick snapshot for ${symbol}.
 
-INDICATORS:
-- RSI (14): ${safeToFixed(indicators.rsi?.value, 1)} (${indicators.rsi?.zone || 'N/A'})
-- MACD Histogram: ${safeToFixed(indicators.macd?.histogram, 3)}
-- 50 SMA: $${safeToFixed(indicators.sma50?.value, 2)} (${indicators.sma50?.position || 'N/A'} by ${indicators.sma50?.distance || 'N/A'})
-- ATR (14): $${safeToFixed(indicators.atr?.value, 2)} (${indicators.atr?.regime || 'N/A'})
+CURRENT: $${safeToFixed(currentPrice, 2)}
+RSI: ${safeToFixed(indicators.rsi?.value, 1)} | MACD: ${indicators.macd?.histogram > 0 ? '+' : ''}${safeToFixed(indicators.macd?.histogram, 2)}
+50 SMA: $${safeToFixed(indicators.sma50?.value, 2)} (${indicators.sma50?.position || 'N/A'})
+20-Day Range: $${safeToFixed(low20, 2)} - $${safeToFixed(high20, 2)}
 
-OHLCV (30 days):
-${ohlcvSummary}
+OHLCV (10 days):
+${recentOhlcv}
 
-Context: ${battleType}
-
-Identify: confluence zones, trendlines, patterns. Return JSON only.`;
+Identify: primary trend, key level, one takeaway. Return JSON only.`;
 };
 
 /**
@@ -342,7 +318,7 @@ export const analyzeStockWithAI = async (symbol, ohlcvData, calculatedIndicators
   const systemPrompt = mode === 'deep' ? DEEP_ANALYSIS_PROMPT : QUICK_ANALYSIS_PROMPT;
 
   // Format OHLCV data for the prompt
-  const candleCount = mode === 'deep' ? 45 : 30;
+  const candleCount = mode === 'deep' ? 45 : 15;
   const recentCandles = ohlcvData.slice(0, candleCount);
   const ohlcvSummary = recentCandles.map(c =>
     `${c.date}: O=${safeToFixed(c.open, 2)} H=${safeToFixed(c.high, 2)} L=${safeToFixed(c.low, 2)} C=${safeToFixed(c.close, 2)} V=${(c.volume / 1000000).toFixed(1)}M`

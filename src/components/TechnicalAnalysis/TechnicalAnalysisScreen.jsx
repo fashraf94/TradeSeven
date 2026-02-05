@@ -79,6 +79,9 @@ const TechnicalAnalysisScreen = ({
       const closingPrices = ohlcvData.map(c => c.close);
       const currentPrice = closingPrices[0];
 
+      // Always calculate local indicators first (source of truth for numeric values)
+      const localIndicators = calculateLocalIndicators(closingPrices, ohlcvData);
+
       // Try AI analysis if available
       if (analyzeStock) {
         console.log(`[TechnicalAnalysis] Running ${mode} AI analysis for ${stock.symbol}...`);
@@ -86,17 +89,41 @@ const TechnicalAnalysisScreen = ({
           const aiResult = await analyzeStock(stock.symbol, ohlcvData, { mode });
           console.log(`[TechnicalAnalysis] AI analysis complete (${mode}):`, aiResult?.summary?.substring(0, 100));
 
-          // Merge AI result with local calculations for any missing data
+          // Merge local indicators with AI response
+          // Local = source of truth for numeric values (sma50, atr, etc.)
+          // AI = source of qualitative analysis (zones, trends, patterns)
+          const mergedIndicators = {
+            rsi: {
+              value: localIndicators.rsi?.value,  // Local number
+              zone: aiResult.indicators?.rsi?.zone || localIndicators.rsi?.zone,
+              divergence: aiResult.indicators?.rsi?.divergence || null,
+              regime: aiResult.indicators?.rsi?.regime || null,
+            },
+            macd: {
+              histogram: localIndicators.macd?.histogram,  // Local number
+              state: aiResult.indicators?.macd?.state || localIndicators.macd?.state,
+              crossover: aiResult.indicators?.macd?.crossover || null,
+            },
+            sma50: localIndicators.sma50,   // Always from local
+            atr: localIndicators.atr,       // Always from local
+            sma20: localIndicators.sma20,
+            sma200: localIndicators.sma200,
+            trend: aiResult.indicators?.trend || localIndicators.trend,
+            trendStrength: aiResult.indicators?.trendStrength || null,
+          };
+
           setAnalysis({
             ticker: stock?.symbol,
             currentPrice,
             summary: aiResult.summary || generateFallbackSummary(stock.symbol, currentPrice),
-            indicators: aiResult.indicators || calculateLocalIndicators(closingPrices, ohlcvData),
+            indicators: mergedIndicators,
             trendlines: aiResult.trendlines || {},
-            confluenceZones: aiResult.confluenceZones || generateConfluenceZones(ohlcvData, {}, currentPrice),
+            confluenceZones: aiResult.confluenceZones || generateConfluenceZones(ohlcvData, localIndicators, currentPrice),
             patterns: aiResult.patterns || [],
-            levels: aiResult.levels || generateLevels(ohlcvData, {}),
+            levels: aiResult.levels || generateLevels(ohlcvData, localIndicators),
             marketContext: aiResult.marketContext || null,
+            primaryLevel: aiResult.primaryLevel || null,  // Quick mode field
+            keyTakeaway: aiResult.keyTakeaway || null,    // Quick mode field
             calculatedAt: new Date().toISOString(),
             analysisMode: mode,
             aiGenerated: aiResult.aiGenerated !== false,
@@ -108,9 +135,8 @@ const TechnicalAnalysisScreen = ({
         }
       }
 
-      // Local analysis fallback
+      // Local analysis fallback (localIndicators already calculated above)
       console.log(`[TechnicalAnalysis] Running local analysis for ${stock.symbol}...`);
-      const localIndicators = calculateLocalIndicators(closingPrices, ohlcvData);
 
       // Generate confluence zones based on real data
       const confluenceZones = generateConfluenceZones(ohlcvData, localIndicators, currentPrice);
@@ -134,6 +160,8 @@ const TechnicalAnalysisScreen = ({
         patterns: [],
         levels,
         marketContext: null,
+        primaryLevel: null,   // Quick mode field
+        keyTakeaway: null,    // Quick mode field
         calculatedAt: new Date().toISOString(),
         analysisMode: 'local',
         aiGenerated: false,
@@ -567,7 +595,7 @@ const OverviewTab = ({ analysis }) => (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '24px' }}>
       <IndicatorCard
         name="RSI (14)"
-        value={analysis.indicators?.rsi?.value || '--'}
+        value={typeof analysis.indicators?.rsi?.value === 'number' ? analysis.indicators.rsi.value.toFixed(1) : '--'}
         status={analysis.indicators?.rsi?.zone || 'N/A'}
       />
       <IndicatorCard
@@ -586,6 +614,58 @@ const OverviewTab = ({ analysis }) => (
         status={analysis.indicators?.atr?.regime || 'N/A'}
       />
     </div>
+
+    {/* Quick mode: Primary Level */}
+    {analysis.primaryLevel && analysis.primaryLevel.type !== 'NONE' && (
+      <>
+        <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', textTransform: 'uppercase' }}>
+          Key Level
+        </h3>
+        <div style={{
+          padding: '12px 16px',
+          backgroundColor: analysis.primaryLevel.type === 'SUPPORT' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+          border: `1px solid ${analysis.primaryLevel.type === 'SUPPORT' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+          borderRadius: '8px',
+          marginBottom: '16px',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: analysis.primaryLevel.type === 'SUPPORT' ? '#22c55e' : '#ef4444', fontWeight: '600' }}>
+              {analysis.primaryLevel.type}
+            </span>
+            <span style={{ color: '#fff', fontWeight: '600' }}>
+              ${typeof analysis.primaryLevel.price === 'number' ? analysis.primaryLevel.price.toFixed(2) : analysis.primaryLevel.price}
+            </span>
+          </div>
+          {analysis.primaryLevel.source && (
+            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>
+              {analysis.primaryLevel.source}
+            </div>
+          )}
+        </div>
+      </>
+    )}
+
+    {/* Quick mode: Key Takeaway */}
+    {analysis.keyTakeaway && (
+      <>
+        <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', textTransform: 'uppercase' }}>
+          Key Takeaway
+        </h3>
+        <div style={{
+          padding: '12px 16px',
+          backgroundColor: 'rgba(0, 255, 255, 0.05)',
+          border: '1px solid rgba(0, 255, 255, 0.2)',
+          borderRadius: '8px',
+          marginBottom: '16px',
+        }}>
+          <p style={{ fontSize: '14px', color: '#00ffff', margin: 0, lineHeight: '1.5' }}>
+            {analysis.keyTakeaway}
+          </p>
+        </div>
+      </>
+    )}
+
+    {/* Summary (both modes) */}
     {analysis.summary && (
       <>
         <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', textTransform: 'uppercase' }}>

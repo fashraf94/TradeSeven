@@ -8933,14 +8933,15 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
 
   // Load user's tracked patterns from Firebase
   const loadUserPatterns = async () => {
-    if (!user?.oddsId) return;
+    const userId = user?.odUserId || user?.uid || user?.username;
+    if (!userId) return;
 
     setIsLoadingPatterns(true);
     try {
-      const patterns = await getUserTrackedPatterns(user.oddsId);
+      const patterns = await getUserTrackedPatterns(userId);
       setTrackedPatterns(patterns);
 
-      const stats = await getUserPatternStats(user.oddsId);
+      const stats = await getUserPatternStats(userId);
       setPatternStats(stats);
     } catch (error) {
       console.error('[App] Failed to load patterns:', error);
@@ -8951,10 +8952,11 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
 
   // Load patterns when user changes
   useEffect(() => {
-    if (user?.oddsId) {
+    const userId = user?.odUserId || user?.uid || user?.username;
+    if (userId) {
       loadUserPatterns();
     }
-  }, [user?.oddsId]);
+  }, [user?.odUserId]);
 
   // AI Analysis handler with mode support
   const handleAIAnalysis = async (symbol, ohlcvData, options = {}) => {
@@ -9017,13 +9019,14 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
 
   // Save pattern handler
   const handleSavePattern = async (patternData) => {
-    if (!user?.oddsId) {
-      console.error('[App] No user ID for saving pattern');
+    const userId = user?.odUserId || user?.uid || user?.username;
+    if (!userId) {
+      console.error('[App] No user ID for saving pattern. User object:', user);
       return;
     }
 
     try {
-      const patternId = await saveTrackedPattern(user.oddsId, patternData);
+      const patternId = await saveTrackedPattern(userId, patternData);
 
       // Refresh patterns list
       await loadUserPatterns();
