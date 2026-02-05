@@ -11,3 +11,4 @@ export { default as CandlestickChart } from './CandlestickChart';
 export { default as TimeframeSelector } from './TimeframeSelector';
 export { default as PatternsTab } from './PatternsTab';
 export { default as LevelsTab } from './LevelsTab';
+export { default as ExploreTab } from './ExploreTab';

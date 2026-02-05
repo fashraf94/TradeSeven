@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import detectLevels from '../../services/levelDetection';
+import { getStrengthColor } from './utils/colors';
 
 const LevelsTab = ({
   dailyData,
@@ -31,15 +32,6 @@ const LevelsTab = ({
 
     return () => clearTimeout(timer);
   }, [dailyData, indicators]);
-
-  const getStrengthColor = (strength) => {
-    switch (strength) {
-      case 'STRONG': return '#00ff88';
-      case 'MODERATE': return '#ffcc00';
-      case 'WEAK': return '#888';
-      default: return '#888';
-    }
-  };
 
   if (isLoading) {
     return (

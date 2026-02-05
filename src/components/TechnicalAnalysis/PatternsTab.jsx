@@ -4,6 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { detectConfluence } from '../../services/confluenceDetection';
+import { getStrengthColor, getStrengthIcon } from './utils/colors';
 
 const PatternsTab = ({
   ohlcvData,
@@ -11,7 +12,6 @@ const PatternsTab = ({
   dailyIndicators,
   selectedTimeframe,
   onTrackPattern,
-  trackedPatterns = [],
 }) => {
   const [confluences, setConfluences] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -41,24 +41,6 @@ const PatternsTab = ({
     setIsLoading(false);
   }, [ohlcvData, dailyAnchorData, dailyIndicators, selectedTimeframe]);
 
-  const getStrengthColor = (strength) => {
-    switch (strength) {
-      case 'STRONG': return '#00ff88';
-      case 'MODERATE': return '#ffcc00';
-      case 'WEAK': return '#ff6b6b';
-      default: return '#888';
-    }
-  };
-
-  const getStrengthIcon = (strength) => {
-    switch (strength) {
-      case 'STRONG': return '⚡';
-      case 'MODERATE': return '📊';
-      case 'WEAK': return '📉';
-      default: return '•';
-    }
-  };
-
   const getBiasIcon = (bias) => {
     switch (bias) {
       case 'BULLISH': return '🟢';
@@ -67,9 +49,9 @@ const PatternsTab = ({
     }
   };
 
-  const isPatternTracked = (confluenceId) => {
-    return trackedPatterns?.some(p => p.patternId === confluenceId);
-  };
+  // Pattern tracking state is managed via Firebase, not local state
+  // This always returns false since local tracking was removed
+  const isPatternTracked = () => false;
 
   if (isLoading) {
     return (

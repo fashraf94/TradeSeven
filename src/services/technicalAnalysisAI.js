@@ -159,13 +159,13 @@ Keep it educational and avoid trading recommendations.`
 };
 
 // ============================================
-// ANALYSIS MODES (Quick/Deep - legacy, still used by runAnalysis)
+// LEGACY PROMPTS - Used by analyzeStockWithAI (default export)
+// Note: The Quick/Deep UI toggle was removed in Phase 6.
+// 'quick' mode is now hardcoded. 'deep' mode is deprecated but kept for backwards compatibility.
 // ============================================
 
 /**
- * QUICK MODE PROMPT
- * Fast, brief analysis - just the essentials
- * ~800 tokens, suitable for frequent use
+ * QUICK MODE PROMPT (Still in use - hardcoded as default mode)
  */
 const QUICK_ANALYSIS_PROMPT = `You are a technical analyst. Provide a brief snapshot only - NOT trading advice.
 
@@ -193,9 +193,8 @@ Keep it brief. Identify the single most important level. Return ONLY valid JSON.
 
 
 /**
- * DEEP MODE PROMPT
- * Comprehensive analysis with detailed pattern detection and historical context
- * ~4,000 tokens, for serious research
+ * DEEP MODE PROMPT (DEPRECATED - kept for backwards compatibility)
+ * Previously used for comprehensive analysis. UI toggle was removed in Phase 6.
  */
 const DEEP_ANALYSIS_PROMPT = `You are an expert technical analyst for MarketClash, an educational financial learning platform. Your role is to provide thorough pattern detection and analysis - NOT trading recommendations.
 
