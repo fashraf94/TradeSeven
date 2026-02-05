@@ -2,9 +2,10 @@
 // Multi-Timeframe Confluence Detection Tab
 
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { detectConfluence } from '../../services/confluenceDetection';
 import { getStrengthColor, getStrengthIcon } from './utils/colors';
+import { LoadingState, EmptyState, ErrorState } from './shared';
 
 const PatternsTab = ({
   ohlcvData,
@@ -63,49 +64,26 @@ const PatternsTab = ({
   const isPatternTracked = () => false;
 
   if (isLoading) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.loading}>
-          <motion.div
-            style={styles.loadingBar}
-            initial={{ width: 0 }}
-            animate={{ width: '100%' }}
-            transition={{ duration: 1.5, ease: 'linear', repeat: Infinity }}
-          />
-          <span style={styles.loadingText}>Detecting confluence zones...</span>
-        </div>
-      </div>
-    );
+    return <LoadingState message="Detecting confluence zones..." />;
   }
 
   if (error) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.errorState}>
-          <span style={styles.emptyIcon}>⚠️</span>
-          <h3 style={styles.errorTitle}>Detection Error</h3>
-          <p style={styles.emptyText}>{error}</p>
-        </div>
-      </div>
-    );
+    return <ErrorState title="Detection Error" message={error} />;
   }
 
   if (confluences.length === 0) {
     return (
       <div style={styles.container}>
-        <div style={styles.emptyState}>
-          <span style={styles.emptyIcon}>🔍</span>
-          <h3 style={styles.emptyTitle}>No Confluence Detected</h3>
-          <p style={styles.emptyText}>
-            No significant pattern + level alignments found on the current timeframe.
-            Try switching timeframes or check back later.
-          </p>
-          <div style={styles.emptyHint}>
-            <strong>What is confluence?</strong><br/>
-            When short-term patterns (like double bottoms, engulfing candles) align
-            with longer-term levels (like the 50-day SMA), it creates a high-probability
-            reaction zone.
-          </div>
+        <EmptyState
+          icon="🔍"
+          title="No Confluence Detected"
+          message="No significant pattern + level alignments found on the current timeframe. Try switching timeframes or check back later."
+        />
+        <div style={styles.emptyHint}>
+          <strong>What is confluence?</strong><br/>
+          When short-term patterns (like double bottoms, engulfing candles) align
+          with longer-term levels (like the 50-day SMA), it creates a high-probability
+          reaction zone.
         </div>
       </div>
     );

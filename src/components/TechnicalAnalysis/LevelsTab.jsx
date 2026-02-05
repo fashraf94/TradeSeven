@@ -4,6 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import detectLevels from '../../services/levelDetection';
 import { getStrengthColor } from './utils/colors';
+import { LoadingState, EmptyState, ErrorState } from './shared';
 
 const LevelsTab = ({
   dailyData,
@@ -43,47 +44,22 @@ const LevelsTab = ({
   }, [dailyData, indicators]);
 
   if (isLoading) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.loading}>
-          <div style={styles.loadingBar}>
-            <div style={styles.loadingProgress} />
-          </div>
-          <span style={styles.loadingText}>Analyzing key levels...</span>
-        </div>
-      </div>
-    );
+    return <LoadingState message="Analyzing key levels..." />;
   }
 
   if (error) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.errorState}>
-          <span style={styles.emptyIcon}>&#9888;&#65039;</span>
-          <h3 style={styles.errorTitle}>Detection Error</h3>
-          <p style={styles.emptyText}>{error}</p>
-        </div>
-      </div>
-    );
+    return <ErrorState title="Detection Error" message={error} />;
   }
 
   const hasLevels = levels.support.length > 0 || levels.resistance.length > 0;
 
   if (!hasLevels) {
     return (
-      <div style={styles.container}>
-        <div style={styles.emptyState}>
-          <span style={styles.emptyIcon}>&#128202;</span>
-          <h3 style={styles.emptyTitle}>Insufficient Confluence</h3>
-          <p style={styles.emptyText}>
-            No high-quality support/resistance levels detected. Quality levels require
-            at least 2 technical factors aligning at the same price zone.
-          </p>
-          <p style={styles.emptySubtext}>
-            Try checking with more price history or during periods of stronger technical structure.
-          </p>
-        </div>
-      </div>
+      <EmptyState
+        icon="&#128202;"
+        title="Insufficient Confluence"
+        message="No high-quality support/resistance levels detected. Quality levels require at least 2 technical factors aligning at the same price zone. Try checking with more price history or during periods of stronger technical structure."
+      />
     );
   }
 
