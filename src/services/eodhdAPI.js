@@ -749,6 +749,77 @@ export function clearEarningsCache() {
 }
 
 // ============================================
+// HISTORICAL OHLCV DATA
+// ============================================
+
+/**
+ * Fetch historical OHLCV data for technical analysis
+ * @param {string} symbol - Stock ticker (e.g., 'AAPL')
+ * @param {string} timeframe - Timeframe: '1h' (hourly), '1d' (daily), '1w' (weekly)
+ * @returns {Promise<Object>} Object with { data, actualTimeframe, fallbackMessage } or just data array for backwards compatibility
+ */
+export async function fetchHistoricalOHLCV(symbol, timeframe = '1d') {
+  const upperSymbol = symbol.toUpperCase();
+  const cacheKey = `ohlcv_${upperSymbol}_${timeframe}`;
+
+  // Check cache (AGGRESSIVE tier - longer TTL for historical data)
+  const cached = cacheService.get('historical', cacheKey);
+  if (cached !== null) {
+    console.log(`[EODHD] Using cached ${timeframe} OHLCV for ${upperSymbol}`);
+    // Return cached data - could be array (old format) or object with metadata
+    return Array.isArray(cached) ? cached : cached.data || cached;
+  }
+
+  console.log(`[EODHD] Fetching ${timeframe} OHLCV for ${upperSymbol}...`);
+
+  try {
+    const response = await fetchWithTimeout(
+      `${API_BASE}/stocks/historical?symbol=${upperSymbol}&timeframe=${timeframe}`
+    );
+
+    if (!response.ok) {
+      throw new Error(`Proxy error: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (result.success && result.data) {
+      // Track API call
+      apiMonitor.track('/api/stocks/historical', { symbol: upperSymbol, timeframe }, 'eodhdAPI.fetchHistoricalOHLCV');
+
+      // Log if there was a fallback
+      if (result.fallbackMessage) {
+        console.warn(`[EODHD] ${result.fallbackMessage} for ${upperSymbol}`);
+      }
+
+      // Cache with longer TTL (historical data doesn't change)
+      // Cache the actual timeframe's data to avoid re-fetching
+      const actualCacheKey = `ohlcv_${upperSymbol}_${result.timeframe}`;
+      cacheService.set('historical', actualCacheKey, result.data);
+
+      console.log(`[EODHD] Got ${result.data.length} ${result.timeframe} OHLCV candles for ${upperSymbol}`);
+
+      // Return data with metadata for the UI to handle
+      // Attach metadata to the array for backwards compatibility
+      const dataWithMeta = result.data;
+      dataWithMeta._meta = {
+        actualTimeframe: result.timeframe,
+        requestedTimeframe: result.requestedTimeframe || timeframe,
+        fallbackMessage: result.fallbackMessage || null,
+        description: result.description
+      };
+      return dataWithMeta;
+    }
+
+    throw new Error(result.error || 'Failed to fetch historical data');
+
+  } catch (error) {
+    console.warn(`[EODHD] Historical OHLCV fetch failed for ${upperSymbol}:`, error.message);
+    return null;
+  }
+}
+
+// ============================================
 // UTILITY FUNCTIONS
 // ============================================
 
@@ -944,6 +1015,8 @@ export const stockAPI = {
   // Earnings functions
   fetchLatestEarnings,
   clearEarningsCache,
+  // Historical OHLCV data
+  fetchHistoricalOHLCV,
   // Cache utilities
   getCacheStats,
   printCacheReport,

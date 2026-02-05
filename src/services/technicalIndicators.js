@@ -150,29 +150,81 @@ export function getRSISignal(rsi) {
 // ============================================
 
 /**
+ * Calculate EMA series (returns array of all EMA values)
+ * @param {number[]} data - Array of values (oldest first)
+ * @param {number} period - EMA period
+ * @returns {number[]} Array of EMA values (null for insufficient data points)
+ */
+function calculateEMASeries(data, period) {
+  if (!data || data.length < period) {
+    return new Array(data?.length || 0).fill(null);
+  }
+
+  const multiplier = 2 / (period + 1);
+  const ema = [];
+
+  // First EMA value is SMA of first `period` values
+  let sum = 0;
+  for (let i = 0; i < period; i++) {
+    sum += data[i];
+    ema.push(null); // Not enough data yet
+  }
+  ema[period - 1] = sum / period; // First valid EMA
+
+  // Calculate remaining EMA values
+  for (let i = period; i < data.length; i++) {
+    const currentEma = (data[i] - ema[i - 1]) * multiplier + ema[i - 1];
+    ema.push(currentEma);
+  }
+
+  return ema;
+}
+
+/**
  * Calculate MACD (Moving Average Convergence Divergence)
+ * Uses proper 9-period EMA of MACD line for signal line (L3 fix)
  * @param {number[]} prices - Array of prices (newest first)
  * @returns {object|null} MACD data { macd, signal, histogram }
  */
 export function calculateMACD(prices) {
-  if (!prices || prices.length < 26) return null;
+  if (!prices || prices.length < 35) return null; // Need 26 + 9 periods minimum
 
-  const ema12 = calculateEMA(prices, 12);
-  const ema26 = calculateEMA(prices, 26);
+  // Reverse to get oldest first for calculations
+  const chronological = [...prices].reverse();
 
-  if (ema12 === null || ema26 === null) return null;
+  // Calculate 12-period and 26-period EMA series
+  const ema12Series = calculateEMASeries(chronological, 12);
+  const ema26Series = calculateEMASeries(chronological, 26);
 
-  const macd = ema12 - ema26;
+  // Calculate MACD Line series (12 EMA - 26 EMA)
+  const macdLine = [];
+  for (let i = 0; i < chronological.length; i++) {
+    if (ema12Series[i] !== null && ema26Series[i] !== null) {
+      macdLine.push(ema12Series[i] - ema26Series[i]);
+    } else {
+      macdLine.push(null);
+    }
+  }
 
-  // For signal line, we need MACD history
-  // Simplified: use current MACD value
-  // In production, you'd calculate EMA of MACD values
-  const signal = macd * 0.9; // Approximation
+  // Get valid MACD values for signal calculation
+  const validMacdValues = macdLine.filter(v => v !== null);
+  if (validMacdValues.length < 9) return null;
+
+  // Calculate 9-period EMA of MACD Line for Signal Line
+  const signalSeries = calculateEMASeries(validMacdValues, 9);
+
+  // Get latest values (end of series = most recent)
+  const latestMacd = macdLine[macdLine.length - 1];
+  const latestSignal = signalSeries[signalSeries.length - 1];
+
+  if (latestMacd === null || latestSignal === null) return null;
+
+  const histogram = latestMacd - latestSignal;
 
   return {
-    macd: Number(macd.toFixed(4)),
-    signal: Number(signal.toFixed(4)),
-    histogram: Number((macd - signal).toFixed(4))
+    macd: Number(latestMacd.toFixed(4)),
+    signal: Number(latestSignal.toFixed(4)),
+    histogram: Number(histogram.toFixed(4))
   };
 }
 

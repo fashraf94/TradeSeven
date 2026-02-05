@@ -3614,6 +3614,396 @@ export function subscribeToLobby(callback) {
   }
 }
 
+
+// =====================================================
+// PATTERN TRACKING (Technical Analysis)
+// =====================================================
+
+/**
+ * Save a tracked pattern to Firebase
+ * @param {string} userId - User ID
+ * @param {Object} patternData - Pattern data from AI analysis + user selections
+ * @returns {Promise<string>} Document ID of saved pattern
+ */
+export async function saveTrackedPattern(userId, patternData) {
+  try {
+    const patternsRef = collection(db, 'trackedPatterns');
+
+    const pattern = removeUndefined({
+      userId,
+
+      // Pattern identification
+      ticker: patternData.ticker,
+      patternType: patternData.patternType || 'CONFLUENCE_ZONE',
+      patternName: patternData.patternName || `${patternData.zoneType} Zone`,
+
+      // Zone details
+      zoneType: patternData.zoneType, // SUPPORT or RESISTANCE
+      priceLow: patternData.priceLow,
+      priceHigh: patternData.priceHigh,
+
+      // AI-detected indicators that form the confluence
+      indicators: patternData.indicators || [],
+      confluenceStrength: patternData.strength || 'MODERATE',
+
+      // Trendline data (if applicable)
+      trendlineData: patternData.trendlineData || null,
+      chartPattern: patternData.chartPattern || null, // TRIANGLE, WEDGE, etc.
+      patternReliability: patternData.patternReliability || null, // Bulkowski %
+
+      // AI analysis metadata
+      aiGenerated: patternData.aiGenerated || false,
+      analysisMode: patternData.analysisMode || 'quick', // quick or deep
+      aiDescription: patternData.description || null,
+      aiHistoricalContext: patternData.historicalContext || null,
+
+      // User's thesis
+      thesis: patternData.thesis, // BULLISH_BOUNCE, BEARISH_BREAKDOWN, etc.
+      thesisDescription: patternData.thesisDescription || null,
+      userNotes: patternData.userNotes || '',
+
+      // Tracking parameters
+      trackingDuration: patternData.trackingDuration || 7, // days
+      priceAtCreation: patternData.priceAtCreation,
+
+      // Status tracking
+      status: 'WAITING', // WAITING, TESTING, RESOLVED, EXPIRED, CANCELLED
+      outcome: null, // CONFIRMED, FAILED, PARTIAL, INCONCLUSIVE
+
+      // Timestamps
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + (patternData.trackingDuration || 7) * 24 * 60 * 60 * 1000).toISOString(),
+      resolvedAt: null,
+
+      // Price history (updated periodically)
+      priceHistory: [{
+        date: new Date().toISOString(),
+        price: patternData.priceAtCreation,
+        inZone: patternData.priceAtCreation >= patternData.priceLow &&
+                patternData.priceAtCreation <= patternData.priceHigh
+      }],
+
+      // Result data (filled when resolved)
+      result: null,
+    });
+
+    const docRef = await addDoc(patternsRef, pattern);
+    console.log('✅ Pattern saved with ID:', docRef.id);
+    return docRef.id;
+  } catch (error) {
+    console.error('❌ Error saving pattern:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get all tracked patterns for a user
+ * @param {string} userId - User ID
+ * @param {string} statusFilter - Optional: 'active', 'completed', 'all'
+ * @returns {Promise<Array>} Array of patterns
+ */
+export async function getUserTrackedPatterns(userId, statusFilter = 'all') {
+  try {
+    const patternsRef = collection(db, 'trackedPatterns');
+    let q;
+
+    if (statusFilter === 'active') {
+      q = query(
+        patternsRef,
+        where('userId', '==', userId),
+        where('status', 'in', ['WAITING', 'TESTING']),
+        orderBy('createdAt', 'desc')
+      );
+    } else if (statusFilter === 'completed') {
+      q = query(
+        patternsRef,
+        where('userId', '==', userId),
+        where('status', 'in', ['RESOLVED', 'EXPIRED']),
+        orderBy('createdAt', 'desc')
+      );
+    } else {
+      q = query(
+        patternsRef,
+        where('userId', '==', userId),
+        orderBy('createdAt', 'desc')
+      );
+    }
+
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data(),
+    }));
+  } catch (error) {
+    console.error('❌ Error fetching patterns:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update pattern status
+ * @param {string} patternId - Pattern document ID
+ * @param {Object} updates - Fields to update
+ */
+export async function updatePatternStatus(patternId, updates) {
+  try {
+    const patternRef = doc(db, 'trackedPatterns', patternId);
+    await updateDoc(patternRef, removeUndefined({
+      ...updates,
+      updatedAt: new Date().toISOString()
+    }));
+    console.log('✅ Pattern updated:', patternId);
+  } catch (error) {
+    console.error('❌ Error updating pattern:', error);
+    throw error;
+  }
+}
+
+/**
+ * Cancel a tracked pattern
+ * @param {string} patternId - Pattern document ID
+ */
+export async function cancelTrackedPattern(patternId) {
+  try {
+    await updatePatternStatus(patternId, {
+      status: 'CANCELLED',
+      resolvedAt: new Date().toISOString()
+    });
+    console.log('✅ Pattern cancelled:', patternId);
+  } catch (error) {
+    console.error('❌ Error cancelling pattern:', error);
+    throw error;
+  }
+}
+
+/**
+ * Calculate user's pattern tracking statistics
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>} Stats object
+ */
+export async function getUserPatternStats(userId) {
+  try {
+    const patterns = await getUserTrackedPatterns(userId, 'all');
+
+    const resolved = patterns.filter(p => p.status === 'RESOLVED');
+    const confirmed = resolved.filter(p => p.outcome === 'CONFIRMED');
+    const failed = resolved.filter(p => p.outcome === 'FAILED');
+
+    // Stats by pattern type
+    const statsByType = {};
+    resolved.forEach(p => {
+      const type = p.patternType || 'UNKNOWN';
+      if (!statsByType[type]) {
+        statsByType[type] = { tracked: 0, confirmed: 0, failed: 0 };
+      }
+      statsByType[type].tracked++;
+      if (p.outcome === 'CONFIRMED') statsByType[type].confirmed++;
+      if (p.outcome === 'FAILED') statsByType[type].failed++;
+    });
+
+    // Calculate rates
+    Object.keys(statsByType).forEach(type => {
+      const s = statsByType[type];
+      s.confirmationRate = s.tracked > 0
+        ? Math.round((s.confirmed / s.tracked) * 100)
+        : 0;
+    });
+
+    // Stats by confluence strength
+    const statsByStrength = {};
+    resolved.forEach(p => {
+      const strength = p.confluenceStrength || 'UNKNOWN';
+      if (!statsByStrength[strength]) {
+        statsByStrength[strength] = { tracked: 0, confirmed: 0, failed: 0 };
+      }
+      statsByStrength[strength].tracked++;
+      if (p.outcome === 'CONFIRMED') statsByStrength[strength].confirmed++;
+      if (p.outcome === 'FAILED') statsByStrength[strength].failed++;
+    });
+
+    Object.keys(statsByStrength).forEach(strength => {
+      const s = statsByStrength[strength];
+      s.rate = s.tracked > 0 ? Math.round((s.confirmed / s.tracked) * 100) : 0;
+    });
+
+    // Stats by chart pattern (trendline patterns)
+    const statsByChartPattern = {};
+    resolved.filter(p => p.chartPattern).forEach(p => {
+      const pattern = p.chartPattern;
+      if (!statsByChartPattern[pattern]) {
+        statsByChartPattern[pattern] = { tracked: 0, confirmed: 0, failed: 0 };
+      }
+      statsByChartPattern[pattern].tracked++;
+      if (p.outcome === 'CONFIRMED') statsByChartPattern[pattern].confirmed++;
+      if (p.outcome === 'FAILED') statsByChartPattern[pattern].failed++;
+    });
+
+    Object.keys(statsByChartPattern).forEach(pattern => {
+      const s = statsByChartPattern[pattern];
+      s.rate = s.tracked > 0 ? Math.round((s.confirmed / s.tracked) * 100) : 0;
+    });
+
+    // Last 30 days
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const recent = resolved.filter(p => new Date(p.createdAt) > thirtyDaysAgo);
+    const recentConfirmed = recent.filter(p => p.outcome === 'CONFIRMED');
+
+    // Find best pattern type
+    let bestPatternType = null;
+    let bestRate = 0;
+    Object.entries(statsByType).forEach(([type, stats]) => {
+      if (stats.tracked >= 3 && stats.confirmationRate > bestRate) {
+        bestRate = stats.confirmationRate;
+        bestPatternType = type;
+      }
+    });
+
+    return {
+      totalTracked: patterns.length,
+      active: patterns.filter(p => ['WAITING', 'TESTING'].includes(p.status)).length,
+      resolved: resolved.length,
+      confirmed: confirmed.length,
+      failed: failed.length,
+      confirmationRate: resolved.length > 0
+        ? Math.round((confirmed.length / resolved.length) * 100)
+        : 0,
+      statsByType,
+      statsByStrength,
+      statsByChartPattern,
+      bestPatternType,
+      bestConfirmationRate: bestRate,
+      last30Days: {
+        tracked: recent.length,
+        confirmed: recentConfirmed.length,
+        failed: recent.filter(p => p.outcome === 'FAILED').length,
+        rate: recent.length > 0
+          ? Math.round((recentConfirmed.length / recent.length) * 100)
+          : 0
+      }
+    };
+  } catch (error) {
+    console.error('❌ Error calculating stats:', error);
+    return {
+      totalTracked: 0,
+      active: 0,
+      resolved: 0,
+      confirmed: 0,
+      failed: 0,
+      confirmationRate: 0,
+      statsByType: {},
+      statsByStrength: {},
+      statsByChartPattern: {},
+      bestPatternType: null,
+      bestConfirmationRate: 0,
+      last30Days: { tracked: 0, confirmed: 0, failed: 0, rate: 0 }
+    };
+  }
+}
+
+/**
+ * Check and update pattern status based on current price
+ * @param {Object} pattern - Pattern object
+ * @param {number} currentPrice - Current stock price
+ * @returns {Promise<Object|null>} Updated pattern (or null if no update needed)
+ */
+export async function checkPatternResolution(pattern, currentPrice) {
+  if (!['WAITING', 'TESTING'].includes(pattern.status)) {
+    return null; // Already resolved
+  }
+
+  const inZone = currentPrice >= pattern.priceLow && currentPrice <= pattern.priceHigh;
+  const now = new Date();
+  const updates = {};
+
+  // Check if price entered zone
+  if (pattern.status === 'WAITING' && inZone) {
+    updates.status = 'TESTING';
+    updates.testedAt = now.toISOString();
+  }
+
+  // Check for resolution
+  if (pattern.status === 'TESTING' || inZone) {
+    const zoneSize = pattern.priceHigh - pattern.priceLow;
+    const zoneMid = (pattern.priceLow + pattern.priceHigh) / 2;
+    const moveThreshold = zoneMid * 0.02; // 2% move
+
+    let resolved = false;
+    let outcome = null;
+
+    switch (pattern.thesis) {
+      case 'BULLISH_BOUNCE':
+        if (currentPrice > pattern.priceHigh + moveThreshold) {
+          resolved = true;
+          outcome = 'CONFIRMED';
+        } else if (currentPrice < pattern.priceLow - zoneSize) {
+          resolved = true;
+          outcome = 'FAILED';
+        }
+        break;
+
+      case 'BEARISH_BREAKDOWN':
+        if (currentPrice < pattern.priceLow - moveThreshold) {
+          resolved = true;
+          outcome = 'CONFIRMED';
+        } else if (currentPrice > pattern.priceHigh + zoneSize) {
+          resolved = true;
+          outcome = 'FAILED';
+        }
+        break;
+
+      case 'BEARISH_BOUNCE':
+        if (currentPrice < pattern.priceLow - moveThreshold) {
+          resolved = true;
+          outcome = 'CONFIRMED';
+        } else if (currentPrice > pattern.priceHigh + zoneSize) {
+          resolved = true;
+          outcome = 'FAILED';
+        }
+        break;
+
+      case 'BULLISH_BREAKOUT':
+        if (currentPrice > pattern.priceHigh + moveThreshold) {
+          resolved = true;
+          outcome = 'CONFIRMED';
+        } else if (currentPrice < pattern.priceLow - zoneSize) {
+          resolved = true;
+          outcome = 'FAILED';
+        }
+        break;
+
+      case 'NEUTRAL_OBSERVATION':
+        // No resolution logic - just track
+        break;
+    }
+
+    if (resolved) {
+      updates.status = 'RESOLVED';
+      updates.outcome = outcome;
+      updates.resolvedAt = now.toISOString();
+      updates.result = {
+        priceAtResolution: currentPrice,
+        moveFromZone: ((currentPrice - zoneMid) / zoneMid * 100).toFixed(2) + '%'
+      };
+    }
+  }
+
+  // Check for expiration
+  if (new Date(pattern.expiresAt) < now && pattern.status !== 'RESOLVED') {
+    updates.status = 'EXPIRED';
+    updates.outcome = 'INCONCLUSIVE';
+    updates.resolvedAt = now.toISOString();
+  }
+
+  // Apply updates if any
+  if (Object.keys(updates).length > 0) {
+    await updatePatternStatus(pattern.id, updates);
+    return { ...pattern, ...updates };
+  }
+
+  return null;
+}
+
+
 // =====================================================
 // EXPORTS
 // =====================================================
@@ -3708,5 +4098,13 @@ export default {
   settleOptionsContract,
   resolveOptionsEntry,
   calculateOptionsRankings,
-  clearOptionsBotEntries
+  clearOptionsBotEntries,
+
+  // Pattern Tracking (Technical Analysis)
+  saveTrackedPattern,
+  getUserTrackedPatterns,
+  updatePatternStatus,
+  cancelTrackedPattern,
+  getUserPatternStats,
+  checkPatternResolution
 };

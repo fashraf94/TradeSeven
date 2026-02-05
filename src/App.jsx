@@ -4,9 +4,11 @@ import { useUser } from './contexts/UserContext';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
-import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, joinBaggerBombBattle, joinBaggerBombBattleV3, subscribeToLobby, subscribeToAllLobbies, getOpenBaggerBombBattles } from './firebase/firebaseService';
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, joinBaggerBombBattle, joinBaggerBombBattleV3, subscribeToLobby, subscribeToAllLobbies, getOpenBaggerBombBattles, saveTrackedPattern, getUserTrackedPatterns, getUserPatternStats, cancelTrackedPattern, checkPatternResolution } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
-import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings } from './services/eodhdAPI';
+import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings, fetchHistoricalOHLCV } from './services/eodhdAPI';
+// Technical Analysis AI Service
+import { analyzeStockWithAI, generateFallbackAnalysis } from './services/technicalAnalysisAI';
 import './firebase/config';
 import { motion } from 'framer-motion';
 // Event watchlist configuration for Week Ahead calendar
@@ -49,6 +51,15 @@ const TDBattleView = BaggerBombBattleView;
 import { generateGamePlan, enhanceRecommendations, getAssetDeepDive } from './services/researchAdvisor';
 // Snake Draft strategy utilities (consolidated from duplicate code paths)
 import { createSnakeDraftGamePlan } from './utils/draftStrategy';
+// Technical Research components
+import {
+  TechnicalResearchCard,
+  TechnicalAnalysisScreen,
+  StockSearchModal,
+  TrackPatternModal,
+  PatternTrackerDashboard,
+  PatternInsights,
+} from './components/TechnicalAnalysis';
 // Battle helper utilities for V1/V2 format handling
 import {
   getUsername as getPlayerUsername,
@@ -7564,7 +7575,17 @@ const AIMarketSummary = ({ marketData, news, moversData, colors }) => {
 // PHASE 1: MARKET BRIEFING
 // ============================================
 
-const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
+const MarketBriefing = ({
+  stocksData,
+  cryptoData,
+  onContinue,
+  colors,
+  // Technical Research props
+  onAnalyzeStock,
+  onMyPatterns,
+  onInsights,
+  activePatternCount = 0,
+}) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
 
   // News and movers state
@@ -7875,6 +7896,18 @@ const MarketBriefing = ({ stocksData, cryptoData, onContinue, colors }) => {
 
         {/* Animations consolidated in index.css: pulse-glow, shimmer-effect, float-particle, pulse-icon, bounce-arrow */}
       </div>
+
+      {/* Technical Research Card */}
+      {onAnalyzeStock && (
+        <TechnicalResearchCard
+          onAnalyzeStock={onAnalyzeStock}
+          onMyPatterns={onMyPatterns}
+          onInsights={onInsights}
+          activePatternCount={activePatternCount}
+          confirmationRate={null}
+          colors={c}
+        />
+      )}
 
       {/* Your Watchlist - Personalized news for user's stock picks */}
       <WatchlistNews colors={c} />
@@ -8887,6 +8920,140 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
   const [tier2Picks, setTier2Picks] = useState({ steady: [], risky: [], defensive: [] });
   const [draftRankerPhase, setDraftRankerPhase] = useState(null);
 
+  // Technical Research state
+  const [showTechnicalScreen, setShowTechnicalScreen] = useState(null); // 'analysis' | 'patterns' | 'insights' | null
+  const [technicalSymbol, setTechnicalSymbol] = useState(null);
+  const [patternToTrack, setPatternToTrack] = useState(null);
+  const [showStockSearchModal, setShowStockSearchModal] = useState(false);
+  const [showTrackModal, setShowTrackModal] = useState(false);
+  const [trackedPatterns, setTrackedPatterns] = useState([]);
+  const [patternStats, setPatternStats] = useState({});
+  const [isLoadingPatterns, setIsLoadingPatterns] = useState(false);
+  const [analysisMode, setAnalysisMode] = useState('quick'); // 'quick' or 'deep'
+
+  // Load user's tracked patterns from Firebase
+  const loadUserPatterns = async () => {
+    const userId = user?.odUserId || user?.uid || user?.username;
+    if (!userId) return;
+
+    setIsLoadingPatterns(true);
+    try {
+      const patterns = await getUserTrackedPatterns(userId);
+      setTrackedPatterns(patterns);
+
+      const stats = await getUserPatternStats(userId);
+      setPatternStats(stats);
+    } catch (error) {
+      console.error('[App] Failed to load patterns:', error);
+    } finally {
+      setIsLoadingPatterns(false);
+    }
+  };
+
+  // Load patterns when user changes
+  useEffect(() => {
+    const userId = user?.odUserId || user?.uid || user?.username;
+    if (userId) {
+      loadUserPatterns();
+    }
+  }, [user?.odUserId]);
+
+  // AI Analysis handler with mode support
+  const handleAIAnalysis = async (symbol, ohlcvData, options = {}) => {
+    const { mode = analysisMode, battleType = 'Classic' } = options;
+
+    // First calculate indicators locally using existing technicalIndicators.js
+    const { calculateRSI, getRSISignal, calculateMACD, getMACDSignal, calculateSMA, calculateATR, calculateATRPercent, detectTrend } = await import('./services/technicalIndicators');
+
+    const closingPrices = ohlcvData.map(c => c.close);
+    const currentPrice = closingPrices[0];
+
+    // Calculate indicators
+    const rsiValue = calculateRSI(closingPrices, 14);
+    const macdData = calculateMACD(closingPrices);
+    const sma20 = calculateSMA(closingPrices, 20);
+    const sma50 = calculateSMA(closingPrices, 50);
+    const sma200 = calculateSMA(closingPrices, 200);
+    const atrValue = calculateATR(ohlcvData, 14);
+    const trend = detectTrend(closingPrices);
+
+    const calculatedIndicators = {
+      rsi: {
+        value: rsiValue,
+        zone: getRSISignal(rsiValue)
+      },
+      macd: {
+        histogram: macdData?.histogram || 0,
+        line: macdData?.macdLine,
+        signal: macdData?.signalLine,
+        state: getMACDSignal(macdData)
+      },
+      sma20,
+      sma50: {
+        value: sma50,
+        position: currentPrice > sma50 ? 'above' : 'below',
+        distance: sma50 ? `${((currentPrice - sma50) / sma50 * 100).toFixed(1)}%` : 'N/A'
+      },
+      sma200,
+      atr: {
+        value: atrValue,
+        percent: calculateATRPercent(ohlcvData, 14),
+        regime: atrValue > (currentPrice * 0.03) ? 'HIGH' : atrValue > (currentPrice * 0.015) ? 'NORMAL' : 'LOW'
+      },
+      trend
+    };
+
+    try {
+      // Call AI for enhanced analysis
+      const aiAnalysis = await analyzeStockWithAI(symbol, ohlcvData, calculatedIndicators, {
+        mode,
+        battleType
+      });
+      return aiAnalysis;
+    } catch (error) {
+      console.error('[App] AI analysis failed, falling back to calculated:', error);
+      // Return calculated indicators as fallback
+      return generateFallbackAnalysis(symbol, calculatedIndicators);
+    }
+  };
+
+  // Save pattern handler
+  const handleSavePattern = async (patternData) => {
+    const userId = user?.odUserId || user?.uid || user?.username;
+    if (!userId) {
+      console.error('[App] No user ID for saving pattern. User object:', user);
+      return;
+    }
+
+    try {
+      const patternId = await saveTrackedPattern(userId, patternData);
+
+      // Refresh patterns list
+      await loadUserPatterns();
+
+      // Close modal
+      setShowTrackModal(false);
+      setPatternToTrack(null);
+
+      console.log('[App] Pattern tracked successfully:', patternId);
+
+      return patternId;
+    } catch (error) {
+      console.error('[App] Failed to save pattern:', error);
+      throw error;
+    }
+  };
+
+  // Cancel pattern handler
+  const handleCancelPattern = async (patternId) => {
+    try {
+      await cancelTrackedPattern(patternId);
+      await loadUserPatterns();
+    } catch (error) {
+      console.error('[App] Failed to cancel pattern:', error);
+    }
+  };
+
   // Reset flow
   const resetFlow = () => {
     setFlowPhase(1);
@@ -9323,6 +9490,54 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
       );
     }
 
+    // Technical Research screens
+    if (showTechnicalScreen === 'analysis' && technicalSymbol) {
+      return (
+        <TechnicalAnalysisScreen
+          stock={technicalSymbol}
+          onBack={() => {
+            setShowTechnicalScreen(null);
+            setTechnicalSymbol(null);
+          }}
+          onTrackPattern={(pattern) => {
+            setPatternToTrack({
+              ...pattern,
+              ticker: technicalSymbol.symbol,
+              priceAtCreation: technicalSymbol.price || pattern.priceAtCreation
+            });
+            setShowTrackModal(true);
+          }}
+          fetchOHLCV={fetchHistoricalOHLCV}
+          analyzeStock={handleAIAnalysis}
+          analysisMode={analysisMode}
+          onToggleMode={() => setAnalysisMode(m => m === 'quick' ? 'deep' : 'quick')}
+          colors={c}
+        />
+      );
+    }
+
+    if (showTechnicalScreen === 'patterns') {
+      return (
+        <PatternTrackerDashboard
+          patterns={trackedPatterns}
+          stats={patternStats}
+          isLoading={isLoadingPatterns}
+          onViewPattern={(pattern) => console.log('View pattern:', pattern)}
+          onCancelPattern={handleCancelPattern}
+          onBack={() => setShowTechnicalScreen(null)}
+        />
+      );
+    }
+
+    if (showTechnicalScreen === 'insights') {
+      return (
+        <PatternInsights
+          stats={patternStats}
+          onBack={() => setShowTechnicalScreen(null)}
+        />
+      );
+    }
+
     switch (flowPhase) {
       case 1:
         return (
@@ -9331,6 +9546,12 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
             cryptoData={cryptoData}
             onContinue={() => setFlowPhase(2)}
             colors={c}
+            // Technical Research props
+            onAnalyzeStock={() => setShowStockSearchModal(true)}
+            onMyPatterns={() => setShowTechnicalScreen('patterns')}
+            onInsights={() => setShowTechnicalScreen('insights')}
+            activePatternCount={patternStats.active || 0}
+            confirmationRate={patternStats.confirmationRate || null}
           />
         );
 
@@ -9434,7 +9655,7 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
   return (
     <div style={{ minHeight: '100vh', background: '#0d1117' }}>
       {/* Progress indicator */}
-      {!selectedAsset && (
+      {!selectedAsset && !showTechnicalScreen && (
         <div style={{
           display: 'flex',
           justifyContent: 'center',
@@ -9458,6 +9679,29 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
       )}
 
       {renderPhase()}
+
+      {/* Technical Research Modals */}
+      <StockSearchModal
+        isOpen={showStockSearchModal}
+        onClose={() => setShowStockSearchModal(false)}
+        onSelectStock={(stock) => {
+          setTechnicalSymbol(stock);
+          setShowStockSearchModal(false);
+          setShowTechnicalScreen('analysis');
+        }}
+        recentSearches={[]}
+        searchStocks={null} // TODO: Connect to EODHD search
+      />
+
+      <TrackPatternModal
+        isOpen={showTrackModal}
+        onClose={() => {
+          setShowTrackModal(false);
+          setPatternToTrack(null);
+        }}
+        pattern={patternToTrack}
+        onStartTracking={handleSavePattern}
+      />
     </div>
   );
 };

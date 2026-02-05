@@ -794,6 +794,51 @@ export default async function handler(req, res) {
       return await handleEarningsWebSearch(req, res, API_KEY);
     }
 
+    // Handle technical-analysis advisorType for AI-powered technical analysis
+    if (advisorType === 'technical-analysis') {
+      const { systemPrompt, prompt: techPrompt, maxTokens: techMaxTokens, mode } = req.body;
+
+      if (!techPrompt) {
+        return res.status(400).json({ error: 'Missing prompt for technical analysis' });
+      }
+
+      console.log(`[AI Advisor] Technical analysis request (${mode || 'quick'} mode), prompt length:`, techPrompt.length);
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: mode === 'deep' ? 'claude-sonnet-4-20250514' : 'claude-3-5-haiku-20241022',
+          max_tokens: techMaxTokens || (mode === 'deep' ? 3000 : 800),
+          system: systemPrompt,
+          messages: [
+            { role: 'user', content: techPrompt }
+          ],
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.error || !response.ok) {
+        console.error('[AI Advisor] Technical analysis error:', data.error);
+        return res.status(500).json({
+          error: 'AI service error',
+          details: data.error?.message || 'Unknown error'
+        });
+      }
+
+      return res.status(200).json({
+        response: data.content?.[0]?.text || '',
+        message: data.content?.[0]?.text || '',
+        mode: mode || 'quick',
+        usage: data.usage
+      });
+    }
+
     // Use message or prompt, whichever is provided
     const userInput = message || prompt;
 
