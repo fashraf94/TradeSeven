@@ -10,15 +10,120 @@ import LevelsTab from './LevelsTab';
 import detectLevels from '../../services/levelDetection';
 import {
   calculateRSI,
-  getRSISignal,
   calculateMACD,
-  getMACDSignal,
   calculateSMA,
   calculateATR,
   calculateATRPercent,
   detectTrend,
 } from '../../services/technicalIndicators';
 import { getExploreQuestions, analyzeExploreQuestion } from '../../services/technicalAnalysisAI';
+
+// Conditional logging - only show debug logs in development
+const DEBUG = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
+const logger = {
+  log: (...args) => DEBUG && console.log(...args),
+  warn: (...args) => console.warn(...args),
+  error: (...args) => console.error(...args),
+};
+
+// Skeleton loading component
+const Skeleton = ({ width = '100%', height = 20, style = {} }) => (
+  <div
+    style={{
+      width,
+      height,
+      backgroundColor: 'rgba(255,255,255,0.05)',
+      borderRadius: '4px',
+      animation: 'skeleton-pulse 1.5s ease-in-out infinite',
+      ...style,
+    }}
+  />
+);
+
+// Chart skeleton loader
+const ChartSkeleton = () => (
+  <div style={{
+    height: '100%',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: '8px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '12px',
+  }}>
+    <div style={{
+      width: '60px',
+      height: '3px',
+      backgroundColor: 'rgba(0, 255, 255, 0.2)',
+      borderRadius: '2px',
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        width: '30%',
+        height: '100%',
+        backgroundColor: '#00ffff',
+        borderRadius: '2px',
+        animation: 'skeleton-slide 1.5s ease-in-out infinite',
+      }} />
+    </div>
+    <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px' }}>
+      Loading chart...
+    </span>
+  </div>
+);
+
+// Error state component with retry
+const ErrorState = ({ message, onRetry }) => (
+  <div style={{
+    padding: '40px 20px',
+    textAlign: 'center',
+    backgroundColor: 'rgba(255, 71, 87, 0.1)',
+    borderRadius: '12px',
+    border: '1px solid rgba(255, 71, 87, 0.2)',
+  }}>
+    <span style={{ fontSize: '32px', display: 'block', marginBottom: '12px' }}>&#9888;&#65039;</span>
+    <h3 style={{ color: '#ff4757', margin: '0 0 8px 0', fontSize: '16px' }}>
+      Something went wrong
+    </h3>
+    <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px', margin: '0 0 16px 0' }}>
+      {message || 'Failed to load data. Please try again.'}
+    </p>
+    {onRetry && (
+      <button
+        onClick={onRetry}
+        style={{
+          padding: '10px 24px',
+          backgroundColor: 'rgba(255, 71, 87, 0.2)',
+          border: '1px solid #ff4757',
+          borderRadius: '8px',
+          color: '#ff4757',
+          fontSize: '14px',
+          cursor: 'pointer',
+        }}
+      >
+        Try Again
+      </button>
+    )}
+  </div>
+);
+
+// CSS keyframes for skeleton animation (injected once)
+if (typeof document !== 'undefined' && !document.getElementById('skeleton-styles')) {
+  const style = document.createElement('style');
+  style.id = 'skeleton-styles';
+  style.textContent = `
+    @keyframes skeleton-pulse {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 0.8; }
+    }
+    @keyframes skeleton-slide {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(400%); }
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 const TechnicalAnalysisScreen = ({
   stock,
@@ -64,7 +169,7 @@ const TechnicalAnalysisScreen = ({
     if (!stock?.symbol || !fetchOHLCV) return;
 
     try {
-      console.log(`[TechnicalAnalysis] Loading daily anchor data for ${stock.symbol}...`);
+      logger.log(`[TechnicalAnalysis] Loading daily anchor data for ${stock.symbol}...`);
       const dailyData = await fetchOHLCV(stock.symbol, '1d');
 
       if (dailyData && dailyData.length > 0) {
@@ -75,10 +180,10 @@ const TechnicalAnalysisScreen = ({
         const indicators = calculateLocalIndicators(closingPrices, dailyData);
         setDailyIndicators(indicators);
 
-        console.log(`[TechnicalAnalysis] Daily anchor loaded: ${dailyData.length} candles`);
+        logger.log(`[TechnicalAnalysis] Daily anchor loaded: ${dailyData.length} candles`);
       }
     } catch (error) {
-      console.warn('[TechnicalAnalysis] Failed to load daily anchor:', error);
+      logger.warn('[TechnicalAnalysis] Failed to load daily anchor:', error);
       // Non-fatal - patterns tab will use current timeframe data as fallback
     }
   };
@@ -90,10 +195,10 @@ const TechnicalAnalysisScreen = ({
     setNotification(null);
     try {
       if (fetchOHLCV) {
-        console.log(`[TechnicalAnalysis] Fetching ${timeframe} OHLCV for ${stock.symbol}...`);
+        logger.log(`[TechnicalAnalysis] Fetching ${timeframe} OHLCV for ${stock.symbol}...`);
         const data = await fetchOHLCV(stock.symbol, timeframe);
         if (data && data.length > 0) {
-          console.log(`[TechnicalAnalysis] Got ${data.length} ${timeframe} candles for ${stock.symbol}`);
+          logger.log(`[TechnicalAnalysis] Got ${data.length} ${timeframe} candles for ${stock.symbol}`);
           setOhlcvData(data);
 
           // Check for fallback metadata
@@ -117,7 +222,7 @@ const TechnicalAnalysisScreen = ({
         setOhlcvData(generateDemoOHLCV(stock.price || 150));
       }
     } catch (err) {
-      console.error('Failed to fetch OHLCV:', err);
+      logger.error('[TechnicalAnalysis] Failed to fetch OHLCV:', err);
       setError('Failed to load price data. Please try again.');
     } finally {
       setIsLoadingData(false);
@@ -134,10 +239,10 @@ const TechnicalAnalysisScreen = ({
 
     try {
       if (fetchOHLCV) {
-        console.log(`[TechnicalAnalysis] Switching to ${newTimeframe} timeframe...`);
+        logger.log(`[TechnicalAnalysis] Switching to ${newTimeframe} timeframe...`);
         const data = await fetchOHLCV(stock.symbol, newTimeframe);
         if (data && data.length > 0) {
-          console.log(`[TechnicalAnalysis] Got ${data.length} ${newTimeframe} candles`);
+          logger.log(`[TechnicalAnalysis] Got ${data.length} ${newTimeframe} candles`);
           setOhlcvData(data);
 
           // Check for fallback metadata
@@ -155,7 +260,7 @@ const TechnicalAnalysisScreen = ({
         }
       }
     } catch (err) {
-      console.error('Failed to fetch timeframe data:', err);
+      logger.error('[TechnicalAnalysis] Failed to fetch timeframe data:', err);
       setError(`Failed to load ${newTimeframe} data`);
     } finally {
       setIsLoadingTimeframe(false);
@@ -178,10 +283,10 @@ const TechnicalAnalysisScreen = ({
 
       // Try AI analysis if available
       if (analyzeStock) {
-        console.log(`[TechnicalAnalysis] Running AI analysis for ${stock.symbol}...`);
+        logger.log(`[TechnicalAnalysis] Running AI analysis for ${stock.symbol}...`);
         try {
           const aiResult = await analyzeStock(stock.symbol, ohlcvData, { mode: 'quick' });
-          console.log(`[TechnicalAnalysis] AI analysis complete:`, aiResult?.summary?.substring(0, 100));
+          logger.log(`[TechnicalAnalysis] AI analysis complete:`, aiResult?.summary?.substring(0, 100));
 
           // Merge local indicators with AI response
           // Local = source of truth for numeric values (sma50, atr, etc.)
@@ -224,13 +329,13 @@ const TechnicalAnalysisScreen = ({
           });
           return;
         } catch (aiError) {
-          console.warn('[TechnicalAnalysis] AI analysis failed, falling back to local:', aiError);
+          logger.warn('[TechnicalAnalysis] AI analysis failed, falling back to local:', aiError);
           // Fall through to local analysis
         }
       }
 
       // Local analysis fallback (localIndicators already calculated above)
-      console.log(`[TechnicalAnalysis] Running local analysis for ${stock.symbol}...`);
+      logger.log(`[TechnicalAnalysis] Running local analysis for ${stock.symbol}...`);
 
       // Generate confluence zones based on real data
       const confluenceZones = generateConfluenceZones(ohlcvData, localIndicators, currentPrice);
@@ -254,15 +359,15 @@ const TechnicalAnalysisScreen = ({
         patterns: [],
         levels,
         marketContext: null,
-        primaryLevel: null,   // Quick mode field
-        keyTakeaway: null,    // Quick mode field
+        primaryLevel: null,
+        keyTakeaway: null,
         calculatedAt: new Date().toISOString(),
         analysisMode: 'local',
         aiGenerated: false,
       });
 
     } catch (err) {
-      console.error('Analysis failed:', err);
+      logger.error('[TechnicalAnalysis] Analysis failed:', err);
       setError('Analysis failed. Please try again.');
     } finally {
       setIsAnalyzing(false);
@@ -362,7 +467,7 @@ const TechnicalAnalysisScreen = ({
 
       setExploreConversation(prev => [...prev, response]);
     } catch (err) {
-      console.error('[Explore] Question failed:', err);
+      logger.error('[Explore] Question failed:', err);
       setExploreConversation(prev => [...prev, {
         questionId,
         question: 'Analysis failed',
@@ -523,9 +628,7 @@ const TechnicalAnalysisScreen = ({
         position: 'relative',
       }}>
         {isLoadingData ? (
-          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.5)' }}>
-            Loading chart data...
-          </div>
+          <ChartSkeleton />
         ) : ohlcvData && ohlcvData.length > 0 ? (
           <CandlestickChart
             ohlcvData={ohlcvData}
@@ -559,16 +662,35 @@ const TechnicalAnalysisScreen = ({
       </div>
 
       {/* Tabs */}
-      <div style={{
-        display: 'flex',
-        padding: '0 16px',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-        backgroundColor: '#0d1117',
-      }}>
-        {['explore', 'patterns', 'levels'].map(tab => (
+      <div
+        role="tablist"
+        aria-label="Analysis sections"
+        style={{
+          display: 'flex',
+          padding: '0 16px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          backgroundColor: '#0d1117',
+        }}
+      >
+        {['explore', 'patterns', 'levels'].map((tab, index) => (
           <button
             key={tab}
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`${tab}-panel`}
+            id={`${tab}-tab`}
+            tabIndex={activeTab === tab ? 0 : -1}
             onClick={() => setActiveTab(tab)}
+            onKeyDown={(e) => {
+              const tabs = ['explore', 'patterns', 'levels'];
+              if (e.key === 'ArrowRight') {
+                const nextIndex = (index + 1) % tabs.length;
+                setActiveTab(tabs[nextIndex]);
+              } else if (e.key === 'ArrowLeft') {
+                const prevIndex = (index - 1 + tabs.length) % tabs.length;
+                setActiveTab(tabs[prevIndex]);
+              }
+            }}
             style={{
               flex: 1,
               padding: '14px 16px',
@@ -579,6 +701,8 @@ const TechnicalAnalysisScreen = ({
               fontSize: '14px',
               fontWeight: '500',
               cursor: 'pointer',
+              transition: 'color 0.2s ease, border-color 0.2s ease',
+              minHeight: '44px', // Touch target size
             }}
           >
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -593,20 +717,7 @@ const TechnicalAnalysisScreen = ({
             <p style={{ color: 'rgba(255,255,255,0.5)' }}>Loading data...</p>
           </div>
         ) : error ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.6)' }}>
-            <p>&#9888;&#65039; {error}</p>
-            <button onClick={loadStockData} style={{
-              marginTop: '16px',
-              padding: '10px 20px',
-              backgroundColor: 'rgba(0, 255, 255, 0.1)',
-              border: '1px solid rgba(0, 255, 255, 0.3)',
-              borderRadius: '8px',
-              color: '#00ffff',
-              cursor: 'pointer',
-            }}>
-              Try Again
-            </button>
-          </div>
+          <ErrorState message={error} onRetry={() => loadStockData()} />
         ) : ohlcvData && calculatedIndicators ? (
           <AnimatePresence mode="wait">
             <motion.div
@@ -661,71 +772,6 @@ const TechnicalAnalysisScreen = ({
           This analysis identifies technical patterns for educational purposes.
           Pattern detection is not a recommendation to trade.
         </span>
-      </div>
-    </div>
-  );
-};
-
-// Mini Price Chart Component
-const MiniPriceChart = ({ data }) => {
-  if (!data || data.length === 0) return null;
-
-  const closes = data.map(d => d.close).reverse(); // oldest to newest for chart
-  const minPrice = Math.min(...closes);
-  const maxPrice = Math.max(...closes);
-  const priceRange = maxPrice - minPrice || 1;
-
-  const width = 100;
-  const height = 100;
-
-  const points = closes.map((price, i) => {
-    const x = (i / (closes.length - 1)) * width;
-    const y = height - ((price - minPrice) / priceRange) * height;
-    return `${x},${y}`;
-  }).join(' ');
-
-  const isPositive = closes[closes.length - 1] >= closes[0];
-  const color = isPositive ? '#10b981' : '#ef4444';
-
-  return (
-    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: '100%' }} preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.3" />
-            <stop offset="100%" stopColor={color} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <polygon
-          points={`0,${height} ${points} ${width},${height}`}
-          fill="url(#chartGradient)"
-        />
-        <polyline
-          points={points}
-          fill="none"
-          stroke={color}
-          strokeWidth="1.5"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
-      <div style={{
-        position: 'absolute',
-        bottom: '8px',
-        left: '8px',
-        fontSize: '10px',
-        color: 'rgba(255,255,255,0.4)',
-      }}>
-        30-day price
-      </div>
-      <div style={{
-        position: 'absolute',
-        top: '8px',
-        right: '8px',
-        fontSize: '11px',
-        color: color,
-        fontWeight: '600',
-      }}>
-        {isPositive ? '+' : ''}{((closes[closes.length - 1] - closes[0]) / closes[0] * 100).toFixed(1)}%
       </div>
     </div>
   );
@@ -923,111 +969,6 @@ const ExploreTab = ({ indicators, conversation, isLoading, onAskQuestion, onRese
     </div>
   );
 };
-
-// Overview Tab (kept for reference, now replaced by ExploreTab)
-const OverviewTab = ({ analysis }) => (
-  <div>
-    <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', textTransform: 'uppercase' }}>
-      Indicator Readings
-    </h3>
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '24px' }}>
-      <IndicatorCard
-        name="RSI (14)"
-        value={typeof analysis.indicators?.rsi?.value === 'number' ? analysis.indicators.rsi.value.toFixed(1) : '--'}
-        status={analysis.indicators?.rsi?.zone || 'N/A'}
-      />
-      <IndicatorCard
-        name="MACD"
-        value={typeof analysis.indicators?.macd?.histogram === 'number' ? analysis.indicators.macd.histogram.toFixed(2) : '--'}
-        status={analysis.indicators?.macd?.state || 'N/A'}
-      />
-      <IndicatorCard
-        name="vs 50 SMA"
-        value={analysis.indicators?.sma50?.distance || '--'}
-        status={analysis.indicators?.sma50?.position || 'N/A'}
-      />
-      <IndicatorCard
-        name="ATR (14)"
-        value={analysis.indicators?.atr?.value ? `$${analysis.indicators.atr.value.toFixed(2)}` : '--'}
-        status={analysis.indicators?.atr?.regime || 'N/A'}
-      />
-    </div>
-
-    {/* Quick mode: Primary Level */}
-    {analysis.primaryLevel && analysis.primaryLevel.type !== 'NONE' && (
-      <>
-        <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', textTransform: 'uppercase' }}>
-          Key Level
-        </h3>
-        <div style={{
-          padding: '12px 16px',
-          backgroundColor: analysis.primaryLevel.type === 'SUPPORT' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-          border: `1px solid ${analysis.primaryLevel.type === 'SUPPORT' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-          borderRadius: '8px',
-          marginBottom: '16px',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ color: analysis.primaryLevel.type === 'SUPPORT' ? '#22c55e' : '#ef4444', fontWeight: '600' }}>
-              {analysis.primaryLevel.type}
-            </span>
-            <span style={{ color: '#fff', fontWeight: '600' }}>
-              ${typeof analysis.primaryLevel.price === 'number' ? analysis.primaryLevel.price.toFixed(2) : analysis.primaryLevel.price}
-            </span>
-          </div>
-          {analysis.primaryLevel.source && (
-            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>
-              {analysis.primaryLevel.source}
-            </div>
-          )}
-        </div>
-      </>
-    )}
-
-    {/* Quick mode: Key Takeaway */}
-    {analysis.keyTakeaway && (
-      <>
-        <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', textTransform: 'uppercase' }}>
-          Key Takeaway
-        </h3>
-        <div style={{
-          padding: '12px 16px',
-          backgroundColor: 'rgba(0, 255, 255, 0.05)',
-          border: '1px solid rgba(0, 255, 255, 0.2)',
-          borderRadius: '8px',
-          marginBottom: '16px',
-        }}>
-          <p style={{ fontSize: '14px', color: '#00ffff', margin: 0, lineHeight: '1.5' }}>
-            {analysis.keyTakeaway}
-          </p>
-        </div>
-      </>
-    )}
-
-    {/* Summary (both modes) */}
-    {analysis.summary && (
-      <>
-        <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', textTransform: 'uppercase' }}>
-          Technical Context
-        </h3>
-        <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)', lineHeight: '1.6' }}>{analysis.summary}</p>
-      </>
-    )}
-  </div>
-);
-
-// Indicator Card
-const IndicatorCard = ({ name, value, status }) => (
-  <div style={{
-    padding: '14px',
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: '10px',
-    border: '1px solid rgba(255,255,255,0.08)',
-  }}>
-    <span style={{ display: 'block', fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>{name}</span>
-    <span style={{ display: 'block', fontSize: '18px', fontWeight: '600', color: '#fff', marginBottom: '4px' }}>{value}</span>
-    <span style={{ fontSize: '12px', color: '#00ffff' }}>{status}</span>
-  </div>
-);
 
 // Helper: Generate summary from real indicators
 const generateSummary = (symbol, currentPrice, indicators) => {

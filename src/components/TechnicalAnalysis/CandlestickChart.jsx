@@ -4,6 +4,14 @@
 import React, { useEffect, useRef } from 'react';
 import { createChart, CandlestickSeries } from 'lightweight-charts';
 
+// Conditional logging - only show debug logs in development
+const DEBUG = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
+const logger = {
+  log: (...args) => DEBUG && console.log(...args),
+  warn: (...args) => DEBUG && console.warn(...args),
+  error: (...args) => console.error(...args),
+};
+
 // Strict validation for numeric values - uses Number.isFinite for maximum strictness
 const isValidNumber = (val) => {
   if (val === null || val === undefined || val === '') return false;
@@ -102,7 +110,7 @@ const CandlestickChart = ({
       if (!isValid) {
         rawFilteredCount++;
         if (rawFilteredCount <= 3) {
-          console.warn(`[CandlestickChart] Filtered invalid raw candle #${rawFilteredCount}:`, {
+          logger.warn(`[CandlestickChart] Filtered invalid raw candle #${rawFilteredCount}:`, {
             index,
             date: candle?.date,
             open: candle?.open,
@@ -121,14 +129,14 @@ const CandlestickChart = ({
 
     if (validRawCandles.length === 0) {
       setChartError('No valid price data available');
-      console.error('[CandlestickChart] All raw candles filtered out');
+      logger.error('[CandlestickChart] All raw candles filtered out');
       return;
     }
 
     // Diagnostic: Log raw data sample to understand format
-    console.log('[CandlestickChart] Raw data sample (first 3):', validRawCandles.slice(0, 3));
+    logger.log('[CandlestickChart] Raw data sample (first 3):', validRawCandles.slice(0, 3));
     const sampleCandle = validRawCandles[0];
-    console.log('[CandlestickChart] Sample candle structure:', {
+    logger.log('[CandlestickChart] Sample candle structure:', {
       date: sampleCandle?.date,
       datetime: sampleCandle?.datetime,
       timestamp: sampleCandle?.timestamp,
@@ -138,7 +146,7 @@ const CandlestickChart = ({
     // Detect if this is intraday data (has time component in date)
     const dateValue = sampleCandle?.date || sampleCandle?.datetime || sampleCandle?.timestamp;
     const isIntraday = typeof dateValue === 'string' && (dateValue.includes('T') || dateValue.includes(':'));
-    console.log('[CandlestickChart] Detected intraday data:', isIntraday);
+    logger.log('[CandlestickChart] Detected intraday data:', isIntraday);
 
     // Transform data with proper time format conversion
     const transformedData = validRawCandles.map(candle => {
@@ -152,8 +160,8 @@ const CandlestickChart = ({
     });
 
     // Diagnostic: Log transformed data sample
-    console.log('[CandlestickChart] Transformed data sample (first 3):', transformedData.slice(0, 3));
-    console.log('[CandlestickChart] Data types:', transformedData[0] ? {
+    logger.log('[CandlestickChart] Transformed data sample (first 3):', transformedData.slice(0, 3));
+    logger.log('[CandlestickChart] Data types:', transformedData[0] ? {
       time: typeof transformedData[0].time,
       timeValue: transformedData[0].time,
       open: typeof transformedData[0].open,
@@ -169,7 +177,7 @@ const CandlestickChart = ({
       if (!isValid) {
         formattedFilteredCount++;
         if (formattedFilteredCount <= 3) {
-          console.warn(`[CandlestickChart] Filtered invalid formatted candle #${formattedFilteredCount}:`, candle);
+          logger.warn(`[CandlestickChart] Filtered invalid formatted candle #${formattedFilteredCount}:`, candle);
         }
       }
       return isValid;
@@ -181,7 +189,7 @@ const CandlestickChart = ({
 
     if (validFormattedData.length === 0) {
       setChartError('No valid price data after processing');
-      console.error('[CandlestickChart] All formatted candles filtered out');
+      logger.error('[CandlestickChart] All formatted candles filtered out');
       return;
     }
 
@@ -194,7 +202,7 @@ const CandlestickChart = ({
     });
 
     // Log sorted data sample
-    console.log('[CandlestickChart] Sorted data (first & last):', {
+    logger.log('[CandlestickChart] Sorted data (first & last):', {
       first: sortedData[0],
       last: sortedData[sortedData.length - 1],
       count: sortedData.length
@@ -271,21 +279,21 @@ const CandlestickChart = ({
 
       // Final safety check before setData
       if (!sortedData || sortedData.length === 0) {
-        console.error('[CandlestickChart] No data to set after all validation');
+        logger.error('[CandlestickChart] No data to set after all validation');
         setChartError('No valid chart data');
         return;
       }
 
       // ========== DIAGNOSTIC: Check for issues that crash lightweight-charts ==========
-      console.log('[CandlestickChart] FULL DATA DUMP (first 5):', JSON.stringify(sortedData.slice(0, 5), null, 2));
-      console.log('[CandlestickChart] Total candles:', sortedData.length);
-      console.log('[CandlestickChart] Time range:', sortedData[0]?.time, 'to', sortedData[sortedData.length - 1]?.time);
+      logger.log('[CandlestickChart] FULL DATA DUMP (first 5):', JSON.stringify(sortedData.slice(0, 5), null, 2));
+      logger.log('[CandlestickChart] Total candles:', sortedData.length);
+      logger.log('[CandlestickChart] Time range:', sortedData[0]?.time, 'to', sortedData[sortedData.length - 1]?.time);
 
       // Check for duplicate times (lightweight-charts HATES duplicate timestamps)
       const times = sortedData.map(c => c.time);
       const uniqueTimes = new Set(times);
       if (times.length !== uniqueTimes.size) {
-        console.error('[CandlestickChart] DUPLICATE TIMES DETECTED!', times.length - uniqueTimes.size, 'duplicates');
+        logger.error('[CandlestickChart] DUPLICATE TIMES DETECTED!', times.length - uniqueTimes.size, 'duplicates');
         // Find and log duplicates
         const seen = {};
         times.forEach((t, idx) => {
@@ -295,7 +303,7 @@ const CandlestickChart = ({
           seen[t] = idx;
         });
       } else {
-        console.log('[CandlestickChart] No duplicate times detected');
+        logger.log('[CandlestickChart] No duplicate times detected');
       }
 
       // Check time ordering (must be strictly ascending)
@@ -316,7 +324,7 @@ const CandlestickChart = ({
       if (orderErrors > 0) {
         console.error(`[CandlestickChart] Total time order errors: ${orderErrors}`);
       } else {
-        console.log('[CandlestickChart] Time ordering is correct (ascending)');
+        logger.log('[CandlestickChart] Time ordering is correct (ascending)');
       }
       // ========== END DIAGNOSTIC ==========
 
@@ -326,11 +334,11 @@ const CandlestickChart = ({
       // Set data with comprehensive error handling
       try {
         candleSeries.setData(sortedData);
-        console.log('[CandlestickChart] setData completed successfully');
+        logger.log('[CandlestickChart] setData completed successfully');
       } catch (setDataErr) {
-        console.error('[CandlestickChart] Error in setData:', setDataErr);
-        console.error('[CandlestickChart] First candle:', JSON.stringify(sortedData[0]));
-        console.error('[CandlestickChart] Last candle:', JSON.stringify(sortedData[sortedData.length - 1]));
+        logger.error('[CandlestickChart] Error in setData:', setDataErr);
+        logger.error('[CandlestickChart] First candle:', JSON.stringify(sortedData[0]));
+        logger.error('[CandlestickChart] Last candle:', JSON.stringify(sortedData[sortedData.length - 1]));
         // Try to find problematic candles
         for (let i = 0; i < sortedData.length; i++) {
           const c = sortedData[i];
@@ -362,7 +370,7 @@ const CandlestickChart = ({
       window.addEventListener('resize', handleResize);
 
     } catch (err) {
-      console.error('[CandlestickChart] Error creating chart:', err);
+      logger.error('[CandlestickChart] Error creating chart:', err);
       setChartError('Failed to render chart');
     }
 
