@@ -77,6 +77,7 @@ const CandlestickChart = ({
   ohlcvData,
   height = 300,
   levels = [],
+  showLevelOverlay = false,
   showVolume = false
 }) => {
   const chartContainerRef = useRef(null);
@@ -391,12 +392,14 @@ const CandlestickChart = ({
     });
     levelLinesRef.current = [];
 
-    // Add new level lines if provided
-    if (levels?.length > 0) {
+    // Add new level lines if overlay is enabled and levels are provided
+    if (showLevelOverlay && levels?.length > 0) {
       levels.forEach(level => {
+        // Support both uppercase and lowercase type values
+        const isSupport = level.type === 'SUPPORT' || level.type === 'support';
         const line = candleSeriesRef.current.createPriceLine({
           price: level.price,
-          color: level.type === 'support' ? '#22c55e' : '#ef4444',
+          color: isSupport ? '#00ff88' : '#ff4757',
           lineWidth: 1,
           lineStyle: 2, // Dashed
           axisLabelVisible: true,
@@ -405,7 +408,7 @@ const CandlestickChart = ({
         levelLinesRef.current.push(line);
       });
     }
-  }, [levels]);
+  }, [levels, showLevelOverlay]);
 
   // Calculate price change for display
   const getPriceChange = () => {

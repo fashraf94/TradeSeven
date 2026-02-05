@@ -6,6 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import CandlestickChart from './CandlestickChart';
 import TimeframeSelector from './TimeframeSelector';
 import PatternsTab from './PatternsTab';
+import LevelsTab from './LevelsTab';
+import detectLevels from '../../services/levelDetection';
 import {
   calculateRSI,
   getRSISignal,
@@ -45,6 +47,10 @@ const TechnicalAnalysisScreen = ({
   const [dailyAnchorData, setDailyAnchorData] = useState(null);
   const [dailyIndicators, setDailyIndicators] = useState(null);
   const [trackedPatterns, setTrackedPatterns] = useState([]);
+
+  // Chart level overlay state (Phase 5)
+  const [showLevelOverlay, setShowLevelOverlay] = useState(false);
+  const [chartLevels, setChartLevels] = useState([]);
 
   useEffect(() => {
     if (stock?.symbol) {
@@ -384,6 +390,29 @@ const TechnicalAnalysisScreen = ({
     }
   }, [ohlcvData]);
 
+  // Calculate chart levels for overlay (Phase 5)
+  useEffect(() => {
+    if (dailyAnchorData && dailyIndicators) {
+      const detected = detectLevels(dailyAnchorData, dailyIndicators);
+
+      // Format levels for chart overlay
+      const allLevels = [
+        ...detected.support.map(l => ({
+          price: l.price,
+          type: 'SUPPORT',
+          label: l.factors[0]?.name || 'Support',
+        })),
+        ...detected.resistance.map(l => ({
+          price: l.price,
+          type: 'RESISTANCE',
+          label: l.factors[0]?.name || 'Resistance',
+        })),
+      ];
+
+      setChartLevels(allLevels);
+    }
+  }, [dailyAnchorData, dailyIndicators]);
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -498,7 +527,12 @@ const TechnicalAnalysisScreen = ({
             Loading chart data...
           </div>
         ) : ohlcvData && ohlcvData.length > 0 ? (
-          <CandlestickChart ohlcvData={ohlcvData} height={264} />
+          <CandlestickChart
+            ohlcvData={ohlcvData}
+            height={264}
+            levels={chartLevels}
+            showLevelOverlay={showLevelOverlay}
+          />
         ) : (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.3)' }}>
             No chart data available
@@ -601,7 +635,12 @@ const TechnicalAnalysisScreen = ({
                 />
               )}
               {activeTab === 'levels' && (
-                <LevelsTab analysis={analysis} />
+                <LevelsTab
+                  dailyData={dailyAnchorData}
+                  indicators={dailyIndicators}
+                  chartOverlayEnabled={showLevelOverlay}
+                  onToggleChartOverlay={setShowLevelOverlay}
+                />
               )}
             </motion.div>
           </AnimatePresence>
@@ -975,58 +1014,6 @@ const OverviewTab = ({ analysis }) => (
     )}
   </div>
 );
-
-// Levels Tab
-const LevelsTab = ({ analysis }) => {
-  const supportLevels = analysis?.levels?.support || [];
-  const resistanceLevels = analysis?.levels?.resistance || [];
-
-  return (
-    <div>
-      <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', textTransform: 'uppercase' }}>
-        Support Zones
-      </h3>
-      {supportLevels.length > 0 ? (
-        supportLevels.map((level, i) => (
-          <div key={i} style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            padding: '12px',
-            backgroundColor: 'rgba(255,255,255,0.03)',
-            borderRadius: '8px',
-            marginBottom: '8px',
-          }}>
-            <span style={{ color: 'rgba(255,255,255,0.6)' }}>{level.source}</span>
-            <span style={{ color: '#10b981', fontWeight: '600' }}>${level.price?.toFixed(2)}</span>
-          </div>
-        ))
-      ) : (
-        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px' }}>No support levels identified</p>
-      )}
-
-      <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', marginTop: '20px', textTransform: 'uppercase' }}>
-        Resistance Zones
-      </h3>
-      {resistanceLevels.length > 0 ? (
-        resistanceLevels.map((level, i) => (
-          <div key={i} style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            padding: '12px',
-            backgroundColor: 'rgba(255,255,255,0.03)',
-            borderRadius: '8px',
-            marginBottom: '8px',
-          }}>
-            <span style={{ color: 'rgba(255,255,255,0.6)' }}>{level.source}</span>
-            <span style={{ color: '#ef4444', fontWeight: '600' }}>${level.price?.toFixed(2)}</span>
-          </div>
-        ))
-      ) : (
-        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px' }}>No resistance levels identified</p>
-      )}
-    </div>
-  );
-};
 
 // Indicator Card
 const IndicatorCard = ({ name, value, status }) => (
