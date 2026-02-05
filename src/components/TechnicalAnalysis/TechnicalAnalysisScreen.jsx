@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import CandlestickChart from './CandlestickChart';
 import {
   calculateRSI,
   getRSISignal,
@@ -300,19 +301,19 @@ const TechnicalAnalysisScreen = ({
         </div>
       </div>
 
-      {/* Mini Price Chart */}
+      {/* Candlestick Chart */}
       <div style={{
-        height: '200px',
-        backgroundColor: '#0d1117',
+        height: '280px',
+        backgroundColor: '#0a1628',
         borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-        padding: '16px',
+        padding: '8px',
       }}>
         {isLoadingData ? (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.5)' }}>
             Loading chart data...
           </div>
         ) : ohlcvData && ohlcvData.length > 0 ? (
-          <MiniPriceChart data={ohlcvData.slice(0, 30)} />
+          <CandlestickChart ohlcvData={ohlcvData} height={264} />
         ) : (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.3)' }}>
             No chart data available

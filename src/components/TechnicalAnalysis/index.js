@@ -7,3 +7,4 @@ export { default as StockSearchModal } from './StockSearchModal';
 export { default as TrackPatternModal } from './TrackPatternModal';
 export { default as PatternTrackerDashboard } from './PatternTrackerDashboard';
 export { default as PatternInsights } from './PatternInsights';
+export { default as CandlestickChart } from './CandlestickChart';
