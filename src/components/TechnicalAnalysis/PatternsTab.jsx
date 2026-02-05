@@ -16,6 +16,7 @@ const PatternsTab = ({
   const [confluences, setConfluences] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!ohlcvData?.length) {
@@ -24,21 +25,29 @@ const PatternsTab = ({
     }
 
     setIsLoading(true);
+    setError(null);
 
-    // Use daily anchor data if available, otherwise use the current timeframe data
-    const anchorData = dailyAnchorData?.length ? dailyAnchorData : ohlcvData;
-    const anchorIndicators = dailyIndicators || {};
+    try {
+      // Use daily anchor data if available, otherwise use the current timeframe data
+      const anchorData = dailyAnchorData?.length ? dailyAnchorData : ohlcvData;
+      const anchorIndicators = dailyIndicators || {};
 
-    // Run confluence detection
-    const detected = detectConfluence(
-      ohlcvData,
-      anchorData,
-      anchorIndicators,
-      selectedTimeframe
-    );
+      // Run confluence detection
+      const detected = detectConfluence(
+        ohlcvData,
+        anchorData,
+        anchorIndicators,
+        selectedTimeframe
+      );
 
-    setConfluences(detected);
-    setIsLoading(false);
+      setConfluences(detected);
+    } catch (err) {
+      console.error('[PatternsTab] Detection failed:', err);
+      setError('Failed to detect patterns. Please try again.');
+      setConfluences([]);
+    } finally {
+      setIsLoading(false);
+    }
   }, [ohlcvData, dailyAnchorData, dailyIndicators, selectedTimeframe]);
 
   const getBiasIcon = (bias) => {
@@ -64,6 +73,18 @@ const PatternsTab = ({
             transition={{ duration: 1.5, ease: 'linear', repeat: Infinity }}
           />
           <span style={styles.loadingText}>Detecting confluence zones...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.errorState}>
+          <span style={styles.emptyIcon}>⚠️</span>
+          <h3 style={styles.errorTitle}>Detection Error</h3>
+          <p style={styles.emptyText}>{error}</p>
         </div>
       </div>
     );
@@ -281,6 +302,18 @@ const styles = {
   emptyState: {
     textAlign: 'center',
     padding: '40px 20px',
+  },
+  errorState: {
+    textAlign: 'center',
+    padding: '40px 20px',
+    backgroundColor: 'rgba(255, 71, 87, 0.1)',
+    borderRadius: '12px',
+    border: '1px solid rgba(255, 71, 87, 0.2)',
+  },
+  errorTitle: {
+    color: '#ff4757',
+    fontSize: '16px',
+    margin: '0 0 8px 0',
   },
   emptyIcon: {
     fontSize: '48px',

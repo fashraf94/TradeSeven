@@ -14,6 +14,7 @@ const LevelsTab = ({
   const [levels, setLevels] = useState({ support: [], resistance: [], currentPrice: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [expandedLevel, setExpandedLevel] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!dailyData?.length) {
@@ -22,12 +23,20 @@ const LevelsTab = ({
     }
 
     setIsLoading(true);
+    setError(null);
 
     // Small delay to show loading state
     const timer = setTimeout(() => {
-      const detected = detectLevels(dailyData, indicators);
-      setLevels(detected);
-      setIsLoading(false);
+      try {
+        const detected = detectLevels(dailyData, indicators);
+        setLevels(detected);
+      } catch (err) {
+        console.error('[LevelsTab] Detection failed:', err);
+        setError('Failed to detect levels. Please try again.');
+        setLevels({ support: [], resistance: [], currentPrice: 0 });
+      } finally {
+        setIsLoading(false);
+      }
     }, 100);
 
     return () => clearTimeout(timer);
@@ -41,6 +50,18 @@ const LevelsTab = ({
             <div style={styles.loadingProgress} />
           </div>
           <span style={styles.loadingText}>Analyzing key levels...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.errorState}>
+          <span style={styles.emptyIcon}>&#9888;&#65039;</span>
+          <h3 style={styles.errorTitle}>Detection Error</h3>
+          <p style={styles.emptyText}>{error}</p>
         </div>
       </div>
     );
@@ -271,6 +292,18 @@ const styles = {
   emptyState: {
     textAlign: 'center',
     padding: '40px 20px',
+  },
+  errorState: {
+    textAlign: 'center',
+    padding: '40px 20px',
+    backgroundColor: 'rgba(255, 71, 87, 0.1)',
+    borderRadius: '12px',
+    border: '1px solid rgba(255, 71, 87, 0.2)',
+  },
+  errorTitle: {
+    color: '#ff4757',
+    fontSize: '16px',
+    margin: '0 0 8px 0',
   },
   emptyIcon: {
     fontSize: '48px',
