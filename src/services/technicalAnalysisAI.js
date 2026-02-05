@@ -1,11 +1,165 @@
 /**
  * Technical Analysis AI Service
  * Uses Claude API via /api/ai-advisor endpoint for AI-powered technical analysis
- * Supports Quick (fast) and Deep (comprehensive) analysis modes
+ * Supports conversational Explore tab with preset questions
  */
 
 // ============================================
-// ANALYSIS MODES
+// EXPLORE TAB PROMPTS (Conversational Q&A)
+// ============================================
+
+/**
+ * EXPLORE_PROMPTS - Each question has a focused system prompt
+ * Returns concise, educational analysis with 2-3 follow-up suggestions
+ */
+export const EXPLORE_PROMPTS = {
+  oversold_overbought: {
+    id: 'oversold_overbought',
+    question: 'Is this stock oversold or overbought?',
+    shortLabel: 'Oversold/Overbought',
+    systemPrompt: `You are a technical analyst providing RSI and momentum analysis. Answer conversationally in 2-3 sentences.
+
+Focus on:
+- RSI level and what zone it's in (oversold <30, overbought >70)
+- Whether RSI is trending up or down
+- Any divergences between price and RSI
+
+OUTPUT FORMAT (JSON only):
+{
+  "answer": "2-3 sentence conversational response about oversold/overbought status",
+  "rsiValue": number,
+  "zone": "Oversold|Bearish|Neutral|Bullish|Overbought",
+  "trend": "Improving|Stable|Weakening",
+  "followUps": ["suggested question 1", "suggested question 2"]
+}
+
+Keep it educational and avoid trading recommendations.`
+  },
+
+  key_indicators: {
+    id: 'key_indicators',
+    question: 'What are the key indicators showing?',
+    shortLabel: 'Key Indicators',
+    systemPrompt: `You are a technical analyst summarizing key indicator readings. Answer conversationally in 3-4 sentences.
+
+Cover these indicators briefly:
+- RSI: momentum and zone
+- MACD: histogram direction and signal
+- Moving averages: price position relative to 20/50 SMA
+- Volume: recent trend
+
+OUTPUT FORMAT (JSON only):
+{
+  "answer": "3-4 sentence conversational summary of key indicators",
+  "highlights": [
+    { "indicator": "name", "reading": "brief status" }
+  ],
+  "overallBias": "Bullish|Neutral|Bearish",
+  "followUps": ["suggested question 1", "suggested question 2"]
+}
+
+Keep it educational and avoid trading recommendations.`
+  },
+
+  support_resistance: {
+    id: 'support_resistance',
+    question: 'Where are the support and resistance levels?',
+    shortLabel: 'Support/Resistance',
+    systemPrompt: `You are a technical analyst identifying key price levels. Answer conversationally in 3-4 sentences.
+
+Identify:
+- Primary support level and its source (SMA, recent low, etc.)
+- Primary resistance level and its source
+- Distance from current price to each level
+
+OUTPUT FORMAT (JSON only):
+{
+  "answer": "3-4 sentence conversational explanation of key levels",
+  "primarySupport": { "price": number, "source": "description", "distance": "X%" },
+  "primaryResistance": { "price": number, "source": "description", "distance": "X%" },
+  "followUps": ["suggested question 1", "suggested question 2"]
+}
+
+Keep it educational and avoid trading recommendations.`
+  },
+
+  momentum: {
+    id: 'momentum',
+    question: 'How is momentum trending?',
+    shortLabel: 'Momentum',
+    systemPrompt: `You are a technical analyst assessing momentum. Answer conversationally in 2-3 sentences.
+
+Analyze:
+- MACD histogram direction and strength
+- RSI trend direction
+- Price momentum vs moving averages
+- Any momentum divergences
+
+OUTPUT FORMAT (JSON only):
+{
+  "answer": "2-3 sentence conversational assessment of momentum",
+  "macdSignal": "Bullish|Neutral|Bearish",
+  "momentumStrength": "Strong|Moderate|Weak",
+  "trend": "Accelerating|Steady|Decelerating",
+  "followUps": ["suggested question 1", "suggested question 2"]
+}
+
+Keep it educational and avoid trading recommendations.`
+  },
+
+  volatility: {
+    id: 'volatility',
+    question: "What's the current volatility like?",
+    shortLabel: 'Volatility',
+    systemPrompt: `You are a technical analyst assessing volatility. Answer conversationally in 2-3 sentences.
+
+Analyze:
+- ATR value and what it means for this stock
+- Volatility regime (high, normal, low)
+- Recent price range behavior
+- Whether volatility is expanding or contracting
+
+OUTPUT FORMAT (JSON only):
+{
+  "answer": "2-3 sentence conversational assessment of volatility",
+  "atrValue": number,
+  "atrPercent": number,
+  "regime": "High|Normal|Low",
+  "trend": "Expanding|Stable|Contracting",
+  "followUps": ["suggested question 1", "suggested question 2"]
+}
+
+Keep it educational and avoid trading recommendations.`
+  },
+
+  patterns: {
+    id: 'patterns',
+    question: 'Are there any patterns forming?',
+    shortLabel: 'Patterns',
+    systemPrompt: `You are a technical analyst detecting chart patterns. Answer conversationally in 2-4 sentences.
+
+Look for:
+- Candlestick patterns (recent 5 candles)
+- Chart patterns (triangles, wedges, channels)
+- Trend patterns (higher highs/lows, consolidation)
+- Any incomplete patterns that may be forming
+
+OUTPUT FORMAT (JSON only):
+{
+  "answer": "2-4 sentence conversational description of any patterns",
+  "patternsDetected": [
+    { "name": "pattern name", "type": "Bullish|Bearish|Neutral", "description": "brief explanation" }
+  ],
+  "formingPatterns": "Description of incomplete patterns if any, or 'None detected'",
+  "followUps": ["suggested question 1", "suggested question 2"]
+}
+
+Keep it educational and avoid trading recommendations.`
+  }
+};
+
+// ============================================
+// ANALYSIS MODES (Quick/Deep - legacy, still used by runAnalysis)
 // ============================================
 
 /**
@@ -425,5 +579,114 @@ export const generateFallbackAnalysis = (symbol, calculatedIndicators) => {
   };
 };
 
+
+// ============================================
+// EXPLORE TAB ANALYSIS FUNCTION
+// ============================================
+
+/**
+ * Build user prompt for explore question
+ */
+const buildExploreUserPrompt = (symbol, questionId, currentPrice, indicators, ohlcvData) => {
+  const recentCandles = ohlcvData.slice(0, 15);
+  const ohlcvSummary = recentCandles.map(c =>
+    `${c.date}: O=${safeToFixed(c.open, 2)} H=${safeToFixed(c.high, 2)} L=${safeToFixed(c.low, 2)} C=${safeToFixed(c.close, 2)} V=${(c.volume / 1000000).toFixed(1)}M`
+  ).join('\n');
+
+  const high20 = Math.max(...ohlcvData.slice(0, 20).map(c => c.high));
+  const low20 = Math.min(...ohlcvData.slice(0, 20).map(c => c.low));
+
+  return `Analyze ${symbol} to answer the user's question.
+
+CURRENT DATA:
+- Price: $${safeToFixed(currentPrice, 2)}
+- RSI (14): ${safeToFixed(indicators.rsi?.value, 1)} (${indicators.rsi?.zone || 'N/A'})
+- MACD Histogram: ${safeToFixed(indicators.macd?.histogram, 3)}
+- 20 SMA: $${safeToFixed(indicators.sma20, 2)}
+- 50 SMA: $${safeToFixed(indicators.sma50?.value, 2)} (Price ${indicators.sma50?.position || 'N/A'})
+- 200 SMA: $${safeToFixed(indicators.sma200, 2)}
+- ATR (14): $${safeToFixed(indicators.atr?.value, 2)} (${safeToFixed(indicators.atr?.percent, 1)}% of price, ${indicators.atr?.regime || 'N/A'})
+- 20-Day Range: $${safeToFixed(low20, 2)} - $${safeToFixed(high20, 2)}
+- Trend: ${indicators.trend?.direction || 'N/A'}
+
+RECENT OHLCV (15 days):
+${ohlcvSummary}
+
+Provide a focused answer with 2 relevant follow-up question suggestions. Return JSON only.`;
+};
+
+/**
+ * Analyze stock for a specific explore question
+ * @param {string} symbol - Stock ticker
+ * @param {string} questionId - ID from EXPLORE_PROMPTS
+ * @param {Array} ohlcvData - OHLCV candles (newest first)
+ * @param {Object} calculatedIndicators - Pre-calculated indicators
+ * @returns {Promise<Object>} AI response with answer and follow-ups
+ */
+export const analyzeExploreQuestion = async (symbol, questionId, ohlcvData, calculatedIndicators) => {
+  const promptConfig = EXPLORE_PROMPTS[questionId];
+  if (!promptConfig) {
+    throw new Error(`Unknown question ID: ${questionId}`);
+  }
+
+  console.log(`[TechnicalAnalysisAI] Explore: ${promptConfig.shortLabel} for ${symbol}`);
+
+  const currentPrice = ohlcvData[0]?.close;
+  const userPrompt = buildExploreUserPrompt(symbol, questionId, currentPrice, calculatedIndicators, ohlcvData);
+
+  try {
+    const response = await fetch('/api/ai-advisor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        advisorType: 'technical-analysis',
+        mode: 'explore',
+        systemPrompt: promptConfig.systemPrompt,
+        prompt: userPrompt,
+        maxTokens: 800
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`AI API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const responseText = data.response || data.message || data.content;
+    const parsed = parseAIResponse(responseText);
+
+    return {
+      questionId,
+      question: promptConfig.question,
+      ...parsed,
+      ticker: symbol,
+      timestamp: new Date().toISOString(),
+    };
+  } catch (error) {
+    console.error('[TechnicalAnalysisAI] Explore question failed:', error);
+
+    // Return fallback response
+    return {
+      questionId,
+      question: promptConfig.question,
+      answer: `Unable to analyze ${symbol} at this time. Please check the indicator readings above for ${promptConfig.shortLabel.toLowerCase()} information.`,
+      followUps: ['What are the key indicators showing?', 'Where are the support and resistance levels?'],
+      error: true,
+      ticker: symbol,
+      timestamp: new Date().toISOString(),
+    };
+  }
+};
+
+/**
+ * Get list of explore questions for UI
+ */
+export const getExploreQuestions = () => {
+  return Object.values(EXPLORE_PROMPTS).map(p => ({
+    id: p.id,
+    question: p.question,
+    shortLabel: p.shortLabel,
+  }));
+};
 
 export default analyzeStockWithAI;
