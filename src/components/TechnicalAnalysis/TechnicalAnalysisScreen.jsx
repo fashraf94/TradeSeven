@@ -176,6 +176,10 @@ const TechnicalAnalysisScreen = ({
         0% { transform: translateX(-100%); }
         100% { transform: translateX(400%); }
       }
+      @keyframes loadingSlide {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(350%); }
+      }
     `;
     document.head.appendChild(style);
 

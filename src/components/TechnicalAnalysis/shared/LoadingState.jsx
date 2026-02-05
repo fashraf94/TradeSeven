@@ -2,16 +2,12 @@
 // Shared loading state component for Technical Analysis tabs
 
 import React from 'react';
-import { motion } from 'framer-motion';
 
 const LoadingState = ({ message = 'Loading...' }) => (
   <div style={styles.container}>
-    <motion.div
-      style={styles.bar}
-      initial={{ width: 0 }}
-      animate={{ width: '100%' }}
-      transition={{ duration: 1.5, ease: 'linear', repeat: Infinity }}
-    />
+    <div style={styles.barContainer}>
+      <div style={styles.bar} />
+    </div>
     <span style={styles.text}>{message}</span>
   </div>
 );
@@ -25,11 +21,19 @@ const styles = {
     padding: '40px 20px',
     gap: '12px',
   },
-  bar: {
+  barContainer: {
     width: '100px',
     height: '3px',
+    backgroundColor: 'rgba(0, 255, 255, 0.2)',
+    borderRadius: '2px',
+    overflow: 'hidden',
+  },
+  bar: {
+    width: '40%',
+    height: '100%',
     backgroundColor: '#00ffff',
     borderRadius: '2px',
+    animation: 'loadingSlide 1s ease-in-out infinite',
   },
   text: {
     color: 'rgba(255,255,255,0.5)',
