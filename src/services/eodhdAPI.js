@@ -755,25 +755,25 @@ export function clearEarningsCache() {
 /**
  * Fetch historical OHLCV data for technical analysis
  * @param {string} symbol - Stock ticker (e.g., 'AAPL')
- * @param {number} days - Number of days of history (default 90, max 365)
+ * @param {string} timeframe - Timeframe: '1h' (hourly), '1d' (daily), '1w' (weekly)
  * @returns {Promise<Array>} Array of OHLCV candles, newest first
  */
-export async function fetchHistoricalOHLCV(symbol, days = 90) {
+export async function fetchHistoricalOHLCV(symbol, timeframe = '1d') {
   const upperSymbol = symbol.toUpperCase();
-  const cacheKey = `ohlcv_${upperSymbol}_${days}`;
+  const cacheKey = `ohlcv_${upperSymbol}_${timeframe}`;
 
   // Check cache (AGGRESSIVE tier - longer TTL for historical data)
   const cached = cacheService.get('historical', cacheKey);
   if (cached !== null) {
-    console.log(`[EODHD] Using cached OHLCV for ${upperSymbol}`);
+    console.log(`[EODHD] Using cached ${timeframe} OHLCV for ${upperSymbol}`);
     return cached;
   }
 
-  console.log(`[EODHD] Fetching ${days} days of OHLCV for ${upperSymbol}...`);
+  console.log(`[EODHD] Fetching ${timeframe} OHLCV for ${upperSymbol}...`);
 
   try {
     const response = await fetchWithTimeout(
-      `${API_BASE}/stocks/historical?symbol=${upperSymbol}&days=${days}`
+      `${API_BASE}/stocks/historical?symbol=${upperSymbol}&timeframe=${timeframe}`
     );
 
     if (!response.ok) {
@@ -784,12 +784,12 @@ export async function fetchHistoricalOHLCV(symbol, days = 90) {
 
     if (result.success && result.data) {
       // Track API call
-      apiMonitor.track('/api/stocks/historical', { symbol: upperSymbol, days }, 'eodhdAPI.fetchHistoricalOHLCV');
+      apiMonitor.track('/api/stocks/historical', { symbol: upperSymbol, timeframe }, 'eodhdAPI.fetchHistoricalOHLCV');
 
       // Cache with longer TTL (historical data doesn't change)
       cacheService.set('historical', cacheKey, result.data);
 
-      console.log(`[EODHD] Got ${result.data.length} OHLCV candles for ${upperSymbol}`);
+      console.log(`[EODHD] Got ${result.data.length} ${timeframe} OHLCV candles for ${upperSymbol}`);
       return result.data;
     }
 

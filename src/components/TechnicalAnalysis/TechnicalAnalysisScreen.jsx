@@ -4,6 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CandlestickChart from './CandlestickChart';
+import TimeframeSelector from './TimeframeSelector';
 import {
   calculateRSI,
   getRSISignal,
@@ -32,6 +33,8 @@ const TechnicalAnalysisScreen = ({
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [currentMode, setCurrentMode] = useState(analysisMode);
+  const [selectedTimeframe, setSelectedTimeframe] = useState('1d');
+  const [isLoadingTimeframe, setIsLoadingTimeframe] = useState(false);
 
   useEffect(() => {
     if (stock?.symbol) {
@@ -39,16 +42,16 @@ const TechnicalAnalysisScreen = ({
     }
   }, [stock?.symbol]);
 
-  const loadStockData = async () => {
+  const loadStockData = async (timeframe = selectedTimeframe) => {
     setIsLoadingData(true);
     setError(null);
     setAnalysis(null);
     try {
       if (fetchOHLCV) {
-        console.log(`[TechnicalAnalysis] Fetching OHLCV for ${stock.symbol}...`);
-        const data = await fetchOHLCV(stock.symbol, 90);
+        console.log(`[TechnicalAnalysis] Fetching ${timeframe} OHLCV for ${stock.symbol}...`);
+        const data = await fetchOHLCV(stock.symbol, timeframe);
         if (data && data.length > 0) {
-          console.log(`[TechnicalAnalysis] Got ${data.length} candles for ${stock.symbol}`);
+          console.log(`[TechnicalAnalysis] Got ${data.length} ${timeframe} candles for ${stock.symbol}`);
           setOhlcvData(data);
         } else {
           console.warn(`[TechnicalAnalysis] No data returned for ${stock.symbol}`);
@@ -65,6 +68,32 @@ const TechnicalAnalysisScreen = ({
       setError('Failed to load price data. Please try again.');
     } finally {
       setIsLoadingData(false);
+    }
+  };
+
+  const handleTimeframeChange = async (newTimeframe) => {
+    if (newTimeframe === selectedTimeframe || isLoadingTimeframe) return;
+
+    setIsLoadingTimeframe(true);
+    setSelectedTimeframe(newTimeframe);
+    setAnalysis(null); // Clear analysis when changing timeframe
+
+    try {
+      if (fetchOHLCV) {
+        console.log(`[TechnicalAnalysis] Switching to ${newTimeframe} timeframe...`);
+        const data = await fetchOHLCV(stock.symbol, newTimeframe);
+        if (data && data.length > 0) {
+          console.log(`[TechnicalAnalysis] Got ${data.length} ${newTimeframe} candles`);
+          setOhlcvData(data);
+        } else {
+          setError(`No ${newTimeframe} data available`);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch timeframe data:', err);
+      setError(`Failed to load ${newTimeframe} data`);
+    } finally {
+      setIsLoadingTimeframe(false);
     }
   };
 
@@ -301,12 +330,37 @@ const TechnicalAnalysisScreen = ({
         </div>
       </div>
 
+      {/* Timeframe Selector */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '8px 12px',
+        backgroundColor: '#0d1117',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+      }}>
+        <span style={{
+          fontSize: '12px',
+          color: 'rgba(255,255,255,0.5)',
+        }}>
+          {selectedTimeframe === '1h' && '10-day hourly'}
+          {selectedTimeframe === '1d' && '3-month daily'}
+          {selectedTimeframe === '1w' && '3-year weekly'}
+        </span>
+        <TimeframeSelector
+          selected={selectedTimeframe}
+          onChange={handleTimeframeChange}
+          disabled={isLoadingTimeframe || isLoadingData}
+        />
+      </div>
+
       {/* Candlestick Chart */}
       <div style={{
         height: '280px',
         backgroundColor: '#0a1628',
         borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
         padding: '8px',
+        position: 'relative',
       }}>
         {isLoadingData ? (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.5)' }}>
@@ -317,6 +371,24 @@ const TechnicalAnalysisScreen = ({
         ) : (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.3)' }}>
             No chart data available
+          </div>
+        )}
+        {isLoadingTimeframe && (
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(10, 22, 40, 0.85)',
+            borderRadius: '8px',
+          }}>
+            <span style={{ color: '#00ffff', fontSize: '14px' }}>
+              Loading {selectedTimeframe.toUpperCase()} data...
+            </span>
           </div>
         )}
       </div>
