@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CandlestickChart from './CandlestickChart';
 import TimeframeSelector from './TimeframeSelector';
+import PatternsTab from './PatternsTab';
 import {
   calculateRSI,
   getRSISignal,
@@ -40,11 +41,41 @@ const TechnicalAnalysisScreen = ({
   const [isExploreLoading, setIsExploreLoading] = useState(false);
   const [calculatedIndicators, setCalculatedIndicators] = useState(null);
 
+  // Daily anchor data for multi-timeframe confluence detection
+  const [dailyAnchorData, setDailyAnchorData] = useState(null);
+  const [dailyIndicators, setDailyIndicators] = useState(null);
+  const [trackedPatterns, setTrackedPatterns] = useState([]);
+
   useEffect(() => {
     if (stock?.symbol) {
       loadStockData();
+      loadDailyAnchorData(); // Always load daily data as anchor
     }
   }, [stock?.symbol]);
+
+  // Always fetch daily data as anchor for S/R levels (Phase 4)
+  const loadDailyAnchorData = async () => {
+    if (!stock?.symbol || !fetchOHLCV) return;
+
+    try {
+      console.log(`[TechnicalAnalysis] Loading daily anchor data for ${stock.symbol}...`);
+      const dailyData = await fetchOHLCV(stock.symbol, '1d');
+
+      if (dailyData && dailyData.length > 0) {
+        setDailyAnchorData(dailyData);
+
+        // Calculate daily indicators for S/R levels
+        const closingPrices = dailyData.map(c => c.close);
+        const indicators = calculateLocalIndicators(closingPrices, dailyData);
+        setDailyIndicators(indicators);
+
+        console.log(`[TechnicalAnalysis] Daily anchor loaded: ${dailyData.length} candles`);
+      }
+    } catch (error) {
+      console.warn('[TechnicalAnalysis] Failed to load daily anchor:', error);
+      // Non-fatal - patterns tab will use current timeframe data as fallback
+    }
+  };
 
   const loadStockData = async (timeframe = selectedTimeframe) => {
     setIsLoadingData(true);
@@ -560,7 +591,14 @@ const TechnicalAnalysisScreen = ({
                 />
               )}
               {activeTab === 'patterns' && (
-                <PatternsTab analysis={analysis} onTrack={handleTrackPattern} />
+                <PatternsTab
+                  ohlcvData={ohlcvData}
+                  dailyAnchorData={dailyAnchorData}
+                  dailyIndicators={dailyIndicators}
+                  selectedTimeframe={selectedTimeframe}
+                  onTrackPattern={handleTrackPattern}
+                  trackedPatterns={trackedPatterns}
+                />
               )}
               {activeTab === 'levels' && (
                 <LevelsTab analysis={analysis} />
@@ -937,67 +975,6 @@ const OverviewTab = ({ analysis }) => (
     )}
   </div>
 );
-
-// Patterns Tab
-const PatternsTab = ({ analysis, onTrack }) => {
-  const zones = analysis?.confluenceZones || [];
-
-  return (
-    <div>
-      {zones.length > 0 ? (
-        <>
-          <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', textTransform: 'uppercase' }}>
-            Confluence Zones Detected
-          </h3>
-          {zones.map((zone, i) => (
-            <div key={i} style={{
-              padding: '16px',
-              backgroundColor: 'rgba(255,255,255,0.03)',
-              borderRadius: '12px',
-              border: '1px solid rgba(255,255,255,0.1)',
-              marginBottom: '12px',
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <span style={{ color: '#fff', fontWeight: '600' }}>
-                  {zone.zoneType === 'SUPPORT' ? '&#128994;' : '&#128308;'} {zone.zoneType}
-                </span>
-                <span style={{ color: '#fff', fontWeight: '600' }}>
-                  ${zone.priceLow?.toFixed(2)} - ${zone.priceHigh?.toFixed(2)}
-                </span>
-              </div>
-              <div style={{ marginBottom: '14px' }}>
-                {zone.indicators?.map((ind, j) => (
-                  <div key={j} style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>
-                    <span style={{ color: '#00ffff' }}>&bull;</span> {ind.indicator}: ${ind.value?.toFixed(2)}
-                  </div>
-                ))}
-              </div>
-              <button onClick={() => onTrack(zone)} style={{
-                width: '100%',
-                padding: '12px',
-                backgroundColor: 'rgba(0, 255, 255, 0.1)',
-                border: '1px solid rgba(0, 255, 255, 0.3)',
-                borderRadius: '8px',
-                color: '#00ffff',
-                fontWeight: '600',
-                cursor: 'pointer',
-              }}>
-                &#128300; Track This Pattern
-              </button>
-            </div>
-          ))}
-        </>
-      ) : (
-        <div style={{ textAlign: 'center', padding: '40px 20px', color: 'rgba(255,255,255,0.5)' }}>
-          <p>No significant confluence zones detected at current price levels.</p>
-          <p style={{ fontSize: '12px', marginTop: '8px' }}>
-            Check the Levels tab for individual support and resistance points.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-};
 
 // Levels Tab
 const LevelsTab = ({ analysis }) => {
