@@ -35,6 +35,7 @@ const TechnicalAnalysisScreen = ({
   const [currentMode, setCurrentMode] = useState(analysisMode);
   const [selectedTimeframe, setSelectedTimeframe] = useState('1d');
   const [isLoadingTimeframe, setIsLoadingTimeframe] = useState(false);
+  const [notification, setNotification] = useState(null); // For fallback messages
 
   useEffect(() => {
     if (stock?.symbol) {
@@ -46,6 +47,7 @@ const TechnicalAnalysisScreen = ({
     setIsLoadingData(true);
     setError(null);
     setAnalysis(null);
+    setNotification(null);
     try {
       if (fetchOHLCV) {
         console.log(`[TechnicalAnalysis] Fetching ${timeframe} OHLCV for ${stock.symbol}...`);
@@ -53,6 +55,17 @@ const TechnicalAnalysisScreen = ({
         if (data && data.length > 0) {
           console.log(`[TechnicalAnalysis] Got ${data.length} ${timeframe} candles for ${stock.symbol}`);
           setOhlcvData(data);
+
+          // Check for fallback metadata
+          if (data._meta?.fallbackMessage) {
+            setNotification(data._meta.fallbackMessage);
+            // Update timeframe selector to reflect actual timeframe
+            if (data._meta.actualTimeframe && data._meta.actualTimeframe !== timeframe) {
+              setSelectedTimeframe(data._meta.actualTimeframe);
+            }
+            // Auto-dismiss notification after 5 seconds
+            setTimeout(() => setNotification(null), 5000);
+          }
         } else {
           console.warn(`[TechnicalAnalysis] No data returned for ${stock.symbol}`);
           setError('No price data available for this symbol');
@@ -77,6 +90,7 @@ const TechnicalAnalysisScreen = ({
     setIsLoadingTimeframe(true);
     setSelectedTimeframe(newTimeframe);
     setAnalysis(null); // Clear analysis when changing timeframe
+    setNotification(null);
 
     try {
       if (fetchOHLCV) {
@@ -85,6 +99,17 @@ const TechnicalAnalysisScreen = ({
         if (data && data.length > 0) {
           console.log(`[TechnicalAnalysis] Got ${data.length} ${newTimeframe} candles`);
           setOhlcvData(data);
+
+          // Check for fallback metadata
+          if (data._meta?.fallbackMessage) {
+            setNotification(data._meta.fallbackMessage);
+            // Update timeframe selector to reflect actual timeframe
+            if (data._meta.actualTimeframe && data._meta.actualTimeframe !== newTimeframe) {
+              setSelectedTimeframe(data._meta.actualTimeframe);
+            }
+            // Auto-dismiss notification after 5 seconds
+            setTimeout(() => setNotification(null), 5000);
+          }
         } else {
           setError(`No ${newTimeframe} data available`);
         }
@@ -353,6 +378,36 @@ const TechnicalAnalysisScreen = ({
           disabled={isLoadingTimeframe || isLoadingData}
         />
       </div>
+
+      {/* Notification Banner */}
+      {notification && (
+        <div style={{
+          padding: '8px 12px',
+          backgroundColor: 'rgba(255, 193, 7, 0.15)',
+          borderBottom: '1px solid rgba(255, 193, 7, 0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
+        }}>
+          <span style={{ fontSize: '12px', color: '#ffc107' }}>
+            ⚠️ {notification}
+          </span>
+          <button
+            onClick={() => setNotification(null)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'rgba(255, 255, 255, 0.5)',
+              cursor: 'pointer',
+              padding: '2px 6px',
+              fontSize: '14px',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Candlestick Chart */}
       <div style={{

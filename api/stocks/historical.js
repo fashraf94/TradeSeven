@@ -95,16 +95,21 @@ export default async function handler(req, res) {
     const fromDate = startDate.toISOString().split('T')[0];
 
     let data;
+    let actualTimeframe = timeframe; // Track if we fell back to a different timeframe
+    let fallbackMessage = null;
 
     if (timeframe === '1h') {
       // Fetch intraday data from EODHD
-      const response = await fetch(
-        `https://eodhd.com/api/intraday/${upperSymbol}.US?api_token=${API_KEY}&fmt=json&interval=1h&from=${Math.floor(startDate.getTime() / 1000)}`
-      );
+      const intradayUrl = `https://eodhd.com/api/intraday/${upperSymbol}.US?api_token=${API_KEY}&fmt=json&interval=1h&from=${Math.floor(startDate.getTime() / 1000)}`;
+      console.log(`[API] Fetching intraday from: ${intradayUrl.replace(API_KEY, 'HIDDEN')}`);
+
+      const response = await fetch(intradayUrl);
 
       if (!response.ok) {
         // Fallback to daily if intraday not available
-        console.warn(`[API] Intraday not available for ${upperSymbol}, falling back to daily`);
+        console.warn(`[API] Intraday API error (${response.status}) for ${upperSymbol}, falling back to daily`);
+        actualTimeframe = '1d';
+        fallbackMessage = 'Hourly data not available, showing daily';
         const fallbackResponse = await fetch(
           `https://eodhd.com/api/eod/${upperSymbol}.US?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${fromDate}`
         );
@@ -114,15 +119,58 @@ export default async function handler(req, res) {
         data = await fallbackResponse.json();
       } else {
         const intradayData = await response.json();
-        // Transform intraday format to match daily format
-        data = (intradayData || []).map(candle => ({
-          date: new Date(candle.timestamp * 1000).toISOString(),
-          open: candle.open,
-          high: candle.high,
-          low: candle.low,
-          close: candle.close,
-          volume: candle.volume
-        })).sort((a, b) => new Date(b.date) - new Date(a.date)); // Newest first
+        console.log(`[API] Intraday response type: ${typeof intradayData}, isArray: ${Array.isArray(intradayData)}, length: ${intradayData?.length || 0}`);
+
+        // Check if intraday data is valid and non-empty
+        if (!Array.isArray(intradayData) || intradayData.length === 0) {
+          console.warn(`[API] Intraday data empty or invalid for ${upperSymbol}, falling back to daily`);
+          actualTimeframe = '1d';
+          fallbackMessage = 'Hourly data not available, showing daily';
+          const fallbackResponse = await fetch(
+            `https://eodhd.com/api/eod/${upperSymbol}.US?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${fromDate}`
+          );
+          if (!fallbackResponse.ok) {
+            throw new Error(`EODHD API responded with ${fallbackResponse.status}`);
+          }
+          data = await fallbackResponse.json();
+        } else {
+          // Transform intraday format to match daily format
+          // Filter out any candles with null/undefined values
+          data = intradayData
+            .filter(candle =>
+              candle &&
+              candle.timestamp != null &&
+              candle.open != null &&
+              candle.high != null &&
+              candle.low != null &&
+              candle.close != null
+            )
+            .map(candle => ({
+              date: new Date(candle.timestamp * 1000).toISOString().split('T')[0], // Use YYYY-MM-DD format
+              open: parseFloat(candle.open) || 0,
+              high: parseFloat(candle.high) || 0,
+              low: parseFloat(candle.low) || 0,
+              close: parseFloat(candle.close) || 0,
+              volume: parseInt(candle.volume, 10) || 0
+            }))
+            .sort((a, b) => new Date(b.date) - new Date(a.date)); // Newest first
+
+          console.log(`[API] Processed ${data.length} valid intraday candles`);
+
+          // If all candles were filtered out, fall back to daily
+          if (data.length === 0) {
+            console.warn(`[API] All intraday candles had null values, falling back to daily`);
+            actualTimeframe = '1d';
+            fallbackMessage = 'Hourly data not available, showing daily';
+            const fallbackResponse = await fetch(
+              `https://eodhd.com/api/eod/${upperSymbol}.US?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${fromDate}`
+            );
+            if (!fallbackResponse.ok) {
+              throw new Error(`EODHD API responded with ${fallbackResponse.status}`);
+            }
+            data = await fallbackResponse.json();
+          }
+        }
       }
     } else {
       // Fetch daily EOD data from EODHD
@@ -172,13 +220,16 @@ export default async function handler(req, res) {
       volume: parseInt(candle.volume, 10) || 0,
     }));
 
-    console.log(`[API] Returning ${ohlcv.length} ${timeframe} OHLCV candles for ${upperSymbol}`);
+    console.log(`[API] Returning ${ohlcv.length} ${actualTimeframe} OHLCV candles for ${upperSymbol}`);
 
+    const responseConfig = TIMEFRAME_CONFIG[actualTimeframe] || config;
     return res.status(200).json({
       success: true,
       symbol: upperSymbol,
-      timeframe,
-      description: config.description,
+      timeframe: actualTimeframe,
+      requestedTimeframe: timeframe,
+      description: responseConfig.description,
+      fallbackMessage: fallbackMessage,
       count: ohlcv.length,
       data: ohlcv
     });
