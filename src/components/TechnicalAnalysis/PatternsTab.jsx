@@ -2,7 +2,6 @@
 // Multi-Timeframe Confluence Detection Tab
 
 import React, { useState, useEffect } from 'react';
-import { AnimatePresence } from 'framer-motion';
 import { detectConfluence } from '../../services/confluenceDetection';
 import { getStrengthColor, getStrengthIcon } from './utils/colors';
 import { LoadingState, EmptyState, ErrorState } from './shared';
@@ -99,18 +98,14 @@ const PatternsTab = ({
       </div>
 
       <div style={styles.confluenceList}>
-        <AnimatePresence>
-          {confluences.map((confluence, index) => (
-            <motion.div
-              key={confluence.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              style={{
-                ...styles.confluenceCard,
-                borderColor: getStrengthColor(confluence.strength),
-              }}
-            >
+        {confluences.map((confluence) => (
+          <div
+            key={confluence.id}
+            style={{
+              ...styles.confluenceCard,
+              borderColor: getStrengthColor(confluence.strength),
+            }}
+          >
               {/* Header */}
               <div
                 style={styles.cardHeader}
@@ -169,33 +164,26 @@ const PatternsTab = ({
               </div>
 
               {/* Expanded Details */}
-              <AnimatePresence>
-                {expandedId === confluence.id && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    style={styles.expandedSection}
-                  >
-                    <div style={styles.whyMatters}>
-                      <div style={styles.whyTitle}>WHY THIS MATTERS</div>
-                      <p style={styles.whyText}>{confluence.description}</p>
-                    </div>
+              {expandedId === confluence.id && (
+                <div style={styles.expandedSection}>
+                  <div style={styles.whyMatters}>
+                    <div style={styles.whyTitle}>WHY THIS MATTERS</div>
+                    <p style={styles.whyText}>{confluence.description}</p>
+                  </div>
 
-                    <div style={styles.historicalContext}>
-                      <div style={styles.histTitle}>HISTORICAL CONTEXT</div>
-                      <p style={styles.histText}>{confluence.historicalContext}</p>
-                    </div>
+                  <div style={styles.historicalContext}>
+                    <div style={styles.histTitle}>HISTORICAL CONTEXT</div>
+                    <p style={styles.histText}>{confluence.historicalContext}</p>
+                  </div>
 
-                    <div style={styles.thesisHint}>
-                      <span style={styles.thesisLabel}>Suggested thesis:</span>
-                      <span style={styles.thesisValue}>
-                        {confluence.suggestedThesis.replace(/_/g, ' ')}
-                      </span>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                  <div style={styles.thesisHint}>
+                    <span style={styles.thesisLabel}>Suggested thesis:</span>
+                    <span style={styles.thesisValue}>
+                      {confluence.suggestedThesis.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Track Button */}
               <button
@@ -225,9 +213,8 @@ const PatternsTab = ({
               >
                 {isPatternTracked(confluence.id) ? '✓ Tracking' : '📊 Track This Pattern'}
               </button>
-            </motion.div>
-          ))}
-        </AnimatePresence>
+          </div>
+        ))}
       </div>
 
       <div style={styles.disclaimer}>
