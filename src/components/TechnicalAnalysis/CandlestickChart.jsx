@@ -11,9 +11,46 @@ const isValidNumber = (val) => {
   return Number.isFinite(num) && num > 0;
 };
 
+/**
+ * Convert various time formats to Unix timestamp in seconds
+ * lightweight-charts requires time as:
+ * - Unix timestamp in SECONDS (not milliseconds)
+ * - Or a date string 'YYYY-MM-DD' for daily data
+ */
+const formatTime = (dateValue, isIntraday = false) => {
+  if (!dateValue) return null;
+
+  // If already a Unix timestamp in seconds (10 digits)
+  if (typeof dateValue === 'number' && dateValue < 9999999999) {
+    return dateValue;
+  }
+
+  // If Unix timestamp in milliseconds (13 digits), convert to seconds
+  if (typeof dateValue === 'number' && dateValue > 9999999999) {
+    return Math.floor(dateValue / 1000);
+  }
+
+  // If string, parse it
+  if (typeof dateValue === 'string') {
+    // For intraday data, convert to Unix timestamp in seconds
+    if (isIntraday || dateValue.includes('T') || dateValue.includes(':')) {
+      const timestamp = new Date(dateValue).getTime();
+      if (isNaN(timestamp)) return null;
+      return Math.floor(timestamp / 1000);
+    }
+    // For daily data, return date string as-is (YYYY-MM-DD format)
+    return dateValue.split('T')[0];
+  }
+
+  return null;
+};
+
 // Helper to validate raw candle data before transformation
 const isValidRawCandle = (candle) => {
-  if (!candle || !candle.date) return false;
+  if (!candle) return false;
+  // Check for date field (could be 'date', 'datetime', or 'timestamp')
+  const hasDate = candle.date || candle.datetime || candle.timestamp;
+  if (!hasDate) return false;
   return (
     isValidNumber(candle.open) &&
     isValidNumber(candle.high) &&
@@ -24,8 +61,12 @@ const isValidRawCandle = (candle) => {
 
 // Helper to validate formatted candle data (after transformation)
 const isValidFormattedCandle = (candle) => {
-  return candle &&
-    candle.time &&
+  if (!candle || !candle.time) return false;
+  // Time can be number (Unix timestamp) or string (date)
+  const validTime = typeof candle.time === 'number'
+    ? Number.isFinite(candle.time) && candle.time > 0
+    : typeof candle.time === 'string' && candle.time.length > 0;
+  return validTime &&
     Number.isFinite(candle.open) && candle.open > 0 &&
     Number.isFinite(candle.high) && candle.high > 0 &&
     Number.isFinite(candle.low) && candle.low > 0 &&
@@ -83,25 +124,42 @@ const CandlestickChart = ({
       return;
     }
 
-    // Transform data with safe parsing
-    const transformedData = validRawCandles.map(candle => {
-      // Normalize date format - extract YYYY-MM-DD if it's an ISO string
-      let dateStr = candle.date;
-      if (typeof dateStr === 'string' && dateStr.includes('T')) {
-        dateStr = dateStr.split('T')[0];
-      }
-      const open = parseFloat(candle.open);
-      const high = parseFloat(candle.high);
-      const low = parseFloat(candle.low);
-      const close = parseFloat(candle.close);
-      return {
-        time: dateStr,
-        open,
-        high,
-        low,
-        close,
-      };
+    // Diagnostic: Log raw data sample to understand format
+    console.log('[CandlestickChart] Raw data sample (first 3):', validRawCandles.slice(0, 3));
+    const sampleCandle = validRawCandles[0];
+    console.log('[CandlestickChart] Sample candle structure:', {
+      date: sampleCandle?.date,
+      datetime: sampleCandle?.datetime,
+      timestamp: sampleCandle?.timestamp,
+      dateType: typeof sampleCandle?.date,
     });
+
+    // Detect if this is intraday data (has time component in date)
+    const dateValue = sampleCandle?.date || sampleCandle?.datetime || sampleCandle?.timestamp;
+    const isIntraday = typeof dateValue === 'string' && (dateValue.includes('T') || dateValue.includes(':'));
+    console.log('[CandlestickChart] Detected intraday data:', isIntraday);
+
+    // Transform data with proper time format conversion
+    const transformedData = validRawCandles.map(candle => {
+      const rawTime = candle.date || candle.datetime || candle.timestamp;
+      const time = formatTime(rawTime, isIntraday);
+      const open = Number(candle.open);
+      const high = Number(candle.high);
+      const low = Number(candle.low);
+      const close = Number(candle.close);
+      return { time, open, high, low, close };
+    });
+
+    // Diagnostic: Log transformed data sample
+    console.log('[CandlestickChart] Transformed data sample (first 3):', transformedData.slice(0, 3));
+    console.log('[CandlestickChart] Data types:', transformedData[0] ? {
+      time: typeof transformedData[0].time,
+      timeValue: transformedData[0].time,
+      open: typeof transformedData[0].open,
+      high: typeof transformedData[0].high,
+      low: typeof transformedData[0].low,
+      close: typeof transformedData[0].close,
+    } : 'no data');
 
     // Second pass: filter transformed data with detailed logging
     let formattedFilteredCount = 0;
@@ -127,10 +185,18 @@ const CandlestickChart = ({
     }
 
     // Sort chronologically (oldest first for lightweight-charts)
+    // Handle both numeric timestamps and string dates
     const sortedData = validFormattedData.sort((a, b) => {
-      const dateA = new Date(a.time).getTime();
-      const dateB = new Date(b.time).getTime();
-      return dateA - dateB;
+      const timeA = typeof a.time === 'number' ? a.time : new Date(a.time).getTime() / 1000;
+      const timeB = typeof b.time === 'number' ? b.time : new Date(b.time).getTime() / 1000;
+      return timeA - timeB;
+    });
+
+    // Log sorted data sample
+    console.log('[CandlestickChart] Sorted data (first & last):', {
+      first: sortedData[0],
+      last: sortedData[sortedData.length - 1],
+      count: sortedData.length
     });
 
     // Final validation summary
