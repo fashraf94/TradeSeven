@@ -4,18 +4,21 @@
 import React, { useEffect, useRef } from 'react';
 import { createChart, CandlestickSeries } from 'lightweight-charts';
 
+// Strict validation for numeric values - uses Number.isFinite for maximum strictness
+const isValidNumber = (val) => {
+  if (val === null || val === undefined || val === '') return false;
+  const num = typeof val === 'number' ? val : parseFloat(val);
+  return Number.isFinite(num) && num > 0;
+};
+
 // Helper to validate raw candle data before transformation
 const isValidRawCandle = (candle) => {
   if (!candle || !candle.date) return false;
-  const open = parseFloat(candle.open);
-  const high = parseFloat(candle.high);
-  const low = parseFloat(candle.low);
-  const close = parseFloat(candle.close);
   return (
-    typeof open === 'number' && !isNaN(open) && isFinite(open) && open > 0 &&
-    typeof high === 'number' && !isNaN(high) && isFinite(high) && high > 0 &&
-    typeof low === 'number' && !isNaN(low) && isFinite(low) && low > 0 &&
-    typeof close === 'number' && !isNaN(close) && isFinite(close) && close > 0
+    isValidNumber(candle.open) &&
+    isValidNumber(candle.high) &&
+    isValidNumber(candle.low) &&
+    isValidNumber(candle.close)
   );
 };
 
@@ -23,10 +26,10 @@ const isValidRawCandle = (candle) => {
 const isValidFormattedCandle = (candle) => {
   return candle &&
     candle.time &&
-    typeof candle.open === 'number' && !isNaN(candle.open) && isFinite(candle.open) && candle.open > 0 &&
-    typeof candle.high === 'number' && !isNaN(candle.high) && isFinite(candle.high) && candle.high > 0 &&
-    typeof candle.low === 'number' && !isNaN(candle.low) && isFinite(candle.low) && candle.low > 0 &&
-    typeof candle.close === 'number' && !isNaN(candle.close) && isFinite(candle.close) && candle.close > 0;
+    Number.isFinite(candle.open) && candle.open > 0 &&
+    Number.isFinite(candle.high) && candle.high > 0 &&
+    Number.isFinite(candle.low) && candle.low > 0 &&
+    Number.isFinite(candle.close) && candle.close > 0;
 };
 
 const CandlestickChart = ({
@@ -50,56 +53,76 @@ const CandlestickChart = ({
       return;
     }
 
-    // First pass: filter raw candles
+    // First pass: filter raw candles with detailed logging
+    let rawFilteredCount = 0;
     const validRawCandles = ohlcvData.filter((candle, index) => {
       const isValid = isValidRawCandle(candle);
-      if (!isValid && index < 5) {
-        // Log first few invalid candles for debugging
-        console.warn(`[CandlestickChart] Invalid raw candle at index ${index}:`, {
-          date: candle?.date,
-          open: candle?.open,
-          high: candle?.high,
-          low: candle?.low,
-          close: candle?.close
-        });
+      if (!isValid) {
+        rawFilteredCount++;
+        if (rawFilteredCount <= 3) {
+          console.warn(`[CandlestickChart] Filtered invalid raw candle #${rawFilteredCount}:`, {
+            index,
+            date: candle?.date,
+            open: candle?.open,
+            high: candle?.high,
+            low: candle?.low,
+            close: candle?.close
+          });
+        }
       }
       return isValid;
     });
 
+    if (rawFilteredCount > 0) {
+      console.log(`[CandlestickChart] Raw pass: filtered ${rawFilteredCount} of ${ohlcvData.length} candles`);
+    }
+
     if (validRawCandles.length === 0) {
       setChartError('No valid price data available');
-      console.warn('[CandlestickChart] All raw candles filtered out');
+      console.error('[CandlestickChart] All raw candles filtered out');
       return;
     }
 
-    // Transform data
+    // Transform data with safe parsing
     const transformedData = validRawCandles.map(candle => {
       // Normalize date format - extract YYYY-MM-DD if it's an ISO string
       let dateStr = candle.date;
       if (typeof dateStr === 'string' && dateStr.includes('T')) {
         dateStr = dateStr.split('T')[0];
       }
+      const open = parseFloat(candle.open);
+      const high = parseFloat(candle.high);
+      const low = parseFloat(candle.low);
+      const close = parseFloat(candle.close);
       return {
         time: dateStr,
-        open: parseFloat(candle.open),
-        high: parseFloat(candle.high),
-        low: parseFloat(candle.low),
-        close: parseFloat(candle.close),
+        open,
+        high,
+        low,
+        close,
       };
     });
 
-    // Second pass: filter transformed data (catch any parsing issues)
+    // Second pass: filter transformed data with detailed logging
+    let formattedFilteredCount = 0;
     const validFormattedData = transformedData.filter((candle, index) => {
       const isValid = isValidFormattedCandle(candle);
       if (!isValid) {
-        console.warn(`[CandlestickChart] Invalid formatted candle at index ${index}:`, candle);
+        formattedFilteredCount++;
+        if (formattedFilteredCount <= 3) {
+          console.warn(`[CandlestickChart] Filtered invalid formatted candle #${formattedFilteredCount}:`, candle);
+        }
       }
       return isValid;
     });
 
+    if (formattedFilteredCount > 0) {
+      console.log(`[CandlestickChart] Formatted pass: filtered ${formattedFilteredCount} more candles`);
+    }
+
     if (validFormattedData.length === 0) {
       setChartError('No valid price data after processing');
-      console.warn('[CandlestickChart] All formatted candles filtered out');
+      console.error('[CandlestickChart] All formatted candles filtered out');
       return;
     }
 
@@ -110,10 +133,12 @@ const CandlestickChart = ({
       return dateA - dateB;
     });
 
-    // Log summary
-    const filteredCount = ohlcvData.length - sortedData.length;
-    if (filteredCount > 0) {
-      console.log(`[CandlestickChart] Filtered out ${filteredCount} invalid candles, ${sortedData.length} remain`);
+    // Final validation summary
+    const totalFiltered = ohlcvData.length - sortedData.length;
+    if (totalFiltered > 0) {
+      console.log(`[CandlestickChart] Total: filtered ${totalFiltered} invalid candles, ${sortedData.length} valid candles remain`);
+    } else {
+      console.log(`[CandlestickChart] All ${sortedData.length} candles valid`);
     }
 
     setChartError(null);
@@ -177,19 +202,42 @@ const CandlestickChart = ({
       const candleSeries = chart.addSeries(CandlestickSeries, candlestickOptions);
       candleSeriesRef.current = candleSeries;
 
-      // Set data with try-catch for any remaining edge cases
+      // Final safety check before setData
+      if (!sortedData || sortedData.length === 0) {
+        console.error('[CandlestickChart] No data to set after all validation');
+        setChartError('No valid chart data');
+        return;
+      }
+
+      // Log what we're about to set
+      console.log(`[CandlestickChart] Setting ${sortedData.length} candles, first: ${sortedData[0]?.time}, last: ${sortedData[sortedData.length - 1]?.time}`);
+
+      // Set data with comprehensive error handling
       try {
         candleSeries.setData(sortedData);
+        console.log('[CandlestickChart] setData completed successfully');
       } catch (setDataErr) {
         console.error('[CandlestickChart] Error in setData:', setDataErr);
-        console.error('[CandlestickChart] First candle:', sortedData[0]);
-        console.error('[CandlestickChart] Last candle:', sortedData[sortedData.length - 1]);
+        console.error('[CandlestickChart] First candle:', JSON.stringify(sortedData[0]));
+        console.error('[CandlestickChart] Last candle:', JSON.stringify(sortedData[sortedData.length - 1]));
+        // Try to find problematic candles
+        for (let i = 0; i < sortedData.length; i++) {
+          const c = sortedData[i];
+          if (!isValidFormattedCandle(c)) {
+            console.error(`[CandlestickChart] Found bad candle at index ${i}:`, JSON.stringify(c));
+          }
+        }
         setChartError('Failed to render chart data');
         return;
       }
 
       // Fit content to show all candles
-      chart.timeScale().fitContent();
+      try {
+        chart.timeScale().fitContent();
+      } catch (fitErr) {
+        console.warn('[CandlestickChart] Error fitting content:', fitErr);
+        // Non-fatal, continue
+      }
 
       // Handle resize
       handleResize = () => {

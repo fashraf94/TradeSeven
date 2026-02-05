@@ -125,12 +125,11 @@ const TechnicalAnalysisScreen = ({
     }
   };
 
-  const runAnalysis = async (mode = currentMode) => {
+  const runAnalysis = async () => {
     if (!ohlcvData || ohlcvData.length === 0) return;
 
     setIsAnalyzing(true);
     setError(null);
-    setCurrentMode(mode);
 
     try {
       // Extract closing prices for indicator calculations
@@ -142,10 +141,10 @@ const TechnicalAnalysisScreen = ({
 
       // Try AI analysis if available
       if (analyzeStock) {
-        console.log(`[TechnicalAnalysis] Running ${mode} AI analysis for ${stock.symbol}...`);
+        console.log(`[TechnicalAnalysis] Running AI analysis for ${stock.symbol}...`);
         try {
-          const aiResult = await analyzeStock(stock.symbol, ohlcvData, { mode });
-          console.log(`[TechnicalAnalysis] AI analysis complete (${mode}):`, aiResult?.summary?.substring(0, 100));
+          const aiResult = await analyzeStock(stock.symbol, ohlcvData, { mode: 'quick' });
+          console.log(`[TechnicalAnalysis] AI analysis complete:`, aiResult?.summary?.substring(0, 100));
 
           // Merge local indicators with AI response
           // Local = source of truth for numeric values (sma50, atr, etc.)
@@ -180,10 +179,10 @@ const TechnicalAnalysisScreen = ({
             patterns: aiResult.patterns || [],
             levels: aiResult.levels || generateLevels(ohlcvData, localIndicators),
             marketContext: aiResult.marketContext || null,
-            primaryLevel: aiResult.primaryLevel || null,  // Quick mode field
-            keyTakeaway: aiResult.keyTakeaway || null,    // Quick mode field
+            primaryLevel: aiResult.primaryLevel || null,
+            keyTakeaway: aiResult.keyTakeaway || null,
             calculatedAt: new Date().toISOString(),
-            analysisMode: mode,
+            analysisMode: 'ai',
             aiGenerated: aiResult.aiGenerated !== false,
           });
           return;
@@ -940,108 +939,117 @@ const OverviewTab = ({ analysis }) => (
 );
 
 // Patterns Tab
-const PatternsTab = ({ analysis, onTrack }) => (
-  <div>
-    {analysis.confluenceZones?.length > 0 ? (
-      <>
-        <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', textTransform: 'uppercase' }}>
-          Confluence Zones Detected
-        </h3>
-        {analysis.confluenceZones.map((zone, i) => (
-          <div key={i} style={{
-            padding: '16px',
-            backgroundColor: 'rgba(255,255,255,0.03)',
-            borderRadius: '12px',
-            border: '1px solid rgba(255,255,255,0.1)',
-            marginBottom: '12px',
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <span style={{ color: '#fff', fontWeight: '600' }}>
-                {zone.zoneType === 'SUPPORT' ? '&#128994;' : '&#128308;'} {zone.zoneType}
-              </span>
-              <span style={{ color: '#fff', fontWeight: '600' }}>
-                ${zone.priceLow?.toFixed(2)} - ${zone.priceHigh?.toFixed(2)}
-              </span>
-            </div>
-            <div style={{ marginBottom: '14px' }}>
-              {zone.indicators?.map((ind, j) => (
-                <div key={j} style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>
-                  <span style={{ color: '#00ffff' }}>&bull;</span> {ind.indicator}: ${ind.value?.toFixed(2)}
-                </div>
-              ))}
-            </div>
-            <button onClick={() => onTrack(zone)} style={{
-              width: '100%',
-              padding: '12px',
-              backgroundColor: 'rgba(0, 255, 255, 0.1)',
-              border: '1px solid rgba(0, 255, 255, 0.3)',
-              borderRadius: '8px',
-              color: '#00ffff',
-              fontWeight: '600',
-              cursor: 'pointer',
+const PatternsTab = ({ analysis, onTrack }) => {
+  const zones = analysis?.confluenceZones || [];
+
+  return (
+    <div>
+      {zones.length > 0 ? (
+        <>
+          <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', textTransform: 'uppercase' }}>
+            Confluence Zones Detected
+          </h3>
+          {zones.map((zone, i) => (
+            <div key={i} style={{
+              padding: '16px',
+              backgroundColor: 'rgba(255,255,255,0.03)',
+              borderRadius: '12px',
+              border: '1px solid rgba(255,255,255,0.1)',
+              marginBottom: '12px',
             }}>
-              &#128300; Track This Pattern
-            </button>
-          </div>
-        ))}
-      </>
-    ) : (
-      <div style={{ textAlign: 'center', padding: '40px 20px', color: 'rgba(255,255,255,0.5)' }}>
-        <p>No significant confluence zones detected at current price levels.</p>
-        <p style={{ fontSize: '12px', marginTop: '8px' }}>
-          Check the Levels tab for individual support and resistance points.
-        </p>
-      </div>
-    )}
-  </div>
-);
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <span style={{ color: '#fff', fontWeight: '600' }}>
+                  {zone.zoneType === 'SUPPORT' ? '&#128994;' : '&#128308;'} {zone.zoneType}
+                </span>
+                <span style={{ color: '#fff', fontWeight: '600' }}>
+                  ${zone.priceLow?.toFixed(2)} - ${zone.priceHigh?.toFixed(2)}
+                </span>
+              </div>
+              <div style={{ marginBottom: '14px' }}>
+                {zone.indicators?.map((ind, j) => (
+                  <div key={j} style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>
+                    <span style={{ color: '#00ffff' }}>&bull;</span> {ind.indicator}: ${ind.value?.toFixed(2)}
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => onTrack(zone)} style={{
+                width: '100%',
+                padding: '12px',
+                backgroundColor: 'rgba(0, 255, 255, 0.1)',
+                border: '1px solid rgba(0, 255, 255, 0.3)',
+                borderRadius: '8px',
+                color: '#00ffff',
+                fontWeight: '600',
+                cursor: 'pointer',
+              }}>
+                &#128300; Track This Pattern
+              </button>
+            </div>
+          ))}
+        </>
+      ) : (
+        <div style={{ textAlign: 'center', padding: '40px 20px', color: 'rgba(255,255,255,0.5)' }}>
+          <p>No significant confluence zones detected at current price levels.</p>
+          <p style={{ fontSize: '12px', marginTop: '8px' }}>
+            Check the Levels tab for individual support and resistance points.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // Levels Tab
-const LevelsTab = ({ analysis }) => (
-  <div>
-    <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', textTransform: 'uppercase' }}>
-      Support Zones
-    </h3>
-    {(analysis.levels?.support || []).length > 0 ? (
-      (analysis.levels?.support || []).map((level, i) => (
-        <div key={i} style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          padding: '12px',
-          backgroundColor: 'rgba(255,255,255,0.03)',
-          borderRadius: '8px',
-          marginBottom: '8px',
-        }}>
-          <span style={{ color: 'rgba(255,255,255,0.6)' }}>{level.source}</span>
-          <span style={{ color: '#10b981', fontWeight: '600' }}>${level.price?.toFixed(2)}</span>
-        </div>
-      ))
-    ) : (
-      <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px' }}>No support levels identified</p>
-    )}
+const LevelsTab = ({ analysis }) => {
+  const supportLevels = analysis?.levels?.support || [];
+  const resistanceLevels = analysis?.levels?.resistance || [];
 
-    <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', marginTop: '20px', textTransform: 'uppercase' }}>
-      Resistance Zones
-    </h3>
-    {(analysis.levels?.resistance || []).length > 0 ? (
-      (analysis.levels?.resistance || []).map((level, i) => (
-        <div key={i} style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          padding: '12px',
-          backgroundColor: 'rgba(255,255,255,0.03)',
-          borderRadius: '8px',
-          marginBottom: '8px',
-        }}>
-          <span style={{ color: 'rgba(255,255,255,0.6)' }}>{level.source}</span>
-          <span style={{ color: '#ef4444', fontWeight: '600' }}>${level.price?.toFixed(2)}</span>
-        </div>
-      ))
-    ) : (
-      <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px' }}>No resistance levels identified</p>
-    )}
-  </div>
-);
+  return (
+    <div>
+      <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', textTransform: 'uppercase' }}>
+        Support Zones
+      </h3>
+      {supportLevels.length > 0 ? (
+        supportLevels.map((level, i) => (
+          <div key={i} style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            padding: '12px',
+            backgroundColor: 'rgba(255,255,255,0.03)',
+            borderRadius: '8px',
+            marginBottom: '8px',
+          }}>
+            <span style={{ color: 'rgba(255,255,255,0.6)' }}>{level.source}</span>
+            <span style={{ color: '#10b981', fontWeight: '600' }}>${level.price?.toFixed(2)}</span>
+          </div>
+        ))
+      ) : (
+        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px' }}>No support levels identified</p>
+      )}
+
+      <h3 style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', marginTop: '20px', textTransform: 'uppercase' }}>
+        Resistance Zones
+      </h3>
+      {resistanceLevels.length > 0 ? (
+        resistanceLevels.map((level, i) => (
+          <div key={i} style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            padding: '12px',
+            backgroundColor: 'rgba(255,255,255,0.03)',
+            borderRadius: '8px',
+            marginBottom: '8px',
+          }}>
+            <span style={{ color: 'rgba(255,255,255,0.6)' }}>{level.source}</span>
+            <span style={{ color: '#ef4444', fontWeight: '600' }}>${level.price?.toFixed(2)}</span>
+          </div>
+        ))
+      ) : (
+        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px' }}>No resistance levels identified</p>
+      )}
+    </div>
+  );
+};
 
 // Indicator Card
 const IndicatorCard = ({ name, value, status }) => (
