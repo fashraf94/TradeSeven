@@ -345,6 +345,16 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
     throw new Error('Not your turn');
   }
 
+  // Validate pick deadline hasn't passed (skip for autopick - autopick IS the timeout handler)
+  if (!isAutopick && draft.pickDeadline) {
+    const deadline = draft.pickDeadline.toDate
+      ? draft.pickDeadline.toDate()
+      : new Date(draft.pickDeadline);
+    if (Date.now() > deadline.getTime()) {
+      throw new Error('Pick deadline expired');
+    }
+  }
+
   // Validate category limit
   if (player.categories[asset.category] >= 3) {
     throw new Error(`Already have 3 ${asset.category} picks`);

@@ -105,9 +105,12 @@ export const useBattles = (user) => {
 
   const userBattles = battles.filter(b => isParticipant(b, username));
 
-  const activeBattles = userBattles.filter(b =>
-    b.status === 'active' || b.status === 'pending' || b.status === 'accepted'
-  );
+  const activeBattles = userBattles.filter(b => {
+    // Check both top-level status and nested state.status (V3 BaggerBomb battles)
+    if (b.status === 'completed') return false;
+    if (b.state?.status === 'completed') return false;
+    return b.status === 'active' || b.status === 'pending' || b.status === 'accepted';
+  });
 
   const pendingBattles = userBattles.filter(b =>
     b.status === 'pending' && getUsername(b.creator) === username

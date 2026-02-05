@@ -124,6 +124,35 @@ export const useDraft = (user, screen, setScreen = null) => {
     };
   }, [screen, draftState?.pickDeadline, draftState?.currentPlayerId]);
 
+  // Effect: Timer-expired autopick - hard backstop when timer hits 0
+  // Any client can trigger this (not just host), solving the host-leaves problem
+  useEffect(() => {
+    if (screen !== 'draftRoom') return;
+    if (!draftState || draftState.status !== 'active') return;
+    if (draftTimeRemaining > 0) return;
+
+    const currentPlayer = draftState.players?.find(
+      p => p.odUserId === draftState.currentPlayerId
+    );
+
+    // Skip if no current player or if CPU (handled by existing autopick)
+    if (!currentPlayer || currentPlayer.isCPU) return;
+
+    // Random delay (500-2500ms) to avoid race conditions from multiple clients
+    const delay = Math.floor(Math.random() * 2000) + 500;
+    const timerExpiredAutopick = setTimeout(async () => {
+      try {
+        const draftService = await import('../services/draftService');
+        await draftService.handleAutopick(draftState.id, draftState.currentPlayerId);
+      } catch (error) {
+        // Race condition (another client picked) is expected - log quietly
+        console.log('[useDraft] Timer-expired autopick attempted:', error.message);
+      }
+    }, delay);
+
+    return () => clearTimeout(timerExpiredAutopick);
+  }, [screen, draftState?.id, draftState?.status, draftState?.currentPlayerId, draftTimeRemaining]);
+
   // Effect: CPU/Absent player autopick with 3-second countdown
   useEffect(() => {
     if (screen !== 'draftRoom') return;
@@ -192,14 +221,15 @@ export const useDraft = (user, screen, setScreen = null) => {
     };
   }, [screen, draftState?.id, draftState?.status, user]);
 
-  // Effect: Check for absent players periodically (only host runs this)
+  // Effect: Check for absent players periodically (all clients, staggered intervals)
   useEffect(() => {
     if (screen !== 'draftRoom') return;
     if (!draftState?.id || draftState.status !== 'active') return;
 
     const currentUserId = user?.odUserId || user?.username;
     const isHost = draftState.hostId === currentUserId;
-    if (!isHost) return;
+    // Host checks every 15s, non-host every 30s (reduces Firestore writes)
+    const checkInterval = isHost ? 15000 : 30000;
 
     const checkAbsent = async () => {
       try {
@@ -210,7 +240,7 @@ export const useDraft = (user, screen, setScreen = null) => {
       }
     };
 
-    absentCheckRef.current = setInterval(checkAbsent, 15000);
+    absentCheckRef.current = setInterval(checkAbsent, checkInterval);
 
     return () => {
       if (absentCheckRef.current) clearInterval(absentCheckRef.current);
