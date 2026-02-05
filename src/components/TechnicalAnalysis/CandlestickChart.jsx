@@ -275,6 +275,50 @@ const CandlestickChart = ({
         return;
       }
 
+      // ========== DIAGNOSTIC: Check for issues that crash lightweight-charts ==========
+      console.log('[CandlestickChart] FULL DATA DUMP (first 5):', JSON.stringify(sortedData.slice(0, 5), null, 2));
+      console.log('[CandlestickChart] Total candles:', sortedData.length);
+      console.log('[CandlestickChart] Time range:', sortedData[0]?.time, 'to', sortedData[sortedData.length - 1]?.time);
+
+      // Check for duplicate times (lightweight-charts HATES duplicate timestamps)
+      const times = sortedData.map(c => c.time);
+      const uniqueTimes = new Set(times);
+      if (times.length !== uniqueTimes.size) {
+        console.error('[CandlestickChart] DUPLICATE TIMES DETECTED!', times.length - uniqueTimes.size, 'duplicates');
+        // Find and log duplicates
+        const seen = {};
+        times.forEach((t, idx) => {
+          if (seen[t] !== undefined) {
+            console.error(`Duplicate time at index ${idx}:`, t, '(first seen at index', seen[t], ')');
+          }
+          seen[t] = idx;
+        });
+      } else {
+        console.log('[CandlestickChart] No duplicate times detected');
+      }
+
+      // Check time ordering (must be strictly ascending)
+      let orderErrors = 0;
+      for (let i = 1; i < sortedData.length; i++) {
+        const prevTime = sortedData[i - 1].time;
+        const currTime = sortedData[i].time;
+        // Compare as numbers if numeric, otherwise as strings
+        const prev = typeof prevTime === 'number' ? prevTime : new Date(prevTime).getTime();
+        const curr = typeof currTime === 'number' ? currTime : new Date(currTime).getTime();
+        if (curr <= prev) {
+          orderErrors++;
+          if (orderErrors <= 3) {
+            console.error(`[CandlestickChart] TIME ORDER ERROR at index ${i}:`, prevTime, '>=', currTime);
+          }
+        }
+      }
+      if (orderErrors > 0) {
+        console.error(`[CandlestickChart] Total time order errors: ${orderErrors}`);
+      } else {
+        console.log('[CandlestickChart] Time ordering is correct (ascending)');
+      }
+      // ========== END DIAGNOSTIC ==========
+
       // Log what we're about to set
       console.log(`[CandlestickChart] Setting ${sortedData.length} candles, first: ${sortedData[0]?.time}, last: ${sortedData[sortedData.length - 1]?.time}`);
 
