@@ -2,7 +2,7 @@
 // Interactive candlestick chart using lightweight-charts library
 
 import React, { useEffect, useRef } from 'react';
-import { createChart } from 'lightweight-charts';
+import { createChart, CandlestickSeries } from 'lightweight-charts';
 
 const CandlestickChart = ({
   ohlcvData,
@@ -69,8 +69,8 @@ const CandlestickChart = ({
       wickDownColor: '#ff4757',
     };
 
-    // Add candlestick series
-    const candleSeries = chart.addCandlestickSeries(candlestickOptions);
+    // Add candlestick series (v5.x API)
+    const candleSeries = chart.addSeries(CandlestickSeries, candlestickOptions);
     candleSeriesRef.current = candleSeries;
 
     // Format and set data - ensure chronological order (oldest first)
