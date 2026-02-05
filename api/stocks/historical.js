@@ -136,6 +136,9 @@ export default async function handler(req, res) {
         } else {
           // Transform intraday format to match daily format
           // Filter out any candles with null/undefined values
+          // IMPORTANT: For intraday, preserve full datetime, not just date!
+          console.log('[API] Raw EODHD intraday sample:', JSON.stringify(intradayData[0], null, 2));
+
           data = intradayData
             .filter(candle =>
               candle &&
@@ -145,17 +148,27 @@ export default async function handler(req, res) {
               candle.low != null &&
               candle.close != null
             )
-            .map(candle => ({
-              date: new Date(candle.timestamp * 1000).toISOString().split('T')[0], // Use YYYY-MM-DD format
-              open: parseFloat(candle.open) || 0,
-              high: parseFloat(candle.high) || 0,
-              low: parseFloat(candle.low) || 0,
-              close: parseFloat(candle.close) || 0,
-              volume: parseInt(candle.volume, 10) || 0
-            }))
-            .sort((a, b) => new Date(b.date) - new Date(a.date)); // Newest first
+            .map(candle => {
+              // EODHD returns timestamp in seconds, convert to full ISO datetime
+              const dt = new Date(candle.timestamp * 1000);
+              return {
+                // For intraday: use full ISO datetime string to preserve hours
+                date: dt.toISOString(), // Full datetime: '2026-01-26T14:00:00.000Z'
+                datetime: dt.toISOString(), // Explicit datetime field
+                timestamp: candle.timestamp, // Also include original Unix timestamp
+                open: parseFloat(candle.open) || 0,
+                high: parseFloat(candle.high) || 0,
+                low: parseFloat(candle.low) || 0,
+                close: parseFloat(candle.close) || 0,
+                volume: parseInt(candle.volume, 10) || 0
+              };
+            })
+            .sort((a, b) => b.timestamp - a.timestamp); // Newest first, sort by timestamp
 
           console.log(`[API] Processed ${data.length} valid intraday candles`);
+          if (data.length > 0) {
+            console.log('[API] Processed intraday sample:', JSON.stringify(data[0], null, 2));
+          }
 
           // If all candles were filtered out, fall back to daily
           if (data.length === 0) {
