@@ -2,7 +2,8 @@
 // Interactive candlestick chart using lightweight-charts library
 
 import React, { useEffect, useRef } from 'react';
-import { createChart, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
+import { createChart, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts';
+import { createSeriesMarkers } from 'lightweight-charts';
 
 // Conditional logging - only show debug logs in development
 const DEBUG = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
@@ -86,12 +87,18 @@ const CandlestickChart = ({
   height = 300,
   levels = [],
   showLevelOverlay = false,
-  showVolume = false
+  showVolume = false,
+  smaData = null,
+  fibLevels = null,
+  patternMarkers = null,
 }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
   const candleSeriesRef = useRef(null);
   const levelLinesRef = useRef([]);
+  const smaSeriesRef = useRef([]);
+  const fibLinesRef = useRef([]);
+  const markersRef = useRef(null);
   const [chartError, setChartError] = React.useState(null);
 
   useEffect(() => {
@@ -421,6 +428,13 @@ const CandlestickChart = ({
       if (handleResize) {
         window.removeEventListener('resize', handleResize);
       }
+      // Clean up overlay refs before removing chart
+      smaSeriesRef.current = [];
+      fibLinesRef.current = [];
+      if (markersRef.current) {
+        try { markersRef.current.detach(); } catch (e) { /* ok */ }
+        markersRef.current = null;
+      }
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
@@ -459,6 +473,135 @@ const CandlestickChart = ({
       });
     }
   }, [levels, showLevelOverlay]);
+
+  // SMA overlay lines
+  useEffect(() => {
+    if (!chartRef.current || !candleSeriesRef.current) return;
+
+    // Remove existing SMA series
+    smaSeriesRef.current.forEach(s => {
+      try { chartRef.current.removeSeries(s); } catch (e) { /* already removed */ }
+    });
+    smaSeriesRef.current = [];
+
+    if (!smaData) return;
+
+    // Detect if intraday from existing candle data
+    const sampleCandle = ohlcvData?.[0];
+    const sampleDate = sampleCandle?.date || sampleCandle?.datetime || sampleCandle?.timestamp;
+    const isIntraday = typeof sampleDate === 'string' && (sampleDate.includes('T') || sampleDate.includes(':'));
+
+    const smaConfigs = [
+      { key: 'sma20', color: 'rgba(0,255,255,0.4)', lineWidth: 1 },
+      { key: 'sma50', color: '#00ffff', lineWidth: 2 },
+      { key: 'sma200', color: '#ffaa00', lineWidth: 2 },
+    ];
+
+    smaConfigs.forEach(({ key, color, lineWidth }) => {
+      const data = smaData[key];
+      if (!data || data.length === 0) return;
+
+      try {
+        const series = chartRef.current.addSeries(LineSeries, {
+          color,
+          lineWidth,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+
+        // Data is newest-first, reverse for chart (oldest-first)
+        const formatted = [...data].reverse()
+          .map(d => ({
+            time: formatTime(d.date, isIntraday),
+            value: d.value,
+          }))
+          .filter(d => d.time != null && Number.isFinite(d.value));
+
+        if (formatted.length > 0) {
+          series.setData(formatted);
+          smaSeriesRef.current.push(series);
+        } else {
+          chartRef.current.removeSeries(series);
+        }
+      } catch (e) {
+        logger.warn(`[CandlestickChart] SMA ${key} failed:`, e);
+      }
+    });
+  }, [smaData, ohlcvData]);
+
+  // Fibonacci overlay price lines
+  useEffect(() => {
+    if (!candleSeriesRef.current) return;
+
+    // Remove existing fib lines
+    fibLinesRef.current.forEach(line => {
+      try { candleSeriesRef.current.removePriceLine(line); } catch (e) { /* already removed */ }
+    });
+    fibLinesRef.current = [];
+
+    if (!fibLevels || !Array.isArray(fibLevels)) return;
+
+    fibLevels.forEach(fib => {
+      try {
+        const line = candleSeriesRef.current.createPriceLine({
+          price: fib.price,
+          color: 'rgba(255, 170, 0, 0.5)',
+          lineWidth: 1,
+          lineStyle: 1, // Dashed
+          axisLabelVisible: true,
+          title: fib.level || '',
+        });
+        fibLinesRef.current.push(line);
+      } catch (e) {
+        logger.warn('[CandlestickChart] Fib line failed:', e);
+      }
+    });
+  }, [fibLevels]);
+
+  // Pattern markers overlay
+  useEffect(() => {
+    // Detach previous markers
+    if (markersRef.current) {
+      try { markersRef.current.detach(); } catch (e) { /* already detached */ }
+      markersRef.current = null;
+    }
+
+    if (!candleSeriesRef.current || !patternMarkers || patternMarkers.length === 0) return;
+
+    // Detect if intraday
+    const sampleCandle = ohlcvData?.[0];
+    const sampleDate = sampleCandle?.date || sampleCandle?.datetime || sampleCandle?.timestamp;
+    const isIntraday = typeof sampleDate === 'string' && (sampleDate.includes('T') || sampleDate.includes(':'));
+
+    try {
+      const markers = patternMarkers
+        .map(p => {
+          const time = formatTime(p.time, isIntraday);
+          if (!time) return null;
+          const isBullish = p.bias === 'BULLISH';
+          return {
+            time,
+            position: isBullish ? 'belowBar' : 'aboveBar',
+            color: isBullish ? '#00ff88' : '#ff4757',
+            shape: isBullish ? 'arrowUp' : 'arrowDown',
+            text: p.shortName || '',
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          const tA = typeof a.time === 'number' ? a.time : new Date(a.time).getTime() / 1000;
+          const tB = typeof b.time === 'number' ? b.time : new Date(b.time).getTime() / 1000;
+          return tA - tB;
+        });
+
+      if (markers.length > 0) {
+        markersRef.current = createSeriesMarkers(candleSeriesRef.current, markers);
+      }
+    } catch (e) {
+      logger.warn('[CandlestickChart] Pattern markers failed:', e);
+    }
+  }, [patternMarkers, ohlcvData]);
 
   // Calculate price change for display
   const getPriceChange = () => {

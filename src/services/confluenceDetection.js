@@ -227,7 +227,7 @@ const buildRVOLContext = (rvolData) => {
  * @param {string} timeframe - '1h', '1d', or '1w'
  * @param {Object|null} rvolData - Pre-calculated RVOL data for context
  */
-const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
+export const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
   const patterns = [];
   const len = candles.length;
   if (len < 5) return patterns;
@@ -240,6 +240,9 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
   const prev = candles[1];
   const prev2 = candles[2];
   const rvolContext = buildRVOLContext(rvolData);
+
+  // Capture latest candle time for chart marker placement
+  const latestTime = latest.date || latest.datetime || latest.timestamp;
 
   // Double Bottom Detection (look at last 10 candles)
   const recentSlice = candles.slice(0, 10);
@@ -267,6 +270,8 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
     patterns.push({
       type: 'DOUBLE_BOTTOM',
       name: 'Double Bottom',
+      shortName: 'DBL',
+      time: latestTime,
       price: minLow,
       description: `Double bottom forming near $${minLow.toFixed(2)}`,
       bias: 'BULLISH',
@@ -304,6 +309,8 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
     patterns.push({
       type: 'DOUBLE_TOP',
       name: 'Double Top',
+      shortName: 'DBL',
+      time: latestTime,
       price: maxHigh,
       description: `Double top forming near $${maxHigh.toFixed(2)}`,
       bias: 'BEARISH',
@@ -328,6 +335,8 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
     patterns.push({
       type: 'HAMMER',
       name: 'Hammer Candle',
+      shortName: 'HAM',
+      time: latestTime,
       price: latest.low,
       description: `Bullish hammer pattern detected${shadowRatio >= 3 ? ' (strong)' : ''}`,
       bias: 'BULLISH',
@@ -348,6 +357,8 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
     patterns.push({
       type: 'SHOOTING_STAR',
       name: 'Shooting Star',
+      shortName: 'STAR',
+      time: latestTime,
       price: latest.high,
       description: `Bearish shooting star pattern detected${shadowRatio >= 3 ? ' (strong)' : ''}`,
       bias: 'BEARISH',
@@ -374,6 +385,8 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
     patterns.push({
       type: 'BULLISH_ENGULFING',
       name: 'Bullish Engulfing',
+      shortName: 'ENG',
+      time: latestTime,
       price: latest.low,
       description: `Bullish engulfing pattern detected${isStrong ? ' (strong)' : ''}`,
       bias: 'BULLISH',
@@ -402,6 +415,8 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
     patterns.push({
       type: 'BEARISH_ENGULFING',
       name: 'Bearish Engulfing',
+      shortName: 'ENG',
+      time: latestTime,
       price: latest.high,
       description: `Bearish engulfing pattern detected${isStrong ? ' (strong)' : ''}`,
       bias: 'BEARISH',
@@ -431,6 +446,8 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
       patterns.push({
         type: 'HIGHER_LOWS',
         name: 'Higher Lows',
+        shortName: 'H-LO',
+        time: latestTime,
         price: lows[0],
         description: 'Series of higher lows indicating uptrend',
         bias: 'BULLISH',
@@ -458,6 +475,8 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
       patterns.push({
         type: 'LOWER_HIGHS',
         name: 'Lower Highs',
+        shortName: 'L-HI',
+        time: latestTime,
         price: highs[0],
         description: 'Series of lower highs indicating downtrend',
         bias: 'BEARISH',
@@ -506,6 +525,8 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
     patterns.push({
       type: dojiType,
       name: dojiName,
+      shortName: 'DOJI',
+      time: latestTime,
       price: (latest.high + latest.low) / 2,
       description: `${dojiName} detected — ${dojiBias === 'NEUTRAL' ? 'indecision' : dojiBias.toLowerCase() + ' signal'}`,
       bias: dojiBias,
@@ -536,6 +557,8 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
       patterns.push({
         type: 'MORNING_STAR',
         name: 'Morning Star',
+        shortName: 'M\u2605',
+        time: latestTime,
         price: prev.low,
         description: 'Morning Star — 3-candle bullish reversal pattern',
         bias: 'BULLISH',
@@ -569,6 +592,8 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
       patterns.push({
         type: 'EVENING_STAR',
         name: 'Evening Star',
+        shortName: 'E\u2605',
+        time: latestTime,
         price: prev.high,
         description: 'Evening Star — 3-candle bearish reversal pattern',
         bias: 'BEARISH',
@@ -600,6 +625,8 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
     patterns.push({
       type: 'INSIDE_BAR',
       name: isDoubleInside ? 'Double Inside Bar' : (isNR4 ? 'Inside Bar (NR4)' : 'Inside Bar'),
+      shortName: 'IN',
+      time: latestTime,
       price: (latest.high + latest.low) / 2,
       description: `${isDoubleInside ? 'Double Inside Bar' : 'Inside Bar'} — volatility compression${isNR4 ? ', narrowest range in 4 bars' : ''}`,
       bias: 'NEUTRAL',
@@ -799,4 +826,5 @@ const calculateFibonacciLevels = (data) => {
   }));
 };
 
+export { calculateFibonacciLevels };
 export default detectConfluence;

@@ -9512,6 +9512,10 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
           analysisMode={analysisMode}
           onToggleMode={() => setAnalysisMode(m => m === 'quick' ? 'deep' : 'quick')}
           colors={c}
+          userId={user?.odUserId || user?.uid || user?.username}
+          showToast={showToast}
+          trackedPatterns={trackedPatterns}
+          onPatternTracked={loadUserPatterns}
         />
       );
     }
