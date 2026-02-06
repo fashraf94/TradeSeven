@@ -8888,7 +8888,7 @@ const AssetDetailView = ({ asset, thesis, pinnedInsights, onPin, onBack, colors 
 // RESEARCH FLOW - MAIN CONTAINER
 // ============================================
 
-const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors, user }) => {
+const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors, user, showToast }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
 
   // Flow state
@@ -16716,6 +16716,7 @@ export default function PortfolioDuel() {
             }}
             colors={colors}
             user={user}
+            showToast={showToast}
           />
         </div>
       );
