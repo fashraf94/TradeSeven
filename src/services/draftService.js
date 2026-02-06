@@ -476,32 +476,48 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
 }
 
 /**
- * Handle autopick when timer expires
+ * Handle autopick when timer expires (client-side)
+ * Also called server-side via the cron job (api/cron/snake-draft-autopick.js)
+ * which uses its own Firebase Admin SDK implementation.
  */
 export async function handleAutopick(draftId, userId) {
   const draft = await getDraft(draftId);
-  if (!draft || draft.status !== 'active') return;
+  if (!draft || draft.status !== 'active') {
+    console.log(`[AUTOPICK] Skipped - draft ${draftId} not active (status: ${draft?.status})`);
+    return;
+  }
 
   const player = draft.players.find(p => p.odUserId === userId);
-  if (!player) return;
+  if (!player) {
+    console.log(`[AUTOPICK] Skipped - player ${userId} not found in draft ${draftId}`);
+    return;
+  }
 
-  // Find needed category
+  // Find needed category (each player needs 3 of each)
   const neededCategories = [];
-  if (player.categories.steady < 3) neededCategories.push('steady');
-  if (player.categories.risky < 3) neededCategories.push('risky');
-  if (player.categories.defensive < 3) neededCategories.push('defensive');
+  if ((player.categories?.steady || 0) < 3) neededCategories.push('steady');
+  if ((player.categories?.risky || 0) < 3) neededCategories.push('risky');
+  if ((player.categories?.defensive || 0) < 3) neededCategories.push('defensive');
 
-  if (neededCategories.length === 0) return;
+  if (neededCategories.length === 0) {
+    console.log(`[AUTOPICK] Skipped - ${player.displayName} has all categories filled`);
+    return;
+  }
 
   const category = neededCategories[Math.floor(Math.random() * neededCategories.length)];
   const available = draft.availableAssets[category];
 
-  if (available.length === 0) return;
+  if (!available || available.length === 0) {
+    console.log(`[AUTOPICK] Skipped - no available ${category} assets`);
+    return;
+  }
 
   const asset = {
     ...available[Math.floor(Math.random() * available.length)],
     category
   };
+
+  console.log(`[AUTOPICK] ${player.displayName} needs ${category} → picking ${asset.symbol}`);
 
   return makePick(draftId, userId, asset, true);
 }
