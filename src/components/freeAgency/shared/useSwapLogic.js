@@ -32,6 +32,9 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
   const [selectedCategory, setSelectedCategory] = useState('steady');
   const [selectionOrder, setSelectionOrder] = useState(null); // 'add-first' | 'drop-first' | null
 
+  // Price data
+  const [livePrices, setLivePrices] = useState({});
+
   // UI state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isSwapping, setIsSwapping] = useState(false);
@@ -139,6 +142,31 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
     const interval = setInterval(loadData, 60000);
     return () => clearInterval(interval);
   }, [loadData]);
+
+  // Fetch live prices for all assets (free agents + roster)
+  useEffect(() => {
+    const allSymbols = new Set();
+    ['steady', 'risky', 'defensive'].forEach(cat => {
+      (freeAgents[cat] || []).forEach(a => { if (a.symbol) allSymbols.add(a.symbol.toUpperCase()); });
+      (playerRoster[cat] || []).forEach(a => { if (a.symbol) allSymbols.add(a.symbol.toUpperCase()); });
+    });
+
+    if (allSymbols.size === 0) return;
+
+    const fetchPrices = async () => {
+      try {
+        const { getMultipleStockPrices } = await import('../../../services/eodhdAPI');
+        const prices = await getMultipleStockPrices(Array.from(allSymbols));
+        setLivePrices(prices);
+      } catch (err) {
+        logger.error('[FreeAgency] Failed to fetch prices:', err);
+      }
+    };
+
+    fetchPrices();
+    const interval = setInterval(fetchPrices, 60000);
+    return () => clearInterval(interval);
+  }, [freeAgents, playerRoster, logger]);
 
   // ===========================================
   // SELECTION HANDLERS (Bidirectional: Add or Drop first)
@@ -292,6 +320,7 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
     timeInfo,
     portfolioType,
     currentUserId,
+    livePrices,
 
     // Loading/Error states
     loading,
