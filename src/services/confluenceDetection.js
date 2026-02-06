@@ -20,6 +20,34 @@ const getDistanceThresholds = (timeframe) => {
 };
 
 /**
+ * Pattern detection threshold scaling by timeframe
+ * Weekly candles have much wider ranges and fewer data points
+ */
+const getPatternThresholds = (timeframe) => {
+  switch (timeframe) {
+    case '1w':
+      return {
+        doubleFormationTolerance: 0.02,  // 2% (vs 0.5% daily)
+        trendLookback: 8,                // 8 weeks (vs 4 days)
+        swingLookback: 3,                // 3 bars each side for weekly swings
+      };
+    case '1h':
+      return {
+        doubleFormationTolerance: 0.005,
+        trendLookback: 4,
+        swingLookback: 5,
+      };
+    case '1d':
+    default:
+      return {
+        doubleFormationTolerance: 0.005,
+        trendLookback: 4,
+        swingLookback: 5,
+      };
+  }
+};
+
+/**
  * Detect confluence zones by combining micro patterns with macro levels
  * @param {Array} selectedTimeframeData - OHLCV data for user's selected timeframe
  * @param {Array} dailyData - OHLCV data for daily (anchor) timeframe
@@ -34,8 +62,12 @@ export const detectConfluence = (selectedTimeframeData, dailyData, dailyIndicato
     return confluences;
   }
 
-  // Get macro levels from daily data
-  const macroLevels = getMacroLevels(dailyData, dailyIndicators);
+  // For weekly timeframe, use weekly data as its own macro anchor
+  // Daily macro levels are too granular for multi-year weekly charts
+  const isWeekly = selectedTimeframe === '1w';
+  const macroData = isWeekly ? selectedTimeframeData : dailyData;
+  const macroIndicators = isWeekly ? (dailyIndicators || {}) : dailyIndicators;
+  const macroLevels = getMacroLevels(macroData, macroIndicators, selectedTimeframe);
 
   // Get current price info from selected timeframe
   const currentPrice = selectedTimeframeData[0]?.close; // Data is newest first
@@ -116,7 +148,7 @@ export const detectConfluence = (selectedTimeframeData, dailyData, dailyIndicato
 /**
  * Get macro support/resistance levels from daily data
  */
-const getMacroLevels = (dailyData, indicators) => {
+const getMacroLevels = (dailyData, indicators, timeframe = '1d') => {
   const levels = [];
   if (!dailyData?.length) return levels;
 
@@ -153,8 +185,9 @@ const getMacroLevels = (dailyData, indicators) => {
     });
   }
 
-  // Recent swing highs/lows
-  const swingPoints = findSwingPoints(dailyData);
+  // Recent swing highs/lows (smaller lookback for weekly to find more swing points)
+  const swingLookback = timeframe === '1w' ? 3 : 5;
+  const swingPoints = findSwingPoints(dailyData, swingLookback);
   swingPoints.forEach(point => {
     levels.push({
       type: point.type,
@@ -199,6 +232,9 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
   const len = candles.length;
   if (len < 5) return patterns;
 
+  // Timeframe-aware pattern thresholds
+  const patternThresholds = getPatternThresholds(timeframe);
+
   // Note: candles are newest first, so candles[0] is latest
   const latest = candles[0];
   const prev = candles[1];
@@ -209,12 +245,13 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
   const recentSlice = candles.slice(0, 10);
   const recentLows = recentSlice.map(c => c.low);
   const minLow = Math.min(...recentLows);
-  const lowTouches = recentLows.filter(l => Math.abs(l - minLow) / minLow < 0.005).length;
+  const dblTolerance = patternThresholds.doubleFormationTolerance;
+  const lowTouches = recentLows.filter(l => Math.abs(l - minLow) / minLow < dblTolerance).length;
   if (lowTouches >= 2) {
     // Volume comparison between first and second touch
     const lowCandleIndices = recentSlice
       .map((c, i) => ({ index: i, low: c.low, volume: c.volume }))
-      .filter(c => Math.abs(c.low - minLow) / minLow < 0.005);
+      .filter(c => Math.abs(c.low - minLow) / minLow < dblTolerance);
     let volumeContext = null;
     if (lowCandleIndices.length >= 2) {
       // In newest-first: higher index = older candle
@@ -247,12 +284,12 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
   // Double Top Detection
   const recentHighs = recentSlice.map(c => c.high);
   const maxHigh = Math.max(...recentHighs);
-  const highTouches = recentHighs.filter(h => Math.abs(h - maxHigh) / maxHigh < 0.005).length;
+  const highTouches = recentHighs.filter(h => Math.abs(h - maxHigh) / maxHigh < dblTolerance).length;
   if (highTouches >= 2) {
     // Volume comparison between first and second peak
     const highCandleIndices = recentSlice
       .map((c, i) => ({ index: i, high: c.high, volume: c.volume }))
-      .filter(c => Math.abs(c.high - maxHigh) / maxHigh < 0.005);
+      .filter(c => Math.abs(c.high - maxHigh) / maxHigh < dblTolerance);
     let volumeContext = null;
     if (highCandleIndices.length >= 2) {
       const firstPeak = highCandleIndices[highCandleIndices.length - 1]; // oldest
@@ -381,11 +418,16 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
     });
   }
 
-  // Higher Lows (uptrend confirmation) - check last 4 candles (newest first, so reverse logic)
-  if (len >= 4) {
-    const lows = candles.slice(0, 4).map(c => c.low);
-    // lows[0] is newest, lows[3] is oldest
-    if (lows[0] > lows[1] && lows[1] > lows[2] && lows[2] > lows[3]) {
+  // Higher Lows (uptrend confirmation) - check last N candles (scaled by timeframe)
+  const trendLookback = patternThresholds.trendLookback;
+  if (len >= trendLookback) {
+    const lows = candles.slice(0, trendLookback).map(c => c.low);
+    // Check that each successive low is higher (lows[0] is newest)
+    let isHigherLows = true;
+    for (let i = 0; i < lows.length - 1; i++) {
+      if (lows[i] <= lows[i + 1]) { isHigherLows = false; break; }
+    }
+    if (isHigherLows) {
       patterns.push({
         type: 'HIGHER_LOWS',
         name: 'Higher Lows',
@@ -405,10 +447,14 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
   }
 
   // Lower Highs (downtrend confirmation)
-  if (len >= 4) {
-    const highs = candles.slice(0, 4).map(c => c.high);
-    // highs[0] is newest, highs[3] is oldest
-    if (highs[0] < highs[1] && highs[1] < highs[2] && highs[2] < highs[3]) {
+  if (len >= trendLookback) {
+    const highs = candles.slice(0, trendLookback).map(c => c.high);
+    // Check that each successive high is lower (highs[0] is newest)
+    let isLowerHighs = true;
+    for (let i = 0; i < highs.length - 1; i++) {
+      if (highs[i] >= highs[i + 1]) { isLowerHighs = false; break; }
+    }
+    if (isLowerHighs) {
       patterns.push({
         type: 'LOWER_HIGHS',
         name: 'Lower Highs',

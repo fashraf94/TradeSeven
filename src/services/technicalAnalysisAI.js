@@ -5,6 +5,22 @@
  */
 
 // ============================================
+// FREEFORM FOLLOW-UP PROMPT (for AI-generated follow-up questions)
+// ============================================
+
+const FREEFORM_SYSTEM_PROMPT = `You are a technical analyst answering a follow-up question about a stock. Answer conversationally in 2-3 sentences.
+
+Focus on the specific question asked, using the provided indicator data and OHLCV candles.
+
+OUTPUT FORMAT (JSON only):
+{
+  "answer": "2-3 sentence conversational response addressing the question",
+  "followUps": ["suggested follow-up question 1", "suggested follow-up question 2"]
+}
+
+Keep it educational and avoid trading recommendations.`;
+
+// ============================================
 // EXPLORE TAB PROMPTS (Conversational Q&A)
 // ============================================
 
@@ -718,14 +734,22 @@ Provide a focused answer with 2 relevant follow-up question suggestions. Return 
  */
 export const analyzeExploreQuestion = async (symbol, questionId, ohlcvData, calculatedIndicators) => {
   const promptConfig = EXPLORE_PROMPTS[questionId];
-  if (!promptConfig) {
-    throw new Error(`Unknown question ID: ${questionId}`);
-  }
 
-  console.log(`[TechnicalAnalysisAI] Explore: ${promptConfig.shortLabel} for ${symbol}`);
+  // Support freeform follow-up questions: if questionId doesn't match a preset, treat it as freeform text
+  const isFreeform = !promptConfig;
+  const systemPrompt = isFreeform ? FREEFORM_SYSTEM_PROMPT : promptConfig.systemPrompt;
+  const questionText = isFreeform ? questionId : promptConfig.question;
+  const shortLabel = isFreeform ? 'Follow-up' : promptConfig.shortLabel;
+
+  console.log(`[TechnicalAnalysisAI] Explore: ${shortLabel} for ${symbol}${isFreeform ? ' (freeform)' : ''}`);
 
   const currentPrice = ohlcvData[0]?.close;
-  const userPrompt = buildExploreUserPrompt(symbol, questionId, currentPrice, calculatedIndicators, ohlcvData);
+  let userPrompt = buildExploreUserPrompt(symbol, questionId, currentPrice, calculatedIndicators, ohlcvData);
+
+  // For freeform questions, append the actual question text
+  if (isFreeform) {
+    userPrompt += `\n\nUSER'S QUESTION: ${questionText}`;
+  }
 
   try {
     const response = await fetch('/api/ai-advisor', {
@@ -734,7 +758,7 @@ export const analyzeExploreQuestion = async (symbol, questionId, ohlcvData, calc
       body: JSON.stringify({
         advisorType: 'technical-analysis',
         mode: 'explore',
-        systemPrompt: promptConfig.systemPrompt,
+        systemPrompt,
         prompt: userPrompt,
         maxTokens: 800
       })
@@ -750,7 +774,7 @@ export const analyzeExploreQuestion = async (symbol, questionId, ohlcvData, calc
 
     return {
       questionId,
-      question: promptConfig.question,
+      question: questionText,
       ...parsed,
       ticker: symbol,
       timestamp: new Date().toISOString(),
@@ -761,8 +785,8 @@ export const analyzeExploreQuestion = async (symbol, questionId, ohlcvData, calc
     // Return fallback response
     return {
       questionId,
-      question: promptConfig.question,
-      answer: `Unable to analyze ${symbol} at this time. Please check the indicator readings above for ${promptConfig.shortLabel.toLowerCase()} information.`,
+      question: questionText,
+      answer: `Unable to analyze ${symbol} at this time. Please check the indicator readings above for ${shortLabel.toLowerCase()} information.`,
       followUps: ['What are the key indicators showing?', 'Where are the support and resistance levels?'],
       error: true,
       ticker: symbol,

@@ -282,32 +282,25 @@ const ExploreTab = ({ indicators, conversation, isLoading, onAskQuestion, onRese
               {/* Follow-up Suggestions */}
               {item.followUps && item.followUps.length > 0 && (
                 <div style={{ marginTop: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {item.followUps.map((followUp, j) => {
-                    // Find the question ID that matches this follow-up
-                    const matchingQ = questions.find(q =>
-                      q.question.toLowerCase().includes(followUp.toLowerCase().slice(0, 20)) ||
-                      followUp.toLowerCase().includes(q.shortLabel.toLowerCase())
-                    );
-                    return (
-                      <button
-                        key={j}
-                        onClick={() => matchingQ && onAskQuestion(matchingQ.id)}
-                        disabled={isLoading || !matchingQ}
-                        style={{
-                          padding: '6px 12px',
-                          fontSize: '12px',
-                          backgroundColor: 'rgba(0, 255, 255, 0.1)',
-                          border: '1px solid rgba(0, 255, 255, 0.3)',
-                          borderRadius: '16px',
-                          color: '#00ffff',
-                          cursor: matchingQ && !isLoading ? 'pointer' : 'default',
-                          opacity: matchingQ && !isLoading ? 1 : 0.5,
-                        }}
-                      >
-                        {followUp}
-                      </button>
-                    );
-                  })}
+                  {item.followUps.map((followUp, j) => (
+                    <button
+                      key={j}
+                      onClick={() => onAskQuestion(followUp)}
+                      disabled={isLoading}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        backgroundColor: 'rgba(0, 255, 255, 0.1)',
+                        border: '1px solid rgba(0, 255, 255, 0.3)',
+                        borderRadius: '16px',
+                        color: '#00ffff',
+                        cursor: isLoading ? 'default' : 'pointer',
+                        opacity: isLoading ? 0.5 : 1,
+                      }}
+                    >
+                      {followUp}
+                    </button>
+                  ))}
                 </div>
               )}
             </motion.div>

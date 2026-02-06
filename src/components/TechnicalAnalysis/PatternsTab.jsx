@@ -10,6 +10,7 @@ const PatternsTab = ({
   ohlcvData,
   dailyAnchorData,
   dailyIndicators,
+  calculatedIndicators,
   selectedTimeframe,
   onTrackPattern,
   rvolData,
@@ -29,9 +30,11 @@ const PatternsTab = ({
     setError(null);
 
     try {
-      // Use daily anchor data if available, otherwise use the current timeframe data
-      const anchorData = dailyAnchorData?.length ? dailyAnchorData : ohlcvData;
-      const anchorIndicators = dailyIndicators || {};
+      // For weekly: use weekly data + weekly indicators as macro anchor
+      // Daily macro levels are too granular for multi-year weekly charts
+      const isWeekly = selectedTimeframe === '1w';
+      const anchorData = isWeekly ? ohlcvData : (dailyAnchorData?.length ? dailyAnchorData : ohlcvData);
+      const anchorIndicators = isWeekly ? (calculatedIndicators || {}) : (dailyIndicators || {});
 
       // Run confluence detection
       const detected = detectConfluence(
@@ -95,7 +98,7 @@ const PatternsTab = ({
       <div style={styles.header}>
         <h3 style={styles.title}>CONFLUENCE ZONES</h3>
         <span style={styles.subtitle}>
-          Micro patterns ({selectedTimeframe.toUpperCase()}) aligning with macro levels (Daily)
+          Micro patterns ({selectedTimeframe.toUpperCase()}) aligning with macro levels ({selectedTimeframe === '1w' ? 'Weekly' : 'Daily'})
         </span>
       </div>
 
@@ -219,7 +222,7 @@ const PatternsTab = ({
 
               {/* Macro Level */}
               <div style={styles.levelSection}>
-                <div style={styles.sectionLabel}>MACRO (DAILY ANCHOR)</div>
+                <div style={styles.sectionLabel}>MACRO ({selectedTimeframe === '1w' ? 'WEEKLY' : 'DAILY'} ANCHOR)</div>
                 <div style={styles.levelName}>{confluence.macroLevel.name}</div>
                 <div style={styles.levelPrice}>${confluence.macroLevel.price.toFixed(2)}</div>
               </div>

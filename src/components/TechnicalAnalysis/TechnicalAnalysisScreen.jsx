@@ -769,6 +769,7 @@ const TechnicalAnalysisScreen = ({
                   ohlcvData={ohlcvData}
                   dailyAnchorData={dailyAnchorData}
                   dailyIndicators={dailyIndicators}
+                  calculatedIndicators={calculatedIndicators}
                   selectedTimeframe={selectedTimeframe}
                   onTrackPattern={handleTrackPattern}
                   rvolData={calculatedIndicators?.rvol}
