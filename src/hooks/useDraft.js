@@ -44,11 +44,13 @@ export const useDraft = (user, screen, setScreen = null) => {
   const [draftLoading, setDraftLoading] = useState(false);
   const [draftError, setDraftError] = useState(null);
 
+  // Local absence detection (computed from lastSeen, no Firestore writes)
+  const [currentPickerAbsent, setCurrentPickerAbsent] = useState(false);
+
   // Refs for cleanup
   const timerRef = useRef(null);
   const autopickRef = useRef(null);
   const presenceRef = useRef(null);
-  const absentCheckRef = useRef(null);
 
   // ============================================
   // EFFECTS (moved from App.jsx)
@@ -159,7 +161,9 @@ export const useDraft = (user, screen, setScreen = null) => {
     if (!draftState || draftState.status !== 'active') return;
 
     const currentPlayer = draftState.players?.find(p => p.odUserId === draftState.currentPlayerId);
-    const needsAutopick = currentPlayer?.isCPU || currentPlayer?.disconnected || currentPlayer?.isAbsent;
+    // Use locally-computed absence (currentPickerAbsent) instead of Firestore isAbsent
+    // to avoid race condition where concurrent presence writes overwrite the isAbsent flag
+    const needsAutopick = currentPlayer?.isCPU || currentPlayer?.disconnected || currentPickerAbsent;
 
     if (needsAutopick) {
       // Show 3-second countdown
@@ -193,7 +197,7 @@ export const useDraft = (user, screen, setScreen = null) => {
     } else {
       setAutopickCountdown(null);
     }
-  }, [screen, draftState?.currentPlayerId, draftState?.status, draftState?.players]);
+  }, [screen, draftState?.currentPlayerId, draftState?.status, draftState?.players, currentPickerAbsent]);
 
   // Effect: Presence heartbeat
   useEffect(() => {
@@ -212,40 +216,58 @@ export const useDraft = (user, screen, setScreen = null) => {
       }
     };
 
-    // Send presence immediately and every 10 seconds
+    // Send presence immediately and every 5 seconds
     sendPresence();
-    presenceRef.current = setInterval(sendPresence, 10000);
+    presenceRef.current = setInterval(sendPresence, 5000);
 
     return () => {
       if (presenceRef.current) clearInterval(presenceRef.current);
     };
   }, [screen, draftState?.id, draftState?.status, user]);
 
-  // Effect: Check for absent players periodically (all clients, staggered intervals)
+  // Effect: Detect current picker absence locally (no Firestore writes)
+  // Polls every 3 seconds and computes absence from lastSeen timestamps.
+  // This avoids the race condition where concurrent updatePlayerPresence writes
+  // overwrite the isAbsent flag set by checkAbsentPlayers.
   useEffect(() => {
     if (screen !== 'draftRoom') return;
-    if (!draftState?.id || draftState.status !== 'active') return;
+    if (!draftState || draftState.status !== 'active') return;
 
-    const currentUserId = user?.odUserId || user?.username;
-    const isHost = draftState.hostId === currentUserId;
-    // Host checks every 15s, non-host every 30s (reduces Firestore writes)
-    const checkInterval = isHost ? 15000 : 30000;
+    const ABSENCE_THRESHOLD_MS = 15000; // 15 seconds without heartbeat = absent
 
-    const checkAbsent = async () => {
-      try {
-        const draftService = await import('../services/draftService');
-        await draftService.checkAbsentPlayers(draftState.id);
-      } catch (error) {
-        console.error('[useDraft] Absent check failed:', error);
+    const checkCurrentPickerAbsence = () => {
+      const currentPlayer = draftState.players?.find(
+        p => p.odUserId === draftState.currentPlayerId
+      );
+
+      // CPU players have their own autopick - don't flag as absent
+      if (!currentPlayer || currentPlayer.isCPU) {
+        setCurrentPickerAbsent(false);
+        return;
       }
+
+      // No lastSeen yet (just joined) - not absent
+      if (!currentPlayer.lastSeen) {
+        setCurrentPickerAbsent(false);
+        return;
+      }
+
+      const lastSeenMs = new Date(currentPlayer.lastSeen).getTime();
+      const timeSinceLastSeen = Date.now() - lastSeenMs;
+      const isAbsent = timeSinceLastSeen > ABSENCE_THRESHOLD_MS;
+
+      setCurrentPickerAbsent(isAbsent);
     };
 
-    absentCheckRef.current = setInterval(checkAbsent, checkInterval);
+    // Check immediately and every 3 seconds
+    checkCurrentPickerAbsence();
+    const interval = setInterval(checkCurrentPickerAbsence, 3000);
 
     return () => {
-      if (absentCheckRef.current) clearInterval(absentCheckRef.current);
+      clearInterval(interval);
+      setCurrentPickerAbsent(false);
     };
-  }, [screen, draftState?.id, draftState?.status, draftState?.hostId, user]);
+  }, [screen, draftState?.status, draftState?.currentPlayerId, draftState?.players]);
 
   // Effect: Check for active draft on dashboard (rejoin functionality)
   useEffect(() => {
@@ -294,7 +316,6 @@ export const useDraft = (user, screen, setScreen = null) => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (autopickRef.current) clearTimeout(autopickRef.current);
       if (presenceRef.current) clearInterval(presenceRef.current);
-      if (absentCheckRef.current) clearInterval(absentCheckRef.current);
     };
   }, []);
 
