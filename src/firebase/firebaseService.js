@@ -3735,6 +3735,14 @@ export async function getUserTrackedPatterns(userId, statusFilter = 'all') {
       ...docSnap.data(),
     }));
   } catch (error) {
+    const msg = error?.message || '';
+    if (error?.code === 'failed-precondition' || msg.includes('requires an index') || msg.includes('FAILED_PRECONDITION')) {
+      console.warn(
+        '[Firebase] Composite index needed for trackedPatterns query. ' +
+        'Returning empty results. Create the index via Firebase console link:', msg
+      );
+      return [];
+    }
     console.error('❌ Error fetching patterns:', error);
     throw error;
   }

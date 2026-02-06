@@ -3,6 +3,8 @@
  * Identifies when micro patterns align with macro levels
  */
 
+import { detectSwingPoints } from './technicalUtils';
+
 /**
  * Distance threshold scaling by timeframe
  * Weekly candles have much wider ranges, so thresholds must be proportionally wider
@@ -542,7 +544,12 @@ export const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
   }
 
   // Morning Star (3-candle bullish reversal)
-  if (prev2 && prev && latest) {
+  if (prev2 && prev && latest && len >= 8) {
+    // Require bearish context: 4+ of 5 candles before the pattern window must be bearish
+    const msContextCandles = candles.slice(3, 8);
+    const msBearishCount = msContextCandles.filter(c => c.close < c.open).length;
+
+    if (msBearishCount >= 4) {
     const prev2BodyMS = Math.abs(prev2.close - prev2.open);
     const prev2RangeMS = prev2.high - prev2.low;
     const prevBodyMS = Math.abs(prev.close - prev.open);
@@ -574,10 +581,16 @@ export const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
         },
       });
     }
+    } // end bearish context check
   }
 
   // Evening Star (3-candle bearish reversal)
-  if (prev2 && prev && latest) {
+  if (prev2 && prev && latest && len >= 8) {
+    // Require bullish context: 4+ of 5 candles before the pattern window must be bullish
+    const esContextCandles = candles.slice(3, 8);
+    const esBullishCount = esContextCandles.filter(c => c.close > c.open).length;
+
+    if (esBullishCount >= 4) {
     const prev2BodyES = Math.abs(prev2.close - prev2.open);
     const prev2RangeES = prev2.high - prev2.low;
     const prevBodyES = Math.abs(prev.close - prev.open);
@@ -609,6 +622,7 @@ export const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
         },
       });
     }
+    } // end bullish context check
   }
 
   // Inside Bar (volatility compression)
@@ -639,6 +653,20 @@ export const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
         qualityNote: ibNote,
       },
     });
+  }
+
+  // Mutual exclusion: Morning Star and Evening Star cannot coexist
+  const morningStar = patterns.find(p => p.type === 'MORNING_STAR');
+  const eveningStar = patterns.find(p => p.type === 'EVENING_STAR');
+  if (morningStar && eveningStar) {
+    const keepEvening = eveningStar.quality.isStrong && !morningStar.quality.isStrong;
+    if (keepEvening) {
+      const idx = patterns.indexOf(morningStar);
+      if (idx !== -1) patterns.splice(idx, 1);
+    } else {
+      const idx = patterns.indexOf(eveningStar);
+      if (idx !== -1) patterns.splice(idx, 1);
+    }
   }
 
   return patterns;
@@ -796,17 +824,46 @@ const findSwingPoints = (data, lookback = 5) => {
 };
 
 /**
- * Calculate Fibonacci retracement levels
+ * Calculate Fibonacci retracement levels using swing-point anchors
+ * Uses detectSwingPoints for proper swing high/low instead of period extremes
  */
 const calculateFibonacciLevels = (data) => {
   if (!data?.length || data.length < 20) return [];
 
-  const recent = data.slice(0, 60); // Last 60 candles (newest first)
-  const high = Math.max(...recent.map(c => c.high));
-  const low = Math.min(...recent.map(c => c.low));
+  const currentPrice = data[0].close;
+
+  // Use swing points for proper anchor detection
+  const { swingHighs, swingLows } = detectSwingPoints(data, {
+    lookback: 5,
+    clusterThreshold: 0.01,
+    maxResults: 3,
+  });
+
+  let high = swingHighs.length > 0 ? swingHighs[0].price : null;
+  let low = swingLows.length > 0 ? swingLows[0].price : null;
+
+  // If price has broken beyond swings, use current price as provisional anchor
+  if (high !== null && currentPrice > high) high = currentPrice;
+  if (low !== null && currentPrice < low) low = currentPrice;
+
+  // Fallback: if no swings found, use dataset extremes
+  if (high === null || low === null) {
+    const recent = data.slice(0, 60);
+    high = high ?? Math.max(...recent.map(c => c.high));
+    low = low ?? Math.min(...recent.map(c => c.low));
+  }
+
+  // Guard: high must be > low
+  if (high <= low) {
+    const recent = data.slice(0, 60);
+    high = Math.max(...recent.map(c => c.high));
+    low = Math.min(...recent.map(c => c.low));
+  }
+
   const range = high - low;
 
-  if (range <= 0) return [];
+  // Skip tiny ranges (<2%)
+  if (range / low < 0.02) return [];
 
   const fibRatios = [
     { level: '23.6%', ratio: 0.236 },
@@ -816,8 +873,6 @@ const calculateFibonacciLevels = (data) => {
     { level: '78.6%', ratio: 0.786 },
   ];
 
-  // Determine if we're in uptrend or downtrend
-  const currentPrice = data[0].close;
   const isUptrend = currentPrice > (high + low) / 2;
 
   return fibRatios.map(fib => ({
