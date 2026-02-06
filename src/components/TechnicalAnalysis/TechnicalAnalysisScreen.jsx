@@ -480,7 +480,9 @@ const TechnicalAnalysisScreen = ({
   };
 
   // Handle explore question click
-  const handleExploreQuestion = useCallback(async (questionId) => {
+  // Not memoized — ensures fresh state references on every render to prevent stale closures
+  const handleExploreQuestion = async (questionId) => {
+    if (isExploreLoading) return; // Prevent double-clicks while loading
     if (!ohlcvData || ohlcvData.length === 0 || !calculatedIndicators) return;
 
     setIsExploreLoading(true);
@@ -506,7 +508,7 @@ const TechnicalAnalysisScreen = ({
     } finally {
       setIsExploreLoading(false);
     }
-  }, [ohlcvData, calculatedIndicators, stock?.symbol]);
+  };
 
   // Reset explore conversation
   const handleExploreReset = useCallback(() => {
@@ -648,7 +650,7 @@ const TechnicalAnalysisScreen = ({
 
       {/* Candlestick Chart */}
       <div style={{
-        height: '280px',
+        height: '320px',
         backgroundColor: '#0a1628',
         borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
         padding: '8px',
@@ -659,7 +661,7 @@ const TechnicalAnalysisScreen = ({
         ) : ohlcvData && ohlcvData.length > 0 ? (
           <CandlestickChart
             ohlcvData={ohlcvData}
-            height={264}
+            height={304}
             levels={chartLevels}
             showLevelOverlay={showLevelOverlay}
           />

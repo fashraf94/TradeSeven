@@ -2,7 +2,7 @@
 // Interactive candlestick chart using lightweight-charts library
 
 import React, { useEffect, useRef } from 'react';
-import { createChart, CandlestickSeries } from 'lightweight-charts';
+import { createChart, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
 
 // Conditional logging - only show debug logs in development
 const DEBUG = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
@@ -348,6 +348,48 @@ const CandlestickChart = ({
         }
         setChartError('Failed to render chart data');
         return;
+      }
+
+      // Volume histogram series (bottom 20% of chart)
+      try {
+        const volumeSeries = chart.addSeries(HistogramSeries, {
+          priceFormat: { type: 'volume' },
+          priceScaleId: 'volume',
+        });
+
+        volumeSeries.priceScale().applyOptions({
+          scaleMargins: {
+            top: 0.8,
+            bottom: 0,
+          },
+        });
+
+        // Build volume data from original OHLCV (same sort order as sortedData)
+        const volumeData = validRawCandles.map(candle => {
+          const rawTime = candle.date || candle.datetime || candle.timestamp;
+          const time = formatTime(rawTime, isIntraday);
+          const o = Number(candle.open);
+          const c = Number(candle.close);
+          return {
+            time,
+            value: Number(candle.volume) || 0,
+            color: c >= o
+              ? 'rgba(0, 255, 136, 0.3)'
+              : 'rgba(255, 71, 87, 0.3)',
+          };
+        }).filter(v => v.time != null)
+          .sort((a, b) => {
+            const tA = typeof a.time === 'number' ? a.time : new Date(a.time).getTime() / 1000;
+            const tB = typeof b.time === 'number' ? b.time : new Date(b.time).getTime() / 1000;
+            return tA - tB;
+          });
+
+        if (volumeData.length > 0) {
+          volumeSeries.setData(volumeData);
+          logger.log('[CandlestickChart] Volume histogram set with', volumeData.length, 'bars');
+        }
+      } catch (volErr) {
+        logger.warn('[CandlestickChart] Volume histogram failed (non-fatal):', volErr);
       }
 
       // Fit content to show all candles

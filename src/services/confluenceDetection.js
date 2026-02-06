@@ -4,6 +4,22 @@
  */
 
 /**
+ * Distance threshold scaling by timeframe
+ * Weekly candles have much wider ranges, so thresholds must be proportionally wider
+ */
+const getDistanceThresholds = (timeframe) => {
+  switch (timeframe) {
+    case '1h':
+      return { strong: 0.005, moderate: 0.01, weak: 0.015 };
+    case '1w':
+      return { strong: 0.015, moderate: 0.03, weak: 0.05 };
+    case '1d':
+    default:
+      return { strong: 0.005, moderate: 0.01, weak: 0.015 };
+  }
+};
+
+/**
  * Detect confluence zones by combining micro patterns with macro levels
  * @param {Array} selectedTimeframeData - OHLCV data for user's selected timeframe
  * @param {Array} dailyData - OHLCV data for daily (anchor) timeframe
@@ -28,18 +44,21 @@ export const detectConfluence = (selectedTimeframeData, dailyData, dailyIndicato
   // Detect micro patterns on selected timeframe
   const microPatterns = detectMicroPatterns(recentCandles, selectedTimeframe, rvolData);
 
+  // Get timeframe-aware distance thresholds
+  const thresholds = getDistanceThresholds(selectedTimeframe);
+
   // Find confluences: micro patterns near macro levels
   microPatterns.forEach(pattern => {
     macroLevels.forEach(level => {
       const distance = Math.abs(pattern.price - level.price) / level.price;
 
-      // Within 1.5% = potential confluence
-      if (distance < 0.015) {
+      // Use timeframe-scaled threshold for maximum distance
+      if (distance < thresholds.weak) {
         // Doji bias-matching: directional dojis only match appropriate level types
         if (pattern.type === 'GRAVESTONE_DOJI' && level.type !== 'RESISTANCE') return;
         if (pattern.type === 'DRAGONFLY_DOJI' && level.type !== 'SUPPORT') return;
 
-        const strength = calculateConfluenceStrength(distance, pattern, level);
+        const strength = calculateConfluenceStrength(distance, pattern, level, thresholds);
 
         confluences.push({
           id: `${pattern.type}-${level.type}-${level.price.toFixed(2)}`,
@@ -555,13 +574,13 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
 /**
  * Calculate confluence strength based on distance and pattern/level quality
  */
-const calculateConfluenceStrength = (distance, pattern, level) => {
+const calculateConfluenceStrength = (distance, pattern, level, thresholds = { strong: 0.005, moderate: 0.01, weak: 0.015 }) => {
   let score = 0;
 
-  // Distance factor (closer = stronger)
-  if (distance < 0.005) score += 3;      // Within 0.5%
-  else if (distance < 0.01) score += 2;  // Within 1%
-  else score += 1;                        // Within 1.5%
+  // Distance factor (closer = stronger), using timeframe-aware thresholds
+  if (distance < thresholds.strong) score += 3;
+  else if (distance < thresholds.moderate) score += 2;
+  else score += 1;  // Within weak threshold
 
   // Level strength factor
   if (level.strength === 'STRONG') score += 2;
