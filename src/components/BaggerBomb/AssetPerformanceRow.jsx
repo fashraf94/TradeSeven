@@ -4,6 +4,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { calculateBaggerBombs, calculateBusts } from '../../services/scoring/baggerBombCalculator';
+import { getBaggerGlow } from '../../constants/holoTheme';
+import { KEYFRAMES, ANIMATION_PRESETS } from '../../constants/animations';
 
 /**
  * AssetPerformanceRow
@@ -45,6 +48,11 @@ export default function AssetPerformanceRow({
   const hasRally = absChange >= rallyThreshold;
   const hasMoonshot = absChange >= moonshotThreshold;
 
+  // Calculate bomb/bust counts for glow effect
+  const bombCount = calculateBaggerBombs(effectiveChange, baseThreshold);
+  const bustCount = calculateBusts(effectiveChange, baseThreshold);
+  const glowConfig = getBaggerGlow(bombCount, bustCount);
+
   // Check if this asset has any recorded breakouts
   const hasRecordedBreakout = breakouts.some(b =>
     b.symbol?.toUpperCase() === asset.symbol?.toUpperCase()
@@ -61,15 +69,23 @@ export default function AssetPerformanceRow({
   const isBust = effectiveChange < 0 && hasBreakout;
 
   return (
+    <>
+    {glowConfig && <style>{KEYFRAMES.baggerGlowPulse}</style>}
     <motion.div
       initial={{ opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
       className={cn(
         'flex items-center gap-3 p-3 rounded-lg border transition-all',
         'bg-card/30 border-border/30',
-        hasBreakout && isPositive && 'border-emerald-500/30 bg-emerald-500/5',
-        hasBreakout && !isPositive && 'border-red-500/30 bg-red-500/5'
+        hasBreakout && isPositive && !glowConfig && 'border-emerald-500/30 bg-emerald-500/5',
+        hasBreakout && !isPositive && !glowConfig && 'border-red-500/30 bg-red-500/5'
       )}
+      style={glowConfig ? {
+        '--bagger-glow-base': glowConfig.shadow,
+        '--bagger-glow-peak': glowConfig.shadowPeak,
+        borderColor: glowConfig.border,
+        animation: ANIMATION_PRESETS.baggerGlowPulse,
+      } : undefined}
     >
       {/* Symbol and Name */}
       <div className="flex-1 min-w-0">
@@ -161,6 +177,7 @@ export default function AssetPerformanceRow({
         </div>
       </div>
     </motion.div>
+    </>
   );
 }
 

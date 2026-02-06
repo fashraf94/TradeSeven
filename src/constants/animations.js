@@ -645,6 +645,14 @@ export const KEYFRAMES = {
       100% { transform: scale(1); }
     }
   `,
+
+  // BaggerBomb card glow pulse (uses CSS variables for color)
+  baggerGlowPulse: `
+    @keyframes bagger-glow-pulse {
+      0%, 100% { box-shadow: var(--bagger-glow-base); }
+      50% { box-shadow: var(--bagger-glow-peak); }
+    }
+  `,
 };
 
 // =============================================================================
@@ -747,6 +755,9 @@ export const ANIMATION_PRESETS = {
   sparkle: 'sparkle 1.5s ease-in-out infinite',
   successToastIn: 'success-toast-in 0.4s ease-out forwards',
   successCheckPop: 'success-check-pop 0.5s ease-out forwards',
+
+  // BaggerBomb glow
+  baggerGlowPulse: 'bagger-glow-pulse 2.5s ease-in-out infinite',
 };
 
 // =============================================================================

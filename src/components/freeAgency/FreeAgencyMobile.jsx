@@ -66,6 +66,7 @@ const FreeAgencyMobile = ({
   handleConfirmSwap,
   handleBack,
   loadData,
+  livePrices = {},
 }) => {
   // State for asset research modal
   const [assetForResearch, setAssetForResearch] = useState(null);
@@ -302,17 +303,10 @@ const FreeAgencyMobile = ({
           asset={{
             symbol: assetForResearch.symbol,
             name: assetForResearch.name || assetForResearch.symbol,
-            // Try multiple possible price fields
-            price: assetForResearch.price
-              || assetForResearch.currentPrice
-              || assetForResearch.close
-              || assetForResearch.lastPrice
-              || 0,
-            percentChange: assetForResearch.priceChange
-              || assetForResearch.percentChange
-              || assetForResearch.change
-              || assetForResearch.gain
-              || 0,
+            price: livePrices[assetForResearch.symbol?.toUpperCase()]?.price
+              || assetForResearch.price || 0,
+            percentChange: livePrices[assetForResearch.symbol?.toUpperCase()]?.percentChange
+              || assetForResearch.percentChange || 0,
             sector: assetForResearch.sector,
           }}
           sector={assetForResearch.sector}

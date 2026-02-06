@@ -10,6 +10,7 @@ import {
   Zap, Factory, Lightbulb, Home, Radio, Layers
 } from 'lucide-react';
 import { HOLO_COLORS } from '../../constants/holoTheme';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import AssetResearchModal from '../draft/AssetResearchModal';
 
 // Sector definitions with Lucide icons
@@ -243,6 +244,7 @@ export default function AssetPickerModal({
   stockOnly = false,
   title = 'Select Asset',
 }) {
+  const { isMobile } = useIsMobile();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSector, setActiveSector] = useState('all');
   const [researchAsset, setResearchAsset] = useState(null);
@@ -433,7 +435,7 @@ export default function AssetPickerModal({
                       fontSize: '14px',
                       color: HOLO_COLORS.textPrimary,
                     }}
-                    autoFocus
+                    autoFocus={!isMobile}
                   />
                   {searchQuery && (
                     <button

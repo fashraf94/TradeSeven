@@ -68,6 +68,50 @@ export const GLOW_EFFECTS = {
   gold: '0 0 15px rgba(255, 215, 0, 0.5), 0 0 30px rgba(255, 215, 0, 0.3)',
 };
 
+// BaggerBomb glow effects based on bomb/bust count
+export const BAGGER_GLOW_CONFIG = {
+  bomb1: { // 1 baggerbomb - Blue
+    shadow: '0 0 12px rgba(59, 130, 246, 0.4), 0 0 24px rgba(59, 130, 246, 0.2)',
+    shadowPeak: '0 0 18px rgba(59, 130, 246, 0.55), 0 0 32px rgba(59, 130, 246, 0.35)',
+    border: 'rgba(59, 130, 246, 0.5)',
+  },
+  bomb2: { // 2 baggerbombs - Green
+    shadow: '0 0 15px rgba(16, 185, 129, 0.5), 0 0 30px rgba(16, 185, 129, 0.25)',
+    shadowPeak: '0 0 22px rgba(16, 185, 129, 0.65), 0 0 40px rgba(16, 185, 129, 0.4)',
+    border: 'rgba(16, 185, 129, 0.6)',
+  },
+  bomb3: { // 3+ baggerbombs - Gold
+    shadow: '0 0 18px rgba(255, 215, 0, 0.5), 0 0 36px rgba(255, 215, 0, 0.3)',
+    shadowPeak: '0 0 25px rgba(255, 215, 0, 0.65), 0 0 45px rgba(255, 215, 0, 0.45)',
+    border: 'rgba(255, 215, 0, 0.6)',
+  },
+  bust1: { // 1 bust - Yellow
+    shadow: '0 0 12px rgba(234, 179, 8, 0.4), 0 0 24px rgba(234, 179, 8, 0.2)',
+    shadowPeak: '0 0 18px rgba(234, 179, 8, 0.55), 0 0 32px rgba(234, 179, 8, 0.35)',
+    border: 'rgba(234, 179, 8, 0.5)',
+  },
+  bust2: { // 2 busts - Orange
+    shadow: '0 0 15px rgba(249, 115, 22, 0.5), 0 0 30px rgba(249, 115, 22, 0.25)',
+    shadowPeak: '0 0 22px rgba(249, 115, 22, 0.65), 0 0 40px rgba(249, 115, 22, 0.4)',
+    border: 'rgba(249, 115, 22, 0.6)',
+  },
+  bust3: { // 3+ busts - Red
+    shadow: '0 0 18px rgba(239, 68, 68, 0.5), 0 0 36px rgba(239, 68, 68, 0.3)',
+    shadowPeak: '0 0 25px rgba(239, 68, 68, 0.65), 0 0 45px rgba(239, 68, 68, 0.45)',
+    border: 'rgba(239, 68, 68, 0.6)',
+  },
+};
+
+export const getBaggerGlow = (bombCount, bustCount) => {
+  if (bombCount >= 3) return BAGGER_GLOW_CONFIG.bomb3;
+  if (bombCount === 2) return BAGGER_GLOW_CONFIG.bomb2;
+  if (bombCount === 1) return BAGGER_GLOW_CONFIG.bomb1;
+  if (bustCount >= 3) return BAGGER_GLOW_CONFIG.bust3;
+  if (bustCount === 2) return BAGGER_GLOW_CONFIG.bust2;
+  if (bustCount === 1) return BAGGER_GLOW_CONFIG.bust1;
+  return null;
+};
+
 export const RANK_CONFIG = {
   1: { label: '1ST', emoji: '', color: HOLO_COLORS.gold, glow: GLOW_EFFECTS.gold },
   2: { label: '2ND', emoji: '', color: HOLO_COLORS.silver, glow: 'none' },

@@ -30,22 +30,33 @@ export default function LiveClashesSection({
 }) {
   // Determine which battles to show based on mode
   const allBattles = useMemo(() => {
+    let battles;
     if (isTrainingMode) {
       // Training tab: training battles + training drafts (isTraining: true)
       const training = activeTrainingBattles.map(b => ({ battle: b, type: 'training' }));
       const trainingDrafts = activeDraftBattles
         .filter(b => b.isTraining === true)
         .map(b => ({ battle: b, type: 'draft' }));
-      return [...training, ...trainingDrafts];
+      battles = [...training, ...trainingDrafts];
+    } else {
+      // PVP tab: classic 1v1 + PVP draft battles (exclude training)
+      const classic = activeBattles
+        .filter(b => !b.isTrainingBattle)
+        .map(b => ({ battle: b, type: 'classic' }));
+      const draft = activeDraftBattles
+        .filter(b => b.isTraining !== true)
+        .map(b => ({ battle: b, type: 'draft' }));
+      battles = [...classic, ...draft];
     }
-    // PVP tab: classic 1v1 + PVP draft battles (exclude training)
-    const classic = activeBattles
-      .filter(b => !b.isTrainingBattle)
-      .map(b => ({ battle: b, type: 'classic' }));
-    const draft = activeDraftBattles
-      .filter(b => b.isTraining !== true)
-      .map(b => ({ battle: b, type: 'draft' }));
-    return [...classic, ...draft];
+
+    // Defensive: filter out any completed/expired battles that slipped through
+    return battles.filter(({ battle }) => {
+      const status = battle.status || battle.state?.status;
+      if (status === 'completed') return false;
+      const remaining = getRemainingMs(battle);
+      if (remaining === 0) return false;
+      return true;
+    });
   }, [activeBattles, activeDraftBattles, activeTrainingBattles, isTrainingMode]);
 
   // Find the most urgent battle (soonest ending)
