@@ -35,6 +35,10 @@ export const detectConfluence = (selectedTimeframeData, dailyData, dailyIndicato
 
       // Within 1.5% = potential confluence
       if (distance < 0.015) {
+        // Doji bias-matching: directional dojis only match appropriate level types
+        if (pattern.type === 'GRAVESTONE_DOJI' && level.type !== 'RESISTANCE') return;
+        if (pattern.type === 'DRAGONFLY_DOJI' && level.type !== 'SUPPORT') return;
+
         const strength = calculateConfluenceStrength(distance, pattern, level);
 
         confluences.push({
@@ -80,13 +84,13 @@ export const detectConfluence = (selectedTimeframeData, dailyData, dailyIndicato
     });
   });
 
-  // Sort by strength and distance from current price
+  // Sort by proximity to current price (closest first), then by strength
   return confluences.sort((a, b) => {
+    const distA = Math.abs(parseFloat(a.distanceFromCurrent));
+    const distB = Math.abs(parseFloat(b.distanceFromCurrent));
+    if (distA !== distB) return distA - distB;
     const strengthOrder = { 'STRONG': 0, 'MODERATE': 1, 'WEAK': 2 };
-    if (strengthOrder[a.strength] !== strengthOrder[b.strength]) {
-      return strengthOrder[a.strength] - strengthOrder[b.strength];
-    }
-    return Math.abs(parseFloat(a.distanceFromCurrent)) - Math.abs(parseFloat(b.distanceFromCurrent));
+    return strengthOrder[a.strength] - strengthOrder[b.strength];
   });
 };
 
@@ -404,22 +408,143 @@ const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
     }
   }
 
-  // Doji (indecision)
+  // Doji Sub-Type Detection
   const range = latest.high - latest.low;
   if (range > 0 && bodySize / range < 0.1) {
+    const dojiUpperShadow = latest.high - Math.max(latest.open, latest.close);
+    const dojiLowerShadow = Math.min(latest.open, latest.close) - latest.low;
+
+    let dojiType, dojiName, dojiBias, dojiNote;
+
+    if (dojiUpperShadow > range * 0.6 && dojiLowerShadow < range * 0.15) {
+      dojiType = 'GRAVESTONE_DOJI';
+      dojiName = 'Gravestone Doji';
+      dojiBias = 'BEARISH';
+      dojiNote = 'Gravestone Doji — long upper shadow, bearish at resistance';
+    } else if (dojiLowerShadow > range * 0.6 && dojiUpperShadow < range * 0.15) {
+      dojiType = 'DRAGONFLY_DOJI';
+      dojiName = 'Dragonfly Doji';
+      dojiBias = 'BULLISH';
+      dojiNote = 'Dragonfly Doji — long lower shadow, bullish at support';
+    } else if (dojiUpperShadow > range * 0.3 && dojiLowerShadow > range * 0.3) {
+      dojiType = 'LONG_LEGGED_DOJI';
+      dojiName = 'Long-Legged Doji';
+      dojiBias = 'NEUTRAL';
+      dojiNote = 'Long-Legged Doji — high indecision, both sides contested';
+    } else {
+      dojiType = 'STANDARD_DOJI';
+      dojiName = 'Standard Doji';
+      dojiBias = 'NEUTRAL';
+      dojiNote = 'Standard Doji — indecision candle';
+    }
+
     patterns.push({
-      type: 'DOJI',
-      name: 'Doji',
+      type: dojiType,
+      name: dojiName,
       price: (latest.high + latest.low) / 2,
-      description: 'Doji candle showing indecision',
+      description: `${dojiName} detected — ${dojiBias === 'NEUTRAL' ? 'indecision' : dojiBias.toLowerCase() + ' signal'}`,
+      bias: dojiBias,
+      quality: {
+        bodyRatio: null,
+        shadowRatio: null,
+        isStrong: dojiType === 'GRAVESTONE_DOJI' || dojiType === 'DRAGONFLY_DOJI',
+        volumeContext: null,
+        rvolContext,
+        qualityNote: dojiNote,
+      },
+    });
+  }
+
+  // Morning Star (3-candle bullish reversal)
+  if (prev2 && prev && latest) {
+    const prev2BodyMS = Math.abs(prev2.close - prev2.open);
+    const prev2RangeMS = prev2.high - prev2.low;
+    const prevBodyMS = Math.abs(prev.close - prev.open);
+    const latestBodyMS = Math.abs(latest.close - latest.open);
+    const prev2MidpointMS = (prev2.open + prev2.close) / 2;
+
+    if (prev2.close < prev2.open &&                          // prev2 is bearish
+        prev2RangeMS > 0 && prev2BodyMS / prev2RangeMS > 0.5 && // large bearish body
+        prevBodyMS < prev2BodyMS * 0.3 &&                     // middle candle has small body
+        latest.close > latest.open &&                          // latest is bullish
+        latest.close > prev2MidpointMS) {                      // closes above prev2 midpoint
+      patterns.push({
+        type: 'MORNING_STAR',
+        name: 'Morning Star',
+        price: prev.low,
+        description: 'Morning Star — 3-candle bullish reversal pattern',
+        bias: 'BULLISH',
+        quality: {
+          bodyRatio: prev2BodyMS > 0 ? parseFloat((latestBodyMS / prev2BodyMS).toFixed(1)) : null,
+          shadowRatio: null,
+          isStrong: latest.close > prev2.open,
+          volumeContext: null,
+          rvolContext,
+          qualityNote: latest.close > prev2.open
+            ? 'Strong Morning Star — confirmation closes above first candle'
+            : 'Morning Star — confirmation closes above midpoint',
+        },
+      });
+    }
+  }
+
+  // Evening Star (3-candle bearish reversal)
+  if (prev2 && prev && latest) {
+    const prev2BodyES = Math.abs(prev2.close - prev2.open);
+    const prev2RangeES = prev2.high - prev2.low;
+    const prevBodyES = Math.abs(prev.close - prev.open);
+    const latestBodyES = Math.abs(latest.close - latest.open);
+    const prev2MidpointES = (prev2.open + prev2.close) / 2;
+
+    if (prev2.close > prev2.open &&                          // prev2 is bullish
+        prev2RangeES > 0 && prev2BodyES / prev2RangeES > 0.5 && // large bullish body
+        prevBodyES < prev2BodyES * 0.3 &&                     // middle candle has small body
+        latest.close < latest.open &&                          // latest is bearish
+        latest.close < prev2MidpointES) {                      // closes below prev2 midpoint
+      patterns.push({
+        type: 'EVENING_STAR',
+        name: 'Evening Star',
+        price: prev.high,
+        description: 'Evening Star — 3-candle bearish reversal pattern',
+        bias: 'BEARISH',
+        quality: {
+          bodyRatio: prev2BodyES > 0 ? parseFloat((latestBodyES / prev2BodyES).toFixed(1)) : null,
+          shadowRatio: null,
+          isStrong: latest.close < prev2.open,
+          volumeContext: null,
+          rvolContext,
+          qualityNote: latest.close < prev2.open
+            ? 'Strong Evening Star — confirmation closes below first candle'
+            : 'Evening Star — confirmation closes below midpoint',
+        },
+      });
+    }
+  }
+
+  // Inside Bar (volatility compression)
+  if (prev && latest.high < prev.high && latest.low > prev.low) {
+    const isDoubleInside = prev2 && prev.high < prev2.high && prev.low > prev2.low;
+    const recentRanges = candles.slice(0, 4).map(c => c.high - c.low);
+    const latestRange = recentRanges[0];
+    const isNR4 = len >= 4 && recentRanges.every((r, i) => i === 0 || latestRange <= r);
+
+    let ibNote = 'Inside Bar — volatility compression';
+    if (isDoubleInside) ibNote = 'Double Inside Bar — extended compression, breakout imminent';
+    else if (isNR4) ibNote = 'Inside Bar + NR4 — narrowest range in 4 bars, expansion expected';
+
+    patterns.push({
+      type: 'INSIDE_BAR',
+      name: isDoubleInside ? 'Double Inside Bar' : (isNR4 ? 'Inside Bar (NR4)' : 'Inside Bar'),
+      price: (latest.high + latest.low) / 2,
+      description: `${isDoubleInside ? 'Double Inside Bar' : 'Inside Bar'} — volatility compression${isNR4 ? ', narrowest range in 4 bars' : ''}`,
       bias: 'NEUTRAL',
       quality: {
         bodyRatio: null,
         shadowRatio: null,
-        isStrong: false,
+        isStrong: isDoubleInside || isNR4,
         volumeContext: null,
         rvolContext,
-        qualityNote: 'Indecision candle',
+        qualityNote: ibNote,
       },
     });
   }
@@ -443,7 +568,7 @@ const calculateConfluenceStrength = (distance, pattern, level) => {
   else if (level.strength === 'MODERATE') score += 1;
 
   // Pattern type factor (some patterns are more reliable)
-  const strongPatterns = ['DOUBLE_BOTTOM', 'DOUBLE_TOP', 'BULLISH_ENGULFING', 'BEARISH_ENGULFING'];
+  const strongPatterns = ['DOUBLE_BOTTOM', 'DOUBLE_TOP', 'BULLISH_ENGULFING', 'BEARISH_ENGULFING', 'MORNING_STAR', 'EVENING_STAR'];
   if (strongPatterns.includes(pattern.type)) score += 2;
   else score += 1;
 
@@ -482,6 +607,16 @@ const getHistoricalContext = (patternType, levelSource) => {
     'SHOOTING_STAR_SMA': 'Shooting stars at moving average resistance are reliable reversal signals.',
     'HIGHER_LOWS_SMA': 'Higher lows forming above key moving averages confirm trend strength.',
     'LOWER_HIGHS_SMA': 'Lower highs below resistance confirm bearish pressure.',
+    'GRAVESTONE_DOJI_SMA': 'Gravestone Doji at moving average resistance historically signals rejection.',
+    'DRAGONFLY_DOJI_SMA': 'Dragonfly Doji at moving average support historically signals a bounce.',
+    'MORNING_STAR_SMA': 'Morning Star at moving average support is a high-probability bullish reversal.',
+    'MORNING_STAR_FIBONACCI': 'Morning Star at Fibonacci support has historically strong reversal rates.',
+    'MORNING_STAR_SWING': 'Morning Star at swing low support frequently marks significant bottoms.',
+    'EVENING_STAR_SMA': 'Evening Star at moving average resistance is a high-probability bearish reversal.',
+    'EVENING_STAR_FIBONACCI': 'Evening Star at Fibonacci resistance shows strong follow-through historically.',
+    'EVENING_STAR_SWING': 'Evening Star at swing high resistance frequently marks significant tops.',
+    'INSIDE_BAR_SMA': 'Inside Bar at key moving average often precedes a directional breakout.',
+    'INSIDE_BAR_FIBONACCI': 'Inside Bar compression at Fibonacci levels precedes high-conviction breakouts.',
   };
 
   // Try to find a matching context
