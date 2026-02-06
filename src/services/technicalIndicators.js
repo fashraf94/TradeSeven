@@ -25,7 +25,8 @@ const DEFAULT_PERIODS = {
   MACD_SIGNAL: 9,
   BOLLINGER: 20,
   BOLLINGER_STD: 2,
-  ATR: 14
+  ATR: 14,
+  RVOL: 20
 };
 
 // ============================================
@@ -385,6 +386,94 @@ export function calculateVolatility(prices, period = 20) {
 }
 
 // ============================================
+// RELATIVE VOLUME (RVOL)
+// ============================================
+
+/**
+ * Calculate Relative Volume (RVOL)
+ * RVOL = Current Volume / Average Volume (20-day SMA)
+ *
+ * Uses a 7-tier institutional classification scale:
+ * - < 0.5: Very Low (unsustainable moves)
+ * - 0.5–0.75: Below Average (low conviction)
+ * - 0.75–1.25: Normal (balanced auction)
+ * - 1.25–2.5: Elevated (increased interest, "in-play")
+ * - 2.5–4.0: High Institutional (strong conviction, breakout fuel)
+ * - > 4.0: Climax/Exhaustion (potential blow-off top or selling climax)
+ *
+ * @param {Array} ohlcvData - OHLCV candles (newest first)
+ * @param {number} period - Lookback period for average (default 20)
+ * @returns {Object} RVOL data with value, classification, and metadata
+ */
+export function calculateRVOL(ohlcvData, period = DEFAULT_PERIODS.RVOL) {
+  if (!ohlcvData || ohlcvData.length < period + 1) {
+    return { value: null, label: 'Insufficient data', tier: 'UNKNOWN', isHigh: false, isClimax: false };
+  }
+
+  const currentVolume = ohlcvData[0].volume;
+
+  // Average volume over the lookback period (excluding current day)
+  const historicalVolumes = ohlcvData.slice(1, period + 1).map(c => c.volume);
+  const validVolumes = historicalVolumes.filter(v => v > 0);
+
+  if (validVolumes.length < Math.floor(period / 2)) {
+    return { value: null, label: 'No volume data', tier: 'UNKNOWN', isHigh: false, isClimax: false };
+  }
+
+  const avgVolume = validVolumes.reduce((sum, v) => sum + v, 0) / validVolumes.length;
+
+  if (avgVolume === 0) {
+    return { value: null, label: 'No volume data', tier: 'UNKNOWN', isHigh: false, isClimax: false };
+  }
+
+  const rvol = currentVolume / avgVolume;
+
+  // 7-tier institutional classification
+  let label, tier, isHigh, isClimax;
+  if (rvol > 4.0) {
+    label = 'Climax/Exhaustion — Potential blow-off or selling climax';
+    tier = 'CLIMAX';
+    isHigh = true;
+    isClimax = true;
+  } else if (rvol >= 2.5) {
+    label = 'High Institutional — Strong conviction, breakout-grade volume';
+    tier = 'INSTITUTIONAL';
+    isHigh = true;
+    isClimax = false;
+  } else if (rvol >= 1.25) {
+    label = 'Elevated — Increased interest, stock is "in-play"';
+    tier = 'ELEVATED';
+    isHigh = false;
+    isClimax = false;
+  } else if (rvol >= 0.75) {
+    label = 'Normal — Balanced auction, typical participation';
+    tier = 'NORMAL';
+    isHigh = false;
+    isClimax = false;
+  } else if (rvol >= 0.5) {
+    label = 'Below Average — Low conviction move';
+    tier = 'LOW';
+    isHigh = false;
+    isClimax = false;
+  } else {
+    label = 'Very Low — Extremely thin participation, move likely unsustainable';
+    tier = 'VERY_LOW';
+    isHigh = false;
+    isClimax = false;
+  }
+
+  return {
+    value: parseFloat(rvol.toFixed(2)),
+    label,
+    tier,
+    isHigh,
+    isClimax,
+    currentVolume,
+    avgVolume: Math.round(avgVolume)
+  };
+}
+
+// ============================================
 // COMPREHENSIVE ANALYSIS
 // ============================================
 
@@ -431,6 +520,9 @@ export function calculateAllIndicators(symbol, prices, ohlcData = null) {
     volatility: calculateVolatility(prices),
     atr: ohlcData ? calculateATR(ohlcData) : null,
     atrPercent: ohlcData ? calculateATRPercent(ohlcData) : null,
+
+    // Relative Volume
+    rvol: ohlcData ? calculateRVOL(ohlcData) : null,
 
     // Trend detection
     trend: detectTrend(prices)
@@ -555,6 +647,7 @@ export default {
   calculateATR,
   calculateATRPercent,
   calculateVolatility,
+  calculateRVOL,
   calculateAllIndicators,
   detectTrend,
   getBullBearScore,

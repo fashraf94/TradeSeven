@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { detectConfluence } from '../../services/confluenceDetection';
-import { getStrengthColor, getStrengthIcon } from './utils/colors';
+import { getStrengthColor, getStrengthIcon, getRVOLTierColor } from './utils/colors';
 import { LoadingState, EmptyState, ErrorState } from './shared';
 
 const PatternsTab = ({
@@ -12,6 +12,7 @@ const PatternsTab = ({
   dailyIndicators,
   selectedTimeframe,
   onTrackPattern,
+  rvolData,
 }) => {
   const [confluences, setConfluences] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -37,7 +38,8 @@ const PatternsTab = ({
         ohlcvData,
         anchorData,
         anchorIndicators,
-        selectedTimeframe
+        selectedTimeframe,
+        rvolData
       );
 
       setConfluences(detected);
@@ -48,7 +50,7 @@ const PatternsTab = ({
     } finally {
       setIsLoading(false);
     }
-  }, [ohlcvData, dailyAnchorData, dailyIndicators, selectedTimeframe]);
+  }, [ohlcvData, dailyAnchorData, dailyIndicators, selectedTimeframe, rvolData]);
 
   const getBiasIcon = (bias) => {
     switch (bias) {
@@ -97,6 +99,45 @@ const PatternsTab = ({
         </span>
       </div>
 
+      {/* RVOL Context Banner */}
+      {rvolData && rvolData.value !== null && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '8px 12px',
+          marginBottom: '12px',
+          backgroundColor: rvolData.isClimax
+            ? 'rgba(255, 170, 0, 0.1)'
+            : 'rgba(0, 0, 0, 0.2)',
+          borderRadius: '8px',
+          border: `1px solid ${getRVOLTierColor(rvolData.tier)}30`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', letterSpacing: '0.5px' }}>
+              RVOL
+            </span>
+            <span style={{
+              fontSize: '14px',
+              fontWeight: 600,
+              color: getRVOLTierColor(rvolData.tier),
+            }}>
+              {rvolData.value}x
+            </span>
+          </div>
+          <span style={{
+            fontSize: '11px',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            backgroundColor: `${getRVOLTierColor(rvolData.tier)}20`,
+            color: getRVOLTierColor(rvolData.tier),
+            fontWeight: 500,
+          }}>
+            {rvolData.tier}{rvolData.isClimax ? ' \u26A0\uFE0F' : ''}
+          </span>
+        </div>
+      )}
+
       <div style={styles.confluenceList}>
         {confluences.map((confluence) => (
           <div
@@ -141,6 +182,39 @@ const PatternsTab = ({
                   <span style={styles.patternName}>{confluence.microPattern.name}</span>
                 </div>
                 <div style={styles.patternDesc}>{confluence.microPattern.description}</div>
+
+                {/* Quality Metadata Badges */}
+                {confluence.microPattern.quality && (
+                  <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {confluence.microPattern.quality.qualityNote && (
+                      <span style={{
+                        fontSize: '10px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        backgroundColor: confluence.microPattern.quality.isStrong
+                          ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                        color: confluence.microPattern.quality.isStrong
+                          ? '#00ff88' : 'rgba(255,255,255,0.5)',
+                        border: `1px solid ${confluence.microPattern.quality.isStrong
+                          ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255,255,255,0.1)'}`,
+                      }}>
+                        {confluence.microPattern.quality.qualityNote}
+                      </span>
+                    )}
+                    {confluence.microPattern.quality.volumeContext && (
+                      <span style={{
+                        fontSize: '10px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        backgroundColor: 'rgba(255, 204, 0, 0.1)',
+                        color: '#ffcc00',
+                        border: '1px solid rgba(255, 204, 0, 0.2)',
+                      }}>
+                        {confluence.microPattern.quality.volumeContext}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Macro Level */}
@@ -175,6 +249,41 @@ const PatternsTab = ({
                     <div style={styles.histTitle}>HISTORICAL CONTEXT</div>
                     <p style={styles.histText}>{confluence.historicalContext}</p>
                   </div>
+
+                  {/* Pattern Quality Detail */}
+                  {confluence.microPattern.quality && (
+                    confluence.microPattern.quality.bodyRatio !== null ||
+                    confluence.microPattern.quality.shadowRatio !== null
+                  ) && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <div style={{
+                        fontSize: '10px',
+                        color: 'rgba(255,255,255,0.4)',
+                        letterSpacing: '0.5px',
+                        marginBottom: '6px',
+                      }}>
+                        PATTERN QUALITY
+                      </div>
+                      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                        {confluence.microPattern.quality.bodyRatio !== null && (
+                          <div>
+                            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>Body Ratio: </span>
+                            <span style={{ fontSize: '12px', color: '#fff' }}>
+                              {confluence.microPattern.quality.bodyRatio}x
+                            </span>
+                          </div>
+                        )}
+                        {confluence.microPattern.quality.shadowRatio !== null && (
+                          <div>
+                            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>Shadow Ratio: </span>
+                            <span style={{ fontSize: '12px', color: '#fff' }}>
+                              {confluence.microPattern.quality.shadowRatio}:1
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   <div style={styles.thesisHint}>
                     <span style={styles.thesisLabel}>Suggested thesis:</span>

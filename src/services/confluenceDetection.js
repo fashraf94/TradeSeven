@@ -11,7 +11,7 @@
  * @param {string} selectedTimeframe - '1h', '1d', or '1w'
  * @returns {Array} Confluence signals
  */
-export const detectConfluence = (selectedTimeframeData, dailyData, dailyIndicators, selectedTimeframe) => {
+export const detectConfluence = (selectedTimeframeData, dailyData, dailyIndicators, selectedTimeframe, rvolData = null) => {
   const confluences = [];
 
   if (!selectedTimeframeData?.length || !dailyData?.length) {
@@ -26,7 +26,7 @@ export const detectConfluence = (selectedTimeframeData, dailyData, dailyIndicato
   const recentCandles = selectedTimeframeData.slice(0, 20); // Last 20 candles (newest first)
 
   // Detect micro patterns on selected timeframe
-  const microPatterns = detectMicroPatterns(recentCandles, selectedTimeframe);
+  const microPatterns = detectMicroPatterns(recentCandles, selectedTimeframe, rvolData);
 
   // Find confluences: micro patterns near macro levels
   microPatterns.forEach(pattern => {
@@ -49,6 +49,7 @@ export const detectConfluence = (selectedTimeframeData, dailyData, dailyIndicato
             price: pattern.price,
             description: pattern.description,
             bias: pattern.bias,
+            quality: pattern.quality || null,
           },
 
           // Macro level info
@@ -157,9 +158,20 @@ const getMacroLevels = (dailyData, indicators) => {
 };
 
 /**
- * Detect micro patterns on the selected timeframe
+ * Build RVOL context string for pattern quality metadata
  */
-const detectMicroPatterns = (candles, timeframe) => {
+const buildRVOLContext = (rvolData) => {
+  if (!rvolData || rvolData.value === null) return null;
+  return `RVOL ${rvolData.value}x (${rvolData.tier})`;
+};
+
+/**
+ * Detect micro patterns on the selected timeframe
+ * @param {Array} candles - OHLCV candles (newest first)
+ * @param {string} timeframe - '1h', '1d', or '1w'
+ * @param {Object|null} rvolData - Pre-calculated RVOL data for context
+ */
+const detectMicroPatterns = (candles, timeframe, rvolData = null) => {
   const patterns = [];
   const len = candles.length;
   if (len < 5) return patterns;
@@ -168,32 +180,81 @@ const detectMicroPatterns = (candles, timeframe) => {
   const latest = candles[0];
   const prev = candles[1];
   const prev2 = candles[2];
+  const rvolContext = buildRVOLContext(rvolData);
 
   // Double Bottom Detection (look at last 10 candles)
-  const recentLows = candles.slice(0, 10).map(c => c.low);
+  const recentSlice = candles.slice(0, 10);
+  const recentLows = recentSlice.map(c => c.low);
   const minLow = Math.min(...recentLows);
   const lowTouches = recentLows.filter(l => Math.abs(l - minLow) / minLow < 0.005).length;
   if (lowTouches >= 2) {
+    // Volume comparison between first and second touch
+    const lowCandleIndices = recentSlice
+      .map((c, i) => ({ index: i, low: c.low, volume: c.volume }))
+      .filter(c => Math.abs(c.low - minLow) / minLow < 0.005);
+    let volumeContext = null;
+    if (lowCandleIndices.length >= 2) {
+      // In newest-first: higher index = older candle
+      const firstTouch = lowCandleIndices[lowCandleIndices.length - 1]; // oldest
+      const secondTouch = lowCandleIndices[0]; // newest
+      if (firstTouch.volume > 0 && secondTouch.volume > 0) {
+        const volChange = ((secondTouch.volume - firstTouch.volume) / firstTouch.volume * 100).toFixed(0);
+        volumeContext = secondTouch.volume < firstTouch.volume
+          ? `Second low on ${Math.abs(volChange)}% lower volume — weakening selling pressure`
+          : `Second low on ${volChange}% higher volume`;
+      }
+    }
     patterns.push({
       type: 'DOUBLE_BOTTOM',
       name: 'Double Bottom',
       price: minLow,
       description: `Double bottom forming near $${minLow.toFixed(2)}`,
       bias: 'BULLISH',
+      quality: {
+        bodyRatio: null,
+        shadowRatio: null,
+        isStrong: lowTouches >= 3,
+        volumeContext,
+        rvolContext,
+        qualityNote: `${lowTouches} touches at support${volumeContext ? '. ' + volumeContext : ''}`,
+      },
     });
   }
 
   // Double Top Detection
-  const recentHighs = candles.slice(0, 10).map(c => c.high);
+  const recentHighs = recentSlice.map(c => c.high);
   const maxHigh = Math.max(...recentHighs);
   const highTouches = recentHighs.filter(h => Math.abs(h - maxHigh) / maxHigh < 0.005).length;
   if (highTouches >= 2) {
+    // Volume comparison between first and second peak
+    const highCandleIndices = recentSlice
+      .map((c, i) => ({ index: i, high: c.high, volume: c.volume }))
+      .filter(c => Math.abs(c.high - maxHigh) / maxHigh < 0.005);
+    let volumeContext = null;
+    if (highCandleIndices.length >= 2) {
+      const firstPeak = highCandleIndices[highCandleIndices.length - 1]; // oldest
+      const secondPeak = highCandleIndices[0]; // newest
+      if (firstPeak.volume > 0 && secondPeak.volume > 0) {
+        const volChange = ((secondPeak.volume - firstPeak.volume) / firstPeak.volume * 100).toFixed(0);
+        volumeContext = secondPeak.volume < firstPeak.volume
+          ? `Second peak on ${Math.abs(volChange)}% lower volume — weakening conviction`
+          : `Second peak on ${volChange}% higher volume`;
+      }
+    }
     patterns.push({
       type: 'DOUBLE_TOP',
       name: 'Double Top',
       price: maxHigh,
       description: `Double top forming near $${maxHigh.toFixed(2)}`,
       bias: 'BEARISH',
+      quality: {
+        bodyRatio: null,
+        shadowRatio: null,
+        isStrong: highTouches >= 3,
+        volumeContext,
+        rvolContext,
+        qualityNote: `${highTouches} tests at resistance${volumeContext ? '. ' + volumeContext : ''}`,
+      },
     });
   }
 
@@ -203,23 +264,41 @@ const detectMicroPatterns = (candles, timeframe) => {
   const upperWick = latest.high - Math.max(latest.open, latest.close);
 
   if (lowerWick > bodySize * 2 && upperWick < bodySize * 0.5 && bodySize > 0) {
+    const shadowRatio = parseFloat((lowerWick / bodySize).toFixed(1));
     patterns.push({
       type: 'HAMMER',
       name: 'Hammer Candle',
       price: latest.low,
-      description: 'Bullish hammer pattern detected',
+      description: `Bullish hammer pattern detected${shadowRatio >= 3 ? ' (strong)' : ''}`,
       bias: 'BULLISH',
+      quality: {
+        bodyRatio: null,
+        shadowRatio,
+        isStrong: shadowRatio >= 3,
+        volumeContext: null,
+        rvolContext,
+        qualityNote: `Shadow-to-body ratio: ${shadowRatio}x`,
+      },
     });
   }
 
   // Shooting Star/Bearish Pin Bar (at highs)
   if (upperWick > bodySize * 2 && lowerWick < bodySize * 0.5 && bodySize > 0) {
+    const shadowRatio = parseFloat((upperWick / bodySize).toFixed(1));
     patterns.push({
       type: 'SHOOTING_STAR',
       name: 'Shooting Star',
       price: latest.high,
-      description: 'Bearish shooting star pattern detected',
+      description: `Bearish shooting star pattern detected${shadowRatio >= 3 ? ' (strong)' : ''}`,
       bias: 'BEARISH',
+      quality: {
+        bodyRatio: null,
+        shadowRatio,
+        isStrong: shadowRatio >= 3,
+        volumeContext: null,
+        rvolContext,
+        qualityNote: `Shadow-to-body ratio: ${shadowRatio}x`,
+      },
     });
   }
 
@@ -228,12 +307,26 @@ const detectMicroPatterns = (candles, timeframe) => {
       latest.close > latest.open && // Current is bullish
       latest.open < prev.close && // Opens below prev close
       latest.close > prev.open) { // Closes above prev open
+    const prevBody = Math.abs(prev.close - prev.open);
+    const currBody = Math.abs(latest.close - latest.open);
+    const bodyRatio = prevBody > 0 ? parseFloat((currBody / prevBody).toFixed(1)) : null;
+    const isStrong = bodyRatio !== null && bodyRatio >= 2.0;
     patterns.push({
       type: 'BULLISH_ENGULFING',
       name: 'Bullish Engulfing',
       price: latest.low,
-      description: 'Bullish engulfing pattern detected',
+      description: `Bullish engulfing pattern detected${isStrong ? ' (strong)' : ''}`,
       bias: 'BULLISH',
+      quality: {
+        bodyRatio,
+        shadowRatio: null,
+        isStrong,
+        volumeContext: null,
+        rvolContext,
+        qualityNote: isStrong
+          ? `Engulfing body ${bodyRatio}x prior candle`
+          : `Engulfing body ${bodyRatio}x prior — marginal`,
+      },
     });
   }
 
@@ -242,12 +335,26 @@ const detectMicroPatterns = (candles, timeframe) => {
       latest.close < latest.open && // Current is bearish
       latest.open > prev.close && // Opens above prev close
       latest.close < prev.open) { // Closes below prev open
+    const prevBody = Math.abs(prev.close - prev.open);
+    const currBody = Math.abs(latest.close - latest.open);
+    const bodyRatio = prevBody > 0 ? parseFloat((currBody / prevBody).toFixed(1)) : null;
+    const isStrong = bodyRatio !== null && bodyRatio >= 2.0;
     patterns.push({
       type: 'BEARISH_ENGULFING',
       name: 'Bearish Engulfing',
       price: latest.high,
-      description: 'Bearish engulfing pattern detected',
+      description: `Bearish engulfing pattern detected${isStrong ? ' (strong)' : ''}`,
       bias: 'BEARISH',
+      quality: {
+        bodyRatio,
+        shadowRatio: null,
+        isStrong,
+        volumeContext: null,
+        rvolContext,
+        qualityNote: isStrong
+          ? `Engulfing body ${bodyRatio}x prior candle`
+          : `Engulfing body ${bodyRatio}x prior — marginal`,
+      },
     });
   }
 
@@ -262,6 +369,14 @@ const detectMicroPatterns = (candles, timeframe) => {
         price: lows[0],
         description: 'Series of higher lows indicating uptrend',
         bias: 'BULLISH',
+        quality: {
+          bodyRatio: null,
+          shadowRatio: null,
+          isStrong: false,
+          volumeContext: null,
+          rvolContext,
+          qualityNote: 'Trend continuation pattern',
+        },
       });
     }
   }
@@ -277,6 +392,14 @@ const detectMicroPatterns = (candles, timeframe) => {
         price: highs[0],
         description: 'Series of lower highs indicating downtrend',
         bias: 'BEARISH',
+        quality: {
+          bodyRatio: null,
+          shadowRatio: null,
+          isStrong: false,
+          volumeContext: null,
+          rvolContext,
+          qualityNote: 'Trend continuation pattern',
+        },
       });
     }
   }
@@ -290,6 +413,14 @@ const detectMicroPatterns = (candles, timeframe) => {
       price: (latest.high + latest.low) / 2,
       description: 'Doji candle showing indecision',
       bias: 'NEUTRAL',
+      quality: {
+        bodyRatio: null,
+        shadowRatio: null,
+        isStrong: false,
+        volumeContext: null,
+        rvolContext,
+        qualityNote: 'Indecision candle',
+      },
     });
   }
 
@@ -315,6 +446,9 @@ const calculateConfluenceStrength = (distance, pattern, level) => {
   const strongPatterns = ['DOUBLE_BOTTOM', 'DOUBLE_TOP', 'BULLISH_ENGULFING', 'BEARISH_ENGULFING'];
   if (strongPatterns.includes(pattern.type)) score += 2;
   else score += 1;
+
+  // Quality factor: strong patterns (high body ratio, deep shadow, etc.) get a bonus
+  if (pattern.quality?.isStrong) score += 1;
 
   // Determine strength
   if (score >= 6) return 'STRONG';

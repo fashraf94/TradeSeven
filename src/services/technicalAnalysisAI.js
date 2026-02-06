@@ -46,6 +46,7 @@ Cover these indicators briefly:
 - RSI: momentum and zone
 - MACD: histogram direction and signal
 - Moving averages: price position relative to 20/50 SMA
+- RVOL: current relative volume classification and what it implies for price action reliability
 - Volume: recent trend
 
 OUTPUT FORMAT (JSON only):
@@ -116,6 +117,7 @@ Keep it educational and avoid trading recommendations.`
 Analyze:
 - ATR value and what it means for this stock
 - Volatility regime (high, normal, low)
+- RVOL: relative volume level and what it says about current participation
 - Recent price range behavior
 - Whether volatility is expanding or contracting
 
@@ -331,6 +333,70 @@ FAKEOUT DETECTION:
 - Immediate reversal = confirmation of fakeout
 - Note risk level for any detected patterns
 
+RELATIVE VOLUME (RVOL):
+- RVOL is PRE-CALCULATED and provided in the indicator data — do NOT recalculate it
+- RVOL compares today's volume to the 20-day average. It answers: "Is participation unusual today?"
+- 7-Tier Institutional Classification:
+  * VERY_LOW (<0.5x): Extremely thin participation, moves likely unsustainable
+  * LOW (0.5-0.75x): Below-average conviction, breakouts prone to failure
+  * NORMAL (0.75-1.25x): Balanced auction, typical participation — neutral for pattern confirmation
+  * ELEVATED (1.25-2.5x): Stock is "in-play" with above-normal interest, moderate follow-through expected
+  * INSTITUTIONAL (2.5-4.0x): Strong institutional conviction, breakout-grade volume, highest follow-through probability
+  * CLIMAX (>4.0x): CAUTION — Potential blow-off top or selling climax. Extreme volume at the end of extended moves historically indicates exhaustion, not continuation
+- CRITICAL — The Climax Warning (RVOL > 4.0):
+  * At end of extended uptrend + reversal candle = "Potential blow-off top detected. Extremely high volume indicates exhaustion."
+  * At end of extended downtrend + reversal candle = "Potential selling climax detected. Capitulation — sellers exhausting themselves."
+  * Breakout from consolidation base = Climax warning does NOT apply. High volume on base breakout is constructive.
+- Always contextualize patterns with RVOL:
+  * Bounce at support WITH RVOL > 2.5 = "High-conviction institutional reaction at support zone"
+  * Bounce at support WITH RVOL < 0.75 = "Support held, but volume is unremarkable — conviction is neutral"
+  * Breakout WITH RVOL < 0.75 = "Low-conviction breakout — historically prone to failure"
+  * Pullback WITH RVOL < 0.75 = "Healthy volume dry-up on pullback — holders not liquidating" (bullish within uptrend)
+  * Pattern WITH RVOL > 4.0 at extended move end = Apply climax warning
+  * Pattern WITH RVOL < 0.5 = "Pattern detected but on very thin volume — reliability significantly reduced"
+- Volume Dry-Up Context: Pullback on contracting RVOL = healthy pause. Pullback on expanding RVOL = warning of possible trend change.
+- RVOL + OBV Cross-Check (when OBV data available):
+  * Price rising + OBV rising + RVOL elevated = Healthy trend, accumulation confirmed
+  * Price rising + OBV flat/declining + RVOL spikes on up-days = Distribution warning
+  * Price declining + OBV flat + RVOL low = Orderly pullback, no panic
+  * Price declining + OBV declining sharply + RVOL high = Active selling/liquidation
+- RVOL influences confluence zone descriptions:
+  * STRONG confluence + RVOL INSTITUTIONAL = "High-conviction STRONG confluence — institutional-grade volume supports this zone"
+  * STRONG confluence + RVOL NORMAL = "STRONG confluence structurally, but volume participation is unremarkable"
+  * STRONG confluence + RVOL LOW/VERY_LOW = "STRONG confluence detected, but current volume is unusually thin — reduced reliability"
+  * Confluence at support during pullback + RVOL LOW = "Volume drying up at confluence support — historically constructive"
+
+CANDLESTICK PATTERN QUALITY RULES:
+When detecting candlestick patterns, always assess and report quality context:
+- Engulfing Patterns:
+  * Strong: Engulfing candle's body is at least 2x the previous candle's body
+  * Weak/Marginal: Engulfing candle barely exceeds previous body
+  * Report: "Bullish Engulfing (strong — engulfing body 2.3x prior candle)" or "Bullish Engulfing (marginal — body only 1.1x prior)"
+- Hammer / Shooting Star:
+  * Valid: Lower shadow (hammer) or upper shadow (shooting star) must be at least 2x the body length
+  * Invalid: If shadow < 2x body, do NOT classify as hammer/shooting star
+  * Report shadow-to-body ratio when detected
+  * A Shooting Star on RVOL > 4.0 at end of extended uptrend is a high-probability blow-off signal — always flag explicitly
+- Double Top / Double Bottom:
+  * Volume comparison is critical: Compare volume at first peak/trough vs second
+  * Declining volume on second test = higher probability pattern (weakening conviction)
+  * Increasing volume on second test = pattern less likely to resolve as expected
+  * Report: "Double Top near $X — second peak on 40% lower volume, indicating weakening conviction"
+- All Patterns:
+  * Always report the RVOL tier at the candle where the pattern was detected
+  * Pattern on RVOL < 0.75 = flag as "low-conviction"
+  * Pattern on RVOL 2.5-4.0 = flag as "high-conviction, institutional-grade"
+  * Pattern on RVOL > 4.0 = evaluate for exhaustion context (see Climax Warning above)
+
+ELLIOTT WAVE ANALYSIS — GATING:
+- Elliott Wave counting requires visual chart inspection for reliable wave identification
+- In OHLCV-only mode (no chart image): Do NOT output specific wave counts (e.g., "we are in Wave 3")
+- You MAY note structural observations consistent with wave theory if the OHLCV structure strongly suggests it:
+  * "Price structure shows characteristics of an impulsive advance" (if clearly visible from data)
+  * "The current pullback has a corrective appearance" (if pattern is unambiguous)
+- ALWAYS include gating caveat: "Wave analysis requires visual confirmation for reliable counts"
+- Flag confidence: LOW (OHLCV data only), HIGH (chart image available)
+
 Remember: This is for EDUCATIONAL pattern tracking. Provide thorough analysis with historical context, but never recommend specific actions.`;
 
 
@@ -354,6 +420,7 @@ const buildQuickUserPrompt = (symbol, currentPrice, high20, low20, indicators, o
 
 CURRENT: $${safeToFixed(currentPrice, 2)}
 RSI: ${safeToFixed(indicators.rsi?.value, 1)} | MACD: ${indicators.macd?.histogram > 0 ? '+' : ''}${safeToFixed(indicators.macd?.histogram, 2)}
+RVOL: ${indicators.rvol?.value || 'N/A'}x (${indicators.rvol?.label || 'Unknown'}) [Tier: ${indicators.rvol?.tier || 'UNKNOWN'}]
 50 SMA: $${safeToFixed(indicators.sma50?.value, 2)} (${indicators.sma50?.position || 'N/A'})
 20-Day Range: $${safeToFixed(low20, 2)} - $${safeToFixed(high20, 2)}
 
@@ -366,7 +433,7 @@ Identify: primary trend, key level, one takeaway. Return JSON only.`;
 /**
  * Build user prompt for deep analysis
  */
-const buildDeepUserPrompt = (symbol, currentPrice, high20, low20, high50, low50, indicators, ohlcvSummary, battleType) => {
+const buildDeepUserPrompt = (symbol, currentPrice, high20, low20, high50, low50, indicators, ohlcvSummary, battleType, hasChartImage = false) => {
   return `Perform comprehensive technical analysis of ${symbol} for educational pattern detection.
 
 CURRENT MARKET DATA:
@@ -381,13 +448,16 @@ PRE-CALCULATED INDICATORS:
 - 50 SMA: $${safeToFixed(indicators.sma50?.value, 2)} (Price ${indicators.sma50?.position || 'N/A'} by ${indicators.sma50?.distance || 'N/A'})
 - 200 SMA: $${safeToFixed(indicators.sma200, 2)}
 - ATR (14): $${safeToFixed(indicators.atr?.value, 2)} (${indicators.atr?.regime || 'N/A'}, ${safeToFixed(indicators.atr?.percent, 1)}% of price)
+- RVOL (20): ${indicators.rvol?.value || 'N/A'}x (${indicators.rvol?.label || 'Unknown'}) [Tier: ${indicators.rvol?.tier || 'UNKNOWN'}]
 
 RECENT OHLCV DATA (45 days, newest first):
 ${ohlcvSummary}
 
 ANALYSIS CONTEXT:
 - Battle Type: ${battleType} (${battleType === 'BaggerBomb' ? 'focus on volatility and momentum setups' : 'standard swing analysis'})
+- Analysis Mode: ${hasChartImage ? 'OHLCV + Chart Image' : 'OHLCV Only'}
 - Request: Deep analysis with full pattern detection
+${!hasChartImage ? '- NOTE: Elliott Wave analysis is NOT available in OHLCV-only mode.' : ''}
 
 REQUIRED ANALYSIS:
 1. Identify all confluence zones where multiple indicators align within 1%
@@ -605,6 +675,7 @@ CURRENT DATA:
 - 50 SMA: $${safeToFixed(indicators.sma50?.value, 2)} (Price ${indicators.sma50?.position || 'N/A'})
 - 200 SMA: $${safeToFixed(indicators.sma200, 2)}
 - ATR (14): $${safeToFixed(indicators.atr?.value, 2)} (${safeToFixed(indicators.atr?.percent, 1)}% of price, ${indicators.atr?.regime || 'N/A'})
+- RVOL (20): ${indicators.rvol?.value || 'N/A'}x (${indicators.rvol?.tier || 'N/A'} — ${indicators.rvol?.label || ''})
 - 20-Day Range: $${safeToFixed(low20, 2)} - $${safeToFixed(high20, 2)}
 - Trend: ${indicators.trend?.direction || 'N/A'}
 

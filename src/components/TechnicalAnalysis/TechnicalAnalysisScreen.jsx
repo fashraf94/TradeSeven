@@ -15,6 +15,7 @@ import {
   calculateSMA,
   calculateATR,
   calculateATRPercent,
+  calculateRVOL,
   detectTrend,
 } from '../../services/technicalIndicators';
 import { analyzeExploreQuestion } from '../../services/technicalAnalysisAI';
@@ -403,6 +404,7 @@ const TechnicalAnalysisScreen = ({
     const sma200 = calculateSMA(closingPrices, 200);
     const atrValue = calculateATR(ohlcvData, 14);
     const atrPercent = calculateATRPercent(ohlcvData, 14);
+    const rvolData = calculateRVOL(ohlcvData);
     const trend = detectTrend(closingPrices);
 
     const sma50Distance = sma50 ? ((currentPrice - sma50) / sma50 * 100) : 0;
@@ -446,6 +448,7 @@ const TechnicalAnalysisScreen = ({
       },
       sma20: sma20 ? Math.round(sma20 * 100) / 100 : null,
       sma200: sma200 ? Math.round(sma200 * 100) / 100 : null,
+      rvol: rvolData,
       trend,
     };
   };
@@ -766,6 +769,7 @@ const TechnicalAnalysisScreen = ({
                   dailyIndicators={dailyIndicators}
                   selectedTimeframe={selectedTimeframe}
                   onTrackPattern={handleTrackPattern}
+                  rvolData={calculatedIndicators?.rvol}
                 />
               )}
               {activeTab === 'levels' && (

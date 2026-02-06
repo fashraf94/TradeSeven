@@ -45,6 +45,7 @@ export const COLORS = {
   neutral: '#888',
   accent: '#00ffff',
   warning: '#ffcc00',
+  climax: '#ffaa00',
   background: '#0a1628',
   backgroundDark: '#0a0e14',
   backgroundCard: 'rgba(0, 0, 0, 0.2)',
@@ -53,4 +54,21 @@ export const COLORS = {
   textPrimary: '#ffffff',
   textSecondary: 'rgba(255, 255, 255, 0.6)',
   textMuted: 'rgba(255, 255, 255, 0.4)',
+};
+
+/**
+ * Get color for RVOL tier classification
+ * @param {string} tier - RVOL tier name
+ * @returns {string} Color value
+ */
+export const getRVOLTierColor = (tier) => {
+  switch (tier) {
+    case 'CLIMAX': return '#ffaa00';
+    case 'INSTITUTIONAL': return '#00ff88';
+    case 'ELEVATED': return 'rgba(0, 255, 136, 0.6)';
+    case 'NORMAL': return 'rgba(255,255,255,0.4)';
+    case 'LOW': return 'rgba(255,255,255,0.3)';
+    case 'VERY_LOW': return 'rgba(255,255,255,0.25)';
+    default: return 'rgba(255,255,255,0.4)';
+  }
 };
