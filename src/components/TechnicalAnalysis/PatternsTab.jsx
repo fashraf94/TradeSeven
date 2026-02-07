@@ -1,7 +1,8 @@
 // src/components/TechnicalAnalysis/PatternsTab.jsx
 // Multi-Timeframe Confluence Detection Tab with Pattern Tracking
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Bookmark, BookmarkCheck, MapPin, X, ShieldCheck, TrendingDown, Info } from 'lucide-react';
 import { detectConfluence } from '../../services/confluenceDetection';
 import { saveTrackedPattern, updatePatternStatus } from '../../firebase/firebaseService';
 import { getStrengthColor, getStrengthIcon, getRVOLTierColor } from './utils/colors';
@@ -64,14 +65,6 @@ const PatternsTab = ({
       setIsLoading(false);
     }
   }, [ohlcvData, dailyAnchorData, dailyIndicators, selectedTimeframe, rvolData]);
-
-  const getBiasIcon = (bias) => {
-    switch (bias) {
-      case 'BULLISH': return '\uD83D\uDFE2';
-      case 'BEARISH': return '\uD83D\uDD34';
-      default: return '\u26AA';
-    }
-  };
 
   // Check if a confluence zone is already tracked
   const isPatternTracked = (confluence) => {
@@ -185,6 +178,10 @@ const PatternsTab = ({
   // Filter tracked patterns for current ticker
   const tickerPatterns = (trackedPatterns || []).filter(p => p.ticker === ticker);
 
+  // Split confluences into support / resistance
+  const supportPatterns = confluences.filter(z => z.macroLevel.type === 'SUPPORT');
+  const resistancePatterns = confluences.filter(z => z.macroLevel.type === 'RESISTANCE');
+
   // Pill toggle
   const renderSubTabToggle = () => (
     <div style={styles.pillToggle}>
@@ -202,6 +199,306 @@ const PatternsTab = ({
       </button>
     </div>
   );
+
+  // Render a single confluence card (used inside carousels)
+  const renderCard = (confluence) => {
+    const tracked = isPatternTracked(confluence);
+    const saving = isInProgress(confluence.id);
+    const isHighlighted = activeHighlight?.confluenceId === confluence.id;
+
+    return (
+      <div
+        key={confluence.id}
+        style={{
+          ...styles.carouselCard,
+          borderColor: getStrengthColor(confluence.strength),
+        }}
+      >
+        {/* Header */}
+        <div
+          style={styles.cardHeader}
+          onClick={() => setExpandedId(expandedId === confluence.id ? null : confluence.id)}
+        >
+          <div style={styles.headerLeft}>
+            <span style={{
+              ...styles.strengthBadge,
+              backgroundColor: getStrengthColor(confluence.strength) + '20',
+              color: getStrengthColor(confluence.strength),
+            }}>
+              {getStrengthIcon(confluence.strength)} {confluence.strength}
+            </span>
+            <span style={{
+              ...styles.levelType,
+              color: confluence.macroLevel.type === 'SUPPORT' ? '#00ff88' : '#ff6b6b',
+            }}>
+              {confluence.macroLevel.type}
+            </span>
+          </div>
+          <div style={styles.priceRange}>
+            ${confluence.priceRange.low.toFixed(2)} - ${confluence.priceRange.high.toFixed(2)}
+          </div>
+        </div>
+
+        {/* Show on Chart button — own row */}
+        <div style={{ padding: '4px 16px 0' }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); handleShowOnChart(confluence); }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '5px 12px',
+              fontSize: '11px',
+              fontWeight: 600,
+              borderRadius: '6px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              border: isHighlighted
+                ? '1px solid rgba(0, 255, 255, 0.4)'
+                : '1px solid rgba(255, 255, 255, 0.12)',
+              background: isHighlighted
+                ? 'rgba(0, 255, 255, 0.12)'
+                : 'rgba(255, 255, 255, 0.04)',
+              color: isHighlighted
+                ? '#00ffff'
+                : 'rgba(255, 255, 255, 0.5)',
+            }}
+          >
+            {isHighlighted
+              ? <><X size={12} /> Hide from Chart</>
+              : <><MapPin size={12} /> Show on Chart</>
+            }
+          </button>
+        </div>
+
+        {/* Micro Pattern */}
+        <div style={styles.patternSection}>
+          <div style={styles.sectionLabel}>
+            MICRO ({confluence.microPattern.timeframe.toUpperCase()})
+          </div>
+          <div style={styles.patternRow}>
+            <div style={{
+              width: '10px',
+              height: '10px',
+              borderRadius: '50%',
+              background: confluence.microPattern.bias === 'BULLISH' ? '#00ff88'
+                : confluence.microPattern.bias === 'BEARISH' ? '#ff4757'
+                : 'rgba(255,255,255,0.4)',
+              flexShrink: 0,
+            }} />
+            <span style={styles.patternName}>{confluence.microPattern.name}</span>
+          </div>
+          <div style={styles.patternDesc}>{confluence.microPattern.description}</div>
+
+          {/* Quality Metadata Badges */}
+          {confluence.microPattern.quality && (
+            <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {confluence.microPattern.quality.qualityNote && (
+                <span style={{
+                  fontSize: '10px',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  backgroundColor: confluence.microPattern.quality.isStrong
+                    ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                  color: confluence.microPattern.quality.isStrong
+                    ? '#00ff88' : 'rgba(255,255,255,0.5)',
+                  border: `1px solid ${confluence.microPattern.quality.isStrong
+                    ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255,255,255,0.1)'}`,
+                }}>
+                  {confluence.microPattern.quality.qualityNote}
+                </span>
+              )}
+              {confluence.microPattern.quality.volumeContext && (
+                <span style={{
+                  fontSize: '10px',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  backgroundColor: 'rgba(255, 204, 0, 0.1)',
+                  color: '#ffcc00',
+                  border: '1px solid rgba(255, 204, 0, 0.2)',
+                }}>
+                  {confluence.microPattern.quality.volumeContext}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Macro Level */}
+        <div style={styles.levelSection}>
+          <div style={styles.sectionLabel}>MACRO ({selectedTimeframe === '1w' ? 'WEEKLY' : 'DAILY'} ANCHOR)</div>
+          <div style={styles.levelName}>{confluence.macroLevel.name}</div>
+          <div style={styles.levelPrice}>${confluence.macroLevel.price.toFixed(2)}</div>
+        </div>
+
+        {/* Distance indicator */}
+        <div style={styles.distanceBar}>
+          <span style={styles.distanceLabel}>
+            {parseFloat(confluence.distanceFromCurrent) > 0 ? 'Above' : 'Below'} current price by
+          </span>
+          <span style={{
+            ...styles.distanceValue,
+            color: Math.abs(parseFloat(confluence.distanceFromCurrent)) < 1 ? '#00ff88' : '#fff',
+          }}>
+            {Math.abs(parseFloat(confluence.distanceFromCurrent)).toFixed(2)}%
+          </span>
+        </div>
+
+        {/* Expanded Details */}
+        {expandedId === confluence.id && (
+          <div style={styles.expandedSection}>
+            <div style={styles.whyMatters}>
+              <div style={styles.whyTitle}>WHY THIS MATTERS</div>
+              <p style={styles.whyText}>{confluence.description}</p>
+            </div>
+
+            <div style={styles.historicalContext}>
+              <div style={styles.histTitle}>HISTORICAL CONTEXT</div>
+              <p style={styles.histText}>{confluence.historicalContext}</p>
+            </div>
+
+            {/* Pattern Quality Detail */}
+            {confluence.microPattern.quality && (
+              confluence.microPattern.quality.bodyRatio !== null ||
+              confluence.microPattern.quality.shadowRatio !== null
+            ) && (
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{
+                  fontSize: '10px',
+                  color: 'rgba(255,255,255,0.4)',
+                  letterSpacing: '0.5px',
+                  marginBottom: '6px',
+                }}>
+                  PATTERN QUALITY
+                </div>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  {confluence.microPattern.quality.bodyRatio !== null && (
+                    <div>
+                      <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>Body Ratio: </span>
+                      <span style={{ fontSize: '12px', color: '#fff' }}>
+                        {confluence.microPattern.quality.bodyRatio}x
+                      </span>
+                    </div>
+                  )}
+                  {confluence.microPattern.quality.shadowRatio !== null && (
+                    <div>
+                      <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>Shadow Ratio: </span>
+                      <span style={{ fontSize: '12px', color: '#fff' }}>
+                        {confluence.microPattern.quality.shadowRatio}:1
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div style={styles.thesisHint}>
+              <span style={styles.thesisLabel}>Suggested thesis:</span>
+              <span style={styles.thesisValue}>
+                {confluence.suggestedThesis.replace(/_/g, ' ')}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Track Button — 2-click instant flow */}
+        <button
+          style={{
+            ...styles.trackButton,
+            ...(tracked || saving ? {
+              backgroundColor: 'rgba(0, 255, 136, 0.15)',
+              borderTopColor: 'rgba(0, 255, 136, 0.3)',
+              color: '#00ff88',
+              cursor: 'default',
+            } : {}),
+          }}
+          onClick={() => !tracked && !saving && handleInstantTrack(confluence)}
+          disabled={tracked || saving}
+        >
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            {tracked
+              ? <><BookmarkCheck size={14} /> Tracked</>
+              : saving
+                ? 'Saving...'
+                : <><Bookmark size={14} /> Track Pattern</>
+            }
+          </span>
+        </button>
+      </div>
+    );
+  };
+
+  // Render a carousel section (support or resistance)
+  const renderCarouselSection = (patterns, type) => {
+    const isSupport = type === 'SUPPORT';
+    const accentColor = isSupport ? '#00ff88' : '#ff4757';
+    const Icon = isSupport ? ShieldCheck : TrendingDown;
+    const label = isSupport ? 'Support Zones' : 'Resistance Zones';
+
+    if (patterns.length === 0) {
+      return (
+        <div key={type}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '12px 16px 8px',
+          }}>
+            <Icon size={14} color={accentColor} />
+            <span style={{
+              fontSize: '11px',
+              fontWeight: 700,
+              letterSpacing: '1px',
+              color: accentColor,
+              textTransform: 'uppercase',
+            }}>{label}</span>
+            <span style={{
+              fontSize: '11px',
+              color: 'rgba(255,255,255,0.3)',
+            }}>(0)</span>
+          </div>
+          <div style={{
+            padding: '16px',
+            fontSize: '12px',
+            color: 'rgba(255,255,255,0.3)',
+            fontStyle: 'italic',
+          }}>
+            No {type.toLowerCase()} patterns detected
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div key={type}>
+        {/* Section header */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '12px 16px 8px',
+        }}>
+          <Icon size={14} color={accentColor} />
+          <span style={{
+            fontSize: '11px',
+            fontWeight: 700,
+            letterSpacing: '1px',
+            color: accentColor,
+            textTransform: 'uppercase',
+          }}>{label}</span>
+          <span style={{
+            fontSize: '11px',
+            color: 'rgba(255,255,255,0.3)',
+          }}>({patterns.length})</span>
+        </div>
+
+        {/* Horizontal carousel */}
+        <div style={styles.carouselContainer}>
+          {patterns.map(renderCard)}
+        </div>
+      </div>
+    );
+  };
 
   // Pattern History sub-tab
   if (subTab === 'history') {
@@ -300,213 +597,20 @@ const PatternsTab = ({
             color: getRVOLTierColor(rvolData.tier),
             fontWeight: 500,
           }}>
-            {rvolData.tier}{rvolData.isClimax ? ' \u26A0\uFE0F' : ''}
+            {rvolData.tier}
           </span>
         </div>
       )}
 
-      <div style={styles.confluenceList}>
-        {confluences.map((confluence) => {
-          const tracked = isPatternTracked(confluence);
-          const saving = isInProgress(confluence.id);
-
-          return (
-            <div
-              key={confluence.id}
-              style={{
-                ...styles.confluenceCard,
-                borderColor: getStrengthColor(confluence.strength),
-              }}
-            >
-                {/* Header */}
-                <div
-                  style={styles.cardHeader}
-                  onClick={() => setExpandedId(expandedId === confluence.id ? null : confluence.id)}
-                >
-                  <div style={styles.headerLeft}>
-                    <span style={{
-                      ...styles.strengthBadge,
-                      backgroundColor: getStrengthColor(confluence.strength) + '20',
-                      color: getStrengthColor(confluence.strength),
-                    }}>
-                      {getStrengthIcon(confluence.strength)} {confluence.strength}
-                    </span>
-                    <span style={{
-                      ...styles.levelType,
-                      color: confluence.macroLevel.type === 'SUPPORT' ? '#00ff88' : '#ff6b6b',
-                    }}>
-                      {confluence.macroLevel.type}
-                    </span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleShowOnChart(confluence); }}
-                      style={{
-                        padding: '3px 8px',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                        backgroundColor: activeHighlight?.confluenceId === confluence.id
-                          ? 'rgba(0, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                        border: `1px solid ${activeHighlight?.confluenceId === confluence.id
-                          ? 'rgba(0, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
-                        color: activeHighlight?.confluenceId === confluence.id
-                          ? '#00ffff' : 'rgba(255, 255, 255, 0.5)',
-                      }}
-                    >
-                      {activeHighlight?.confluenceId === confluence.id ? '\u2715 Hide' : '\uD83D\uDCCD Chart'}
-                    </button>
-                  </div>
-                  <div style={styles.priceRange}>
-                    ${confluence.priceRange.low.toFixed(2)} - ${confluence.priceRange.high.toFixed(2)}
-                  </div>
-                </div>
-
-                {/* Micro Pattern */}
-                <div style={styles.patternSection}>
-                  <div style={styles.sectionLabel}>
-                    MICRO ({confluence.microPattern.timeframe.toUpperCase()})
-                  </div>
-                  <div style={styles.patternRow}>
-                    <span style={styles.biasIcon}>{getBiasIcon(confluence.microPattern.bias)}</span>
-                    <span style={styles.patternName}>{confluence.microPattern.name}</span>
-                  </div>
-                  <div style={styles.patternDesc}>{confluence.microPattern.description}</div>
-
-                  {/* Quality Metadata Badges */}
-                  {confluence.microPattern.quality && (
-                    <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                      {confluence.microPattern.quality.qualityNote && (
-                        <span style={{
-                          fontSize: '10px',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          backgroundColor: confluence.microPattern.quality.isStrong
-                            ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
-                          color: confluence.microPattern.quality.isStrong
-                            ? '#00ff88' : 'rgba(255,255,255,0.5)',
-                          border: `1px solid ${confluence.microPattern.quality.isStrong
-                            ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255,255,255,0.1)'}`,
-                        }}>
-                          {confluence.microPattern.quality.qualityNote}
-                        </span>
-                      )}
-                      {confluence.microPattern.quality.volumeContext && (
-                        <span style={{
-                          fontSize: '10px',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          backgroundColor: 'rgba(255, 204, 0, 0.1)',
-                          color: '#ffcc00',
-                          border: '1px solid rgba(255, 204, 0, 0.2)',
-                        }}>
-                          {confluence.microPattern.quality.volumeContext}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Macro Level */}
-                <div style={styles.levelSection}>
-                  <div style={styles.sectionLabel}>MACRO ({selectedTimeframe === '1w' ? 'WEEKLY' : 'DAILY'} ANCHOR)</div>
-                  <div style={styles.levelName}>{confluence.macroLevel.name}</div>
-                  <div style={styles.levelPrice}>${confluence.macroLevel.price.toFixed(2)}</div>
-                </div>
-
-                {/* Distance indicator */}
-                <div style={styles.distanceBar}>
-                  <span style={styles.distanceLabel}>
-                    {parseFloat(confluence.distanceFromCurrent) > 0 ? 'Above' : 'Below'} current price by
-                  </span>
-                  <span style={{
-                    ...styles.distanceValue,
-                    color: Math.abs(parseFloat(confluence.distanceFromCurrent)) < 1 ? '#00ff88' : '#fff',
-                  }}>
-                    {Math.abs(parseFloat(confluence.distanceFromCurrent)).toFixed(2)}%
-                  </span>
-                </div>
-
-                {/* Expanded Details */}
-                {expandedId === confluence.id && (
-                  <div style={styles.expandedSection}>
-                    <div style={styles.whyMatters}>
-                      <div style={styles.whyTitle}>WHY THIS MATTERS</div>
-                      <p style={styles.whyText}>{confluence.description}</p>
-                    </div>
-
-                    <div style={styles.historicalContext}>
-                      <div style={styles.histTitle}>HISTORICAL CONTEXT</div>
-                      <p style={styles.histText}>{confluence.historicalContext}</p>
-                    </div>
-
-                    {/* Pattern Quality Detail */}
-                    {confluence.microPattern.quality && (
-                      confluence.microPattern.quality.bodyRatio !== null ||
-                      confluence.microPattern.quality.shadowRatio !== null
-                    ) && (
-                      <div style={{ marginBottom: '12px' }}>
-                        <div style={{
-                          fontSize: '10px',
-                          color: 'rgba(255,255,255,0.4)',
-                          letterSpacing: '0.5px',
-                          marginBottom: '6px',
-                        }}>
-                          PATTERN QUALITY
-                        </div>
-                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                          {confluence.microPattern.quality.bodyRatio !== null && (
-                            <div>
-                              <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>Body Ratio: </span>
-                              <span style={{ fontSize: '12px', color: '#fff' }}>
-                                {confluence.microPattern.quality.bodyRatio}x
-                              </span>
-                            </div>
-                          )}
-                          {confluence.microPattern.quality.shadowRatio !== null && (
-                            <div>
-                              <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>Shadow Ratio: </span>
-                              <span style={{ fontSize: '12px', color: '#fff' }}>
-                                {confluence.microPattern.quality.shadowRatio}:1
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    <div style={styles.thesisHint}>
-                      <span style={styles.thesisLabel}>Suggested thesis:</span>
-                      <span style={styles.thesisValue}>
-                        {confluence.suggestedThesis.replace(/_/g, ' ')}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Track Button — 2-click instant flow */}
-                <button
-                  style={{
-                    ...styles.trackButton,
-                    ...(tracked || saving ? {
-                      backgroundColor: 'rgba(0, 255, 136, 0.15)',
-                      borderTopColor: 'rgba(0, 255, 136, 0.3)',
-                      color: '#00ff88',
-                      cursor: 'default',
-                    } : {}),
-                  }}
-                  onClick={() => !tracked && !saving && handleInstantTrack(confluence)}
-                  disabled={tracked || saving}
-                >
-                  {tracked ? '\u2713 Tracking' : saving ? 'Saving...' : '\uD83D\uDCCA Track This Pattern'}
-                </button>
-            </div>
-          );
-        })}
-      </div>
+      {/* Support and Resistance Carousels */}
+      {supportPatterns.length > 0 && renderCarouselSection(supportPatterns, 'SUPPORT')}
+      {resistancePatterns.length > 0 && renderCarouselSection(resistancePatterns, 'RESISTANCE')}
+      {/* Show empty messages only when the other direction has patterns */}
+      {supportPatterns.length === 0 && resistancePatterns.length > 0 && renderCarouselSection([], 'SUPPORT')}
+      {resistancePatterns.length === 0 && supportPatterns.length > 0 && renderCarouselSection([], 'RESISTANCE')}
 
       <div style={styles.disclaimer}>
-        <span style={styles.disclaimerIcon}>{'\u2139\uFE0F'}</span>
+        <Info size={14} color="rgba(255,255,255,0.4)" style={{ flexShrink: 0 }} />
         <span>
           Confluence detection identifies technical patterns for educational purposes.
           Past patterns do not guarantee future results.
@@ -568,12 +672,21 @@ const styles = {
     textAlign: 'left',
     lineHeight: '1.5',
   },
-  confluenceList: {
+  // Carousel styles
+  carouselContainer: {
     display: 'flex',
-    flexDirection: 'column',
     gap: '12px',
+    overflowX: 'auto',
+    scrollSnapType: 'x mandatory',
+    WebkitOverflowScrolling: 'touch',
+    padding: '0 16px 12px 16px',
+    scrollbarWidth: 'none',
+    msOverflowStyle: 'none',
   },
-  confluenceCard: {
+  carouselCard: {
+    flex: '0 0 auto',
+    width: 'min(320px, calc(100vw - 48px))',
+    scrollSnapAlign: 'start',
     backgroundColor: 'rgba(0,0,0,0.3)',
     borderRadius: '12px',
     border: '1px solid',
@@ -624,9 +737,6 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
-  },
-  biasIcon: {
-    fontSize: '12px',
   },
   patternName: {
     fontSize: '14px',
@@ -741,9 +851,6 @@ const styles = {
     borderRadius: '8px',
     fontSize: '11px',
     color: 'rgba(255,255,255,0.4)',
-  },
-  disclaimerIcon: {
-    flexShrink: 0,
   },
 };
 

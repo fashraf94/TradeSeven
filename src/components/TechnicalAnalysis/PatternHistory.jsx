@@ -2,6 +2,7 @@
 // Shows tracked patterns for the current stock with progress bars and status badges
 
 import React, { useEffect, useRef } from 'react';
+import { Clock, CheckCircle, XCircle, CircleDot } from 'lucide-react';
 import { EmptyState } from './shared';
 
 const TRACKING_DAYS = 14;
@@ -46,6 +47,23 @@ const formatDate = (timestamp) => {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+// Status icon component
+const StatusIcon = ({ status, outcome }) => {
+  if (status === 'EXPIRED' || status === 'RESOLVED') {
+    if (outcome === 'CONFIRMED') {
+      return <CheckCircle size={12} color="#00ff88" />;
+    } else if (outcome === 'FAILED') {
+      return <XCircle size={12} color="#ff4757" />;
+    }
+    return <CircleDot size={12} color="rgba(255,255,255,0.5)" />;
+  }
+  if (status === 'CANCELLED') {
+    return <CircleDot size={12} color="rgba(255,255,255,0.4)" />;
+  }
+  // ACTIVE / RESOLVING
+  return <Clock size={12} color="#ffaa00" />;
+};
+
 const PatternHistory = ({ patterns, currentPrice, onResolve }) => {
   const resolvedRef = useRef(new Set());
 
@@ -71,7 +89,7 @@ const PatternHistory = ({ patterns, currentPrice, onResolve }) => {
       <EmptyState
         icon={'\uD83D\uDCCA'}
         title="No Tracked Patterns"
-        message="Track confluence zones to monitor their outcomes over time. Tap 'Track This Pattern' on any zone."
+        message="Track confluence zones to monitor their outcomes over time. Tap 'Track Pattern' on any zone."
       />
     );
   }
@@ -97,30 +115,25 @@ const PatternHistory = ({ patterns, currentPrice, onResolve }) => {
           : null;
 
         // Determine display status
-        let statusLabel, statusColor, statusIcon;
+        let statusLabel, statusColor;
+        const outcome = pattern.outcome || pattern.result?.outcome;
         if (pattern.status === 'EXPIRED' || pattern.status === 'RESOLVED') {
-          const outcome = pattern.outcome || pattern.result?.outcome;
           if (outcome === 'CONFIRMED') {
             statusLabel = 'CONFIRMED';
             statusColor = '#00ff88';
-            statusIcon = '\uD83D\uDFE2';
           } else if (outcome === 'FAILED') {
             statusLabel = 'FAILED';
             statusColor = '#ff4757';
-            statusIcon = '\uD83D\uDD34';
           } else {
             statusLabel = 'EXPIRED';
             statusColor = 'rgba(255,255,255,0.5)';
-            statusIcon = '\u26AA';
           }
         } else if (pattern.status === 'CANCELLED') {
           statusLabel = 'CANCELLED';
           statusColor = 'rgba(255,255,255,0.4)';
-          statusIcon = '\u26AA';
         } else {
           statusLabel = expired ? 'RESOLVING...' : 'ACTIVE';
           statusColor = '#ffaa00';
-          statusIcon = '\uD83D\uDFE1';
         }
 
         return (
@@ -128,7 +141,7 @@ const PatternHistory = ({ patterns, currentPrice, onResolve }) => {
             {/* Status + Pattern Name */}
             <div style={styles.cardHeader}>
               <div style={styles.headerLeft}>
-                <span style={{ fontSize: '10px' }}>{statusIcon}</span>
+                <StatusIcon status={pattern.status} outcome={outcome} />
                 <span style={{ ...styles.statusBadge, color: statusColor, borderColor: statusColor + '40' }}>
                   {statusLabel}
                 </span>
