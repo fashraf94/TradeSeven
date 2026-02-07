@@ -71,8 +71,8 @@ async function fetchEarningsCalendar(fromDate, toDate) {
   for (const event of earnings) {
     const symbol = event.code?.split('.')[0]?.toUpperCase();
     if (symbol && event.report_date) {
-      // Store as ISO string with time at midnight UTC
-      const reportDate = `${event.report_date}T00:00:00.000Z`;
+      // Store as YYYY-MM-DD string (matches bot service and calendar service format)
+      const reportDate = event.report_date;
       calendarMap.set(symbol, {
         reportDate,
         reportTime: event.before_after_market || 'TBD',

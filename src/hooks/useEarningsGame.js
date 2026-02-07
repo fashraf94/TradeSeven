@@ -339,7 +339,7 @@ export function useEarningsGame(userId = null) {
       eventId: event.id,
       symbol: event.symbol,
       companyName: event.companyName || event.title,
-      reportDate: event.reportDate || event.endDate,
+      reportDate: event.reportDate || event.endDate || parlay.reportDate,
 
       // Parlay details
       parlayId: parlay.id,
