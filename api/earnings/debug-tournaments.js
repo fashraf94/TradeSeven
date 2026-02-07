@@ -108,7 +108,7 @@ export default async function handler(req, res) {
 
     // Also check what the resolution query would find
     const resolutionQuerySnapshot = await db.collection('earningsTournaments')
-      .where('status', 'in', ['locked', 'in_progress', 'active'])
+      .where('status', 'in', ['open', 'locked', 'in_progress'])
       .get();
 
     const resolutionQueryResults = resolutionQuerySnapshot.docs.map(doc => ({

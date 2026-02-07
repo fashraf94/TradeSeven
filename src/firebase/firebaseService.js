@@ -2228,9 +2228,11 @@ export async function getCurrentTournament() {
     }
 
     // Create new tournament for this week
-    // Lock deadline is Friday 11:59 PM ET (Saturday 4:59 AM UTC)
-    const lockDeadline = new Date(friday);
-    lockDeadline.setHours(23, 59, 59, 999);
+    // Lock deadline: Sunday night before earnings week starts
+    // Monday 04:59:59 UTC = Sunday 11:59 PM EST / Sunday 8:59 PM PST
+    // Uses setUTCHours for timezone-independent behavior (runs client-side)
+    const lockDeadline = new Date(monday);
+    lockDeadline.setUTCHours(4, 59, 59, 999);
 
     const newTournament = {
       id: weekId,

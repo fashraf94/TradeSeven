@@ -257,25 +257,34 @@ export default async function handler(req, res) {
         });
 
         if (data.status === 'open') {
-          // Check if lock deadline has passed
-          // Handle both Firestore Timestamps and ISO strings
+          // Check if lock deadline has passed OR if the earnings week has already started
+          // The weekStart fallback handles tournaments created with the old Friday-night lockDeadline
           const lockDeadline = safeParseDate(data.lockDeadline);
-          if (lockDeadline && lockDeadline < now) {
+          const weekStart = data.weekStart ? new Date(data.weekStart + 'T00:00:00Z') : null;
+
+          const pastDeadline = lockDeadline && lockDeadline < now;
+          const pastWeekStart = weekStart && weekStart < now;
+
+          if (pastDeadline || pastWeekStart) {
+            const reason = pastDeadline ? 'past_deadline' : 'past_week_start';
             logInfo('TRANSITION', `Auto-transitioning ${doc.id} from 'open' to 'locked'`, {
-              deadline: lockDeadline.toISOString(),
+              deadline: lockDeadline?.toISOString(),
+              weekStart: data.weekStart,
+              reason,
               now: now.toISOString()
             });
             // Update status to 'locked'
             if (!isDryRun) {
               await db.collection('earningsTournaments').doc(doc.id).update({
                 status: 'locked',
-                lockedAt: new Date()
+                lockedAt: new Date(),
+                lockReason: reason
               });
             }
             tournamentDocs.push(doc);
           } else {
             const deadlineStr = lockDeadline ? lockDeadline.toISOString() : (data.lockDeadline || 'none');
-            logInfo('SKIP', `Skipping ${doc.id} - still open (deadline: ${deadlineStr})`);
+            logInfo('SKIP', `Skipping ${doc.id} - still open (deadline: ${deadlineStr}, weekStart: ${data.weekStart || 'none'})`);
           }
         } else {
           // Already locked or in_progress
