@@ -8,7 +8,7 @@ import TimeframeSelector from './TimeframeSelector';
 import PatternsTab from './PatternsTab';
 import LevelsTab from './LevelsTab';
 import ExploreTab from './ExploreTab';
-import detectLevels from '../../services/levelDetection';
+import useChartOverlays from './hooks/useChartOverlays';
 import {
   calculateRSI,
   calculateMACD,
@@ -19,7 +19,6 @@ import {
   detectTrend,
 } from '../../services/technicalIndicators';
 import { analyzeExploreQuestion } from '../../services/technicalAnalysisAI';
-import { detectMicroPatterns, calculateFibonacciLevels } from '../../services/confluenceDetection';
 
 // Conditional logging - only show debug logs in development
 const DEBUG = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
@@ -113,22 +112,6 @@ const ErrorState = ({ message, onRetry }) => (
 
 // CSS keyframes injection moved to useEffect in component
 
-// Compute rolling SMA array for chart overlay lines
-// Returns array of { date, value } in newest-first order (matching ohlcvData)
-const computeRollingSMA = (ohlcvData, period) => {
-  if (!ohlcvData || ohlcvData.length < period) return [];
-  const result = [];
-  for (let i = 0; i <= ohlcvData.length - period; i++) {
-    const slice = ohlcvData.slice(i, i + period);
-    const avg = slice.reduce((sum, c) => sum + c.close, 0) / period;
-    result.push({
-      date: ohlcvData[i].date || ohlcvData[i].datetime || ohlcvData[i].timestamp,
-      value: Math.round(avg * 100) / 100,
-    });
-  }
-  return result;
-};
-
 const TechnicalAnalysisScreen = ({
   stock,
   onBack,
@@ -160,20 +143,12 @@ const TechnicalAnalysisScreen = ({
   const [dailyAnchorData, setDailyAnchorData] = useState(null);
   const [dailyIndicators, setDailyIndicators] = useState(null);
 
-  // Chart overlay state
-  const [overlayToggles, setOverlayToggles] = useState({ sma: false, fib: false, sr: false });
-  const [chartLevels, setChartLevels] = useState([]);
-
-  // Overlay data (computed from ohlcvData)
-  const [smaLineData, setSmaLineData] = useState(null);
-  const [fibLevels, setFibLevels] = useState(null);
-  // const [patternMarkerData, setPatternMarkerData] = useState(null); // Replaced by per-card activeChartHighlight
-
-  // Per-card chart highlight from PatternsTab "Show on Chart" button
-  const [activeChartHighlight, setActiveChartHighlight] = useState(null);
-
-  // Derive showLevelOverlay from overlay toggles for backward compat
-  const showLevelOverlay = overlayToggles.sr;
+  // Chart overlay state (hook manages toggles, SMA/Fib/S&R data, highlight)
+  const {
+    overlayToggles, handleOverlayToggle, showLevelOverlay,
+    activeChartHighlight, setActiveChartHighlight,
+    smaLineData, fibLevels, chartLevels,
+  } = useChartOverlays(ohlcvData, dailyAnchorData, dailyIndicators);
 
   // Track if initial load has happened
   const initialLoadRef = useRef(false);
@@ -279,7 +254,6 @@ const TechnicalAnalysisScreen = ({
         }
       } else {
         // Demo mode - simulate loading with fake data
-        console.log('[TechnicalAnalysis] Demo mode - using simulated data');
         await new Promise(resolve => setTimeout(resolve, 500));
         setOhlcvData(generateDemoOHLCV(stock.price || 150));
       }
@@ -502,16 +476,6 @@ const TechnicalAnalysisScreen = ({
     runAnalysisIfNeeded();
   }, [runAnalysisIfNeeded]);
 
-  const handleTrackPattern = (pattern) => {
-    if (onTrackPattern) {
-      onTrackPattern({
-        ...pattern,
-        ticker: stock.symbol,
-        priceAtCreation: ohlcvData?.[0]?.close || stock.price,
-      });
-    }
-  };
-
   // Handle explore question click
   // Not memoized — ensures fresh state references on every render to prevent stale closures
   const handleExploreQuestion = async (questionId) => {
@@ -556,70 +520,6 @@ const TechnicalAnalysisScreen = ({
       setCalculatedIndicators(indicators);
     }
   }, [ohlcvData]);
-
-  // Overlay toggle handler
-  const handleOverlayToggle = (key) => {
-    setOverlayToggles(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  // Compute SMA line data for chart overlays
-  useEffect(() => {
-    if (!ohlcvData?.length) {
-      setSmaLineData(null);
-      return;
-    }
-    setSmaLineData({
-      sma20: computeRollingSMA(ohlcvData, 20),
-      sma50: computeRollingSMA(ohlcvData, 50),
-      sma200: computeRollingSMA(ohlcvData, 200),
-    });
-  }, [ohlcvData]);
-
-  // Compute Fibonacci levels for chart overlays
-  useEffect(() => {
-    if (!ohlcvData?.length || ohlcvData.length < 20) {
-      setFibLevels(null);
-      return;
-    }
-    try {
-      const fibs = calculateFibonacciLevels(ohlcvData);
-      setFibLevels(fibs);
-    } catch {
-      setFibLevels(null);
-    }
-  }, [ohlcvData]);
-
-  // OLD GLOBAL PATTERN MARKERS - replaced by per-card activeChartHighlight
-  // useEffect(() => {
-  //   if (!ohlcvData?.length || ohlcvData.length < 5) { setPatternMarkerData(null); return; }
-  //   try {
-  //     const patterns = detectMicroPatterns(ohlcvData.slice(0, 20), selectedTimeframe, calculatedIndicators?.rvol);
-  //     setPatternMarkerData(patterns);
-  //   } catch { setPatternMarkerData(null); }
-  // }, [ohlcvData, selectedTimeframe, calculatedIndicators]);
-
-  // Calculate chart levels for overlay (Phase 5)
-  useEffect(() => {
-    if (dailyAnchorData && dailyIndicators) {
-      const detected = detectLevels(dailyAnchorData, dailyIndicators);
-
-      // Format levels for chart overlay
-      const allLevels = [
-        ...detected.support.map(l => ({
-          price: l.price,
-          type: 'SUPPORT',
-          label: l.factors[0]?.name || 'Support',
-        })),
-        ...detected.resistance.map(l => ({
-          price: l.price,
-          type: 'RESISTANCE',
-          label: l.factors[0]?.name || 'Resistance',
-        })),
-      ];
-
-      setChartLevels(allLevels);
-    }
-  }, [dailyAnchorData, dailyIndicators]);
 
   return (
     <div style={{
@@ -886,7 +786,6 @@ const TechnicalAnalysisScreen = ({
                   dailyIndicators={dailyIndicators}
                   calculatedIndicators={calculatedIndicators}
                   selectedTimeframe={selectedTimeframe}
-                  onTrackPattern={handleTrackPattern}
                   rvolData={calculatedIndicators?.rvol}
                   userId={userId}
                   showToast={showToast}

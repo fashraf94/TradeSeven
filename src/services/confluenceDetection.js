@@ -3,7 +3,7 @@
  * Identifies when micro patterns align with macro levels
  */
 
-import { detectSwingPoints } from './technicalUtils';
+import { detectSwingPoints, calculateFibonacciLevels, FIBONACCI_RATIOS } from './technicalUtils';
 
 /**
  * Distance threshold scaling by timeframe
@@ -150,7 +150,12 @@ export const detectConfluence = (selectedTimeframeData, dailyData, dailyIndicato
 };
 
 /**
- * Get macro support/resistance levels from daily data
+ * Get macro support/resistance levels from daily (or weekly) data
+ * Identifies SMAs, swing points, and Fibonacci levels as macro anchors
+ * @param {Array} dailyData - OHLCV data (newest first)
+ * @param {Object} indicators - Calculated indicators (sma20, sma50, sma200)
+ * @param {string} timeframe - '1h', '1d', or '1w' (affects swing lookback)
+ * @returns {Array} Level objects { type, name, price, source, strength }
  */
 const getMacroLevels = (dailyData, indicators, timeframe = '1d') => {
   const levels = [];
@@ -191,11 +196,24 @@ const getMacroLevels = (dailyData, indicators, timeframe = '1d') => {
 
   // Recent swing highs/lows (smaller lookback for weekly to find more swing points)
   const swingLookback = timeframe === '1w' ? 3 : 5;
-  const swingPoints = findSwingPoints(dailyData, swingLookback);
-  swingPoints.forEach(point => {
+  const { swingHighs, swingLows } = detectSwingPoints(dailyData, {
+    lookback: swingLookback,
+    clusterThreshold: 0.01,
+    maxResults: 3,
+  });
+  swingLows.forEach(point => {
     levels.push({
-      type: point.type,
-      name: point.type === 'SUPPORT' ? 'Recent Swing Low' : 'Recent Swing High',
+      type: 'SUPPORT',
+      name: 'Recent Swing Low',
+      price: point.price,
+      source: 'SWING_POINT',
+      strength: point.touches > 2 ? 'STRONG' : 'MODERATE',
+    });
+  });
+  swingHighs.forEach(point => {
+    levels.push({
+      type: 'RESISTANCE',
+      name: 'Recent Swing High',
       price: point.price,
       source: 'SWING_POINT',
       strength: point.touches > 2 ? 'STRONG' : 'MODERATE',
@@ -766,121 +784,6 @@ const getSuggestedThesis = (pattern, level) => {
     return 'BEARISH_BREAKDOWN';
   }
   return 'NEUTRAL_OBSERVATION';
-};
-
-/**
- * Find swing highs and lows in price data
- */
-const findSwingPoints = (data, lookback = 5) => {
-  const points = [];
-  if (!data?.length || data.length < lookback * 2 + 1) return points;
-
-  // Data is newest first, so we need to reverse our logic
-  for (let i = lookback; i < data.length - lookback; i++) {
-    const current = data[i];
-    const before = data.slice(i - lookback, i); // More recent candles
-    const after = data.slice(i + 1, i + lookback + 1); // Older candles
-
-    // Swing Low
-    if (before.every(c => c.low >= current.low) &&
-        after.every(c => c.low >= current.low)) {
-      points.push({
-        type: 'SUPPORT',
-        price: current.low,
-        index: i,
-        date: current.date,
-      });
-    }
-
-    // Swing High
-    if (before.every(c => c.high <= current.high) &&
-        after.every(c => c.high <= current.high)) {
-      points.push({
-        type: 'RESISTANCE',
-        price: current.high,
-        index: i,
-        date: current.date,
-      });
-    }
-  }
-
-  // Count touches for each level and deduplicate similar prices
-  const consolidatedPoints = [];
-  points.forEach(point => {
-    const existing = consolidatedPoints.find(p =>
-      p.type === point.type &&
-      Math.abs(p.price - point.price) / point.price < 0.01
-    );
-    if (existing) {
-      existing.touches = (existing.touches || 1) + 1;
-    } else {
-      consolidatedPoints.push({ ...point, touches: 1 });
-    }
-  });
-
-  // Return top 3 of each type
-  const supports = consolidatedPoints.filter(p => p.type === 'SUPPORT').slice(0, 3);
-  const resistances = consolidatedPoints.filter(p => p.type === 'RESISTANCE').slice(0, 3);
-
-  return [...supports, ...resistances];
-};
-
-/**
- * Calculate Fibonacci retracement levels using swing-point anchors
- * Uses detectSwingPoints for proper swing high/low instead of period extremes
- */
-const calculateFibonacciLevels = (data) => {
-  if (!data?.length || data.length < 20) return [];
-
-  const currentPrice = data[0].close;
-
-  // Use swing points for proper anchor detection
-  const { swingHighs, swingLows } = detectSwingPoints(data, {
-    lookback: 5,
-    clusterThreshold: 0.01,
-    maxResults: 3,
-  });
-
-  let high = swingHighs.length > 0 ? swingHighs[0].price : null;
-  let low = swingLows.length > 0 ? swingLows[0].price : null;
-
-  // If price has broken beyond swings, use current price as provisional anchor
-  if (high !== null && currentPrice > high) high = currentPrice;
-  if (low !== null && currentPrice < low) low = currentPrice;
-
-  // Fallback: if no swings found, use dataset extremes
-  if (high === null || low === null) {
-    const recent = data.slice(0, 60);
-    high = high ?? Math.max(...recent.map(c => c.high));
-    low = low ?? Math.min(...recent.map(c => c.low));
-  }
-
-  // Guard: high must be > low
-  if (high <= low) {
-    const recent = data.slice(0, 60);
-    high = Math.max(...recent.map(c => c.high));
-    low = Math.min(...recent.map(c => c.low));
-  }
-
-  const range = high - low;
-
-  // Skip tiny ranges (<2%)
-  if (range / low < 0.02) return [];
-
-  const fibRatios = [
-    { level: '23.6%', ratio: 0.236 },
-    { level: '38.2%', ratio: 0.382 },
-    { level: '50%', ratio: 0.5 },
-    { level: '61.8%', ratio: 0.618 },
-    { level: '78.6%', ratio: 0.786 },
-  ];
-
-  const isUptrend = currentPrice > (high + low) / 2;
-
-  return fibRatios.map(fib => ({
-    level: fib.level,
-    price: isUptrend ? high - (range * fib.ratio) : low + (range * fib.ratio),
-  }));
 };
 
 export { calculateFibonacciLevels };

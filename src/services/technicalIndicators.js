@@ -48,6 +48,28 @@ export function calculateSMA(prices, period = DEFAULT_PERIODS.SMA_SHORT) {
 }
 
 /**
+ * Calculate rolling SMA array for chart overlay lines
+ * Unlike calculateSMA (which returns a single value), this returns an array
+ * of { date, value } in newest-first order matching the input OHLCV data.
+ * @param {Array} ohlcvData - OHLCV candles (newest first)
+ * @param {number} period - SMA period
+ * @returns {Array} Array of { date, value } or empty array
+ */
+export function calculateRollingSMA(ohlcvData, period) {
+  if (!ohlcvData || ohlcvData.length < period) return [];
+  const result = [];
+  for (let i = 0; i <= ohlcvData.length - period; i++) {
+    const slice = ohlcvData.slice(i, i + period);
+    const avg = slice.reduce((sum, c) => sum + c.close, 0) / period;
+    result.push({
+      date: ohlcvData[i].date || ohlcvData[i].datetime || ohlcvData[i].timestamp,
+      value: Math.round(avg * 100) / 100,
+    });
+  }
+  return result;
+}
+
+/**
  * Calculate Exponential Moving Average
  * @param {number[]} prices - Array of prices (newest first)
  * @param {number} period - Number of periods
@@ -488,11 +510,8 @@ export function calculateAllIndicators(symbol, prices, ohlcData = null) {
   // Check cache first
   const cached = cacheService.get('technicals', symbol);
   if (cached) {
-    console.log(`[TechnicalIndicators] Cache hit for ${symbol}`);
     return cached;
   }
-
-  console.log(`[TechnicalIndicators] Calculating indicators for ${symbol}`);
 
   const currentPrice = prices && prices.length > 0 ? prices[0] : null;
 
@@ -631,11 +650,11 @@ export async function calculateIndicatorsBatch(symbolsWithPrices) {
  */
 export function clearTechnicalsCache() {
   cacheService.clearType('technicals');
-  console.log('[TechnicalIndicators] Cache cleared');
 }
 
 export default {
   calculateSMA,
+  calculateRollingSMA,
   calculateEMA,
   calculateMovingAverages,
   calculateRSI,

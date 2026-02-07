@@ -1,13 +1,13 @@
 // src/components/TechnicalAnalysis/PatternsTab.jsx
 // Multi-Timeframe Confluence Detection Tab with Pattern Tracking
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bookmark, BookmarkCheck, MapPin, X, ShieldCheck, TrendingDown, Info } from 'lucide-react';
 import { detectConfluence } from '../../services/confluenceDetection';
-import { saveTrackedPattern, updatePatternStatus } from '../../firebase/firebaseService';
 import { getStrengthColor, getStrengthIcon, getRVOLTierColor } from './utils/colors';
 import { LoadingState, EmptyState, ErrorState } from './shared';
 import PatternHistory from './PatternHistory';
+import usePatternTracking from './hooks/usePatternTracking';
 
 const PatternsTab = ({
   ohlcvData,
@@ -15,7 +15,6 @@ const PatternsTab = ({
   dailyIndicators,
   calculatedIndicators,
   selectedTimeframe,
-  onTrackPattern,
   rvolData,
   userId,
   showToast,
@@ -30,8 +29,10 @@ const PatternsTab = ({
   const [expandedId, setExpandedId] = useState(null);
   const [error, setError] = useState(null);
   const [subTab, setSubTab] = useState('zones');
-  const [trackingInProgress, setTrackingInProgress] = useState(new Set());
-  const [locallyTracked, setLocallyTracked] = useState(new Set());
+
+  const {
+    isPatternTracked, isInProgress, handleInstantTrack, handleResolvePattern,
+  } = usePatternTracking(userId, ticker, ohlcvData, trackedPatterns, showToast, onPatternTracked);
 
   useEffect(() => {
     if (!ohlcvData?.length) {
@@ -65,93 +66,6 @@ const PatternsTab = ({
       setIsLoading(false);
     }
   }, [ohlcvData, dailyAnchorData, dailyIndicators, selectedTimeframe, rvolData]);
-
-  // Check if a confluence zone is already tracked
-  const isPatternTracked = (confluence) => {
-    // Check local optimistic state first (works even when Firebase query fails)
-    if (locallyTracked.has(confluence.id)) return true;
-
-    if (!trackedPatterns || !ticker) return false;
-    const patternName = `${confluence.microPattern.name} at ${confluence.macroLevel.name}`;
-    return trackedPatterns.some(p =>
-      p.ticker === ticker &&
-      p.patternName === patternName &&
-      ['WAITING', 'TESTING'].includes(p.status)
-    );
-  };
-
-  const isInProgress = (confluenceId) => trackingInProgress.has(confluenceId);
-
-  // Instant 2-click tracking
-  const handleInstantTrack = async (confluence) => {
-    if (!userId) {
-      showToast?.('Please sign in to track patterns', 'error');
-      return;
-    }
-
-    const patternName = `${confluence.microPattern.name} at ${confluence.macroLevel.name}`;
-
-    // Optimistic UI: mark as in-progress immediately
-    setTrackingInProgress(prev => new Set(prev).add(confluence.id));
-
-    try {
-      await saveTrackedPattern(userId, {
-        ticker,
-        patternType: 'CONFLUENCE_ZONE',
-        patternName,
-        zoneType: confluence.macroLevel.type,
-        priceLow: confluence.priceRange.low,
-        priceHigh: confluence.priceRange.high,
-        thesis: confluence.suggestedThesis,
-        trackingDuration: 14,
-        priceAtCreation: ohlcvData?.[0]?.close,
-        indicators: [
-          { indicator: confluence.microPattern.name, value: confluence.microPattern.price },
-          { indicator: confluence.macroLevel.name, value: confluence.macroLevel.price },
-        ],
-        confluenceStrength: confluence.strength,
-        description: confluence.description,
-        historicalContext: confluence.historicalContext,
-      });
-
-      showToast?.('Pattern tracked! Check back in 2 weeks.', 'success');
-
-      // Mark as locally tracked (permanent for this session)
-      setLocallyTracked(prev => new Set(prev).add(confluence.id));
-
-      // Remove from in-progress (fixes stuck "Saving..." bug)
-      setTrackingInProgress(prev => {
-        const next = new Set(prev);
-        next.delete(confluence.id);
-        return next;
-      });
-
-      // Refresh tracked patterns from Firebase (may fail due to missing index — that's OK)
-      try {
-        onPatternTracked?.();
-      } catch (e) {
-        console.warn('[PatternsTab] Pattern refresh failed:', e);
-      }
-    } catch (err) {
-      console.error('[PatternsTab] Failed to track:', err);
-      showToast?.('Failed to track pattern', 'error');
-      setTrackingInProgress(prev => {
-        const next = new Set(prev);
-        next.delete(confluence.id);
-        return next;
-      });
-    }
-  };
-
-  // Resolve expired patterns from history
-  const handleResolvePattern = async (patternId, updates) => {
-    try {
-      await updatePatternStatus(patternId, updates);
-      onPatternTracked?.();
-    } catch (err) {
-      console.error('[PatternsTab] Failed to resolve:', err);
-    }
-  };
 
   // Show single pattern + level on chart
   const handleShowOnChart = (confluence) => {
@@ -229,7 +143,7 @@ const PatternsTab = ({
             </span>
             <span style={{
               ...styles.levelType,
-              color: confluence.macroLevel.type === 'SUPPORT' ? '#00ff88' : '#ff6b6b',
+              color: confluence.macroLevel.type === 'SUPPORT' ? '#00ff88' : '#ff4757',
             }}>
               {confluence.macroLevel.type}
             </span>

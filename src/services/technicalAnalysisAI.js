@@ -545,7 +545,6 @@ const parseAIResponse = (responseText) => {
     return JSON.parse(cleaned);
   } catch (e) {
     console.error('[TechnicalAnalysisAI] Failed to parse AI response:', e);
-    console.log('[TechnicalAnalysisAI] Raw response:', responseText);
 
     // Return a fallback structure
     return {
@@ -573,8 +572,6 @@ const parseAIResponse = (responseText) => {
  */
 export const analyzeStockWithAI = async (symbol, ohlcvData, calculatedIndicators, options = {}) => {
   const { mode = 'quick', battleType = 'Classic' } = options;
-
-  console.log(`[TechnicalAnalysisAI] Starting ${mode} analysis for ${symbol}`);
 
   // Select prompt based on mode
   const systemPrompt = mode === 'deep' ? DEEP_ANALYSIS_PROMPT : QUICK_ANALYSIS_PROMPT;
@@ -627,8 +624,6 @@ export const analyzeStockWithAI = async (symbol, ohlcvData, calculatedIndicators
     analysis.analysisMode = mode;
     analysis.dataPoints = ohlcvData.length;
     analysis.aiGenerated = true;
-
-    console.log(`[TechnicalAnalysisAI] ${mode} analysis complete for ${symbol}`);
 
     return analysis;
   } catch (error) {
@@ -740,8 +735,6 @@ export const analyzeExploreQuestion = async (symbol, questionId, ohlcvData, calc
   const systemPrompt = isFreeform ? FREEFORM_SYSTEM_PROMPT : promptConfig.systemPrompt;
   const questionText = isFreeform ? questionId : promptConfig.question;
   const shortLabel = isFreeform ? 'Follow-up' : promptConfig.shortLabel;
-
-  console.log(`[TechnicalAnalysisAI] Explore: ${shortLabel} for ${symbol}${isFreeform ? ' (freeform)' : ''}`);
 
   const currentPrice = ohlcvData[0]?.close;
   let userPrompt = buildExploreUserPrompt(symbol, questionId, currentPrice, calculatedIndicators, ohlcvData);

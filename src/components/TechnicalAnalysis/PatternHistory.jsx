@@ -5,7 +5,7 @@ import React, { useEffect, useRef } from 'react';
 import { Clock, CheckCircle, XCircle, CircleDot } from 'lucide-react';
 import { EmptyState } from './shared';
 
-const TRACKING_DAYS = 14;
+export const TRACKING_DAYS = 14;
 
 // Client-side resolution for expired patterns
 const resolvePattern = (pattern, currentPrice) => {
@@ -153,7 +153,7 @@ const PatternHistory = ({ patterns, currentPrice, onResolve }) => {
             <div style={styles.patternInfo}>
               <div style={styles.patternName}>{pattern.patternName}</div>
               <div style={styles.zoneType}>
-                <span style={{ color: pattern.zoneType === 'SUPPORT' ? '#00ff88' : '#ff6b6b' }}>
+                <span style={{ color: pattern.zoneType === 'SUPPORT' ? '#00ff88' : '#ff4757' }}>
                   {pattern.zoneType}
                 </span>
                 <span style={styles.priceRange}>

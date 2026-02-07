@@ -133,7 +133,7 @@ const CandlestickChart = ({
     });
 
     if (rawFilteredCount > 0) {
-      console.log(`[CandlestickChart] Raw pass: filtered ${rawFilteredCount} of ${ohlcvData.length} candles`);
+      logger.log(`[CandlestickChart] Raw pass: filtered ${rawFilteredCount} of ${ohlcvData.length} candles`);
     }
 
     if (validRawCandles.length === 0) {
@@ -193,7 +193,7 @@ const CandlestickChart = ({
     });
 
     if (formattedFilteredCount > 0) {
-      console.log(`[CandlestickChart] Formatted pass: filtered ${formattedFilteredCount} more candles`);
+      logger.log(`[CandlestickChart] Formatted pass: filtered ${formattedFilteredCount} more candles`);
     }
 
     if (validFormattedData.length === 0) {
@@ -220,9 +220,9 @@ const CandlestickChart = ({
     // Final validation summary
     const totalFiltered = ohlcvData.length - sortedData.length;
     if (totalFiltered > 0) {
-      console.log(`[CandlestickChart] Total: filtered ${totalFiltered} invalid candles, ${sortedData.length} valid candles remain`);
+      logger.log(`[CandlestickChart] Total: filtered ${totalFiltered} invalid candles, ${sortedData.length} valid candles remain`);
     } else {
-      console.log(`[CandlestickChart] All ${sortedData.length} candles valid`);
+      logger.log(`[CandlestickChart] All ${sortedData.length} candles valid`);
     }
 
     setChartError(null);
@@ -307,7 +307,7 @@ const CandlestickChart = ({
         const seen = {};
         times.forEach((t, idx) => {
           if (seen[t] !== undefined) {
-            console.error(`Duplicate time at index ${idx}:`, t, '(first seen at index', seen[t], ')');
+            logger.error(`Duplicate time at index ${idx}:`, t, '(first seen at index', seen[t], ')');
           }
           seen[t] = idx;
         });
@@ -326,19 +326,18 @@ const CandlestickChart = ({
         if (curr <= prev) {
           orderErrors++;
           if (orderErrors <= 3) {
-            console.error(`[CandlestickChart] TIME ORDER ERROR at index ${i}:`, prevTime, '>=', currTime);
+            logger.error(`[CandlestickChart] TIME ORDER ERROR at index ${i}:`, prevTime, '>=', currTime);
           }
         }
       }
       if (orderErrors > 0) {
-        console.error(`[CandlestickChart] Total time order errors: ${orderErrors}`);
+        logger.error(`[CandlestickChart] Total time order errors: ${orderErrors}`);
       } else {
         logger.log('[CandlestickChart] Time ordering is correct (ascending)');
       }
       // ========== END DIAGNOSTIC ==========
 
-      // Log what we're about to set
-      console.log(`[CandlestickChart] Setting ${sortedData.length} candles, first: ${sortedData[0]?.time}, last: ${sortedData[sortedData.length - 1]?.time}`);
+      logger.log(`[CandlestickChart] Setting ${sortedData.length} candles, first: ${sortedData[0]?.time}, last: ${sortedData[sortedData.length - 1]?.time}`);
 
       // Set data with comprehensive error handling
       try {
@@ -352,7 +351,7 @@ const CandlestickChart = ({
         for (let i = 0; i < sortedData.length; i++) {
           const c = sortedData[i];
           if (!isValidFormattedCandle(c)) {
-            console.error(`[CandlestickChart] Found bad candle at index ${i}:`, JSON.stringify(c));
+            logger.error(`[CandlestickChart] Found bad candle at index ${i}:`, JSON.stringify(c));
           }
         }
         setChartError('Failed to render chart data');
@@ -405,7 +404,7 @@ const CandlestickChart = ({
       try {
         chart.timeScale().fitContent();
       } catch (fitErr) {
-        console.warn('[CandlestickChart] Error fitting content:', fitErr);
+        logger.warn('[CandlestickChart] Error fitting content:', fitErr);
         // Non-fatal, continue
       }
 
@@ -466,8 +465,7 @@ const CandlestickChart = ({
     // Add new level lines if overlay is enabled and levels are provided
     if (showLevelOverlay && levels?.length > 0) {
       levels.forEach(level => {
-        // Support both uppercase and lowercase type values
-        const isSupport = level.type === 'SUPPORT' || level.type === 'support';
+        const isSupport = level.type === 'SUPPORT';
         const line = candleSeriesRef.current.createPriceLine({
           price: level.price,
           color: isSupport ? '#00ff88' : '#ff4757',
@@ -565,19 +563,6 @@ const CandlestickChart = ({
       }
     });
   }, [fibLevels]);
-
-  // OLD GLOBAL PATTERN MARKERS - replaced by per-card activeHighlight
-  // useEffect(() => {
-  //   if (markersRef.current) { try { markersRef.current.detach(); } catch {} markersRef.current = null; }
-  //   if (!candleSeriesRef.current || !patternMarkers || patternMarkers.length === 0) return;
-  //   const sampleCandle = ohlcvData?.[0];
-  //   const sampleDate = sampleCandle?.date || sampleCandle?.datetime || sampleCandle?.timestamp;
-  //   const isIntraday = typeof sampleDate === 'string' && (sampleDate.includes('T') || sampleDate.includes(':'));
-  //   try {
-  //     const markers = patternMarkers.map(p => { ... }).filter(Boolean).sort(...);
-  //     if (markers.length > 0) markersRef.current = createSeriesMarkers(candleSeriesRef.current, markers);
-  //   } catch (e) { logger.warn('[CandlestickChart] Pattern markers failed:', e); }
-  // }, [patternMarkers, ohlcvData]);
 
   // Per-card highlight: single marker + level line from PatternsTab "Show on Chart"
   useEffect(() => {
