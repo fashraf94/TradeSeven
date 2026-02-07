@@ -2,7 +2,8 @@
 // Interactive candlestick chart using lightweight-charts library
 
 import React, { useEffect, useRef } from 'react';
-import { createChart, CandlestickSeries } from 'lightweight-charts';
+import { createChart, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts';
+import { createSeriesMarkers } from 'lightweight-charts';
 
 // Conditional logging - only show debug logs in development
 const DEBUG = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
@@ -86,12 +87,20 @@ const CandlestickChart = ({
   height = 300,
   levels = [],
   showLevelOverlay = false,
-  showVolume = false
+  showVolume = false,
+  smaData = null,
+  fibLevels = null,
+  activeHighlight = null,
 }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
   const candleSeriesRef = useRef(null);
   const levelLinesRef = useRef([]);
+  const smaSeriesRef = useRef([]);
+  const fibLinesRef = useRef([]);
+  const markersRef = useRef(null);
+  const highlightLineRef = useRef(null);
+  const highlightMarkersRef = useRef(null);
   const [chartError, setChartError] = React.useState(null);
 
   useEffect(() => {
@@ -124,7 +133,7 @@ const CandlestickChart = ({
     });
 
     if (rawFilteredCount > 0) {
-      console.log(`[CandlestickChart] Raw pass: filtered ${rawFilteredCount} of ${ohlcvData.length} candles`);
+      logger.log(`[CandlestickChart] Raw pass: filtered ${rawFilteredCount} of ${ohlcvData.length} candles`);
     }
 
     if (validRawCandles.length === 0) {
@@ -184,7 +193,7 @@ const CandlestickChart = ({
     });
 
     if (formattedFilteredCount > 0) {
-      console.log(`[CandlestickChart] Formatted pass: filtered ${formattedFilteredCount} more candles`);
+      logger.log(`[CandlestickChart] Formatted pass: filtered ${formattedFilteredCount} more candles`);
     }
 
     if (validFormattedData.length === 0) {
@@ -211,9 +220,9 @@ const CandlestickChart = ({
     // Final validation summary
     const totalFiltered = ohlcvData.length - sortedData.length;
     if (totalFiltered > 0) {
-      console.log(`[CandlestickChart] Total: filtered ${totalFiltered} invalid candles, ${sortedData.length} valid candles remain`);
+      logger.log(`[CandlestickChart] Total: filtered ${totalFiltered} invalid candles, ${sortedData.length} valid candles remain`);
     } else {
-      console.log(`[CandlestickChart] All ${sortedData.length} candles valid`);
+      logger.log(`[CandlestickChart] All ${sortedData.length} candles valid`);
     }
 
     setChartError(null);
@@ -298,7 +307,7 @@ const CandlestickChart = ({
         const seen = {};
         times.forEach((t, idx) => {
           if (seen[t] !== undefined) {
-            console.error(`Duplicate time at index ${idx}:`, t, '(first seen at index', seen[t], ')');
+            logger.error(`Duplicate time at index ${idx}:`, t, '(first seen at index', seen[t], ')');
           }
           seen[t] = idx;
         });
@@ -317,19 +326,18 @@ const CandlestickChart = ({
         if (curr <= prev) {
           orderErrors++;
           if (orderErrors <= 3) {
-            console.error(`[CandlestickChart] TIME ORDER ERROR at index ${i}:`, prevTime, '>=', currTime);
+            logger.error(`[CandlestickChart] TIME ORDER ERROR at index ${i}:`, prevTime, '>=', currTime);
           }
         }
       }
       if (orderErrors > 0) {
-        console.error(`[CandlestickChart] Total time order errors: ${orderErrors}`);
+        logger.error(`[CandlestickChart] Total time order errors: ${orderErrors}`);
       } else {
         logger.log('[CandlestickChart] Time ordering is correct (ascending)');
       }
       // ========== END DIAGNOSTIC ==========
 
-      // Log what we're about to set
-      console.log(`[CandlestickChart] Setting ${sortedData.length} candles, first: ${sortedData[0]?.time}, last: ${sortedData[sortedData.length - 1]?.time}`);
+      logger.log(`[CandlestickChart] Setting ${sortedData.length} candles, first: ${sortedData[0]?.time}, last: ${sortedData[sortedData.length - 1]?.time}`);
 
       // Set data with comprehensive error handling
       try {
@@ -343,18 +351,60 @@ const CandlestickChart = ({
         for (let i = 0; i < sortedData.length; i++) {
           const c = sortedData[i];
           if (!isValidFormattedCandle(c)) {
-            console.error(`[CandlestickChart] Found bad candle at index ${i}:`, JSON.stringify(c));
+            logger.error(`[CandlestickChart] Found bad candle at index ${i}:`, JSON.stringify(c));
           }
         }
         setChartError('Failed to render chart data');
         return;
       }
 
+      // Volume histogram series (bottom 20% of chart)
+      try {
+        const volumeSeries = chart.addSeries(HistogramSeries, {
+          priceFormat: { type: 'volume' },
+          priceScaleId: 'volume',
+        });
+
+        volumeSeries.priceScale().applyOptions({
+          scaleMargins: {
+            top: 0.8,
+            bottom: 0,
+          },
+        });
+
+        // Build volume data from original OHLCV (same sort order as sortedData)
+        const volumeData = validRawCandles.map(candle => {
+          const rawTime = candle.date || candle.datetime || candle.timestamp;
+          const time = formatTime(rawTime, isIntraday);
+          const o = Number(candle.open);
+          const c = Number(candle.close);
+          return {
+            time,
+            value: Number(candle.volume) || 0,
+            color: c >= o
+              ? 'rgba(0, 255, 136, 0.3)'
+              : 'rgba(255, 71, 87, 0.3)',
+          };
+        }).filter(v => v.time != null)
+          .sort((a, b) => {
+            const tA = typeof a.time === 'number' ? a.time : new Date(a.time).getTime() / 1000;
+            const tB = typeof b.time === 'number' ? b.time : new Date(b.time).getTime() / 1000;
+            return tA - tB;
+          });
+
+        if (volumeData.length > 0) {
+          volumeSeries.setData(volumeData);
+          logger.log('[CandlestickChart] Volume histogram set with', volumeData.length, 'bars');
+        }
+      } catch (volErr) {
+        logger.warn('[CandlestickChart] Volume histogram failed (non-fatal):', volErr);
+      }
+
       // Fit content to show all candles
       try {
         chart.timeScale().fitContent();
       } catch (fitErr) {
-        console.warn('[CandlestickChart] Error fitting content:', fitErr);
+        logger.warn('[CandlestickChart] Error fitting content:', fitErr);
         // Non-fatal, continue
       }
 
@@ -379,6 +429,18 @@ const CandlestickChart = ({
       if (handleResize) {
         window.removeEventListener('resize', handleResize);
       }
+      // Clean up overlay refs before removing chart
+      smaSeriesRef.current = [];
+      fibLinesRef.current = [];
+      if (markersRef.current) {
+        try { markersRef.current.detach(); } catch (e) { /* ok */ }
+        markersRef.current = null;
+      }
+      if (highlightMarkersRef.current) {
+        try { highlightMarkersRef.current.detach(); } catch (e) { /* ok */ }
+        highlightMarkersRef.current = null;
+      }
+      highlightLineRef.current = null;
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
@@ -403,8 +465,7 @@ const CandlestickChart = ({
     // Add new level lines if overlay is enabled and levels are provided
     if (showLevelOverlay && levels?.length > 0) {
       levels.forEach(level => {
-        // Support both uppercase and lowercase type values
-        const isSupport = level.type === 'SUPPORT' || level.type === 'support';
+        const isSupport = level.type === 'SUPPORT';
         const line = candleSeriesRef.current.createPriceLine({
           price: level.price,
           color: isSupport ? '#00ff88' : '#ff4757',
@@ -417,6 +478,149 @@ const CandlestickChart = ({
       });
     }
   }, [levels, showLevelOverlay]);
+
+  // SMA overlay lines
+  useEffect(() => {
+    if (!chartRef.current || !candleSeriesRef.current) return;
+
+    // Remove existing SMA series
+    smaSeriesRef.current.forEach(s => {
+      try { chartRef.current.removeSeries(s); } catch (e) { /* already removed */ }
+    });
+    smaSeriesRef.current = [];
+
+    if (!smaData) return;
+
+    // Detect if intraday from existing candle data
+    const sampleCandle = ohlcvData?.[0];
+    const sampleDate = sampleCandle?.date || sampleCandle?.datetime || sampleCandle?.timestamp;
+    const isIntraday = typeof sampleDate === 'string' && (sampleDate.includes('T') || sampleDate.includes(':'));
+
+    const smaConfigs = [
+      { key: 'sma20', color: 'rgba(0,255,255,0.4)', lineWidth: 1 },
+      { key: 'sma50', color: '#00ffff', lineWidth: 2 },
+      { key: 'sma200', color: '#ffaa00', lineWidth: 2 },
+    ];
+
+    smaConfigs.forEach(({ key, color, lineWidth }) => {
+      const data = smaData[key];
+      if (!data || data.length === 0) return;
+
+      try {
+        const series = chartRef.current.addSeries(LineSeries, {
+          color,
+          lineWidth,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+
+        // Data is newest-first, reverse for chart (oldest-first)
+        const formatted = [...data].reverse()
+          .map(d => ({
+            time: formatTime(d.date, isIntraday),
+            value: d.value,
+          }))
+          .filter(d => d.time != null && Number.isFinite(d.value));
+
+        if (formatted.length > 0) {
+          series.setData(formatted);
+          smaSeriesRef.current.push(series);
+        } else {
+          chartRef.current.removeSeries(series);
+        }
+      } catch (e) {
+        logger.warn(`[CandlestickChart] SMA ${key} failed:`, e);
+      }
+    });
+  }, [smaData, ohlcvData]);
+
+  // Fibonacci overlay price lines
+  useEffect(() => {
+    if (!candleSeriesRef.current) return;
+
+    // Remove existing fib lines
+    fibLinesRef.current.forEach(line => {
+      try { candleSeriesRef.current.removePriceLine(line); } catch (e) { /* already removed */ }
+    });
+    fibLinesRef.current = [];
+
+    if (!fibLevels || !Array.isArray(fibLevels)) return;
+
+    fibLevels.forEach(fib => {
+      try {
+        const line = candleSeriesRef.current.createPriceLine({
+          price: fib.price,
+          color: 'rgba(255, 170, 0, 0.5)',
+          lineWidth: 1,
+          lineStyle: 1, // Dashed
+          axisLabelVisible: true,
+          title: fib.level || '',
+        });
+        fibLinesRef.current.push(line);
+      } catch (e) {
+        logger.warn('[CandlestickChart] Fib line failed:', e);
+      }
+    });
+  }, [fibLevels]);
+
+  // Per-card highlight: single marker + level line from PatternsTab "Show on Chart"
+  useEffect(() => {
+    // Clear previous highlight
+    if (highlightMarkersRef.current) {
+      try { highlightMarkersRef.current.detach(); } catch (e) { /* ok */ }
+      highlightMarkersRef.current = null;
+    }
+    if (highlightLineRef.current) {
+      try { candleSeriesRef.current?.removePriceLine(highlightLineRef.current); } catch (e) { /* ok */ }
+      highlightLineRef.current = null;
+    }
+
+    if (!candleSeriesRef.current || !activeHighlight) return;
+
+    // Detect intraday for time formatting
+    const sampleCandle = ohlcvData?.[0];
+    const sampleDate = sampleCandle?.date || sampleCandle?.datetime || sampleCandle?.timestamp;
+    const isIntraday = typeof sampleDate === 'string' && (sampleDate.includes('T') || sampleDate.includes(':'));
+
+    const { marker, levelLine } = activeHighlight;
+
+    // Draw micro pattern marker
+    if (marker?.time) {
+      try {
+        const time = formatTime(marker.time, isIntraday);
+        if (time) {
+          const isBullish = marker.bias === 'BULLISH';
+          highlightMarkersRef.current = createSeriesMarkers(candleSeriesRef.current, [{
+            time,
+            position: isBullish ? 'belowBar' : 'aboveBar',
+            color: isBullish ? '#00ff88' : '#ff4757',
+            shape: isBullish ? 'arrowUp' : 'arrowDown',
+            text: marker.shortName || '',
+          }]);
+        }
+      } catch (e) {
+        logger.warn('[CandlestickChart] Highlight marker failed:', e);
+      }
+    }
+
+    // Draw macro level line
+    if (levelLine?.price) {
+      try {
+        const isSupport = levelLine.type === 'SUPPORT';
+        highlightLineRef.current = candleSeriesRef.current.createPriceLine({
+          price: levelLine.price,
+          color: isSupport ? '#00ff88' : '#ff4757',
+          lineWidth: 2,
+          lineStyle: 0, // Solid (distinct from S/R dashed lines)
+          axisLabelVisible: true,
+          title: levelLine.name || '',
+        });
+      } catch (e) {
+        logger.warn('[CandlestickChart] Highlight level line failed:', e);
+      }
+    }
+  }, [activeHighlight, ohlcvData]);
 
   // Calculate price change for display
   const getPriceChange = () => {

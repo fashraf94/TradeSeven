@@ -8,13 +8,14 @@ import TimeframeSelector from './TimeframeSelector';
 import PatternsTab from './PatternsTab';
 import LevelsTab from './LevelsTab';
 import ExploreTab from './ExploreTab';
-import detectLevels from '../../services/levelDetection';
+import useChartOverlays from './hooks/useChartOverlays';
 import {
   calculateRSI,
   calculateMACD,
   calculateSMA,
   calculateATR,
   calculateATRPercent,
+  calculateRVOL,
   detectTrend,
 } from '../../services/technicalIndicators';
 import { analyzeExploreQuestion } from '../../services/technicalAnalysisAI';
@@ -118,6 +119,10 @@ const TechnicalAnalysisScreen = ({
   fetchOHLCV,
   analyzeStock,
   colors = {},
+  userId,
+  showToast,
+  trackedPatterns,
+  onPatternTracked,
 }) => {
   const [ohlcvData, setOhlcvData] = useState(null);
   const [analysis, setAnalysis] = useState(null);
@@ -138,9 +143,12 @@ const TechnicalAnalysisScreen = ({
   const [dailyAnchorData, setDailyAnchorData] = useState(null);
   const [dailyIndicators, setDailyIndicators] = useState(null);
 
-  // Chart level overlay state (Phase 5)
-  const [showLevelOverlay, setShowLevelOverlay] = useState(false);
-  const [chartLevels, setChartLevels] = useState([]);
+  // Chart overlay state (hook manages toggles, SMA/Fib/S&R data, highlight)
+  const {
+    overlayToggles, handleOverlayToggle, showLevelOverlay,
+    activeChartHighlight, setActiveChartHighlight,
+    smaLineData, fibLevels, chartLevels,
+  } = useChartOverlays(ohlcvData, dailyAnchorData, dailyIndicators);
 
   // Track if initial load has happened
   const initialLoadRef = useRef(false);
@@ -246,7 +254,6 @@ const TechnicalAnalysisScreen = ({
         }
       } else {
         // Demo mode - simulate loading with fake data
-        console.log('[TechnicalAnalysis] Demo mode - using simulated data');
         await new Promise(resolve => setTimeout(resolve, 500));
         setOhlcvData(generateDemoOHLCV(stock.price || 150));
       }
@@ -264,6 +271,7 @@ const TechnicalAnalysisScreen = ({
     setIsLoadingTimeframe(true);
     setSelectedTimeframe(newTimeframe);
     setAnalysis(null); // Clear analysis when changing timeframe
+    setActiveChartHighlight(null); // Clear per-card highlight on timeframe change
     setNotification(null);
 
     try {
@@ -403,6 +411,7 @@ const TechnicalAnalysisScreen = ({
     const sma200 = calculateSMA(closingPrices, 200);
     const atrValue = calculateATR(ohlcvData, 14);
     const atrPercent = calculateATRPercent(ohlcvData, 14);
+    const rvolData = calculateRVOL(ohlcvData);
     const trend = detectTrend(closingPrices);
 
     const sma50Distance = sma50 ? ((currentPrice - sma50) / sma50 * 100) : 0;
@@ -446,6 +455,7 @@ const TechnicalAnalysisScreen = ({
       },
       sma20: sma20 ? Math.round(sma20 * 100) / 100 : null,
       sma200: sma200 ? Math.round(sma200 * 100) / 100 : null,
+      rvol: rvolData,
       trend,
     };
   };
@@ -466,18 +476,10 @@ const TechnicalAnalysisScreen = ({
     runAnalysisIfNeeded();
   }, [runAnalysisIfNeeded]);
 
-  const handleTrackPattern = (pattern) => {
-    if (onTrackPattern) {
-      onTrackPattern({
-        ...pattern,
-        ticker: stock.symbol,
-        priceAtCreation: ohlcvData?.[0]?.close || stock.price,
-      });
-    }
-  };
-
   // Handle explore question click
-  const handleExploreQuestion = useCallback(async (questionId) => {
+  // Not memoized — ensures fresh state references on every render to prevent stale closures
+  const handleExploreQuestion = async (questionId) => {
+    if (isExploreLoading) return; // Prevent double-clicks while loading
     if (!ohlcvData || ohlcvData.length === 0 || !calculatedIndicators) return;
 
     setIsExploreLoading(true);
@@ -503,7 +505,7 @@ const TechnicalAnalysisScreen = ({
     } finally {
       setIsExploreLoading(false);
     }
-  }, [ohlcvData, calculatedIndicators, stock?.symbol]);
+  };
 
   // Reset explore conversation
   const handleExploreReset = useCallback(() => {
@@ -518,29 +520,6 @@ const TechnicalAnalysisScreen = ({
       setCalculatedIndicators(indicators);
     }
   }, [ohlcvData]);
-
-  // Calculate chart levels for overlay (Phase 5)
-  useEffect(() => {
-    if (dailyAnchorData && dailyIndicators) {
-      const detected = detectLevels(dailyAnchorData, dailyIndicators);
-
-      // Format levels for chart overlay
-      const allLevels = [
-        ...detected.support.map(l => ({
-          price: l.price,
-          type: 'SUPPORT',
-          label: l.factors[0]?.name || 'Support',
-        })),
-        ...detected.resistance.map(l => ({
-          price: l.price,
-          type: 'RESISTANCE',
-          label: l.factors[0]?.name || 'Resistance',
-        })),
-      ];
-
-      setChartLevels(allLevels);
-    }
-  }, [dailyAnchorData, dailyIndicators]);
 
   return (
     <div style={{
@@ -613,6 +592,39 @@ const TechnicalAnalysisScreen = ({
         />
       </div>
 
+      {/* Chart Overlay Toggles */}
+      <div style={{
+        display: 'flex',
+        gap: '6px',
+        padding: '6px 12px',
+        backgroundColor: '#0d1117',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+      }}>
+        {[
+          { key: 'sma', label: 'SMAs' },
+          { key: 'fib', label: 'Fib' },
+          { key: 'sr', label: 'S/R' },
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => handleOverlayToggle(t.key)}
+            style={{
+              padding: '6px 12px',
+              fontSize: '11px',
+              fontWeight: 600,
+              borderRadius: '6px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              backgroundColor: overlayToggles[t.key] ? 'rgba(0, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+              border: `1px solid ${overlayToggles[t.key] ? 'rgba(0, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
+              color: overlayToggles[t.key] ? '#00ffff' : 'rgba(255, 255, 255, 0.4)',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {/* Notification Banner */}
       {notification && (
         <div style={{
@@ -645,7 +657,7 @@ const TechnicalAnalysisScreen = ({
 
       {/* Candlestick Chart */}
       <div style={{
-        height: '280px',
+        height: '320px',
         backgroundColor: '#0a1628',
         borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
         padding: '8px',
@@ -656,9 +668,12 @@ const TechnicalAnalysisScreen = ({
         ) : ohlcvData && ohlcvData.length > 0 ? (
           <CandlestickChart
             ohlcvData={ohlcvData}
-            height={264}
+            height={304}
             levels={chartLevels}
             showLevelOverlay={showLevelOverlay}
+            smaData={overlayToggles.sma ? smaLineData : null}
+            fibLevels={overlayToggles.fib ? fibLevels : null}
+            activeHighlight={activeChartHighlight}
           />
         ) : (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.3)' }}>
@@ -704,15 +719,20 @@ const TechnicalAnalysisScreen = ({
             aria-controls={`${tab}-panel`}
             id={`${tab}-tab`}
             tabIndex={activeTab === tab ? 0 : -1}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => {
+              setActiveTab(tab);
+              if (tab !== 'patterns') setActiveChartHighlight(null);
+            }}
             onKeyDown={(e) => {
               const tabs = ['explore', 'patterns', 'levels'];
               if (e.key === 'ArrowRight') {
                 const nextIndex = (index + 1) % tabs.length;
                 setActiveTab(tabs[nextIndex]);
+                if (tabs[nextIndex] !== 'patterns') setActiveChartHighlight(null);
               } else if (e.key === 'ArrowLeft') {
                 const prevIndex = (index - 1 + tabs.length) % tabs.length;
                 setActiveTab(tabs[prevIndex]);
+                if (tabs[prevIndex] !== 'patterns') setActiveChartHighlight(null);
               }
             }}
             style={{
@@ -764,16 +784,24 @@ const TechnicalAnalysisScreen = ({
                   ohlcvData={ohlcvData}
                   dailyAnchorData={dailyAnchorData}
                   dailyIndicators={dailyIndicators}
+                  calculatedIndicators={calculatedIndicators}
                   selectedTimeframe={selectedTimeframe}
-                  onTrackPattern={handleTrackPattern}
+                  rvolData={calculatedIndicators?.rvol}
+                  userId={userId}
+                  showToast={showToast}
+                  trackedPatterns={trackedPatterns}
+                  onPatternTracked={onPatternTracked}
+                  ticker={stock?.symbol}
+                  onHighlightPattern={setActiveChartHighlight}
+                  activeHighlight={activeChartHighlight}
                 />
               )}
               {activeTab === 'levels' && (
                 <LevelsTab
                   dailyData={dailyAnchorData}
                   indicators={dailyIndicators}
-                  chartOverlayEnabled={showLevelOverlay}
-                  onToggleChartOverlay={setShowLevelOverlay}
+                  chartOverlayEnabled={overlayToggles.sr}
+                  onToggleChartOverlay={() => handleOverlayToggle('sr')}
                 />
               )}
             </motion.div>

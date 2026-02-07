@@ -5,6 +5,22 @@
  */
 
 // ============================================
+// FREEFORM FOLLOW-UP PROMPT (for AI-generated follow-up questions)
+// ============================================
+
+const FREEFORM_SYSTEM_PROMPT = `You are a technical analyst answering a follow-up question about a stock. Answer conversationally in 2-3 sentences.
+
+Focus on the specific question asked, using the provided indicator data and OHLCV candles.
+
+OUTPUT FORMAT (JSON only):
+{
+  "answer": "2-3 sentence conversational response addressing the question",
+  "followUps": ["suggested follow-up question 1", "suggested follow-up question 2"]
+}
+
+Keep it educational and avoid trading recommendations.`;
+
+// ============================================
 // EXPLORE TAB PROMPTS (Conversational Q&A)
 // ============================================
 
@@ -38,19 +54,20 @@ Keep it educational and avoid trading recommendations.`
 
   key_indicators: {
     id: 'key_indicators',
-    question: 'What are the key indicators showing?',
-    shortLabel: 'Key Indicators',
-    systemPrompt: `You are a technical analyst summarizing key indicator readings. Answer conversationally in 3-4 sentences.
+    question: "What's the overall picture?",
+    shortLabel: 'Overall Picture',
+    systemPrompt: `You are a technical analyst providing a holistic summary. Answer conversationally in 3-4 sentences.
 
-Cover these indicators briefly:
-- RSI: momentum and zone
-- MACD: histogram direction and signal
-- Moving averages: price position relative to 20/50 SMA
-- Volume: recent trend
+Synthesize across all available data:
+- Trend direction and strength (moving averages, higher highs/lows)
+- Momentum state (RSI zone, MACD histogram direction)
+- Volume conviction (RVOL tier and what it implies for current moves)
+- Nearest key level (support or resistance) and distance
+- One-sentence "bottom line" assessment
 
 OUTPUT FORMAT (JSON only):
 {
-  "answer": "3-4 sentence conversational summary of key indicators",
+  "answer": "3-4 sentence conversational overview synthesizing trend, momentum, volume, and levels",
   "highlights": [
     { "indicator": "name", "reading": "brief status" }
   ],
@@ -85,19 +102,20 @@ Keep it educational and avoid trading recommendations.`
 
   momentum: {
     id: 'momentum',
-    question: 'How is momentum trending?',
-    shortLabel: 'Momentum',
-    systemPrompt: `You are a technical analyst assessing momentum. Answer conversationally in 2-3 sentences.
+    question: 'How strong is the current trend?',
+    shortLabel: 'Trend Strength',
+    systemPrompt: `You are a technical analyst assessing trend strength and momentum. Answer conversationally in 3-4 sentences.
 
 Analyze:
-- MACD histogram direction and strength
-- RSI trend direction
-- Price momentum vs moving averages
-- Any momentum divergences
+- Trend direction from moving averages (price vs 20/50/200 SMA)
+- MACD histogram direction, strength, and any crossovers
+- RSI trend direction and zone
+- Whether momentum is confirming or diverging from the trend
+- RVOL context: is volume supporting the trend?
 
 OUTPUT FORMAT (JSON only):
 {
-  "answer": "2-3 sentence conversational assessment of momentum",
+  "answer": "3-4 sentence conversational assessment of trend strength and momentum",
   "macdSignal": "Bullish|Neutral|Bearish",
   "momentumStrength": "Strong|Moderate|Weak",
   "trend": "Accelerating|Steady|Decelerating",
@@ -109,19 +127,20 @@ Keep it educational and avoid trading recommendations.`
 
   volatility: {
     id: 'volatility',
-    question: "What's the current volatility like?",
-    shortLabel: 'Volatility',
-    systemPrompt: `You are a technical analyst assessing volatility. Answer conversationally in 2-3 sentences.
+    question: "What's the risk profile right now?",
+    shortLabel: 'Risk Profile',
+    systemPrompt: `You are a technical analyst assessing risk and volatility. Answer conversationally in 3-4 sentences.
 
 Analyze:
-- ATR value and what it means for this stock
-- Volatility regime (high, normal, low)
-- Recent price range behavior
-- Whether volatility is expanding or contracting
+- ATR value and what it means for this stock's typical price swings
+- Volatility regime (high, normal, low) and whether expanding or contracting
+- RVOL tier and what it says about current participation and conviction
+- Distance to nearest support and resistance (how much room the price has)
+- Overall risk context: is this a high-risk or low-risk environment?
 
 OUTPUT FORMAT (JSON only):
 {
-  "answer": "2-3 sentence conversational assessment of volatility",
+  "answer": "3-4 sentence conversational assessment of risk and volatility",
   "atrValue": number,
   "atrPercent": number,
   "regime": "High|Normal|Low",
@@ -134,23 +153,22 @@ Keep it educational and avoid trading recommendations.`
 
   patterns: {
     id: 'patterns',
-    question: 'Are there any patterns forming?',
-    shortLabel: 'Patterns',
-    systemPrompt: `You are a technical analyst detecting chart patterns. Answer conversationally in 2-4 sentences.
+    question: 'What would change the current outlook?',
+    shortLabel: 'Outlook Change',
+    systemPrompt: `You are a technical analyst identifying the conditions that would shift the current technical picture. Answer conversationally in 3-4 sentences.
 
-Look for:
-- Candlestick patterns (recent 5 candles)
-- Chart patterns (triangles, wedges, channels)
-- Trend patterns (higher highs/lows, consolidation)
-- Any incomplete patterns that may be forming
+Identify:
+- The specific price levels or events that would invalidate the current bias (e.g., "a close below $X would break the uptrend")
+- Key levels to watch for confirmation of continuation vs reversal
+- Volume conditions that would signal a regime change (e.g., "a breakout above $X on RVOL > 2.5 would confirm")
+- Any forming patterns that could resolve in either direction
 
 OUTPUT FORMAT (JSON only):
 {
-  "answer": "2-4 sentence conversational description of any patterns",
-  "patternsDetected": [
-    { "name": "pattern name", "type": "Bullish|Bearish|Neutral", "description": "brief explanation" }
-  ],
-  "formingPatterns": "Description of incomplete patterns if any, or 'None detected'",
+  "answer": "3-4 sentence conversational description of what would change the outlook",
+  "bullishTrigger": "Condition that would turn outlook more bullish",
+  "bearishTrigger": "Condition that would turn outlook more bearish",
+  "keyLevelToWatch": number,
   "followUps": ["suggested question 1", "suggested question 2"]
 }
 
@@ -331,6 +349,93 @@ FAKEOUT DETECTION:
 - Immediate reversal = confirmation of fakeout
 - Note risk level for any detected patterns
 
+RELATIVE VOLUME (RVOL):
+- RVOL is PRE-CALCULATED and provided in the indicator data — do NOT recalculate it
+- RVOL compares today's volume to the 20-day average. It answers: "Is participation unusual today?"
+- 7-Tier Institutional Classification:
+  * VERY_LOW (<0.5x): Extremely thin participation, moves likely unsustainable
+  * LOW (0.5-0.75x): Below-average conviction, breakouts prone to failure
+  * NORMAL (0.75-1.25x): Balanced auction, typical participation — neutral for pattern confirmation
+  * ELEVATED (1.25-2.5x): Stock is "in-play" with above-normal interest, moderate follow-through expected
+  * INSTITUTIONAL (2.5-4.0x): Strong institutional conviction, breakout-grade volume, highest follow-through probability
+  * CLIMAX (>4.0x): CAUTION — Potential blow-off top or selling climax. Extreme volume at the end of extended moves historically indicates exhaustion, not continuation
+- CRITICAL — The Climax Warning (RVOL > 4.0):
+  * At end of extended uptrend + reversal candle = "Potential blow-off top detected. Extremely high volume indicates exhaustion."
+  * At end of extended downtrend + reversal candle = "Potential selling climax detected. Capitulation — sellers exhausting themselves."
+  * Breakout from consolidation base = Climax warning does NOT apply. High volume on base breakout is constructive.
+- Always contextualize patterns with RVOL:
+  * Bounce at support WITH RVOL > 2.5 = "High-conviction institutional reaction at support zone"
+  * Bounce at support WITH RVOL < 0.75 = "Support held, but volume is unremarkable — conviction is neutral"
+  * Breakout WITH RVOL < 0.75 = "Low-conviction breakout — historically prone to failure"
+  * Pullback WITH RVOL < 0.75 = "Healthy volume dry-up on pullback — holders not liquidating" (bullish within uptrend)
+  * Pattern WITH RVOL > 4.0 at extended move end = Apply climax warning
+  * Pattern WITH RVOL < 0.5 = "Pattern detected but on very thin volume — reliability significantly reduced"
+- Volume Dry-Up Context: Pullback on contracting RVOL = healthy pause. Pullback on expanding RVOL = warning of possible trend change.
+- RVOL + OBV Cross-Check (when OBV data available):
+  * Price rising + OBV rising + RVOL elevated = Healthy trend, accumulation confirmed
+  * Price rising + OBV flat/declining + RVOL spikes on up-days = Distribution warning
+  * Price declining + OBV flat + RVOL low = Orderly pullback, no panic
+  * Price declining + OBV declining sharply + RVOL high = Active selling/liquidation
+- RVOL influences confluence zone descriptions:
+  * STRONG confluence + RVOL INSTITUTIONAL = "High-conviction STRONG confluence — institutional-grade volume supports this zone"
+  * STRONG confluence + RVOL NORMAL = "STRONG confluence structurally, but volume participation is unremarkable"
+  * STRONG confluence + RVOL LOW/VERY_LOW = "STRONG confluence detected, but current volume is unusually thin — reduced reliability"
+  * Confluence at support during pullback + RVOL LOW = "Volume drying up at confluence support — historically constructive"
+
+CANDLESTICK PATTERNS TO DETECT:
+- Doji Sub-Types: Classify dojis by shadow structure:
+  * Gravestone Doji: Long upper shadow, minimal lower shadow — bearish, only valid near resistance
+  * Dragonfly Doji: Long lower shadow, minimal upper shadow — bullish, only valid near support
+  * Long-Legged Doji: Long shadows on both sides — high indecision, valid at either level
+  * Standard Doji: Small shadows — mild indecision, lowest significance
+- Morning Star (3-candle bullish reversal):
+  * Candle 1: Large bearish body (body > 50% of range)
+  * Candle 2 (star): Small body (< 30% of candle 1 body)
+  * Candle 3: Large bullish body closing above midpoint of candle 1
+  * Strong variant: Candle 3 closes above entire candle 1 open
+  * Historically ~75% reversal success rate at support
+- Evening Star (3-candle bearish reversal):
+  * Mirror of Morning Star — bullish candle 1, small star, bearish candle 3
+  * Strong variant: Candle 3 closes below entire candle 1 open
+  * Historically ~72% reversal success rate at resistance
+- Inside Bar (volatility compression):
+  * Current bar's high < prior bar's high AND current bar's low > prior bar's low
+  * Double Inside Bar: Two consecutive inside bars — extreme compression, imminent expansion
+  * NR4: Current bar is narrowest of last 4 bars — highest breakout probability
+  * Inside Bars are NEUTRAL — direction of breakout determines bias
+  * Volume typically contracts during inside bars; a breakout on RVOL > 2.0 confirms direction
+
+CANDLESTICK PATTERN QUALITY RULES:
+When detecting candlestick patterns, always assess and report quality context:
+- Engulfing Patterns:
+  * Strong: Engulfing candle's body is at least 2x the previous candle's body
+  * Weak/Marginal: Engulfing candle barely exceeds previous body
+  * Report: "Bullish Engulfing (strong — engulfing body 2.3x prior candle)" or "Bullish Engulfing (marginal — body only 1.1x prior)"
+- Hammer / Shooting Star:
+  * Valid: Lower shadow (hammer) or upper shadow (shooting star) must be at least 2x the body length
+  * Invalid: If shadow < 2x body, do NOT classify as hammer/shooting star
+  * Report shadow-to-body ratio when detected
+  * A Shooting Star on RVOL > 4.0 at end of extended uptrend is a high-probability blow-off signal — always flag explicitly
+- Double Top / Double Bottom:
+  * Volume comparison is critical: Compare volume at first peak/trough vs second
+  * Declining volume on second test = higher probability pattern (weakening conviction)
+  * Increasing volume on second test = pattern less likely to resolve as expected
+  * Report: "Double Top near $X — second peak on 40% lower volume, indicating weakening conviction"
+- All Patterns:
+  * Always report the RVOL tier at the candle where the pattern was detected
+  * Pattern on RVOL < 0.75 = flag as "low-conviction"
+  * Pattern on RVOL 2.5-4.0 = flag as "high-conviction, institutional-grade"
+  * Pattern on RVOL > 4.0 = evaluate for exhaustion context (see Climax Warning above)
+
+ELLIOTT WAVE ANALYSIS — GATING:
+- Elliott Wave counting requires visual chart inspection for reliable wave identification
+- In OHLCV-only mode (no chart image): Do NOT output specific wave counts (e.g., "we are in Wave 3")
+- You MAY note structural observations consistent with wave theory if the OHLCV structure strongly suggests it:
+  * "Price structure shows characteristics of an impulsive advance" (if clearly visible from data)
+  * "The current pullback has a corrective appearance" (if pattern is unambiguous)
+- ALWAYS include gating caveat: "Wave analysis requires visual confirmation for reliable counts"
+- Flag confidence: LOW (OHLCV data only), HIGH (chart image available)
+
 Remember: This is for EDUCATIONAL pattern tracking. Provide thorough analysis with historical context, but never recommend specific actions.`;
 
 
@@ -354,6 +459,7 @@ const buildQuickUserPrompt = (symbol, currentPrice, high20, low20, indicators, o
 
 CURRENT: $${safeToFixed(currentPrice, 2)}
 RSI: ${safeToFixed(indicators.rsi?.value, 1)} | MACD: ${indicators.macd?.histogram > 0 ? '+' : ''}${safeToFixed(indicators.macd?.histogram, 2)}
+RVOL: ${indicators.rvol?.value || 'N/A'}x (${indicators.rvol?.label || 'Unknown'}) [Tier: ${indicators.rvol?.tier || 'UNKNOWN'}]
 50 SMA: $${safeToFixed(indicators.sma50?.value, 2)} (${indicators.sma50?.position || 'N/A'})
 20-Day Range: $${safeToFixed(low20, 2)} - $${safeToFixed(high20, 2)}
 
@@ -366,7 +472,7 @@ Identify: primary trend, key level, one takeaway. Return JSON only.`;
 /**
  * Build user prompt for deep analysis
  */
-const buildDeepUserPrompt = (symbol, currentPrice, high20, low20, high50, low50, indicators, ohlcvSummary, battleType) => {
+const buildDeepUserPrompt = (symbol, currentPrice, high20, low20, high50, low50, indicators, ohlcvSummary, battleType, hasChartImage = false) => {
   return `Perform comprehensive technical analysis of ${symbol} for educational pattern detection.
 
 CURRENT MARKET DATA:
@@ -381,13 +487,16 @@ PRE-CALCULATED INDICATORS:
 - 50 SMA: $${safeToFixed(indicators.sma50?.value, 2)} (Price ${indicators.sma50?.position || 'N/A'} by ${indicators.sma50?.distance || 'N/A'})
 - 200 SMA: $${safeToFixed(indicators.sma200, 2)}
 - ATR (14): $${safeToFixed(indicators.atr?.value, 2)} (${indicators.atr?.regime || 'N/A'}, ${safeToFixed(indicators.atr?.percent, 1)}% of price)
+- RVOL (20): ${indicators.rvol?.value || 'N/A'}x (${indicators.rvol?.label || 'Unknown'}) [Tier: ${indicators.rvol?.tier || 'UNKNOWN'}]
 
 RECENT OHLCV DATA (45 days, newest first):
 ${ohlcvSummary}
 
 ANALYSIS CONTEXT:
 - Battle Type: ${battleType} (${battleType === 'BaggerBomb' ? 'focus on volatility and momentum setups' : 'standard swing analysis'})
+- Analysis Mode: ${hasChartImage ? 'OHLCV + Chart Image' : 'OHLCV Only'}
 - Request: Deep analysis with full pattern detection
+${!hasChartImage ? '- NOTE: Elliott Wave analysis is NOT available in OHLCV-only mode.' : ''}
 
 REQUIRED ANALYSIS:
 1. Identify all confluence zones where multiple indicators align within 1%
@@ -436,7 +545,6 @@ const parseAIResponse = (responseText) => {
     return JSON.parse(cleaned);
   } catch (e) {
     console.error('[TechnicalAnalysisAI] Failed to parse AI response:', e);
-    console.log('[TechnicalAnalysisAI] Raw response:', responseText);
 
     // Return a fallback structure
     return {
@@ -464,8 +572,6 @@ const parseAIResponse = (responseText) => {
  */
 export const analyzeStockWithAI = async (symbol, ohlcvData, calculatedIndicators, options = {}) => {
   const { mode = 'quick', battleType = 'Classic' } = options;
-
-  console.log(`[TechnicalAnalysisAI] Starting ${mode} analysis for ${symbol}`);
 
   // Select prompt based on mode
   const systemPrompt = mode === 'deep' ? DEEP_ANALYSIS_PROMPT : QUICK_ANALYSIS_PROMPT;
@@ -518,8 +624,6 @@ export const analyzeStockWithAI = async (symbol, ohlcvData, calculatedIndicators
     analysis.analysisMode = mode;
     analysis.dataPoints = ohlcvData.length;
     analysis.aiGenerated = true;
-
-    console.log(`[TechnicalAnalysisAI] ${mode} analysis complete for ${symbol}`);
 
     return analysis;
   } catch (error) {
@@ -605,6 +709,7 @@ CURRENT DATA:
 - 50 SMA: $${safeToFixed(indicators.sma50?.value, 2)} (Price ${indicators.sma50?.position || 'N/A'})
 - 200 SMA: $${safeToFixed(indicators.sma200, 2)}
 - ATR (14): $${safeToFixed(indicators.atr?.value, 2)} (${safeToFixed(indicators.atr?.percent, 1)}% of price, ${indicators.atr?.regime || 'N/A'})
+- RVOL (20): ${indicators.rvol?.value || 'N/A'}x (${indicators.rvol?.tier || 'N/A'} — ${indicators.rvol?.label || ''})
 - 20-Day Range: $${safeToFixed(low20, 2)} - $${safeToFixed(high20, 2)}
 - Trend: ${indicators.trend?.direction || 'N/A'}
 
@@ -624,14 +729,20 @@ Provide a focused answer with 2 relevant follow-up question suggestions. Return 
  */
 export const analyzeExploreQuestion = async (symbol, questionId, ohlcvData, calculatedIndicators) => {
   const promptConfig = EXPLORE_PROMPTS[questionId];
-  if (!promptConfig) {
-    throw new Error(`Unknown question ID: ${questionId}`);
-  }
 
-  console.log(`[TechnicalAnalysisAI] Explore: ${promptConfig.shortLabel} for ${symbol}`);
+  // Support freeform follow-up questions: if questionId doesn't match a preset, treat it as freeform text
+  const isFreeform = !promptConfig;
+  const systemPrompt = isFreeform ? FREEFORM_SYSTEM_PROMPT : promptConfig.systemPrompt;
+  const questionText = isFreeform ? questionId : promptConfig.question;
+  const shortLabel = isFreeform ? 'Follow-up' : promptConfig.shortLabel;
 
   const currentPrice = ohlcvData[0]?.close;
-  const userPrompt = buildExploreUserPrompt(symbol, questionId, currentPrice, calculatedIndicators, ohlcvData);
+  let userPrompt = buildExploreUserPrompt(symbol, questionId, currentPrice, calculatedIndicators, ohlcvData);
+
+  // For freeform questions, append the actual question text
+  if (isFreeform) {
+    userPrompt += `\n\nUSER'S QUESTION: ${questionText}`;
+  }
 
   try {
     const response = await fetch('/api/ai-advisor', {
@@ -640,7 +751,7 @@ export const analyzeExploreQuestion = async (symbol, questionId, ohlcvData, calc
       body: JSON.stringify({
         advisorType: 'technical-analysis',
         mode: 'explore',
-        systemPrompt: promptConfig.systemPrompt,
+        systemPrompt,
         prompt: userPrompt,
         maxTokens: 800
       })
@@ -656,7 +767,7 @@ export const analyzeExploreQuestion = async (symbol, questionId, ohlcvData, calc
 
     return {
       questionId,
-      question: promptConfig.question,
+      question: questionText,
       ...parsed,
       ticker: symbol,
       timestamp: new Date().toISOString(),
@@ -667,8 +778,8 @@ export const analyzeExploreQuestion = async (symbol, questionId, ohlcvData, calc
     // Return fallback response
     return {
       questionId,
-      question: promptConfig.question,
-      answer: `Unable to analyze ${symbol} at this time. Please check the indicator readings above for ${promptConfig.shortLabel.toLowerCase()} information.`,
+      question: questionText,
+      answer: `Unable to analyze ${symbol} at this time. Please check the indicator readings above for ${shortLabel.toLowerCase()} information.`,
       followUps: ['What are the key indicators showing?', 'Where are the support and resistance levels?'],
       error: true,
       ticker: symbol,

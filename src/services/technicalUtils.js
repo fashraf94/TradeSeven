@@ -26,21 +26,47 @@ export const FIBONACCI_RATIOS = [
 export const calculateFibonacciLevels = (data, options = {}) => {
   const {
     lookbackCandles = 60,
-    minRangePercent = 0.05,
+    minRangePercent = 0.02,
     ratios = FIBONACCI_RATIOS,
   } = options;
 
   if (!data?.length || data.length < 20) return [];
 
-  const recent = data.slice(0, lookbackCandles);
-  const high = Math.max(...recent.map(c => c.high));
-  const low = Math.min(...recent.map(c => c.low));
+  const currentPrice = data[0].close;
+
+  // Use swing points for proper anchor detection
+  const { swingHighs, swingLows } = detectSwingPoints(data, {
+    lookback: 5,
+    clusterThreshold: 0.01,
+    maxResults: 3,
+  });
+
+  let high = swingHighs.length > 0 ? swingHighs[0].price : null;
+  let low = swingLows.length > 0 ? swingLows[0].price : null;
+
+  // If price has broken beyond swings, use current price as provisional anchor
+  if (high !== null && currentPrice > high) high = currentPrice;
+  if (low !== null && currentPrice < low) low = currentPrice;
+
+  // Fallback: if no swings found, use dataset extremes
+  if (high === null || low === null) {
+    const recent = data.slice(0, lookbackCandles);
+    high = high ?? Math.max(...recent.map(c => c.high));
+    low = low ?? Math.min(...recent.map(c => c.low));
+  }
+
+  // Guard: high must be > low
+  if (high <= low) {
+    const recent = data.slice(0, lookbackCandles);
+    high = Math.max(...recent.map(c => c.high));
+    low = Math.min(...recent.map(c => c.low));
+  }
+
   const range = high - low;
 
   // Skip if range is too small
   if (range / low < minRangePercent) return [];
 
-  const currentPrice = data[0].close;
   const isUptrend = currentPrice > (high + low) / 2;
 
   return ratios.map(fib => ({
