@@ -107,6 +107,8 @@ export const detectConfluence = (selectedTimeframeData, dailyData, dailyIndicato
             description: pattern.description,
             bias: pattern.bias,
             quality: pattern.quality || null,
+            time: pattern.time,
+            shortName: pattern.shortName,
           },
 
           // Macro level info

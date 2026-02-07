@@ -161,13 +161,16 @@ const TechnicalAnalysisScreen = ({
   const [dailyIndicators, setDailyIndicators] = useState(null);
 
   // Chart overlay state
-  const [overlayToggles, setOverlayToggles] = useState({ sma: false, fib: false, patterns: false, sr: false });
+  const [overlayToggles, setOverlayToggles] = useState({ sma: false, fib: false, sr: false });
   const [chartLevels, setChartLevels] = useState([]);
 
   // Overlay data (computed from ohlcvData)
   const [smaLineData, setSmaLineData] = useState(null);
   const [fibLevels, setFibLevels] = useState(null);
-  const [patternMarkerData, setPatternMarkerData] = useState(null);
+  // const [patternMarkerData, setPatternMarkerData] = useState(null); // Replaced by per-card activeChartHighlight
+
+  // Per-card chart highlight from PatternsTab "Show on Chart" button
+  const [activeChartHighlight, setActiveChartHighlight] = useState(null);
 
   // Derive showLevelOverlay from overlay toggles for backward compat
   const showLevelOverlay = overlayToggles.sr;
@@ -294,6 +297,7 @@ const TechnicalAnalysisScreen = ({
     setIsLoadingTimeframe(true);
     setSelectedTimeframe(newTimeframe);
     setAnalysis(null); // Clear analysis when changing timeframe
+    setActiveChartHighlight(null); // Clear per-card highlight on timeframe change
     setNotification(null);
 
     try {
@@ -585,19 +589,14 @@ const TechnicalAnalysisScreen = ({
     }
   }, [ohlcvData]);
 
-  // Compute pattern markers for chart overlays
-  useEffect(() => {
-    if (!ohlcvData?.length || ohlcvData.length < 5) {
-      setPatternMarkerData(null);
-      return;
-    }
-    try {
-      const patterns = detectMicroPatterns(ohlcvData.slice(0, 20), selectedTimeframe, calculatedIndicators?.rvol);
-      setPatternMarkerData(patterns);
-    } catch {
-      setPatternMarkerData(null);
-    }
-  }, [ohlcvData, selectedTimeframe, calculatedIndicators]);
+  // OLD GLOBAL PATTERN MARKERS - replaced by per-card activeChartHighlight
+  // useEffect(() => {
+  //   if (!ohlcvData?.length || ohlcvData.length < 5) { setPatternMarkerData(null); return; }
+  //   try {
+  //     const patterns = detectMicroPatterns(ohlcvData.slice(0, 20), selectedTimeframe, calculatedIndicators?.rvol);
+  //     setPatternMarkerData(patterns);
+  //   } catch { setPatternMarkerData(null); }
+  // }, [ohlcvData, selectedTimeframe, calculatedIndicators]);
 
   // Calculate chart levels for overlay (Phase 5)
   useEffect(() => {
@@ -704,7 +703,6 @@ const TechnicalAnalysisScreen = ({
         {[
           { key: 'sma', label: 'SMAs' },
           { key: 'fib', label: 'Fib' },
-          { key: 'patterns', label: 'Patterns' },
           { key: 'sr', label: 'S/R' },
         ].map(t => (
           <button
@@ -775,7 +773,7 @@ const TechnicalAnalysisScreen = ({
             showLevelOverlay={showLevelOverlay}
             smaData={overlayToggles.sma ? smaLineData : null}
             fibLevels={overlayToggles.fib ? fibLevels : null}
-            patternMarkers={overlayToggles.patterns ? patternMarkerData : null}
+            activeHighlight={activeChartHighlight}
           />
         ) : (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.3)' }}>
@@ -821,15 +819,20 @@ const TechnicalAnalysisScreen = ({
             aria-controls={`${tab}-panel`}
             id={`${tab}-tab`}
             tabIndex={activeTab === tab ? 0 : -1}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => {
+              setActiveTab(tab);
+              if (tab !== 'patterns') setActiveChartHighlight(null);
+            }}
             onKeyDown={(e) => {
               const tabs = ['explore', 'patterns', 'levels'];
               if (e.key === 'ArrowRight') {
                 const nextIndex = (index + 1) % tabs.length;
                 setActiveTab(tabs[nextIndex]);
+                if (tabs[nextIndex] !== 'patterns') setActiveChartHighlight(null);
               } else if (e.key === 'ArrowLeft') {
                 const prevIndex = (index - 1 + tabs.length) % tabs.length;
                 setActiveTab(tabs[prevIndex]);
+                if (tabs[prevIndex] !== 'patterns') setActiveChartHighlight(null);
               }
             }}
             style={{
@@ -890,6 +893,8 @@ const TechnicalAnalysisScreen = ({
                   trackedPatterns={trackedPatterns}
                   onPatternTracked={onPatternTracked}
                   ticker={stock?.symbol}
+                  onHighlightPattern={setActiveChartHighlight}
+                  activeHighlight={activeChartHighlight}
                 />
               )}
               {activeTab === 'levels' && (

@@ -90,7 +90,7 @@ const CandlestickChart = ({
   showVolume = false,
   smaData = null,
   fibLevels = null,
-  patternMarkers = null,
+  activeHighlight = null,
 }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -99,6 +99,8 @@ const CandlestickChart = ({
   const smaSeriesRef = useRef([]);
   const fibLinesRef = useRef([]);
   const markersRef = useRef(null);
+  const highlightLineRef = useRef(null);
+  const highlightMarkersRef = useRef(null);
   const [chartError, setChartError] = React.useState(null);
 
   useEffect(() => {
@@ -435,6 +437,11 @@ const CandlestickChart = ({
         try { markersRef.current.detach(); } catch (e) { /* ok */ }
         markersRef.current = null;
       }
+      if (highlightMarkersRef.current) {
+        try { highlightMarkersRef.current.detach(); } catch (e) { /* ok */ }
+        highlightMarkersRef.current = null;
+      }
+      highlightLineRef.current = null;
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
@@ -559,49 +566,76 @@ const CandlestickChart = ({
     });
   }, [fibLevels]);
 
-  // Pattern markers overlay
+  // OLD GLOBAL PATTERN MARKERS - replaced by per-card activeHighlight
+  // useEffect(() => {
+  //   if (markersRef.current) { try { markersRef.current.detach(); } catch {} markersRef.current = null; }
+  //   if (!candleSeriesRef.current || !patternMarkers || patternMarkers.length === 0) return;
+  //   const sampleCandle = ohlcvData?.[0];
+  //   const sampleDate = sampleCandle?.date || sampleCandle?.datetime || sampleCandle?.timestamp;
+  //   const isIntraday = typeof sampleDate === 'string' && (sampleDate.includes('T') || sampleDate.includes(':'));
+  //   try {
+  //     const markers = patternMarkers.map(p => { ... }).filter(Boolean).sort(...);
+  //     if (markers.length > 0) markersRef.current = createSeriesMarkers(candleSeriesRef.current, markers);
+  //   } catch (e) { logger.warn('[CandlestickChart] Pattern markers failed:', e); }
+  // }, [patternMarkers, ohlcvData]);
+
+  // Per-card highlight: single marker + level line from PatternsTab "Show on Chart"
   useEffect(() => {
-    // Detach previous markers
-    if (markersRef.current) {
-      try { markersRef.current.detach(); } catch (e) { /* already detached */ }
-      markersRef.current = null;
+    // Clear previous highlight
+    if (highlightMarkersRef.current) {
+      try { highlightMarkersRef.current.detach(); } catch (e) { /* ok */ }
+      highlightMarkersRef.current = null;
+    }
+    if (highlightLineRef.current) {
+      try { candleSeriesRef.current?.removePriceLine(highlightLineRef.current); } catch (e) { /* ok */ }
+      highlightLineRef.current = null;
     }
 
-    if (!candleSeriesRef.current || !patternMarkers || patternMarkers.length === 0) return;
+    if (!candleSeriesRef.current || !activeHighlight) return;
 
-    // Detect if intraday
+    // Detect intraday for time formatting
     const sampleCandle = ohlcvData?.[0];
     const sampleDate = sampleCandle?.date || sampleCandle?.datetime || sampleCandle?.timestamp;
     const isIntraday = typeof sampleDate === 'string' && (sampleDate.includes('T') || sampleDate.includes(':'));
 
-    try {
-      const markers = patternMarkers
-        .map(p => {
-          const time = formatTime(p.time, isIntraday);
-          if (!time) return null;
-          const isBullish = p.bias === 'BULLISH';
-          return {
+    const { marker, levelLine } = activeHighlight;
+
+    // Draw micro pattern marker
+    if (marker?.time) {
+      try {
+        const time = formatTime(marker.time, isIntraday);
+        if (time) {
+          const isBullish = marker.bias === 'BULLISH';
+          highlightMarkersRef.current = createSeriesMarkers(candleSeriesRef.current, [{
             time,
             position: isBullish ? 'belowBar' : 'aboveBar',
             color: isBullish ? '#00ff88' : '#ff4757',
             shape: isBullish ? 'arrowUp' : 'arrowDown',
-            text: p.shortName || '',
-          };
-        })
-        .filter(Boolean)
-        .sort((a, b) => {
-          const tA = typeof a.time === 'number' ? a.time : new Date(a.time).getTime() / 1000;
-          const tB = typeof b.time === 'number' ? b.time : new Date(b.time).getTime() / 1000;
-          return tA - tB;
-        });
-
-      if (markers.length > 0) {
-        markersRef.current = createSeriesMarkers(candleSeriesRef.current, markers);
+            text: marker.shortName || '',
+          }]);
+        }
+      } catch (e) {
+        logger.warn('[CandlestickChart] Highlight marker failed:', e);
       }
-    } catch (e) {
-      logger.warn('[CandlestickChart] Pattern markers failed:', e);
     }
-  }, [patternMarkers, ohlcvData]);
+
+    // Draw macro level line
+    if (levelLine?.price) {
+      try {
+        const isSupport = levelLine.type === 'SUPPORT';
+        highlightLineRef.current = candleSeriesRef.current.createPriceLine({
+          price: levelLine.price,
+          color: isSupport ? '#00ff88' : '#ff4757',
+          lineWidth: 2,
+          lineStyle: 0, // Solid (distinct from S/R dashed lines)
+          axisLabelVisible: true,
+          title: levelLine.name || '',
+        });
+      } catch (e) {
+        logger.warn('[CandlestickChart] Highlight level line failed:', e);
+      }
+    }
+  }, [activeHighlight, ohlcvData]);
 
   // Calculate price change for display
   const getPriceChange = () => {

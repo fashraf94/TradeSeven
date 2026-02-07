@@ -21,6 +21,8 @@ const PatternsTab = ({
   trackedPatterns,
   onPatternTracked,
   ticker,
+  onHighlightPattern,
+  activeHighlight,
 }) => {
   const [confluences, setConfluences] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,6 +30,7 @@ const PatternsTab = ({
   const [error, setError] = useState(null);
   const [subTab, setSubTab] = useState('zones');
   const [trackingInProgress, setTrackingInProgress] = useState(new Set());
+  const [locallyTracked, setLocallyTracked] = useState(new Set());
 
   useEffect(() => {
     if (!ohlcvData?.length) {
@@ -72,6 +75,9 @@ const PatternsTab = ({
 
   // Check if a confluence zone is already tracked
   const isPatternTracked = (confluence) => {
+    // Check local optimistic state first (works even when Firebase query fails)
+    if (locallyTracked.has(confluence.id)) return true;
+
     if (!trackedPatterns || !ticker) return false;
     const patternName = `${confluence.microPattern.name} at ${confluence.macroLevel.name}`;
     return trackedPatterns.some(p =>
@@ -116,7 +122,23 @@ const PatternsTab = ({
       });
 
       showToast?.('Pattern tracked! Check back in 2 weeks.', 'success');
-      onPatternTracked?.();
+
+      // Mark as locally tracked (permanent for this session)
+      setLocallyTracked(prev => new Set(prev).add(confluence.id));
+
+      // Remove from in-progress (fixes stuck "Saving..." bug)
+      setTrackingInProgress(prev => {
+        const next = new Set(prev);
+        next.delete(confluence.id);
+        return next;
+      });
+
+      // Refresh tracked patterns from Firebase (may fail due to missing index — that's OK)
+      try {
+        onPatternTracked?.();
+      } catch (e) {
+        console.warn('[PatternsTab] Pattern refresh failed:', e);
+      }
     } catch (err) {
       console.error('[PatternsTab] Failed to track:', err);
       showToast?.('Failed to track pattern', 'error');
@@ -136,6 +158,28 @@ const PatternsTab = ({
     } catch (err) {
       console.error('[PatternsTab] Failed to resolve:', err);
     }
+  };
+
+  // Show single pattern + level on chart
+  const handleShowOnChart = (confluence) => {
+    if (activeHighlight?.confluenceId === confluence.id) {
+      onHighlightPattern?.(null);
+      return;
+    }
+    onHighlightPattern?.({
+      confluenceId: confluence.id,
+      marker: {
+        time: confluence.microPattern.time,
+        shortName: confluence.microPattern.shortName,
+        price: confluence.microPattern.price,
+        bias: confluence.microPattern.bias,
+      },
+      levelLine: {
+        price: confluence.macroLevel.price,
+        type: confluence.macroLevel.type,
+        name: confluence.macroLevel.name,
+      },
+    });
   };
 
   // Filter tracked patterns for current ticker
@@ -293,6 +337,25 @@ const PatternsTab = ({
                     }}>
                       {confluence.macroLevel.type}
                     </span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleShowOnChart(confluence); }}
+                      style={{
+                        padding: '3px 8px',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        backgroundColor: activeHighlight?.confluenceId === confluence.id
+                          ? 'rgba(0, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                        border: `1px solid ${activeHighlight?.confluenceId === confluence.id
+                          ? 'rgba(0, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
+                        color: activeHighlight?.confluenceId === confluence.id
+                          ? '#00ffff' : 'rgba(255, 255, 255, 0.5)',
+                      }}
+                    >
+                      {activeHighlight?.confluenceId === confluence.id ? '\u2715 Hide' : '\uD83D\uDCCD Chart'}
+                    </button>
                   </div>
                   <div style={styles.priceRange}>
                     ${confluence.priceRange.low.toFixed(2)} - ${confluence.priceRange.high.toFixed(2)}
