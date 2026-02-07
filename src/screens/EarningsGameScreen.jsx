@@ -190,8 +190,9 @@ const EarningsGameScreen = ({
   const handleAddParlay = (prediction) => {
     // Use hook's addPrediction - it handles all validation
     // The prediction object comes from ParlayArchitectModal with all required fields
+    // IMPORTANT: Must include reportDate in the event object — addPrediction reads it from here
     const success = addPrediction(
-      { id: prediction.eventId, symbol: prediction.symbol, companyName: prediction.companyName },
+      { id: prediction.eventId, symbol: prediction.symbol, companyName: prediction.companyName, reportDate: prediction.reportDate },
       prediction
     );
 

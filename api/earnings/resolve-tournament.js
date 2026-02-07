@@ -210,6 +210,16 @@ export default async function handler(req, res) {
     // Get tournaments to resolve
     let tournamentDocs = [];
 
+    // Diagnostic tracker — populated throughout, returned in dry run response
+    const debug = {
+      query: {
+        tournamentsFoundBeforeFiltering: 0,
+        tournaments: [] // { id, status, lockDeadline, weekStart, decision, reason }
+      },
+      tournamentDetails: {},    // keyed by tournamentId
+      predictionSamples: []     // first 3 unresolved predictions with full detail
+    };
+
     if (tournamentId) {
       // Specific tournament requested
       logInfo('QUERY', `Fetching specific tournament: ${tournamentId}`);
@@ -241,6 +251,7 @@ export default async function handler(req, res) {
         .get();
 
       logInfo('QUERY', `Found ${snapshot.docs.length} tournament(s) in open/locked/in_progress status`);
+      debug.query.tournamentsFoundBeforeFiltering = snapshot.docs.length;
 
       // Filter and auto-transition 'open' tournaments that are past their lock deadline
       const now = new Date();
@@ -256,31 +267,68 @@ export default async function handler(req, res) {
           resolutionAttempts: data.resolutionAttempts || 0
         });
 
+        // Track this tournament in debug output
+        const tournamentDebug = {
+          id: doc.id,
+          status: data.status,
+          entryCount: data.entryCount || 0,
+          lockDeadline: data.lockDeadline || null,
+          weekStart: data.weekStart || null,
+          weekEnd: data.weekEnd || null,
+          decision: null,
+          reason: null
+        };
+
         if (data.status === 'open') {
-          // Check if lock deadline has passed
-          // Handle both Firestore Timestamps and ISO strings
+          // Check if lock deadline has passed OR if the earnings week has already started
+          // The weekStart fallback handles tournaments created with the old Friday-night lockDeadline
           const lockDeadline = safeParseDate(data.lockDeadline);
-          if (lockDeadline && lockDeadline < now) {
+          const weekStart = data.weekStart ? new Date(data.weekStart + 'T00:00:00Z') : null;
+
+          const pastDeadline = lockDeadline && lockDeadline < now;
+          const pastWeekStart = weekStart && weekStart < now;
+
+          tournamentDebug.openBranchEntered = true;
+          tournamentDebug.pastDeadline = pastDeadline;
+          tournamentDebug.pastWeekStart = pastWeekStart;
+          tournamentDebug.lockDeadlineParsed = lockDeadline?.toISOString() || null;
+          tournamentDebug.weekStartParsed = weekStart?.toISOString() || null;
+          tournamentDebug.nowUtc = now.toISOString();
+
+          if (pastDeadline || pastWeekStart) {
+            const reason = pastDeadline ? 'past_deadline' : 'past_week_start';
+            tournamentDebug.decision = 'transition_to_locked';
+            tournamentDebug.reason = reason;
+
             logInfo('TRANSITION', `Auto-transitioning ${doc.id} from 'open' to 'locked'`, {
-              deadline: lockDeadline.toISOString(),
+              deadline: lockDeadline?.toISOString(),
+              weekStart: data.weekStart,
+              reason,
               now: now.toISOString()
             });
             // Update status to 'locked'
             if (!isDryRun) {
               await db.collection('earningsTournaments').doc(doc.id).update({
                 status: 'locked',
-                lockedAt: new Date()
+                lockedAt: new Date(),
+                lockReason: reason
               });
             }
             tournamentDocs.push(doc);
           } else {
+            tournamentDebug.decision = 'skipped';
+            tournamentDebug.reason = 'still_open_deadline_not_passed';
             const deadlineStr = lockDeadline ? lockDeadline.toISOString() : (data.lockDeadline || 'none');
-            logInfo('SKIP', `Skipping ${doc.id} - still open (deadline: ${deadlineStr})`);
+            logInfo('SKIP', `Skipping ${doc.id} - still open (deadline: ${deadlineStr}, weekStart: ${data.weekStart || 'none'})`);
           }
         } else {
           // Already locked or in_progress
+          tournamentDebug.decision = 'included';
+          tournamentDebug.reason = `already_${data.status}`;
           tournamentDocs.push(doc);
         }
+
+        debug.query.tournaments.push(tournamentDebug);
       }
     }
 
@@ -292,7 +340,8 @@ export default async function handler(req, res) {
         success: true,
         message: 'No active tournaments to resolve',
         tournamentsProcessed: 0,
-        runId
+        runId,
+        debug
       });
     }
 
@@ -496,6 +545,19 @@ export default async function handler(req, res) {
         logInfo('FETCH', `resultsMap keys: ${Array.from(resultsMap.keys()).join(', ')}`);
       }
 
+      // Initialize per-tournament debug detail
+      const tDetail = {
+        id: tId,
+        name: tournament.name || 'Unnamed',
+        status: tournament.status,
+        entriesFound: entriesSnapshot.docs.length,
+        uniqueSymbolDatePairs: symbolDatePairs.size,
+        eohdResultsReturned: resultsMap.size,
+        fetchStats: { ...fetchStats },
+        entries: [],
+        resultsMapKeys: Array.from(resultsMap.keys())
+      };
+
       // Score each entry
       const batch = db.batch();
       let tournamentPendingCount = 0;
@@ -526,6 +588,47 @@ export default async function handler(req, res) {
           const date = toYYYYMMDD(rawDate) || rawDate;
           const key = `${pred.symbol}_${date}`;
           const result = resultsMap.get(key);
+
+          // Capture prediction-level debug sample (first 3 unresolved predictions)
+          if (debug.predictionSamples.length < 3) {
+            const rawDateType = typeof rawDate;
+            let rawDateClassification = rawDateType;
+            if (rawDate && typeof rawDate === 'object') {
+              if (typeof rawDate.toDate === 'function') rawDateClassification = 'FirestoreTimestamp';
+              else if (rawDate.seconds !== undefined) rawDateClassification = 'TimestampLike({seconds,nanoseconds})';
+              else rawDateClassification = `object(keys:${Object.keys(rawDate).slice(0, 5).join(',')})`;
+            } else if (typeof rawDate === 'string') {
+              if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) rawDateClassification = 'YYYY-MM-DD';
+              else if (rawDate.includes('T')) rawDateClassification = 'ISO8601';
+              else rawDateClassification = `string("${rawDate}")`;
+            }
+
+            debug.predictionSamples.push({
+              symbol: pred.symbol,
+              reportDateRaw: rawDate && typeof rawDate === 'object'
+                ? (rawDate.toDate ? `Timestamp(${rawDate.toDate().toISOString()})` : JSON.stringify(rawDate))
+                : String(rawDate),
+              reportDateType: rawDateClassification,
+              reportDateNormalized: date,
+              lookupKey: key,
+              lookupKeyInResultsMap: resultsMap.has(key),
+              eohdResult: result ? {
+                success: result.success,
+                resolved: result.resolved,
+                outcome: result.outcome,
+                magnitude: result.magnitude,
+                priceMove: result.priceMove,
+                reportDate: result.reportDate,
+                epsActual: result.epsActual,
+                epsEstimate: result.epsEstimate
+              } : null,
+              matched: !!result,
+              matchFailureReason: !result ? 'key_not_in_resultsMap' : null,
+              predicted: { outcome: pred.outcome, magnitude: pred.magnitude },
+              entry: entry.username || entry.odUserId,
+              tournament: tId
+            });
+          }
 
           // Enhanced logging for bot predictions to diagnose 0 pts issue
           if (isBot) {
@@ -599,6 +702,18 @@ export default async function handler(req, res) {
 
         results.entriesProcessed++;
 
+        // Track per-entry debug detail
+        tDetail.entries.push({
+          username: entry.username || entry.odUserId || 'unknown',
+          isBot,
+          predictionsTotal: scoredPredictions.length,
+          resolved: correctCount + incorrectCount,
+          pending: pendingCount,
+          correct: correctCount,
+          incorrect: incorrectCount,
+          totalPoints
+        });
+
         // Track bot-specific stats for debugging
         if (isBot) {
           botEntriesProcessed++;
@@ -659,6 +774,9 @@ export default async function handler(req, res) {
       }
 
       results.tournamentsProcessed++;
+
+      // Store tournament detail in debug output
+      debug.tournamentDetails[tId] = tDetail;
     }
 
     // Calculate final rankings for completed tournaments
@@ -723,20 +841,26 @@ export default async function handler(req, res) {
       ...results
     };
 
-    // Include debug samples for dry runs to help diagnose issues
-    if (isDryRun && debugSamples.length > 0) {
-      response.debugSamples = debugSamples;
-      response.debugSummary = {
-        totalSamples: debugSamples.length,
-        byStatus: {
-          success: debugSamples.filter(s => s.matchStatus === 'success').length,
-          date_mismatch: debugSamples.filter(s => s.matchStatus === 'date_mismatch').length,
-          no_eps_data: debugSamples.filter(s => s.matchStatus === 'no_eps_data').length,
-          no_price_data: debugSamples.filter(s => s.matchStatus === 'no_price_data').length,
-          api_error: debugSamples.filter(s => s.matchStatus === 'api_error').length,
-          unknown: debugSamples.filter(s => s.matchStatus === 'unknown').length
-        }
-      };
+    // Include debug info for dry runs to diagnose issues
+    if (isDryRun) {
+      // Legacy debug samples (EODHD fetch results per unique symbol/date pair)
+      if (debugSamples.length > 0) {
+        response.debugSamples = debugSamples;
+        response.debugSummary = {
+          totalSamples: debugSamples.length,
+          byStatus: {
+            success: debugSamples.filter(s => s.matchStatus === 'success').length,
+            date_mismatch: debugSamples.filter(s => s.matchStatus === 'date_mismatch').length,
+            no_eps_data: debugSamples.filter(s => s.matchStatus === 'no_eps_data').length,
+            no_price_data: debugSamples.filter(s => s.matchStatus === 'no_price_data').length,
+            api_error: debugSamples.filter(s => s.matchStatus === 'api_error').length,
+            unknown: debugSamples.filter(s => s.matchStatus === 'unknown').length
+          }
+        };
+      }
+
+      // Comprehensive debug object
+      response.debug = debug;
     }
 
     return res.status(200).json(response);
