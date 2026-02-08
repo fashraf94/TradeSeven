@@ -358,11 +358,44 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     });
   }, [currentPrices, openPrices, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger]);
 
-  // Fetch prices
+  // Fetch prices — uses frozen close prices from Firebase when a session has ended,
+  // ensuring both players see identical scores for completed sessions
   const fetchPrices = useCallback(async () => {
     const allAssets = [...myPortfolioFlat, ...oppPortfolioFlat].filter(Boolean);
     if (allAssets.length === 0) return;
 
+    // Check if we can use frozen close prices from Firebase instead of live EODHD data
+    const sessionId = getCurrentSessionId();
+    let frozenPrices = null;
+
+    if (sessionId && sessionId !== '') {
+      // We're in a named session — check if it already has close prices (session ended)
+      const closePrices = battle?.sessionPrices?.[sessionId]?.close;
+      if (closePrices && Object.keys(closePrices).length > 0) {
+        frozenPrices = closePrices;
+        console.log(`[BaggerBomb] Using frozen close prices from session: ${sessionId}`);
+      }
+    } else {
+      // Outside all sessions (before 9:30 AM or after 8 PM ET) —
+      // find the most recent completed session with close prices
+      const sessionSearchOrder = ['NIGHT_GAME', 'POWER_HOUR', 'MIDDAY', 'MORNING_BELL'];
+      for (const sid of sessionSearchOrder) {
+        const closePrices = battle?.sessionPrices?.[sid]?.close;
+        if (closePrices && Object.keys(closePrices).length > 0) {
+          frozenPrices = closePrices;
+          console.log(`[BaggerBomb] Using frozen close prices from last completed session: ${sid}`);
+          break;
+        }
+      }
+    }
+
+    if (frozenPrices) {
+      // Use frozen prices — both players read the same Firebase data, so scores match
+      setCurrentPrices((prev) => ({ ...prev, ...frozenPrices }));
+      return;
+    }
+
+    // No frozen prices available — active session, live fetch from EODHD
     try {
       const allSymbols = [...new Set(allAssets.map((a) => a.symbol))];
       const stockSymbols = allSymbols.filter((s) => !isCrypto(s));
@@ -447,10 +480,26 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   }, [battleId]);
 
   // Fetch prices on mount and interval
+  // Only poll during active session hours; outside sessions, fetch once to load frozen prices
   useEffect(() => {
     if (myPortfolioFlat.length === 0 && oppPortfolioFlat.length === 0) return;
 
+    // Always fetch once (loads frozen prices if outside sessions, or live prices if inside)
     fetchPrices();
+
+    // Only set up polling interval during session hours (weekdays 9:30 AM - 8:00 PM ET)
+    // Uses toLocaleString for DST accuracy instead of hardcoded UTC-5
+    const nowETString = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+    const nowET = new Date(nowETString);
+    const day = nowET.getDay();
+    const timeDecimal = nowET.getHours() + nowET.getMinutes() / 60;
+    const isInsideSessionHours = day >= 1 && day <= 5 && timeDecimal >= 9.5 && timeDecimal < 20;
+
+    if (!isInsideSessionHours) {
+      console.log('[BaggerBomb] Outside session hours — polling disabled, using frozen prices');
+      return;
+    }
+
     const interval = setInterval(fetchPrices, PRICE_POLL_INTERVAL);
     return () => clearInterval(interval);
   }, [fetchPrices, myPortfolioFlat.length, oppPortfolioFlat.length]);
