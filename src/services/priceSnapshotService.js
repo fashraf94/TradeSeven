@@ -12,6 +12,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getMultipleStockPrices, getMultipleCryptoPrices } from './eodhdAPI';
 import { SESSIONS, SESSION_ORDER, isCrypto } from './sessionScoringService';
+import { calculateAssetScoreV3 } from '../utils/baggerBombUtils';
 // V3-safe portfolio helpers
 import { safePortfolioArray, safeBenchArray } from '../utils/portfolioHelpers';
 
@@ -379,6 +380,65 @@ export async function initializeBattlePrices(battleId, allSymbols) {
 }
 
 // ============================================
+// SESSION SCORE CALCULATION
+// ============================================
+
+/**
+ * Calculate session scores for both players given open and close prices.
+ * Uses the same scoring function (calculateAssetScoreV3) as the client hook,
+ * ensuring scores are consistent and deterministic from frozen price data.
+ *
+ * @param {Object} battle - Battle document
+ * @param {Object} openPrices - Session open prices { SYMBOL: number }
+ * @param {Object} closePrices - Session close prices { SYMBOL: number }
+ * @returns {{ creator: { totalPoints, assets }, opponent: { totalPoints, assets } }}
+ */
+function calculateSessionScoresForBattle(battle, openPrices, closePrices) {
+  const result = {
+    creator: { totalPoints: 0, assets: [] },
+    opponent: { totalPoints: 0, assets: [] },
+  };
+
+  if (!openPrices || !closePrices) return result;
+
+  for (const role of ['creator', 'opponent']) {
+    const playerData = battle[role];
+    if (!playerData) continue;
+
+    const assets = safePortfolioArray(playerData.portfolio);
+    let totalPoints = 0;
+
+    for (const asset of assets) {
+      if (!asset?.symbol) continue;
+
+      const symbol = asset.symbol;
+      const openPrice = openPrices[symbol] || openPrices[symbol.toUpperCase()] || openPrices[symbol.toLowerCase()];
+      const closePrice = closePrices[symbol] || closePrices[symbol.toUpperCase()] || closePrices[symbol.toLowerCase()];
+
+      if (!openPrice || !closePrice || openPrice === 0) continue;
+
+      const priceChange = ((closePrice - openPrice) / openPrice) * 100;
+      const history = playerData.history?.[symbol] || { maxMultiplier: 0, minMultiplier: 0 };
+
+      const assetScore = calculateAssetScoreV3(asset, priceChange, history);
+
+      totalPoints += assetScore.totalPoints || 0;
+      result[role].assets.push({
+        symbol,
+        openPrice,
+        closePrice,
+        priceChange,
+        points: assetScore.totalPoints || 0,
+      });
+    }
+
+    result[role].totalPoints = Math.round(totalPoints);
+  }
+
+  return result;
+}
+
+// ============================================
 // SESSION TRANSITION
 // ============================================
 
@@ -429,17 +489,31 @@ export async function processSessionTransition(battleId) {
 
       // Capture NIGHT_GAME close if not already done
       const nightStatus = checkSessionPriceStatus(battle, 'NIGHT_GAME');
+      let nightClosePrices = battle.sessionPrices?.NIGHT_GAME?.close;
       if (nightStatus.needsClose) {
-        await captureSessionPrices(battleId, 'NIGHT_GAME', 'close', allSymbols);
+        nightClosePrices = await captureSessionPrices(battleId, 'NIGHT_GAME', 'close', allSymbols);
       }
 
-      // Mark all sessions as complete
+      // Mark all sessions as complete and persist NIGHT_GAME scores
       const allComplete = [...SESSION_ORDER];
-      await updateDoc(battleRef, {
+      const nightUpdate = {
         'state.currentSession': null,
         'state.completedSessions': allComplete,
-        updatedAt: new Date().toISOString()
-      });
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Calculate and persist NIGHT_GAME session scores
+      const nightOpenPrices = battle.sessionPrices?.NIGHT_GAME?.open || {};
+      if (Object.keys(nightOpenPrices).length > 0 && nightClosePrices && Object.keys(nightClosePrices).length > 0) {
+        const scores = calculateSessionScoresForBattle(battle, nightOpenPrices, nightClosePrices);
+        nightUpdate['sessionScores.NIGHT_GAME.creator'] = scores.creator.totalPoints;
+        nightUpdate['sessionScores.NIGHT_GAME.opponent'] = scores.opponent.totalPoints;
+        nightUpdate['sessionScores.NIGHT_GAME.creatorAssets'] = scores.creator.assets;
+        nightUpdate['sessionScores.NIGHT_GAME.opponentAssets'] = scores.opponent.assets;
+        logDebug(`NIGHT_GAME scores: Creator=${scores.creator.totalPoints}, Opponent=${scores.opponent.totalPoints}`);
+      }
+
+      await updateDoc(battleRef, nightUpdate);
 
       const updatedBattleSnap = await getDoc(battleRef);
       return {
@@ -470,13 +544,26 @@ export async function processSessionTransition(battleId) {
   if (previousSessionId && !completedSessions.includes(previousSessionId)) {
     const prevStatus = checkSessionPriceStatus(battle, previousSessionId);
 
+    // Capture close prices (or use already-captured ones)
+    let prevClosePrices = battle.sessionPrices?.[previousSessionId]?.close;
     if (prevStatus.needsClose) {
       logDebug(`Capturing ${previousSessionId} close prices`);
-      await captureSessionPrices(battleId, previousSessionId, 'close', allSymbols);
+      prevClosePrices = await captureSessionPrices(battleId, previousSessionId, 'close', allSymbols);
     }
 
     newCompletedSessions.push(previousSessionId);
     logDebug(`Marked ${previousSessionId} as completed`);
+
+    // Calculate and persist per-player session scores
+    const prevOpenPrices = battle.sessionPrices?.[previousSessionId]?.open || {};
+    if (Object.keys(prevOpenPrices).length > 0 && prevClosePrices && Object.keys(prevClosePrices).length > 0) {
+      const scores = calculateSessionScoresForBattle(battle, prevOpenPrices, prevClosePrices);
+      updates[`sessionScores.${previousSessionId}.creator`] = scores.creator.totalPoints;
+      updates[`sessionScores.${previousSessionId}.opponent`] = scores.opponent.totalPoints;
+      updates[`sessionScores.${previousSessionId}.creatorAssets`] = scores.creator.assets;
+      updates[`sessionScores.${previousSessionId}.opponentAssets`] = scores.opponent.assets;
+      logDebug(`Session scores for ${previousSessionId}: Creator=${scores.creator.totalPoints}, Opponent=${scores.opponent.totalPoints}`);
+    }
   }
 
   // Open current session
