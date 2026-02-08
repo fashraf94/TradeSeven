@@ -388,7 +388,14 @@ const DraftBattleScreenV2 = ({
       // Check if we need to record daily close scores (after market close)
       if (tradingDay >= 1 && tradingDay <= 5 && isAfterMarketClose()) {
         const dayData = draftDailyData[todayDayKey];
-        if (dayData?.openPrices && !dayData?.recorded) {
+
+        // Day 1 uses lockedPrices as baseline (openPrices is never captured for Day 1)
+        // Day 2+ requires openPrices to have been captured that morning
+        const hasBaseline = tradingDay === 1
+          ? (currentDraft.lockedPrices && Object.keys(currentDraft.lockedPrices).length > 0)
+          : (dayData?.openPrices && Object.keys(dayData.openPrices).length > 0);
+
+        if (hasBaseline && !dayData?.recorded) {
           await recordDailyCloseScores(currentDraft.id, allPrices, symbolThresholds);
         }
       }
