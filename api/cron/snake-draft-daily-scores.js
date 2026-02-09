@@ -67,14 +67,15 @@ function isWeekday() {
 function getCurrentTradingDay(battleStartTime) {
   if (!battleStartTime) return 0;
 
+  // Convert battleStartTime to Eastern Time before normalizing
+  // This ensures both dates are in the same ET reference frame,
+  // preventing off-by-one errors since this cron runs on Vercel (UTC)
   const startDate = new Date(battleStartTime);
-  const now = getEasternTime();
-
-  // Normalize to start of day
-  const startDay = new Date(startDate);
+  const startETString = startDate.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const startDay = new Date(startETString);
   startDay.setHours(0, 0, 0, 0);
 
-  const currentDay = new Date(now);
+  const currentDay = new Date(getEasternTime());
   currentDay.setHours(0, 0, 0, 0);
 
   // Count trading days between start and now
