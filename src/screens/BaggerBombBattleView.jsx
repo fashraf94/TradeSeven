@@ -34,21 +34,21 @@ const TIERS = [
   {
     key: 'star',
     label: '⭐ Star Picks',
-    allocation: '20%',
+    allocation: '⭐ 2x',
     slots: 2,
     description: 'Your highest conviction plays',
   },
   {
     key: 'core',
     label: '💎 Core Holds',
-    allocation: '15%',
+    allocation: '💎 1.5x',
     slots: 2,
     description: 'Solid foundation assets',
   },
   {
     key: 'support',
     label: '📊 Support Plays',
-    allocation: '10%',
+    allocation: '🛡️ 1x',
     slots: 3,
     hasCrypto: true, // Last slot must be crypto
     description: 'Diversified support positions',

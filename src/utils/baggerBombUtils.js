@@ -4,6 +4,7 @@
 import {
   THRESHOLD_MULTIPLIERS as _THRESHOLD_MULTIPLIERS,
   THRESHOLD_POINTS as _THRESHOLD_POINTS,
+  CONVICTION_MULTIPLIERS,
 } from '../constants/baggerBombScoring';
 
 // ==================== CONSTANTS ====================
@@ -425,8 +426,11 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}) {
   const baseATR = asset.baseATR || 2.5;
   const multiplier = priceChange / baseATR;
 
-  // Base points: 10 per 1% change
-  const basePoints = priceChange * 10;
+  // Conviction multiplier: Star 2x, Core 1.5x, Support 1x
+  const tierMultiplier = CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support;
+
+  // Base points: 10 per 1% change, scaled by conviction tier
+  const basePoints = priceChange * 10 * tierMultiplier;
 
   // Get badges from history
   const badges = getBadgesFromHistory({
@@ -434,7 +438,7 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}) {
     minMultiplier: Math.min(history.minMultiplier || 0, multiplier),
   });
 
-  // Bonus points from badges (only count each once)
+  // Bonus points from badges (flat, NOT scaled by conviction)
   const bonusPoints = calculatePoints(badges);
 
   return {
@@ -442,6 +446,7 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}) {
     priceChange,
     multiplier,
     baseATR,
+    tierMultiplier,
     basePoints: Math.round(basePoints),
     bonusPoints,
     totalPoints: Math.round(basePoints + bonusPoints),

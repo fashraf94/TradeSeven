@@ -585,6 +585,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       points: scoreData?.totalPoints || 0,
       badges: scoreData?.badges || getBadgesFromHistory(assetHistory),
       isCrypto: asset.isCrypto,
+      tierMultiplier: scoreData?.tierMultiplier || 1.0,
     };
   }, []);
 

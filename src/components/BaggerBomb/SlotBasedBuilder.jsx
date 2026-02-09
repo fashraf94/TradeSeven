@@ -31,7 +31,7 @@ const BUILDER_TIERS = [
   {
     key: 'star',
     label: '⭐ Star Picks',
-    description: 'Your highest conviction plays',
+    description: '2x point multiplier on % gains/losses',
     allocation: '20%',
     slots: 2,
     cryptoAllowed: false,
@@ -39,7 +39,7 @@ const BUILDER_TIERS = [
   {
     key: 'core',
     label: '💎 Core Holds',
-    description: 'Solid foundation assets',
+    description: '1.5x point multiplier on % gains/losses',
     allocation: '15%',
     slots: 2,
     cryptoAllowed: false,
@@ -47,7 +47,7 @@ const BUILDER_TIERS = [
   {
     key: 'support',
     label: '📊 Support Plays',
-    description: 'Diversified positions (last slot = crypto)',
+    description: '1x base multiplier (last slot = crypto)',
     allocation: '10%',
     slots: 3,
     cryptoAllowed: true,

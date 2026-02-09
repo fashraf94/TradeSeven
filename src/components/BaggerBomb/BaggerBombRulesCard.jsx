@@ -164,6 +164,7 @@ export default function BaggerBombRulesCard({ defaultExpanded = false }) {
             <RuleItem text="Bust: -10 pts when asset drops below threshold" />
             <RuleItem text="Multiple thresholds stack (2x = 30 pts, 3x = 50 pts)" />
             <RuleItem text="Base points: 1% return = 10 points" />
+            <RuleItem text="Star picks earn 2x base points, Core 1.5x, Support 1x" />
             <RuleItem text="Thresholds are unique to each asset based on volatility" />
           </RuleSection>
 

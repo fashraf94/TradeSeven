@@ -49,6 +49,16 @@ export const THRESHOLD_MULTIPLIERS = {
   meltdown: -2.0,
 };
 
+// ==================== CONVICTION MULTIPLIERS ====================
+
+/** Tier-based conviction multipliers for Star/Core/Support portfolios.
+ *  Applied to percentage-based points only; BaggerBomb/Bust bonuses stay flat. */
+export const CONVICTION_MULTIPLIERS = {
+  star: 2.0,
+  core: 1.5,
+  support: 1.0,
+};
+
 // ==================== LINEAR SCORING ====================
 
 /** Per-threshold points for linear scoring engines (sessionScoringService, breakoutDetection) */

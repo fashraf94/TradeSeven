@@ -861,7 +861,7 @@ export default function BaggerBombBattleViewRedesign({
           color: '#8b949e'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span>💰 {allocationPercent.toFixed(1)}%</span>
+            <span>{allocationPercent >= 20 ? '⭐ 2x' : allocationPercent >= 15 ? '💎 1.5x' : '🛡️ 1x'}</span>
           </div>
           <div style={{ color: '#10b981' }}>
             💣 +15 if hit
