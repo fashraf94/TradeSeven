@@ -83,8 +83,8 @@ const DraftBattleScreenV2 = ({
   // Phase 5.7: Daily Scores modal
   const [showDailyScores, setShowDailyScores] = useState(false);
 
-  // BaggerBomb scoring state
-  const [thresholds, setThresholds] = useState({});
+  // BaggerBomb scoring state — prefer stored thresholds from draft document for consistency
+  const [thresholds, setThresholds] = useState(currentDraft?.thresholds || {});
 
   // Daily scoring state
   const [currentDay, setCurrentDay] = useState(0);
@@ -313,7 +313,8 @@ const DraftBattleScreenV2 = ({
       const symbolList = Array.from(allSymbols);
 
       // STEP 2: Fetch volatility thresholds for BaggerBomb scoring
-      let symbolThresholds = thresholds;
+      // Prefer stored thresholds from draft document (set at draft completion) for consistency
+      let symbolThresholds = { ...(currentDraft?.thresholds || {}), ...thresholds };
       const missingThresholds = symbolList.filter(s => !symbolThresholds[s]);
 
       if (missingThresholds.length > 0) {
@@ -323,9 +324,8 @@ const DraftBattleScreenV2 = ({
           setThresholds(symbolThresholds);
         } catch (thresholdError) {
           console.warn('[DraftBattleV2] Failed to fetch thresholds, using defaults:', thresholdError);
-          // Use default threshold of 3% for stocks
           missingThresholds.forEach(symbol => {
-            symbolThresholds[symbol] = { symbol, threshold: 3.0, isDefault: true };
+            symbolThresholds[symbol] = { symbol, threshold: 2.0, isDefault: true };
           });
           setThresholds(symbolThresholds);
         }

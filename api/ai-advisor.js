@@ -760,6 +760,86 @@ If web search returns no results, respond with exactly: "NO_RECENT_DATA"`;
   }
 }
 
+// Handle news sentiment analysis
+async function handleNewsSentiment(req, res, API_KEY) {
+  const { symbol, articles } = req.body;
+
+  console.log('[AI Advisor] News sentiment analysis for:', symbol);
+
+  if (!articles || !Array.isArray(articles) || articles.length === 0) {
+    return res.status(200).json({ success: false, error: 'No articles to analyze' });
+  }
+
+  const systemPrompt = `You are a financial news sentiment analyst. Analyze the provided news articles and return:
+1. A sentiment score from 0-100 (0=extremely bearish, 50=neutral, 100=extremely bullish)
+2. A 3-4 sentence summary of the key themes and sentiment drivers.
+
+Always respond in this exact format:
+SCORE: <number>
+SUMMARY: <your summary text>
+
+Be objective. Base your analysis on the actual article content, not speculation.`;
+
+  const userPrompt = `Analyze the news sentiment for ${symbol}. Here are the recent articles:
+
+${articles.slice(0, 8).map((a, i) => `[${i + 1}] "${a.title}" (${a.source || 'Unknown'}, ${a.publishedAt || 'Recent'})
+${a.summary || ''}`).join('\n\n')}
+
+Provide your sentiment score and summary.`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-haiku-20241022',
+        max_tokens: 400,
+        system: systemPrompt,
+        messages: [
+          { role: 'user', content: userPrompt }
+        ],
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.error || !response.ok) {
+      console.error('[AI Advisor] News sentiment error:', data.error);
+      return res.status(200).json({ success: false, error: 'AI unavailable' });
+    }
+
+    const resultText = data.content?.[0]?.text || '';
+
+    // Parse SCORE and SUMMARY from structured response
+    const scoreMatch = resultText.match(/SCORE:\s*(\d+)/);
+    const summaryMatch = resultText.match(/SUMMARY:\s*([\s\S]*)/);
+
+    const score = scoreMatch ? Math.min(100, Math.max(0, parseInt(scoreMatch[1], 10))) : null;
+    const summary = summaryMatch ? summaryMatch[1].trim() : resultText;
+
+    if (score === null) {
+      console.warn('[AI Advisor] Could not parse sentiment score from response');
+      return res.status(200).json({ success: false, error: 'Could not parse sentiment score' });
+    }
+
+    console.log('[AI Advisor] News sentiment for', symbol, ':', score);
+
+    return res.status(200).json({
+      success: true,
+      score,
+      summary,
+    });
+
+  } catch (error) {
+    console.error('[AI Advisor] News sentiment error:', error.message);
+    return res.status(200).json({ success: false, error: error.message });
+  }
+}
+
 export default async function handler(req, res) {
   // Apply security middleware (CORS, security headers, rate limiting, preflight)
   // Lower rate limit for AI endpoint (20/min) - this costs money!
@@ -792,6 +872,11 @@ export default async function handler(req, res) {
     // Handle earnings-web-search type for earnings insights with web search fallback
     if (type === 'earnings-web-search') {
       return await handleEarningsWebSearch(req, res, API_KEY);
+    }
+
+    // Handle news-sentiment type for AI news sentiment analysis
+    if (type === 'news-sentiment') {
+      return await handleNewsSentiment(req, res, API_KEY);
     }
 
     // Handle technical-analysis advisorType for AI-powered technical analysis

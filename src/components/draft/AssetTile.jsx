@@ -96,13 +96,11 @@ const AssetTile = ({
   const totalScore = asset?.totalScore ?? 0;
   const isScorePositive = totalScore >= 0;
 
-  // Calculate baseATR for ChamberFuse threshold meter
-  // For stocks: threshold / 1.5, for crypto: threshold / 2.0
+  // baseATR for ChamberFuse threshold meter — threshold now equals baseATR directly
   const baseATR = useMemo(() => {
     if (!asset?.threshold) return null;
-    const isCrypto = asset.isCrypto || asset.category === 'crypto';
-    return asset.threshold / (isCrypto ? 2.0 : 1.5);
-  }, [asset?.threshold, asset?.isCrypto, asset?.category]);
+    return asset.threshold;
+  }, [asset?.threshold]);
 
   if (!asset || !asset.symbol) {
     return (
