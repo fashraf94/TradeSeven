@@ -15620,9 +15620,12 @@ export default function PortfolioDuel() {
     asset.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Get battles for current user (handles both V1 string and V2 object formats)
+  // Get battles for current user (handles both V1 string and V2/V3 object formats)
+  // Matches by username (V1/V2) OR by odUserId (V3) for cross-device robustness
+  const currentUserId = user?.odUserId || user?.username;
   const userBattles = battles.filter(b =>
-    getUsername(b.creator) === user?.username || getUsername(b.opponent) === user?.username,
+    getUsername(b.creator) === user?.username || getUsername(b.opponent) === user?.username ||
+    getUserId(b.creator) === currentUserId || getUserId(b.opponent) === currentUserId,
     'userBattles from battles'
   );
 

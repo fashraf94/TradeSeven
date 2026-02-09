@@ -437,37 +437,43 @@ export function subscribeToBattles(userId, callback) {
     callback(battles);
   };
 
-  // Listen to creator battles (by uid)
-  const unsubscribe1 = onSnapshot(q1, (snapshot) => {
-    snapshot.docs.forEach(doc => {
-      allBattles.set(doc.id, { id: doc.id, ...doc.data() });
-    });
-    sortAndCallback();
-  });
+  // Fallback: when an onSnapshot listener fails (e.g., missing composite index,
+  // permission denied), do a one-time getDocs query instead. This ensures battles
+  // are fetched even when real-time listeners can't be established.
+  const fallbackGetDocs = async (failedQuery, label) => {
+    try {
+      const snapshot = await getDocs(failedQuery);
+      snapshot.docs.forEach(d => {
+        allBattles.set(d.id, { id: d.id, ...d.data() });
+      });
+      if (snapshot.docs.length > 0) {
+        console.log(`📋 Fallback getDocs (${label}): fetched ${snapshot.docs.length} battles`);
+        sortAndCallback();
+      }
+    } catch (fallbackErr) {
+      // getDocs also failed — query itself is invalid (e.g., truly missing index)
+      console.warn(`⚠️ Fallback getDocs (${label}) also failed:`, fallbackErr.message);
+    }
+  };
 
-  // Listen to opponent battles (by uid)
-  const unsubscribe2 = onSnapshot(q2, (snapshot) => {
-    snapshot.docs.forEach(doc => {
-      allBattles.set(doc.id, { id: doc.id, ...doc.data() });
+  // Helper: create an onSnapshot listener with error handling + getDocs fallback
+  const listenWithFallback = (q, label) => {
+    return onSnapshot(q, (snapshot) => {
+      snapshot.docs.forEach(d => {
+        allBattles.set(d.id, { id: d.id, ...d.data() });
+      });
+      sortAndCallback();
+    }, (error) => {
+      console.error(`❌ onSnapshot error (${label}):`, error.message);
+      // Attempt one-time fetch as fallback
+      fallbackGetDocs(q, label);
     });
-    sortAndCallback();
-  });
+  };
 
-  // Listen to creator battles (by odUserId for V3)
-  const unsubscribe3 = onSnapshot(q3, (snapshot) => {
-    snapshot.docs.forEach(doc => {
-      allBattles.set(doc.id, { id: doc.id, ...doc.data() });
-    });
-    sortAndCallback();
-  });
-
-  // Listen to opponent battles (by odUserId for V3)
-  const unsubscribe4 = onSnapshot(q4, (snapshot) => {
-    snapshot.docs.forEach(doc => {
-      allBattles.set(doc.id, { id: doc.id, ...doc.data() });
-    });
-    sortAndCallback();
-  });
+  const unsubscribe1 = listenWithFallback(q1, 'creator.uid');
+  const unsubscribe2 = listenWithFallback(q2, 'opponent.uid');
+  const unsubscribe3 = listenWithFallback(q3, 'creator.odUserId');
+  const unsubscribe4 = listenWithFallback(q4, 'opponent.odUserId');
 
   console.log('✅ Subscribed to battle updates for user:', userId);
 
