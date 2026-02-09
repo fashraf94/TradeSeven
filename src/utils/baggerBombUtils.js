@@ -75,6 +75,34 @@ export const SESSION_ID_ORDER = ['MORNING_BELL', 'MIDDAY', 'POWER_HOUR', 'NIGHT_
 // ==================== HISTORY TRACKING ====================
 
 /**
+ * Check if history needs updating and return the updated history, or null if unchanged.
+ * Only returns a new object when maxMultiplier increased or minMultiplier decreased,
+ * preventing unnecessary Firebase writes on every price poll.
+ * @param {number} currentMultiplier - Current multiplier (priceChange / baseATR)
+ * @param {Object} prevHistory - Previous history { maxMultiplier, minMultiplier, badges, events }
+ * @returns {Object|null} Updated history if changed, null if no update needed
+ */
+export function getHistoryUpdateIfChanged(currentMultiplier, prevHistory = {}) {
+  const prevMax = prevHistory.maxMultiplier || 0;
+  const prevMin = prevHistory.minMultiplier || 0;
+
+  const newMax = Math.max(prevMax, currentMultiplier);
+  const newMin = Math.min(prevMin, currentMultiplier);
+
+  if (newMax > prevMax || newMin < prevMin) {
+    return {
+      ...prevHistory,
+      maxMultiplier: newMax,
+      minMultiplier: newMin,
+      badges: prevHistory.badges ? [...prevHistory.badges] : [],
+      events: prevHistory.events ? [...prevHistory.events] : [],
+    };
+  }
+
+  return null; // No change needed
+}
+
+/**
  * Update asset history with new multiplier, tracking max/min reached
  * @param {string} symbol - Asset symbol
  * @param {number} currentMultiplier - Current multiplier (priceChange / baseATR)
