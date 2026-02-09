@@ -368,6 +368,8 @@ export default function BaggerBombTrainingBattleViewV3({
       onBack={onBack}
       nightMode={currentSessionId === 'NIGHT_GAME'}
       isTraining={true}
+      thresholds={thresholds}
+      currentPrices={currentPrices}
     />
   );
 }

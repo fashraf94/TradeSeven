@@ -6,7 +6,7 @@ import {
   Percent, BarChart3, Newspaper, ChevronLeft, X
 } from 'lucide-react';
 import { HOLO_COLORS } from '../../constants/holoTheme';
-import { BAGGER_TIERS } from '../../constants/baggerBombScoring';
+import { BAGGER_TIERS, BUST_TIERS } from '../../constants/baggerBombScoring';
 
 // Color scheme using centralized theme
 const colors = {
@@ -256,6 +256,43 @@ const StockDetailModal = ({
                         </span>
                       </div>
                       <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textSecondary }}>+{tier.points} pts</span>
+                    </div>
+                  );
+                })}
+
+                {/* Negative (Bust) Tiers */}
+                {BUST_TIERS.map((tier, index) => {
+                  const bustColors = [colors.red, colors.red, colors.red];
+                  const thresholdValue = threshold?.threshold
+                    ? (threshold.threshold * tier.multiplier).toFixed(1)
+                    : '—';
+                  return (
+                    <div key={tier.key} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px',
+                      backgroundColor: 'rgba(239,68,68,0.05)',
+                      borderRadius: '12px'
+                    }}>
+                      <div style={{
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: 'rgba(239,68,68,0.15)'
+                      }}>
+                        <span style={{ fontSize: '16px' }}>{tier.emoji}</span>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ display: 'block', fontSize: '12px', color: colors.textMuted }}>{tier.label}</span>
+                        <span style={{ fontSize: '18px', fontWeight: '700', color: colors.red }}>
+                          -{thresholdValue}%
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '14px', fontWeight: '600', color: colors.red }}>{tier.points} pts</span>
                     </div>
                   );
                 })}

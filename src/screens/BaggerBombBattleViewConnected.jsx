@@ -43,6 +43,8 @@ export default function BaggerBombBattleViewConnected({
     completedSessions,
     events,
     refreshPrices,
+    currentPrices,
+    thresholds,
     // New: Hook-managed trigger state for chain animations
     activeTrigger,
     chainCount,
@@ -154,6 +156,8 @@ export default function BaggerBombBattleViewConnected({
         events={events}
         onBack={onBack}
         nightMode={isNightMode}
+        thresholds={thresholds}
+        currentPrices={currentPrices}
       />
 
       {/* Threshold Trigger Celebration Overlay with Chain Support */}
