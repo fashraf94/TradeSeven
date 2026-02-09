@@ -88,6 +88,7 @@ export default async function handler(req, res) {
     const result = {
       symbol: upperSymbol,
       name: general.Name || upperSymbol,
+      description: general.Description || '',
       sector: general.Sector || 'Unknown',
       industry: general.Industry || 'Unknown',
 
@@ -99,11 +100,17 @@ export default async function handler(req, res) {
 
       // Fundamentals (8 metrics for stocks)
       beta: technicals.Beta || null,
+      profitMargin: highlights.ProfitMargin || null,
+      revenueGrowthYOY: highlights.QuarterlyRevenueGrowthYOY || null,
       momentum7d,
       upDays7d,
 
       // Analyst data
       analystRating,
+      ratingText: analystRating >= 4.5 ? 'Strong Buy'
+        : analystRating >= 3.5 ? 'Buy'
+        : analystRating >= 2.5 ? 'Hold'
+        : analystRating >= 1.5 ? 'Sell' : 'Strong Sell',
       analystConsensus: {
         rating: analystRating,
         totalAnalysts,

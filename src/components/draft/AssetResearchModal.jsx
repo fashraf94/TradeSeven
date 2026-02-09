@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import FundamentalNews from '../Research/FundamentalNews';
 import LatestEarningsReport from '../Research/LatestEarningsReport';
 import { HOLO_COLORS, CATEGORY_CONFIG, getSectorColor, getRatingColor } from '../../constants/holoTheme';
 import { BAGGER_TIERS, BUST_TIERS } from '../../constants/baggerBombScoring';
+import { getCompanyProfile } from '../../services/fundamentalsService';
+import { formatLargeNumber } from '../../utils/formatters';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -688,6 +690,23 @@ const AssetResearchModal = ({
   showActionButton = true,
 }) => {
   const [activeTab, setActiveTab] = useState('fundamental');
+  const [profile, setProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
+
+  const isCrypto = asset?.isCrypto || asset?.category === 'crypto';
+
+  useEffect(() => {
+    if (asset?.symbol && !isCrypto) {
+      setProfileLoading(true);
+      setDescExpanded(false);
+      getCompanyProfile(asset.symbol)
+        .then(data => setProfile(data))
+        .finally(() => setProfileLoading(false));
+    } else {
+      setProfile(null);
+    }
+  }, [asset?.symbol]);
 
   if (!asset) return null;
 
@@ -695,7 +714,9 @@ const AssetResearchModal = ({
   const fundamentals = getMockFundamentals(asset.symbol);
   const priceChange = asset.percentChange || asset.change || 0;
 
-  const ratingColor = getRatingColor(fundamentals.rating);
+  // Use real rating from API if available, fall back to mock
+  const displayRating = profile?.ratingText || fundamentals.rating;
+  const ratingColor = getRatingColor(displayRating);
 
   // Category styles derived from CATEGORY_CONFIG
   const getCategoryStyle = (cat) => {
@@ -1158,9 +1179,110 @@ const AssetResearchModal = ({
                   }}
                 >
                   <span style={{ color: ratingColor, fontWeight: '600', fontSize: '14px' }}>
-                    ● {fundamentals.rating}
+                    ● {displayRating}
                   </span>
                 </div>
+
+                {/* Company Profile Section */}
+                {profileLoading && (
+                  <div style={{
+                    padding: '16px',
+                    marginBottom: '16px',
+                    borderRadius: '12px',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                  }}>
+                    <div style={{
+                      height: '14px', width: '40%', borderRadius: '7px',
+                      background: 'linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%)',
+                      backgroundSize: '200% 100%',
+                      animation: 'shimmer 1.5s infinite',
+                      marginBottom: '10px',
+                    }} />
+                    <div style={{
+                      height: '12px', width: '90%', borderRadius: '6px',
+                      background: 'linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%)',
+                      backgroundSize: '200% 100%',
+                      animation: 'shimmer 1.5s infinite',
+                      marginBottom: '6px',
+                    }} />
+                    <div style={{
+                      height: '12px', width: '70%', borderRadius: '6px',
+                      background: 'linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%)',
+                      backgroundSize: '200% 100%',
+                      animation: 'shimmer 1.5s infinite',
+                    }} />
+                    <style>{`@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
+                  </div>
+                )}
+
+                {profile && !profileLoading && (profile.sector !== 'Unknown' || profile.description) && (
+                  <div style={{
+                    padding: '14px 16px',
+                    marginBottom: '16px',
+                    borderRadius: '12px',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                  }}>
+                    {/* Sector · Industry pills */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: profile.description ? '10px' : 0 }}>
+                      {profile.sector && profile.sector !== 'Unknown' && (
+                        <span style={{
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          color: '#10b981',
+                          padding: '3px 10px',
+                          borderRadius: '10px',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                        }}>
+                          {profile.sector}
+                        </span>
+                      )}
+                      {profile.industry && profile.industry !== 'Unknown' && (
+                        <span style={{
+                          background: 'rgba(139, 92, 246, 0.15)',
+                          color: '#818cf8',
+                          padding: '3px 10px',
+                          borderRadius: '10px',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                        }}>
+                          {profile.industry}
+                        </span>
+                      )}
+                    </div>
+                    {/* Company description */}
+                    {profile.description && (
+                      <>
+                        <p style={{
+                          color: 'rgba(255, 255, 255, 0.55)',
+                          fontSize: '12px',
+                          lineHeight: '1.55',
+                          margin: 0,
+                          overflow: 'hidden',
+                          maxHeight: descExpanded ? 'none' : '54px',
+                        }}>
+                          {profile.description}
+                        </p>
+                        {profile.description.length > 150 && (
+                          <button
+                            onClick={() => setDescExpanded(!descExpanded)}
+                            style={{
+                              color: '#14b8a6',
+                              background: 'none',
+                              border: 'none',
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                              padding: '4px 0 0',
+                              fontWeight: '500',
+                            }}
+                          >
+                            {descExpanded ? 'Show less' : 'Read more'}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
 
                 {/* Metrics Grid */}
                 <div
@@ -1198,7 +1320,7 @@ const AssetResearchModal = ({
                       </svg>
                     </div>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: '#ffffff' }}>
-                      {fundamentals.marketCap}
+                      {profile?.marketCap ? formatLargeNumber(profile.marketCap, 1) : fundamentals.marketCap}
                     </div>
                     <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       Market Cap
@@ -1234,7 +1356,7 @@ const AssetResearchModal = ({
                       </svg>
                     </div>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: '#ffffff' }}>
-                      {fundamentals.peRatio}
+                      {profile?.peRatio != null ? `${Number(profile.peRatio).toFixed(1)}x` : fundamentals.peRatio}
                     </div>
                     <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       P/E Ratio
@@ -1268,7 +1390,7 @@ const AssetResearchModal = ({
                       </svg>
                     </div>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: '#10b981' }}>
-                      {fundamentals.revenueGrowth}
+                      {profile?.revenueGrowthYOY != null ? `${(profile.revenueGrowthYOY * 100) >= 0 ? '+' : ''}${(profile.revenueGrowthYOY * 100).toFixed(0)}%` : fundamentals.revenueGrowth}
                     </div>
                     <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       Revenue Growth
@@ -1303,7 +1425,7 @@ const AssetResearchModal = ({
                       </svg>
                     </div>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>
-                      {fundamentals.profitMargin}
+                      {profile?.profitMargin != null ? `${(profile.profitMargin * 100).toFixed(0)}%` : fundamentals.profitMargin}
                     </div>
                     <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       Profit Margin
