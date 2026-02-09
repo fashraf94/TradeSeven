@@ -13,37 +13,37 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 
 const STOCK_DEFAULTS = {
   // High volatility
-  'TSLA': 4.0, 'NVDA': 3.5, 'AMD': 3.5, 'COIN': 5.0, 'GME': 6.0,
-  'MSTR': 5.0, 'RIVN': 4.5, 'LCID': 4.5, 'NIO': 4.0, 'PLTR': 3.5,
+  'TSLA': 3.5, 'NVDA': 2.8, 'AMD': 3.0, 'COIN': 4.0, 'GME': 5.0,
+  'MSTR': 4.0, 'RIVN': 3.5, 'LCID': 3.5, 'NIO': 3.0, 'PLTR': 3.0,
   // Medium volatility
-  'AAPL': 2.0, 'MSFT': 2.0, 'GOOGL': 2.5, 'AMZN': 2.5, 'META': 3.0,
-  'NFLX': 3.0, 'CRM': 2.5, 'ORCL': 2.0, 'ADBE': 2.5, 'INTC': 2.5,
+  'AAPL': 1.8, 'MSFT': 1.8, 'GOOGL': 2.0, 'AMZN': 2.0, 'META': 2.5,
+  'NFLX': 2.5, 'CRM': 2.0, 'ORCL': 1.8, 'ADBE': 2.0, 'INTC': 2.0,
   // Low volatility
-  'JNJ': 1.2, 'KO': 1.0, 'PG': 1.0, 'WMT': 1.5, 'JPM': 1.8,
-  'BAC': 1.8, 'WFC': 1.8, 'VZ': 1.2, 'T': 1.5, 'XOM': 2.0,
-  'DEFAULT': 2.5
+  'JNJ': 1.0, 'KO': 0.8, 'PG': 0.8, 'WMT': 1.2, 'JPM': 1.5,
+  'BAC': 1.5, 'WFC': 1.5, 'VZ': 1.0, 'T': 1.2, 'XOM': 1.8,
+  'DEFAULT': 2.0
 };
 
 const CRYPTO_DEFAULTS = {
   // Major coins
-  'BTC': 5.0, 'ETH': 6.0, 'SOL': 8.0, 'ADA': 7.0,
-  'DOGE': 10.0, 'XRP': 7.0, 'AVAX': 8.0, 'DOT': 7.0,
-  'MATIC': 8.0, 'LINK': 7.0, 'UNI': 8.0, 'ATOM': 7.0,
-  'LTC': 6.0, 'BCH': 6.0, 'NEAR': 8.0, 'APT': 8.0,
+  'BTC': 4.0, 'ETH': 5.0, 'SOL': 6.5, 'ADA': 5.5,
+  'DOGE': 8.0, 'XRP': 5.5, 'AVAX': 6.5, 'DOT': 5.5,
+  'MATIC': 6.5, 'LINK': 5.5, 'UNI': 6.5, 'ATOM': 5.5,
+  'LTC': 5.0, 'BCH': 5.0, 'NEAR': 6.5, 'APT': 6.5,
   // Layer 2 / Alt L1
-  'ARB': 9.0, 'OP': 9.0, 'SHIB': 12.0, 'PEPE': 15.0,
-  'BNB': 6.0, 'TRX': 7.0, 'TON': 8.0, 'XLM': 7.0,
+  'ARB': 7.0, 'OP': 7.0, 'SHIB': 10.0, 'PEPE': 12.0,
+  'BNB': 5.0, 'TRX': 5.5, 'TON': 6.5, 'XLM': 5.5,
   // DeFi / Infrastructure
-  'ALGO': 8.0, 'FIL': 8.0, 'AAVE': 8.0, 'MKR': 7.0,
-  'CRV': 9.0, 'SNX': 9.0, 'COMP': 8.0, 'VET': 8.0,
+  'ALGO': 6.5, 'FIL': 6.5, 'AAVE': 6.5, 'MKR': 5.5,
+  'CRV': 7.0, 'SNX': 7.0, 'COMP': 6.5, 'VET': 6.5,
   // Gaming / Metaverse
-  'SAND': 10.0, 'MANA': 10.0, 'AXS': 10.0, 'IMX': 9.0,
-  'GALA': 12.0, 'ENJ': 9.0,
+  'SAND': 8.0, 'MANA': 8.0, 'AXS': 8.0, 'IMX': 7.0,
+  'GALA': 10.0, 'ENJ': 7.0,
   // AI / Data
-  'RNDR': 10.0, 'FET': 10.0, 'OCEAN': 10.0, 'TAO': 12.0,
+  'RNDR': 8.0, 'FET': 8.0, 'OCEAN': 8.0, 'TAO': 10.0,
   // Stablecoins (very low threshold - shouldn't move much)
   'USDT': 0.5, 'USDC': 0.5,
-  'DEFAULT': 6.0
+  'DEFAULT': 5.0
 };
 
 // Threshold bounds
@@ -109,16 +109,20 @@ function calculateATRPercent(ohlcData, days) {
 
 /**
  * Calculate threshold from ATR values
+ *
+ * Uses a weighted blend of 14-day (baseline) and 5-day (recent) ATR.
+ * The threshold represents the expected daily % move for the asset.
+ * No multiplier is applied — tier multipliers (1.0x, 1.5x, 2.0x) are
+ * handled downstream by BAGGER_TIERS / BUST_TIERS.
  */
 function calculateThreshold(baseATR, recentATR, type) {
-  const multiplier = type === 'crypto' ? CRYPTO_MULTIPLIER : STOCK_MULTIPLIER;
   const bounds = type === 'crypto' ? CRYPTO_BOUNDS : STOCK_BOUNDS;
 
-  // Momentum factor: how volatile is it recently vs baseline?
+  // Momentum factor: how volatile is it recently vs baseline? (informational)
   const momentumFactor = recentATR / baseATR;
 
-  // Base threshold with momentum adjustment
-  let threshold = baseATR * multiplier * momentumFactor;
+  // Weighted blend: 70% baseline + 30% recent momentum
+  let threshold = 0.7 * baseATR + 0.3 * recentATR;
 
   // Clamp to bounds
   threshold = Math.max(bounds.min, Math.min(bounds.max, threshold));
@@ -167,8 +171,8 @@ function buildFallbackResponse(symbol, type) {
   return {
     symbol: symbol.toUpperCase(),
     threshold,
-    baseATR: threshold / (type === 'crypto' ? CRYPTO_MULTIPLIER : STOCK_MULTIPLIER),
-    recentATR: threshold / (type === 'crypto' ? CRYPTO_MULTIPLIER : STOCK_MULTIPLIER),
+    baseATR: threshold,
+    recentATR: threshold,
     momentumFactor: 1.0,
     rallyThreshold: Number((threshold * 1.5).toFixed(2)),
     moonshotThreshold: Number((threshold * 2.0).toFixed(2)),

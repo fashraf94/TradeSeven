@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getAssetPool, generateSnakeOrder, generateDraftCode, shuffleArray } from './draftAssets';
+import { getVolatilityThresholds } from './volatilityService';
 import { initializeFreeAgents, calculateBattleEndTime } from './freeAgencyService';
 import { logDraftToAnalytics } from './draftAnalyticsService';
 // EODHD API - All-in-one provider (replaces Finnhub + CoinGecko)
@@ -447,6 +448,20 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
       originalPicks: [...player.picks]
     }));
 
+    // Fetch and store volatility thresholds so both game modes use the same values
+    let draftThresholds = {};
+    try {
+      const allSymbols = playersWithOriginalPicks.flatMap(p =>
+        (p.picks || []).map(pick => String(pick.symbol || pick).toUpperCase())
+      );
+      const uniqueSymbols = [...new Set(allSymbols)];
+      if (uniqueSymbols.length > 0) {
+        draftThresholds = await getVolatilityThresholds(uniqueSymbols, 'stock');
+      }
+    } catch (err) {
+      console.warn('[DraftService] Could not fetch thresholds at draft completion:', err.message);
+    }
+
     updateData.players = playersWithOriginalPicks;
     updateData.status = 'battle';
     updateData.completedAt = serverTimestamp();
@@ -455,6 +470,7 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
     updateData.freeAgents = freeAgents;
     updateData.swapHistory = [];
     updateData.dailySwaps = {};
+    updateData.thresholds = draftThresholds;
   }
 
   await updateDoc(doc(db, 'drafts', draftId), removeUndefined(updateData));
