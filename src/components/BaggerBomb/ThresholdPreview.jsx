@@ -4,6 +4,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { BAGGER_TIERS } from '../../constants/baggerBombScoring';
 
 /**
  * ThresholdPreview
@@ -83,21 +84,13 @@ export default function ThresholdPreview({
                 Higher volatility assets need bigger moves to score breakout bonuses.
               </p>
               <div className="grid grid-cols-3 gap-2 mt-3">
-                <div className="text-center p-2 rounded bg-emerald-500/10">
-                  <div className="text-lg">🎯</div>
-                  <div className="text-xs font-medium text-emerald-500">Breakout</div>
-                  <div className="text-xs text-muted-foreground">+15 pts</div>
-                </div>
-                <div className="text-center p-2 rounded bg-amber-500/10">
-                  <div className="text-lg">🚀</div>
-                  <div className="text-xs font-medium text-amber-500">Rally</div>
-                  <div className="text-xs text-muted-foreground">+30 pts</div>
-                </div>
-                <div className="text-center p-2 rounded bg-violet-500/10">
-                  <div className="text-lg">🌙</div>
-                  <div className="text-xs font-medium text-violet-500">Moonshot</div>
-                  <div className="text-xs text-muted-foreground">+50 pts</div>
-                </div>
+                {BAGGER_TIERS.map((tier) => (
+                  <div key={tier.key} className="text-center p-2 rounded bg-emerald-500/10">
+                    <div className="text-lg">{tier.emoji}</div>
+                    <div className="text-xs font-medium text-emerald-500">{tier.label}</div>
+                    <div className="text-xs text-muted-foreground">+{tier.points} pts</div>
+                  </div>
+                ))}
               </div>
             </div>
           </motion.div>

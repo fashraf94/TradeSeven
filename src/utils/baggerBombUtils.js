@@ -1,29 +1,17 @@
 // baggerBombUtils.js - Utility functions for BaggerBomb scoring and history tracking
 // Handles threshold crossing detection, history updates, and session timing
 
+import {
+  THRESHOLD_MULTIPLIERS as _THRESHOLD_MULTIPLIERS,
+  THRESHOLD_POINTS as _THRESHOLD_POINTS,
+  CONVICTION_MULTIPLIERS,
+} from '../constants/baggerBombScoring';
+
 // ==================== CONSTANTS ====================
+// Re-exported from single source of truth (src/constants/baggerBombScoring.js)
 
-// Threshold multipliers (of baseATR)
-export const THRESHOLD_MULTIPLIERS = {
-  // Positive thresholds
-  bagger: 1.0,
-  doubleBagger: 1.5,
-  tenBagger: 2.0,
-  // Negative thresholds
-  bust: -1.0,
-  crash: -1.5,
-  meltdown: -2.0,
-};
-
-// Points for each threshold
-export const THRESHOLD_POINTS = {
-  bagger: 15,
-  doubleBagger: 30,
-  tenBagger: 50,
-  bust: -10,
-  crash: -20,
-  meltdown: -35,
-};
+export const THRESHOLD_MULTIPLIERS = _THRESHOLD_MULTIPLIERS;
+export const THRESHOLD_POINTS = _THRESHOLD_POINTS;
 
 // Session definitions (Eastern Time)
 export const SESSION_CONFIG = {
@@ -73,6 +61,34 @@ export const SESSION_ORDER = ['morning', 'midday', 'power', 'night'];
 export const SESSION_ID_ORDER = ['MORNING_BELL', 'MIDDAY', 'POWER_HOUR', 'NIGHT_GAME'];
 
 // ==================== HISTORY TRACKING ====================
+
+/**
+ * Check if history needs updating and return the updated history, or null if unchanged.
+ * Only returns a new object when maxMultiplier increased or minMultiplier decreased,
+ * preventing unnecessary Firebase writes on every price poll.
+ * @param {number} currentMultiplier - Current multiplier (priceChange / baseATR)
+ * @param {Object} prevHistory - Previous history { maxMultiplier, minMultiplier, badges, events }
+ * @returns {Object|null} Updated history if changed, null if no update needed
+ */
+export function getHistoryUpdateIfChanged(currentMultiplier, prevHistory = {}) {
+  const prevMax = prevHistory.maxMultiplier || 0;
+  const prevMin = prevHistory.minMultiplier || 0;
+
+  const newMax = Math.max(prevMax, currentMultiplier);
+  const newMin = Math.min(prevMin, currentMultiplier);
+
+  if (newMax > prevMax || newMin < prevMin) {
+    return {
+      ...prevHistory,
+      maxMultiplier: newMax,
+      minMultiplier: newMin,
+      badges: prevHistory.badges ? [...prevHistory.badges] : [],
+      events: prevHistory.events ? [...prevHistory.events] : [],
+    };
+  }
+
+  return null; // No change needed
+}
 
 /**
  * Update asset history with new multiplier, tracking max/min reached
@@ -410,8 +426,11 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}) {
   const baseATR = asset.baseATR || 2.5;
   const multiplier = priceChange / baseATR;
 
-  // Base points: 10 per 1% change
-  const basePoints = priceChange * 10;
+  // Conviction multiplier: Star 2x, Core 1.5x, Support 1x
+  const tierMultiplier = CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support;
+
+  // Base points: 10 per 1% change, scaled by conviction tier
+  const basePoints = priceChange * 10 * tierMultiplier;
 
   // Get badges from history
   const badges = getBadgesFromHistory({
@@ -419,7 +438,7 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}) {
     minMultiplier: Math.min(history.minMultiplier || 0, multiplier),
   });
 
-  // Bonus points from badges (only count each once)
+  // Bonus points from badges (flat, NOT scaled by conviction)
   const bonusPoints = calculatePoints(badges);
 
   return {
@@ -427,6 +446,7 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}) {
     priceChange,
     multiplier,
     baseATR,
+    tierMultiplier,
     basePoints: Math.round(basePoints),
     bonusPoints,
     totalPoints: Math.round(basePoints + bonusPoints),

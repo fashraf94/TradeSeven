@@ -70,10 +70,10 @@ const POINTS_PER_PERCENT = 10;
 
 /** BaggerBomb scoring constants (NEW LINEAR SYSTEM)
  * +15 points per threshold crossed (positive)
- * -7.5 points per threshold crossed (negative)
+ * -10 points per threshold crossed (negative)
  */
 const BAGGERBOMB_POINTS = 15;
-const BUST_POINTS = -7.5;
+const BUST_POINTS = -10;
 
 /** Conviction multipliers based on portfolio allocation (PvP 1v1 only) */
 const CONVICTION_TIERS = [
@@ -261,7 +261,7 @@ export function getConvictionMultiplier(allocationPercent) {
 
 /**
  * Calculate BaggerBomb count for an asset's performance
- * NEW LINEAR SYSTEM: +15 per threshold crossed, -7.5 per negative threshold
+ * NEW LINEAR SYSTEM: +15 per threshold crossed, -10 per negative threshold
  *
  * @param {number} percentChange - The asset's % change
  * @param {number} threshold - The asset's volatility threshold
@@ -405,10 +405,10 @@ export function calculateBreakoutBonuses(percentChange, thresholds) {
 
 /**
  * Calculate bust penalties for negative threshold breaches
- * NEW LINEAR SYSTEM: Each threshold crossed = -7.5 points (stacking)
+ * NEW LINEAR SYSTEM: Each threshold crossed = -10 points (stacking)
  *
  * Example: Asset threshold = 2.8%
- * -2.8% = 1 Bust = -7.5 pts
+ * -2.8% = 1 Bust = -10 pts
  * -5.6% = 2 Busts = -15 pts
  * -8.4% = 3 Busts = -22.5 pts
  *

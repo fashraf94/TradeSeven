@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 import FundamentalNews from '../Research/FundamentalNews';
 import LatestEarningsReport from '../Research/LatestEarningsReport';
 import { HOLO_COLORS, CATEGORY_CONFIG, getSectorColor, getRatingColor } from '../../constants/holoTheme';
+import { BAGGER_TIERS, BUST_TIERS } from '../../constants/baggerBombScoring';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -382,16 +383,6 @@ const BaggerBombTab = ({ asset }) => {
   // Get base threshold (default 2.5% for unknown stocks)
   const baseThreshold = asset?.threshold || 2.5;
 
-  // Calculate threshold tiers
-  const thresholds = {
-    baggerBomb: baseThreshold,
-    doubleBagger: baseThreshold * 1.5,
-    tenBagger: baseThreshold * 2.0,
-    bust: baseThreshold,
-    crash: baseThreshold * 1.5,
-    meltdown: baseThreshold * 2.0,
-  };
-
   // Mock historical data (in production, fetch from API)
   const getHistoricalStats = (symbol) => {
     const mockData = {
@@ -463,56 +454,25 @@ const BaggerBombTab = ({ asset }) => {
           padding: '12px',
           marginBottom: '8px',
         }}>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '8px 0',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-          }}>
-            <span style={{ color: '#00ff88', fontSize: '13px' }}>💣 BaggerBomb</span>
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-              <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
-                +{thresholds.baggerBomb.toFixed(1)}%
-              </span>
-              <span style={{ color: '#00ff88', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
-                +15 pts
-              </span>
+          {BAGGER_TIERS.map((tier, i) => (
+            <div key={tier.key} style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '8px 0',
+              borderBottom: i < BAGGER_TIERS.length - 1 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
+            }}>
+              <span style={{ color: '#00ff88', fontSize: '13px' }}>{tier.emoji} {tier.label}</span>
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
+                  +{(baseThreshold * tier.multiplier).toFixed(1)}%
+                </span>
+                <span style={{ color: '#00ff88', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
+                  +{tier.points} pts
+                </span>
+              </div>
             </div>
-          </div>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '8px 0',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-          }}>
-            <span style={{ color: '#00ff88', fontSize: '13px' }}>💣💣 Double Bagger</span>
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-              <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
-                +{thresholds.doubleBagger.toFixed(1)}%
-              </span>
-              <span style={{ color: '#00ff88', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
-                +30 pts
-              </span>
-            </div>
-          </div>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '8px 0',
-          }}>
-            <span style={{ color: '#00ff88', fontSize: '13px' }}>🚀💣 TenBagger</span>
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-              <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
-                +{thresholds.tenBagger.toFixed(1)}%
-              </span>
-              <span style={{ color: '#00ff88', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
-                +50 pts
-              </span>
-            </div>
-          </div>
+          ))}
         </div>
 
         {/* Negative Thresholds */}
@@ -521,56 +481,25 @@ const BaggerBombTab = ({ asset }) => {
           borderRadius: '10px',
           padding: '12px',
         }}>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '8px 0',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-          }}>
-            <span style={{ color: '#ff3366', fontSize: '13px' }}>📉 Bust</span>
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-              <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
-                -{thresholds.bust.toFixed(1)}%
-              </span>
-              <span style={{ color: '#ff3366', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
-                -10 pts
-              </span>
+          {BUST_TIERS.map((tier, i) => (
+            <div key={tier.key} style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '8px 0',
+              borderBottom: i < BUST_TIERS.length - 1 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
+            }}>
+              <span style={{ color: '#ff3366', fontSize: '13px' }}>{tier.emoji} {tier.label}</span>
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
+                  -{(baseThreshold * tier.multiplier).toFixed(1)}%
+                </span>
+                <span style={{ color: '#ff3366', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
+                  {tier.points} pts
+                </span>
+              </div>
             </div>
-          </div>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '8px 0',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-          }}>
-            <span style={{ color: '#ff3366', fontSize: '13px' }}>💥 Crash</span>
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-              <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
-                -{thresholds.crash.toFixed(1)}%
-              </span>
-              <span style={{ color: '#ff3366', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
-                -20 pts
-              </span>
-            </div>
-          </div>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '8px 0',
-          }}>
-            <span style={{ color: '#ff3366', fontSize: '13px' }}>🔥 Meltdown</span>
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-              <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
-                -{thresholds.meltdown.toFixed(1)}%
-              </span>
-              <span style={{ color: '#ff3366', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
-                -35 pts
-              </span>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
 

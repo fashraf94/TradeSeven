@@ -3,13 +3,13 @@
 //
 // NEW LINEAR SCORING SYSTEM:
 // - BaggerBomb: +15 points per threshold crossed (positive)
-// - Bust: -7.5 points per threshold crossed (negative)
+// - Bust: -10 points per threshold crossed (negative)
 //
 // Example with 2.8% threshold:
 // +2.8% = 1 BaggerBomb (+15 pts)
 // +5.6% = 2 BaggerBombs (+30 pts)
-// -2.8% = 1 Bust (-7.5 pts)
-// -5.6% = 2 Busts (-15 pts)
+// -2.8% = 1 Bust (-10 pts)
+// -5.6% = 2 Busts (-20 pts)
 
 import { isCrypto } from './sessionScoringService.js';
 
@@ -18,7 +18,7 @@ import { isCrypto } from './sessionScoringService.js';
 // ============================================
 
 const BAGGERBOMB_POINTS = 15;   // +15 per threshold crossed
-const BUST_POINTS = -7.5;       // -7.5 per negative threshold crossed
+const BUST_POINTS = -10;        // -10 per negative threshold crossed
 
 // ============================================
 // BREAKOUT EVENT TYPES
@@ -85,7 +85,7 @@ export const BREAKOUT_TYPES = {
     name: '2x Bust',
     emoji: '📉📉',
     color: '#dc2626',
-    points: -15,
+    points: -20,
     isPositive: false,
     thresholdMultiplier: 1.5,
     _legacy: true
@@ -95,7 +95,7 @@ export const BREAKOUT_TYPES = {
     name: '3x Bust',
     emoji: '📉📉📉',
     color: '#991b1b',
-    points: -22.5,
+    points: -35,
     isPositive: false,
     thresholdMultiplier: 2.0,
     _legacy: true

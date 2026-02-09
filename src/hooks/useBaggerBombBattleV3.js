@@ -22,6 +22,7 @@ import {
   flattenPortfolio,
   createThresholdEvent,
   calculateAssetScoreV3,
+  getHistoryUpdateIfChanged,
   SESSION_CONFIG,
   SESSION_ORDER,
   THRESHOLD_POINTS,
@@ -49,6 +50,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
 
   // Local history tracking (for real-time updates before Firebase sync)
   const [localHistory, setLocalHistory] = useState({});
+  const [localOppHistory, setLocalOppHistory] = useState({});
   const prevMultipliersRef = useRef({});
 
   // Chain trigger system for staggered celebrations
@@ -170,10 +172,13 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     return calculateScores(myPortfolioFlat, currentPrices, openPrices, combinedHistory);
   }, [myPortfolioFlat, currentPrices, openPrices, combinedHistory, calculateScores]);
 
-  // Opponent scores
+  // Opponent scores — combine Firebase history with local opponent history
+  // (mirrors combinedHistory pattern for own data, ensuring opponent badges
+  // persist even before Firebase snapshot round-trips back)
   const oppHistory = useMemo(() => {
-    return isCreator ? battle?.opponent?.history : battle?.creator?.history;
-  }, [battle, isCreator]);
+    const battleOppHistory = isCreator ? battle?.opponent?.history : battle?.creator?.history;
+    return { ...battleOppHistory, ...localOppHistory };
+  }, [battle, isCreator, localOppHistory]);
 
   const oppScores = useMemo(() => {
     return calculateScores(oppPortfolioFlat, currentPrices, openPrices, oppHistory || {});
@@ -358,6 +363,54 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     });
   }, [currentPrices, openPrices, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger]);
 
+  // Continuous history tracking — ensures maxMultiplier/minMultiplier are always
+  // recorded for BOTH player and opponent portfolios on every price poll.
+  // This is the core persistence fix: even if the threshold-crossing event was missed
+  // (e.g., client offline), peaks are recorded whenever any client is running.
+  // Writes to Firebase only when values actually change (getHistoryUpdateIfChanged
+  // returns null when no update is needed), minimizing write costs.
+  useEffect(() => {
+    if (!currentPrices || Object.keys(currentPrices).length === 0) return;
+    if (!battle || !battleId || battleId.startsWith('training_')) return;
+
+    const processPortfolio = (portfolioFlat, existingHistory, setHistoryFn, isOwnPortfolio) => {
+      portfolioFlat.forEach((asset) => {
+        if (!asset) return;
+
+        const openPrice = openPrices[asset.symbol];
+        const currentPrice = currentPrices[asset.symbol];
+        if (!openPrice || !currentPrice) return;
+
+        const priceChange = ((currentPrice - openPrice) / openPrice) * 100;
+        const baseATR = asset.baseATR || battle?.thresholds?.[asset.symbol]?.threshold || 2.5;
+        const currentMultiplier = priceChange / baseATR;
+
+        const assetHistory = existingHistory[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
+        const updatedHistory = getHistoryUpdateIfChanged(currentMultiplier, assetHistory);
+
+        if (updatedHistory) {
+          // Update local state immediately (provides instant UI feedback)
+          setHistoryFn((prev) => ({
+            ...prev,
+            [asset.symbol]: updatedHistory,
+          }));
+
+          // Persist to Firebase — use isCreator for own portfolio, !isCreator for opponent
+          const isCreatorForField = isOwnPortfolio ? isCreator : !isCreator;
+          updateAssetHistoryInBattle(battleId, isCreatorForField, asset.symbol, updatedHistory)
+            .catch(console.error);
+        }
+      });
+    };
+
+    // Track own portfolio history
+    processPortfolio(myPortfolioFlat, combinedHistory, setLocalHistory, true);
+
+    // Track opponent portfolio history (redundant recording — if opponent's client
+    // is offline, this client still records their peaks)
+    processPortfolio(oppPortfolioFlat, oppHistory, setLocalOppHistory, false);
+  }, [currentPrices, openPrices, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
+
   // Fetch prices — uses frozen close prices from Firebase when a session has ended,
   // ensuring both players see identical scores for completed sessions
   const fetchPrices = useCallback(async () => {
@@ -532,6 +585,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       points: scoreData?.totalPoints || 0,
       badges: scoreData?.badges || getBadgesFromHistory(assetHistory),
       isCrypto: asset.isCrypto,
+      tierMultiplier: scoreData?.tierMultiplier || 1.0,
     };
   }, []);
 

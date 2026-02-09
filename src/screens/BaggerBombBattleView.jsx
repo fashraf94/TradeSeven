@@ -34,21 +34,21 @@ const TIERS = [
   {
     key: 'star',
     label: '⭐ Star Picks',
-    allocation: '20%',
+    allocation: '⭐ 2x',
     slots: 2,
     description: 'Your highest conviction plays',
   },
   {
     key: 'core',
     label: '💎 Core Holds',
-    allocation: '15%',
+    allocation: '💎 1.5x',
     slots: 2,
     description: 'Solid foundation assets',
   },
   {
     key: 'support',
     label: '📊 Support Plays',
-    allocation: '10%',
+    allocation: '🛡️ 1x',
     slots: 3,
     hasCrypto: true, // Last slot must be crypto
     description: 'Diversified support positions',
@@ -198,6 +198,8 @@ export default function BaggerBombBattleView({
   onThresholdCross,
   nightMode = false,
   isTraining = false,
+  thresholds = {},
+  currentPrices = {},
 }) {
   const [activeTab, setActiveTab] = useState('matchups');
   const [researchAsset, setResearchAsset] = useState(null);
@@ -436,9 +438,9 @@ export default function BaggerBombBattleView({
           asset={{
             symbol: researchAsset.symbol,
             name: researchAsset.name || researchAsset.symbol,
-            price: researchAsset.currentPrice || researchAsset.price || 0,
+            price: currentPrices[researchAsset.symbol] || researchAsset.currentPrice || researchAsset.price || 0,
             percentChange: researchAsset.priceChange || 0,
-            threshold: researchAsset.baseATR || 2.5,
+            threshold: thresholds[researchAsset.symbol]?.threshold || researchAsset.baseATR || 2.5,
           }}
           onClose={() => setResearchAsset(null)}
           showActionButton={false}
@@ -451,7 +453,7 @@ export default function BaggerBombBattleView({
           asset={{
             symbol: breakdownAsset.symbol,
             gain: breakdownAsset.priceChange || 0,
-            threshold: breakdownAsset.baseATR || 2.5,
+            threshold: thresholds[breakdownAsset.symbol]?.threshold || breakdownAsset.baseATR || 2.5,
             baggerBombs: breakdownAsset.badges?.filter(b =>
               b === 'bagger' || b === 'rally' || b === 'moonshot'
             ).length || 0,
@@ -464,7 +466,7 @@ export default function BaggerBombBattleView({
             ).length || 0) * 15,
             bustPoints: (breakdownAsset.badges?.filter(b =>
               b === 'bust' || b === 'crash' || b === 'meltdown'
-            ).length || 0) * -7.5,
+            ).length || 0) * -10,
             totalScore: breakdownAsset.points || 0,
           }}
           onClose={() => setBreakdownAsset(null)}
