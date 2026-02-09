@@ -161,8 +161,8 @@ export default function BaggerBombRulesCard({ defaultExpanded = false }) {
             title="Scoring"
           >
             <RuleItem text="BaggerBomb: +15 pts when asset crosses its volatility threshold" />
-            <RuleItem text="Bust: -7.5 pts when asset drops below threshold" />
-            <RuleItem text="Multiple thresholds stack (2x = 30 pts, 3x = 45 pts)" />
+            <RuleItem text="Bust: -10 pts when asset drops below threshold" />
+            <RuleItem text="Multiple thresholds stack (2x = 30 pts, 3x = 50 pts)" />
             <RuleItem text="Base points: 1% return = 10 points" />
             <RuleItem text="Thresholds are unique to each asset based on volatility" />
           </RuleSection>

@@ -1,29 +1,16 @@
 // baggerBombUtils.js - Utility functions for BaggerBomb scoring and history tracking
 // Handles threshold crossing detection, history updates, and session timing
 
+import {
+  THRESHOLD_MULTIPLIERS as _THRESHOLD_MULTIPLIERS,
+  THRESHOLD_POINTS as _THRESHOLD_POINTS,
+} from '../constants/baggerBombScoring';
+
 // ==================== CONSTANTS ====================
+// Re-exported from single source of truth (src/constants/baggerBombScoring.js)
 
-// Threshold multipliers (of baseATR)
-export const THRESHOLD_MULTIPLIERS = {
-  // Positive thresholds
-  bagger: 1.0,
-  doubleBagger: 1.5,
-  tenBagger: 2.0,
-  // Negative thresholds
-  bust: -1.0,
-  crash: -1.5,
-  meltdown: -2.0,
-};
-
-// Points for each threshold
-export const THRESHOLD_POINTS = {
-  bagger: 15,
-  doubleBagger: 30,
-  tenBagger: 50,
-  bust: -10,
-  crash: -20,
-  meltdown: -35,
-};
+export const THRESHOLD_MULTIPLIERS = _THRESHOLD_MULTIPLIERS;
+export const THRESHOLD_POINTS = _THRESHOLD_POINTS;
 
 // Session definitions (Eastern Time)
 export const SESSION_CONFIG = {

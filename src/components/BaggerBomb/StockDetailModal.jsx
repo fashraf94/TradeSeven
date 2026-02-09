@@ -6,6 +6,7 @@ import {
   Percent, BarChart3, Newspaper, ChevronLeft, X
 } from 'lucide-react';
 import { HOLO_COLORS } from '../../constants/holoTheme';
+import { BAGGER_TIERS } from '../../constants/baggerBombScoring';
 
 // Color scheme using centralized theme
 const colors = {
@@ -218,92 +219,46 @@ const StockDetailModal = ({
 
               {/* Threshold Cards */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {/* Breakout */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '12px',
-                  backgroundColor: 'rgba(255,255,255,0.03)',
-                  borderRadius: '12px'
-                }}>
-                  <div style={{
-                    width: '40px',
-                    height: '40px',
-                    borderRadius: '10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: `${colors.green}20`
-                  }}>
-                    <Target size={18} color={colors.green} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <span style={{ display: 'block', fontSize: '12px', color: colors.textMuted }}>Breakout</span>
-                    <span style={{ fontSize: '18px', fontWeight: '700', color: colors.green }}>
-                      {threshold?.threshold?.toFixed(1) || '—'}%
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textSecondary }}>+15 pts</span>
-                </div>
-
-                {/* Rally */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '12px',
-                  backgroundColor: 'rgba(255,255,255,0.03)',
-                  borderRadius: '12px'
-                }}>
-                  <div style={{
-                    width: '40px',
-                    height: '40px',
-                    borderRadius: '10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: `${colors.yellow}20`
-                  }}>
-                    <TrendingUp size={18} color={colors.yellow} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <span style={{ display: 'block', fontSize: '12px', color: colors.textMuted }}>Rally</span>
-                    <span style={{ fontSize: '18px', fontWeight: '700', color: colors.yellow }}>
-                      {threshold?.rallyThreshold?.toFixed(1) || '—'}%
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textSecondary }}>+30 pts</span>
-                </div>
-
-                {/* Moonshot */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '12px',
-                  backgroundColor: 'rgba(255,255,255,0.03)',
-                  borderRadius: '12px'
-                }}>
-                  <div style={{
-                    width: '40px',
-                    height: '40px',
-                    borderRadius: '10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: `${colors.purple}20`
-                  }}>
-                    <Rocket size={18} color={colors.purple} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <span style={{ display: 'block', fontSize: '12px', color: colors.textMuted }}>Moonshot</span>
-                    <span style={{ fontSize: '18px', fontWeight: '700', color: colors.purple }}>
-                      {threshold?.moonshotThreshold?.toFixed(1) || '—'}%
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textSecondary }}>+50 pts</span>
-                </div>
+                {BAGGER_TIERS.map((tier, index) => {
+                  const tierColors = [colors.green, colors.yellow, colors.purple];
+                  const tierIcons = [
+                    <Target key="t" size={18} color={tierColors[index]} />,
+                    <TrendingUp key="tu" size={18} color={tierColors[index]} />,
+                    <Rocket key="r" size={18} color={tierColors[index]} />,
+                  ];
+                  const thresholdValue = threshold?.threshold
+                    ? (threshold.threshold * tier.multiplier).toFixed(1)
+                    : '—';
+                  return (
+                    <div key={tier.key} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px',
+                      backgroundColor: 'rgba(255,255,255,0.03)',
+                      borderRadius: '12px'
+                    }}>
+                      <div style={{
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: `${tierColors[index]}20`
+                      }}>
+                        {tierIcons[index]}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ display: 'block', fontSize: '12px', color: colors.textMuted }}>{tier.label}</span>
+                        <span style={{ fontSize: '18px', fontWeight: '700', color: tierColors[index] }}>
+                          {thresholdValue}%
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '14px', fontWeight: '600', color: colors.textSecondary }}>+{tier.points} pts</span>
+                    </div>
+                  );
+                })}
               </div>
 
               <p style={{

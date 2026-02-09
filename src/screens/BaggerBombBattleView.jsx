@@ -464,7 +464,7 @@ export default function BaggerBombBattleView({
             ).length || 0) * 15,
             bustPoints: (breakdownAsset.badges?.filter(b =>
               b === 'bust' || b === 'crash' || b === 'meltdown'
-            ).length || 0) * -7.5,
+            ).length || 0) * -10,
             totalScore: breakdownAsset.points || 0,
           }}
           onClose={() => setBreakdownAsset(null)}

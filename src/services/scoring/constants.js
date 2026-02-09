@@ -14,7 +14,7 @@ export const BAGGERBOMB = {
   POINTS_PER_THRESHOLD: 15,
 
   // Points per threshold crossed (negative direction)
-  BUST_POINTS_PER_THRESHOLD: -7.5,
+  BUST_POINTS_PER_THRESHOLD: -10,
 };
 
 // ===========================================
