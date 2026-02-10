@@ -31,6 +31,40 @@ function perfColor(val) {
 }
 
 // ===========================================
+// EXTRACTED STYLE CONSTANTS
+// ===========================================
+
+const MUTED_LABEL = {
+  fontSize: '10px',
+  color: '#8b949e',
+};
+
+const INNER_CARD_BG = {
+  padding: '12px',
+  background: '#161b22',
+  borderRadius: '8px',
+};
+
+const STAT_CELL = {
+  textAlign: 'center',
+  padding: '10px',
+  background: '#161b22',
+  borderRadius: '8px',
+};
+
+function alertCardStyle(colorRgb) {
+  return {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '10px',
+    padding: '12px',
+    borderRadius: '8px',
+    background: `rgba(${colorRgb},0.08)`,
+    border: `1px solid rgba(${colorRgb},0.2)`,
+  };
+}
+
+// ===========================================
 // SECTION HEADER
 // ===========================================
 
@@ -276,12 +310,8 @@ const SectorCard = ({ sector, isExpanded, onToggle, onTooltip }) => {
                   gap: '10px',
                 }}>
                   {/* Trend Position */}
-                  <div style={{
-                    padding: '12px',
-                    background: '#161b22',
-                    borderRadius: '8px',
-                  }}>
-                    <div style={{ fontSize: '10px', color: '#8b949e', marginBottom: '4px' }}>
+                  <div style={INNER_CARD_BG}>
+                    <div style={{ ...MUTED_LABEL, marginBottom: '4px' }}>
                       Trend Position
                     </div>
                     <div style={{
@@ -293,12 +323,8 @@ const SectorCard = ({ sector, isExpanded, onToggle, onTooltip }) => {
                     </div>
                   </div>
                   {/* Breadth */}
-                  <div style={{
-                    padding: '12px',
-                    background: '#161b22',
-                    borderRadius: '8px',
-                  }}>
-                    <div style={{ fontSize: '10px', color: '#8b949e', marginBottom: '4px' }}>
+                  <div style={INNER_CARD_BG}>
+                    <div style={{ ...MUTED_LABEL, marginBottom: '4px' }}>
                       <TappableLabel metricKey="breadth" onTooltip={onTooltip}>Breadth</TappableLabel>
                     </div>
                     <BreadthBar
@@ -308,12 +334,8 @@ const SectorCard = ({ sector, isExpanded, onToggle, onTooltip }) => {
                     />
                   </div>
                   {/* Leadership */}
-                  <div style={{
-                    padding: '12px',
-                    background: '#161b22',
-                    borderRadius: '8px',
-                  }}>
-                    <div style={{ fontSize: '10px', color: '#8b949e', marginBottom: '4px' }}>
+                  <div style={INNER_CARD_BG}>
+                    <div style={{ ...MUTED_LABEL, marginBottom: '4px' }}>
                       <TappableLabel metricKey="leadership" onTooltip={onTooltip}>Leadership</TappableLabel>
                     </div>
                     <LeadershipDisplay
@@ -339,12 +361,7 @@ const SectorCard = ({ sector, isExpanded, onToggle, onTooltip }) => {
                     { label: '1 Month', value: perf.month1 },
                     { label: '3 Months', value: perf.month3 },
                   ].map(({ label, value }) => (
-                    <div key={label} style={{
-                      textAlign: 'center',
-                      padding: '10px',
-                      background: '#161b22',
-                      borderRadius: '8px',
-                    }}>
+                    <div key={label} style={STAT_CELL}>
                       <div style={{
                         fontSize: '16px',
                         fontWeight: '700',
@@ -352,11 +369,7 @@ const SectorCard = ({ sector, isExpanded, onToggle, onTooltip }) => {
                       }}>
                         {formatPercent(value)}
                       </div>
-                      <div style={{
-                        fontSize: '10px',
-                        color: '#8b949e',
-                        marginTop: '2px',
-                      }}>
+                      <div style={{ ...MUTED_LABEL, marginTop: '2px' }}>
                         {label}
                       </div>
                     </div>
@@ -377,9 +390,8 @@ const SectorCard = ({ sector, isExpanded, onToggle, onTooltip }) => {
                     { label: '200-day MA', tooltipKey: 'ma200', above: techs.above200SMA, distance: techs.distanceFrom200SMA },
                   ].map(({ label, tooltipKey, above, distance }) => (
                     <div key={label} style={{
+                      ...INNER_CARD_BG,
                       padding: '10px',
-                      background: '#161b22',
-                      borderRadius: '8px',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '8px',
@@ -395,7 +407,7 @@ const SectorCard = ({ sector, isExpanded, onToggle, onTooltip }) => {
                         <div style={{ fontSize: '12px', color: '#ffffff' }}>
                           {above ? 'Above' : 'Below'} <TappableLabel metricKey={tooltipKey} onTooltip={onTooltip}>{label}</TappableLabel>
                         </div>
-                        <div style={{ fontSize: '10px', color: '#8b949e' }}>
+                        <div style={MUTED_LABEL}>
                           {formatDistance(distance)}
                         </div>
                       </div>
@@ -412,38 +424,23 @@ const SectorCard = ({ sector, isExpanded, onToggle, onTooltip }) => {
                   gridTemplateColumns: 'repeat(3, 1fr)',
                   gap: '8px',
                 }}>
-                  <div style={{
-                    textAlign: 'center',
-                    padding: '10px',
-                    background: '#161b22',
-                    borderRadius: '8px',
-                  }}>
+                  <div style={STAT_CELL}>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: '#10b981' }}>
                       {bb.breakouts7d ?? 0}
                     </div>
-                    <div style={{ fontSize: '10px', color: '#8b949e' }}>Breakouts</div>
+                    <div style={MUTED_LABEL}>Breakouts</div>
                   </div>
-                  <div style={{
-                    textAlign: 'center',
-                    padding: '10px',
-                    background: '#161b22',
-                    borderRadius: '8px',
-                  }}>
+                  <div style={STAT_CELL}>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: '#ef4444' }}>
                       {bb.busts7d ?? 0}
                     </div>
-                    <div style={{ fontSize: '10px', color: '#8b949e' }}>Busts</div>
+                    <div style={MUTED_LABEL}>Busts</div>
                   </div>
-                  <div style={{
-                    textAlign: 'center',
-                    padding: '10px',
-                    background: '#161b22',
-                    borderRadius: '8px',
-                  }}>
+                  <div style={STAT_CELL}>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: '#ffffff' }}>
                       {bb.hitRate ?? 0}%
                     </div>
-                    <div style={{ fontSize: '10px', color: '#8b949e' }}>Hit Rate</div>
+                    <div style={MUTED_LABEL}>Hit Rate</div>
                   </div>
                 </div>
               </div>
@@ -498,19 +495,9 @@ const SectorCard = ({ sector, isExpanded, onToggle, onTooltip }) => {
                 }}>
                   {/* Gilded Cage Alert */}
                   {sector.gildedCage?.detected && (
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: '10px',
-                      padding: '12px',
-                      borderRadius: '8px',
-                      background: sector.gildedCage.severity === 'CRITICAL'
-                        ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)',
-                      border: `1px solid ${
-                        sector.gildedCage.severity === 'CRITICAL'
-                          ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'
-                      }`,
-                    }}>
+                    <div style={alertCardStyle(
+                      sector.gildedCage.severity === 'CRITICAL' ? '239,68,68' : '245,158,11'
+                    )}>
                       <span style={{ fontSize: '16px', flexShrink: 0, marginTop: '1px' }}>
                         {sector.gildedCage.severity === 'CRITICAL' ? '\uD83C\uDFDA\uFE0F' : '\u26A0\uFE0F'}
                       </span>
@@ -535,13 +522,13 @@ const SectorCard = ({ sector, isExpanded, onToggle, onTooltip }) => {
                           gap: '16px',
                           marginTop: '8px',
                         }}>
-                          <span style={{ fontSize: '10px', color: '#8b949e' }}>
+                          <span style={MUTED_LABEL}>
                             Leadership: {sector.gildedCage.leadershipScore}/5
                           </span>
-                          <span style={{ fontSize: '10px', color: '#8b949e' }}>
+                          <span style={MUTED_LABEL}>
                             Breadth: {sector.gildedCage.breadthPercent}%
                           </span>
-                          <span style={{ fontSize: '10px', color: '#8b949e' }}>
+                          <span style={MUTED_LABEL}>
                             <TappableLabel metricKey="weightedLeadership" onTooltip={onTooltip}>Weighted</TappableLabel>: {Math.round((sector.gildedCage.weightedLeadership || 0) * 100)}%
                           </span>
                         </div>
@@ -551,19 +538,9 @@ const SectorCard = ({ sector, isExpanded, onToggle, onTooltip }) => {
 
                   {/* Price-Breadth Divergence Alert */}
                   {sector.priceBreadthDivergence?.divergence && sector.priceBreadthDivergence.divergence !== 'none' && (
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: '10px',
-                      padding: '12px',
-                      borderRadius: '8px',
-                      background: sector.priceBreadthDivergence.divergence === 'bearish'
-                        ? 'rgba(239,68,68,0.08)' : 'rgba(59,130,246,0.08)',
-                      border: `1px solid ${
-                        sector.priceBreadthDivergence.divergence === 'bearish'
-                          ? 'rgba(239,68,68,0.2)' : 'rgba(59,130,246,0.2)'
-                      }`,
-                    }}>
+                    <div style={alertCardStyle(
+                      sector.priceBreadthDivergence.divergence === 'bearish' ? '239,68,68' : '59,130,246'
+                    )}>
                       <span style={{ fontSize: '16px', flexShrink: 0, marginTop: '1px' }}>
                         {sector.priceBreadthDivergence.divergence === 'bearish' ? '\uD83D\uDCC9' : '\uD83D\uDCC8'}
                       </span>
