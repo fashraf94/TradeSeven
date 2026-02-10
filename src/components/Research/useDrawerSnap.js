@@ -1,43 +1,36 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useMotionValue, animate } from 'framer-motion';
 
-/** Collapsed drawer height in px — shared with AnalysisDrawer for positioning */
-export const COLLAPSED_HEIGHT = 80;
+const SPRING_CONFIG = { type: 'spring', stiffness: 300, damping: 30 };
 
 /**
  * useDrawerSnap — Gesture-driven snap behavior for a bottom pull-up drawer.
  *
- * Three snap points (measured as drawer height from bottom):
- * - collapsed: 80px visible
- * - mid: 50% of container height
- * - full: 90% of container height
+ * Two snap points:
+ * - mid (default): tabs visible below chart
+ * - full: covers chart, maximum content space
+ *
+ * Coordinate system: y = how far DOWN the drawer is pushed from bottom:0.
+ * y = 0 → full (fully visible), y = MID_Y → mid (partially pushed down).
  *
  * @param {number} containerHeight - Height of the parent container (px)
- * @returns {Object} { y, snapState, snapTo, onDragStart, onDragEnd, drawerHeight }
+ * @param {boolean} isMobile - Whether the viewport is mobile-sized
+ * @returns {Object} { y, snapState, snapTo, toggleDrawer, onDragStart, onDragEnd, dragConstraints }
  */
 export default function useDrawerSnap(containerHeight, isMobile = false) {
-  const [snapState, setSnapState] = useState('mid'); // 'collapsed' | 'mid' | 'full'
+  const [snapState, setSnapState] = useState('mid');
   const dragging = useRef(false);
   const prevContainer = useRef(containerHeight);
 
-  const COLLAPSED = COLLAPSED_HEIGHT;
-  const MID = Math.round(containerHeight * (isMobile ? 0.40 : 0.50));
-  const FULL = Math.round(containerHeight * 0.9);
+  const FULL_Y = 0;
+  const MID_Y = Math.round(containerHeight * 0.9 - containerHeight * (isMobile ? 0.4 : 0.5));
 
-  // y = 0 means collapsed, y goes negative as drawer rises
-  // Drawer height = COLLAPSED - y (where y <= 0)
-  // So: collapsed → y=0, mid → y=-(MID-COLLAPSED), full → y=-(FULL-COLLAPSED)
-  // Start at mid position so the drawer opens showing tabs + content
-  const y = useMotionValue(-(MID - COLLAPSED));
+  // Start at mid position
+  const y = useMotionValue(MID_Y);
 
   const getYForState = useCallback((state) => {
-    switch (state) {
-      case 'collapsed': return 0;
-      case 'mid': return -(MID - COLLAPSED);
-      case 'full': return -(FULL - COLLAPSED);
-      default: return 0;
-    }
-  }, [MID, FULL]);
+    return state === 'full' ? FULL_Y : MID_Y;
+  }, [MID_Y]);
 
   // Re-snap when container resizes (e.g. ResizeObserver updates real height)
   useEffect(() => {
@@ -47,25 +40,8 @@ export default function useDrawerSnap(containerHeight, isMobile = false) {
     }
   }, [containerHeight, getYForState, snapState, y]);
 
-  const getStateForY = useCallback((yVal) => {
-    const midY = -(MID - COLLAPSED);
-    const fullY = -(FULL - COLLAPSED);
-    const distCollapsed = Math.abs(yVal);
-    const distMid = Math.abs(yVal - midY);
-    const distFull = Math.abs(yVal - fullY);
-
-    if (distCollapsed <= distMid && distCollapsed <= distFull) return 'collapsed';
-    if (distMid <= distFull) return 'mid';
-    return 'full';
-  }, [MID, FULL]);
-
   const snapTo = useCallback((state) => {
-    const targetY = getYForState(state);
-    animate(y, targetY, {
-      type: 'spring',
-      stiffness: 300,
-      damping: 30,
-    });
+    animate(y, getYForState(state), SPRING_CONFIG);
     setSnapState(state);
   }, [y, getYForState]);
 
@@ -78,37 +54,17 @@ export default function useDrawerSnap(containerHeight, isMobile = false) {
     const currentY = y.get();
     const velocity = info.velocity.y;
 
-    const VELOCITY_THRESHOLD = 500;
-
-    let targetState;
-    if (velocity < -VELOCITY_THRESHOLD) {
-      // Fast flick up → go to next higher state
-      if (snapState === 'collapsed') targetState = 'mid';
-      else if (snapState === 'mid') targetState = 'full';
-      else targetState = 'full';
-    } else if (velocity > VELOCITY_THRESHOLD) {
-      // Fast flick down → go to next lower state
-      if (snapState === 'full') targetState = 'mid';
-      else if (snapState === 'mid') targetState = 'collapsed';
-      else targetState = 'collapsed';
+    // Fast flick up OR past midpoint → full
+    if (velocity < -500 || currentY < MID_Y / 2) {
+      snapTo('full');
     } else {
-      // Low velocity → snap to nearest
-      targetState = getStateForY(currentY);
+      snapTo('mid');
     }
+  }, [y, MID_Y, snapTo]);
 
-    snapTo(targetState);
-  }, [y, snapState, getStateForY, snapTo]);
-
-  const cycleState = useCallback(() => {
-    if (snapState === 'collapsed') snapTo('mid');
-    else if (snapState === 'mid') snapTo('full');
-    else snapTo('collapsed');
+  const toggleDrawer = useCallback(() => {
+    snapTo(snapState === 'mid' ? 'full' : 'mid');
   }, [snapState, snapTo]);
-
-  // Current drawer height for layout
-  const drawerHeight = snapState === 'collapsed' ? COLLAPSED
-    : snapState === 'mid' ? MID
-    : FULL;
 
   return {
     y,
@@ -116,11 +72,10 @@ export default function useDrawerSnap(containerHeight, isMobile = false) {
     snapTo,
     onDragStart,
     onDragEnd,
-    cycleState,
-    drawerHeight,
+    toggleDrawer,
     dragConstraints: {
-      top: -(FULL - COLLAPSED),
-      bottom: 0,
+      top: FULL_Y,
+      bottom: MID_Y,
     },
   };
 }

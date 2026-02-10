@@ -701,7 +701,7 @@ const AssetResearchModal = ({
   const [profileLoading, setProfileLoading] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
   const [highlightedLevel, setHighlightedLevel] = useState(null);
-  const [drawerSnapState, setDrawerSnapState] = useState('collapsed');
+  const [drawerSnapState, setDrawerSnapState] = useState('mid');
   const [v2ContainerHeight, setV2ContainerHeight] = useState(600);
   const v2ContainerRef = useRef(null);
 
@@ -729,14 +729,6 @@ const AssetResearchModal = ({
     observer.observe(v2ContainerRef.current);
     return () => observer.disconnect();
   }, [version]);
-
-  // v2: Summary data for collapsed drawer badges
-  const drawerSummaryData = version >= 2 ? {
-    sentiment: researchData.indicators?.rsi > 60 ? 'bullish'
-      : researchData.indicators?.rsi < 40 ? 'bearish' : 'neutral',
-    dailyChange: asset?.percentChange || asset?.change || 0,
-    volumeRatio: 1.0, // Will be computed from ohlcvData in Phase 3
-  } : null;
 
   const handleDrawerSnapChange = useCallback((state) => {
     setDrawerSnapState(state);
@@ -1169,7 +1161,6 @@ const AssetResearchModal = ({
               activeTab={activeTab}
               setActiveTab={setActiveTab}
               onSnapStateChange={handleDrawerSnapChange}
-              summaryData={drawerSummaryData}
             >
               {activeTab === 'fundamental' && (
                 <div style={{ padding: '8px 0' }}>
