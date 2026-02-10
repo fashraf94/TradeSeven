@@ -255,7 +255,6 @@ const MoneyMapScreen = ({ onBack }) => {
           if (!mountedRef.current) return;
           setData(newData);
           setCachedData(newData, fetchedAt);
-          console.log(`[MoneyMap] Background refresh complete (${Object.keys(newData.sectors).length} sectors)`);
         })
         .catch((err) => {
           console.warn('[MoneyMap] Background refresh failed, keeping cached data:', err.message);
@@ -271,7 +270,6 @@ const MoneyMapScreen = ({ onBack }) => {
           if (!mountedRef.current) return;
           setData(newData);
           setCachedData(newData, fetchedAt);
-          console.log(`[MoneyMap] Initial load complete (${Object.keys(newData.sectors).length} sectors)`);
         })
         .catch((err) => {
           if (!mountedRef.current) return;
