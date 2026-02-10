@@ -444,6 +444,7 @@ export default function BaggerBombBattleView({
           }}
           onClose={() => setResearchAsset(null)}
           showActionButton={false}
+          version={2}
         />
       )}
 
