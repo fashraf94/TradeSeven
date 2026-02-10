@@ -15,13 +15,13 @@ export const COLLAPSED_HEIGHT = 80;
  * @param {number} containerHeight - Height of the parent container (px)
  * @returns {Object} { y, snapState, snapTo, onDragStart, onDragEnd, drawerHeight }
  */
-export default function useDrawerSnap(containerHeight) {
+export default function useDrawerSnap(containerHeight, isMobile = false) {
   const [snapState, setSnapState] = useState('mid'); // 'collapsed' | 'mid' | 'full'
   const dragging = useRef(false);
   const prevContainer = useRef(containerHeight);
 
   const COLLAPSED = COLLAPSED_HEIGHT;
-  const MID = Math.round(containerHeight * 0.5);
+  const MID = Math.round(containerHeight * (isMobile ? 0.40 : 0.50));
   const FULL = Math.round(containerHeight * 0.9);
 
   // y = 0 means collapsed, y goes negative as drawer rises

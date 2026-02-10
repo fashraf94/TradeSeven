@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { motion, useDragControls } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import useDrawerSnap, { COLLAPSED_HEIGHT } from './useDrawerSnap';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 const TAB_CONFIGS = [
   { key: 'fundamental', label: 'Analysis', activeColor: '#00d9ff' },
@@ -31,6 +32,7 @@ const AnalysisDrawer = ({
   summaryData,
   children,
 }) => {
+  const { isMobile } = useIsMobile();
   const {
     y,
     snapState,
@@ -39,7 +41,7 @@ const AnalysisDrawer = ({
     onDragEnd,
     cycleState,
     dragConstraints,
-  } = useDrawerSnap(containerHeight);
+  } = useDrawerSnap(containerHeight, isMobile);
 
   const dragControls = useDragControls();
   const contentRef = useRef(null);
@@ -84,6 +86,7 @@ const AnalysisDrawer = ({
         boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.5)',
         display: 'flex',
         flexDirection: 'column',
+        overflow: 'hidden',
         willChange: 'transform',
         touchAction: 'none',
       }}
@@ -232,6 +235,7 @@ const AnalysisDrawer = ({
         ref={contentRef}
         style={{
           flex: 1,
+          minHeight: 0,
           overflowY: contentScrollable ? 'auto' : 'hidden',
           overscrollBehavior: 'contain',
           padding: '0 12px 12px',
