@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { motion, useDragControls } from 'framer-motion';
 import { TrendingUp, TrendingDown, ArrowRight } from 'lucide-react';
 import { HOLO_COLORS } from '../../constants/holoTheme';
@@ -46,17 +46,11 @@ const AnalysisDrawer = ({
 
   const dragControls = useDragControls();
   const contentRef = useRef(null);
-  const [contentScrollable, setContentScrollable] = useState(false);
 
   // Notify parent of snap state changes
   useEffect(() => {
     onSnapStateChange?.(snapState);
   }, [snapState, onSnapStateChange]);
-
-  // Enable content scrolling only when drawer is at 'full'
-  useEffect(() => {
-    setContentScrollable(snapState === 'full' || snapState === 'mid');
-  }, [snapState]);
 
   const sentiment = summaryData?.sentiment;
   const dailyChange = summaryData?.dailyChange ?? 0;
@@ -240,7 +234,7 @@ const AnalysisDrawer = ({
         style={{
           flex: 1,
           minHeight: 0,
-          overflowY: contentScrollable ? 'auto' : 'hidden',
+          overflowY: 'auto',
           overscrollBehavior: 'contain',
           padding: '0 12px 12px',
           WebkitOverflowScrolling: 'touch',
