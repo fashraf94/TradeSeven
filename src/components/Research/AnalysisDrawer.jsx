@@ -52,6 +52,11 @@ const AnalysisDrawer = ({
     onSnapStateChange?.(snapState);
   }, [snapState, onSnapStateChange]);
 
+  // Explicit scroll height bypasses flex calculation that browsers may constrain
+  // to the visible (clipped) drawer area instead of the full drawer interior
+  const HEADER_HEIGHT = 110; // grab handle + summary strip + tab bar + spacing
+  const scrollHeight = containerHeight * 0.9 - HEADER_HEIGHT;
+
   const sentiment = summaryData?.sentiment;
   const dailyChange = summaryData?.dailyChange ?? 0;
   const volumeRatio = summaryData?.volumeRatio ?? 1.0;
@@ -232,8 +237,8 @@ const AnalysisDrawer = ({
       <div
         ref={contentRef}
         style={{
-          flex: 1,
-          minHeight: 0,
+          height: scrollHeight,
+          flexShrink: 0,
           overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: 'contain',

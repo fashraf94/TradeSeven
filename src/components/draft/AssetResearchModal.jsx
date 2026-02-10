@@ -980,7 +980,7 @@ const AssetResearchModal = ({
         <div
           ref={version >= 2 ? v2ContainerRef : undefined}
           style={version >= 2
-            ? { flex: 1, position: 'relative', overflow: 'hidden' }
+            ? { flex: 1, position: 'relative', overflow: 'visible' }
             : { flex: 1, overflowY: 'auto' }
           }
         >
