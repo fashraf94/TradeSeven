@@ -35,7 +35,10 @@ const ConfidenceGauge = ({ confidence, onTooltip }) => {
         marginBottom: '20px',
       }}>
         <span
+          role="button"
+          tabIndex={0}
           onClick={() => onTooltip?.('confidenceGauge')}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTooltip?.('confidenceGauge'); } }}
           style={{
             borderBottom: onTooltip ? '1px dashed #484f58' : 'none',
             cursor: onTooltip ? 'pointer' : 'default',
@@ -67,7 +70,13 @@ const ConfidenceGauge = ({ confidence, onTooltip }) => {
         </motion.div>
 
         {/* Track */}
-        <div style={{
+        <div
+          role="meter"
+          aria-valuenow={safeConfidence}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Risk appetite gauge"
+          style={{
           position: 'relative',
           height: '4px',
           borderRadius: '9999px',

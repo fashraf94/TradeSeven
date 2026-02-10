@@ -1,6 +1,6 @@
 // /src/components/Research/MoneyMap/MetricTooltip.jsx
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // ===========================================
@@ -75,6 +75,13 @@ const TOOLTIPS = {
 const MetricTooltip = ({ metric, isOpen, onClose }) => {
   const tooltip = metric ? TOOLTIPS[metric] : null;
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleEsc = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [isOpen, onClose]);
+
   return (
     <AnimatePresence>
       {isOpen && tooltip && (
@@ -98,6 +105,9 @@ const MetricTooltip = ({ metric, isOpen, onClose }) => {
           {/* Bottom Sheet */}
           <motion.div
             key="tooltip-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label={tooltip?.title || 'Metric explanation'}
             initial={{ y: 100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 100, opacity: 0 }}

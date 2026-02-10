@@ -96,7 +96,10 @@ const SectionHeader = ({ children }) => (
 /** Inline tappable label: dashed underline + triggers tooltip on tap */
 const TappableLabel = ({ metricKey, onTooltip, children, style }) => (
   <span
+    role="button"
+    tabIndex={0}
     onClick={(e) => { e.stopPropagation(); onTooltip?.(metricKey); }}
+    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onTooltip?.(metricKey); } }}
     style={{
       ...style,
       borderBottom: onTooltip ? '1px dashed #484f58' : 'none',
@@ -115,7 +118,11 @@ const SectorCard = React.memo(({ sector, isExpanded, onToggle, onTooltip }) => {
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={onToggle}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+      aria-expanded={isExpanded}
       style={{
         background: isExpanded ? '#1c2128' : '#161b22',
         border: '1px solid #21262d',

@@ -80,7 +80,10 @@ const RegimeBanner = ({ regime, weather, computedAt, onTooltip, onRefresh, isRef
         marginBottom: '4px',
       }}>
         <span
+          role="button"
+          tabIndex={0}
           onClick={() => onTooltip?.('regime')}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTooltip?.('regime'); } }}
           style={{
             borderBottom: onTooltip ? '1px dashed #484f58' : 'none',
             cursor: onTooltip ? 'pointer' : 'default',

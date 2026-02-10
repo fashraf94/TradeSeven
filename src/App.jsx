@@ -97,7 +97,7 @@ import DraftCompleteScreen from './screens/SnakeDraft/DraftCompleteScreen';
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 import { ConfirmationPopup } from './components/shared';
-import ErrorBoundary from './components/ErrorBoundary';
+import ErrorBoundary, { CompactErrorFallback } from './components/ErrorBoundary';
 // Money Map screen
 import { MoneyMapScreen } from './components/Research/MoneyMap';
 // Dashboard Components
@@ -9641,9 +9641,14 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
     // Money Map screen
     if (showMoneyMap) {
       return (
-        <MoneyMapScreen
-          onBack={() => setShowMoneyMap(false)}
-        />
+        <ErrorBoundary
+          fallback={<CompactErrorFallback message="Money Map failed to load. Please try again." />}
+          onRetry={() => setShowMoneyMap(false)}
+        >
+          <MoneyMapScreen
+            onBack={() => setShowMoneyMap(false)}
+          />
+        </ErrorBoundary>
       );
     }
 
