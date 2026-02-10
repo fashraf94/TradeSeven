@@ -128,6 +128,56 @@ const MOMENTUM_Y_WEIGHT = 2.0;
 const MOMENTUM_DIRECTION_THRESHOLD = 0.5;
 
 // ===========================================
+// TUNING CONSTANTS
+// Named thresholds for scoring & classification
+// ===========================================
+
+// Leadership scoring weights (sum = 5.0 max)
+const LEADERSHIP_HEALTH_WEIGHT = 3.0;
+const LEADERSHIP_OUTPERFORM_WEIGHT = 1.5;
+const LEADERSHIP_DEPTH_WEIGHT = 0.5;
+const LEADERSHIP_MAX_DEPTH = 7;
+const LEADERSHIP_MAX_SCORE = 5;
+
+// Leadership health multipliers
+const HEALTH_MULT_GOOD = 1.5;
+const HEALTH_MULT_WARN = 1.0;
+const HEALTH_MULT_BAD = 0.5;
+const OUTPERFORM_MULT_YES = 1.2;
+const OUTPERFORM_MULT_NO = 0.8;
+
+// Gilded Cage detection
+const GILDED_CAGE_LEADERSHIP_MIN = 4.0;
+const GILDED_CAGE_BREADTH_MAX = 40;
+const GILDED_CAGE_CRITICAL_THRESHOLD = 0.70;
+
+// Regime thresholds
+const REGIME_BREADTH_RISK_ON = 80;
+const REGIME_BREADTH_RISK_OFF = 20;
+const REGIME_BREADTH_CYCLICAL_MIN = 60;
+const REGIME_BREADTH_CYCLICAL_MAX = 80;
+const REGIME_BREADTH_DEFENSIVE_MIN = 25;
+const REGIME_BREADTH_DEFENSIVE_MAX = 40;
+const REGIME_BREADTH_MIXED_MIN = 45;
+const REGIME_BREADTH_MIXED_MAX = 55;
+const REGIME_DELTA_RISK_OFF = -3;
+const REGIME_DELTA_MIXED_BAND = 1;
+const REGIME_DELTA_FALLBACK = 1;
+const REGIME_SECTORS_POSITIVE_MIN = 8;
+
+// Confidence scoring
+const CONFIDENCE_PERF_RANGE = 20;
+const CONFIDENCE_PERF_MAX = 60;
+const CONFIDENCE_BREADTH_MAX = 25;
+const CONFIDENCE_ALIGNMENT_FULL = 15;
+const CONFIDENCE_ALIGNMENT_PARTIAL = 7.5;
+const CONFIDENCE_ALIGNMENT_THRESHOLD = 0.5;
+
+// Price-Breadth divergence
+const DIVERGENCE_BREADTH_LOW = 40;
+const DIVERGENCE_BREADTH_HIGH = 60;
+
+// ===========================================
 // SAFE NUMBER HELPERS
 // Guard against undefined, null, NaN, Infinity in sector data
 // ===========================================
@@ -290,14 +340,14 @@ function computePriceBreadthDivergence(performance, breadthPercent) {
   const m1 = safeNum(performance.month1);
   const pct = safePercent(breadthPercent);
 
-  if (m1 > 0 && pct < 40) {
+  if (m1 > 0 && pct < DIVERGENCE_BREADTH_LOW) {
     return {
       divergence: 'bearish',
       description: 'Price is rising but fewer stocks are participating. Rally may be fragile.',
     };
   }
 
-  if (m1 < 0 && pct > 60) {
+  if (m1 < 0 && pct > DIVERGENCE_BREADTH_HIGH) {
     return {
       divergence: 'bullish',
       description: 'Price is falling but breadth remains wide. Underlying strength suggests potential rebound.',
@@ -321,7 +371,7 @@ function computePriceBreadthDivergence(performance, breadthPercent) {
  */
 function computeLeadershipScore(leadership) {
   if (!leadership || leadership.length === 0) {
-    return { score: 0, maxScore: 5, healthy: 0, outperforming: 0, total: 0 };
+    return { score: 0, maxScore: LEADERSHIP_MAX_SCORE, healthy: 0, outperforming: 0, total: 0 };
   }
 
   const total = leadership.length;
@@ -330,12 +380,12 @@ function computeLeadershipScore(leadership) {
 
   const healthRatio = healthy / total;
   const outperformRatio = outperforming / total;
-  const depthRatio = Math.min(total / 7, 1);
+  const depthRatio = Math.min(total / LEADERSHIP_MAX_DEPTH, 1);
 
-  const raw = (healthRatio * 3.0) + (outperformRatio * 1.5) + (depthRatio * 0.5);
-  const score = round(clamp(raw, 0, 5), 1);
+  const raw = (healthRatio * LEADERSHIP_HEALTH_WEIGHT) + (outperformRatio * LEADERSHIP_OUTPERFORM_WEIGHT) + (depthRatio * LEADERSHIP_DEPTH_WEIGHT);
+  const score = round(clamp(raw, 0, LEADERSHIP_MAX_SCORE), 1);
 
-  return { score, maxScore: 5, healthy, outperforming, total };
+  return { score, maxScore: LEADERSHIP_MAX_SCORE, healthy, outperforming, total };
 }
 
 /**
@@ -352,7 +402,7 @@ function computeLeadershipScore(leadership) {
  * @returns {{ detected: boolean, severity: string, description: string, weightedLeadership: number }}
  */
 function computeGildedCage(leadershipScore, breadthPercent, leadership) {
-  const detected = leadershipScore >= 4.0 && breadthPercent < 40;
+  const detected = leadershipScore >= GILDED_CAGE_LEADERSHIP_MIN && breadthPercent < GILDED_CAGE_BREADTH_MAX;
 
   if (!detected) {
     return { detected: false, severity: 'none', description: '', weightedLeadership: 0 };
@@ -367,19 +417,19 @@ function computeGildedCage(leadershipScore, breadthPercent, leadership) {
 
   leadership.forEach((leader, index) => {
     const positionWeight = leadership.length - index;
-    const healthMult = leader.healthStatus === '✅' ? 1.5 :
-                       leader.healthStatus === '⚠️' ? 1.0 : 0.5;
-    const outMult = leader.outperforming ? 1.2 : 0.8;
+    const healthMult = leader.healthStatus === '✅' ? HEALTH_MULT_GOOD :
+                       leader.healthStatus === '⚠️' ? HEALTH_MULT_WARN : HEALTH_MULT_BAD;
+    const outMult = leader.outperforming ? OUTPERFORM_MULT_YES : OUTPERFORM_MULT_NO;
 
     weightedSum += positionWeight * healthMult * outMult;
-    maxPossible += positionWeight * 1.5 * 1.2; // Maximum per position
+    maxPossible += positionWeight * HEALTH_MULT_GOOD * OUTPERFORM_MULT_YES;
   });
 
   const weightedLeadership = maxPossible > 0 ? round(weightedSum / maxPossible, 2) : 0;
 
   // CRITICAL if weighted leadership < 70% of max — means top names are carrying
   // the sector while second-tier names are faltering
-  const severity = weightedLeadership < 0.70 ? 'CRITICAL' : 'WARNING';
+  const severity = weightedLeadership < GILDED_CAGE_CRITICAL_THRESHOLD ? 'CRITICAL' : 'WARNING';
 
   const description = severity === 'CRITICAL'
     ? 'A few mega-cap leaders are masking broad sector weakness. High risk of sudden mean-reversion if top names falter.'
@@ -467,20 +517,20 @@ function computeMarketRegime(sectorData) {
   // Apply regime rules in order of specificity
   let regime;
 
-  if (avgBreadth > 80 && delta1W > 0 && delta1M > 0 && sectorsPositive3M >= 8) {
+  if (avgBreadth > REGIME_BREADTH_RISK_ON && delta1W > 0 && delta1M > 0 && sectorsPositive3M >= REGIME_SECTORS_POSITIVE_MIN) {
     regime = 'FULL_RISK_ON';
-  } else if (avgBreadth < 20 && delta1M < -3 && delta3M < -3) {
+  } else if (avgBreadth < REGIME_BREADTH_RISK_OFF && delta1M < REGIME_DELTA_RISK_OFF && delta3M < REGIME_DELTA_RISK_OFF) {
     regime = 'FULL_RISK_OFF';
-  } else if (avgBreadth >= 60 && avgBreadth <= 80 && delta1M > 0) {
+  } else if (avgBreadth >= REGIME_BREADTH_CYCLICAL_MIN && avgBreadth <= REGIME_BREADTH_CYCLICAL_MAX && delta1M > 0) {
     regime = 'LEANING_CYCLICAL';
-  } else if (avgBreadth >= 25 && avgBreadth <= 40 && delta1W < 0 && delta1M < 0) {
+  } else if (avgBreadth >= REGIME_BREADTH_DEFENSIVE_MIN && avgBreadth <= REGIME_BREADTH_DEFENSIVE_MAX && delta1W < 0 && delta1M < 0) {
     regime = 'LEANING_DEFENSIVE';
-  } else if (avgBreadth >= 45 && avgBreadth <= 55 && Math.abs(delta1M) <= 1) {
+  } else if (avgBreadth >= REGIME_BREADTH_MIXED_MIN && avgBreadth <= REGIME_BREADTH_MIXED_MAX && Math.abs(delta1M) <= REGIME_DELTA_MIXED_BAND) {
     regime = 'MIXED';
   } else {
     // Fallback: classify by 1M performance delta direction
-    if (delta1M > 1) regime = 'LEANING_CYCLICAL';
-    else if (delta1M < -1) regime = 'LEANING_DEFENSIVE';
+    if (delta1M > REGIME_DELTA_FALLBACK) regime = 'LEANING_CYCLICAL';
+    else if (delta1M < -REGIME_DELTA_FALLBACK) regime = 'LEANING_DEFENSIVE';
     else regime = 'MIXED';
   }
 
@@ -524,19 +574,16 @@ function computeConfidenceRatio(regimeData) {
   const d1W = safeNum(perfDelta1W);
   const breadth = safeNum(avgBreadth, 50);
 
-  // Performance component (0-60 range)
-  // +10% cyclical advantage → 60, -10% → 0, 0% → 30
-  const perfScore = clamp(((d1M + 10) / 20) * 60, 0, 60);
+  // Performance component (0-CONFIDENCE_PERF_MAX range)
+  const perfScore = clamp(((d1M + (CONFIDENCE_PERF_RANGE / 2)) / CONFIDENCE_PERF_RANGE) * CONFIDENCE_PERF_MAX, 0, CONFIDENCE_PERF_MAX);
 
-  // Breadth component (0-25 range)
-  // High breadth favors risk-on, low breadth favors risk-off
-  const breadthScore = clamp((breadth / 100) * 25, 0, 25);
+  // Breadth component (0-CONFIDENCE_BREADTH_MAX range)
+  const breadthScore = clamp((breadth / 100) * CONFIDENCE_BREADTH_MAX, 0, CONFIDENCE_BREADTH_MAX);
 
-  // Short-term momentum confirmation (0-15 range)
-  // If 1W delta aligns with 1M delta, adds conviction
+  // Short-term momentum confirmation (0-CONFIDENCE_ALIGNMENT_FULL range)
   const alignmentBonus = (d1W > 0 && d1M > 0) || (d1W < 0 && d1M < 0)
-    ? 15
-    : Math.abs(d1W) < 0.5 ? 7.5 : 0;
+    ? CONFIDENCE_ALIGNMENT_FULL
+    : Math.abs(d1W) < CONFIDENCE_ALIGNMENT_THRESHOLD ? CONFIDENCE_ALIGNMENT_PARTIAL : 0;
 
   return Math.round(clamp(perfScore + breadthScore + alignmentBonus, 0, 100));
 }

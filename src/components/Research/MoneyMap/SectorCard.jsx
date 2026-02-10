@@ -108,7 +108,7 @@ const TappableLabel = ({ metricKey, onTooltip, children, style }) => (
   </span>
 );
 
-const SectorCard = ({ sector, isExpanded, onToggle, onTooltip }) => {
+const SectorCard = React.memo(({ sector, isExpanded, onToggle, onTooltip }) => {
   const perf = sector.performance || {};
   const techs = sector.etfTechnicals || {};
   const bb = sector.baggerBombStats || {};
@@ -572,6 +572,6 @@ const SectorCard = ({ sector, isExpanded, onToggle, onTooltip }) => {
       </AnimatePresence>
     </div>
   );
-};
+});
 
 export default SectorCard;
