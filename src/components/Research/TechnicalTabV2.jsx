@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Target, Zap, BarChart3, Globe, TrendingUp, TrendingDown } from 'lucide-react';
 import CollapsibleSection from './CollapsibleSection';
 import { SECTORS, CRYPTO_SECTOR } from '../../constants/sectors';
 import { getQuickSectorSummary } from '../../services/sectorDataService';
@@ -87,7 +88,7 @@ const PriceLevelsSection = ({ levels, price, onLevelHighlight }) => {
   };
 
   return (
-    <CollapsibleSection title="Price Levels" icon={'\uD83C\uDFAF'} defaultOpen>
+    <CollapsibleSection title="Price Levels" icon={<Target size={14} color="#00d9ff" />} defaultOpen>
       {support.length === 0 && resistance.length === 0 ? (
         <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px', padding: '8px 0' }}>
           Insufficient data for level detection
@@ -123,7 +124,7 @@ const PriceLevelsSection = ({ levels, price, onLevelHighlight }) => {
 const MomentumSection = ({ indicators, price }) => {
   if (!indicators) {
     return (
-      <CollapsibleSection title="Momentum Signals" icon={'\u26A1'} defaultOpen>
+      <CollapsibleSection title="Momentum Signals" icon={<Zap size={14} color="#f59e0b" />} defaultOpen>
         <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px', padding: '8px 0' }}>
           Loading indicators...
         </div>
@@ -148,7 +149,7 @@ const MomentumSection = ({ indicators, price }) => {
   const ma50Diff = sma50 && price ? ((price - sma50) / sma50 * 100) : null;
 
   return (
-    <CollapsibleSection title="Momentum Signals" icon={'\u26A1'} defaultOpen>
+    <CollapsibleSection title="Momentum Signals" icon={<Zap size={14} color="#f59e0b" />} defaultOpen>
       {/* RSI Gauge */}
       <div style={{ marginBottom: '12px' }}>
         <div style={{
@@ -196,7 +197,11 @@ const MomentumSection = ({ indicators, price }) => {
           background: `${macdColor}15`, color: macdColor,
           textTransform: 'capitalize',
         }}>
-          {macdSignal === 'bullish' ? '\u2191 Bullish Cross' : macdSignal === 'bearish' ? '\u2193 Bearish Cross' : 'Neutral'}
+          {macdSignal === 'bullish'
+            ? <><TrendingUp size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} /> Bullish Cross</>
+            : macdSignal === 'bearish'
+            ? <><TrendingDown size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} /> Bearish Cross</>
+            : 'Neutral'}
         </span>
       </div>
 
@@ -249,7 +254,7 @@ const VolumeRangeSection = ({ ohlcvData, price }) => {
   };
 
   return (
-    <CollapsibleSection title="Volume & Range" icon={'\uD83D\uDCCA'} defaultOpen>
+    <CollapsibleSection title="Volume & Range" icon={<BarChart3 size={14} color="#8b5cf6" />} defaultOpen>
       {!stats ? (
         <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px', padding: '8px 0' }}>
           Insufficient data
@@ -386,7 +391,7 @@ const SectorContextSection = ({ asset }) => {
   return (
     <CollapsibleSection
       title="Sector Context"
-      icon={'\uD83C\uDF0D'}
+      icon={<Globe size={14} color="#00d9ff" />}
       defaultOpen={false}
     >
       {/* Detect when section opens to trigger lazy fetch */}

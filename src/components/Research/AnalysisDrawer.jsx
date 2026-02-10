@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { motion, useDragControls } from 'framer-motion';
+import { TrendingUp, TrendingDown, ArrowRight } from 'lucide-react';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import useDrawerSnap, { COLLAPSED_HEIGHT } from './useDrawerSnap';
 import { useIsMobile } from '../../hooks/useIsMobile';
@@ -88,7 +89,6 @@ const AnalysisDrawer = ({
         flexDirection: 'column',
         overflow: 'hidden',
         willChange: 'transform',
-        touchAction: 'none',
       }}
     >
       {/* Drag handle area — onPointerDown starts drag on root via dragControls */}
@@ -154,7 +154,11 @@ const AnalysisDrawer = ({
                   ? '#00ff88' : sentiment === 'bearish'
                   ? '#ff4757' : HOLO_COLORS.textSecondary,
               }}>
-                {sentiment === 'bullish' ? '\u2191 Bullish' : sentiment === 'bearish' ? '\u2193 Bearish' : '\u2192 Neutral'}
+                {sentiment === 'bullish'
+                  ? <><TrendingUp size={10} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 2 }} /> Bullish</>
+                  : sentiment === 'bearish'
+                  ? <><TrendingDown size={10} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 2 }} /> Bearish</>
+                  : <><ArrowRight size={10} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 2 }} /> Neutral</>}
               </span>
             )}
 
@@ -240,6 +244,7 @@ const AnalysisDrawer = ({
           overscrollBehavior: 'contain',
           padding: '0 12px 12px',
           WebkitOverflowScrolling: 'touch',
+          touchAction: 'pan-y',
         }}
       >
         {children}
