@@ -117,7 +117,7 @@ const ChartHeader = ({ asset, sector, category, onClose }) => {
             alignItems: 'center',
           }}
         >
-          \u2715
+          {'\u2715'}
         </button>
       </div>
     </div>

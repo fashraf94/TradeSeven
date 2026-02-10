@@ -781,6 +781,25 @@ const AssetResearchModal = ({
   };
   const catStyle = getCategoryStyle(category);
 
+  // v2: Compute responsive modal size overrides
+  const v2ModalStyle = version >= 2 ? (
+    isMobile ? {
+      width: '100vw',
+      height: '100vh',
+      top: 0,
+      left: 0,
+      transform: 'none',
+      borderRadius: 0,
+      maxHeight: 'none',
+    } : {
+      width: '90vw',
+      maxWidth: '900px',
+      height: '90vh',
+      maxHeight: '90vh',
+      borderRadius: '12px',
+    }
+  ) : {};
+
   // Use Portal to render at document.body level, bypassing any parent CSS constraints
   return ReactDOM.createPortal(
     <>
@@ -817,6 +836,7 @@ const AssetResearchModal = ({
           display: 'flex',
           flexDirection: 'column',
           animation: 'modalSlideIn 0.3s ease-out',
+          ...v2ModalStyle,
         }}
       >
         {/* ON THE CLOCK Alert - Shows when it's user's turn */}

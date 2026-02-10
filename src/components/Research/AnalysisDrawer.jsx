@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
-import useDrawerSnap from './useDrawerSnap';
+import useDrawerSnap, { COLLAPSED_HEIGHT } from './useDrawerSnap';
 
 const TAB_CONFIGS = [
   { key: 'fundamental', label: 'Analysis', activeColor: '#00d9ff' },
@@ -64,7 +64,7 @@ const AnalysisDrawer = ({
         position: 'absolute',
         left: 0,
         right: 0,
-        bottom: 0,
+        bottom: COLLAPSED_HEIGHT - containerHeight * 0.9, // Push down so only 80px peeks at y=0
         height: containerHeight * 0.9, // Max possible height
         y,
         background: HOLO_COLORS.bgCard,

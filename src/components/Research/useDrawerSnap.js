@@ -1,6 +1,9 @@
 import { useRef, useState, useCallback } from 'react';
 import { useMotionValue, animate } from 'framer-motion';
 
+/** Collapsed drawer height in px — shared with AnalysisDrawer for positioning */
+export const COLLAPSED_HEIGHT = 80;
+
 /**
  * useDrawerSnap — Gesture-driven snap behavior for a bottom pull-up drawer.
  *
@@ -16,7 +19,7 @@ export default function useDrawerSnap(containerHeight) {
   const [snapState, setSnapState] = useState('collapsed'); // 'collapsed' | 'mid' | 'full'
   const dragging = useRef(false);
 
-  const COLLAPSED = 80;
+  const COLLAPSED = COLLAPSED_HEIGHT;
   const MID = Math.round(containerHeight * 0.5);
   const FULL = Math.round(containerHeight * 0.9);
 
