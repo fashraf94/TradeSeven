@@ -1,6 +1,6 @@
 // /src/components/Research/MoneyMap/MoneyMapScreen.jsx
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchAllSectorsData } from '../../../services/sectorDataService';
 import { computeMoneyMapData, BELLWETHER_MAP } from '../../../services/moneyMapEngine';
 import { SECTORS } from '../../../constants/sectors';
@@ -10,9 +10,44 @@ import SectorList from './SectorList';
 import MetricTooltip from './MetricTooltip';
 
 // ===========================================
+// SESSION STORAGE CACHE
+// Stores computed Money Map data with 15-min TTL.
+// On revisit within window, data renders instantly
+// while a background refresh fetches fresh data.
+// ===========================================
+
+const CACHE_KEY = 'mc_moneymap_data';
+const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
+
+function getCachedData() {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed.data || !parsed.timestamp) return null;
+    if (Date.now() - parsed.timestamp > CACHE_TTL) {
+      sessionStorage.removeItem(CACHE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function setCachedData(data, timestamp) {
+  try {
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+      data,
+      timestamp,
+    }));
+  } catch (e) {
+    console.warn('[MoneyMap] Cache write failed:', e.message);
+  }
+}
+
+// ===========================================
 // SPY BENCHMARK FETCHER
-// Fetches S&P 500 historical prices and computes
-// performance metrics needed by the engine
 // ===========================================
 
 async function fetchSpyPerformance() {
@@ -32,17 +67,13 @@ async function fetchSpyPerformance() {
     };
     return { week1: getReturn(5), month1: getReturn(21), month3: getReturn(63) };
   } catch (e) {
-    console.warn('[MoneyMap] SPY fetch failed, using fallback SPY data:', e.message);
-    // Fallback: neutral SPY performance so relative metrics still work
+    console.warn('[MoneyMap] SPY fetch failed, using fallback:', e.message);
     return { week1: 0, month1: 0, month3: 0 };
   }
 }
 
 // ===========================================
 // DATA ENRICHMENT
-// Merges engine output with raw sector data
-// so SectorCard has both derived metrics and
-// raw display fields for the expanded view
 // ===========================================
 
 function enrichSectors(engineSectors, rawSectors) {
@@ -53,12 +84,9 @@ function enrichSectors(engineSectors, rawSectors) {
     const sectorDef = SECTORS[sectorId];
 
     enriched[sectorId] = {
-      // Engine-derived fields
       ...engineSector,
-
-      // Raw display fields for expanded card sections
       performance: raw?.performance || { week1: 0, month1: 0, month3: 0 },
-      breadthDirection: 'stable', // No historical comparison available yet
+      breadthDirection: 'stable',
       etfTechnicals: raw?.etfTechnicals || {},
       baggerBombStats: raw?.baggerBombStats || {},
       leaders: (raw?.leadership || []).map(l => ({
@@ -77,17 +105,94 @@ function enrichSectors(engineSectors, rawSectors) {
 }
 
 // ===========================================
+// SKELETON COMPONENTS
+// Shimmer placeholders shown while sector
+// data loads on a cold start (no cache)
+// ===========================================
+
+const SectorCardSkeleton = () => (
+  <div style={{
+    background: '#161b22',
+    border: '1px solid #21262d',
+    borderRadius: '12px',
+    padding: '16px',
+    overflow: 'hidden',
+    position: 'relative',
+  }}>
+    {/* Shimmer overlay */}
+    <div style={{
+      position: 'absolute',
+      inset: 0,
+      background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.03) 50%, transparent 100%)',
+      animation: 'moneymap-shimmer 1.5s ease-in-out infinite',
+    }} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#21262d', flexShrink: 0 }} />
+      <div style={{ flex: 1 }}>
+        <div style={{ height: '12px', width: '55%', background: '#21262d', borderRadius: '4px', marginBottom: '8px' }} />
+        <div style={{ height: '10px', width: '35%', background: '#21262d', borderRadius: '4px' }} />
+      </div>
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div style={{ height: '8px', width: '40px', background: '#21262d', borderRadius: '4px' }} />
+        <div style={{ height: '16px', width: '16px', borderRadius: '4px', background: '#21262d' }} />
+      </div>
+    </div>
+  </div>
+);
+
+const SectorListSkeleton = () => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    {/* Group header skeleton */}
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#21262d' }} />
+        <div style={{ height: '10px', width: '100px', background: '#21262d', borderRadius: '4px' }} />
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <SectorCardSkeleton />
+        <SectorCardSkeleton />
+        <SectorCardSkeleton />
+      </div>
+    </div>
+    {/* Second group */}
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#21262d' }} />
+        <div style={{ height: '10px', width: '80px', background: '#21262d', borderRadius: '4px' }} />
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <SectorCardSkeleton />
+        <SectorCardSkeleton />
+      </div>
+    </div>
+  </div>
+);
+
+// ===========================================
+// SHIMMER KEYFRAMES (injected once)
+// ===========================================
+
+const SHIMMER_STYLE = `
+@keyframes moneymap-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+`;
+
+// ===========================================
 // COMPONENT
 // ===========================================
 
 /**
  * MoneyMapScreen -- Main container for the Money Map feature
  *
- * Fetches live sector data from sectorDataService, computes intelligence
- * via moneyMapEngine, and renders the three layers:
- *   1. RegimeBanner (market regime + weather)
- *   2. ConfidenceGauge (cyclical vs defensive balance)
- *   3. SectorList (11 sectors grouped by momentum quadrant)
+ * Stale-while-revalidate pattern:
+ *   1. On mount, check sessionStorage for cached data (15-min TTL)
+ *   2. If cached: show instantly, then fetch fresh data in background
+ *   3. If no cache: show skeleton, fetch fresh data
+ *   4. On fresh data: update display + update cache
+ *   5. Refresh button forces a new fetch
  *
  * @param {Object}   props
  * @param {function} props.onBack - Navigate back to Research landing page
@@ -95,59 +200,119 @@ function enrichSectors(engineSectors, rawSectors) {
 const MoneyMapScreen = ({ onBack }) => {
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [expandedSectorId, setExpandedSectorId] = useState(null);
   const [tooltipMetric, setTooltipMetric] = useState(null);
+  const mountedRef = useRef(true);
 
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      // Fetch all sector data + SPY benchmark in parallel
-      const [allSectors, spyPerf] = await Promise.all([
-        fetchAllSectorsData(),
-        fetchSpyPerformance(),
-      ]);
+  // Core fetch + compute pipeline
+  const fetchFreshData = useCallback(async () => {
+    const [allSectors, spyPerf] = await Promise.all([
+      fetchAllSectorsData(),
+      fetchSpyPerformance(),
+    ]);
 
-      if (!allSectors || Object.keys(allSectors).length === 0) {
-        throw new Error('No sector data returned');
-      }
-
-      console.log(`[MoneyMap] Loaded ${Object.keys(allSectors).length} sectors, SPY perf:`, spyPerf);
-
-      // Run the intelligence engine
-      const engineResult = computeMoneyMapData(allSectors, spyPerf);
-
-      // Merge engine output with raw sector data for display
-      const enrichedSectors = enrichSectors(engineResult.sectors, allSectors);
-
-      setData({
-        sectors: enrichedSectors,
-        global: engineResult.global,
-      });
-    } catch (err) {
-      console.error('[MoneyMap] Failed to load data:', err);
-      setError(err.message || 'Failed to load Money Map data');
-    } finally {
-      setIsLoading(false);
+    if (!allSectors || Object.keys(allSectors).length === 0) {
+      throw new Error('No sector data returned');
     }
+
+    const engineResult = computeMoneyMapData(allSectors, spyPerf);
+    const enrichedSectors = enrichSectors(engineResult.sectors, allSectors);
+    const fetchedAt = Date.now();
+
+    const newData = {
+      sectors: enrichedSectors,
+      global: {
+        ...engineResult.global,
+        computedAt: fetchedAt,
+      },
+    };
+
+    return { newData, fetchedAt };
   }, []);
 
+  // Stale-while-revalidate: load cached data first, then refresh in background
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    mountedRef.current = true;
+    const cached = getCachedData();
+
+    if (cached) {
+      // Show cached data instantly with the original fetch timestamp
+      setData({
+        ...cached.data,
+        global: {
+          ...cached.data.global,
+          computedAt: cached.timestamp,
+        },
+      });
+      setIsLoading(false);
+
+      // Background refresh
+      setIsRefreshing(true);
+      fetchFreshData()
+        .then(({ newData, fetchedAt }) => {
+          if (!mountedRef.current) return;
+          setData(newData);
+          setCachedData(newData, fetchedAt);
+          console.log(`[MoneyMap] Background refresh complete (${Object.keys(newData.sectors).length} sectors)`);
+        })
+        .catch((err) => {
+          console.warn('[MoneyMap] Background refresh failed, keeping cached data:', err.message);
+        })
+        .finally(() => {
+          if (mountedRef.current) setIsRefreshing(false);
+        });
+    } else {
+      // Cold start: no cache, show loading skeleton
+      setIsLoading(true);
+      fetchFreshData()
+        .then(({ newData, fetchedAt }) => {
+          if (!mountedRef.current) return;
+          setData(newData);
+          setCachedData(newData, fetchedAt);
+          console.log(`[MoneyMap] Initial load complete (${Object.keys(newData.sectors).length} sectors)`);
+        })
+        .catch((err) => {
+          if (!mountedRef.current) return;
+          console.error('[MoneyMap] Failed to load data:', err);
+          setError(err.message || 'Failed to load Money Map data');
+        })
+        .finally(() => {
+          if (mountedRef.current) setIsLoading(false);
+        });
+    }
+
+    return () => { mountedRef.current = false; };
+  }, [fetchFreshData]);
+
+  // Manual refresh: force-fetch fresh data
+  const handleRefresh = useCallback(async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    setError(null);
+    try {
+      const { newData, fetchedAt } = await fetchFreshData();
+      if (!mountedRef.current) return;
+      setData(newData);
+      setCachedData(newData, fetchedAt);
+    } catch (err) {
+      if (!mountedRef.current) return;
+      console.error('[MoneyMap] Refresh failed:', err);
+      if (!data) {
+        setError(err.message || 'Failed to load Money Map data');
+      }
+    } finally {
+      if (mountedRef.current) setIsRefreshing(false);
+    }
+  }, [fetchFreshData, isRefreshing, data]);
 
   const handleToggleSector = (sectorId) => {
     setExpandedSectorId(prev => prev === sectorId ? null : sectorId);
   };
 
-  const handleTooltip = (metric) => {
-    setTooltipMetric(metric);
-  };
-
-  const handleCloseTooltip = () => {
-    setTooltipMetric(null);
-  };
+  const handleTooltip = (metric) => setTooltipMetric(metric);
+  const handleCloseTooltip = () => setTooltipMetric(null);
 
   return (
     <div style={{
@@ -155,6 +320,8 @@ const MoneyMapScreen = ({ onBack }) => {
       maxWidth: '600px',
       margin: '0 auto',
     }}>
+      <style>{SHIMMER_STYLE}</style>
+
       {/* Back Header */}
       <div style={{
         display: 'flex',
@@ -179,7 +346,7 @@ const MoneyMapScreen = ({ onBack }) => {
             </svg>
           </button>
         )}
-        <div>
+        <div style={{ flex: 1 }}>
           <h1 style={{
             color: '#ffffff',
             fontSize: '20px',
@@ -196,42 +363,75 @@ const MoneyMapScreen = ({ onBack }) => {
             Where's the money going?
           </p>
         </div>
+        {/* Refreshing indicator in header */}
+        {isRefreshing && data && (
+          <div style={{
+            width: '14px',
+            height: '14px',
+            border: '2px solid #00d9ff',
+            borderTopColor: 'transparent',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            flexShrink: 0,
+          }} />
+        )}
       </div>
 
-      {/* Loading State */}
-      {isLoading && (
+      {/* Cold-start loading: full skeleton */}
+      {isLoading && !data && (
         <div style={{
           display: 'flex',
           flexDirection: 'column',
           gap: '24px',
         }}>
+          {/* RegimeBanner skeleton */}
           <div style={{
             background: '#1c2128',
             border: '1px solid #21262d',
             borderRadius: '16px',
             padding: '20px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
+            position: 'relative',
+            overflow: 'hidden',
           }}>
             <div style={{
-              width: '20px',
-              height: '20px',
-              border: '2px solid #00d9ff',
-              borderTopColor: 'transparent',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite',
+              position: 'absolute',
+              inset: 0,
+              background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.03) 50%, transparent 100%)',
+              animation: 'moneymap-shimmer 1.5s ease-in-out infinite',
             }} />
-            <span style={{ color: '#8b949e', fontSize: '14px' }}>
-              Computing Money Map...
-            </span>
+            <div style={{ height: '10px', width: '100px', background: '#21262d', borderRadius: '4px', marginBottom: '12px' }} />
+            <div style={{ height: '20px', width: '60%', background: '#21262d', borderRadius: '4px', marginBottom: '12px' }} />
+            <div style={{ height: '12px', width: '40%', background: '#21262d', borderRadius: '4px', marginBottom: '16px' }} />
+            <div style={{ height: '12px', width: '100%', background: '#21262d', borderRadius: '4px', marginBottom: '8px' }} />
+            <div style={{ height: '12px', width: '80%', background: '#21262d', borderRadius: '4px' }} />
           </div>
-          <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+
+          {/* ConfidenceGauge skeleton */}
+          <div style={{
+            background: '#161b22',
+            border: '1px solid #21262d',
+            borderRadius: '16px',
+            padding: '20px',
+            position: 'relative',
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.03) 50%, transparent 100%)',
+              animation: 'moneymap-shimmer 1.5s ease-in-out infinite',
+            }} />
+            <div style={{ height: '12px', width: '100px', background: '#21262d', borderRadius: '4px', marginBottom: '20px' }} />
+            <div style={{ height: '4px', width: '100%', background: '#21262d', borderRadius: '4px' }} />
+          </div>
+
+          {/* SectorList skeleton */}
+          <SectorListSkeleton />
         </div>
       )}
 
-      {/* Error State */}
-      {!isLoading && error && (
+      {/* Error (only on cold-start failure with no cached data) */}
+      {!isLoading && error && !data && (
         <div style={{
           background: '#1c2128',
           border: '1px solid rgba(239,68,68,0.3)',
@@ -244,7 +444,7 @@ const MoneyMapScreen = ({ onBack }) => {
             {error}
           </div>
           <button
-            onClick={loadData}
+            onClick={handleRefresh}
             style={{
               background: 'rgba(0, 217, 255, 0.1)',
               border: '1px solid rgba(0, 217, 255, 0.3)',
@@ -262,8 +462,8 @@ const MoneyMapScreen = ({ onBack }) => {
         </div>
       )}
 
-      {/* Main Content */}
-      {!isLoading && !error && data && (
+      {/* Main content: show when data exists (cached or fresh) */}
+      {data && (
         <div style={{
           display: 'flex',
           flexDirection: 'column',
@@ -275,6 +475,8 @@ const MoneyMapScreen = ({ onBack }) => {
             weather={data.global.weather}
             computedAt={data.global.computedAt}
             onTooltip={handleTooltip}
+            onRefresh={handleRefresh}
+            isRefreshing={isRefreshing}
           />
 
           {/* Layer 2: Confidence Gauge */}

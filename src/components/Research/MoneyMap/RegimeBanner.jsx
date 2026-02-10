@@ -55,7 +55,7 @@ const formatUpdatedTime = (timestamp) => {
  * @param {Object} props.weather - From global.weather ({ weather, description })
  * @param {number} props.computedAt - Timestamp from Date.now()
  */
-const RegimeBanner = ({ regime, weather, computedAt, onTooltip }) => {
+const RegimeBanner = ({ regime, weather, computedAt, onTooltip, onRefresh, isRefreshing }) => {
   const glowColor = REGIME_GLOW[regime.regime] || 'transparent';
   const weatherEmoji = WEATHER_EMOJI[weather.weather] || '';
 
@@ -140,29 +140,34 @@ const RegimeBanner = ({ regime, weather, computedAt, onTooltip }) => {
           Updated {formatUpdatedTime(computedAt)}
         </span>
 
-        {/* Refresh icon — disabled for Phase 2 */}
+        {/* Refresh button */}
         <button
-          disabled
+          disabled={!onRefresh || isRefreshing}
+          onClick={onRefresh}
           style={{
             background: 'transparent',
             border: 'none',
-            cursor: 'not-allowed',
-            opacity: 0.4,
+            cursor: onRefresh && !isRefreshing ? 'pointer' : 'not-allowed',
+            opacity: onRefresh ? (isRefreshing ? 0.6 : 1) : 0.4,
             padding: '4px',
             display: 'flex',
             alignItems: 'center',
+            transition: 'opacity 0.2s',
           }}
-          title="Refresh (coming soon)"
+          title={isRefreshing ? 'Refreshing...' : 'Refresh data'}
         >
           <svg
             width="16"
             height="16"
             viewBox="0 0 24 24"
             fill="none"
-            stroke="#8b949e"
+            stroke={isRefreshing ? '#00d9ff' : '#8b949e'}
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
+            style={{
+              animation: isRefreshing ? 'spin 1s linear infinite' : 'none',
+            }}
           >
             <polyline points="23 4 23 10 17 10" />
             <polyline points="1 20 1 14 7 14" />
