@@ -11,7 +11,7 @@ import { motion } from 'framer-motion';
  * @param {Object} props
  * @param {number} props.confidence - 0-100, where 50 is neutral
  */
-const ConfidenceGauge = ({ confidence }) => {
+const ConfidenceGauge = ({ confidence, onTooltip }) => {
   // Guard against bad input
   const safeConfidence = typeof confidence === 'number' && Number.isFinite(confidence)
     ? Math.max(0, Math.min(100, confidence))
@@ -34,7 +34,14 @@ const ConfidenceGauge = ({ confidence }) => {
         fontWeight: '600',
         marginBottom: '20px',
       }}>
-        RISK APPETITE
+        <span
+          onClick={() => onTooltip?.('confidenceGauge')}
+          style={{
+            borderBottom: onTooltip ? '1px dashed #484f58' : 'none',
+            cursor: onTooltip ? 'pointer' : 'default',
+            paddingBottom: '1px',
+          }}
+        >RISK APPETITE</span>
       </div>
 
       {/* Gauge Area */}

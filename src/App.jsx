@@ -98,6 +98,8 @@ import DraftCompleteScreen from './screens/SnakeDraft/DraftCompleteScreen';
 import DesktopBackground from './components/DesktopBackground';
 import { ConfirmationPopup } from './components/shared';
 import ErrorBoundary from './components/ErrorBoundary';
+// Money Map screen
+import { MoneyMapScreen } from './components/Research/MoneyMap';
 // Dashboard Components
 import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
 
@@ -7585,6 +7587,8 @@ const MarketBriefing = ({
   onMyPatterns,
   onInsights,
   activePatternCount = 0,
+  // Money Map
+  onOpenMoneyMap,
 }) => {
   const c = colors || { green: '#00ff88', red: '#ff4757', cyan: '#00d9ff' };
 
@@ -7907,6 +7911,95 @@ const MarketBriefing = ({
           confirmationRate={null}
           colors={c}
         />
+      )}
+
+      {/* Money Map Card */}
+      {onOpenMoneyMap && (
+        <div
+          onClick={onOpenMoneyMap}
+          style={{
+            position: 'relative',
+            borderRadius: '16px',
+            padding: '2px',
+            background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.3), rgba(0, 217, 255, 0.1), rgba(6, 182, 212, 0.2))',
+            boxShadow: '0 0 20px rgba(0, 217, 255, 0.1)',
+            overflow: 'hidden',
+            marginBottom: '20px',
+            cursor: 'pointer',
+          }}
+        >
+          {/* Gradient border effect */}
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '16px',
+            padding: '2px',
+            background: 'linear-gradient(135deg, #00d9ff, #06b6d4)',
+            WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+            WebkitMaskComposite: 'xor',
+            maskComposite: 'exclude',
+            opacity: 0.4,
+          }} />
+
+          <div style={{
+            position: 'relative',
+            background: 'linear-gradient(145deg, rgba(13, 17, 23, 0.95), rgba(22, 27, 34, 0.98))',
+            borderRadius: '14px',
+            padding: '20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px',
+          }}>
+            {/* Compass Icon */}
+            <div style={{
+              width: '48px',
+              height: '48px',
+              background: 'rgba(0, 217, 255, 0.1)',
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 0 16px rgba(0, 217, 255, 0.15)',
+              flexShrink: 0,
+            }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#00d9ff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+              </svg>
+            </div>
+
+            {/* Text */}
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                <span style={{
+                  color: '#ffffff',
+                  fontSize: '16px',
+                  fontWeight: '700',
+                }}>
+                  Money Map
+                </span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00d9ff" strokeWidth="2.5">
+                  <path d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </div>
+              <span style={{
+                color: '#00d9ff',
+                fontSize: '12px',
+                fontWeight: '600',
+                display: 'block',
+                marginBottom: '4px',
+              }}>
+                Where's the money going?
+              </span>
+              <span style={{
+                color: 'rgba(255, 255, 255, 0.5)',
+                fontSize: '12px',
+              }}>
+                See which sectors are leading, lagging, and turning around
+              </span>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Your Watchlist - Personalized news for user's stock picks */}
@@ -8920,6 +9013,9 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
   const [tier2Picks, setTier2Picks] = useState({ steady: [], risky: [], defensive: [] });
   const [draftRankerPhase, setDraftRankerPhase] = useState(null);
 
+  // Money Map state
+  const [showMoneyMap, setShowMoneyMap] = useState(false);
+
   // Technical Research state
   const [showTechnicalScreen, setShowTechnicalScreen] = useState(null); // 'analysis' | 'patterns' | 'insights' | null
   const [technicalSymbol, setTechnicalSymbol] = useState(null);
@@ -9542,6 +9638,15 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
       );
     }
 
+    // Money Map screen
+    if (showMoneyMap) {
+      return (
+        <MoneyMapScreen
+          onBack={() => setShowMoneyMap(false)}
+        />
+      );
+    }
+
     switch (flowPhase) {
       case 1:
         return (
@@ -9556,6 +9661,8 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
             onInsights={() => setShowTechnicalScreen('insights')}
             activePatternCount={patternStats.active || 0}
             confirmationRate={patternStats.confirmationRate || null}
+            // Money Map
+            onOpenMoneyMap={() => setShowMoneyMap(true)}
           />
         );
 
@@ -9659,7 +9766,7 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
   return (
     <div style={{ minHeight: '100vh', background: '#0d1117' }}>
       {/* Progress indicator */}
-      {!selectedAsset && !showTechnicalScreen && (
+      {!selectedAsset && !showTechnicalScreen && !showMoneyMap && (
         <div style={{
           display: 'flex',
           justifyContent: 'center',

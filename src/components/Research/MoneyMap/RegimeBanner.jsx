@@ -55,7 +55,7 @@ const formatUpdatedTime = (timestamp) => {
  * @param {Object} props.weather - From global.weather ({ weather, description })
  * @param {number} props.computedAt - Timestamp from Date.now()
  */
-const RegimeBanner = ({ regime, weather, computedAt }) => {
+const RegimeBanner = ({ regime, weather, computedAt, onTooltip }) => {
   const glowColor = REGIME_GLOW[regime.regime] || 'transparent';
   const weatherEmoji = WEATHER_EMOJI[weather.weather] || '';
 
@@ -79,7 +79,14 @@ const RegimeBanner = ({ regime, weather, computedAt }) => {
         letterSpacing: '1px',
         marginBottom: '4px',
       }}>
-        MARKET REGIME
+        <span
+          onClick={() => onTooltip?.('regime')}
+          style={{
+            borderBottom: onTooltip ? '1px dashed #484f58' : 'none',
+            cursor: onTooltip ? 'pointer' : 'default',
+            paddingBottom: '1px',
+          }}
+        >MARKET REGIME</span>
       </div>
 
       {/* Regime Name */}

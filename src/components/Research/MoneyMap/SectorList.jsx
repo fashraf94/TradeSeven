@@ -26,7 +26,7 @@ const GROUP_HEADERS = {
  * @param {string|null} props.expandedSectorId  - Currently expanded sector, or null
  * @param {function}    props.onToggleSector     - (sectorId) => void
  */
-const SectorList = ({ sectors, expandedSectorId, onToggleSector }) => {
+const SectorList = ({ sectors, expandedSectorId, onToggleSector, onTooltip }) => {
   // Group sectors by quadrant, sort within each group by momentumScore desc
   const groups = useMemo(() => {
     const sectorArray = Object.values(sectors || {});
@@ -113,6 +113,7 @@ const SectorList = ({ sectors, expandedSectorId, onToggleSector }) => {
                 sector={sector}
                 isExpanded={expandedSectorId === sector.sectorId}
                 onToggle={() => onToggleSector(sector.sectorId)}
+                onTooltip={onTooltip}
               />
             ))}
           </div>

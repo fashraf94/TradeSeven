@@ -59,7 +59,22 @@ const SectionHeader = ({ children }) => (
  * @param {boolean}  props.isExpanded  - Whether this card is expanded
  * @param {function} props.onToggle    - Toggle expand/collapse
  */
-const SectorCard = ({ sector, isExpanded, onToggle }) => {
+/** Inline tappable label: dashed underline + triggers tooltip on tap */
+const TappableLabel = ({ metricKey, onTooltip, children, style }) => (
+  <span
+    onClick={(e) => { e.stopPropagation(); onTooltip?.(metricKey); }}
+    style={{
+      ...style,
+      borderBottom: onTooltip ? '1px dashed #484f58' : 'none',
+      cursor: onTooltip ? 'pointer' : 'default',
+      paddingBottom: '1px',
+    }}
+  >
+    {children}
+  </span>
+);
+
+const SectorCard = ({ sector, isExpanded, onToggle, onTooltip }) => {
   const perf = sector.performance || {};
   const techs = sector.etfTechnicals || {};
   const bb = sector.baggerBombStats || {};
@@ -159,7 +174,7 @@ const SectorCard = ({ sector, isExpanded, onToggle }) => {
             alignItems: 'center',
             gap: '6px',
           }}>
-            <span style={{ color: '#8b949e', fontSize: '11px' }}>Mom</span>
+            <TappableLabel metricKey="momentumScore" onTooltip={onTooltip} style={{ color: '#8b949e', fontSize: '11px' }}>Mom</TappableLabel>
             <span style={{
               color: perfColor(sector.momentumScore),
               fontSize: '12px',
@@ -183,30 +198,38 @@ const SectorCard = ({ sector, isExpanded, onToggle }) => {
           flexShrink: 0,
         }}>
           {sector.gildedCage?.detected && (
-            <span style={{
-              padding: '2px 6px',
-              borderRadius: '6px',
-              fontSize: '10px',
-              fontWeight: '600',
-              background: sector.gildedCage.severity === 'CRITICAL'
-                ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
-              color: sector.gildedCage.severity === 'CRITICAL'
-                ? '#ef4444' : '#f59e0b',
-            }}>
+            <span
+              onClick={(e) => { e.stopPropagation(); onTooltip?.('gildedCage'); }}
+              style={{
+                padding: '2px 6px',
+                borderRadius: '6px',
+                fontSize: '10px',
+                fontWeight: '600',
+                background: sector.gildedCage.severity === 'CRITICAL'
+                  ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
+                color: sector.gildedCage.severity === 'CRITICAL'
+                  ? '#ef4444' : '#f59e0b',
+                cursor: 'pointer',
+              }}
+            >
               {sector.gildedCage.severity === 'CRITICAL' ? '\uD83C\uDFDA\uFE0F' : '\u26A0\uFE0F'} Cage
             </span>
           )}
           {sector.priceBreadthDivergence?.divergence !== 'none' && sector.priceBreadthDivergence?.divergence && (
-            <span style={{
-              padding: '2px 6px',
-              borderRadius: '6px',
-              fontSize: '10px',
-              fontWeight: '600',
-              background: sector.priceBreadthDivergence.divergence === 'bearish'
-                ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.15)',
-              color: sector.priceBreadthDivergence.divergence === 'bearish'
-                ? '#ef4444' : '#3b82f6',
-            }}>
+            <span
+              onClick={(e) => { e.stopPropagation(); onTooltip?.('breadth'); }}
+              style={{
+                padding: '2px 6px',
+                borderRadius: '6px',
+                fontSize: '10px',
+                fontWeight: '600',
+                background: sector.priceBreadthDivergence.divergence === 'bearish'
+                  ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.15)',
+                color: sector.priceBreadthDivergence.divergence === 'bearish'
+                  ? '#ef4444' : '#3b82f6',
+                cursor: 'pointer',
+              }}
+            >
               {sector.priceBreadthDivergence.divergence === 'bearish' ? '\uD83D\uDCC9' : '\uD83D\uDCC8'} Div
             </span>
           )}
@@ -276,7 +299,7 @@ const SectorCard = ({ sector, isExpanded, onToggle }) => {
                     borderRadius: '8px',
                   }}>
                     <div style={{ fontSize: '10px', color: '#8b949e', marginBottom: '4px' }}>
-                      Breadth
+                      <TappableLabel metricKey="breadth" onTooltip={onTooltip}>Breadth</TappableLabel>
                     </div>
                     <BreadthBar
                       breadth={sector.breadthTier?.percent ?? 50}
@@ -291,7 +314,7 @@ const SectorCard = ({ sector, isExpanded, onToggle }) => {
                     borderRadius: '8px',
                   }}>
                     <div style={{ fontSize: '10px', color: '#8b949e', marginBottom: '4px' }}>
-                      Leadership
+                      <TappableLabel metricKey="leadership" onTooltip={onTooltip}>Leadership</TappableLabel>
                     </div>
                     <LeadershipDisplay
                       leadershipScore={sector.leadershipScore}
@@ -350,9 +373,9 @@ const SectorCard = ({ sector, isExpanded, onToggle }) => {
                   gap: '8px',
                 }}>
                   {[
-                    { label: '50-day MA', above: techs.above50SMA, distance: techs.distanceFrom50SMA },
-                    { label: '200-day MA', above: techs.above200SMA, distance: techs.distanceFrom200SMA },
-                  ].map(({ label, above, distance }) => (
+                    { label: '50-day MA', tooltipKey: 'ma50', above: techs.above50SMA, distance: techs.distanceFrom50SMA },
+                    { label: '200-day MA', tooltipKey: 'ma200', above: techs.above200SMA, distance: techs.distanceFrom200SMA },
+                  ].map(({ label, tooltipKey, above, distance }) => (
                     <div key={label} style={{
                       padding: '10px',
                       background: '#161b22',
@@ -370,7 +393,7 @@ const SectorCard = ({ sector, isExpanded, onToggle }) => {
                       }} />
                       <div>
                         <div style={{ fontSize: '12px', color: '#ffffff' }}>
-                          {above ? 'Above' : 'Below'} {label}
+                          {above ? 'Above' : 'Below'} <TappableLabel metricKey={tooltipKey} onTooltip={onTooltip}>{label}</TappableLabel>
                         </div>
                         <div style={{ fontSize: '10px', color: '#8b949e' }}>
                           {formatDistance(distance)}
@@ -383,7 +406,7 @@ const SectorCard = ({ sector, isExpanded, onToggle }) => {
 
               {/* SECTION 4: BaggerBomb Stats */}
               <div style={{ marginBottom: '16px' }}>
-                <SectionHeader>BaggerBomb Stats (7 Days)</SectionHeader>
+                <SectionHeader><TappableLabel metricKey="baggerbomb" onTooltip={onTooltip}>BaggerBomb Stats</TappableLabel> (7 Days)</SectionHeader>
                 <div style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(3, 1fr)',
@@ -498,7 +521,7 @@ const SectorCard = ({ sector, isExpanded, onToggle }) => {
                           fontWeight: '700',
                           marginBottom: '4px',
                         }}>
-                          GILDED CAGE {sector.gildedCage.severity === 'CRITICAL' ? '— CRITICAL' : '— WARNING'}
+                          <TappableLabel metricKey="gildedCage" onTooltip={onTooltip}>GILDED CAGE</TappableLabel> {sector.gildedCage.severity === 'CRITICAL' ? '— CRITICAL' : '— WARNING'}
                         </div>
                         <div style={{
                           color: '#e6edf3',
@@ -519,7 +542,7 @@ const SectorCard = ({ sector, isExpanded, onToggle }) => {
                             Breadth: {sector.gildedCage.breadthPercent}%
                           </span>
                           <span style={{ fontSize: '10px', color: '#8b949e' }}>
-                            Weighted: {Math.round((sector.gildedCage.weightedLeadership || 0) * 100)}%
+                            <TappableLabel metricKey="weightedLeadership" onTooltip={onTooltip}>Weighted</TappableLabel>: {Math.round((sector.gildedCage.weightedLeadership || 0) * 100)}%
                           </span>
                         </div>
                       </div>
