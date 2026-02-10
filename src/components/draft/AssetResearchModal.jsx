@@ -708,8 +708,10 @@ const AssetResearchModal = ({
   const isCrypto = asset?.isCrypto || asset?.category === 'crypto';
   const { isMobile, isTablet } = useIsMobile();
 
-  // v2: Responsive chart height
-  const chartHeight = isMobile ? 200 : isTablet ? 260 : 300;
+  // v2: Responsive chart height — v2 mobile uses ~50% of container (min 280px)
+  const chartHeight = version >= 2 && isMobile
+    ? Math.max(Math.round(v2ContainerHeight * 0.5), 280)
+    : isMobile ? 200 : isTablet ? 260 : 300;
 
   // v2: Research data hook for chart + enhanced technical tab
   const researchData = useResearchData(version >= 2 ? asset?.symbol : null);

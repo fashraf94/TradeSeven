@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useDragControls } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import useDrawerSnap, { COLLAPSED_HEIGHT } from './useDrawerSnap';
 
@@ -41,6 +41,7 @@ const AnalysisDrawer = ({
     dragConstraints,
   } = useDrawerSnap(containerHeight);
 
+  const dragControls = useDragControls();
   const contentRef = useRef(null);
   const [contentScrollable, setContentScrollable] = useState(false);
 
@@ -60,6 +61,14 @@ const AnalysisDrawer = ({
 
   return (
     <motion.div
+      drag="y"
+      dragControls={dragControls}
+      dragListener={false}
+      dragConstraints={dragConstraints}
+      dragElastic={0.1}
+      dragMomentum={false}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
       style={{
         position: 'absolute',
         left: 0,
@@ -78,14 +87,9 @@ const AnalysisDrawer = ({
         touchAction: 'none',
       }}
     >
-      {/* Drag handle area — always triggers drawer drag */}
-      <motion.div
-        drag="y"
-        dragConstraints={dragConstraints}
-        dragElastic={0.1}
-        dragMomentum={false}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
+      {/* Drag handle area — onPointerDown starts drag on root via dragControls */}
+      <div
+        onPointerDown={(e) => dragControls.start(e)}
         style={{
           cursor: 'grab',
           touchAction: 'none',
@@ -175,7 +179,7 @@ const AnalysisDrawer = ({
             </span>
           </div>
         </div>
-      </motion.div>
+      </div>
 
       {/* Tab bar */}
       <div
