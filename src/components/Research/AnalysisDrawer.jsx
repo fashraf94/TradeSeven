@@ -52,7 +52,7 @@ const AnalysisDrawer = ({
 
   // Enable content scrolling only when drawer is at 'full'
   useEffect(() => {
-    setContentScrollable(snapState === 'full');
+    setContentScrollable(snapState === 'full' || snapState === 'mid');
   }, [snapState]);
 
   const sentiment = summaryData?.sentiment;
@@ -75,6 +75,7 @@ const AnalysisDrawer = ({
         right: 0,
         bottom: COLLAPSED_HEIGHT - containerHeight * 0.9, // Push down so only 80px peeks at y=0
         height: containerHeight * 0.9, // Max possible height
+        zIndex: 10,
         y,
         background: HOLO_COLORS.bgCard,
         borderTopLeftRadius: '16px',

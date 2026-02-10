@@ -1098,7 +1098,7 @@ const AssetResearchModal = ({
 
           {/* v2: Chart Section */}
           {version >= 2 && (
-            <div style={{ flexShrink: 0 }}>
+            <div style={{ flexShrink: 0, position: 'relative', zIndex: 1 }}>
               {researchData.loading && !researchData.ohlcvData && (
                 <div style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1156,7 +1156,7 @@ const AssetResearchModal = ({
                 position: 'absolute',
                 top: 0, left: 0, right: 0, bottom: 0,
                 background: 'rgba(10, 14, 20, 0.7)',
-                zIndex: 1,
+                zIndex: 5,
                 transition: 'opacity 0.3s ease',
               }}
             />

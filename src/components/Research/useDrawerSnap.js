@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { useMotionValue, animate } from 'framer-motion';
 
 /** Collapsed drawer height in px — shared with AnalysisDrawer for positioning */
@@ -16,8 +16,9 @@ export const COLLAPSED_HEIGHT = 80;
  * @returns {Object} { y, snapState, snapTo, onDragStart, onDragEnd, drawerHeight }
  */
 export default function useDrawerSnap(containerHeight) {
-  const [snapState, setSnapState] = useState('collapsed'); // 'collapsed' | 'mid' | 'full'
+  const [snapState, setSnapState] = useState('mid'); // 'collapsed' | 'mid' | 'full'
   const dragging = useRef(false);
+  const prevContainer = useRef(containerHeight);
 
   const COLLAPSED = COLLAPSED_HEIGHT;
   const MID = Math.round(containerHeight * 0.5);
@@ -26,7 +27,8 @@ export default function useDrawerSnap(containerHeight) {
   // y = 0 means collapsed, y goes negative as drawer rises
   // Drawer height = COLLAPSED - y (where y <= 0)
   // So: collapsed → y=0, mid → y=-(MID-COLLAPSED), full → y=-(FULL-COLLAPSED)
-  const y = useMotionValue(0);
+  // Start at mid position so the drawer opens showing tabs + content
+  const y = useMotionValue(-(MID - COLLAPSED));
 
   const getYForState = useCallback((state) => {
     switch (state) {
@@ -36,6 +38,14 @@ export default function useDrawerSnap(containerHeight) {
       default: return 0;
     }
   }, [MID, FULL]);
+
+  // Re-snap when container resizes (e.g. ResizeObserver updates real height)
+  useEffect(() => {
+    if (prevContainer.current !== containerHeight) {
+      prevContainer.current = containerHeight;
+      y.set(getYForState(snapState));
+    }
+  }, [containerHeight, getYForState, snapState, y]);
 
   const getStateForY = useCallback((yVal) => {
     const midY = -(MID - COLLAPSED);
