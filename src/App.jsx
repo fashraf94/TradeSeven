@@ -15550,7 +15550,7 @@ export default function PortfolioDuel() {
     const cpuPortfolio = generateCPUPortfolioBaggerBombV4(stocksData, cryptoData);
 
     const now = new Date();
-    const TRAINING_DURATION = 10.5 * 60 * 60 * 1000; // Full trading day (~10.5 hours)
+    const TRAINING_DURATION = 24 * 60 * 60 * 1000; // 24 hours for V4 training
     const endDate = new Date(now.getTime() + TRAINING_DURATION);
 
     // Collect all unique symbols

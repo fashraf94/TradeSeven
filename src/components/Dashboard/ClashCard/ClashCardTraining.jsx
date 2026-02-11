@@ -165,7 +165,7 @@ export default function ClashCardTraining({
                 fontWeight: '700',
                 color: '#6e7681',
               }}>
-                ~5 min
+                24h
               </span>
             </>
           )}

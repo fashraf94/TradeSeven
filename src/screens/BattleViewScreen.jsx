@@ -293,7 +293,7 @@ const BattleViewScreen = ({
             fontSize: '13px'
           }}>
             <span>🎓</span>
-            Training Battle • 1 Hour • Reduced XP
+            Training Battle • Reduced XP
           </div>
         )}
 
