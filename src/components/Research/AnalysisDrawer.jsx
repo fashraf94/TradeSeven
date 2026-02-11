@@ -5,11 +5,11 @@ import useDrawerSnap from './useDrawerSnap';
 import { useIsMobile } from '../../hooks/useIsMobile';
 
 const TAB_CONFIGS = [
-  { key: 'fundamental', label: 'Analysis', activeColor: '#00d9ff' },
-  { key: 'earnings', label: 'Earnings', activeColor: '#8b5cf6' },
-  { key: 'technical', label: 'Technical', activeColor: '#00d9ff' },
-  { key: 'baggerbomb', label: '\uD83D\uDCA3 Bomb', activeColor: '#00ff88' },
-  { key: 'news', label: 'News', activeColor: '#00d9ff' },
+  { key: 'fundamental', label: 'Analysis', activeColor: HOLO_COLORS.primary },
+  { key: 'earnings', label: 'Earnings', activeColor: HOLO_COLORS.purple },
+  { key: 'technical', label: 'Technical', activeColor: HOLO_COLORS.primary },
+  { key: 'baggerbomb', label: '\uD83D\uDCA3 Bomb', activeColor: HOLO_COLORS.green },
+  { key: 'news', label: 'News', activeColor: HOLO_COLORS.primary },
 ];
 
 /**

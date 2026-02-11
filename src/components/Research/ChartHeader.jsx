@@ -97,7 +97,7 @@ const ChartHeader = ({ asset, sector, category, onClose }) => {
           fontSize: '12px',
           fontWeight: '600',
           background: isPositive ? 'rgba(0, 255, 136, 0.15)' : 'rgba(255, 71, 87, 0.15)',
-          color: isPositive ? '#00ff88' : '#ff4757',
+          color: isPositive ? HOLO_COLORS.green : '#ff4757',
         }}>
           {isPositive ? '\u25B2' : '\u25BC'} {Math.abs(priceChange)?.toFixed(2)}%
         </span>

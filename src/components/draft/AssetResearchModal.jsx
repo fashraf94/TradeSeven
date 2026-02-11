@@ -50,8 +50,6 @@ const getMockFundamentals = (symbol) => {
     weaknesses: ['Valuation concerns', 'Market competition', 'Economic sensitivity'],
     low52w: 100,
     high52w: 200,
-    beta: 1.2,
-    avgVolume: '10M'
   };
 
   // Custom data for popular stocks

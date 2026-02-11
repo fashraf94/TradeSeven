@@ -4,6 +4,7 @@
 import React, { useEffect, useRef } from 'react';
 import { createChart, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts';
 import { createSeriesMarkers } from 'lightweight-charts';
+import { isValidNumber, formatTime, isValidRawCandle, isValidFormattedCandle } from '../Research/chartUtils';
 
 // Conditional logging - only show debug logs in development
 const DEBUG = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
@@ -11,75 +12,6 @@ const logger = {
   log: (...args) => DEBUG && console.log(...args),
   warn: (...args) => DEBUG && console.warn(...args),
   error: (...args) => console.error(...args),
-};
-
-// Strict validation for numeric values - uses Number.isFinite for maximum strictness
-const isValidNumber = (val) => {
-  if (val === null || val === undefined || val === '') return false;
-  const num = typeof val === 'number' ? val : parseFloat(val);
-  return Number.isFinite(num) && num > 0;
-};
-
-/**
- * Convert various time formats to Unix timestamp in seconds
- * lightweight-charts requires time as:
- * - Unix timestamp in SECONDS (not milliseconds)
- * - Or a date string 'YYYY-MM-DD' for daily data
- */
-const formatTime = (dateValue, isIntraday = false) => {
-  if (!dateValue) return null;
-
-  // If already a Unix timestamp in seconds (10 digits)
-  if (typeof dateValue === 'number' && dateValue < 9999999999) {
-    return dateValue;
-  }
-
-  // If Unix timestamp in milliseconds (13 digits), convert to seconds
-  if (typeof dateValue === 'number' && dateValue > 9999999999) {
-    return Math.floor(dateValue / 1000);
-  }
-
-  // If string, parse it
-  if (typeof dateValue === 'string') {
-    // For intraday data, convert to Unix timestamp in seconds
-    if (isIntraday || dateValue.includes('T') || dateValue.includes(':')) {
-      const timestamp = new Date(dateValue).getTime();
-      if (isNaN(timestamp)) return null;
-      return Math.floor(timestamp / 1000);
-    }
-    // For daily data, return date string as-is (YYYY-MM-DD format)
-    return dateValue.split('T')[0];
-  }
-
-  return null;
-};
-
-// Helper to validate raw candle data before transformation
-const isValidRawCandle = (candle) => {
-  if (!candle) return false;
-  // Check for date field (could be 'date', 'datetime', or 'timestamp')
-  const hasDate = candle.date || candle.datetime || candle.timestamp;
-  if (!hasDate) return false;
-  return (
-    isValidNumber(candle.open) &&
-    isValidNumber(candle.high) &&
-    isValidNumber(candle.low) &&
-    isValidNumber(candle.close)
-  );
-};
-
-// Helper to validate formatted candle data (after transformation)
-const isValidFormattedCandle = (candle) => {
-  if (!candle || !candle.time) return false;
-  // Time can be number (Unix timestamp) or string (date)
-  const validTime = typeof candle.time === 'number'
-    ? Number.isFinite(candle.time) && candle.time > 0
-    : typeof candle.time === 'string' && candle.time.length > 0;
-  return validTime &&
-    Number.isFinite(candle.open) && candle.open > 0 &&
-    Number.isFinite(candle.high) && candle.high > 0 &&
-    Number.isFinite(candle.low) && candle.low > 0 &&
-    Number.isFinite(candle.close) && candle.close > 0;
 };
 
 const CandlestickChart = ({

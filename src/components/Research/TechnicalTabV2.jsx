@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Target, Zap, BarChart3, Globe, TrendingUp, TrendingDown } from 'lucide-react';
 import CollapsibleSection from './CollapsibleSection';
+import { HOLO_COLORS } from '../../constants/holoTheme';
 import { SECTORS, CRYPTO_SECTOR } from '../../constants/sectors';
 import { getQuickSectorSummary } from '../../services/sectorDataService';
 import QuadrantBadge from './MoneyMap/QuadrantBadge';
@@ -31,11 +32,11 @@ const PriceLevelsSection = ({ levels, price, onLevelHighlight }) => {
 
   const renderLevel = (level, idx) => {
     const isSupport = level.type === 'SUPPORT';
-    const color = isSupport ? '#00ff88' : '#ff4757';
+    const color = isSupport ? HOLO_COLORS.green : '#ff4757';
     const strengthColors = {
-      STRONG: '#00ff88',
-      MODERATE: '#f59e0b',
-      WEAK: '#8b949e',
+      STRONG: HOLO_COLORS.green,
+      MODERATE: HOLO_COLORS.amber,
+      WEAK: HOLO_COLORS.textSecondary,
     };
 
     return (
@@ -69,8 +70,8 @@ const PriceLevelsSection = ({ levels, price, onLevelHighlight }) => {
             fontSize: '9px',
             fontWeight: '700',
             textTransform: 'uppercase',
-            background: `${strengthColors[level.strength] || '#8b949e'}20`,
-            color: strengthColors[level.strength] || '#8b949e',
+            background: `${strengthColors[level.strength] || HOLO_COLORS.textSecondary}20`,
+            color: strengthColors[level.strength] || HOLO_COLORS.textSecondary,
           }}>
             {level.strength}
           </span>
@@ -124,7 +125,7 @@ const PriceLevelsSection = ({ levels, price, onLevelHighlight }) => {
 const MomentumSection = ({ indicators, price }) => {
   if (!indicators) {
     return (
-      <CollapsibleSection title="Momentum Signals" icon={<Zap size={14} color="#f59e0b" />} defaultOpen>
+      <CollapsibleSection title="Momentum Signals" icon={<Zap size={14} color={HOLO_COLORS.amber} />} defaultOpen>
         <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px', padding: '8px 0' }}>
           Loading indicators...
         </div>
@@ -136,20 +137,20 @@ const MomentumSection = ({ indicators, price }) => {
 
   // RSI gauge
   const rsiValue = rsi ?? 50;
-  const rsiColor = rsiValue >= 70 ? '#ff4757' : rsiValue <= 30 ? '#00ff88' : '#f59e0b';
+  const rsiColor = rsiValue >= 70 ? '#ff4757' : rsiValue <= 30 ? HOLO_COLORS.green : HOLO_COLORS.amber;
   const rsiLabel = rsiValue >= 70 ? 'Overbought' : rsiValue <= 30 ? 'Oversold' : 'Neutral';
 
   // MACD signal
   const macdSignal = macd
     ? macd.histogram > 0 ? 'bullish' : macd.histogram < 0 ? 'bearish' : 'neutral'
     : 'unknown';
-  const macdColor = macdSignal === 'bullish' ? '#00ff88' : macdSignal === 'bearish' ? '#ff4757' : '#8b949e';
+  const macdColor = macdSignal === 'bullish' ? HOLO_COLORS.green : macdSignal === 'bearish' ? '#ff4757' : HOLO_COLORS.textSecondary;
 
   // vs 50-Day MA
   const ma50Diff = sma50 && price ? ((price - sma50) / sma50 * 100) : null;
 
   return (
-    <CollapsibleSection title="Momentum Signals" icon={<Zap size={14} color="#f59e0b" />} defaultOpen>
+    <CollapsibleSection title="Momentum Signals" icon={<Zap size={14} color={HOLO_COLORS.amber} />} defaultOpen>
       {/* RSI Gauge */}
       <div style={{ marginBottom: '12px' }}>
         <div style={{
@@ -180,7 +181,7 @@ const MomentumSection = ({ indicators, price }) => {
             left: `${Math.min(Math.max(rsiValue, 0), 100)}%`,
             top: '-3px',
             width: '12px', height: '12px', borderRadius: '50%',
-            background: rsiColor, border: '2px solid #0d1117',
+            background: rsiColor, border: `2px solid ${HOLO_COLORS.bgCard}`,
             transform: 'translateX(-50%)',
           }} />
         </div>
@@ -214,7 +215,7 @@ const MomentumSection = ({ indicators, price }) => {
           <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>vs 50-Day MA</span>
           <span style={{
             fontSize: '12px', fontWeight: '600',
-            color: ma50Diff >= 0 ? '#00ff88' : '#ff4757',
+            color: ma50Diff >= 0 ? HOLO_COLORS.green : '#ff4757',
           }}>
             {ma50Diff >= 0 ? 'Above' : 'Below'} ({ma50Diff >= 0 ? '+' : ''}{ma50Diff.toFixed(1)}%)
           </span>
@@ -254,7 +255,7 @@ const VolumeRangeSection = ({ ohlcvData, price }) => {
   };
 
   return (
-    <CollapsibleSection title="Volume & Range" icon={<BarChart3 size={14} color="#8b5cf6" />} defaultOpen>
+    <CollapsibleSection title="Volume & Range" icon={<BarChart3 size={14} color={HOLO_COLORS.purple} />} defaultOpen>
       {!stats ? (
         <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px', padding: '8px 0' }}>
           Insufficient data
@@ -302,7 +303,7 @@ const VolumeRangeSection = ({ ohlcvData, price }) => {
                 left: `${Math.min(Math.max(stats.rangePercent, 0), 100)}%`,
                 top: '-2px',
                 width: '12px', height: '12px', borderRadius: '50%',
-                background: '#00d9ff', border: '2px solid #0d1117',
+                background: HOLO_COLORS.primary, border: `2px solid ${HOLO_COLORS.bgCard}`,
                 transform: 'translateX(-50%)',
               }} />
             </div>
@@ -421,7 +422,7 @@ const SectorContextSection = ({ asset }) => {
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             marginBottom: '8px',
           }}>
-            <span style={{ fontSize: '13px', fontWeight: '600', color: '#e6edf3' }}>
+            <span style={{ fontSize: '13px', fontWeight: '600', color: HOLO_COLORS.textPrimary }}>
               {sectorData.emoji} {sectorData.name} ({sectorId})
             </span>
             {sectorData.trend && (
@@ -442,7 +443,7 @@ const SectorContextSection = ({ asset }) => {
               <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>1M Perf</span>
               <div style={{
                 fontSize: '13px', fontWeight: '700', fontFamily: 'monospace',
-                color: (sectorData.performance1M || 0) >= 0 ? '#00ff88' : '#ff4757',
+                color: (sectorData.performance1M || 0) >= 0 ? HOLO_COLORS.green : '#ff4757',
               }}>
                 {(sectorData.performance1M || 0) >= 0 ? '+' : ''}{(sectorData.performance1M || 0).toFixed(1)}%
               </div>

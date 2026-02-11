@@ -47,7 +47,7 @@ const StockChart = ({
 
     const chart = createChart(container, {
       layout: {
-        background: { type: 'solid', color: '#0a0e14' },
+        background: { type: 'solid', color: HOLO_COLORS.bgDeep },
         textColor: 'rgba(255, 255, 255, 0.7)',
       },
       grid: {
@@ -56,8 +56,8 @@ const StockChart = ({
       },
       crosshair: {
         mode: 0,
-        vertLine: { color: 'rgba(0, 255, 255, 0.3)', width: 1, style: 2, labelBackgroundColor: '#0a0e14' },
-        horzLine: { color: 'rgba(0, 255, 255, 0.3)', width: 1, style: 2, labelBackgroundColor: '#0a0e14' },
+        vertLine: { color: 'rgba(0, 255, 255, 0.3)', width: 1, style: 2, labelBackgroundColor: HOLO_COLORS.bgDeep },
+        horzLine: { color: 'rgba(0, 255, 255, 0.3)', width: 1, style: 2, labelBackgroundColor: HOLO_COLORS.bgDeep },
       },
       timeScale: {
         borderColor: 'rgba(0, 255, 255, 0.15)',
@@ -77,11 +77,11 @@ const StockChart = ({
 
     // Candlestick series
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#00ff88',
+      upColor: HOLO_COLORS.green,
       downColor: '#ff4757',
-      borderUpColor: '#00ff88',
+      borderUpColor: HOLO_COLORS.green,
       borderDownColor: '#ff4757',
-      wickUpColor: '#00ff88',
+      wickUpColor: HOLO_COLORS.green,
       wickDownColor: '#ff4757',
     });
     candleSeriesRef.current = candleSeries;
@@ -241,7 +241,7 @@ const StockChart = ({
       const isSupport = activeHighlight.type === 'SUPPORT';
       highlightLineRef.current = candleSeriesRef.current.createPriceLine({
         price: activeHighlight.price,
-        color: isSupport ? '#00ff88' : '#ff4757',
+        color: isSupport ? HOLO_COLORS.green : '#ff4757',
         lineWidth: 2,
         lineStyle: 0, // Solid
         axisLabelVisible: true,
@@ -257,11 +257,11 @@ const StockChart = ({
     borderRadius: '12px',
     border: active
       ? '1px solid rgba(0, 217, 255, 0.5)'
-      : '1px solid #21262d',
+      : `1px solid ${HOLO_COLORS.borderSubtle}`,
     background: active
       ? 'rgba(0, 217, 255, 0.2)'
-      : '#21262d',
-    color: active ? '#00d9ff' : HOLO_COLORS.textSecondary,
+      : HOLO_COLORS.borderSubtle,
+    color: active ? HOLO_COLORS.primary : HOLO_COLORS.textSecondary,
     fontSize: '11px',
     fontWeight: '600',
     cursor: 'pointer',
@@ -269,7 +269,7 @@ const StockChart = ({
   });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', background: '#0a0e14' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', background: HOLO_COLORS.bgDeep }}>
       {/* Control bar */}
       <div style={{
         display: 'flex',
