@@ -168,6 +168,7 @@ export default function FreeAgentBar({
   nextRotationAt,
   currentPrices = {},
   startingPrices = {},
+  freeAgentDailyOpens = {},
   swapsRemaining = 0,
   currentDay = 1,
   totalDays = 3,
@@ -180,17 +181,17 @@ export default function FreeAgentBar({
 }) {
   const [researchAsset, setResearchAsset] = useState(null);
 
-  // Calculate price changes for each free agent
+  // Calculate daily price changes for each free agent (from market open, not battle start)
   const agentChanges = useMemo(() => {
     return freeAgents.map((agent) => {
       const current = currentPrices[agent.symbol];
-      const start = startingPrices[agent.symbol];
-      if (current && start && start > 0) {
-        return ((current - start) / start) * 100;
+      const dailyOpen = freeAgentDailyOpens[agent.symbol];
+      if (current && dailyOpen && dailyOpen > 0) {
+        return ((current - dailyOpen) / dailyOpen) * 100;
       }
       return null;
     });
-  }, [freeAgents, currentPrices, startingPrices]);
+  }, [freeAgents, currentPrices, freeAgentDailyOpens]);
 
   const canSwap = swapsRemaining > 0;
   const isSwapActive = swapMode?.active;
@@ -417,6 +418,7 @@ FreeAgentBar.propTypes = {
   nextRotationAt: PropTypes.string,
   currentPrices: PropTypes.object,
   startingPrices: PropTypes.object,
+  freeAgentDailyOpens: PropTypes.object,
   swapsRemaining: PropTypes.number,
   currentDay: PropTypes.number,
   totalDays: PropTypes.number,

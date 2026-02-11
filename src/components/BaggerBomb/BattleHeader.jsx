@@ -281,6 +281,7 @@ export default function BattleHeader({
   nextRotationAt,
   currentPrices,
   startingPrices,
+  freeAgentDailyOpens,
   swapsRemaining,
   currentDay,
   totalDays,
@@ -384,6 +385,7 @@ export default function BattleHeader({
           nextRotationAt={nextRotationAt}
           currentPrices={currentPrices || {}}
           startingPrices={startingPrices || {}}
+          freeAgentDailyOpens={freeAgentDailyOpens || {}}
           swapsRemaining={swapsRemaining || 0}
           currentDay={currentDay || 1}
           totalDays={totalDays || 3}

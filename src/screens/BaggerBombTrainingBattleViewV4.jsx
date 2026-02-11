@@ -10,7 +10,7 @@ import PropTypes from 'prop-types';
 import BaggerBombBattleView from './BaggerBombBattleView';
 import { HOLO_COLORS } from '../constants/holoTheme';
 import { motion } from 'framer-motion';
-import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
+import { stockAPI, POPULAR_CRYPTO, fetchHistoricalOHLCV } from '../services/eodhdAPI';
 import { getVolatilityThresholds } from '../services/volatilityService';
 import { flattenPortfolio, calculateAssetScoreV3 } from '../utils/baggerBombUtils';
 import { CONVICTION_MULTIPLIERS } from '../constants/baggerBombScoring';
@@ -81,6 +81,9 @@ export default function BaggerBombTrainingBattleViewV4({
   const myData = isCreator ? battle?.creator : battle?.opponent;
   const oppData = isCreator ? battle?.opponent : battle?.creator;
   const [startingPrices, setStartingPrices] = useState(battle?.state?.startingPrices || {});
+
+  // Free agent daily open prices (for card % display — shows today's change)
+  const [freeAgentDailyOpens, setFreeAgentDailyOpens] = useState({});
 
   // --- Free agent state: initialize from battle (Firebase), NOT generated ---
   const battleFreeAgents = battle?.freeAgents?.current || [];
@@ -259,6 +262,32 @@ export default function BaggerBombTrainingBattleViewV4({
     const interval = setInterval(fetchPrices, PRICE_POLL_INTERVAL);
     return () => clearInterval(interval);
   }, [fetchPrices]);
+
+  // Fetch daily open prices for free agents (OHLCV) — used for card % display
+  const freeAgentSymbolsKey = useMemo(() => freeAgents.map(a => a.symbol).sort().join(','), [freeAgents]);
+  useEffect(() => {
+    if (freeAgents.length === 0) return;
+    let cancelled = false;
+
+    const fetchDailyOpens = async () => {
+      const opens = {};
+      await Promise.all(freeAgents.map(async (agent) => {
+        try {
+          const candles = await fetchHistoricalOHLCV(agent.symbol, '1d');
+          if (candles && candles.length > 0) {
+            const todayCandle = candles[candles.length - 1];
+            if (todayCandle?.open) opens[agent.symbol] = todayCandle.open;
+          }
+        } catch (err) {
+          // Silent — fallback to current price display
+        }
+      }));
+      if (!cancelled) setFreeAgentDailyOpens(opens);
+    };
+
+    fetchDailyOpens();
+    return () => { cancelled = true; };
+  }, [freeAgentSymbolsKey]); // Re-fetch when free agent pool rotates
 
   // Enrich asset with live data and scoring
   const enrichAsset = useCallback((asset, tier) => {
@@ -573,6 +602,7 @@ export default function BaggerBombTrainingBattleViewV4({
       battleVersion={4}
       freeAgents={freeAgents}
       startingPrices={startingPrices}
+      freeAgentDailyOpens={freeAgentDailyOpens}
       swapsRemaining={swapUsed ? 0 : 1}
       currentDay={1}
       totalDays={1}
