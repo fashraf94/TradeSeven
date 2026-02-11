@@ -23,6 +23,8 @@ const NIGHT_COLORS = {
 import BattleHeader from '../components/BaggerBomb/BattleHeader';
 import TacticalRow from '../components/BaggerBomb/TacticalRow';
 import BenchSection from '../components/BaggerBomb/BenchSection';
+import ClosedTradesSection from '../components/BaggerBomb/ClosedTradesSection';
+import SwapModal from '../components/BaggerBomb/SwapModal';
 import EventFeed from '../components/BaggerBomb/EventFeed';
 
 // Import modals for research and score breakdown
@@ -200,7 +202,23 @@ export default function BaggerBombBattleView({
   isTraining = false,
   thresholds = {},
   currentPrices = {},
+  // V4 props
+  battleVersion = 3,
+  freeAgents,
+  nextRotationAt,
+  startingPrices,
+  swapsRemaining,
+  onSwapRequest,
+  currentDay,
+  totalDays,
+  rotationCountdown,
+  closedTrades,
+  swapModalState,
+  onCloseSwapModal,
+  onConfirmSwap,
+  isSwapExecuting,
 }) {
+  const isV4 = battleVersion >= 4;
   const [activeTab, setActiveTab] = useState('matchups');
   const [researchAsset, setResearchAsset] = useState(null);
   const [breakdownAsset, setBreakdownAsset] = useState(null);
@@ -356,6 +374,16 @@ export default function BaggerBombBattleView({
           sessionTimeRemaining={sessionTimeRemaining}
           sessionScores={sessionScores}
           completedSessions={completedSessions}
+          battleVersion={battleVersion}
+          freeAgents={freeAgents}
+          nextRotationAt={nextRotationAt}
+          currentPrices={currentPrices}
+          startingPrices={startingPrices}
+          swapsRemaining={swapsRemaining}
+          onSwapRequest={onSwapRequest}
+          currentDay={currentDay}
+          totalDays={totalDays}
+          rotationCountdown={rotationCountdown}
         />
       </div>
 
@@ -421,12 +449,19 @@ export default function BaggerBombBattleView({
                 </div>
               ))}
 
-              {/* Bench Section */}
-              <BenchSection
-                playerBench={player?.bench}
-                opponentBench={opponent?.bench}
-                defaultExpanded={false}
-              />
+              {/* V4: Closed Trades / V3: Bench Section */}
+              {isV4 ? (
+                <ClosedTradesSection
+                  closedTrades={closedTrades || []}
+                  defaultExpanded={false}
+                />
+              ) : (
+                <BenchSection
+                  playerBench={player?.bench}
+                  opponentBench={opponent?.bench}
+                  defaultExpanded={false}
+                />
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -471,6 +506,23 @@ export default function BaggerBombBattleView({
             totalScore: breakdownAsset.points || 0,
           }}
           onClose={() => setBreakdownAsset(null)}
+        />
+      )}
+
+      {/* V4: Swap Modal */}
+      {isV4 && (
+        <SwapModal
+          isOpen={swapModalState?.isOpen || false}
+          onClose={onCloseSwapModal || (() => {})}
+          incomingSymbol={swapModalState?.incomingSymbol}
+          incomingName={swapModalState?.incomingName}
+          incomingIsCrypto={swapModalState?.incomingIsCrypto}
+          portfolio={player?.portfolio}
+          currentPrices={currentPrices}
+          startingPrices={startingPrices}
+          swapsRemaining={swapsRemaining}
+          onConfirmSwap={onConfirmSwap}
+          isExecuting={isSwapExecuting}
         />
       )}
     </div>

@@ -6,6 +6,7 @@ import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
 import SessionHUD from './SessionHUD';
+import FreeAgentBar from './FreeAgentBar';
 
 /**
  * Default avatar component when no image provided
@@ -271,6 +272,17 @@ export default function BattleHeader({
   sessionTimeRemaining,
   sessionScores,
   completedSessions,
+  // V4 props
+  battleVersion = 3,
+  freeAgents,
+  nextRotationAt,
+  currentPrices,
+  startingPrices,
+  swapsRemaining,
+  onSwapRequest,
+  currentDay,
+  totalDays,
+  rotationCountdown,
 }) {
   // Determine who is leading
   const playerLeading = player.totalPoints > opponent.totalPoints;
@@ -356,13 +368,27 @@ export default function BattleHeader({
       {/* Bomb/Bust Counts */}
       <BombBustCounts player={player} opponent={opponent} />
 
-      {/* Session HUD */}
-      <SessionHUD
-        currentSession={currentSession}
-        timeRemaining={sessionTimeRemaining}
-        sessionScores={hudSessionScores}
-        completedSessions={completedSessions || []}
-      />
+      {/* V4: Free Agent Bar / V3: Session HUD */}
+      {battleVersion >= 4 ? (
+        <FreeAgentBar
+          freeAgents={freeAgents || []}
+          nextRotationAt={nextRotationAt}
+          currentPrices={currentPrices || {}}
+          startingPrices={startingPrices || {}}
+          swapsRemaining={swapsRemaining || 0}
+          onSwapRequest={onSwapRequest}
+          currentDay={currentDay || 1}
+          totalDays={totalDays || 3}
+          rotationCountdown={rotationCountdown || 0}
+        />
+      ) : (
+        <SessionHUD
+          currentSession={currentSession}
+          timeRemaining={sessionTimeRemaining}
+          sessionScores={hudSessionScores}
+          completedSessions={completedSessions || []}
+        />
+      )}
     </div>
   );
 }
@@ -388,14 +414,34 @@ BattleHeader.propTypes = {
     baggerBombs: PropTypes.number,
     busts: PropTypes.number,
   }).isRequired,
-  /** Current active session */
+  /** Current active session (V3) */
   currentSession: PropTypes.oneOf(['MORNING_BELL', 'MIDDAY', 'POWER_HOUR', 'NIGHT_GAME', '']),
-  /** Seconds remaining in current session */
+  /** Seconds remaining in current session (V3) */
   sessionTimeRemaining: PropTypes.number,
-  /** Session scores object */
+  /** Session scores object (V3) */
   sessionScores: PropTypes.object,
-  /** Array of completed session keys */
+  /** Array of completed session keys (V3) */
   completedSessions: PropTypes.arrayOf(PropTypes.string),
+  /** Battle version (3 or 4) */
+  battleVersion: PropTypes.number,
+  /** V4: Free agents array */
+  freeAgents: PropTypes.array,
+  /** V4: ISO timestamp of next rotation */
+  nextRotationAt: PropTypes.string,
+  /** V4: Current prices */
+  currentPrices: PropTypes.object,
+  /** V4: Starting prices */
+  startingPrices: PropTypes.object,
+  /** V4: Swaps remaining today */
+  swapsRemaining: PropTypes.number,
+  /** V4: Swap request handler */
+  onSwapRequest: PropTypes.func,
+  /** V4: Current trading day */
+  currentDay: PropTypes.number,
+  /** V4: Total trading days */
+  totalDays: PropTypes.number,
+  /** V4: Seconds until next rotation */
+  rotationCountdown: PropTypes.number,
 };
 
 BattleHeader.defaultProps = {
@@ -403,4 +449,14 @@ BattleHeader.defaultProps = {
   sessionTimeRemaining: 0,
   sessionScores: {},
   completedSessions: [],
+  battleVersion: 3,
+  freeAgents: [],
+  nextRotationAt: null,
+  currentPrices: {},
+  startingPrices: {},
+  swapsRemaining: 0,
+  onSwapRequest: null,
+  currentDay: 1,
+  totalDays: 3,
+  rotationCountdown: 0,
 };

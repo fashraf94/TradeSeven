@@ -457,3 +457,46 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}) {
     },
   };
 }
+
+// ============================================
+// V4 VERSION DETECTION UTILITIES
+// ============================================
+
+/**
+ * Get the schema version of a battle
+ * @param {Object} battle - Battle object
+ * @returns {number} Version number (defaults to 3)
+ */
+export function getBattleVersion(battle) {
+  if (!battle) return 3;
+  if (battle._v) return battle._v;
+  if (battle.type === 'baggerbomb_v4') return 4;
+  return 3;
+}
+
+/**
+ * Check if a battle is V4 (free agent system)
+ * @param {Object} battle - Battle object
+ * @returns {boolean}
+ */
+export function isV4Battle(battle) {
+  return getBattleVersion(battle) >= 4;
+}
+
+/**
+ * Get all portfolio assets including those with swap prices
+ * Works for both V3 and V4
+ * @param {Object} battle - Battle object
+ * @param {boolean} isCreator - Whether to get creator's or opponent's assets
+ * @returns {Array} Flat array of portfolio assets
+ */
+export function getPortfolioAssets(battle, isCreator = true) {
+  const player = isCreator ? battle?.creator : battle?.opponent;
+  if (!player?.portfolio) return [];
+
+  return [
+    ...(player.portfolio.star || []),
+    ...(player.portfolio.core || []),
+    ...(player.portfolio.support || []),
+  ].filter(Boolean);
+}
