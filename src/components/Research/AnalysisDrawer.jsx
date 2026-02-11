@@ -1,0 +1,198 @@
+import React, { useRef, useEffect, useState } from 'react';
+import { motion, useDragControls } from 'framer-motion';
+import { HOLO_COLORS } from '../../constants/holoTheme';
+import useDrawerSnap from './useDrawerSnap';
+import { useIsMobile } from '../../hooks/useIsMobile';
+
+const TAB_CONFIGS = [
+  { key: 'fundamental', label: 'Analysis', activeColor: HOLO_COLORS.primary },
+  { key: 'earnings', label: 'Earnings', activeColor: HOLO_COLORS.purple },
+  { key: 'technical', label: 'Technical', activeColor: HOLO_COLORS.primary },
+  { key: 'baggerbomb', label: '\uD83D\uDCA3 Bomb', activeColor: HOLO_COLORS.green },
+  { key: 'news', label: 'News', activeColor: HOLO_COLORS.primary },
+];
+
+/**
+ * AnalysisDrawer — Bottom pull-up drawer for the AI Analysis tabs.
+ * Two states: mid (default, below chart) and full (covers chart).
+ *
+ * @param {Object} props
+ * @param {number} containerHeight - Parent container height
+ * @param {string} activeTab - Current active tab key
+ * @param {function} setActiveTab - Tab setter
+ * @param {function} onSnapStateChange - Callback when snap state changes
+ * @param {React.ReactNode} children - Tab content to render
+ */
+const AnalysisDrawer = ({
+  containerHeight,
+  activeTab,
+  setActiveTab,
+  onSnapStateChange,
+  children,
+}) => {
+  const { isMobile } = useIsMobile();
+  const {
+    y,
+    snapState,
+    onDragStart,
+    onDragEnd,
+    toggleDrawer,
+    dragConstraints,
+  } = useDrawerSnap(containerHeight, isMobile);
+
+  const dragControls = useDragControls();
+  const headerRef = useRef(null);
+  const [scrollHeight, setScrollHeight] = useState(0);
+
+  // Notify parent of snap state changes
+  useEffect(() => {
+    onSnapStateChange?.(snapState);
+  }, [snapState, onSnapStateChange]);
+
+  // Measure actual header height and compute scroll container height
+  useEffect(() => {
+    const drawerH = containerHeight * 0.9;
+    const headerH = headerRef.current?.getBoundingClientRect().height || 110;
+    setScrollHeight(drawerH - headerH);
+  }, [containerHeight]);
+
+  return (
+    <motion.div
+      data-drawer-root
+      drag="y"
+      dragControls={dragControls}
+      dragListener={false}
+      dragConstraints={dragConstraints}
+      dragElastic={0.1}
+      dragMomentum={false}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: containerHeight * 0.9,
+        display: 'flex',
+        flexDirection: 'column',
+        y,
+        zIndex: 10,
+        background: HOLO_COLORS.bgCard,
+        borderTopLeftRadius: '16px',
+        borderTopRightRadius: '16px',
+        borderTop: '1px solid rgba(0, 217, 255, 0.15)',
+        boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.5)',
+      }}
+    >
+      {/* Fixed header — handle + tabs. Never scrolls. */}
+      <div ref={headerRef} style={{ flexShrink: 0 }}>
+        {/* Drag handle area — onPointerDown starts drag on root via dragControls */}
+        <div
+          onPointerDown={(e) => dragControls.start(e)}
+          style={{
+            cursor: 'grab',
+            touchAction: 'none',
+            userSelect: 'none',
+          }}
+        >
+          {/* Grab handle pill — tap toggles between mid/full */}
+          <div
+            onClick={toggleDrawer}
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              padding: '10px 0 6px',
+            }}
+          >
+            <div style={{
+              width: '36px',
+              height: '4px',
+              borderRadius: '2px',
+              background: 'rgba(255, 255, 255, 0.3)',
+            }} />
+          </div>
+
+          {/* Label row */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '0 12px 8px',
+            }}
+          >
+            <span style={{
+              fontSize: '11px',
+              fontWeight: '700',
+              letterSpacing: '0.5px',
+              color: HOLO_COLORS.textSecondary,
+              textTransform: 'uppercase',
+            }}>
+              AI Analysis
+            </span>
+          </div>
+        </div>
+
+        {/* Tab bar */}
+        <div
+          className="drawer-tabs-scroll"
+          style={{
+            display: 'flex',
+            gap: '6px',
+            padding: '0 12px 8px',
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+          }}
+        >
+          <style>{`.drawer-tabs-scroll::-webkit-scrollbar { display: none; }`}</style>
+          {TAB_CONFIGS.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                padding: '6px 10px',
+                borderRadius: '6px',
+                border: activeTab === tab.key
+                  ? `1px solid ${tab.activeColor}`
+                  : '1px solid rgba(255, 255, 255, 0.1)',
+                background: activeTab === tab.key
+                  ? `${tab.activeColor}20`
+                  : 'rgba(255, 255, 255, 0.05)',
+                color: activeTab === tab.key
+                  ? tab.activeColor
+                  : 'rgba(255, 255, 255, 0.6)',
+                fontWeight: '600',
+                fontSize: '11px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                flexShrink: 0,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Scrollable content — explicit height from measured header */}
+      <div
+        style={{
+          height: scrollHeight > 0 ? scrollHeight : 'auto',
+          flexShrink: 0,
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
+          touchAction: 'pan-y',
+          padding: '0 12px 12px',
+        }}
+      >
+        {children}
+      </div>
+    </motion.div>
+  );
+};
+
+export default AnalysisDrawer;

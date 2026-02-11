@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import FundamentalNews from '../Research/FundamentalNews';
 import LatestEarningsReport from '../Research/LatestEarningsReport';
@@ -6,6 +6,12 @@ import { HOLO_COLORS, CATEGORY_CONFIG, getSectorColor, getRatingColor } from '..
 import { BAGGER_TIERS, BUST_TIERS } from '../../constants/baggerBombScoring';
 import { getCompanyProfile } from '../../services/fundamentalsService';
 import { formatLargeNumber } from '../../utils/formatters';
+import ChartHeader from '../Research/ChartHeader';
+import StockChart from '../Research/StockChart';
+import useResearchData from '../Research/useResearchData';
+import AnalysisDrawer from '../Research/AnalysisDrawer';
+import TechnicalTabV2 from '../Research/TechnicalTabV2';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -44,8 +50,6 @@ const getMockFundamentals = (symbol) => {
     weaknesses: ['Valuation concerns', 'Market competition', 'Economic sensitivity'],
     low52w: 100,
     high52w: 200,
-    beta: 1.2,
-    avgVolume: '10M'
   };
 
   // Custom data for popular stocks
@@ -688,13 +692,45 @@ const AssetResearchModal = ({
   // actionConfig: { label: string, onClick: fn, variant: 'primary'|'danger'|'secondary', disabled?: boolean }
   actionConfig = null,
   showActionButton = true,
+  version = 1,
 }) => {
   const [activeTab, setActiveTab] = useState('fundamental');
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [highlightedLevel, setHighlightedLevel] = useState(null);
+  const [drawerSnapState, setDrawerSnapState] = useState('mid');
+  const [v2ContainerHeight, setV2ContainerHeight] = useState(600);
+  const v2ContainerRef = useRef(null);
 
   const isCrypto = asset?.isCrypto || asset?.category === 'crypto';
+  const { isMobile, isTablet } = useIsMobile();
+
+  // v2: Responsive chart height — v2 mobile uses ~50% of container (min 280px)
+  const chartHeight = version >= 2 && isMobile
+    ? Math.max(Math.round(v2ContainerHeight * 0.5), 280)
+    : isMobile ? 200 : isTablet ? 260 : 300;
+
+  // v2: Research data hook for chart + enhanced technical tab
+  const researchData = useResearchData(version >= 2 ? asset?.symbol : null);
+
+  // v2: Measure container height for drawer snap points
+  useEffect(() => {
+    if (version < 2 || !v2ContainerRef.current) return;
+    const measure = () => {
+      if (v2ContainerRef.current) {
+        setV2ContainerHeight(v2ContainerRef.current.clientHeight);
+      }
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(v2ContainerRef.current);
+    return () => observer.disconnect();
+  }, [version]);
+
+  const handleDrawerSnapChange = useCallback((state) => {
+    setDrawerSnapState(state);
+  }, []);
 
   useEffect(() => {
     if (asset?.symbol && !isCrypto) {
@@ -737,6 +773,25 @@ const AssetResearchModal = ({
   };
   const catStyle = getCategoryStyle(category);
 
+  // v2: Compute responsive modal size overrides
+  const v2ModalStyle = version >= 2 ? (
+    isMobile ? {
+      width: '100vw',
+      height: '100vh',
+      top: 0,
+      left: 0,
+      transform: 'none',
+      borderRadius: 0,
+      maxHeight: 'none',
+    } : {
+      width: '90vw',
+      maxWidth: '900px',
+      height: '90vh',
+      maxHeight: '90vh',
+      borderRadius: '12px',
+    }
+  ) : {};
+
   // Use Portal to render at document.body level, bypassing any parent CSS constraints
   return ReactDOM.createPortal(
     <>
@@ -773,6 +828,7 @@ const AssetResearchModal = ({
           display: 'flex',
           flexDirection: 'column',
           animation: 'modalSlideIn 0.3s ease-out',
+          ...v2ModalStyle,
         }}
       >
         {/* ON THE CLOCK Alert - Shows when it's user's turn */}
@@ -862,131 +918,144 @@ const AssetResearchModal = ({
           }
         `}</style>
 
-        {/* Header */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '16px 20px',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-            flexShrink: 0,
-          }}
-        >
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#00d9ff',
-              fontSize: '14px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-            Back
-          </button>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'rgba(255, 255, 255, 0.4)',
-              cursor: 'pointer',
-              padding: '4px',
-              fontSize: '20px',
-            }}
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Scrollable Content */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {/* Stock Hero Section */}
+        {/* Header: v2 compact header vs v1 original header */}
+        {version >= 2 ? (
+          <ChartHeader asset={asset} sector={sector} category={category} onClose={onClose} />
+        ) : (
           <div
             style={{
-              padding: '24px',
-              margin: '16px',
-              background: `linear-gradient(180deg, ${sectorColor}15 0%, transparent 100%)`,
-              border: `1px solid ${sectorColor}40`,
-              borderRadius: '16px',
-              textAlign: 'center',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '16px 20px',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+              flexShrink: 0,
             }}
           >
-            <h1
+            <button
+              onClick={onClose}
               style={{
-                fontSize: '32px',
-                fontWeight: '800',
-                color: '#ffffff',
-                margin: 0,
-                textShadow: `0 0 20px ${sectorColor}40`,
-              }}
-            >
-              {asset.symbol}
-            </h1>
-            <p
-              style={{
-                color: 'rgba(255, 255, 255, 0.6)',
-                margin: '4px 0 0',
+                background: 'none',
+                border: 'none',
+                color: '#00d9ff',
                 fontSize: '14px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
               }}
             >
-              {asset.name}
-            </p>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+              Back
+            </button>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'rgba(255, 255, 255, 0.4)',
+                cursor: 'pointer',
+                padding: '4px',
+                fontSize: '20px',
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
-            {/* Sector Badge */}
-            {sector && (
+        {/* Content Area — v2: positioned container for chart+drawer, v1: scrollable */}
+        <div
+          ref={version >= 2 ? v2ContainerRef : undefined}
+          style={version >= 2
+            ? { flex: 1, position: 'relative', overflow: 'visible' }
+            : { flex: 1, overflowY: 'auto' }
+          }
+        >
+
+          {/* v1: Stock Hero Section */}
+          {version < 2 && (
+            <div
+              style={{
+                padding: '24px',
+                margin: '16px',
+                background: `linear-gradient(180deg, ${sectorColor}15 0%, transparent 100%)`,
+                border: `1px solid ${sectorColor}40`,
+                borderRadius: '16px',
+                textAlign: 'center',
+              }}
+            >
+              <h1
+                style={{
+                  fontSize: '32px',
+                  fontWeight: '800',
+                  color: '#ffffff',
+                  margin: 0,
+                  textShadow: `0 0 20px ${sectorColor}40`,
+                }}
+              >
+                {asset.symbol}
+              </h1>
+              <p
+                style={{
+                  color: 'rgba(255, 255, 255, 0.6)',
+                  margin: '4px 0 0',
+                  fontSize: '14px',
+                }}
+              >
+                {asset.name}
+              </p>
+
+              {/* Sector Badge */}
+              {sector && (
+                <div
+                  style={{
+                    display: 'inline-block',
+                    marginTop: '8px',
+                    padding: '4px 12px',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    background: `${sectorColor}20`,
+                    color: sectorColor,
+                    border: `1px solid ${sectorColor}40`,
+                  }}
+                >
+                  {sector}
+                </div>
+              )}
+
+              <div
+                style={{
+                  fontSize: '36px',
+                  fontWeight: '700',
+                  color: '#ffffff',
+                  margin: '16px 0 8px',
+                  fontFamily: 'monospace',
+                }}
+              >
+                ${asset.price?.toFixed(2) || '\u2014'}
+              </div>
               <div
                 style={{
                   display: 'inline-block',
-                  marginTop: '8px',
-                  padding: '4px 12px',
-                  borderRadius: '12px',
-                  fontSize: '11px',
+                  padding: '8px 16px',
+                  borderRadius: '20px',
+                  fontSize: '14px',
                   fontWeight: '600',
-                  background: `${sectorColor}20`,
-                  color: sectorColor,
-                  border: `1px solid ${sectorColor}40`,
+                  background: priceChange >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  color: priceChange >= 0 ? '#10b981' : '#ef4444',
                 }}
               >
-                {sector}
+                {priceChange >= 0 ? '\u25B2' : '\u25BC'} {Math.abs(priceChange)?.toFixed(2)}% today
               </div>
-            )}
-
-            <div
-              style={{
-                fontSize: '36px',
-                fontWeight: '700',
-                color: '#ffffff',
-                margin: '16px 0 8px',
-                fontFamily: 'monospace',
-              }}
-            >
-              ${asset.price?.toFixed(2) || '—'}
             </div>
-            <div
-              style={{
-                display: 'inline-block',
-                padding: '8px 16px',
-                borderRadius: '20px',
-                fontSize: '14px',
-                fontWeight: '600',
-                background: priceChange >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                color: priceChange >= 0 ? '#10b981' : '#ef4444',
-              }}
-            >
-              {priceChange >= 0 ? '▲' : '▼'} {Math.abs(priceChange)?.toFixed(2)}% today
-            </div>
-          </div>
+          )}
 
-          {/* Draft Category Section */}
-          {category && (
+          {/* v1: Draft Category Section */}
+          {version < 2 && category && (
             <div
               style={{
                 padding: '16px 20px',
@@ -1017,7 +1086,157 @@ const AssetResearchModal = ({
             </div>
           )}
 
-          {/* AI Analysis Section */}
+          {/* v2: Chart Section */}
+          {version >= 2 && (
+            <div style={{ flexShrink: 0, position: 'relative', zIndex: 1 }}>
+              {researchData.loading && !researchData.ohlcvData && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  height: `${chartHeight}px`, background: '#0a0e14',
+                }}>
+                  <div style={{
+                    width: '90%', height: '200px', borderRadius: '8px',
+                    background: 'linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%)',
+                    backgroundSize: '200% 100%',
+                    animation: 'shimmer 1.5s infinite',
+                  }} />
+                </div>
+              )}
+              {researchData.error && !researchData.ohlcvData && (
+                <div style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  height: `${chartHeight}px`, background: '#0a0e14', gap: '12px',
+                }}>
+                  <span style={{ color: HOLO_COLORS.textSecondary, fontSize: '14px' }}>
+                    Chart data unavailable
+                  </span>
+                  <button
+                    onClick={researchData.retry}
+                    style={{
+                      padding: '6px 16px', borderRadius: '6px',
+                      border: '1px solid rgba(0, 217, 255, 0.3)',
+                      background: 'rgba(0, 217, 255, 0.1)',
+                      color: '#00d9ff', fontSize: '12px', fontWeight: '600', cursor: 'pointer',
+                    }}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+              {researchData.ohlcvData && researchData.ohlcvData.length > 0 && (
+                <StockChart
+                  ohlcvData={researchData.ohlcvData}
+                  rawData={researchData.rawData}
+                  timeframe={researchData.timeframe}
+                  onTimeframeChange={researchData.setTimeframe}
+                  levels={researchData.levels}
+                  smaData={researchData.smaData}
+                  activeHighlight={highlightedLevel}
+                  height={chartHeight}
+                />
+              )}
+            </div>
+          )}
+
+          {/* v2: Chart dim overlay when drawer is at full */}
+          {version >= 2 && drawerSnapState === 'full' && (
+            <div
+              onClick={() => setDrawerSnapState('mid')}
+              style={{
+                position: 'absolute',
+                top: 0, left: 0, right: 0, bottom: 0,
+                background: 'rgba(10, 14, 20, 0.7)',
+                zIndex: 5,
+                transition: 'opacity 0.3s ease',
+              }}
+            />
+          )}
+
+          {/* v2: AnalysisDrawer with tab content inside */}
+          {version >= 2 && (
+            <AnalysisDrawer
+              containerHeight={v2ContainerHeight}
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              onSnapStateChange={handleDrawerSnapChange}
+            >
+              {activeTab === 'fundamental' && (
+                <div style={{ padding: '8px 0' }}>
+                  {/* Rating */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <span style={{ color: ratingColor, fontWeight: '600', fontSize: '14px' }}>
+                      {'\u25CF'} {displayRating}
+                    </span>
+                  </div>
+                  {/* Key metrics grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                    {[
+                      { label: 'Market Cap', value: fundamentals.marketCap },
+                      { label: 'P/E Ratio', value: fundamentals.peRatio },
+                      { label: 'Rev Growth', value: fundamentals.revenueGrowth },
+                      { label: 'Margin', value: fundamentals.profitMargin },
+                    ].map(m => (
+                      <div key={m.label} style={{
+                        padding: '8px', borderRadius: '8px',
+                        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
+                      }}>
+                        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginBottom: '2px' }}>{m.label}</div>
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: '#e6edf3' }}>{m.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Strengths & Weaknesses */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <div>
+                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#00ff88', marginBottom: '4px' }}>Strengths</div>
+                      {fundamentals.strengths?.map((s, i) => (
+                        <div key={i} style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '2px' }}>
+                          {'\u2022'} {s}
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#ff4757', marginBottom: '4px' }}>Weaknesses</div>
+                      {fundamentals.weaknesses?.map((w, i) => (
+                        <div key={i} style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '2px' }}>
+                          {'\u2022'} {w}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'technical' && (
+                <TechnicalTabV2
+                  asset={asset}
+                  ohlcvData={researchData.ohlcvData}
+                  indicators={researchData.indicators}
+                  levels={researchData.levels}
+                  onLevelHighlight={setHighlightedLevel}
+                />
+              )}
+
+              {activeTab === 'baggerbomb' && (
+                <BaggerBombTab asset={asset} />
+              )}
+
+              {activeTab === 'earnings' && (
+                <div style={{ marginTop: '-10px' }}>
+                  <LatestEarningsReport symbol={asset.symbol} />
+                </div>
+              )}
+
+              {activeTab === 'news' && (
+                <div style={{ marginTop: '-10px' }}>
+                  <FundamentalNews symbol={asset.symbol} />
+                </div>
+              )}
+            </AnalysisDrawer>
+          )}
+
+          {/* v1: AI Analysis Section (original layout) */}
+          {version < 2 && (
           <div
             style={{
               padding: '20px',
@@ -1528,6 +1747,7 @@ const AssetResearchModal = ({
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* Action Button Section - Flexible Configuration */}
