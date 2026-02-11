@@ -80,7 +80,7 @@ export default function BaggerBombTrainingBattleViewV4({
   const playerId = isCreator ? 'creator' : 'opponent';
   const myData = isCreator ? battle?.creator : battle?.opponent;
   const oppData = isCreator ? battle?.opponent : battle?.creator;
-  const startingPrices = battle?.state?.startingPrices || {};
+  const [startingPrices, setStartingPrices] = useState(battle?.state?.startingPrices || {});
 
   // --- Free agent state: initialize from battle (Firebase), NOT generated ---
   const battleFreeAgents = battle?.freeAgents?.current || [];
@@ -207,13 +207,31 @@ export default function BaggerBombTrainingBattleViewV4({
       }
 
       setCurrentPrices(prev => ({ ...prev, ...prices }));
+
+      // Backfill free agent starting prices that were 0 placeholders
+      setStartingPrices(prev => {
+        const updated = { ...prev };
+        let changed = false;
+        freeAgents.forEach(agent => {
+          if ((!updated[agent.symbol] || updated[agent.symbol] === 0) && prices[agent.symbol]) {
+            updated[agent.symbol] = prices[agent.symbol];
+            changed = true;
+          }
+        });
+        if (changed && battle?.id) {
+          // Persist backfilled starting prices to Firebase
+          persistSwapToFirebase(battle.id, playerId, { 'state.startingPrices': updated });
+        }
+        return changed ? updated : prev;
+      });
+
       setLoadingPrices(false);
     } catch (error) {
       console.error('[TrainingBattleV4] Error fetching prices:', error);
       setCurrentPrices(startingPrices);
       setLoadingPrices(false);
     }
-  }, [allSymbols, startingPrices]);
+  }, [allSymbols, startingPrices, freeAgents, battle?.id, playerId]);
 
   // Load thresholds
   useEffect(() => {

@@ -29,6 +29,7 @@ const AnalysisDrawer = ({
   setActiveTab,
   onSnapStateChange,
   children,
+  isCrypto = false,
 }) => {
   const { isMobile } = useIsMobile();
   const {
@@ -147,7 +148,7 @@ const AnalysisDrawer = ({
           }}
         >
           <style>{`.drawer-tabs-scroll::-webkit-scrollbar { display: none; }`}</style>
-          {TAB_CONFIGS.map(tab => (
+          {(isCrypto ? TAB_CONFIGS.filter(t => !['fundamental', 'earnings'].includes(t.key)) : TAB_CONFIGS).map(tab => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}

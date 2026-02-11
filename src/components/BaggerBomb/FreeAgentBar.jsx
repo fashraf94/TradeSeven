@@ -19,12 +19,22 @@ const formatCountdown = (seconds) => {
 };
 
 /**
- * Format price change percentage
+ * Format price change percentage — returns null when unavailable
  */
 const formatPriceChange = (pct) => {
-  if (pct === null || pct === undefined || isNaN(pct)) return '--';
+  if (pct === null || pct === undefined || isNaN(pct)) return null;
   const sign = pct >= 0 ? '+' : '';
   return `${sign}${pct.toFixed(2)}%`;
+};
+
+/**
+ * Format absolute price as fallback when percentage unavailable
+ */
+const formatPrice = (price) => {
+  if (!price || isNaN(price)) return '--';
+  if (price >= 1000) return `$${Math.round(price).toLocaleString()}`;
+  if (price >= 1) return `$${price.toFixed(2)}`;
+  return `$${price.toFixed(4)}`;
 };
 
 /**
@@ -32,14 +42,13 @@ const formatPriceChange = (pct) => {
  * Normal mode: tap → research modal
  * Swap selectAgent step: tap → select this agent (green glow)
  */
-function FreeAgentCard({ agent, priceChange, onTap, selectable, selected, onSelect }) {
+function FreeAgentCard({ agent, priceChange, currentPrice, onTap, selectable, selected, onSelect }) {
+  const pctText = formatPriceChange(priceChange);
   const isPositive = priceChange > 0;
   const isNegative = priceChange < 0;
-  const changeColor = isPositive
-    ? HOLO_COLORS.green
-    : isNegative
-      ? HOLO_COLORS.red
-      : HOLO_COLORS.textMuted;
+  const changeColor = pctText
+    ? (isPositive ? HOLO_COLORS.green : isNegative ? HOLO_COLORS.red : HOLO_COLORS.textMuted)
+    : HOLO_COLORS.textSecondary;
 
   const isCrypto = agent.isCrypto;
 
@@ -121,7 +130,7 @@ function FreeAgentCard({ agent, priceChange, onTap, selectable, selected, onSele
         </span>
       )}
 
-      {/* Price Change */}
+      {/* Price Change or Current Price fallback */}
       <span
         style={{
           fontSize: '11px',
@@ -131,7 +140,7 @@ function FreeAgentCard({ agent, priceChange, onTap, selectable, selected, onSele
           lineHeight: 1,
         }}
       >
-        {formatPriceChange(priceChange)}
+        {pctText || formatPrice(currentPrice)}
       </span>
     </motion.button>
   );
@@ -144,6 +153,7 @@ FreeAgentCard.propTypes = {
     isCrypto: PropTypes.bool,
   }).isRequired,
   priceChange: PropTypes.number,
+  currentPrice: PropTypes.number,
   onTap: PropTypes.func,
   selectable: PropTypes.bool,
   selected: PropTypes.bool,
@@ -327,6 +337,7 @@ export default function FreeAgentBar({
               key={agent.symbol}
               agent={agent}
               priceChange={agentChanges[index]}
+              currentPrice={currentPrices[agent.symbol]}
               onTap={handleCardTap}
               selectable={isSelectingAgent}
               selected={swapMode?.selectedFreeAgent?.symbol === agent.symbol}
