@@ -1,10 +1,12 @@
 // FreeAgentBar - Horizontal row of 4 rotating free agent tickers
 // Replaces SessionHUD for V4 battles. Shows free agents, countdown, swaps remaining.
+// Cards: gradient backgrounds, crypto purple tint, swap icon, research modal integration.
 
-import React, { useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
+import AssetResearchModal from '../draft/AssetResearchModal';
 
 /**
  * Format seconds to MM:SS
@@ -27,8 +29,9 @@ const formatPriceChange = (pct) => {
 
 /**
  * FreeAgentCard - Single free agent ticker card
+ * Card tap → opens research modal. Swap icon tap → opens swap modal.
  */
-function FreeAgentCard({ agent, priceChange, onTap, canSwap }) {
+function FreeAgentCard({ agent, priceChange, onTap, onSwap, canSwap }) {
   const isPositive = priceChange > 0;
   const isNegative = priceChange < 0;
   const changeColor = isPositive
@@ -37,31 +40,68 @@ function FreeAgentCard({ agent, priceChange, onTap, canSwap }) {
       ? HOLO_COLORS.red
       : HOLO_COLORS.textMuted;
 
+  const isCrypto = agent.isCrypto;
+
   return (
     <motion.button
-      whileTap={canSwap ? { scale: 0.95 } : {}}
-      onClick={() => canSwap && onTap && onTap(agent)}
-      disabled={!canSwap}
+      whileTap={{ scale: 0.95 }}
+      onClick={() => onTap && onTap(agent)}
       style={{
-        flex: 1,
-        minWidth: '72px',
-        padding: '8px 6px',
+        flex: '1 1 0',
+        minWidth: 0,
+        padding: '10px 6px 8px',
         borderRadius: '8px',
-        backgroundColor: HOLO_COLORS.bgElevated,
-        border: `1px solid ${HOLO_COLORS.borderSubtle}`,
-        cursor: canSwap ? 'pointer' : 'default',
-        opacity: canSwap ? 1 : 0.7,
+        background: isCrypto
+          ? `linear-gradient(135deg, rgba(139, 92, 246, 0.12), ${HOLO_COLORS.bgElevated})`
+          : `linear-gradient(135deg, ${HOLO_COLORS.bgCard}, ${HOLO_COLORS.bgElevated})`,
+        border: isCrypto
+          ? '1px solid rgba(139, 92, 246, 0.4)'
+          : `1px solid ${HOLO_COLORS.borderSubtle}`,
+        cursor: 'pointer',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: '4px',
-        transition: 'border-color 0.2s',
+        gap: '3px',
+        transition: 'border-color 0.2s, box-shadow 0.2s',
+        position: 'relative',
+        overflow: 'hidden',
       }}
     >
-      {/* Crypto indicator */}
-      {agent.isCrypto && (
-        <span style={{ fontSize: '10px', lineHeight: 1 }}>
-          {'🔮'}
+      {/* Swap icon button (top-right) */}
+      {canSwap && (
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSwap && onSwap(agent);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.stopPropagation();
+              onSwap && onSwap(agent);
+            }
+          }}
+          style={{
+            position: 'absolute',
+            top: '3px',
+            right: '3px',
+            width: '20px',
+            height: '20px',
+            borderRadius: '50%',
+            background: 'rgba(0, 217, 255, 0.15)',
+            border: '1px solid rgba(0, 217, 255, 0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '10px',
+            color: HOLO_COLORS.cyan,
+            cursor: 'pointer',
+            zIndex: 2,
+            lineHeight: 1,
+          }}
+        >
+          ↔
         </span>
       )}
 
@@ -72,10 +112,31 @@ function FreeAgentCard({ agent, priceChange, onTap, canSwap }) {
           fontWeight: 700,
           color: HOLO_COLORS.textPrimary,
           lineHeight: 1,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          maxWidth: '100%',
         }}
       >
         {agent.symbol}
       </span>
+
+      {/* Company name */}
+      {agent.name && (
+        <span
+          style={{
+            fontSize: '9px',
+            color: HOLO_COLORS.textMuted,
+            lineHeight: 1,
+            maxWidth: '100%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {agent.name}
+        </span>
+      )}
 
       {/* Price Change */}
       <span
@@ -101,6 +162,7 @@ FreeAgentCard.propTypes = {
   }).isRequired,
   priceChange: PropTypes.number,
   onTap: PropTypes.func,
+  onSwap: PropTypes.func,
   canSwap: PropTypes.bool,
 };
 
@@ -118,6 +180,8 @@ export default function FreeAgentBar({
   totalDays = 3,
   rotationCountdown = 0,
 }) {
+  const [researchAsset, setResearchAsset] = useState(null);
+
   // Calculate price changes for each free agent
   const agentChanges = useMemo(() => {
     return freeAgents.map((agent) => {
@@ -131,6 +195,17 @@ export default function FreeAgentBar({
   }, [freeAgents, currentPrices, startingPrices]);
 
   const canSwap = swapsRemaining > 0;
+
+  const handleCardTap = (agent) => {
+    const idx = freeAgents.findIndex(a => a.symbol === agent.symbol);
+    setResearchAsset({
+      symbol: agent.symbol,
+      name: agent.name || agent.symbol,
+      price: currentPrices[agent.symbol] || 0,
+      percentChange: idx >= 0 ? agentChanges[idx] || 0 : 0,
+      isCrypto: agent.isCrypto,
+    });
+  };
 
   return (
     <div
@@ -179,6 +254,7 @@ export default function FreeAgentBar({
           display: 'flex',
           gap: '6px',
           padding: '0 4px',
+          overflow: 'hidden',
         }}
       >
         {freeAgents.length > 0 ? (
@@ -187,7 +263,8 @@ export default function FreeAgentBar({
               key={agent.symbol}
               agent={agent}
               priceChange={agentChanges[index]}
-              onTap={onSwapRequest}
+              onTap={handleCardTap}
+              onSwap={onSwapRequest}
               canSwap={canSwap}
             />
           ))
@@ -238,6 +315,16 @@ export default function FreeAgentBar({
           {formatCountdown(rotationCountdown)}
         </motion.span>
       </div>
+
+      {/* Research Modal */}
+      {researchAsset && (
+        <AssetResearchModal
+          asset={researchAsset}
+          onClose={() => setResearchAsset(null)}
+          showActionButton={false}
+          version={2}
+        />
+      )}
     </div>
   );
 }

@@ -169,8 +169,8 @@ export default function BaggerBombTrainingBattleViewV4({
     return () => clearInterval(interval);
   }, [fetchPrices]);
 
-  // Enrich asset with live data
-  const enrichAsset = useCallback((asset) => {
+  // Enrich asset with live data and scoring
+  const enrichAsset = useCallback((asset, tier) => {
     if (!asset) return null;
     const openPrice = asset.swapPrice || startingPrices[asset.symbol] || asset.price || 0;
     const currentPrice = currentPrices[asset.symbol] || openPrice;
@@ -179,32 +179,36 @@ export default function BaggerBombTrainingBattleViewV4({
     const priceChange = openPrice > 0 ? ((currentPrice - openPrice) / openPrice) * 100 : 0;
     const multiplier = baseATR > 0 ? priceChange / baseATR : 0;
 
-    const badges = [];
-    if (Math.abs(multiplier) >= 1.0) badges.push(multiplier >= 0 ? 'bagger' : 'bust');
-    if (Math.abs(multiplier) >= 1.5) badges.push(multiplier >= 0 ? 'doubleBagger' : 'crash');
-    if (Math.abs(multiplier) >= 2.0) badges.push(multiplier >= 0 ? 'tenBagger' : 'meltdown');
+    const history = {
+      maxMultiplier: multiplier > 0 ? multiplier : 0,
+      minMultiplier: multiplier < 0 ? multiplier : 0,
+    };
+
+    const score = calculateAssetScoreV3(
+      { ...asset, baseATR, tier },
+      priceChange,
+      history
+    );
 
     return {
       ...asset,
       priceChange,
       baseATR,
-      points: 0, // Will be calculated via scoring
-      badges,
-      history: {
-        maxMultiplier: multiplier > 0 ? multiplier : 0,
-        minMultiplier: multiplier < 0 ? multiplier : 0,
-      },
+      points: score.totalPoints,
+      badges: score.badges,
+      history,
+      tierMultiplier: score.tierMultiplier,
     };
   }, [currentPrices, startingPrices, thresholds]);
 
-  // Build enriched portfolio
+  // Build enriched portfolio (pass tier for conviction multiplier)
   const buildEnrichedPortfolio = useCallback((rawPortfolio) => {
     if (!rawPortfolio) return { star: [], core: [], support: [] };
     if (rawPortfolio.star || rawPortfolio.core || rawPortfolio.support) {
       return {
-        star: (rawPortfolio.star || []).map(enrichAsset).filter(Boolean),
-        core: (rawPortfolio.core || []).map(enrichAsset).filter(Boolean),
-        support: (rawPortfolio.support || []).map(enrichAsset).filter(Boolean),
+        star: (rawPortfolio.star || []).map(a => enrichAsset(a, 'star')).filter(Boolean),
+        core: (rawPortfolio.core || []).map(a => enrichAsset(a, 'core')).filter(Boolean),
+        support: (rawPortfolio.support || []).map(a => enrichAsset(a, 'support')).filter(Boolean),
       };
     }
     return { star: [], core: [], support: [] };

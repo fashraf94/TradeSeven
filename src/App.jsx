@@ -22183,8 +22183,8 @@ export default function PortfolioDuel() {
           title="BaggerBomb Training"
           subtitle="Practice scoring points with breakout bonuses against CPU"
           details={[
-            { label: 'Assets Required', value: '7-13 picks' },
-            { label: 'Duration', value: '1 hour' },
+            { label: 'Assets Required', value: '7 picks' },
+            { label: 'Duration', value: '24 hours' },
             { label: 'Rewards', value: '+10 XP (win) / +5 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
           ]}
           confirmText="Start Training"

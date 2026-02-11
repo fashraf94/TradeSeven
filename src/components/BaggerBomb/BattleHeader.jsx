@@ -46,6 +46,7 @@ function PlayerSide({
   player,
   isRight = false,
   isLeading = false,
+  battleVersion = 3,
 }) {
   const {
     username = 'Player',
@@ -104,17 +105,19 @@ function PlayerSide({
           {Math.round(totalPoints)}
         </div>
 
-        {/* Session Points */}
-        <div
-          style={{
-            fontSize: '13px',
-            color: sessionPoints >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
-            fontWeight: 500,
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        >
-          {sessionPoints >= 0 ? '+' : ''}{Math.round(sessionPoints)} session
-        </div>
+        {/* Session Points (V3 only — V4 has no sessions) */}
+        {battleVersion < 4 && (
+          <div
+            style={{
+              fontSize: '13px',
+              color: sessionPoints >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
+              fontWeight: 500,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {sessionPoints >= 0 ? '+' : ''}{Math.round(sessionPoints)} session
+          </div>
+        )}
 
         {/* Username */}
         <div
@@ -339,6 +342,7 @@ export default function BattleHeader({
           player={player}
           isRight={false}
           isLeading={playerLeading}
+          battleVersion={battleVersion}
         />
 
         {/* VS Badge */}
@@ -356,6 +360,7 @@ export default function BattleHeader({
           player={opponent}
           isRight={true}
           isLeading={opponentLeading}
+          battleVersion={battleVersion}
         />
       </div>
 
