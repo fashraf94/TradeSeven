@@ -45,12 +45,12 @@ export default function BaggerBombTrainingBattleViewV4({
   const [closedTrades, setClosedTrades] = useState([]);
   const [localPortfolio, setLocalPortfolio] = useState(null);
 
-  // Swap modal state
-  const [swapModalState, setSwapModalState] = useState({
-    isOpen: false,
-    incomingSymbol: '',
-    incomingName: '',
-    incomingIsCrypto: false,
+  // Swap mode state (multi-step flow)
+  const [swapMode, setSwapMode] = useState({
+    active: false,
+    selectedFreeAgent: null, // { symbol, name, isCrypto }
+    step: 'idle', // 'idle' | 'selectAgent' | 'selectTarget' | 'confirming'
+    targetAsset: null, // { symbol, tier, slotIndex }
   });
   const [isSwapExecuting, setIsSwapExecuting] = useState(false);
 
@@ -240,28 +240,33 @@ export default function BaggerBombTrainingBattleViewV4({
     return { baggerBombs, busts };
   }, []);
 
-  // Handle swap request from FreeAgentBar
-  const handleSwapRequest = useCallback((agent) => {
+  // Swap mode handlers
+  const enterSwapMode = useCallback(() => {
     if (swapUsed) return;
-    setSwapModalState({
-      isOpen: true,
-      incomingSymbol: agent.symbol,
-      incomingName: agent.name || '',
-      incomingIsCrypto: Boolean(agent.isCrypto),
-    });
+    setSwapMode({ active: true, selectedFreeAgent: null, step: 'selectAgent', targetAsset: null });
   }, [swapUsed]);
 
-  const closeSwapModal = useCallback(() => {
-    setSwapModalState({
-      isOpen: false,
-      incomingSymbol: '',
-      incomingName: '',
-      incomingIsCrypto: false,
-    });
+  const selectFreeAgent = useCallback((agent) => {
+    setSwapMode(prev => ({ ...prev, selectedFreeAgent: agent, step: 'selectTarget' }));
+  }, []);
+
+  const selectSwapTarget = useCallback((asset, tier, slotIndex) => {
+    // Type check: crypto agent can only target crypto slot, stock only stock
+    if (swapMode.selectedFreeAgent?.isCrypto && !asset.isCrypto) return;
+    if (!swapMode.selectedFreeAgent?.isCrypto && asset.isCrypto) return;
+    setSwapMode(prev => ({
+      ...prev,
+      targetAsset: { symbol: asset.symbol, name: asset.name, tier, slotIndex, isCrypto: asset.isCrypto },
+      step: 'confirming',
+    }));
+  }, [swapMode.selectedFreeAgent]);
+
+  const cancelSwapMode = useCallback(() => {
+    setSwapMode({ active: false, selectedFreeAgent: null, step: 'idle', targetAsset: null });
   }, []);
 
   // Execute local swap (no Firebase for training)
-  const executeSwap = useCallback(({ outTier, outSlotIndex, inSymbol }) => {
+  const executeLocalSwap = useCallback(({ outTier, outSlotIndex, inSymbol, selectedAgent }) => {
     if (swapUsed) return;
 
     setIsSwapExecuting(true);
@@ -269,7 +274,7 @@ export default function BaggerBombTrainingBattleViewV4({
     try {
       const portfolio = localPortfolio || { ...myData?.portfolio };
       const outAsset = portfolio[outTier]?.[outSlotIndex];
-      const inAgent = freeAgents.find(a => a.symbol === inSymbol);
+      const inAgent = selectedAgent || freeAgents.find(a => a.symbol === inSymbol);
       if (!outAsset || !inAgent) throw new Error('Asset not found');
 
       // Type check
@@ -289,7 +294,7 @@ export default function BaggerBombTrainingBattleViewV4({
         slotIndex: outSlotIndex,
         entryPrice: openPrice,
         exitPrice,
-        lockedPoints: Math.round(lockedGainPct * 10) / 10, // Simplified scoring for training
+        lockedPoints: Math.round(lockedGainPct * 10) / 10,
         lockedGainPct: Math.round(lockedGainPct * 1000) / 1000,
         swappedOutAt: new Date().toISOString(),
       };
@@ -310,16 +315,40 @@ export default function BaggerBombTrainingBattleViewV4({
         swappedInAt: new Date().toISOString(),
       };
 
+      // Replace the selected free agent with the swapped-out stock
+      const agentIndex = freeAgents.findIndex(a => a.symbol === inAgent.symbol);
+      if (agentIndex >= 0) {
+        const updatedAgents = [...freeAgents];
+        updatedAgents[agentIndex] = {
+          symbol: outAsset.symbol,
+          name: outAsset.name || outAsset.symbol,
+          isCrypto: outAsset.isCrypto,
+          appearedAt: new Date().toISOString(),
+        };
+        setFreeAgents(updatedAgents);
+      }
+
       setLocalPortfolio(newPortfolio);
       setClosedTrades(prev => [...prev, closedTrade]);
       setSwapUsed(true);
-      closeSwapModal();
     } catch (error) {
       console.error('[TrainingV4] Swap error:', error);
     } finally {
       setIsSwapExecuting(false);
     }
-  }, [swapUsed, localPortfolio, myData, freeAgents, startingPrices, currentPrices, closeSwapModal]);
+  }, [swapUsed, localPortfolio, myData, freeAgents, startingPrices, currentPrices]);
+
+  // Confirm swap from swap mode flow
+  const confirmSwap = useCallback(() => {
+    if (!swapMode.targetAsset || !swapMode.selectedFreeAgent) return;
+    executeLocalSwap({
+      outTier: swapMode.targetAsset.tier,
+      outSlotIndex: swapMode.targetAsset.slotIndex,
+      inSymbol: swapMode.selectedFreeAgent.symbol,
+      selectedAgent: swapMode.selectedFreeAgent,
+    });
+    cancelSwapMode();
+  }, [swapMode, executeLocalSwap, cancelSwapMode]);
 
   // Build player data
   const player = useMemo(() => {
@@ -399,14 +428,17 @@ export default function BaggerBombTrainingBattleViewV4({
       freeAgents={freeAgents}
       startingPrices={startingPrices}
       swapsRemaining={swapUsed ? 0 : 1}
-      onSwapRequest={handleSwapRequest}
       currentDay={1}
       totalDays={1}
       rotationCountdown={rotationCountdown}
       closedTrades={closedTrades}
-      swapModalState={swapModalState}
-      onCloseSwapModal={closeSwapModal}
-      onConfirmSwap={executeSwap}
+      // Swap mode props
+      swapMode={swapMode}
+      onEnterSwapMode={enterSwapMode}
+      onSelectFreeAgent={selectFreeAgent}
+      onSelectSwapTarget={selectSwapTarget}
+      onCancelSwapMode={cancelSwapMode}
+      onConfirmSwap={confirmSwap}
       isSwapExecuting={isSwapExecuting}
     />
   );

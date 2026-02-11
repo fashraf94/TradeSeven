@@ -282,10 +282,14 @@ export default function BattleHeader({
   currentPrices,
   startingPrices,
   swapsRemaining,
-  onSwapRequest,
   currentDay,
   totalDays,
   rotationCountdown,
+  // Swap mode props
+  swapMode,
+  onEnterSwapMode,
+  onSelectFreeAgent,
+  onCancelSwapMode,
 }) {
   // Determine who is leading
   const playerLeading = player.totalPoints > opponent.totalPoints;
@@ -381,10 +385,13 @@ export default function BattleHeader({
           currentPrices={currentPrices || {}}
           startingPrices={startingPrices || {}}
           swapsRemaining={swapsRemaining || 0}
-          onSwapRequest={onSwapRequest}
           currentDay={currentDay || 1}
           totalDays={totalDays || 3}
           rotationCountdown={rotationCountdown || 0}
+          swapMode={swapMode}
+          onEnterSwapMode={onEnterSwapMode}
+          onSelectFreeAgent={onSelectFreeAgent}
+          onCancelSwapMode={onCancelSwapMode}
         />
       ) : (
         <SessionHUD

@@ -1,6 +1,6 @@
 // FreeAgentBar - Horizontal row of 4 rotating free agent tickers
-// Replaces SessionHUD for V4 battles. Shows free agents, countdown, swaps remaining.
-// Cards: gradient backgrounds, crypto purple tint, swap icon, research modal integration.
+// V4 multi-step swap mode: Swap pill → select agent → select roster target → confirm
+// Cards: gradient backgrounds, crypto purple tint, research modal integration.
 
 import React, { useState, useMemo } from 'react';
 import PropTypes from 'prop-types';
@@ -29,9 +29,10 @@ const formatPriceChange = (pct) => {
 
 /**
  * FreeAgentCard - Single free agent ticker card
- * Card tap → opens research modal. Swap icon tap → opens swap modal.
+ * Normal mode: tap → research modal
+ * Swap selectAgent step: tap → select this agent (green glow)
  */
-function FreeAgentCard({ agent, priceChange, onTap, onSwap, canSwap }) {
+function FreeAgentCard({ agent, priceChange, onTap, selectable, selected, onSelect }) {
   const isPositive = priceChange > 0;
   const isNegative = priceChange < 0;
   const changeColor = isPositive
@@ -42,10 +43,31 @@ function FreeAgentCard({ agent, priceChange, onTap, onSwap, canSwap }) {
 
   const isCrypto = agent.isCrypto;
 
+  // Border color depends on state
+  let borderColor = isCrypto
+    ? 'rgba(139, 92, 246, 0.4)'
+    : HOLO_COLORS.borderSubtle;
+  let boxShadow = 'none';
+
+  if (selected) {
+    borderColor = '#22c55e';
+    boxShadow = '0 0 8px rgba(34, 197, 94, 0.4)';
+  } else if (selectable) {
+    borderColor = 'rgba(0, 217, 255, 0.5)';
+  }
+
+  const handleClick = () => {
+    if (selectable) {
+      onSelect && onSelect(agent);
+    } else {
+      onTap && onTap(agent);
+    }
+  };
+
   return (
     <motion.button
       whileTap={{ scale: 0.95 }}
-      onClick={() => onTap && onTap(agent)}
+      onClick={handleClick}
       style={{
         flex: '1 1 0',
         minWidth: 0,
@@ -54,9 +76,7 @@ function FreeAgentCard({ agent, priceChange, onTap, onSwap, canSwap }) {
         background: isCrypto
           ? `linear-gradient(135deg, rgba(139, 92, 246, 0.12), ${HOLO_COLORS.bgElevated})`
           : `linear-gradient(135deg, ${HOLO_COLORS.bgCard}, ${HOLO_COLORS.bgElevated})`,
-        border: isCrypto
-          ? '1px solid rgba(139, 92, 246, 0.4)'
-          : `1px solid ${HOLO_COLORS.borderSubtle}`,
+        border: `1px solid ${borderColor}`,
         cursor: 'pointer',
         display: 'flex',
         flexDirection: 'column',
@@ -65,46 +85,9 @@ function FreeAgentCard({ agent, priceChange, onTap, onSwap, canSwap }) {
         transition: 'border-color 0.2s, box-shadow 0.2s',
         position: 'relative',
         overflow: 'hidden',
+        boxShadow,
       }}
     >
-      {/* Swap icon button (top-right) */}
-      {canSwap && (
-        <span
-          role="button"
-          tabIndex={0}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSwap && onSwap(agent);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.stopPropagation();
-              onSwap && onSwap(agent);
-            }
-          }}
-          style={{
-            position: 'absolute',
-            top: '3px',
-            right: '3px',
-            width: '20px',
-            height: '20px',
-            borderRadius: '50%',
-            background: 'rgba(0, 217, 255, 0.15)',
-            border: '1px solid rgba(0, 217, 255, 0.3)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '10px',
-            color: HOLO_COLORS.cyan,
-            cursor: 'pointer',
-            zIndex: 2,
-            lineHeight: 1,
-          }}
-        >
-          ↔
-        </span>
-      )}
-
       {/* Symbol */}
       <span
         style={{
@@ -162,12 +145,13 @@ FreeAgentCard.propTypes = {
   }).isRequired,
   priceChange: PropTypes.number,
   onTap: PropTypes.func,
-  onSwap: PropTypes.func,
-  canSwap: PropTypes.bool,
+  selectable: PropTypes.bool,
+  selected: PropTypes.bool,
+  onSelect: PropTypes.func,
 };
 
 /**
- * FreeAgentBar - Main component
+ * FreeAgentBar - Main component with swap mode support
  */
 export default function FreeAgentBar({
   freeAgents = [],
@@ -175,10 +159,14 @@ export default function FreeAgentBar({
   currentPrices = {},
   startingPrices = {},
   swapsRemaining = 0,
-  onSwapRequest,
   currentDay = 1,
   totalDays = 3,
   rotationCountdown = 0,
+  // Swap mode props
+  swapMode = null,
+  onEnterSwapMode,
+  onSelectFreeAgent,
+  onCancelSwapMode,
 }) {
   const [researchAsset, setResearchAsset] = useState(null);
 
@@ -195,6 +183,9 @@ export default function FreeAgentBar({
   }, [freeAgents, currentPrices, startingPrices]);
 
   const canSwap = swapsRemaining > 0;
+  const isSwapActive = swapMode?.active;
+  const isSelectingAgent = swapMode?.step === 'selectAgent';
+  const isSelectingTarget = swapMode?.step === 'selectTarget';
 
   const handleCardTap = (agent) => {
     const idx = freeAgents.findIndex(a => a.symbol === agent.symbol);
@@ -216,7 +207,7 @@ export default function FreeAgentBar({
         border: `1px solid ${HOLO_COLORS.borderSubtle}`,
       }}
     >
-      {/* Day + Swaps header row */}
+      {/* Header Row: Day label + Swap pill button */}
       <div
         style={{
           display: 'flex',
@@ -237,16 +228,89 @@ export default function FreeAgentBar({
           Day {currentDay}/{totalDays}
         </span>
 
-        <span
+        {/* Swap pill button or Cancel */}
+        {isSwapActive ? (
+          <button
+            onClick={onCancelSwapMode}
+            style={{
+              padding: '4px 12px',
+              borderRadius: '12px',
+              border: `1px solid ${HOLO_COLORS.red}60`,
+              background: `${HOLO_COLORS.red}15`,
+              color: HOLO_COLORS.red,
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+        ) : canSwap ? (
+          <button
+            onClick={onEnterSwapMode}
+            style={{
+              padding: '4px 12px',
+              borderRadius: '12px',
+              border: `1px solid ${HOLO_COLORS.cyan}50`,
+              background: `${HOLO_COLORS.cyan}15`,
+              color: HOLO_COLORS.cyan,
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+          >
+            <span style={{ fontSize: '12px' }}>&#x1F504;</span>
+            Swap ({swapsRemaining} left)
+          </button>
+        ) : (
+          <span
+            style={{
+              fontSize: '10px',
+              fontWeight: 600,
+              color: HOLO_COLORS.textMuted,
+            }}
+          >
+            No swaps today
+          </span>
+        )}
+      </div>
+
+      {/* Swap Mode Banner */}
+      {isSelectingAgent && (
+        <div
           style={{
-            fontSize: '10px',
+            padding: '6px 8px',
+            marginBottom: '6px',
+            background: `${HOLO_COLORS.cyan}10`,
+            borderRadius: '6px',
+            textAlign: 'center',
+            fontSize: '11px',
             fontWeight: 600,
-            color: canSwap ? HOLO_COLORS.cyan : HOLO_COLORS.textMuted,
+            color: HOLO_COLORS.cyan,
           }}
         >
-          {swapsRemaining} swap{swapsRemaining !== 1 ? 's' : ''} left
-        </span>
-      </div>
+          Select a free agent to add
+        </div>
+      )}
+      {isSelectingTarget && (
+        <div
+          style={{
+            padding: '6px 8px',
+            marginBottom: '6px',
+            background: 'rgba(34, 197, 94, 0.1)',
+            borderRadius: '6px',
+            textAlign: 'center',
+            fontSize: '11px',
+            fontWeight: 600,
+            color: '#22c55e',
+          }}
+        >
+          Now tap the stock you want to swap out
+        </div>
+      )}
 
       {/* Free Agent Cards */}
       <div
@@ -264,8 +328,9 @@ export default function FreeAgentBar({
               agent={agent}
               priceChange={agentChanges[index]}
               onTap={handleCardTap}
-              onSwap={onSwapRequest}
-              canSwap={canSwap}
+              selectable={isSelectingAgent}
+              selected={swapMode?.selectedFreeAgent?.symbol === agent.symbol}
+              onSelect={onSelectFreeAgent}
             />
           ))
         ) : (
@@ -330,7 +395,6 @@ export default function FreeAgentBar({
 }
 
 FreeAgentBar.propTypes = {
-  /** Array of 4 free agent objects */
   freeAgents: PropTypes.arrayOf(
     PropTypes.shape({
       symbol: PropTypes.string.isRequired,
@@ -339,32 +403,20 @@ FreeAgentBar.propTypes = {
       appearedAt: PropTypes.string,
     })
   ),
-  /** ISO timestamp of next rotation */
   nextRotationAt: PropTypes.string,
-  /** Current market prices { symbol: price } */
   currentPrices: PropTypes.object,
-  /** Starting/open prices for change calculation */
   startingPrices: PropTypes.object,
-  /** Swaps remaining for today */
   swapsRemaining: PropTypes.number,
-  /** Callback when user taps a free agent to initiate swap */
-  onSwapRequest: PropTypes.func,
-  /** Current trading day (1, 2, or 3) */
   currentDay: PropTypes.number,
-  /** Total trading days in battle */
   totalDays: PropTypes.number,
-  /** Seconds until next rotation */
   rotationCountdown: PropTypes.number,
-};
-
-FreeAgentBar.defaultProps = {
-  freeAgents: [],
-  nextRotationAt: null,
-  currentPrices: {},
-  startingPrices: {},
-  swapsRemaining: 0,
-  onSwapRequest: null,
-  currentDay: 1,
-  totalDays: 3,
-  rotationCountdown: 0,
+  swapMode: PropTypes.shape({
+    active: PropTypes.bool,
+    selectedFreeAgent: PropTypes.object,
+    step: PropTypes.string,
+    targetAsset: PropTypes.object,
+  }),
+  onEnterSwapMode: PropTypes.func,
+  onSelectFreeAgent: PropTypes.func,
+  onCancelSwapMode: PropTypes.func,
 };

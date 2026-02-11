@@ -7,6 +7,7 @@ import ClashCard1v1 from './ClashCard1v1';
 import ClashCard1v1V3 from './ClashCard1v1V3';
 import ClashCardDraft from './ClashCardDraft';
 import ClashCardTraining from './ClashCardTraining';
+import ClashCardTrainingV4 from './ClashCardTrainingV4';
 import { getUsername } from '../../../utils/battleHelpers';
 import { getRemainingTime } from '../../../services/battleTimer';
 
@@ -181,6 +182,19 @@ export default function ClashCard({
           onPress={onPress}
           isMostUrgent={false}
           currentUserId={currentUserId}
+        />
+      );
+    }
+
+    // V4 BaggerBomb training — points-based scoring with live prices
+    const isV4 = battle._v >= 4 || battle.type === 'baggerbomb_v4';
+    if (isV4) {
+      return (
+        <ClashCardTrainingV4
+          battle={battle}
+          user={user}
+          remainingMs={remainingMs}
+          onPress={onPress}
         />
       );
     }

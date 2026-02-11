@@ -14,6 +14,9 @@ function getTrainingTypeInfo(battle) {
   if (battle.players && battle.players.length > 2) {
     return { label: 'SNAKE DRAFT AI', emoji: '🐍', isDraft: true };
   }
+  if (battle._v >= 4 || battle.type === 'baggerbomb_v4') {
+    return { label: 'BAGGERBOMB AI', emoji: '💣', isDraft: false };
+  }
   if (battle._v === 2 || battle.type === 'baggerbomb') {
     return { label: 'BAGGERBOMB AI', emoji: '💣', isDraft: false };
   }
