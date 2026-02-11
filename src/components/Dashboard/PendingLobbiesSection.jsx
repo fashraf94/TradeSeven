@@ -405,8 +405,8 @@ export default function PendingLobbiesSection({
     const pending = [];
 
     (lobbyBattles || []).forEach(lobby => {
-      // BaggerBomb V3
-      if (lobby._v === 3) {
+      // BaggerBomb V3/V4
+      if (lobby._v === 3 || lobby._v === 4) {
         const creatorId = lobby.creator?.odUserId || lobby.creator?.uid;
         const isCreator = creatorId === userId;
         const isPending = lobby.state?.status === 'waiting';

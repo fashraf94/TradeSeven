@@ -30,12 +30,12 @@ export function isSnakeDraft(lobby) {
 }
 
 /**
- * Detect if a lobby is a BaggerBomb V3
+ * Detect if a lobby is a BaggerBomb V3 or V4
  * @param {Object} lobby - Lobby document
  * @returns {boolean}
  */
 export function isBaggerBombV3(lobby) {
-  return lobby?._v === 3;
+  return lobby?._v === 3 || lobby?._v === 4;
 }
 
 /**

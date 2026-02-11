@@ -37,8 +37,8 @@ function getPlayerCountDisplay(battle) {
     return `${current}/4 players`;
   }
 
-  // V3 BaggerBomb: check state.status for waiting
-  if (battle._v === 3) {
+  // V3/V4 BaggerBomb: check state.status for waiting
+  if (battle._v === 3 || battle._v === 4) {
     const status = battle.state?.status;
     if (status === 'waiting') {
       return '1/2 players • Waiting';
@@ -81,8 +81,8 @@ function generateFeedItems(waitingBattles, completedBattles, stocksData, user, l
       const host = battle.players?.find(p => p.isHost);
       return host?.odUsername || host?.displayName || 'Player';
     }
-    // V3 BaggerBomb: creator object
-    if (battle._v === 3) {
+    // V3/V4 BaggerBomb: creator object
+    if (battle._v === 3 || battle._v === 4) {
       return battle.creator?.username || 'Player';
     }
     // V1/V2: use getUsername helper
@@ -95,7 +95,7 @@ function generateFeedItems(waitingBattles, completedBattles, stocksData, user, l
       const host = battle.players?.find(p => p.isHost);
       return host?.odUserId;
     }
-    if (battle._v === 3) {
+    if (battle._v === 3 || battle._v === 4) {
       return battle.creator?.odUserId;
     }
     return battle.creator?.odUserId || battle.creator?.uid;
