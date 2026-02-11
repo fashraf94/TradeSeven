@@ -37,6 +37,9 @@ export function generateFreeAgentPool(rotationCount = 0, mode = 'mixed') {
   const poolSize = FREE_AGENT_CONFIG.POOL_SIZE;
   const now = new Date().toISOString();
 
+  // Filter out symbols with dots (e.g. BRK.B) — causes API proxy 500 errors
+  const eligibleStocks = STOCKS.filter(s => !s.symbol.includes('.'));
+
   if (mode === 'crypto_only') {
     // After hours: all 4 are crypto
     const filteredCrypto = CRYPTO.filter(c => c.category !== 'Stablecoin');
@@ -66,7 +69,7 @@ export function generateFreeAgentPool(rotationCount = 0, mode = 'mixed') {
       });
     }
 
-    const shuffledStocks = shuffleArray(STOCKS);
+    const shuffledStocks = shuffleArray(eligibleStocks);
     const stocksNeeded = poolSize - pool.length;
     for (let i = 0; i < Math.min(stocksNeeded, shuffledStocks.length); i++) {
       pool.push({
@@ -78,7 +81,7 @@ export function generateFreeAgentPool(rotationCount = 0, mode = 'mixed') {
     }
   } else {
     // All 4 stocks
-    const shuffledStocks = shuffleArray(STOCKS);
+    const shuffledStocks = shuffleArray(eligibleStocks);
     for (let i = 0; i < Math.min(poolSize, shuffledStocks.length); i++) {
       pool.push({
         symbol: shuffledStocks[i].symbol,

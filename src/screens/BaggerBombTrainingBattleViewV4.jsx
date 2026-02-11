@@ -1,6 +1,9 @@
 // BaggerBombTrainingBattleViewV4 - V4 Training-specific wrapper
-// Adapts local training battle data to the format expected by BaggerBombBattleView
-// V4: No bench, no sessions, 1 swap total, free agents generated client-side, 1-day duration
+// Adapts training battle data to the format expected by BaggerBombBattleView
+// V4: No bench, no sessions, 1 swap total, free agents from Firebase, 1-day duration
+//
+// PERSISTENCE: Swaps, closed trades, and free agent rotations write to Firebase
+// (trainingBattles collection). On re-entry, state is read from battle prop.
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
@@ -11,15 +14,49 @@ import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
 import { getVolatilityThresholds } from '../services/volatilityService';
 import { flattenPortfolio, calculateAssetScoreV3 } from '../utils/baggerBombUtils';
 import { CONVICTION_MULTIPLIERS } from '../constants/baggerBombScoring';
-import { generateFreeAgentPool } from '../services/freeAgentRotationService';
+import { generateFreeAgentPool, getRotationCountdown } from '../services/freeAgentRotationService';
 import { getFreeAgentConfig } from '../constants/battleTimingV4';
 
 const PRICE_POLL_INTERVAL = 60000; // 60 seconds
-const ROTATION_INTERVAL_MS = 5_400_000; // 90 min for local training
 
 const isCryptoSymbol = (symbol) => {
   return POPULAR_CRYPTO.some(c => c.symbol === symbol) || symbol?.endsWith('-USD');
 };
+
+/**
+ * Write swap data to Firebase trainingBattles collection
+ */
+async function persistSwapToFirebase(battleId, playerId, updates) {
+  try {
+    const { doc, updateDoc } = await import('firebase/firestore');
+    const { db } = await import('../firebase/config');
+    const battleRef = doc(db, 'trainingBattles', battleId);
+    await updateDoc(battleRef, updates);
+    console.log(`✅ [TrainingV4] Swap persisted to Firebase: ${battleId}`);
+  } catch (error) {
+    console.error('[TrainingV4] Failed to persist swap to Firebase:', error);
+  }
+}
+
+/**
+ * Write free agent rotation to Firebase
+ */
+async function persistRotationToFirebase(battleId, newAgents, nextRotationAt, rotationCount) {
+  try {
+    const { doc, updateDoc } = await import('firebase/firestore');
+    const { db } = await import('../firebase/config');
+    const battleRef = doc(db, 'trainingBattles', battleId);
+    await updateDoc(battleRef, {
+      'freeAgents.current': newAgents,
+      'freeAgents.nextRotationAt': nextRotationAt,
+      'freeAgents.rotationCount': rotationCount,
+      updatedAt: new Date().toISOString(),
+    });
+    console.log('✅ [TrainingV4] Rotation persisted to Firebase');
+  } catch (error) {
+    console.error('[TrainingV4] Failed to persist rotation:', error);
+  }
+}
 
 /**
  * BaggerBombTrainingBattleViewV4 - Training wrapper for V4
@@ -34,40 +71,44 @@ export default function BaggerBombTrainingBattleViewV4({
   const [loadingPrices, setLoadingPrices] = useState(true);
   const [thresholds, setThresholds] = useState({});
 
-  // Free agent state (local, not Firebase)
-  const [freeAgents, setFreeAgents] = useState([]);
-  const [rotationCountdown, setRotationCountdown] = useState(0);
-  const nextRotationRef = useRef(null);
-  const rotationCountRef = useRef(0);
-
-  // Swap state
-  const [swapUsed, setSwapUsed] = useState(false);
-  const [closedTrades, setClosedTrades] = useState([]);
-  const [localPortfolio, setLocalPortfolio] = useState(null);
-
-  // Swap mode state (multi-step flow)
-  const [swapMode, setSwapMode] = useState({
-    active: false,
-    selectedFreeAgent: null, // { symbol, name, isCrypto }
-    step: 'idle', // 'idle' | 'selectAgent' | 'selectTarget' | 'confirming'
-    targetAsset: null, // { symbol, tier, slotIndex }
-  });
-  const [isSwapExecuting, setIsSwapExecuting] = useState(false);
-
   // Determine if user is creator
   const isCreator = battle?.creator?.uid === user?.uid ||
                     battle?.creator?.uid === user?.odUserId ||
                     battle?.creator?.odUserId === user?.odUserId ||
                     battle?.creator?.username === user?.username;
 
+  const playerId = isCreator ? 'creator' : 'opponent';
   const myData = isCreator ? battle?.creator : battle?.opponent;
   const oppData = isCreator ? battle?.opponent : battle?.creator;
   const startingPrices = battle?.state?.startingPrices || {};
 
-  // Use local portfolio if swap has occurred, otherwise use battle portfolio
+  // --- Free agent state: initialize from battle (Firebase), NOT generated ---
+  const battleFreeAgents = battle?.freeAgents?.current || [];
+  const [freeAgents, setFreeAgents] = useState(battleFreeAgents);
+  const [rotationCountdown, setRotationCountdown] = useState(0);
+  const nextRotationRef = useRef(null);
+  const rotationCountRef = useRef(battle?.freeAgents?.rotationCount || 0);
+
+  // --- Swap state: initialize from battle data for persistence ---
+  const battleSwapHistory = myData?.swaps?.history || [];
+  const battleSwapsRemaining = myData?.swaps?.remaining?.day1 ?? 1;
+  const [swapUsed, setSwapUsed] = useState(battleSwapHistory.length > 0 || battleSwapsRemaining === 0);
+  const [closedTrades, setClosedTrades] = useState(myData?.closedTrades || []);
+  const [localPortfolio, setLocalPortfolio] = useState(null);
+
+  // Swap mode state (multi-step flow)
+  const [swapMode, setSwapMode] = useState({
+    active: false,
+    selectedFreeAgent: null,
+    step: 'idle',
+    targetAsset: null,
+  });
+  const [isSwapExecuting, setIsSwapExecuting] = useState(false);
+
+  // Use local portfolio if swap has occurred in this session, otherwise use battle portfolio
   const myPortfolioRaw = localPortfolio || myData?.portfolio;
 
-  // Collect all symbols for price fetching (no bench in V4)
+  // Collect all symbols for price fetching (roster + free agents)
   const allSymbols = useMemo(() => {
     const myPortfolio = flattenPortfolio(myPortfolioRaw);
     const oppPortfolio = flattenPortfolio(oppData?.portfolio);
@@ -82,16 +123,42 @@ export default function BaggerBombTrainingBattleViewV4({
     return [...new Set(symbols)];
   }, [myPortfolioRaw, oppData, freeAgents]);
 
-  // Initialize free agents on mount
+  // --- Initialize free agents from battle data on mount ---
   useEffect(() => {
-    const config = getFreeAgentConfig();
-    const pool = generateFreeAgentPool(0, config.mode);
-    setFreeAgents(pool);
-    nextRotationRef.current = Date.now() + config.rotationMs;
-    setRotationCountdown(Math.floor(config.rotationMs / 1000));
-  }, []);
+    const battleAgents = battle?.freeAgents?.current || [];
+    const nextRotationAt = battle?.freeAgents?.nextRotationAt;
 
-  // Rotation countdown + auto-rotate
+    if (battleAgents.length > 0) {
+      // Read persisted free agents from Firebase
+      setFreeAgents(battleAgents);
+      rotationCountRef.current = battle?.freeAgents?.rotationCount || 0;
+
+      if (nextRotationAt) {
+        nextRotationRef.current = new Date(nextRotationAt).getTime();
+        setRotationCountdown(Math.max(0, Math.floor((nextRotationRef.current - Date.now()) / 1000)));
+      } else {
+        // No rotation set, calculate from now
+        const config = getFreeAgentConfig();
+        nextRotationRef.current = Date.now() + config.rotationMs;
+        setRotationCountdown(Math.floor(config.rotationMs / 1000));
+      }
+    } else {
+      // Fallback: battle was created before free agents were populated (legacy)
+      const config = getFreeAgentConfig();
+      const pool = generateFreeAgentPool(0, config.mode);
+      setFreeAgents(pool);
+      nextRotationRef.current = Date.now() + config.rotationMs;
+      setRotationCountdown(Math.floor(config.rotationMs / 1000));
+
+      // Persist to Firebase so they stick on re-entry
+      if (battle?.id) {
+        const nextAt = new Date(Date.now() + config.rotationMs).toISOString();
+        persistRotationToFirebase(battle.id, pool, nextAt, 0);
+      }
+    }
+  }, []); // Run once on mount
+
+  // Rotation countdown + auto-rotate (with Firebase persistence)
   useEffect(() => {
     const interval = setInterval(() => {
       if (!nextRotationRef.current) return;
@@ -104,11 +171,17 @@ export default function BaggerBombTrainingBattleViewV4({
         const pool = generateFreeAgentPool(rotationCountRef.current, config.mode);
         setFreeAgents(pool);
         nextRotationRef.current = Date.now() + config.rotationMs;
+
+        // Persist new rotation to Firebase
+        if (battle?.id) {
+          const nextAt = new Date(Date.now() + config.rotationMs).toISOString();
+          persistRotationToFirebase(battle.id, pool, nextAt, rotationCountRef.current);
+        }
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [battle?.id]);
 
   // Fetch prices
   const fetchPrices = useCallback(async () => {
@@ -251,7 +324,6 @@ export default function BaggerBombTrainingBattleViewV4({
   }, []);
 
   const selectSwapTarget = useCallback((asset, tier, slotIndex) => {
-    // Type check: crypto agent can only target crypto slot, stock only stock
     if (swapMode.selectedFreeAgent?.isCrypto && !asset.isCrypto) return;
     if (!swapMode.selectedFreeAgent?.isCrypto && asset.isCrypto) return;
     setSwapMode(prev => ({
@@ -265,15 +337,21 @@ export default function BaggerBombTrainingBattleViewV4({
     setSwapMode({ active: false, selectedFreeAgent: null, step: 'idle', targetAsset: null });
   }, []);
 
-  // Execute local swap (no Firebase for training)
-  const executeLocalSwap = useCallback(({ outTier, outSlotIndex, inSymbol, selectedAgent }) => {
+  // Execute swap with Firebase persistence + local optimistic update
+  const executeSwap = useCallback(({ outTier, outSlotIndex, inSymbol, selectedAgent, displayedPoints }) => {
     if (swapUsed) return;
 
     setIsSwapExecuting(true);
 
     try {
       const portfolio = localPortfolio || { ...myData?.portfolio };
-      const outAsset = portfolio[outTier]?.[outSlotIndex];
+      // Deep copy the specific tier
+      const portfolioClone = {
+        star: [...(portfolio.star || [])],
+        core: [...(portfolio.core || [])],
+        support: [...(portfolio.support || [])],
+      };
+      const outAsset = portfolioClone[outTier]?.[outSlotIndex];
       const inAgent = selectedAgent || freeAgents.find(a => a.symbol === inSymbol);
       if (!outAsset || !inAgent) throw new Error('Asset not found');
 
@@ -282,10 +360,19 @@ export default function BaggerBombTrainingBattleViewV4({
       const inIsCrypto = Boolean(inAgent.isCrypto);
       if (outIsCrypto !== inIsCrypto) throw new Error('Type mismatch');
 
-      // Calculate locked points for outgoing
+      // Calculate locked points — use DISPLAYED points from enriched portfolio (includes conviction multiplier)
       const openPrice = outAsset.swapPrice || startingPrices[outAsset.symbol] || outAsset.price || 0;
       const exitPrice = currentPrices[outAsset.symbol] || openPrice;
       const lockedGainPct = openPrice > 0 ? ((exitPrice - openPrice) / openPrice) * 100 : 0;
+
+      // Use the displayed points (from enriched portfolio with conviction multiplier),
+      // NOT a raw recalculation. This is what the user sees on screen.
+      const lockedPoints = displayedPoints != null
+        ? Math.round(displayedPoints * 10) / 10
+        : Math.round(lockedGainPct * 10) / 10; // fallback
+
+      const swapPrice = currentPrices[inSymbol] || 0;
+      const now = new Date().toISOString();
 
       const closedTrade = {
         symbol: outAsset.symbol,
@@ -294,61 +381,102 @@ export default function BaggerBombTrainingBattleViewV4({
         slotIndex: outSlotIndex,
         entryPrice: openPrice,
         exitPrice,
-        lockedPoints: Math.round(lockedGainPct * 10) / 10,
+        lockedPoints,
         lockedGainPct: Math.round(lockedGainPct * 1000) / 1000,
-        swappedOutAt: new Date().toISOString(),
+        swappedOutAt: now,
       };
 
-      // Build new portfolio
-      const newPortfolio = {
-        star: [...(portfolio.star || [])],
-        core: [...(portfolio.core || [])],
-        support: [...(portfolio.support || [])],
-      };
-
-      newPortfolio[outTier] = [...newPortfolio[outTier]];
-      newPortfolio[outTier][outSlotIndex] = {
+      // Build incoming asset
+      const incomingAsset = {
         symbol: inAgent.symbol,
         name: inAgent.name,
         isCrypto: inAgent.isCrypto,
-        swapPrice: currentPrices[inSymbol] || 0,
-        swappedInAt: new Date().toISOString(),
+        swapPrice,
+        swappedInAt: now,
       };
 
-      // Replace the selected free agent with the swapped-out stock
+      // Update portfolio slot
+      portfolioClone[outTier] = [...portfolioClone[outTier]];
+      portfolioClone[outTier][outSlotIndex] = incomingAsset;
+
+      // Replace free agent with swapped-out stock
       const agentIndex = freeAgents.findIndex(a => a.symbol === inAgent.symbol);
+      let updatedAgents = freeAgents;
       if (agentIndex >= 0) {
-        const updatedAgents = [...freeAgents];
+        updatedAgents = [...freeAgents];
         updatedAgents[agentIndex] = {
           symbol: outAsset.symbol,
           name: outAsset.name || outAsset.symbol,
           isCrypto: outAsset.isCrypto,
-          appearedAt: new Date().toISOString(),
+          appearedAt: now,
         };
         setFreeAgents(updatedAgents);
       }
 
-      setLocalPortfolio(newPortfolio);
-      setClosedTrades(prev => [...prev, closedTrade]);
+      const newClosedTrades = [...closedTrades, closedTrade];
+
+      // --- Optimistic local state update (immediate UI) ---
+      setLocalPortfolio(portfolioClone);
+      setClosedTrades(newClosedTrades);
       setSwapUsed(true);
+
+      // --- Persist to Firebase (trainingBattles collection) ---
+      if (battle?.id) {
+        const swapRecord = {
+          timestamp: now,
+          day: 1,
+          removedSymbol: outAsset.symbol,
+          removedTier: outTier,
+          removedSlotIndex: outSlotIndex,
+          addedSymbol: inSymbol,
+          swapPrice,
+          lockedPoints,
+        };
+
+        const swapHistory = [...(myData?.swaps?.history || []), swapRecord];
+        const newRemaining = { day1: 0 };
+
+        // Add starting price for new stock so scoring works on re-entry
+        const updatedStartingPrices = { ...(battle?.state?.startingPrices || {}) };
+        updatedStartingPrices[inSymbol] = swapPrice;
+
+        const updates = {
+          [`${playerId}.portfolio`]: portfolioClone,
+          [`${playerId}.closedTrades`]: newClosedTrades,
+          [`${playerId}.swaps.remaining`]: newRemaining,
+          [`${playerId}.swaps.history`]: swapHistory,
+          'freeAgents.current': updatedAgents,
+          'state.startingPrices': updatedStartingPrices,
+          updatedAt: now,
+        };
+
+        persistSwapToFirebase(battle.id, playerId, updates);
+      }
     } catch (error) {
       console.error('[TrainingV4] Swap error:', error);
     } finally {
       setIsSwapExecuting(false);
     }
-  }, [swapUsed, localPortfolio, myData, freeAgents, startingPrices, currentPrices]);
+  }, [swapUsed, localPortfolio, myData, freeAgents, startingPrices, currentPrices, closedTrades, battle, playerId]);
 
-  // Confirm swap from swap mode flow
+  // Confirm swap from swap mode flow — captures DISPLAYED points from enriched portfolio
   const confirmSwap = useCallback(() => {
     if (!swapMode.targetAsset || !swapMode.selectedFreeAgent) return;
-    executeLocalSwap({
+
+    // Get the displayed points from the enriched portfolio (includes conviction multiplier)
+    const enrichedPortfolio = buildEnrichedPortfolio(myPortfolioRaw);
+    const enrichedAsset = enrichedPortfolio[swapMode.targetAsset.tier]?.[swapMode.targetAsset.slotIndex];
+    const displayedPoints = enrichedAsset?.points ?? null;
+
+    executeSwap({
       outTier: swapMode.targetAsset.tier,
       outSlotIndex: swapMode.targetAsset.slotIndex,
       inSymbol: swapMode.selectedFreeAgent.symbol,
       selectedAgent: swapMode.selectedFreeAgent,
+      displayedPoints,
     });
     cancelSwapMode();
-  }, [swapMode, executeLocalSwap, cancelSwapMode]);
+  }, [swapMode, executeSwap, cancelSwapMode, buildEnrichedPortfolio, myPortfolioRaw]);
 
   // Build player data
   const player = useMemo(() => {
@@ -445,21 +573,24 @@ export default function BaggerBombTrainingBattleViewV4({
 }
 
 BaggerBombTrainingBattleViewV4.propTypes = {
-  /** Training battle object */
   battle: PropTypes.shape({
+    id: PropTypes.string,
     creator: PropTypes.object,
     opponent: PropTypes.object,
     state: PropTypes.shape({
       startingPrices: PropTypes.object,
     }),
+    freeAgents: PropTypes.shape({
+      current: PropTypes.array,
+      nextRotationAt: PropTypes.string,
+      rotationCount: PropTypes.number,
+    }),
   }).isRequired,
-  /** Current user object */
   user: PropTypes.shape({
     uid: PropTypes.string,
     odUserId: PropTypes.string,
     username: PropTypes.string,
   }),
-  /** Callback when back button pressed */
   onBack: PropTypes.func,
 };
 

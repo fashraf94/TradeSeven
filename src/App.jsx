@@ -15628,12 +15628,22 @@ export default function PortfolioDuel() {
         dailyOpenPrices: { day1: startingPrices },
       },
 
-      freeAgents: {
-        current: [],
-        nextRotationAt: null,
-        rotationCount: 0,
-        rotationHistory: [],
-      },
+      freeAgents: (() => {
+        try {
+          const { createInitialFreeAgents } = require('./services/freeAgentRotationService');
+          const initial = createInitialFreeAgents();
+          // Add starting prices for free agents so price display works
+          (initial.current || []).forEach(agent => {
+            if (agent.symbol && !startingPrices[agent.symbol]) {
+              startingPrices[agent.symbol] = 0; // placeholder, real price fetched by battle view
+            }
+          });
+          return initial;
+        } catch (e) {
+          console.warn('Failed to generate initial free agents:', e);
+          return { current: [], nextRotationAt: null, rotationCount: 0, rotationHistory: [] };
+        }
+      })(),
 
       isTraining: true,
       isTrainingBattle: true,
