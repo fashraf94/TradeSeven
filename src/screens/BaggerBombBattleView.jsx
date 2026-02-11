@@ -205,7 +205,6 @@ export default function BaggerBombBattleView({
   battleVersion = 3,
   freeAgents,
   nextRotationAt,
-  startingPrices,
   freeAgentDailyOpens,
   swapsRemaining,
   currentDay,
@@ -381,7 +380,6 @@ export default function BaggerBombBattleView({
           freeAgents={freeAgents}
           nextRotationAt={nextRotationAt}
           currentPrices={currentPrices}
-          startingPrices={startingPrices}
           freeAgentDailyOpens={freeAgentDailyOpens}
           swapsRemaining={swapsRemaining}
           currentDay={currentDay}

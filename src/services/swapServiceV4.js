@@ -230,8 +230,6 @@ export async function executeSwap(
 
     transaction.update(battleRef, updates);
 
-    console.log(`✅ Swap executed: ${outSymbol} -> ${inSymbol} (Day ${currentDay}, ${playerId})`);
-
     return {
       closedTrade,
       swapRecord,

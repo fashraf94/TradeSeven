@@ -18,6 +18,7 @@ export const HOLO_COLORS = {
   cyan: '#00ffff',
   green: '#00ff88',
   greenMuted: '#10b981',  // Muted green (used in threshold displays)
+  greenBright: '#22c55e', // Bright green (selections, confirmations)
   amber: '#f59e0b',
   red: '#ff3366',
   redMuted: '#ef4444',  // Muted red (used in threshold displays)

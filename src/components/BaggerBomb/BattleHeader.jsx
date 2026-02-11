@@ -280,7 +280,6 @@ export default function BattleHeader({
   freeAgents,
   nextRotationAt,
   currentPrices,
-  startingPrices,
   freeAgentDailyOpens,
   swapsRemaining,
   currentDay,
@@ -384,7 +383,6 @@ export default function BattleHeader({
           freeAgents={freeAgents || []}
           nextRotationAt={nextRotationAt}
           currentPrices={currentPrices || {}}
-          startingPrices={startingPrices || {}}
           freeAgentDailyOpens={freeAgentDailyOpens || {}}
           swapsRemaining={swapsRemaining || 0}
           currentDay={currentDay || 1}
@@ -444,12 +442,10 @@ BattleHeader.propTypes = {
   nextRotationAt: PropTypes.string,
   /** V4: Current prices */
   currentPrices: PropTypes.object,
-  /** V4: Starting prices */
-  startingPrices: PropTypes.object,
+  /** V4: Daily open prices for free agent cards */
+  freeAgentDailyOpens: PropTypes.object,
   /** V4: Swaps remaining today */
   swapsRemaining: PropTypes.number,
-  /** V4: Swap request handler */
-  onSwapRequest: PropTypes.func,
   /** V4: Current trading day */
   currentDay: PropTypes.number,
   /** V4: Total trading days */
@@ -467,9 +463,8 @@ BattleHeader.defaultProps = {
   freeAgents: [],
   nextRotationAt: null,
   currentPrices: {},
-  startingPrices: {},
+  freeAgentDailyOpens: {},
   swapsRemaining: 0,
-  onSwapRequest: null,
   currentDay: 1,
   totalDays: 3,
   rotationCountdown: 0,

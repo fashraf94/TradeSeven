@@ -54,15 +54,15 @@ function FreeAgentCard({ agent, priceChange, currentPrice, onTap, selectable, se
 
   // Border color depends on state
   let borderColor = isCrypto
-    ? 'rgba(139, 92, 246, 0.4)'
+    ? `${HOLO_COLORS.purple}66`
     : HOLO_COLORS.borderSubtle;
   let boxShadow = 'none';
 
   if (selected) {
-    borderColor = '#22c55e';
-    boxShadow = '0 0 8px rgba(34, 197, 94, 0.4)';
+    borderColor = HOLO_COLORS.greenBright;
+    boxShadow = `0 0 8px ${HOLO_COLORS.greenBright}66`;
   } else if (selectable) {
-    borderColor = 'rgba(0, 217, 255, 0.5)';
+    borderColor = HOLO_COLORS.borderBright;
   }
 
   const handleClick = () => {
@@ -83,7 +83,7 @@ function FreeAgentCard({ agent, priceChange, currentPrice, onTap, selectable, se
         padding: '10px 6px 8px',
         borderRadius: '8px',
         background: isCrypto
-          ? `linear-gradient(135deg, rgba(139, 92, 246, 0.12), ${HOLO_COLORS.bgElevated})`
+          ? `linear-gradient(135deg, ${HOLO_COLORS.purple}1F, ${HOLO_COLORS.bgElevated})`
           : `linear-gradient(135deg, ${HOLO_COLORS.bgCard}, ${HOLO_COLORS.bgElevated})`,
         border: `1px solid ${borderColor}`,
         cursor: 'pointer',
@@ -167,7 +167,6 @@ export default function FreeAgentBar({
   freeAgents = [],
   nextRotationAt,
   currentPrices = {},
-  startingPrices = {},
   freeAgentDailyOpens = {},
   swapsRemaining = 0,
   currentDay = 1,
@@ -311,12 +310,12 @@ export default function FreeAgentBar({
           style={{
             padding: '6px 8px',
             marginBottom: '6px',
-            background: 'rgba(34, 197, 94, 0.1)',
+            background: `${HOLO_COLORS.greenBright}1A`,
             borderRadius: '6px',
             textAlign: 'center',
             fontSize: '11px',
             fontWeight: 600,
-            color: '#22c55e',
+            color: HOLO_COLORS.greenBright,
           }}
         >
           Now tap the stock you want to swap out
@@ -417,7 +416,6 @@ FreeAgentBar.propTypes = {
   ),
   nextRotationAt: PropTypes.string,
   currentPrices: PropTypes.object,
-  startingPrices: PropTypes.object,
   freeAgentDailyOpens: PropTypes.object,
   swapsRemaining: PropTypes.number,
   currentDay: PropTypes.number,

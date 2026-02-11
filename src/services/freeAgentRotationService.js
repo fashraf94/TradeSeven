@@ -183,7 +183,6 @@ export async function rotateFreeAgents(battleId) {
       return newAgents;
     });
 
-    console.log('✅ Free agent rotation complete:', newPool.map(a => a.symbol));
     return newPool;
   } catch (error) {
     console.error('❌ Error rotating free agents:', error);

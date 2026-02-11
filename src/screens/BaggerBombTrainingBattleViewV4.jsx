@@ -13,8 +13,7 @@ import { motion } from 'framer-motion';
 import { stockAPI, POPULAR_CRYPTO, fetchHistoricalOHLCV } from '../services/eodhdAPI';
 import { getVolatilityThresholds } from '../services/volatilityService';
 import { flattenPortfolio, calculateAssetScoreV3 } from '../utils/baggerBombUtils';
-import { CONVICTION_MULTIPLIERS } from '../constants/baggerBombScoring';
-import { generateFreeAgentPool, getRotationCountdown } from '../services/freeAgentRotationService';
+import { generateFreeAgentPool } from '../services/freeAgentRotationService';
 import { getFreeAgentConfig } from '../constants/battleTimingV4';
 
 const PRICE_POLL_INTERVAL = 60000; // 60 seconds
@@ -32,7 +31,6 @@ async function persistSwapToFirebase(battleId, playerId, updates) {
     const { db } = await import('../firebase/config');
     const battleRef = doc(db, 'trainingBattles', battleId);
     await updateDoc(battleRef, updates);
-    console.log(`✅ [TrainingV4] Swap persisted to Firebase: ${battleId}`);
   } catch (error) {
     console.error('[TrainingV4] Failed to persist swap to Firebase:', error);
   }
@@ -52,7 +50,6 @@ async function persistRotationToFirebase(battleId, newAgents, nextRotationAt, ro
       'freeAgents.rotationCount': rotationCount,
       updatedAt: new Date().toISOString(),
     });
-    console.log('✅ [TrainingV4] Rotation persisted to Firebase');
   } catch (error) {
     console.error('[TrainingV4] Failed to persist rotation:', error);
   }
@@ -484,7 +481,7 @@ export default function BaggerBombTrainingBattleViewV4({
         const newRemaining = { day1: 0 };
 
         // Add starting price for new stock so scoring works on re-entry
-        const updatedStartingPrices = { ...(battle?.state?.startingPrices || {}) };
+        const updatedStartingPrices = { ...startingPrices };
         updatedStartingPrices[inSymbol] = swapPrice;
 
         const updates = {

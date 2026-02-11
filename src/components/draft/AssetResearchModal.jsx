@@ -733,8 +733,7 @@ const AssetResearchModal = ({
 
   // Reset tab default when asset changes (crypto → technical, stock → fundamental)
   useEffect(() => {
-    const crypto = asset?.isCrypto || asset?.category === 'crypto';
-    setActiveTab(crypto ? 'technical' : 'fundamental');
+    setActiveTab(isCrypto ? 'technical' : 'fundamental');
   }, [asset?.symbol]);
 
   useEffect(() => {
