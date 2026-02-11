@@ -6,6 +6,7 @@ import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
 import SessionHUD from './SessionHUD';
+import FreeAgentBar from './FreeAgentBar';
 
 /**
  * Default avatar component when no image provided
@@ -45,6 +46,7 @@ function PlayerSide({
   player,
   isRight = false,
   isLeading = false,
+  battleVersion = 3,
 }) {
   const {
     username = 'Player',
@@ -103,17 +105,19 @@ function PlayerSide({
           {Math.round(totalPoints)}
         </div>
 
-        {/* Session Points */}
-        <div
-          style={{
-            fontSize: '13px',
-            color: sessionPoints >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
-            fontWeight: 500,
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        >
-          {sessionPoints >= 0 ? '+' : ''}{Math.round(sessionPoints)} session
-        </div>
+        {/* Session Points (V3 only — V4 has no sessions) */}
+        {battleVersion < 4 && (
+          <div
+            style={{
+              fontSize: '13px',
+              color: sessionPoints >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
+              fontWeight: 500,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {sessionPoints >= 0 ? '+' : ''}{Math.round(sessionPoints)} session
+          </div>
+        )}
 
         {/* Username */}
         <div
@@ -271,6 +275,21 @@ export default function BattleHeader({
   sessionTimeRemaining,
   sessionScores,
   completedSessions,
+  // V4 props
+  battleVersion = 3,
+  freeAgents,
+  nextRotationAt,
+  currentPrices,
+  freeAgentDailyOpens,
+  swapsRemaining,
+  currentDay,
+  totalDays,
+  rotationCountdown,
+  // Swap mode props
+  swapMode,
+  onEnterSwapMode,
+  onSelectFreeAgent,
+  onCancelSwapMode,
 }) {
   // Determine who is leading
   const playerLeading = player.totalPoints > opponent.totalPoints;
@@ -327,6 +346,7 @@ export default function BattleHeader({
           player={player}
           isRight={false}
           isLeading={playerLeading}
+          battleVersion={battleVersion}
         />
 
         {/* VS Badge */}
@@ -344,6 +364,7 @@ export default function BattleHeader({
           player={opponent}
           isRight={true}
           isLeading={opponentLeading}
+          battleVersion={battleVersion}
         />
       </div>
 
@@ -356,13 +377,30 @@ export default function BattleHeader({
       {/* Bomb/Bust Counts */}
       <BombBustCounts player={player} opponent={opponent} />
 
-      {/* Session HUD */}
-      <SessionHUD
-        currentSession={currentSession}
-        timeRemaining={sessionTimeRemaining}
-        sessionScores={hudSessionScores}
-        completedSessions={completedSessions || []}
-      />
+      {/* V4: Free Agent Bar / V3: Session HUD */}
+      {battleVersion >= 4 ? (
+        <FreeAgentBar
+          freeAgents={freeAgents || []}
+          nextRotationAt={nextRotationAt}
+          currentPrices={currentPrices || {}}
+          freeAgentDailyOpens={freeAgentDailyOpens || {}}
+          swapsRemaining={swapsRemaining || 0}
+          currentDay={currentDay || 1}
+          totalDays={totalDays || 3}
+          rotationCountdown={rotationCountdown || 0}
+          swapMode={swapMode}
+          onEnterSwapMode={onEnterSwapMode}
+          onSelectFreeAgent={onSelectFreeAgent}
+          onCancelSwapMode={onCancelSwapMode}
+        />
+      ) : (
+        <SessionHUD
+          currentSession={currentSession}
+          timeRemaining={sessionTimeRemaining}
+          sessionScores={hudSessionScores}
+          completedSessions={completedSessions || []}
+        />
+      )}
     </div>
   );
 }
@@ -388,14 +426,32 @@ BattleHeader.propTypes = {
     baggerBombs: PropTypes.number,
     busts: PropTypes.number,
   }).isRequired,
-  /** Current active session */
+  /** Current active session (V3) */
   currentSession: PropTypes.oneOf(['MORNING_BELL', 'MIDDAY', 'POWER_HOUR', 'NIGHT_GAME', '']),
-  /** Seconds remaining in current session */
+  /** Seconds remaining in current session (V3) */
   sessionTimeRemaining: PropTypes.number,
-  /** Session scores object */
+  /** Session scores object (V3) */
   sessionScores: PropTypes.object,
-  /** Array of completed session keys */
+  /** Array of completed session keys (V3) */
   completedSessions: PropTypes.arrayOf(PropTypes.string),
+  /** Battle version (3 or 4) */
+  battleVersion: PropTypes.number,
+  /** V4: Free agents array */
+  freeAgents: PropTypes.array,
+  /** V4: ISO timestamp of next rotation */
+  nextRotationAt: PropTypes.string,
+  /** V4: Current prices */
+  currentPrices: PropTypes.object,
+  /** V4: Daily open prices for free agent cards */
+  freeAgentDailyOpens: PropTypes.object,
+  /** V4: Swaps remaining today */
+  swapsRemaining: PropTypes.number,
+  /** V4: Current trading day */
+  currentDay: PropTypes.number,
+  /** V4: Total trading days */
+  totalDays: PropTypes.number,
+  /** V4: Seconds until next rotation */
+  rotationCountdown: PropTypes.number,
 };
 
 BattleHeader.defaultProps = {
@@ -403,4 +459,13 @@ BattleHeader.defaultProps = {
   sessionTimeRemaining: 0,
   sessionScores: {},
   completedSessions: [],
+  battleVersion: 3,
+  freeAgents: [],
+  nextRotationAt: null,
+  currentPrices: {},
+  freeAgentDailyOpens: {},
+  swapsRemaining: 0,
+  currentDay: 1,
+  totalDays: 3,
+  rotationCountdown: 0,
 };

@@ -4,7 +4,7 @@ import { useUser } from './contexts/UserContext';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 // Firebase battle service for PvP battles
-import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, joinBaggerBombBattle, joinBaggerBombBattleV3, subscribeToLobby, subscribeToAllLobbies, getOpenBaggerBombBattles, saveTrackedPattern, getUserTrackedPatterns, getUserPatternStats, cancelTrackedPattern, checkPatternResolution } from './firebase/firebaseService';
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, createBaggerBombBattleV4, joinBaggerBombBattle, joinBaggerBombBattleV3, joinBaggerBombBattleV4, subscribeToLobby, subscribeToAllLobbies, getOpenBaggerBombBattles, saveTrackedPattern, getUserTrackedPatterns, getUserPatternStats, cancelTrackedPattern, checkPatternResolution } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings, fetchHistoricalOHLCV } from './services/eodhdAPI';
 // Technical Analysis AI Service
@@ -38,6 +38,8 @@ const PortfolioBuilderBaggerBomb = lazy(() => import('./components/BaggerBomb/Po
 const BaggerBombBattleViewRedesign = lazy(() => import('./components/BaggerBomb/BaggerBombBattleViewRedesign'));
 const BaggerBombBattleViewConnected = lazy(() => import('./screens/BaggerBombBattleViewConnected'));
 const BaggerBombTrainingBattleViewV3 = lazy(() => import('./screens/BaggerBombTrainingBattleViewV3'));
+const BaggerBombBattleViewConnectedV4 = lazy(() => import('./screens/BaggerBombBattleViewConnectedV4'));
+const BaggerBombTrainingBattleViewV4 = lazy(() => import('./screens/BaggerBombTrainingBattleViewV4'));
 const BaggerBombLobby = lazy(() => import('./screens/BaggerBombLobby'));
 const BaggerBombSetupScreen = lazy(() => import('./screens/BaggerBombSetupScreen'));
 const BaggerBombGamePlanFlow = lazy(() => import('./components/GamePlan/BaggerBombGamePlanFlow'));
@@ -15538,6 +15540,195 @@ export default function PortfolioDuel() {
     showToast(`BaggerBomb Training V3 started vs CPU! 🤖💣`);
   };
 
+  // ============================================
+  // BAGGERBOMB TRAINING V4: CREATE V4 TRAINING BATTLE (No Bench, 1 Swap, 1 Day)
+  // ============================================
+  const handleCreateBaggerBombTrainingBattleV4 = async (portfolioData) => {
+    // portfolioData from SlotBasedBuilder V4: { star, core, support } (no bench)
+
+    // Generate CPU portfolio V4 (no bench)
+    const cpuPortfolio = generateCPUPortfolioBaggerBombV4(stocksData, cryptoData);
+
+    const now = new Date();
+    const TRAINING_DURATION = 24 * 60 * 60 * 1000; // 24 hours for V4 training
+    const endDate = new Date(now.getTime() + TRAINING_DURATION);
+
+    // Collect all unique symbols
+    const userAssets = flattenPortfolio(portfolioData);
+    const cpuAssets = flattenPortfolio(cpuPortfolio);
+    const allAssets = [...userAssets, ...cpuAssets];
+    const uniqueSymbols = [...new Set(allAssets.map(a => a?.symbol).filter(Boolean))];
+
+    // Fetch starting prices
+    const startingPrices = {};
+    for (const symbol of uniqueSymbols) {
+      const asset = allAssets.find(a => a?.symbol === symbol);
+      try {
+        const isCrypto = asset?.isCrypto || POPULAR_CRYPTO.some(c => c.symbol === symbol);
+        if (isCrypto) {
+          const data = await stockAPI.getCryptoPrice(symbol);
+          startingPrices[symbol] = data.price;
+        } else {
+          const data = await stockAPI.getStockPrice(symbol);
+          startingPrices[symbol] = data.price;
+        }
+      } catch (error) {
+        startingPrices[symbol] = asset?.price || 0;
+      }
+    }
+
+    const updatePrices = (portfolio) => ({
+      star: (portfolio.star || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price } : null),
+      core: (portfolio.core || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price } : null),
+      support: (portfolio.support || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price } : null),
+    });
+
+    const battleId = `training_baggerbomb_v4_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const odUserId = user.odUserId || user.username;
+
+    const trainingBattle = {
+      id: battleId,
+      challengeCode: 'TRAINING',
+      _v: 4,
+      type: 'baggerbomb_v4',
+
+      creator: {
+        uid: odUserId,
+        odUserId,
+        username: user.username,
+        portfolioName: 'Training Battle',
+        portfolio: updatePrices(portfolioData),
+        swaps: { remaining: { day1: 1 }, history: [] },
+        closedTrades: [],
+        history: {},
+      },
+
+      opponent: {
+        uid: 'cpu',
+        odUserId: 'cpu',
+        username: 'CPU Opponent',
+        portfolioName: 'CPU Strategy',
+        portfolio: updatePrices(cpuPortfolio),
+        swaps: { remaining: { day1: 0 }, history: [] },
+        closedTrades: [],
+        history: {},
+      },
+
+      timing: {
+        createdAt: now.toISOString(),
+        tradingDays: 1,
+        tradingDayDates: [now.toISOString().split('T')[0]],
+        currentTradingDay: 1,
+        scheduledEnd: endDate.toISOString(),
+      },
+
+      state: {
+        status: 'active',
+        startingPrices,
+        dailyOpenPrices: { day1: startingPrices },
+      },
+
+      freeAgents: (() => {
+        try {
+          const { createInitialFreeAgents } = require('./services/freeAgentRotationService');
+          const initial = createInitialFreeAgents();
+          // Add starting prices for free agents so price display works
+          (initial.current || []).forEach(agent => {
+            if (agent.symbol && !startingPrices[agent.symbol]) {
+              startingPrices[agent.symbol] = 0; // placeholder, real price fetched by battle view
+            }
+          });
+          return initial;
+        } catch (e) {
+          console.warn('Failed to generate initial free agents:', e);
+          return { current: [], nextRotationAt: null, rotationCount: 0, rotationHistory: [] };
+        }
+      })(),
+
+      isTraining: true,
+      isTrainingBattle: true,
+      createdAt: now.toISOString(),
+      status: 'active',
+      startDate: now.toISOString(),
+      endDate: endDate.toISOString(),
+      startingPrices,
+      playerIds: [odUserId, 'cpu'],
+      creatorId: odUserId,
+    };
+
+    // Save to Firebase
+    try {
+      const { doc, setDoc } = await import('firebase/firestore');
+      const { db } = await import('./firebase/config');
+      await setDoc(doc(db, 'trainingBattles', battleId), trainingBattle);
+      console.log('BaggerBomb Training V4 battle saved:', battleId);
+    } catch (firebaseError) {
+      console.error('Failed to save V4 training battle:', firebaseError);
+    }
+
+    setBattles(prevBattles => {
+      if (prevBattles.some(b => b.id === trainingBattle.id)) return prevBattles;
+      const updated = [...prevBattles, trainingBattle];
+      saveBattlesSafe(updated);
+      return updated;
+    });
+
+    setActiveBattleId(trainingBattle.id);
+    setBuilderMode('create');
+    setTrainingBattleType('classic');
+    setScreen('dashboard');
+    showToast(`BaggerBomb Training V4 started vs CPU! 🤖💣`);
+  };
+
+  // Generate V4 CPU portfolio (no bench)
+  const generateCPUPortfolioBaggerBombV4 = (stocks, crypto) => {
+    const sectors = ['Technology', 'Finance', 'Healthcare', 'Energy', 'Consumer Discretionary', 'Industrials'];
+    const cpuStocks = [];
+    const usedSymbols = new Set();
+
+    sectors.forEach(sector => {
+      const sectorStocks = stocks.filter(s =>
+        (s.sector === sector || s.category === sector) && !usedSymbols.has(s.symbol)
+      );
+      if (sectorStocks.length > 0) {
+        const pick = sectorStocks[Math.floor(Math.random() * sectorStocks.length)];
+        cpuStocks.push(pick);
+        usedSymbols.add(pick.symbol);
+      }
+    });
+
+    while (cpuStocks.length < 6) {
+      const pick = stocks[Math.floor(Math.random() * stocks.length)];
+      if (!usedSymbols.has(pick.symbol)) {
+        cpuStocks.push(pick);
+        usedSymbols.add(pick.symbol);
+      }
+    }
+
+    const formatAsset = (asset, isCrypto = false) => ({
+      symbol: asset.symbol,
+      name: asset.name || asset.symbol,
+      price: asset.price || 0,
+      baseATR: asset.baseATR || (isCrypto ? 5.0 : 2.5),
+      isCrypto,
+    });
+
+    const eligibleCrypto = crypto.filter(c =>
+      (!c.category || c.category !== 'Stablecoin') && !usedSymbols.has(c.symbol)
+    ).slice(0, 8);
+    const mainCrypto = eligibleCrypto[Math.floor(Math.random() * eligibleCrypto.length)];
+
+    return {
+      star: [formatAsset(cpuStocks[0]), formatAsset(cpuStocks[1])],
+      core: [formatAsset(cpuStocks[2]), formatAsset(cpuStocks[3])],
+      support: [
+        formatAsset(cpuStocks[4]),
+        formatAsset(cpuStocks[5]),
+        mainCrypto ? formatAsset(mainCrypto, true) : null,
+      ],
+    };
+  };
+
   // Generate CPU portfolio for BaggerBomb mode
   const generateCPUPortfolioBaggerBomb = (stocks, crypto) => {
     // Select random stocks with varied thresholds from different sectors
@@ -22002,8 +22193,8 @@ export default function PortfolioDuel() {
           title="BaggerBomb Training"
           subtitle="Practice scoring points with breakout bonuses against CPU"
           details={[
-            { label: 'Assets Required', value: '7-13 picks' },
-            { label: 'Duration', value: '1 hour' },
+            { label: 'Assets Required', value: '7 picks' },
+            { label: 'Duration', value: '24 hours' },
             { label: 'Rewards', value: '+10 XP (win) / +5 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
           ]}
           confirmText="Start Training"
@@ -22275,13 +22466,14 @@ export default function PortfolioDuel() {
     );
   }
 
-  // BAGGERBOMB TRAINING PORTFOLIO BUILDER SCREEN (V3 - Tiered Portfolio)
+  // BAGGERBOMB TRAINING PORTFOLIO BUILDER SCREEN (V4 - No Bench, 1 Swap)
   if (screen === 'trainingPortfolioBuilderTD') {
     return (
       <SlotBasedBuilder
         stocks={stocksData}
         crypto={cryptoData}
-        onComplete={handleCreateBaggerBombTrainingBattleV3}
+        version={4}
+        onComplete={handleCreateBaggerBombTrainingBattleV4}
         onBack={() => {
           setBuilderMode('create');
           setScreen('dashboard');
@@ -22337,23 +22529,23 @@ export default function PortfolioDuel() {
     );
   }
 
-  // BAGGERBOMB CREATE BATTLE - New SlotBasedBuilder
+  // BAGGERBOMB CREATE BATTLE - New SlotBasedBuilder (V4: no bench)
   if (screen === 'baggerBombBuilder') {
     return (
       <SlotBasedBuilder
         stocks={stocksData}
         crypto={cryptoData}
+        version={4}
         onComplete={async (portfolio) => {
           try {
-            console.log('[BaggerBomb] Portfolio submitted:', portfolio);
-            // Create BaggerBomb V3 battle with tiered portfolio structure
-            const battleData = await createBaggerBombBattleV3({
+            console.log('[BaggerBomb V4] Portfolio submitted:', portfolio);
+            // Create BaggerBomb V4 battle with tiered portfolio (no bench)
+            const battleData = await createBaggerBombBattleV4({
               portfolio: {
                 star: portfolio.star,
                 core: portfolio.core,
                 support: portfolio.support,
               },
-              bench: portfolio.bench,
               creator: {
                 uid: user.uid || user.odUserId || user.username,
                 odUserId: user.odUserId || user.username,
@@ -22364,7 +22556,7 @@ export default function PortfolioDuel() {
             if (battleData?.id) {
               showToast(`Battle created! Waiting for opponent...`);
               setCurrentBattle(battleData);
-              setScreen('baggerBombLobby'); // Go back to lobby to see pending battle
+              setScreen('baggerBombLobby');
             }
           } catch (error) {
             console.error('Failed to create BaggerBomb battle:', error);
@@ -22380,10 +22572,12 @@ export default function PortfolioDuel() {
 
   // BAGGERBOMB JOIN FROM LOBBY - Build portfolio then join selected battle
   if (screen === 'baggerBombJoinBuilder') {
+    const joinBattleVersion = battleToJoin?._v || 3;
     return (
       <SlotBasedBuilder
         stocks={stocksData}
         crypto={cryptoData}
+        version={joinBattleVersion >= 4 ? 4 : 3}
         onComplete={async (portfolio) => {
           try {
             if (!battleToJoin?.id) {
@@ -22391,20 +22585,22 @@ export default function PortfolioDuel() {
               setScreen('baggerBombLobby');
               return;
             }
-            console.log('[BaggerBomb] Joining battle from lobby:', battleToJoin.id);
-            // Join using battle ID directly (lobby join)
-            const result = await joinBaggerBombBattleV3(battleToJoin.id, {
+            console.log('[BaggerBomb] Joining battle from lobby:', battleToJoin.id, 'version:', joinBattleVersion);
+            const joinData = {
               portfolio: {
                 star: portfolio.star,
                 core: portfolio.core,
                 support: portfolio.support,
               },
-              bench: portfolio.bench,
+              ...(joinBattleVersion < 4 ? { bench: portfolio.bench } : {}),
               uid: user.uid || user.odUserId || user.username,
               odUserId: user.odUserId || user.username,
               username: user.displayName || user.username,
               avatar: user.avatar || '',
-            }, { joinByBattleId: true });
+            };
+            // Use the correct join function based on version
+            const joinFn = joinBattleVersion >= 4 ? joinBaggerBombBattleV4 : joinBaggerBombBattleV3;
+            const result = await joinFn(battleToJoin.id, joinData, { joinByBattleId: true });
             if (result?.success) {
               showToast(`Joined battle!`);
               setCurrentBattle(result.battle);
@@ -22425,28 +22621,39 @@ export default function PortfolioDuel() {
     );
   }
 
-  // BAGGERBOMB JOIN BATTLE (Legacy - via code)
+  // BAGGERBOMB JOIN BATTLE (Legacy - via code, defaults to V4)
   if (screen === 'joinPortfolioBuilderTD') {
     return (
       <SlotBasedBuilder
         stocks={stocksData}
         crypto={cryptoData}
+        version={4}
         onComplete={async (portfolio) => {
           try {
             console.log('[BaggerBomb] Joining with portfolio:', portfolio);
-            // Join BaggerBomb V3 battle with tiered portfolio structure
-            const result = await joinBaggerBombBattleV3(joinCode, {
+            // Try V4 join first, fall back to V3
+            const joinData = {
               portfolio: {
                 star: portfolio.star,
                 core: portfolio.core,
                 support: portfolio.support,
               },
-              bench: portfolio.bench,
               uid: user.uid || user.odUserId || user.username,
               odUserId: user.odUserId || user.username,
               username: user.displayName || user.username,
               avatar: user.avatar || '',
-            });
+            };
+            let result;
+            try {
+              result = await joinBaggerBombBattleV4(joinCode, joinData);
+            } catch (v4Error) {
+              // Fall back to V3 join (battle may be V3)
+              console.log('[BaggerBomb] V4 join failed, trying V3:', v4Error.message);
+              result = await joinBaggerBombBattleV3(joinCode, {
+                ...joinData,
+                bench: portfolio.bench,
+              });
+            }
             if (result?.success) {
               showToast(`Joined BaggerBomb battle!`);
               setCurrentBattle(result.battle);
@@ -22693,6 +22900,8 @@ export default function PortfolioDuel() {
         BaggerBombBattleViewRedesign={BaggerBombBattleViewRedesign}
         BaggerBombBattleViewConnected={BaggerBombBattleViewConnected}
         BaggerBombTrainingBattleViewV3={BaggerBombTrainingBattleViewV3}
+        BaggerBombBattleViewConnectedV4={BaggerBombBattleViewConnectedV4}
+        BaggerBombTrainingBattleViewV4={BaggerBombTrainingBattleViewV4}
       />
     );
   }

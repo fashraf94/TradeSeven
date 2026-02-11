@@ -14,6 +14,8 @@ const BattleViewScreen = ({
   BaggerBombBattleViewRedesign,
   BaggerBombBattleViewConnected,
   BaggerBombTrainingBattleViewV3,
+  BaggerBombBattleViewConnectedV4,
+  BaggerBombTrainingBattleViewV4,
 }) => {
   // Debug: Log battle routing decision
   console.log('🎮 BATTLE ROUTING DEBUG:', {
@@ -24,6 +26,35 @@ const BattleViewScreen = ({
     hasCreatorObj: !!currentBattle?.creator,
     battleType: currentBattle?.portfolioType
   });
+
+  // V4 battles
+  if (currentBattle._v >= 4) {
+    // V4 Training battles
+    if (currentBattle.isTraining && BaggerBombTrainingBattleViewV4) {
+      return (
+        <Suspense fallback={<LoadingFallback />}>
+          <BaggerBombTrainingBattleViewV4
+            battle={currentBattle}
+            user={user}
+            onBack={onBack}
+          />
+        </Suspense>
+      );
+    }
+
+    // V4 PvP battles
+    if (BaggerBombBattleViewConnectedV4 && currentBattle.id) {
+      return (
+        <Suspense fallback={<LoadingFallback />}>
+          <BaggerBombBattleViewConnectedV4
+            battleId={currentBattle.id}
+            userId={user?.odUserId || user?.username}
+            onBack={onBack}
+          />
+        </Suspense>
+      );
+    }
+  }
 
   // Check if this is a BaggerBomb (V2 or V3) battle - route to new connected view
   if (currentBattle._v === 2 || currentBattle._v === 3) {
@@ -262,7 +293,7 @@ const BattleViewScreen = ({
             fontSize: '13px'
           }}>
             <span>🎓</span>
-            Training Battle • 1 Hour • Reduced XP
+            Training Battle • Reduced XP
           </div>
         )}
 

@@ -18,6 +18,9 @@ function AssetSide({
   onThresholdCross,
   onSymbolClick,
   onPointsClick,
+  highlighted = false,
+  dimmed = false,
+  onAssetSelect,
 }) {
   if (!asset) {
     // Empty slot placeholder
@@ -31,6 +34,7 @@ function AssetSide({
           justifyContent: 'center',
           color: HOLO_COLORS.textMuted,
           fontSize: '12px',
+          opacity: dimmed ? 0.4 : 1,
         }}
       >
         —
@@ -54,8 +58,15 @@ function AssetSide({
       ? HOLO_COLORS.green
       : HOLO_COLORS.red;
 
+  const handleAssetClick = () => {
+    if (highlighted && onAssetSelect) {
+      onAssetSelect(asset);
+    }
+  };
+
   return (
     <div
+      onClick={handleAssetClick}
       style={{
         flex: 1,
         padding: '12px',
@@ -63,6 +74,17 @@ function AssetSide({
         flexDirection: 'column',
         gap: '8px',
         textAlign: isRight ? 'right' : 'left',
+        ...(highlighted ? {
+          border: '1px solid rgba(0, 217, 255, 0.4)',
+          borderRadius: '8px',
+          background: 'rgba(0, 217, 255, 0.05)',
+          cursor: 'pointer',
+        } : {}),
+        ...(dimmed ? {
+          opacity: 0.4,
+          filter: 'grayscale(30%)',
+          pointerEvents: 'none',
+        } : {}),
       }}
     >
       {/* Top Row: Symbol + Points */}
@@ -192,10 +214,11 @@ AssetSide.propTypes = {
   }),
   isRight: PropTypes.bool,
   onThresholdCross: PropTypes.func,
-  /** Callback when symbol is clicked - opens research modal */
   onSymbolClick: PropTypes.func,
-  /** Callback when points are clicked - opens score breakdown */
   onPointsClick: PropTypes.func,
+  highlighted: PropTypes.bool,
+  dimmed: PropTypes.bool,
+  onAssetSelect: PropTypes.func,
 };
 
 /**
@@ -251,6 +274,11 @@ export default function TacticalRow({
   onRightThresholdCross,
   onSymbolClick,
   onPointsClick,
+  // Swap target mode props
+  swapTargetMode = false,
+  onLeftAssetSelect,
+  opponentDimmed = false,
+  leftDisabled = false,
 }) {
   return (
     <motion.div
@@ -272,6 +300,9 @@ export default function TacticalRow({
         onThresholdCross={onLeftThresholdCross}
         onSymbolClick={onSymbolClick}
         onPointsClick={onPointsClick}
+        highlighted={swapTargetMode && !leftDisabled}
+        dimmed={leftDisabled}
+        onAssetSelect={onLeftAssetSelect}
       />
 
       {/* Center Allocation Badge */}
@@ -287,13 +318,13 @@ export default function TacticalRow({
         onThresholdCross={onRightThresholdCross}
         onSymbolClick={onSymbolClick}
         onPointsClick={onPointsClick}
+        dimmed={opponentDimmed}
       />
     </motion.div>
   );
 }
 
 TacticalRow.propTypes = {
-  /** Left side asset (player) */
   leftAsset: PropTypes.shape({
     symbol: PropTypes.string.isRequired,
     priceChange: PropTypes.number,
@@ -305,7 +336,6 @@ TacticalRow.propTypes = {
     points: PropTypes.number,
     badges: PropTypes.arrayOf(PropTypes.string),
   }),
-  /** Right side asset (opponent) */
   rightAsset: PropTypes.shape({
     symbol: PropTypes.string.isRequired,
     priceChange: PropTypes.number,
@@ -317,18 +347,16 @@ TacticalRow.propTypes = {
     points: PropTypes.number,
     badges: PropTypes.arrayOf(PropTypes.string),
   }),
-  /** Allocation percentage label */
   allocationLabel: PropTypes.string,
-  /** Whether this is a crypto-required slot */
   isCryptoSlot: PropTypes.bool,
-  /** Callback when left asset crosses threshold */
   onLeftThresholdCross: PropTypes.func,
-  /** Callback when right asset crosses threshold */
   onRightThresholdCross: PropTypes.func,
-  /** Callback when symbol is clicked - opens research modal */
   onSymbolClick: PropTypes.func,
-  /** Callback when points are clicked - opens score breakdown */
   onPointsClick: PropTypes.func,
+  swapTargetMode: PropTypes.bool,
+  onLeftAssetSelect: PropTypes.func,
+  opponentDimmed: PropTypes.bool,
+  leftDisabled: PropTypes.bool,
 };
 
 TacticalRow.defaultProps = {
@@ -340,6 +368,10 @@ TacticalRow.defaultProps = {
   onRightThresholdCross: null,
   onSymbolClick: null,
   onPointsClick: null,
+  swapTargetMode: false,
+  onLeftAssetSelect: null,
+  opponentDimmed: false,
+  leftDisabled: false,
 };
 
 // Export sub-components for flexibility

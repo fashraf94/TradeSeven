@@ -74,7 +74,7 @@ export default function GameModeCarousels({
       theme: 'baggerBomb',
       title: 'BaggerBomb',
       description: 'Practice scoring points with breakout bonuses against CPU',
-      duration: '~5 min',
+      duration: '24 hours',
       isTraining: true,
       onClick: () => {
         setShowBaggerBombTrainingConfirm(true);

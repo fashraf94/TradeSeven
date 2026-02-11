@@ -96,7 +96,15 @@ export default function LiveClashesSection({
       setCurrentDraft(battle);
       setScreen('draftBattle');
     } else if (type === 'training') {
-      // Convert training battle format for battle view
+      // V4 battles already have the correct structure — pass through directly
+      if (battle._v >= 4) {
+        setCurrentBattle({ ...battle, isTraining: true, isTrainingBattle: true });
+        setActiveBattleId(battle.id);
+        setScreen('battle');
+        return;
+      }
+
+      // Convert V2/V3 training battle format for battle view
       const isBaggerBomb = battle._v === 2 || battle._v === 3 || battle.type === 'baggerbomb';
       const isV3 = battle._v === 3;
       const convertedBattle = {

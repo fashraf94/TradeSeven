@@ -46,7 +46,13 @@ export const TD_NOTIFICATION_TYPES = {
 
   // Opponent events
   opponent_breakout: { icon: '⚠️', color: '#f59e0b', title: 'Opponent Breakout' },
-  opponent_substitution: { icon: '👀', color: '#6b7280', title: 'Opponent Sub' }
+  opponent_substitution: { icon: '👀', color: '#6b7280', title: 'Opponent Sub' },
+
+  // V4 Free Agent & Swap events
+  free_agent_rotation: { icon: '🔄', color: '#8b5cf6', title: 'New Free Agents' },
+  swap_executed: { icon: '↔️', color: '#3b82f6', title: 'Swap Executed' },
+  trade_closed: { icon: '📋', color: '#6b7280', title: 'Trade Closed' },
+  day_complete: { icon: '📅', color: '#f59e0b', title: 'Day Complete' },
 };
 
 // Session display names
@@ -617,6 +623,74 @@ export function addNotificationToStorage(userId, notification) {
 }
 
 // ============================================
+// V4: FREE AGENT & SWAP NOTIFICATIONS
+// ============================================
+
+/**
+ * Create notification for free agent rotation
+ * @param {Array} newAgents - New free agent symbols
+ * @param {string} battleId - Battle ID
+ * @returns {Object} - Notification object
+ */
+export function createFreeAgentRotationNotification(newAgents = [], battleId = null) {
+  const symbols = newAgents.map(a => a.symbol || a).join(', ');
+  return {
+    id: generateNotificationId(),
+    type: 'free_agent_rotation',
+    title: '🔄 New free agents available!',
+    body: symbols || 'Pool refreshed',
+    timestamp: Date.now(),
+    read: false,
+    data: { battleId, symbols: newAgents.map(a => a.symbol || a) },
+  };
+}
+
+/**
+ * Create notification for swap execution
+ * @param {string} outSymbol - Symbol removed
+ * @param {string} inSymbol - Symbol added
+ * @param {number} lockedPoints - Points locked from outgoing asset
+ * @param {string} battleId - Battle ID
+ * @returns {Object} - Notification object
+ */
+export function createSwapNotification(outSymbol, inSymbol, lockedPoints = 0, battleId = null) {
+  const ptsStr = lockedPoints >= 0 ? `+${lockedPoints.toFixed(1)}` : `${lockedPoints.toFixed(1)}`;
+  return {
+    id: generateNotificationId(),
+    type: 'swap_executed',
+    title: `↔️ Swapped ${outSymbol} for ${inSymbol}`,
+    body: `${outSymbol} closed at ${ptsStr} pts`,
+    timestamp: Date.now(),
+    read: false,
+    data: { battleId, outSymbol, inSymbol, lockedPoints },
+  };
+}
+
+/**
+ * Create notification for day completion
+ * @param {number} dayNumber - Day number (1, 2, 3)
+ * @param {number} yourScore - Your score for the day
+ * @param {number} oppScore - Opponent's score
+ * @param {string} battleId - Battle ID
+ * @returns {Object} - Notification object
+ */
+export function createDayCompleteNotification(dayNumber, yourScore, oppScore, battleId = null) {
+  const won = yourScore > oppScore;
+  const tied = yourScore === oppScore;
+  return {
+    id: generateNotificationId(),
+    type: 'day_complete',
+    title: `📅 Day ${dayNumber} Complete`,
+    body: tied
+      ? `Tied at ${Math.round(yourScore)} pts`
+      : `${won ? 'Leading' : 'Trailing'} ${Math.round(yourScore)} - ${Math.round(oppScore)}`,
+    timestamp: Date.now(),
+    read: false,
+    data: { battleId, dayNumber, yourScore, oppScore, won },
+  };
+}
+
+// ============================================
 // EXPORTS
 // ============================================
 
@@ -640,6 +714,11 @@ export default {
   createBattleCompleteNotification,
   createGreenSweepNotification,
   createCleanSweepNotification,
+
+  // V4 notifications
+  createFreeAgentRotationNotification,
+  createSwapNotification,
+  createDayCompleteNotification,
 
   // Helpers
   shouldNotify,

@@ -36,6 +36,13 @@ import {
   getSnakeDraftEndDate,
   TRAINING_CONFIG
 } from '../constants/battleTiming.js';
+import {
+  getTradingDayDates,
+  getBattleEndTimeV4,
+  initializeSwaps,
+  initializeDailyOpenPrices,
+} from '../constants/battleTimingV4.js';
+import { createInitialFreeAgents } from '../services/freeAgentRotationService.js';
 import { toISOString as dateToISO } from '../utils/dateUtils.js';
 
 // =====================================================
@@ -1656,6 +1663,442 @@ export async function joinBaggerBombBattleV3(battleIdOrCode, opponentData, optio
     return { success: true, battle: updatedBattle };
   } catch (error) {
     console.error('❌ Error joining BaggerBomb V3 battle:', error);
+    throw error;
+  }
+}
+
+// =====================================================
+// BAGGERBOMB V4 BATTLE CREATION (Free Agent System)
+// =====================================================
+
+/**
+ * Create a BaggerBomb V4 battle (Free Agent system, 3-day duration)
+ *
+ * V4 removes: bench, sessions, substitutions, sessionPrices, sessionScores
+ * V4 adds: freeAgents, swaps, closedTrades, dailyOpenPrices, tradingDayDates
+ *
+ * @param {Object} battleData - Battle creation data
+ * @param {number} lobbyTimeMinutes - Minutes before lobby auto-disbands (default 30)
+ * @returns {Promise<Object>} Created battle with id
+ */
+export async function createBaggerBombBattleV4(battleData, lobbyTimeMinutes = 30) {
+  try {
+    console.log('🔥 createBaggerBombBattleV4 called with:', battleData, 'lobbyTimeMinutes:', lobbyTimeMinutes);
+
+    // Validate portfolio structure (NO bench required for V4)
+    const { portfolio } = battleData;
+    if (!portfolio || !portfolio.star || !portfolio.core || !portfolio.support) {
+      throw new Error('Portfolio must have star, core, and support tiers');
+    }
+
+    // Generate challenge code
+    const challengeCode = battleData.challengeCode ||
+      `BB${Date.now().toString(36).slice(-4).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+    // Collect all symbols for threshold fetching (no bench in V4)
+    const allAssets = [
+      ...(portfolio.star || []).filter(Boolean),
+      ...(portfolio.core || []).filter(Boolean),
+      ...(portfolio.support || []).filter(Boolean),
+    ].filter(Boolean);
+
+    // Fetch volatility thresholds
+    let thresholds = {};
+    try {
+      thresholds = await fetchAllThresholds(allAssets, []);
+    } catch (thresholdError) {
+      console.warn('⚠️ Could not fetch thresholds:', thresholdError.message);
+    }
+
+    // Sanitize portfolio tiers
+    const sanitizeTierAssets = (assets) =>
+      (assets || []).map((asset) =>
+        asset
+          ? {
+              symbol: String(asset.symbol || '').toUpperCase(),
+              name: String(asset.name || asset.symbol || ''),
+              baseATR: Number(asset.baseATR || thresholds[asset.symbol]?.threshold || 2.5),
+              isCrypto: Boolean(asset.isCrypto),
+            }
+          : null
+      );
+
+    const sanitizedPortfolio = {
+      star: sanitizeTierAssets(portfolio.star),
+      core: sanitizeTierAssets(portfolio.core),
+      support: sanitizeTierAssets(portfolio.support),
+    };
+
+    // Sanitize thresholds
+    const sanitizedThresholds = {};
+    for (const [symbol, data] of Object.entries(thresholds || {})) {
+      if (data && typeof data === 'object') {
+        sanitizedThresholds[String(symbol)] = {
+          threshold: Number(data.threshold) || 2.5,
+          rallyThreshold: Number(data.rallyThreshold) || 3.75,
+          moonshotThreshold: Number(data.moonshotThreshold) || 5.0,
+        };
+      }
+    }
+
+    // Calculate V4 timing (3 trading days)
+    const isTraining = Boolean(battleData.isTraining);
+    const tradingDays = isTraining ? 1 : 3;
+    const battleStart = getNextBattleStart();
+    const tradingDayDates = getTradingDayDates(battleStart, tradingDays);
+    const battleEnd = getBattleEndTimeV4(tradingDayDates);
+
+    // Calculate lobby expiration
+    const lobbyExpiresAt = new Date(Date.now() + lobbyTimeMinutes * 60000);
+
+    // Initialize history tracking per asset with dailyThresholds
+    const initializeHistoryV4 = (portfolio) => {
+      const history = {};
+      const allSymbols = [
+        ...(portfolio.star || []).filter(Boolean).map((a) => a.symbol),
+        ...(portfolio.core || []).filter(Boolean).map((a) => a.symbol),
+        ...(portfolio.support || []).filter(Boolean).map((a) => a.symbol),
+      ];
+      allSymbols.forEach((symbol) => {
+        history[symbol] = {
+          maxMultiplier: 0,
+          minMultiplier: 0,
+          badges: [],
+          dailyThresholds: {},
+        };
+      });
+      return history;
+    };
+
+    // Generate initial free agents
+    const freeAgents = createInitialFreeAgents();
+
+    // Initialize swaps
+    const swaps = initializeSwaps(isTraining, tradingDays);
+
+    const battle = {
+      _v: 4,
+      type: 'baggerbomb_v4',
+      challengeCode,
+      visibility: battleData.visibility || 'public',
+
+      creator: {
+        uid: String(battleData.creator?.uid || 'anonymous'),
+        odUserId: String(battleData.creator?.odUserId || battleData.creator?.uid || 'anonymous'),
+        username: String(battleData.creator?.username || 'Player'),
+        avatar: String(battleData.creator?.avatar || ''),
+        portfolio: sanitizedPortfolio,
+        swaps,
+        closedTrades: [],
+        history: initializeHistoryV4(sanitizedPortfolio),
+        totalScore: 0,
+        baggerBombs: 0,
+        busts: 0,
+      },
+
+      opponent: {
+        uid: '',
+        odUserId: '',
+        username: '',
+        avatar: '',
+        portfolio: { star: [null, null], core: [null, null], support: [null, null, null] },
+        swaps: initializeSwaps(isTraining, tradingDays),
+        closedTrades: [],
+        history: {},
+        totalScore: 0,
+        baggerBombs: 0,
+        busts: 0,
+      },
+
+      freeAgents,
+
+      timing: {
+        createdAt: new Date().toISOString(),
+        lobbyExpiresAt: lobbyExpiresAt.toISOString(),
+        scheduledStart: battleStart.toISOString(),
+        scheduledEnd: battleEnd.toISOString(),
+        actualStart: '',
+        actualEnd: '',
+        tradingDays,
+        tradingDayDates,
+        currentTradingDay: 1,
+      },
+
+      lobbyTimeMinutes,
+
+      state: {
+        status: 'waiting',
+        startingPrices: {},
+        dailyOpenPrices: initializeDailyOpenPrices(tradingDays),
+        isActive: false,
+      },
+
+      thresholds: sanitizedThresholds,
+      events: [],
+
+      result: {},
+
+      metadata: {
+        spectatorCount: 0,
+        featured: false,
+        tags: ['baggerbomb-v4', 'free-agent', 'tier-based'],
+      },
+
+      isTraining: isTraining || false,
+      archived: false,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const cleanedBattle = removeUndefined(battle);
+    console.log('📤 V4 Battle object for Firebase:', JSON.stringify(cleanedBattle, null, 2));
+
+    const battleRef = await addDoc(collection(db, 'battles'), cleanedBattle);
+    console.log('✅ BaggerBomb V4 battle created:', battleRef.id);
+
+    return {
+      id: battleRef.id,
+      ...cleanedBattle,
+    };
+  } catch (error) {
+    console.error('❌ Error creating BaggerBomb V4 battle:', error);
+    throw new Error(`Failed to create BaggerBomb V4 battle: ${error.message}`);
+  }
+}
+
+/**
+ * Join a BaggerBomb V4 battle
+ * Supports joining by battleId (lobby) or challengeCode (legacy)
+ *
+ * @param {string} battleIdOrCode - Battle ID or challenge code
+ * @param {Object} opponentData - Opponent's data with tiered portfolio (NO bench)
+ * @param {Object} options - { joinByBattleId: boolean }
+ * @returns {Promise<Object>} Updated battle
+ */
+export async function joinBaggerBombBattleV4(battleIdOrCode, opponentData, options = {}) {
+  try {
+    const { joinByBattleId = false } = options;
+    console.log('🔥 joinBaggerBombBattleV4 called with:', { battleIdOrCode, opponentData, joinByBattleId });
+
+    if (!battleIdOrCode || typeof battleIdOrCode !== 'string') {
+      throw new Error('Battle ID or challenge code is required');
+    }
+
+    if (!opponentData) {
+      throw new Error('Opponent data is required');
+    }
+
+    const { portfolio } = opponentData;
+    if (!portfolio || !portfolio.star || !portfolio.core || !portfolio.support) {
+      throw new Error('Portfolio must have star, core, and support tiers');
+    }
+
+    let battleDoc;
+    let battleData;
+
+    if (joinByBattleId) {
+      const battleRef = doc(db, 'battles', battleIdOrCode);
+      const battleSnap = await getDoc(battleRef);
+
+      if (!battleSnap.exists()) {
+        throw new Error('Battle not found');
+      }
+
+      battleData = battleSnap.data();
+      battleDoc = { id: battleSnap.id, ref: battleRef };
+
+      if (battleData._v !== 4) {
+        throw new Error('Invalid battle version (expected V4)');
+      }
+      if (battleData.state?.status !== 'waiting') {
+        throw new Error('Battle is no longer available');
+      }
+      if (battleData.archived) {
+        throw new Error('Battle has been archived');
+      }
+    } else {
+      const q = query(
+        collection(db, 'battles'),
+        where('challengeCode', '==', battleIdOrCode.toUpperCase()),
+        where('state.status', '==', 'waiting'),
+        where('_v', '==', 4),
+        where('archived', '==', false)
+      );
+
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) {
+        throw new Error('BaggerBomb V4 battle not found or already started');
+      }
+
+      const foundDoc = snapshot.docs[0];
+      battleData = foundDoc.data();
+      battleDoc = { id: foundDoc.id, ref: doc(db, 'battles', foundDoc.id) };
+    }
+
+    // Check not joining own battle
+    const creatorId = battleData.creator?.odUserId || battleData.creator?.uid;
+    const opponentId = opponentData.odUserId || opponentData.uid;
+    if (creatorId === opponentId) {
+      throw new Error('You cannot join your own battle');
+    }
+
+    // Collect opponent assets for thresholds (no bench)
+    const allOpponentAssets = [
+      ...(portfolio.star || []).filter(Boolean),
+      ...(portfolio.core || []).filter(Boolean),
+      ...(portfolio.support || []).filter(Boolean),
+    ].filter(Boolean);
+
+    let opponentThresholds = {};
+    try {
+      opponentThresholds = await fetchAllThresholds(allOpponentAssets, []);
+    } catch (err) {
+      console.warn('⚠️ Could not fetch opponent thresholds:', err.message);
+    }
+
+    const mergedThresholds = {
+      ...battleData.thresholds,
+      ...opponentThresholds,
+    };
+
+    // Sanitize opponent portfolio
+    const sanitizeTierAssets = (assets) =>
+      (assets || []).map((asset) =>
+        asset
+          ? {
+              symbol: String(asset.symbol || '').toUpperCase(),
+              name: String(asset.name || asset.symbol || ''),
+              baseATR: Number(asset.baseATR || opponentThresholds[asset.symbol]?.threshold || 2.5),
+              isCrypto: Boolean(asset.isCrypto),
+            }
+          : null
+      );
+
+    const sanitizedPortfolio = {
+      star: sanitizeTierAssets(portfolio.star),
+      core: sanitizeTierAssets(portfolio.core),
+      support: sanitizeTierAssets(portfolio.support),
+    };
+
+    // Initialize opponent history with dailyThresholds
+    const initializeHistoryV4 = (portfolio) => {
+      const history = {};
+      const allSymbols = [
+        ...(portfolio.star || []).filter(Boolean).map((a) => a.symbol),
+        ...(portfolio.core || []).filter(Boolean).map((a) => a.symbol),
+        ...(portfolio.support || []).filter(Boolean).map((a) => a.symbol),
+      ];
+      allSymbols.forEach((symbol) => {
+        history[symbol] = {
+          maxMultiplier: 0,
+          minMultiplier: 0,
+          badges: [],
+          dailyThresholds: {},
+        };
+      });
+      return history;
+    };
+
+    // ============ CAPTURE STARTING PRICES ============
+    const collectSymbols = (portfolio) => {
+      const symbols = [];
+      if (portfolio.star) symbols.push(...portfolio.star.filter(Boolean).map(a => a.symbol));
+      if (portfolio.core) symbols.push(...portfolio.core.filter(Boolean).map(a => a.symbol));
+      if (portfolio.support) symbols.push(...portfolio.support.filter(Boolean).map(a => a.symbol));
+      return symbols;
+    };
+
+    const creatorSymbols = collectSymbols(battleData.creator.portfolio || {});
+    const opponentSymbols = collectSymbols(sanitizedPortfolio);
+    const allSymbols = [...new Set([...creatorSymbols, ...opponentSymbols])];
+
+    const { getMultipleStockPrices, getMultipleCryptoPrices } = await import('../services/eodhdAPI.js');
+
+    const cryptoSymbols = allSymbols.filter(s => isCrypto(s));
+    const stockSymbols = allSymbols.filter(s => !isCrypto(s));
+
+    let stockPrices = {};
+    let cryptoPrices = {};
+
+    try {
+      if (stockSymbols.length > 0) {
+        stockPrices = await getMultipleStockPrices(stockSymbols);
+      }
+      if (cryptoSymbols.length > 0) {
+        cryptoPrices = await getMultipleCryptoPrices(cryptoSymbols);
+      }
+    } catch (priceError) {
+      console.warn('⚠️ Error fetching prices for V4 battle:', priceError.message);
+    }
+
+    const startingPrices = {};
+    for (const symbol of allSymbols) {
+      startingPrices[symbol] = stockPrices[symbol]?.price || cryptoPrices[symbol]?.price || 0;
+    }
+
+    // Set day1 open prices = starting prices
+    const tradingDays = battleData.timing?.tradingDays || 3;
+    const dailyOpenPrices = initializeDailyOpenPrices(tradingDays);
+    dailyOpenPrices.day1 = { ...startingPrices };
+
+    // Initialize swaps for opponent
+    const isTraining = Boolean(battleData.isTraining);
+    const opponentSwaps = initializeSwaps(isTraining, tradingDays);
+
+    // Update battle with opponent
+    const battleRef = battleDoc.ref || doc(db, 'battles', battleDoc.id);
+
+    await updateDoc(battleRef, {
+      'opponent.uid': opponentData.uid || opponentData.odUserId || '',
+      'opponent.odUserId': opponentData.odUserId || opponentData.uid || '',
+      'opponent.username': opponentData.username || opponentData.displayName || '',
+      'opponent.avatar': opponentData.avatar || '',
+      'opponent.portfolio': sanitizedPortfolio,
+      'opponent.swaps': opponentSwaps,
+      'opponent.closedTrades': [],
+      'opponent.history': initializeHistoryV4(sanitizedPortfolio),
+      'opponent.totalScore': 0,
+      'opponent.baggerBombs': 0,
+      'opponent.busts': 0,
+
+      'state.status': 'active',
+      'state.startingPrices': startingPrices,
+      'state.dailyOpenPrices': dailyOpenPrices,
+      'state.isActive': true,
+
+      thresholds: mergedThresholds,
+
+      updatedAt: new Date().toISOString(),
+    });
+
+    console.log('✅ BaggerBomb V4 battle joined:', battleDoc.id);
+
+    const updatedBattle = await getBattle(battleDoc.id);
+    return { success: true, battle: updatedBattle };
+  } catch (error) {
+    console.error('❌ Error joining BaggerBomb V4 battle:', error);
+    throw error;
+  }
+}
+
+/**
+ * Capture daily open prices for a V4 battle (called at 9:30 AM ET on Day 2/3)
+ *
+ * @param {string} battleId - Battle ID
+ * @param {number} dayNumber - Trading day number (2 or 3)
+ * @param {Object} prices - Map of symbol -> price
+ * @returns {Promise<void>}
+ */
+export async function captureDailyOpenPrices(battleId, dayNumber, prices) {
+  try {
+    const battleRef = doc(db, 'battles', battleId);
+    await updateDoc(battleRef, {
+      [`state.dailyOpenPrices.day${dayNumber}`]: prices,
+      [`timing.currentTradingDay`]: dayNumber,
+      updatedAt: new Date().toISOString(),
+    });
+    console.log(`✅ Captured day${dayNumber} open prices for battle:`, battleId);
+  } catch (error) {
+    console.error('❌ Error capturing daily open prices:', error);
     throw error;
   }
 }

@@ -489,7 +489,7 @@ const TrainingModePanel = ({
               }}>
                 START TRAINING
               </span>
-              <span style={{ color: '#8b949e', fontSize: '12px' }}>~5 min • Stocks & Crypto</span>
+              <span style={{ color: '#8b949e', fontSize: '12px' }}>24 hours • Stocks & Crypto</span>
             </button>
           </div>
 

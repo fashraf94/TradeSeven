@@ -23,6 +23,7 @@ const NIGHT_COLORS = {
 import BattleHeader from '../components/BaggerBomb/BattleHeader';
 import TacticalRow from '../components/BaggerBomb/TacticalRow';
 import BenchSection from '../components/BaggerBomb/BenchSection';
+import ClosedTradesSection from '../components/BaggerBomb/ClosedTradesSection';
 import EventFeed from '../components/BaggerBomb/EventFeed';
 
 // Import modals for research and score breakdown
@@ -200,7 +201,26 @@ export default function BaggerBombBattleView({
   isTraining = false,
   thresholds = {},
   currentPrices = {},
+  // V4 props
+  battleVersion = 3,
+  freeAgents,
+  nextRotationAt,
+  freeAgentDailyOpens,
+  swapsRemaining,
+  currentDay,
+  totalDays,
+  rotationCountdown,
+  closedTrades,
+  // Swap mode props (V4 multi-step flow)
+  swapMode,
+  onEnterSwapMode,
+  onSelectFreeAgent,
+  onSelectSwapTarget,
+  onCancelSwapMode,
+  onConfirmSwap,
+  isSwapExecuting,
 }) {
+  const isV4 = battleVersion >= 4;
   const [activeTab, setActiveTab] = useState('matchups');
   const [researchAsset, setResearchAsset] = useState(null);
   const [breakdownAsset, setBreakdownAsset] = useState(null);
@@ -356,6 +376,19 @@ export default function BaggerBombBattleView({
           sessionTimeRemaining={sessionTimeRemaining}
           sessionScores={sessionScores}
           completedSessions={completedSessions}
+          battleVersion={battleVersion}
+          freeAgents={freeAgents}
+          nextRotationAt={nextRotationAt}
+          currentPrices={currentPrices}
+          freeAgentDailyOpens={freeAgentDailyOpens}
+          swapsRemaining={swapsRemaining}
+          currentDay={currentDay}
+          totalDays={totalDays}
+          rotationCountdown={rotationCountdown}
+          swapMode={swapMode}
+          onEnterSwapMode={onEnterSwapMode}
+          onSelectFreeAgent={onSelectFreeAgent}
+          onCancelSwapMode={onCancelSwapMode}
         />
       </div>
 
@@ -394,6 +427,12 @@ export default function BaggerBombBattleView({
                     const opponentAsset = opponentPortfolio[tier.key]?.[index] || null;
                     const isCryptoSlot = tier.hasCrypto && index === tier.slots - 1;
 
+                    // Swap target mode: highlight player side, dim opponent
+                    const isSwapTarget = swapMode?.step === 'selectTarget';
+                    const selectedIsCrypto = swapMode?.selectedFreeAgent?.isCrypto;
+                    const slotIsCrypto = Boolean(playerAsset?.isCrypto);
+                    const typeMismatch = isSwapTarget && (Boolean(selectedIsCrypto) !== slotIsCrypto);
+
                     return (
                       <TacticalRow
                         key={`${tier.key}-${index}`}
@@ -415,18 +454,30 @@ export default function BaggerBombBattleView({
                         }
                         onSymbolClick={(asset) => setResearchAsset(asset)}
                         onPointsClick={(asset) => setBreakdownAsset(asset)}
+                        swapTargetMode={isSwapTarget}
+                        onLeftAssetSelect={isSwapTarget ? (asset) =>
+                          onSelectSwapTarget(asset, tier.key, index) : undefined}
+                        opponentDimmed={swapMode?.active}
+                        leftDisabled={typeMismatch}
                       />
                     );
                   })}
                 </div>
               ))}
 
-              {/* Bench Section */}
-              <BenchSection
-                playerBench={player?.bench}
-                opponentBench={opponent?.bench}
-                defaultExpanded={false}
-              />
+              {/* V4: Closed Trades / V3: Bench Section */}
+              {isV4 ? (
+                <ClosedTradesSection
+                  closedTrades={closedTrades || []}
+                  defaultExpanded={false}
+                />
+              ) : (
+                <BenchSection
+                  playerBench={player?.bench}
+                  opponentBench={opponent?.bench}
+                  defaultExpanded={false}
+                />
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -472,6 +523,136 @@ export default function BaggerBombBattleView({
           }}
           onClose={() => setBreakdownAsset(null)}
         />
+      )}
+
+      {/* V4: Swap Confirmation Popup */}
+      {isV4 && swapMode?.step === 'confirming' && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100,
+            padding: '24px',
+          }}
+          onClick={onCancelSwapMode}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.2 }}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: HOLO_COLORS.bgCard,
+              borderRadius: '16px',
+              border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+              padding: '24px',
+              maxWidth: '340px',
+              width: '100%',
+            }}
+          >
+            <div style={{
+              textAlign: 'center',
+              marginBottom: '20px',
+              fontSize: '14px',
+              fontWeight: 700,
+              color: HOLO_COLORS.textPrimary,
+            }}>
+              Confirm Swap
+            </div>
+
+            {/* OUT asset */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px',
+              backgroundColor: `${HOLO_COLORS.red}10`,
+              borderRadius: '8px',
+              border: `1px solid ${HOLO_COLORS.red}30`,
+              marginBottom: '8px',
+            }}>
+              <div>
+                <span style={{ fontSize: '10px', color: HOLO_COLORS.textMuted, fontWeight: 600 }}>
+                  REMOVING
+                </span>
+                <div style={{ fontSize: '16px', fontWeight: 700, color: HOLO_COLORS.textPrimary }}>
+                  {swapMode.targetAsset?.symbol}
+                </div>
+                <span style={{ fontSize: '11px', color: HOLO_COLORS.textMuted }}>
+                  {swapMode.targetAsset?.tier} tier
+                </span>
+              </div>
+              <span style={{ fontSize: '24px', color: HOLO_COLORS.red }}>←</span>
+            </div>
+
+            {/* IN asset */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px',
+              backgroundColor: `${HOLO_COLORS.green}10`,
+              borderRadius: '8px',
+              border: `1px solid ${HOLO_COLORS.green}30`,
+              marginBottom: '20px',
+            }}>
+              <div>
+                <span style={{ fontSize: '10px', color: HOLO_COLORS.textMuted, fontWeight: 600 }}>
+                  ADDING
+                </span>
+                <div style={{ fontSize: '16px', fontWeight: 700, color: HOLO_COLORS.textPrimary }}>
+                  {swapMode.selectedFreeAgent?.symbol}
+                </div>
+                <span style={{ fontSize: '11px', color: HOLO_COLORS.textMuted }}>
+                  {swapMode.selectedFreeAgent?.name}
+                </span>
+              </div>
+              <span style={{ fontSize: '24px', color: HOLO_COLORS.green }}>→</span>
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={onCancelSwapMode}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+                  backgroundColor: 'transparent',
+                  color: HOLO_COLORS.textMuted,
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onConfirmSwap}
+                disabled={isSwapExecuting}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: HOLO_COLORS.cyan,
+                  color: HOLO_COLORS.bgDeep,
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  cursor: isSwapExecuting ? 'wait' : 'pointer',
+                  opacity: isSwapExecuting ? 0.6 : 1,
+                }}
+              >
+                {isSwapExecuting ? 'Swapping...' : 'Confirm'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
       )}
     </div>
   );

@@ -694,7 +694,8 @@ const AssetResearchModal = ({
   showActionButton = true,
   version = 1,
 }) => {
-  const [activeTab, setActiveTab] = useState('fundamental');
+  const isCrypto = asset?.isCrypto || asset?.category === 'crypto';
+  const [activeTab, setActiveTab] = useState(isCrypto ? 'technical' : 'fundamental');
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
@@ -702,8 +703,6 @@ const AssetResearchModal = ({
   const [drawerSnapState, setDrawerSnapState] = useState('mid');
   const [v2ContainerHeight, setV2ContainerHeight] = useState(600);
   const v2ContainerRef = useRef(null);
-
-  const isCrypto = asset?.isCrypto || asset?.category === 'crypto';
   const { isMobile, isTablet } = useIsMobile();
 
   // v2: Responsive chart height — v2 mobile uses ~50% of container (min 280px)
@@ -731,6 +730,11 @@ const AssetResearchModal = ({
   const handleDrawerSnapChange = useCallback((state) => {
     setDrawerSnapState(state);
   }, []);
+
+  // Reset tab default when asset changes (crypto → technical, stock → fundamental)
+  useEffect(() => {
+    setActiveTab(isCrypto ? 'technical' : 'fundamental');
+  }, [asset?.symbol]);
 
   useEffect(() => {
     if (asset?.symbol && !isCrypto) {
@@ -1159,6 +1163,7 @@ const AssetResearchModal = ({
               activeTab={activeTab}
               setActiveTab={setActiveTab}
               onSnapStateChange={handleDrawerSnapChange}
+              isCrypto={isCrypto}
             >
               {activeTab === 'fundamental' && (
                 <div style={{ padding: '8px 0' }}>
@@ -1289,6 +1294,7 @@ const AssetResearchModal = ({
                   display: none;
                 }
               `}</style>
+              {!isCrypto && (
               <button
                 onClick={() => setActiveTab('fundamental')}
                 style={{
@@ -1308,6 +1314,8 @@ const AssetResearchModal = ({
               >
                 Analysis
               </button>
+              )}
+              {!isCrypto && (
               <button
                 onClick={() => setActiveTab('earnings')}
                 style={{
@@ -1327,6 +1335,7 @@ const AssetResearchModal = ({
               >
                 Earnings
               </button>
+              )}
               <button
                 onClick={() => setActiveTab('technical')}
                 style={{

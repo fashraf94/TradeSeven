@@ -55,15 +55,12 @@ const BUILDER_TIERS = [
   },
 ];
 
-// Initial empty portfolio structure
-const createEmptyPortfolio = () => ({
+// Initial empty portfolio structure (V4 omits bench)
+const createEmptyPortfolio = (version = 4) => ({
   star: [null, null],
   core: [null, null],
   support: [null, null, null],
-  bench: {
-    stocks: [null, null, null],
-    crypto: null,
-  },
+  ...(version <= 3 ? { bench: { stocks: [null, null, null], crypto: null } } : {}),
 });
 
 /**
@@ -149,10 +146,11 @@ export default function SlotBasedBuilder({
   onComplete,
   onBack,
   disabled = false,
+  version = 4,
 }) {
   // Portfolio state
   const [portfolio, setPortfolio] = useState(
-    initialPortfolio || createEmptyPortfolio()
+    initialPortfolio || createEmptyPortfolio(version)
   );
 
   // Mobile detection
@@ -238,14 +236,14 @@ export default function SlotBasedBuilder({
       });
     });
 
-    // Bench stocks
-    portfolio.bench?.stocks?.forEach((asset) => {
-      if (asset) selected.push(asset);
-    });
-
-    // Bench crypto
-    if (portfolio.bench?.crypto) {
-      selected.push(portfolio.bench.crypto);
+    // Bench stocks (V3 only)
+    if (version <= 3) {
+      portfolio.bench?.stocks?.forEach((asset) => {
+        if (asset) selected.push(asset);
+      });
+      if (portfolio.bench?.crypto) {
+        selected.push(portfolio.bench.crypto);
+      }
     }
 
     return selected;
@@ -272,12 +270,15 @@ export default function SlotBasedBuilder({
       if (filled < tier.slots) return false;
     }
 
-    // Check bench (3 stocks + 1 crypto)
+    // V4: no bench needed — valid with just 7 active slots
+    if (version >= 4) return true;
+
+    // V3: also need bench (3 stocks + 1 crypto)
     const benchStocksFilled = portfolio.bench?.stocks?.filter(Boolean).length || 0;
     const hasBenchCrypto = !!portfolio.bench?.crypto;
 
     return benchStocksFilled >= 3 && hasBenchCrypto;
-  }, [portfolio, getFilledCount]);
+  }, [portfolio, getFilledCount, version]);
 
   // Validation message
   const validationMessage = useMemo(() => {
@@ -290,18 +291,20 @@ export default function SlotBasedBuilder({
       }
     });
 
-    const benchStocksFilled = portfolio.bench?.stocks?.filter(Boolean).length || 0;
-    if (benchStocksFilled < 3) {
-      missing.push(`${3 - benchStocksFilled} bench stocks`);
-    }
-
-    if (!portfolio.bench?.crypto) {
-      missing.push('1 bench crypto');
+    // V3 only: bench requirements
+    if (version <= 3) {
+      const benchStocksFilled = portfolio.bench?.stocks?.filter(Boolean).length || 0;
+      if (benchStocksFilled < 3) {
+        missing.push(`${3 - benchStocksFilled} bench stocks`);
+      }
+      if (!portfolio.bench?.crypto) {
+        missing.push('1 bench crypto');
+      }
     }
 
     if (missing.length === 0) return null;
     return `Need: ${missing.join(', ')}`;
-  }, [portfolio, getFilledCount]);
+  }, [portfolio, getFilledCount, version]);
 
   // Open picker for a slot
   const openPicker = useCallback((tier, slotIndex, cryptoOnly, stockOnly) => {
@@ -440,7 +443,7 @@ export default function SlotBasedBuilder({
             margin: '4px 0 0 0',
           }}
         >
-          Select 7 active positions + 4 bench slots
+          {version >= 4 ? 'Select 7 active positions' : 'Select 7 active positions + 4 bench slots'}
         </p>
       </div>
 
@@ -479,52 +482,54 @@ export default function SlotBasedBuilder({
         </div>
       ))}
 
-      {/* Bench Section */}
-      <div style={{ marginTop: '24px' }}>
-        <TierSection
-          tier={{
-            key: 'bench',
-            label: '📦 Bench',
-            description: '3 stocks + 1 crypto for substitutions',
-            allocation: 'BN',
-            slots: 4,
-          }}
-          filledCount={getFilledCount('bench')}
-        />
+      {/* Bench Section (V3 only) */}
+      {version <= 3 && (
+        <div style={{ marginTop: '24px' }}>
+          <TierSection
+            tier={{
+              key: 'bench',
+              label: '📦 Bench',
+              description: '3 stocks + 1 crypto for substitutions',
+              allocation: 'BN',
+              slots: 4,
+            }}
+            filledCount={getFilledCount('bench')}
+          />
 
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
-            gap: '8px',
-          }}
-        >
-          {/* Stock bench slots */}
-          {[0, 1, 2].map((index) => (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
+              gap: '8px',
+            }}
+          >
+            {/* Stock bench slots */}
+            {[0, 1, 2].map((index) => (
+              <PortfolioSlot
+                key={`bench-stock-${index}`}
+                asset={portfolio.bench?.stocks?.[index]}
+                tier="bench"
+                allocation="BN"
+                isCrypto={false}
+                onSelect={() => openPicker('bench-stock', index, false, true)}
+                onRemove={() => handleRemove('bench-stock', index)}
+                disabled={disabled}
+              />
+            ))}
+
+            {/* Crypto bench slot */}
             <PortfolioSlot
-              key={`bench-stock-${index}`}
-              asset={portfolio.bench?.stocks?.[index]}
+              asset={portfolio.bench?.crypto}
               tier="bench"
               allocation="BN"
-              isCrypto={false}
-              onSelect={() => openPicker('bench-stock', index, false, true)}
-              onRemove={() => handleRemove('bench-stock', index)}
+              isCrypto={true}
+              onSelect={() => openPicker('bench-crypto', 0, true, false)}
+              onRemove={() => handleRemove('bench-crypto', 0)}
               disabled={disabled}
             />
-          ))}
-
-          {/* Crypto bench slot */}
-          <PortfolioSlot
-            asset={portfolio.bench?.crypto}
-            tier="bench"
-            allocation="BN"
-            isCrypto={true}
-            onSelect={() => openPicker('bench-crypto', 0, true, false)}
-            onRemove={() => handleRemove('bench-crypto', 0)}
-            disabled={disabled}
-          />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Validation Status */}
       <div
@@ -633,6 +638,8 @@ SlotBasedBuilder.propTypes = {
   onBack: PropTypes.func,
   /** Whether builder is disabled */
   disabled: PropTypes.bool,
+  /** Battle version (3 = with bench, 4 = no bench) */
+  version: PropTypes.number,
 };
 
 SlotBasedBuilder.defaultProps = {
@@ -643,6 +650,7 @@ SlotBasedBuilder.defaultProps = {
   onComplete: null,
   onBack: null,
   disabled: false,
+  version: 4,
 };
 
 // Export tier config and helper
