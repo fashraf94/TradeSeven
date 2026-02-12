@@ -56,6 +56,18 @@
     {
       "path": "/api/cron/snake-draft-autopick",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/economic-calendar-refresh?mode=weekly",
+      "schedule": "0 4 * * 1"
+    },
+    {
+      "path": "/api/economic-calendar-refresh?mode=update",
+      "schedule": "0 15 * * 3"
+    },
+    {
+      "path": "/api/economic-calendar-refresh?mode=update",
+      "schedule": "0 15 * * 5"
     }
   ]
 }

@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { SECTORS } from '../../constants/sectors';
 import { getTopMoversWithNews, getMarketNews } from '../../services/eodhdAPI';
-import { WEEK_AHEAD_EVENTS } from '../../data/weekAheadEvents';
+
 import { useAssetResearch } from '../../hooks/useAssetResearch';
 import AssetResearchModal from '../draft/AssetResearchModal';
 
@@ -2756,7 +2756,7 @@ const ResearchLandingPage = ({
       .slice(0, 3);
   }, [moversData, allAssets]);
 
-  // ─── Economic events (live from EODHD) ─────────────────────
+  // ─── Economic events (Firebase-cached calendar) ────────────
   const [economicEvents, setEconomicEvents] = useState([]);
   const [economicEventsLoading, setEconomicEventsLoading] = useState(false);
 
@@ -2784,9 +2784,9 @@ const ResearchLandingPage = ({
 
   }, []);
 
-  // ─── Economic events fetch ─────────────────────────────────
+  // ─── Economic events fetch (Firebase-cached calendar) ──────
   const fetchEconomicEvents = useCallback(async (force = false) => {
-    const CACHE_KEY = 'research_economic_events_cache';
+    const CACHE_KEY = 'research_economic_calendar_cache';
     const CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours
 
     if (!force) {
@@ -2804,10 +2804,10 @@ const ResearchLandingPage = ({
 
     setEconomicEventsLoading(true);
     try {
-      const response = await fetch('/api/economic-events');
+      const response = await fetch('/api/economic-calendar');
       const result = await response.json();
 
-      if (result.success && result.data?.events) {
+      if (result.success && result.data?.events?.length) {
         setEconomicEvents(result.data.events);
         try {
           localStorage.setItem(CACHE_KEY, JSON.stringify({
@@ -2816,7 +2816,8 @@ const ResearchLandingPage = ({
           }));
         } catch (e) { /* ignore storage errors */ }
       } else {
-        // Fallback to static data if API fails
+        // Fallback to static data if Firebase empty
+        const { WEEK_AHEAD_EVENTS } = await import('../../data/weekAheadEvents');
         const today = new Date();
         const endDate = new Date(today);
         endDate.setDate(endDate.getDate() + 7);
@@ -2827,13 +2828,18 @@ const ResearchLandingPage = ({
       }
     } catch (err) {
       console.warn('[ResearchLanding] Economic events fetch failed:', err);
-      const today = new Date();
-      const endDate = new Date(today);
-      endDate.setDate(endDate.getDate() + 7);
-      const fmt = d => d.toISOString().split('T')[0];
-      setEconomicEvents(WEEK_AHEAD_EVENTS
-        .filter(e => e.date >= fmt(today) && e.date <= fmt(endDate))
-        .sort((a, b) => a.date.localeCompare(b.date)));
+      try {
+        const { WEEK_AHEAD_EVENTS } = await import('../../data/weekAheadEvents');
+        const today = new Date();
+        const endDate = new Date(today);
+        endDate.setDate(endDate.getDate() + 7);
+        const fmt = d => d.toISOString().split('T')[0];
+        setEconomicEvents(WEEK_AHEAD_EVENTS
+          .filter(e => e.date >= fmt(today) && e.date <= fmt(endDate))
+          .sort((a, b) => a.date.localeCompare(b.date)));
+      } catch (fallbackErr) {
+        console.warn('[ResearchLanding] Fallback also failed:', fallbackErr);
+      }
     } finally {
       setEconomicEventsLoading(false);
     }
@@ -2968,8 +2974,9 @@ const ResearchLandingPage = ({
       battleStocks,
       economicEvents: economicEvents.slice(0, 5).map(e => ({
         date: e.date,
-        name: e.name,
-        impact: e.impact,
+        name: e.shortName || e.name,
+        tier: e.tier,
+        impact: e.tier === 1 ? 'high' : e.tier === 2 ? 'medium' : 'low',
       })),
     };
   }, [marketBreadth, moversData, marketNews, economicEvents]);
@@ -3045,46 +3052,49 @@ const ResearchLandingPage = ({
       parts.push(`\nUNUSUAL MOVERS: ${disc}`);
     }
 
-    // 6. Upcoming economic events
+    // 6. Upcoming economic events (enriched with tier/volatility/context)
     if (economicEvents?.length) {
       const todayStr = new Date().toISOString().split('T')[0];
       const upcoming = economicEvents
         .filter(e => e.date >= todayStr)
+        .sort((a, b) => (a.tier || 3) - (b.tier || 3) || a.date.localeCompare(b.date))
         .slice(0, 10);
 
       if (upcoming.length) {
         parts.push('\nUPCOMING ECONOMIC EVENTS:');
         upcoming.forEach(e => {
           const dateStr = new Date(e.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-          let detail = `${dateStr}: ${e.name}`;
-          if (e.estimate !== null && e.estimate !== undefined) detail += ` (Estimate: ${e.estimate})`;
-          if (e.previous !== null && e.previous !== undefined) detail += ` (Previous: ${e.previous})`;
-          if (e.actual !== null && e.actual !== undefined) detail += ` (Actual: ${e.actual})`;
-          if (e.impact === 'high') detail += ' [HIGH IMPACT]';
+          let detail = `${dateStr}: ${e.shortName || e.name}`;
+          if (e.estimate != null) detail += ` (Estimate: ${e.estimate})`;
+          if (e.previous != null) detail += ` (Previous: ${e.previous})`;
+          if (e.tier === 1) detail += ' [TIER 1 - HIGH IMPACT]';
+          else if (e.tier === 2) detail += ' [TIER 2]';
+          if (e.volatilityGrade) detail += ` [Vol: ${e.volatilityGrade}]`;
+          if (e.context) detail += ` — ${e.context}`;
           parts.push(detail);
         });
       }
 
-      // Recent releases (last 3 days) that have actual values
+      // Recent releases that have actual values
       const threeDaysAgo = new Date();
       threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
       const threeDaysAgoStr = threeDaysAgo.toISOString().split('T')[0];
       const recent = economicEvents
-        .filter(e => e.date >= threeDaysAgoStr && e.date < todayStr && e.actual !== null && e.actual !== undefined)
+        .filter(e => e.date >= threeDaysAgoStr && e.date < todayStr && e.actual != null)
+        .sort((a, b) => (a.tier || 3) - (b.tier || 3))
         .slice(0, 5);
 
       if (recent.length) {
         parts.push('\nRECENT ECONOMIC RELEASES:');
         recent.forEach(e => {
           const dateStr = new Date(e.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-          let detail = `${dateStr}: ${e.name} — Actual: ${e.actual}`;
-          if (e.estimate !== null && e.estimate !== undefined) detail += `, Estimate was: ${e.estimate}`;
-          if (e.previous !== null && e.previous !== undefined) detail += `, Previous: ${e.previous}`;
-          const act = parseFloat(e.actual);
-          const est = parseFloat(e.estimate);
-          if (!isNaN(act) && !isNaN(est)) {
-            detail += act > est ? ' [BEAT]' : act < est ? ' [MISS]' : ' [IN LINE]';
+          let detail = `${dateStr}: ${e.shortName || e.name} — Actual: ${e.actual}`;
+          if (e.estimate != null) detail += `, Estimate was: ${e.estimate}`;
+          if (e.previous != null) detail += `, Previous: ${e.previous}`;
+          if (e.beatMiss) {
+            detail += e.beatMiss === 'beat' ? ' [BEAT]' : e.beatMiss === 'miss' ? ' [MISS]' : ' [IN LINE]';
           }
+          if (e.marketReaction) detail += ` — Reaction: ${e.marketReaction}`;
           parts.push(detail);
         });
       }
@@ -3171,7 +3181,7 @@ const ResearchLandingPage = ({
             label: 'Key earnings & events this week?',
             answer: {
               insights: [
-                { text: economicEvents.length > 0 ? `${economicEvents[0].name} scheduled for ${economicEvents[0].date}${economicEvents[0].impact === 'high' ? ' (high impact)' : ''}.` : 'No major economic events this week.', type: 'signal' },
+                { text: economicEvents.length > 0 ? `${economicEvents[0].shortName || economicEvents[0].name} scheduled for ${economicEvents[0].date}${economicEvents[0].tier === 1 ? ' (Tier 1 - high impact)' : economicEvents[0].tier === 2 ? ' (Tier 2)' : ''}.` : 'No major economic events this week.', type: 'signal' },
               ],
             },
             followUps: ['Which earnings could move markets?', 'Any surprises expected?'],
