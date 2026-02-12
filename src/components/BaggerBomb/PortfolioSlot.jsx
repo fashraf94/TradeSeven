@@ -5,7 +5,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { Plus, X } from 'lucide-react';
-import { HOLO_COLORS } from '../../constants/holoTheme';
+import { HOLO_COLORS, getSectorColor } from '../../constants/holoTheme';
 
 /**
  * ThresholdPreview - Shows threshold levels for an asset
@@ -143,7 +143,9 @@ export default function PortfolioSlot({
     );
   }
 
-  // Filled slot
+  // Filled slot — sector glow
+  const sectorColor = getSectorColor(asset.sector);
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
@@ -154,7 +156,8 @@ export default function PortfolioSlot({
         height: '100px',
         borderRadius: '12px',
         backgroundColor: HOLO_COLORS.bgElevated,
-        border: `1px solid ${isCrypto ? HOLO_COLORS.purple + '40' : HOLO_COLORS.borderSubtle}`,
+        border: `1px solid ${sectorColor}50`,
+        boxShadow: `0 0 12px ${sectorColor}30, 0 0 4px ${sectorColor}20`,
         padding: '12px',
         display: 'flex',
         flexDirection: 'column',
@@ -165,10 +168,10 @@ export default function PortfolioSlot({
         onClick={onRemove}
         style={{
           position: 'absolute',
-          top: '8px',
-          right: '8px',
-          width: '20px',
-          height: '20px',
+          top: '6px',
+          right: '6px',
+          width: '28px',
+          height: '28px',
           borderRadius: '50%',
           backgroundColor: HOLO_COLORS.bgCard,
           border: `1px solid ${HOLO_COLORS.borderSubtle}`,
@@ -187,7 +190,7 @@ export default function PortfolioSlot({
           e.currentTarget.style.borderColor = HOLO_COLORS.borderSubtle;
         }}
       >
-        <X size={12} color={HOLO_COLORS.textMuted} />
+        <X size={14} color={HOLO_COLORS.textMuted} />
       </button>
 
       {/* Asset Info */}

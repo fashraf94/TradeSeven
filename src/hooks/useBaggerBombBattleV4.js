@@ -61,6 +61,10 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   const [localHistory, setLocalHistory] = useState({});
   const [localOppHistory, setLocalOppHistory] = useState({});
   const prevMultipliersRef = useRef({});
+  const prevOppMultipliersRef = useRef({});
+
+  // Local events for EventFeed (both player + opponent)
+  const [localEvents, setLocalEvents] = useState([]);
 
   // Chain trigger system for staggered celebrations
   const [triggerQueue, setTriggerQueue] = useState([]);
@@ -345,8 +349,16 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     }, CHAIN_WINDOW_MS);
   }, []);
 
+  const pushLocalEvent = useCallback((event) => {
+    setLocalEvents(prev => {
+      const updated = [event, ...prev];
+      return updated.slice(0, 50); // Cap at 50 events
+    });
+  }, []);
+
   // ==================== THRESHOLD DETECTION ====================
 
+  // Player threshold detection
   useEffect(() => {
     if (!currentPrices || Object.keys(currentPrices).length === 0) return;
     if (!battle || !battleId) return;
@@ -380,12 +392,14 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
             }));
 
             const event = createThresholdEvent(
-              'player',
+              myData?.username || 'You',
               asset.symbol,
               threshold.name,
               currentMultiplier,
               threshold.points
             );
+
+            pushLocalEvent(event);
 
             queueTrigger({
               name: threshold.name,
@@ -404,7 +418,50 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
       prevMultipliersRef.current[asset.symbol] = currentMultiplier;
     });
-  }, [currentPrices, openPrices, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger]);
+  }, [currentPrices, openPrices, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger, myData?.username, pushLocalEvent]);
+
+  // Opponent threshold detection (display-only — no Firestore writes, no celebration)
+  useEffect(() => {
+    if (!currentPrices || Object.keys(currentPrices).length === 0) return;
+    if (!battle || !battleId) return;
+
+    oppPortfolioFlat.forEach((asset) => {
+      if (!asset) return;
+
+      const assetOpenPrice = asset.swapPrice || openPrices[asset.symbol];
+      const currentPrice = currentPrices[asset.symbol];
+      if (!assetOpenPrice || !currentPrice) return;
+
+      const priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
+      const baseATR = asset.baseATR || battle?.thresholds?.[asset.symbol]?.threshold || 2.5;
+      const currentMultiplier = priceChange / baseATR;
+
+      const prevMultiplier = prevOppMultipliersRef.current[asset.symbol] || 0;
+      const assetHistory = oppHistory[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
+
+      const crossed = detectThresholdCross(prevMultiplier, currentMultiplier);
+      if (crossed) {
+        crossed.forEach((threshold) => {
+          const existingBadges = getBadgesFromHistory(assetHistory);
+          if (!existingBadges.includes(threshold.name)) {
+            console.log(`🎯 [V4-opp] Threshold crossed: ${asset.symbol} → ${threshold.name}`);
+
+            const event = createThresholdEvent(
+              oppData?.username || 'Opponent',
+              asset.symbol,
+              threshold.name,
+              currentMultiplier,
+              threshold.points
+            );
+
+            pushLocalEvent(event);
+          }
+        });
+      }
+
+      prevOppMultipliersRef.current[asset.symbol] = currentMultiplier;
+    });
+  }, [currentPrices, openPrices, oppPortfolioFlat, battle, battleId, oppHistory, oppData?.username, pushLocalEvent]);
 
   // ==================== CONTINUOUS HISTORY TRACKING ====================
 
@@ -749,8 +806,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     closedTrades,
     closedTradePoints,
 
-    // Events for EventFeed
-    events: battle?.events || [],
+    // Events for EventFeed (local threshold detections for both player + opponent)
+    events: localEvents,
 
     // Prices
     currentPrices,

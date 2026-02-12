@@ -2,7 +2,7 @@
 // V4 multi-step swap mode: Swap pill → select agent → select roster target → confirm
 // Cards: gradient backgrounds, crypto purple tint, research modal integration.
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
@@ -75,34 +75,52 @@ function FreeAgentCard({ agent, priceChange, currentPrice, onTap, selectable, se
 
   return (
     <motion.button
+      whileHover={{ scale: 1.05, y: -2 }}
       whileTap={{ scale: 0.95 }}
       onClick={handleClick}
       style={{
         flex: '1 1 0',
         minWidth: 0,
         padding: '10px 6px 8px',
-        borderRadius: '8px',
-        background: isCrypto
-          ? `linear-gradient(135deg, ${HOLO_COLORS.purple}1F, ${HOLO_COLORS.bgElevated})`
-          : `linear-gradient(135deg, ${HOLO_COLORS.bgCard}, ${HOLO_COLORS.bgElevated})`,
-        border: `1px solid ${borderColor}`,
+        borderRadius: '10px',
+        background: 'linear-gradient(145deg, #161b22 0%, #0d1117 50%, #1a1025 100%)',
+        border: `2px solid ${borderColor}`,
         cursor: 'pointer',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         gap: '3px',
-        transition: 'border-color 0.2s, box-shadow 0.2s',
         position: 'relative',
         overflow: 'hidden',
-        boxShadow,
+        animation: (!selected && !selectable) ? 'holoShimmer 4s ease-in-out infinite' : undefined,
+        boxShadow: selected
+          ? `0 0 8px ${HOLO_COLORS.greenBright}66`
+          : `0 4px 16px rgba(0, 0, 0, 0.4), 0 0 12px rgba(0, 217, 255, 0.15)`,
+        transition: 'border-color 0.2s, box-shadow 0.2s',
       }}
     >
+      {/* Shine sweep overlay */}
+      <div style={{
+        position: 'absolute',
+        top: 0,
+        left: '-100%',
+        width: '60%',
+        height: '100%',
+        background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)',
+        transform: 'skewX(-20deg)',
+        animation: 'shineSweep 5s ease-in-out infinite',
+        pointerEvents: 'none',
+      }} />
+
       {/* Symbol */}
       <span
         style={{
           fontSize: '13px',
           fontWeight: 700,
-          color: HOLO_COLORS.textPrimary,
+          background: 'linear-gradient(135deg, #00d9ff, #8b5cf6, #ffd700)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
           lineHeight: 1,
           whiteSpace: 'nowrap',
           overflow: 'hidden',
@@ -177,8 +195,29 @@ export default function FreeAgentBar({
   onEnterSwapMode,
   onSelectFreeAgent,
   onCancelSwapMode,
+  hideSwapButton = false,
 }) {
   const [researchAsset, setResearchAsset] = useState(null);
+
+  // Inject holographic CSS keyframes once
+  useEffect(() => {
+    const id = 'holo-free-agent-styles';
+    if (document.getElementById(id)) return;
+    const style = document.createElement('style');
+    style.id = id;
+    style.textContent = `
+      @keyframes holoShimmer {
+        0%, 100% { border-color: rgba(0, 217, 255, 0.5); }
+        33% { border-color: rgba(139, 92, 246, 0.5); }
+        66% { border-color: rgba(255, 215, 0, 0.5); }
+      }
+      @keyframes shineSweep {
+        0%, 75%, 100% { left: -100%; }
+        35% { left: 150%; }
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
 
   // Calculate daily price changes for each free agent (from market open, not battle start)
   const agentChanges = useMemo(() => {
@@ -238,53 +277,55 @@ export default function FreeAgentBar({
           Day {currentDay}/{totalDays}
         </span>
 
-        {/* Swap pill button or Cancel */}
-        {isSwapActive ? (
-          <button
-            onClick={onCancelSwapMode}
-            style={{
-              padding: '4px 12px',
-              borderRadius: '12px',
-              border: `1px solid ${HOLO_COLORS.red}60`,
-              background: `${HOLO_COLORS.red}15`,
-              color: HOLO_COLORS.red,
-              fontSize: '11px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Cancel
-          </button>
-        ) : canSwap ? (
-          <button
-            onClick={onEnterSwapMode}
-            style={{
-              padding: '4px 12px',
-              borderRadius: '12px',
-              border: `1px solid ${HOLO_COLORS.cyan}50`,
-              background: `${HOLO_COLORS.cyan}15`,
-              color: HOLO_COLORS.cyan,
-              fontSize: '11px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            <span style={{ fontSize: '12px' }}>&#x1F504;</span>
-            Swap ({swapsRemaining} left)
-          </button>
-        ) : (
-          <span
-            style={{
-              fontSize: '10px',
-              fontWeight: 600,
-              color: HOLO_COLORS.textMuted,
-            }}
-          >
-            No swaps today
-          </span>
+        {/* Swap pill button or Cancel — hidden when parent manages swap button */}
+        {!hideSwapButton && (
+          isSwapActive ? (
+            <button
+              onClick={onCancelSwapMode}
+              style={{
+                padding: '4px 12px',
+                borderRadius: '12px',
+                border: `1px solid ${HOLO_COLORS.red}60`,
+                background: `${HOLO_COLORS.red}15`,
+                color: HOLO_COLORS.red,
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+          ) : canSwap ? (
+            <button
+              onClick={onEnterSwapMode}
+              style={{
+                padding: '4px 12px',
+                borderRadius: '12px',
+                border: `1px solid ${HOLO_COLORS.cyan}50`,
+                background: `${HOLO_COLORS.cyan}15`,
+                color: HOLO_COLORS.cyan,
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <span style={{ fontSize: '12px' }}>&#x1F504;</span>
+              Swap ({swapsRemaining} left)
+            </button>
+          ) : (
+            <span
+              style={{
+                fontSize: '10px',
+                fontWeight: 600,
+                color: HOLO_COLORS.textMuted,
+              }}
+            >
+              No swaps today
+            </span>
+          )
         )}
       </div>
 
@@ -430,4 +471,5 @@ FreeAgentBar.propTypes = {
   onEnterSwapMode: PropTypes.func,
   onSelectFreeAgent: PropTypes.func,
   onCancelSwapMode: PropTypes.func,
+  hideSwapButton: PropTypes.bool,
 };

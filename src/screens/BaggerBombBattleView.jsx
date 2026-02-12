@@ -406,7 +406,7 @@ export default function BaggerBombBattleView({
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.2 }}
             >
-              <EventFeed events={events || []} />
+              <EventFeed events={events || []} currentUser={player?.username} />
             </motion.div>
           ) : (
             <motion.div

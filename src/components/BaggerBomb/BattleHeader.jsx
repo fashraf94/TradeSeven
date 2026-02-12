@@ -377,6 +377,59 @@ export default function BattleHeader({
       {/* Bomb/Bust Counts */}
       <BombBustCounts player={player} opponent={opponent} />
 
+      {/* V4: Swap Button (between bomb/bust and free agent bar) */}
+      {battleVersion >= 4 && (
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          {swapMode?.active ? (
+            <button
+              onClick={onCancelSwapMode}
+              style={{
+                padding: '6px 16px',
+                borderRadius: '12px',
+                border: `1px solid ${HOLO_COLORS.red}60`,
+                background: `${HOLO_COLORS.red}15`,
+                color: HOLO_COLORS.red,
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Cancel Swap
+            </button>
+          ) : swapsRemaining > 0 ? (
+            <button
+              onClick={onEnterSwapMode}
+              style={{
+                padding: '6px 16px',
+                borderRadius: '12px',
+                border: `1px solid ${HOLO_COLORS.cyan}50`,
+                background: `${HOLO_COLORS.cyan}15`,
+                color: HOLO_COLORS.cyan,
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <span style={{ fontSize: '14px' }}>🔄</span>
+              Swap ({swapsRemaining} left)
+            </button>
+          ) : (
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                color: HOLO_COLORS.textMuted,
+              }}
+            >
+              No swaps today
+            </span>
+          )}
+        </div>
+      )}
+
       {/* V4: Free Agent Bar / V3: Session HUD */}
       {battleVersion >= 4 ? (
         <FreeAgentBar
@@ -392,6 +445,7 @@ export default function BattleHeader({
           onEnterSwapMode={onEnterSwapMode}
           onSelectFreeAgent={onSelectFreeAgent}
           onCancelSwapMode={onCancelSwapMode}
+          hideSwapButton
         />
       ) : (
         <SessionHUD
