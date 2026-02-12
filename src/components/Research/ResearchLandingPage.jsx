@@ -1359,7 +1359,7 @@ const QuestionCard = ({ question, index, buildMarketContextString }) => {
 };
 
 // ─── TrackerStockCard (V2) ──────────────────────────────────
-const TrackerStockCard = ({ stock, expanded, onToggle, trackerData, trackerLoading }) => {
+const TrackerStockCard = ({ stock, expanded, onToggle, trackerData, trackerLoading, onRemove }) => {
   const pct = safeNumber(stock.percentChange, 0);
   const isPositive = pct >= 0;
 
@@ -1424,6 +1424,30 @@ const TrackerStockCard = ({ stock, expanded, onToggle, trackerData, trackerLoadi
           }}>
             {statusLabel}
           </span>
+          {onRemove && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemove(stock.symbol); }}
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: 6,
+                background: 'transparent',
+                border: '1px solid transparent',
+                color: C.textMuted,
+                fontSize: 10,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease',
+                opacity: 0.4,
+                flexShrink: 0,
+              }}
+              onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = C.red; e.currentTarget.style.borderColor = `${C.red}30`; }}
+              onMouseLeave={e => { e.currentTarget.style.opacity = '0.4'; e.currentTarget.style.color = C.textMuted; e.currentTarget.style.borderColor = 'transparent'; }}
+              title="Remove from watchlist"
+            >{'\u2715'}</button>
+          )}
           <svg
             width="12" height="12" viewBox="0 0 24 24" fill="none"
             stroke={C.textMuted} strokeWidth="2"
@@ -1470,8 +1494,11 @@ const TrackerStockCard = ({ stock, expanded, onToggle, trackerData, trackerLoadi
 };
 
 // ─── TrackerSection (V2) ────────────────────────────────────
-const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading }) => {
-  if (!watchlistStocks?.length) return null;
+const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onRemoveStock, onAddStock, allAssets }) => {
+  const [showAddStock, setShowAddStock] = useState(false);
+  const [addStockSearch, setAddStockSearch] = useState('');
+
+  if (!watchlistStocks?.length && !onAddStock) return null;
 
   return (
     <div>
@@ -1495,9 +1522,120 @@ const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, tra
             onToggle={() => onToggleTracker(stock.symbol)}
             trackerData={trackerCache[stock.symbol]}
             trackerLoading={trackerLoading}
+            onRemove={onRemoveStock}
           />
         ))}
       </div>
+
+      {/* Add stock button */}
+      {onAddStock && (
+        <button
+          onClick={() => setShowAddStock(!showAddStock)}
+          style={{
+            width: '100%',
+            padding: '10px',
+            borderRadius: 10,
+            background: C.bgElevated,
+            border: `1px dashed ${C.border}`,
+            color: C.textMuted,
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            transition: 'all 0.2s ease',
+            marginTop: 6,
+          }}
+        >
+          <span style={{ fontSize: 14 }}>+</span> Track another stock
+        </button>
+      )}
+
+      {/* Add stock search */}
+      {showAddStock && (
+        <div style={{
+          marginTop: 6,
+          padding: '10px',
+          borderRadius: 10,
+          background: C.bgElevated,
+          border: `1px solid ${C.cyan}20`,
+          animation: 'rlp-fadeSlideIn 0.2s ease both',
+        }}>
+          <input
+            autoFocus
+            value={addStockSearch}
+            onChange={e => setAddStockSearch(e.target.value.toUpperCase())}
+            placeholder="Enter stock symbol (e.g. AAPL)"
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: 8,
+              background: C.bgCard,
+              border: `1px solid ${C.border}`,
+              color: C.white,
+              fontSize: 13,
+              outline: 'none',
+              fontFamily: "'JetBrains Mono', monospace",
+              boxSizing: 'border-box',
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && addStockSearch.trim()) {
+                onAddStock(addStockSearch.trim());
+                setAddStockSearch('');
+                setShowAddStock(false);
+              }
+              if (e.key === 'Escape') {
+                setShowAddStock(false);
+                setAddStockSearch('');
+              }
+            }}
+          />
+          {addStockSearch.length >= 1 && (
+            <div style={{ marginTop: 6, maxHeight: 150, overflowY: 'auto' }}>
+              {(allAssets || [])
+                .filter(a => {
+                  const sym = (a.symbol || a.ticker || '').toUpperCase();
+                  const name = (a.name || '').toUpperCase();
+                  const search = addStockSearch.toUpperCase();
+                  return (sym.startsWith(search) || name.includes(search)) && !watchlistStocks.some(w => w.symbol === sym);
+                })
+                .slice(0, 5)
+                .map(a => {
+                  const sym = (a.symbol || a.ticker || '').toUpperCase();
+                  return (
+                    <button
+                      key={sym}
+                      onClick={() => {
+                        onAddStock(sym);
+                        setAddStockSearch('');
+                        setShowAddStock(false);
+                      }}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                        background: 'transparent',
+                        border: 'none',
+                        color: C.textSecondary,
+                        fontSize: 12,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ fontWeight: 700, color: C.white, fontFamily: "'JetBrains Mono', monospace", minWidth: 50 }}>{sym}</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name || ''}</span>
+                    </button>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -1510,226 +1648,12 @@ const DesktopTrackerSection = ({
   trackerCache,
   trackerLoading,
   onShowWeeklyReport,
-}) => (
-  <div style={{
-    background: C.bgCard,
-    borderRadius: 16,
-    border: `1px solid ${C.border}`,
-    padding: '20px',
-    position: 'relative',
-    overflow: 'hidden',
-  }}>
-    {/* Accent line */}
-    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, ${C.cyan}60, ${C.cyan}20)` }} />
-
-    {/* Header */}
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 14 }}>{'\uD83E\uDD16'}</span>
-        <span style={{ ...sectionLabel(C.textMuted, '0.15em', '10px') }}>TRACKER BOT</span>
-      </div>
-      <span style={{ fontSize: 11, color: C.textMuted }}>Your watchlist, analyzed</span>
-    </div>
-
-    {/* Stock cards */}
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {watchlistStocks.map(stock => (
-        <TrackerStockCard
-          key={stock.symbol}
-          stock={stock}
-          expanded={expandedTracker === stock.symbol}
-          onToggle={() => onToggleTracker(stock.symbol)}
-          trackerData={trackerCache[stock.symbol]}
-          trackerLoading={trackerLoading === stock.symbol}
-        />
-      ))}
-    </div>
-
-    {/* Weekly Intel Report button */}
-    <button
-      onClick={onShowWeeklyReport}
-      style={{
-        width: '100%',
-        marginTop: 12,
-        padding: '10px',
-        borderRadius: 10,
-        background: `${C.cyan}08`,
-        border: `1px solid ${C.cyan}15`,
-        color: C.cyan,
-        fontSize: 13,
-        fontWeight: 700,
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-      }}
-    >
-      {'\uD83D\uDCCB'} View Weekly Intel Report
-    </button>
-  </div>
-);
-
-// ─── MobileEconomicCalendar ─────────────────────────────────
-const MobileEconomicCalendar = ({ events, loading }) => {
-  const [expanded, setExpanded] = useState(false);
-
-  // Only high-impact events in next 7 days
-  const todayStr = new Date().toISOString().split('T')[0];
-  const weekLater = new Date();
-  weekLater.setDate(weekLater.getDate() + 7);
-  const weekLaterStr = weekLater.toISOString().split('T')[0];
-
-  const highImpact = (events || []).filter(e =>
-    e.impact === 'high' && e.date >= todayStr && e.date <= weekLaterStr
-  );
-
-  const VISIBLE_COUNT = 4;
-  const visible = expanded ? highImpact : highImpact.slice(0, VISIBLE_COUNT);
-  const hasMore = highImpact.length > VISIBLE_COUNT;
-
-  return (
-    <div style={{
-      background: C.bgCard,
-      borderRadius: 12,
-      border: `1px solid ${C.border}`,
-      padding: '16px',
-      position: 'relative',
-      overflow: 'hidden',
-    }}>
-      {/* Accent line */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, ${C.amber}60, ${C.amber}20)` }} />
-
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 13 }}>{'\uD83D\uDCC5'}</span>
-          <span style={{ ...sectionLabel(C.textMuted, '0.12em', '9px') }}>ECONOMIC CALENDAR</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{
-            width: 5, height: 5, borderRadius: '50%',
-            background: C.green,
-            animation: 'rlp-pulse 2s ease-in-out infinite',
-          }} />
-          <span style={{ fontSize: 8, fontWeight: 700, color: C.green, letterSpacing: '0.08em' }}>LIVE</span>
-        </div>
-      </div>
-
-      {loading ? (
-        <ThinkingDots label="Loading events..." padding="8px 0" />
-      ) : highImpact.length === 0 ? (
-        <div style={{ fontSize: 11, color: C.textMuted, textAlign: 'center', padding: '8px 0' }}>
-          No high-impact events this week
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {visible.map((evt, i) => {
-            const dateObj = new Date(evt.date + 'T12:00:00');
-            const dayLabel = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-            const hasActual = evt.actual !== null && evt.actual !== undefined;
-            const hasEstimate = evt.estimate !== null && evt.estimate !== undefined;
-
-            // Beat/miss color
-            let resultColor = C.textMuted;
-            if (hasActual && hasEstimate) {
-              const act = parseFloat(evt.actual);
-              const est = parseFloat(evt.estimate);
-              if (!isNaN(act) && !isNaN(est)) {
-                resultColor = act > est ? C.green : act < est ? C.red : C.textSecondary;
-              }
-            }
-
-            return (
-              <div key={`${evt.date}-${i}`} style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '6px 0',
-                borderBottom: i < visible.length - 1 ? `1px solid ${C.border}` : 'none',
-              }}>
-                {/* Day badge */}
-                <span style={{
-                  fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: 9,
-                  fontWeight: 700,
-                  color: C.textMuted,
-                  background: `${C.textMuted}10`,
-                  padding: '2px 6px',
-                  borderRadius: 4,
-                  minWidth: 28,
-                  textAlign: 'center',
-                  textTransform: 'uppercase',
-                }}>
-                  {dayLabel}
-                </span>
-
-                {/* Event name */}
-                <span style={{
-                  flex: 1,
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: C.textPrimary,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {evt.name}
-                </span>
-
-                {/* Actual value or dash */}
-                <span style={{
-                  fontSize: 11,
-                  fontWeight: hasActual ? 700 : 400,
-                  color: hasActual ? resultColor : C.textMuted,
-                  fontFamily: "'JetBrains Mono', monospace",
-                  flexShrink: 0,
-                }}>
-                  {hasActual ? evt.actual : '\u2014'}
-                </span>
-              </div>
-            );
-          })}
-
-          {/* Show all toggle */}
-          {hasMore && (
-            <button
-              onClick={() => setExpanded(!expanded)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: C.cyan,
-                fontSize: 10,
-                fontWeight: 600,
-                cursor: 'pointer',
-                padding: '6px 0 2px',
-                textAlign: 'center',
-              }}
-            >
-              {expanded ? 'Show less' : `Show all events \u2192`}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ─── DesktopEconomicCalendar ─────────────────────────────────
-const DesktopEconomicCalendar = ({ events, loading }) => {
-  // Group events by date
-  const groupedByDate = useMemo(() => {
-    if (!events?.length) return {};
-    const groups = {};
-    events.forEach(event => {
-      const dateKey = event.date;
-      if (!groups[dateKey]) groups[dateKey] = [];
-      groups[dateKey].push(event);
-    });
-    return groups;
-  }, [events]);
-
-  const dateKeys = Object.keys(groupedByDate).sort().slice(0, 14);
+  onRemoveStock,
+  onAddStock,
+  allAssets,
+}) => {
+  const [showAddStock, setShowAddStock] = useState(false);
+  const [addStockSearch, setAddStockSearch] = useState('');
 
   return (
     <div style={{
@@ -1741,150 +1665,306 @@ const DesktopEconomicCalendar = ({ events, loading }) => {
       overflow: 'hidden',
     }}>
       {/* Accent line */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, ${C.amber}60, ${C.amber}20)` }} />
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, ${C.cyan}60, ${C.cyan}20)` }} />
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 14 }}>{'\uD83D\uDCC5'}</span>
-          <span style={{ ...sectionLabel(C.textMuted, '0.15em', '10px') }}>ECONOMIC CALENDAR</span>
+          <span style={{ fontSize: 14 }}>{'\uD83E\uDD16'}</span>
+          <span style={{ ...sectionLabel(C.textMuted, '0.15em', '10px') }}>TRACKER BOT</span>
+        </div>
+        <span style={{ fontSize: 11, color: C.textMuted }}>Your watchlist, analyzed</span>
+      </div>
+
+      {/* Stock cards */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {watchlistStocks.map(stock => (
+          <TrackerStockCard
+            key={stock.symbol}
+            stock={stock}
+            expanded={expandedTracker === stock.symbol}
+            onToggle={() => onToggleTracker(stock.symbol)}
+            trackerData={trackerCache[stock.symbol]}
+            trackerLoading={trackerLoading === stock.symbol}
+            onRemove={onRemoveStock}
+          />
+        ))}
+      </div>
+
+      {/* Add stock button */}
+      {onAddStock && (
+        <button
+          onClick={() => setShowAddStock(!showAddStock)}
+          style={{
+            width: '100%',
+            padding: '10px',
+            borderRadius: 10,
+            background: C.bgElevated,
+            border: `1px dashed ${C.border}`,
+            color: C.textMuted,
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            transition: 'all 0.2s ease',
+            marginTop: 6,
+          }}
+        >
+          <span style={{ fontSize: 14 }}>+</span> Track another stock
+        </button>
+      )}
+
+      {/* Add stock search */}
+      {showAddStock && (
+        <div style={{
+          marginTop: 6,
+          padding: '10px',
+          borderRadius: 10,
+          background: C.bgElevated,
+          border: `1px solid ${C.cyan}20`,
+          animation: 'rlp-fadeSlideIn 0.2s ease both',
+        }}>
+          <input
+            autoFocus
+            value={addStockSearch}
+            onChange={e => setAddStockSearch(e.target.value.toUpperCase())}
+            placeholder="Enter stock symbol (e.g. AAPL)"
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: 8,
+              background: C.bgCard,
+              border: `1px solid ${C.border}`,
+              color: C.white,
+              fontSize: 13,
+              outline: 'none',
+              fontFamily: "'JetBrains Mono', monospace",
+              boxSizing: 'border-box',
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && addStockSearch.trim()) {
+                onAddStock(addStockSearch.trim());
+                setAddStockSearch('');
+                setShowAddStock(false);
+              }
+              if (e.key === 'Escape') {
+                setShowAddStock(false);
+                setAddStockSearch('');
+              }
+            }}
+          />
+          {addStockSearch.length >= 1 && (
+            <div style={{ marginTop: 6, maxHeight: 150, overflowY: 'auto' }}>
+              {(allAssets || [])
+                .filter(a => {
+                  const sym = (a.symbol || a.ticker || '').toUpperCase();
+                  const name = (a.name || '').toUpperCase();
+                  const search = addStockSearch.toUpperCase();
+                  return (sym.startsWith(search) || name.includes(search)) && !watchlistStocks.some(w => w.symbol === sym);
+                })
+                .slice(0, 5)
+                .map(a => {
+                  const sym = (a.symbol || a.ticker || '').toUpperCase();
+                  return (
+                    <button
+                      key={sym}
+                      onClick={() => {
+                        onAddStock(sym);
+                        setAddStockSearch('');
+                        setShowAddStock(false);
+                      }}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                        background: 'transparent',
+                        border: 'none',
+                        color: C.textSecondary,
+                        fontSize: 12,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ fontWeight: 700, color: C.white, fontFamily: "'JetBrains Mono', monospace", minWidth: 50 }}>{sym}</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name || ''}</span>
+                    </button>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Weekly Intel Report button */}
+      <button
+        onClick={onShowWeeklyReport}
+        style={{
+          width: '100%',
+          marginTop: 12,
+          padding: '10px',
+          borderRadius: 10,
+          background: `${C.cyan}08`,
+          border: `1px solid ${C.cyan}15`,
+          color: C.cyan,
+          fontSize: 13,
+          fontWeight: 700,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+        }}
+      >
+        {'\uD83D\uDCCB'} View Weekly Intel Report
+      </button>
+    </div>
+  );
+};
+
+// ─── EconomicEventsBotCard ───────────────────────────────────
+const EconomicEventsBotCard = ({ buildMarketContextString, compact = false }) => {
+  const [activeQuestion, setActiveQuestion] = useState(null);
+  const [answer, setAnswer] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const cardRef = useRef(null);
+
+  const questions = [
+    { id: 'upcoming', icon: '\uD83D\uDCC5', label: 'What events are coming this week?' },
+    { id: 'today', icon: '\uD83D\uDCCA', label: 'What economic data came out today?' },
+    { id: 'estimates', icon: '\uD83D\uDD2E', label: 'Key estimates to watch' },
+  ];
+
+  const handleAsk = useCallback(async (question) => {
+    if (activeQuestion === question.id && answer) {
+      setActiveQuestion(null);
+      setAnswer(null);
+      return;
+    }
+
+    setActiveQuestion(question.id);
+    setAnswer(null);
+    setLoading(true);
+
+    try {
+      const marketContext = buildMarketContextString ? buildMarketContextString() : '';
+
+      const response = await fetch('/api/research-followup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: question.label,
+          parentContext: 'User is asking about economic events and data releases. Focus ONLY on the UPCOMING ECONOMIC EVENTS and RECENT ECONOMIC RELEASES sections of the market data. Be specific about dates, estimates, previous values, and actual values.',
+          marketContext,
+        }),
+      });
+      const result = await response.json();
+
+      if (result.success && result.data?.insights) {
+        setAnswer(result.data.insights);
+      } else {
+        setAnswer([{ text: 'Unable to load economic data right now. Try again in a moment.', type: 'signal' }]);
+      }
+    } catch (error) {
+      console.warn('[EconomicEventsBotCard] Error:', error);
+      setAnswer([{ text: 'Connection error. Please try again.', type: 'signal' }]);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeQuestion, answer, buildMarketContextString]);
+
+  // Close popup when clicking outside
+  useEffect(() => {
+    if (!activeQuestion) return;
+    const handleClickOutside = (e) => {
+      if (cardRef.current && !cardRef.current.contains(e.target)) {
+        setActiveQuestion(null);
+        setAnswer(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [activeQuestion]);
+
+  return (
+    <div ref={cardRef} style={{
+      background: C.bgCard,
+      borderRadius: compact ? 12 : 16,
+      border: `1px solid ${C.border}`,
+      padding: compact ? '14px 16px' : '20px',
+      position: 'relative',
+      overflow: 'visible',
+    }}>
+      {/* Amber accent line */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, borderRadius: compact ? '12px 12px 0 0' : '16px 16px 0 0', background: `linear-gradient(90deg, ${C.amber}60, ${C.amber}20)` }} />
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: compact ? 10 : 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: compact ? 13 : 14 }}>{'\uD83D\uDCC5'}</span>
+          <span style={{ ...sectionLabel(C.textMuted, '0.12em', compact ? '9px' : '10px') }}>ECONOMIC EVENTS</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{
-            width: 5, height: 5, borderRadius: '50%',
-            background: C.green,
-            animation: 'rlp-pulse 2s ease-in-out infinite',
-          }} />
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.green, animation: 'rlp-pulse 2s ease-in-out infinite' }} />
           <span style={{ fontSize: 9, fontWeight: 700, color: C.green, letterSpacing: '0.08em' }}>LIVE</span>
         </div>
       </div>
 
-      {loading ? (
-        <ThinkingDots label="Loading events..." />
-      ) : dateKeys.length === 0 ? (
-        <p style={{ fontSize: 12, color: C.textMuted, textAlign: 'center', padding: '20px 0', margin: 0 }}>No upcoming events found</p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 400, overflowY: 'auto' }}>
-          {dateKeys.map(dateKey => {
-            const dayEvents = groupedByDate[dateKey];
-            const dateObj = new Date(dateKey + 'T12:00:00');
-            const isToday = new Date().toISOString().split('T')[0] === dateKey;
-            const dayLabel = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      {/* Question pills */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: compact ? 4 : 6 }}>
+        {questions.map(q => (
+          <button
+            key={q.id}
+            onClick={() => handleAsk(q)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: compact ? '8px 10px' : '10px 12px',
+              borderRadius: compact ? 8 : 10,
+              background: activeQuestion === q.id ? `${C.amber}10` : C.bgElevated,
+              border: `1px solid ${activeQuestion === q.id ? `${C.amber}30` : C.border}`,
+              color: activeQuestion === q.id ? C.amber : C.textSecondary,
+              fontSize: compact ? 11 : 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              textAlign: 'left',
+              width: '100%',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <span style={{ fontSize: compact ? 12 : 14, flexShrink: 0 }}>{q.icon}</span>
+            <span style={{ flex: 1 }}>{q.label}</span>
+            <span style={{ fontSize: 10, color: C.textMuted, transform: activeQuestion === q.id ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>{'\u25BC'}</span>
+          </button>
+        ))}
+      </div>
 
-            return (
-              <div key={dateKey}>
-                {/* Date header */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  marginBottom: 6,
-                }}>
-                  <span style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: isToday ? C.cyan : C.textSecondary,
-                    letterSpacing: '0.05em',
-                  }}>
-                    {isToday ? '\u25CF TODAY' : dayLabel.toUpperCase()}
-                  </span>
-                  <div style={{ flex: 1, height: 1, background: C.border }} />
-                </div>
-
-                {/* Events for this date */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {dayEvents.map((event, i) => {
-                    const hasActual = event.actual !== null && event.actual !== undefined;
-                    const hasEstimate = event.estimate !== null && event.estimate !== undefined;
-                    const hasPrevious = event.previous !== null && event.previous !== undefined;
-
-                    // Determine beat/miss
-                    let resultColor = C.textMuted;
-                    let resultLabel = null;
-                    if (hasActual && hasEstimate) {
-                      const act = parseFloat(event.actual);
-                      const est = parseFloat(event.estimate);
-                      if (!isNaN(act) && !isNaN(est)) {
-                        if (act > est) { resultColor = C.green; resultLabel = 'BEAT'; }
-                        else if (act < est) { resultColor = C.red; resultLabel = 'MISS'; }
-                        else { resultColor = C.textSecondary; resultLabel = 'IN LINE'; }
-                      }
-                    }
-
-                    return (
-                      <div key={`${dateKey}-${i}`} style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10,
-                        padding: '8px 10px',
-                        borderRadius: 8,
-                        background: event.impact === 'high' ? `${C.amber}06` : 'transparent',
-                        borderLeft: event.impact === 'high' ? `3px solid ${C.amber}` : `3px solid ${C.border}`,
-                      }}>
-                        {/* Event name + time */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{
-                              fontSize: 12,
-                              fontWeight: event.impact === 'high' ? 700 : 500,
-                              color: event.impact === 'high' ? C.white : C.textSecondary,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}>
-                              {event.name}
-                            </span>
-                            {event.impact === 'high' && (
-                              <span style={{
-                                padding: '1px 5px',
-                                borderRadius: 4,
-                                fontSize: 8,
-                                fontWeight: 700,
-                                background: `${C.amber}15`,
-                                color: C.amber,
-                                border: `1px solid ${C.amber}20`,
-                                flexShrink: 0,
-                              }}>HIGH</span>
-                            )}
-                          </div>
-                          {event.time && (
-                            <span style={{ fontSize: 10, color: C.textMuted }}>{event.time}</span>
-                          )}
-                        </div>
-
-                        {/* Data columns: Estimate | Previous | Actual */}
-                        <div style={{ display: 'flex', gap: 12, flexShrink: 0, alignItems: 'center' }}>
-                          {hasEstimate && (
-                            <div style={{ textAlign: 'right' }}>
-                              <div style={{ fontSize: 8, color: C.textMuted, letterSpacing: '0.08em' }}>EST</div>
-                              <div style={{ fontSize: 11, color: C.textSecondary, fontFamily: "'JetBrains Mono', monospace" }}>{event.estimate}</div>
-                            </div>
-                          )}
-                          {hasPrevious && (
-                            <div style={{ textAlign: 'right' }}>
-                              <div style={{ fontSize: 8, color: C.textMuted, letterSpacing: '0.08em' }}>PREV</div>
-                              <div style={{ fontSize: 11, color: C.textSecondary, fontFamily: "'JetBrains Mono', monospace" }}>{event.previous}</div>
-                            </div>
-                          )}
-                          {hasActual ? (
-                            <div style={{ textAlign: 'right' }}>
-                              <div style={{ fontSize: 8, color: resultColor, letterSpacing: '0.08em' }}>{resultLabel || 'ACT'}</div>
-                              <div style={{ fontSize: 11, color: resultColor, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{event.actual}</div>
-                            </div>
-                          ) : (
-                            <div style={{ textAlign: 'right', minWidth: 40 }}>
-                              <div style={{ fontSize: 8, color: C.textMuted, letterSpacing: '0.08em' }}>ACT</div>
-                              <div style={{ fontSize: 11, color: C.textMuted }}>{'\u2014'}</div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
+      {/* Answer popup */}
+      {activeQuestion && (loading || answer) && (
+        <div style={{
+          marginTop: 8,
+          padding: '12px 14px',
+          borderRadius: 12,
+          background: C.bgElevated,
+          border: `1px solid ${C.amber}20`,
+          boxShadow: `0 4px 20px rgba(0,0,0,0.4), 0 0 1px ${C.amber}20`,
+          animation: 'rlp-fadeSlideIn 0.25s ease both',
+        }}>
+          {loading ? (
+            <ThinkingDots label="Checking economic calendar..." dotSize={4} delayStep={0.15} padding="4px 0" />
+          ) : answer ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {answer.map((ins, i) => (
+                <InsightBullet key={i} text={ins.text} type={ins.type} index={i} />
+              ))}
+            </div>
+          ) : null}
         </div>
       )}
     </div>
@@ -2068,7 +2148,7 @@ const WeeklyReport = ({ visible, onClose, reportData, reportLoading }) => {
 };
 
 // ─── BriefingTab (V2) ───────────────────────────────────────
-const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onShowWeeklyReport, buildMarketContextString, economicEvents, economicEventsLoading }) => {
+const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onShowWeeklyReport, buildMarketContextString, onRemoveStock, onAddStock, allAssets }) => {
   if (loading) {
     return (
       <div style={{
@@ -2160,11 +2240,10 @@ const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onTog
         </div>
       )}
 
-      {/* Economic Calendar */}
-      <MobileEconomicCalendar
-        events={economicEvents}
-        loading={economicEventsLoading}
-      />
+      {/* Economic Events Bot */}
+      <div style={{ marginTop: 12, marginBottom: 12 }}>
+        <EconomicEventsBotCard buildMarketContextString={buildMarketContextString} compact />
+      </div>
 
       {/* Tracker Bot */}
       <TrackerSection
@@ -2173,6 +2252,9 @@ const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onTog
         onToggleTracker={onToggleTracker}
         trackerCache={trackerCache}
         trackerLoading={trackerLoading}
+        onRemoveStock={onRemoveStock}
+        onAddStock={onAddStock}
+        allAssets={allAssets}
       />
 
       {/* Weekly Report trigger */}
@@ -2268,8 +2350,8 @@ const MobileIntelligenceHub = ({
   handleToggleTracker,
   showWeeklyReport,
   setShowWeeklyReport,
-  economicEvents,
-  economicEventsLoading,
+  onRemoveStock,
+  onAddStock,
 }) => {
   const [activeTab, setActiveTab] = useState('briefing');
   const [expandedSymbol, setExpandedSymbol] = useState(null);
@@ -2416,8 +2498,9 @@ const MobileIntelligenceHub = ({
             trackerLoading={trackerLoading}
             onShowWeeklyReport={() => { onFetchWeeklyReport(); setShowWeeklyReport(true); }}
             buildMarketContextString={buildMarketContextString}
-            economicEvents={economicEvents}
-            economicEventsLoading={economicEventsLoading}
+            onRemoveStock={onRemoveStock}
+            onAddStock={onAddStock}
+            allAssets={allAssets}
           />
         ) : (
           <DiscoverTab
@@ -2621,6 +2704,8 @@ const ResearchLandingPage = ({
   const allAssets = useMemo(() => [...stocksData, ...cryptoData], [stocksData, cryptoData]);
 
   // ─── Watchlist stocks for Tracker Bot ─────────────────────
+  const [watchlistVersion, setWatchlistVersion] = useState(0);
+
   const watchlistStocks = useMemo(() => {
     let watchlist;
     try { watchlist = JSON.parse(localStorage.getItem('user_watchlist')); } catch (e) { /* ignore */ }
@@ -2633,7 +2718,7 @@ const ResearchLandingPage = ({
         percentChange: safeNumber(asset?.percentChange, 0),
       };
     });
-  }, [allAssets]);
+  }, [allAssets, watchlistVersion]);
 
   // ─── Market breadth & sentiment ──────────────────────────
   const marketBreadth = useMemo(() => {
@@ -3218,6 +3303,35 @@ const ResearchLandingPage = ({
     }
   }, [expandedTracker, trackerCache, watchlistStocks, fetchTracker]);
 
+  // Watchlist management
+  const handleAddToWatchlist = useCallback((symbol) => {
+    try {
+      let currentWatchlist;
+      try { currentWatchlist = JSON.parse(localStorage.getItem('user_watchlist')); } catch (e) { /* ignore */ }
+      if (!currentWatchlist?.length) currentWatchlist = [...DEFAULT_WATCHLIST];
+      if (currentWatchlist.map(s => s.toUpperCase()).includes(symbol.toUpperCase())) return;
+      const updated = [...currentWatchlist, symbol];
+      localStorage.setItem('user_watchlist', JSON.stringify(updated));
+      setWatchlistVersion(prev => prev + 1);
+    } catch (e) {
+      console.warn('[ResearchLanding] Failed to add to watchlist:', e);
+    }
+  }, []);
+
+  const handleRemoveFromWatchlist = useCallback((symbol) => {
+    try {
+      let currentWatchlist;
+      try { currentWatchlist = JSON.parse(localStorage.getItem('user_watchlist')); } catch (e) { /* ignore */ }
+      if (!currentWatchlist?.length) currentWatchlist = [...DEFAULT_WATCHLIST];
+      const updated = currentWatchlist.filter(s => s.toUpperCase() !== symbol.toUpperCase());
+      localStorage.setItem('user_watchlist', JSON.stringify(updated));
+      if (expandedTracker === symbol) setExpandedTracker(null);
+      setWatchlistVersion(prev => prev + 1);
+    } catch (e) {
+      console.warn('[ResearchLanding] Failed to remove from watchlist:', e);
+    }
+  }, [expandedTracker]);
+
   const fetchWeeklyReport = useCallback(async () => {
     // Check 24h cache
     try {
@@ -3308,8 +3422,8 @@ const ResearchLandingPage = ({
           handleToggleTracker={handleToggleTracker}
           showWeeklyReport={showWeeklyReport}
           setShowWeeklyReport={setShowWeeklyReport}
-          economicEvents={economicEvents}
-          economicEventsLoading={economicEventsLoading}
+          onRemoveStock={handleRemoveFromWatchlist}
+          onAddStock={handleAddToWatchlist}
         />
         <WeeklyReport
           visible={showWeeklyReport}
@@ -3568,11 +3682,11 @@ const ResearchLandingPage = ({
           trackerCache={trackerCache}
           trackerLoading={trackerLoading}
           onShowWeeklyReport={() => { fetchWeeklyReport(); setShowWeeklyReport(true); }}
+          onRemoveStock={handleRemoveFromWatchlist}
+          onAddStock={handleAddToWatchlist}
+          allAssets={allAssets}
         />
-        <DesktopEconomicCalendar
-          events={economicEvents}
-          loading={economicEventsLoading}
-        />
+        <EconomicEventsBotCard buildMarketContextString={buildMarketContextString} />
       </div>
 
       {/* ═══ Weekly Report Modal (Desktop) ═══ */}
