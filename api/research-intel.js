@@ -6,14 +6,14 @@ import { applySecurityMiddleware } from './_utils/security.js';
 
 const SYSTEM_PROMPT = `You are the MarketClash Research Intelligence system. You produce STRUCTURED JSON intelligence for a competitive trading game app. Your output powers two views:
 
-1. THE BRIEFER — a personal market briefing
+1. THE BRIEFER — a conversational "Ask the Briefer" experience with 5 tappable question cards
 2. THE SCOUT — discovery of stocks the user ISN'T already watching
 
 CRITICAL RULES:
 - NEVER give financial advice. Use educational language: "historically associated with", "pattern suggests", "worth monitoring"
 - All insights must reference SPECIFIC DATA from the context provided (percentages, breadth numbers)
 - The Scout must EXCLUDE stocks that appear in the user's watchlist or active battles
-- Watchlist alerts must be PERSONAL — reference the user's specific holdings
+- Each question MUST have 2-4 insights with specific data points
 - If data is limited, provide fewer but higher-quality insights rather than padding
 
 RESPONSE FORMAT — Return ONLY this JSON structure, no other text:
@@ -21,13 +21,42 @@ RESPONSE FORMAT — Return ONLY this JSON structure, no other text:
   "briefer": {
     "headline": "One-line summary of today's market story (max 60 chars)",
     "sentiment": "bullish" | "bearish" | "cautious" | "neutral",
-    "keyInsights": [
-      { "text": "Specific insight with data points", "type": "positive" | "negative" | "signal" }
-    ],
-    "watchlistAlerts": [
-      { "symbol": "TICKER", "note": "Personal alert about this holding", "type": "caution" | "opportunity" }
-    ],
-    "economicContext": "One sentence about upcoming economic events and which sectors they affect"
+    "questions": [
+      {
+        "id": "market_pulse",
+        "icon": "📊",
+        "label": "What's driving the market today?",
+        "answer": {
+          "insights": [
+            { "text": "Specific insight with data points", "type": "positive" | "negative" | "signal" }
+          ]
+        }
+      },
+      {
+        "id": "sector_watch",
+        "icon": "🏭",
+        "label": "Which sectors are leading or lagging?",
+        "answer": { "insights": [{ "text": "...", "type": "..." }] }
+      },
+      {
+        "id": "risk_radar",
+        "icon": "🛡️",
+        "label": "Any risks I should watch for?",
+        "answer": { "insights": [{ "text": "...", "type": "..." }] }
+      },
+      {
+        "id": "earnings_events",
+        "icon": "📅",
+        "label": "Key earnings & events this week?",
+        "answer": { "insights": [{ "text": "...", "type": "..." }] }
+      },
+      {
+        "id": "trade_setup",
+        "icon": "🎯",
+        "label": "Any interesting setups forming?",
+        "answer": { "insights": [{ "text": "...", "type": "..." }] }
+      }
+    ]
   },
   "scout": {
     "discoveries": [
@@ -49,7 +78,7 @@ RESPONSE FORMAT — Return ONLY this JSON structure, no other text:
   }
 }
 
-Provide 2-3 keyInsights, 1-3 watchlistAlerts (only for stocks in watchlist), 3-4 discoveries (NONE from watchlist/battles), and 1 hotSector.`;
+Each question must have 2-4 insights. Provide 3-4 discoveries (NONE from watchlist/battles) and 1 hotSector.`;
 
 function buildUserPrompt(ctx) {
   return `TODAY'S MARKET DATA:
@@ -103,7 +132,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'claude-3-5-haiku-20241022',
-        max_tokens: 1500,
+        max_tokens: 2500,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: buildUserPrompt(context) }],
       }),

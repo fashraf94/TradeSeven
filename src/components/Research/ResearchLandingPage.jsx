@@ -58,7 +58,7 @@ const TAG_CONFIG = {
   earnings_play: { color: C.purple, label: 'EARNINGS', icon: '\uD83D\uDCCA' },
 };
 
-const INTEL_CACHE_KEY = 'research_intel_cache';
+const INTEL_CACHE_KEY = 'research_intel_cache_v2';
 const INTEL_CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
 
 // ─── Keyframe Styles (injected once) ────────────────────────
@@ -74,6 +74,10 @@ const KEYFRAMES = `
 @keyframes rlp-shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
+}
+@keyframes rlp-slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }
 `;
 
@@ -610,8 +614,8 @@ const SentimentBadge = ({ sentiment }) => {
   );
 };
 
-// ─── InsightChip ─────────────────────────────────────────────
-const InsightChip = ({ text, type, index }) => {
+// ─── InsightBullet ─────────────────────────────────────────────
+const InsightBullet = ({ text, type, index }) => {
   const colorMap = { positive: C.green, negative: C.red, signal: C.cyan };
   const accent = colorMap[type] || C.cyan;
   return (
@@ -634,36 +638,6 @@ const InsightChip = ({ text, type, index }) => {
       }} />
       <span style={{ fontSize: '13px', color: C.textPrimary, lineHeight: 1.5 }}>
         {text}
-      </span>
-    </div>
-  );
-};
-
-// ─── WatchlistAlert ──────────────────────────────────────────
-const WatchlistAlert = ({ symbol, note, type }) => {
-  const isOpportunity = type === 'opportunity';
-  const accent = isOpportunity ? C.green : C.amber;
-  return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'flex-start',
-      gap: '8px',
-      padding: '8px 0',
-    }}>
-      <span style={{
-        fontFamily: 'monospace',
-        fontSize: '10px',
-        fontWeight: 700,
-        color: accent,
-        background: `${accent}15`,
-        padding: '2px 6px',
-        borderRadius: '4px',
-        flexShrink: 0,
-      }}>
-        {symbol}
-      </span>
-      <span style={{ fontSize: '12px', color: C.textSecondary, lineHeight: 1.4 }}>
-        {note}
       </span>
     </div>
   );
@@ -989,8 +963,417 @@ const ToolStripButton = ({ icon, label, onClick, accent = C.textSecondary }) => 
   </button>
 );
 
-// ─── BriefingTab ─────────────────────────────────────────────
-const BriefingTab = ({ briefer, loading }) => {
+// ─── QuestionCard (V2) ──────────────────────────────────────
+const QuestionCard = ({ question, index }) => {
+  const [expanded, setExpanded] = useState(false);
+  const [showAnswer, setShowAnswer] = useState(false);
+
+  const handleTap = useCallback(() => {
+    if (expanded) {
+      setExpanded(false);
+      setShowAnswer(false);
+      return;
+    }
+    setExpanded(true);
+    // 900ms cosmetic loading delay — answers are pre-loaded
+    setTimeout(() => setShowAnswer(true), 900);
+  }, [expanded]);
+
+  return (
+    <div
+      onClick={handleTap}
+      style={{
+        background: C.bgCard,
+        borderRadius: '12px',
+        borderLeft: `3px solid ${C.cyan}`,
+        padding: '12px 14px',
+        cursor: 'pointer',
+        transition: 'all 0.2s',
+        animation: `rlp-fadeSlideIn 0.3s ease-out ${0.1 + index * 0.08}s both`,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+          <span style={{ fontSize: '18px' }}>{question.icon}</span>
+          <span style={{ fontSize: '13px', color: C.textPrimary, fontWeight: 500 }}>
+            {question.label}
+          </span>
+        </div>
+        <svg
+          width="14" height="14" viewBox="0 0 24 24" fill="none"
+          stroke={C.textMuted} strokeWidth="2"
+          style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </div>
+
+      {expanded && (
+        <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `1px solid ${C.border}` }}>
+          {!showAnswer ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 0' }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{
+                  width: '6px', height: '6px', borderRadius: '50%',
+                  background: C.purple,
+                  animation: `rlp-pulse 1s ease-in-out ${i * 0.2}s infinite`,
+                }} />
+              ))}
+              <span style={{ fontSize: '11px', color: C.textMuted, marginLeft: '4px' }}>Analyzing...</span>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {(question.answer?.insights || []).map((insight, i) => (
+                <InsightBullet key={i} text={insight.text} type={insight.type} index={i} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── TrackerStockCard (V2) ──────────────────────────────────
+const TrackerStockCard = ({ stock, expanded, onToggle, trackerData, trackerLoading }) => {
+  const pct = safeNumber(stock.percentChange, 0);
+  const isPositive = pct >= 0;
+
+  // Status derivation from percentChange thresholds
+  let statusLabel, statusColor;
+  if (pct > 3) { statusLabel = 'SURGING'; statusColor = C.green; }
+  else if (pct > 1) { statusLabel = 'RISING'; statusColor = C.green; }
+  else if (pct > -1) { statusLabel = 'FLAT'; statusColor = C.textMuted; }
+  else if (pct > -3) { statusLabel = 'DIPPING'; statusColor = C.amber; }
+  else { statusLabel = 'DROPPING'; statusColor = C.red; }
+
+  const sections = [
+    { key: 'priceAction', label: 'PRICE ACTION', color: C.cyan },
+    { key: 'technicalLevel', label: 'KEY LEVEL', color: C.amber },
+    { key: 'news', label: 'NEWS', color: C.green },
+    { key: 'baggerBomb', label: 'BAGGERBOMB', color: C.purple },
+  ];
+
+  return (
+    <div
+      onClick={onToggle}
+      style={{
+        background: C.bgCard,
+        border: `1px solid ${expanded ? C.borderActive : C.border}`,
+        borderRadius: '10px',
+        padding: '10px 12px',
+        cursor: 'pointer',
+        transition: 'all 0.2s',
+      }}
+    >
+      {/* Collapsed header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{
+            fontFamily: 'monospace',
+            fontSize: '11px',
+            fontWeight: 700,
+            color: C.cyan,
+            background: C.cyanDim,
+            padding: '2px 6px',
+            borderRadius: '4px',
+          }}>
+            {stock.symbol}
+          </span>
+          <span style={{
+            fontSize: '12px',
+            fontWeight: 600,
+            color: isPositive ? C.green : C.red,
+          }}>
+            {isPositive ? '+' : ''}{pct.toFixed(2)}%
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{
+            fontSize: '8px',
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            color: statusColor,
+            background: `${statusColor}15`,
+            padding: '2px 6px',
+            borderRadius: '4px',
+          }}>
+            {statusLabel}
+          </span>
+          <svg
+            width="12" height="12" viewBox="0 0 24 24" fill="none"
+            stroke={C.textMuted} strokeWidth="2"
+            style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}
+          >
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </div>
+      </div>
+
+      {/* Expanded content */}
+      {expanded && (
+        <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: `1px solid ${C.border}` }}>
+          {trackerLoading === stock.symbol ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '12px 0' }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{
+                  width: '6px', height: '6px', borderRadius: '50%',
+                  background: C.purple,
+                  animation: `rlp-pulse 1s ease-in-out ${i * 0.2}s infinite`,
+                }} />
+              ))}
+              <span style={{ fontSize: '11px', color: C.textMuted, marginLeft: '4px' }}>Analyzing {stock.symbol}...</span>
+            </div>
+          ) : trackerData ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {sections.map(({ key, label, color }) => (
+                <div key={key}>
+                  <div style={{
+                    fontSize: '8px',
+                    fontWeight: 700,
+                    letterSpacing: '0.12em',
+                    color,
+                    marginBottom: '3px',
+                  }}>
+                    {label}
+                  </div>
+                  <div style={{ fontSize: '12px', color: C.textSecondary, lineHeight: 1.5 }}>
+                    {trackerData[key] || 'No data available'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ padding: '8px 0', fontSize: '12px', color: C.textMuted }}>
+              Tap to load analysis
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── TrackerSection (V2) ────────────────────────────────────
+const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading }) => {
+  if (!watchlistStocks?.length) return null;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', padding: '0 4px' }}>
+        <div style={{
+          fontSize: '9px',
+          fontWeight: 700,
+          letterSpacing: '0.12em',
+          color: C.textMuted,
+        }}>
+          TRACKER BOT
+        </div>
+        <span style={{ fontSize: '14px' }}>{'\uD83E\uDD16'}</span>
+      </div>
+      <div style={{ fontSize: '10px', color: C.textMuted, marginBottom: '10px', padding: '0 4px' }}>
+        Your watchlist, analyzed
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {watchlistStocks.map(stock => (
+          <TrackerStockCard
+            key={stock.symbol}
+            stock={stock}
+            expanded={expandedTracker === stock.symbol}
+            onToggle={() => onToggleTracker(stock.symbol)}
+            trackerData={trackerCache[stock.symbol]}
+            trackerLoading={trackerLoading}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ─── WeeklyReport (V2) ─────────────────────────────────────
+const WeeklyReport = ({ visible, onClose, reportData, reportLoading }) => {
+  if (!visible) return null;
+
+  const signalColors = { bullish: C.green, bearish: C.red, neutral: C.textMuted };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0, left: 0, right: 0, bottom: 0,
+      zIndex: 100,
+    }}>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{
+          position: 'absolute',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.7)',
+        }}
+      />
+      {/* Sheet */}
+      <div style={{
+        position: 'absolute',
+        bottom: 0, left: 0, right: 0,
+        maxHeight: '80vh',
+        background: C.bgCard,
+        borderRadius: '20px 20px 0 0',
+        animation: 'rlp-slideUp 0.3s ease-out',
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '16px 20px 12px',
+          borderBottom: `1px solid ${C.border}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '16px' }}>{'\uD83D\uDCCB'}</span>
+            <span style={{
+              fontSize: '11px',
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              color: C.cyan,
+            }}>
+              WEEKLY INTEL
+            </span>
+          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '4px',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Content */}
+        <div style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '16px 20px 24px',
+          WebkitOverflowScrolling: 'touch',
+        }}>
+          {reportLoading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} style={{
+                  height: '14px',
+                  borderRadius: '4px',
+                  background: `linear-gradient(90deg, ${C.bgElevated} 25%, ${C.bgSurface} 50%, ${C.bgElevated} 75%)`,
+                  backgroundSize: '200% 100%',
+                  animation: 'rlp-shimmer 1.5s infinite',
+                  width: i === 4 ? '60%' : '100%',
+                }} />
+              ))}
+            </div>
+          ) : reportData ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Period */}
+              <div style={{
+                fontSize: '10px',
+                fontWeight: 600,
+                color: C.textMuted,
+                letterSpacing: '0.08em',
+              }}>
+                {reportData.period || 'This Week'}
+              </div>
+
+              {/* Summary */}
+              <div style={{
+                fontSize: '13px',
+                color: C.textPrimary,
+                lineHeight: 1.6,
+              }}>
+                {reportData.summary}
+              </div>
+
+              {/* Per-stock verdicts */}
+              {reportData.stocks?.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {reportData.stocks.map((s, i) => (
+                    <div key={i} style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '8px',
+                      padding: '8px 10px',
+                      background: C.bgElevated,
+                      borderRadius: '8px',
+                    }}>
+                      <span style={{
+                        fontFamily: 'monospace',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        color: C.cyan,
+                        background: C.cyanDim,
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        flexShrink: 0,
+                      }}>
+                        {s.symbol}
+                      </span>
+                      <span style={{ fontSize: '12px', color: C.textSecondary, lineHeight: 1.4, flex: 1 }}>
+                        {s.verdict}
+                      </span>
+                      <div style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        background: signalColors[s.signal] || C.textMuted,
+                        marginTop: '5px',
+                        flexShrink: 0,
+                      }} />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Outlook */}
+              {reportData.outlook && (
+                <div style={{
+                  padding: '10px 12px',
+                  background: C.bgElevated,
+                  borderRadius: '10px',
+                  borderLeft: `3px solid ${C.amber}`,
+                }}>
+                  <div style={{
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    letterSpacing: '0.12em',
+                    color: C.amber,
+                    marginBottom: '6px',
+                  }}>
+                    OUTLOOK
+                  </div>
+                  <div style={{ fontSize: '12px', color: C.textSecondary, lineHeight: 1.5 }}>
+                    {reportData.outlook}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '20px', color: C.textMuted, fontSize: '13px' }}>
+              Report unavailable. Try again later.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── BriefingTab (V2) ───────────────────────────────────────
+const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onShowWeeklyReport }) => {
   if (loading) {
     return (
       <div style={{
@@ -1064,8 +1447,8 @@ const BriefingTab = ({ briefer, loading }) => {
         </div>
       </div>
 
-      {/* Key Insights */}
-      {briefer.keyInsights?.length > 0 && (
+      {/* Ask the Briefer — Question Cards */}
+      {briefer.questions?.length > 0 && (
         <div>
           <div style={{
             fontSize: '9px',
@@ -1075,63 +1458,48 @@ const BriefingTab = ({ briefer, loading }) => {
             marginBottom: '8px',
             padding: '0 4px',
           }}>
-            KEY INSIGHTS
+            ASK THE BRIEFER
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {briefer.keyInsights.map((insight, i) => (
-              <InsightChip key={i} text={insight.text} type={insight.type} index={i} />
+            {briefer.questions.map((q, i) => (
+              <QuestionCard key={q.id || i} question={q} index={i} />
             ))}
           </div>
         </div>
       )}
 
-      {/* Watchlist Alerts */}
-      {briefer.watchlistAlerts?.length > 0 && (
-        <div>
-          <div style={{
-            fontSize: '9px',
-            fontWeight: 700,
-            letterSpacing: '0.12em',
-            color: C.textMuted,
-            marginBottom: '6px',
-            padding: '0 4px',
-          }}>
-            YOUR WATCHLIST
-          </div>
-          <div style={{
-            background: C.bgCard,
-            borderRadius: '10px',
-            padding: '8px 12px',
-            border: `1px solid ${C.border}`,
-          }}>
-            {briefer.watchlistAlerts.map((alert, i) => (
-              <WatchlistAlert key={i} symbol={alert.symbol} note={alert.note} type={alert.type} />
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Tracker Bot */}
+      <TrackerSection
+        watchlistStocks={watchlistStocks}
+        expandedTracker={expandedTracker}
+        onToggleTracker={onToggleTracker}
+        trackerCache={trackerCache}
+        trackerLoading={trackerLoading}
+      />
 
-      {/* Economic Context */}
-      {briefer.economicContext && (
-        <div style={{
-          display: 'flex',
-          gap: '8px',
-          padding: '10px 12px',
+      {/* Weekly Report trigger */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onShowWeeklyReport(); }}
+        style={{
+          width: '100%',
+          padding: '12px',
           background: C.bgCard,
-          borderRadius: '10px',
           border: `1px solid ${C.border}`,
-        }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.amber} strokeWidth="2" style={{ marginTop: '2px', flexShrink: 0 }}>
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-            <line x1="16" y1="2" x2="16" y2="6" />
-            <line x1="8" y1="2" x2="8" y2="6" />
-            <line x1="3" y1="10" x2="21" y2="10" />
-          </svg>
-          <span style={{ fontSize: '12px', color: C.textSecondary, lineHeight: 1.5 }}>
-            {briefer.economicContext}
-          </span>
-        </div>
-      )}
+          borderRadius: '10px',
+          color: C.cyan,
+          fontSize: '12px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          transition: 'border-color 0.2s',
+        }}
+      >
+        <span>{'\uD83D\uDCCB'}</span>
+        View Weekly Intel Report
+      </button>
     </div>
   );
 };
@@ -1193,12 +1561,21 @@ const MobileIntelligenceHub = ({
   handleOpenResearch,
   fetchThread,
   threadCache,
+  watchlistStocks,
+  fetchTracker,
+  trackerCache,
+  weeklyReportData,
+  weeklyReportLoading,
+  onFetchWeeklyReport,
 }) => {
   const [activeTab, setActiveTab] = useState('briefing');
   const [expandedSymbol, setExpandedSymbol] = useState(null);
   const [threadLoading, setThreadLoading] = useState(null);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [expandedTracker, setExpandedTracker] = useState(null);
+  const [trackerLoading, setTrackerLoading] = useState(null);
+  const [showWeeklyReport, setShowWeeklyReport] = useState(false);
 
   const briefer = intelData?.briefer;
   const scout = intelData?.scout;
@@ -1223,6 +1600,20 @@ const MobileIntelligenceHub = ({
     const asset = allAssets.find(a => a.symbol === symbol);
     if (asset) handleOpenResearch(asset);
   }, [allAssets, handleOpenResearch]);
+
+  const handleToggleTracker = useCallback(async (symbol) => {
+    if (expandedTracker === symbol) {
+      setExpandedTracker(null);
+      return;
+    }
+    setExpandedTracker(symbol);
+    if (!trackerCache[symbol]) {
+      setTrackerLoading(symbol);
+      const stock = watchlistStocks.find(s => s.symbol === symbol);
+      await fetchTracker(symbol, stock?.price, stock?.percentChange);
+      setTrackerLoading(null);
+    }
+  }, [expandedTracker, trackerCache, watchlistStocks, fetchTracker]);
 
   // Search results
   const searchResults = useMemo(() => {
@@ -1326,11 +1717,20 @@ const MobileIntelligenceHub = ({
       <div style={{
         flex: 1,
         overflowY: 'auto',
-        paddingBottom: '80px',
+        paddingBottom: '120px',
         WebkitOverflowScrolling: 'touch',
       }}>
         {activeTab === 'briefing' ? (
-          <BriefingTab briefer={briefer} loading={intelLoading} />
+          <BriefingTab
+            briefer={briefer}
+            loading={intelLoading}
+            watchlistStocks={watchlistStocks}
+            expandedTracker={expandedTracker}
+            onToggleTracker={handleToggleTracker}
+            trackerCache={trackerCache}
+            trackerLoading={trackerLoading}
+            onShowWeeklyReport={() => { onFetchWeeklyReport(); setShowWeeklyReport(true); }}
+          />
         ) : (
           <DiscoverTab
             scout={scout}
@@ -1486,6 +1886,14 @@ const MobileIntelligenceHub = ({
           }
         />
       </div>
+
+      {/* Weekly Report Modal */}
+      <WeeklyReport
+        visible={showWeeklyReport}
+        onClose={() => setShowWeeklyReport(false)}
+        reportData={weeklyReportData}
+        reportLoading={weeklyReportLoading}
+      />
     </div>
   );
 };
@@ -1519,12 +1927,30 @@ const ResearchLandingPage = ({
   const [intelLoading, setIntelLoading] = useState(false);
   const [intelCacheTime, setIntelCacheTime] = useState(null);
   const [threadCache, setThreadCache] = useState({});
+  const [trackerCache, setTrackerCache] = useState({});
+  const [weeklyReportData, setWeeklyReportData] = useState(null);
+  const [weeklyReportLoading, setWeeklyReportLoading] = useState(false);
 
   // ─── Asset Research Modal ────────────────────────────────
   const { researchAsset, isOpen, showResearch, hideResearch, getModalProps } = useAssetResearch();
 
   // ─── All assets for search ───────────────────────────────
   const allAssets = useMemo(() => [...stocksData, ...cryptoData], [stocksData, cryptoData]);
+
+  // ─── Watchlist stocks for Tracker Bot ─────────────────────
+  const watchlistStocks = useMemo(() => {
+    let watchlist;
+    try { watchlist = JSON.parse(localStorage.getItem('user_watchlist')); } catch (e) { /* ignore */ }
+    if (!watchlist?.length) watchlist = DEFAULT_WATCHLIST;
+    return watchlist.map(sym => {
+      const asset = allAssets.find(a => a.symbol?.toUpperCase() === sym.toUpperCase());
+      return {
+        symbol: sym,
+        price: asset?.price || 0,
+        percentChange: safeNumber(asset?.percentChange, 0),
+      };
+    });
+  }, [allAssets]);
 
   // ─── Market breadth & sentiment ──────────────────────────
   const marketBreadth = useMemo(() => {
@@ -1782,6 +2208,8 @@ const ResearchLandingPage = ({
         sector: m.sector || 'Unknown',
       }));
 
+    const breadthType = sentiment === 'bullish' ? 'positive' : sentiment === 'bearish' ? 'negative' : 'signal';
+
     return {
       briefer: {
         headline: sentiment === 'bullish'
@@ -1790,20 +2218,60 @@ const ResearchLandingPage = ({
             ? `Markets pressured: ${stocksDown} stocks declining`
             : `Mixed session: ${stocksUp} up, ${stocksDown} down`,
         sentiment,
-        keyInsights: [
+        questions: [
           {
-            text: `Market breadth shows ${stocksUp} stocks advancing vs ${stocksDown} declining.`,
-            type: sentiment === 'bullish' ? 'positive' : sentiment === 'bearish' ? 'negative' : 'signal',
+            id: 'market_pulse',
+            icon: '\uD83D\uDCCA',
+            label: 'What\'s driving the market today?',
+            answer: {
+              insights: [
+                { text: `Market breadth: ${stocksUp} stocks advancing vs ${stocksDown} declining.`, type: breadthType },
+                ...(gainers.length > 0 ? [{ text: `${gainers[0]?.symbol} leading gainers at +${safeNumber(gainers[0]?.percentChange, 0).toFixed(1)}%.`, type: 'positive' }] : []),
+              ],
+            },
           },
-          ...(gainers.length > 0 ? [{
-            text: `${gainers[0]?.symbol} leading gainers at +${safeNumber(gainers[0]?.percentChange, 0).toFixed(1)}%.`,
-            type: 'positive',
-          }] : []),
+          {
+            id: 'sector_watch',
+            icon: '\uD83C\uDFED',
+            label: 'Which sectors are leading or lagging?',
+            answer: {
+              insights: [
+                { text: 'Sector data requires live intelligence. Tap refresh for AI analysis.', type: 'signal' },
+              ],
+            },
+          },
+          {
+            id: 'risk_radar',
+            icon: '\uD83D\uDEE1\uFE0F',
+            label: 'Any risks I should watch for?',
+            answer: {
+              insights: [
+                { text: sentiment === 'bearish' ? `Broad weakness with ${stocksDown} stocks declining — monitor positions.` : 'No major risk signals detected in current session.', type: sentiment === 'bearish' ? 'negative' : 'signal' },
+              ],
+            },
+          },
+          {
+            id: 'earnings_events',
+            icon: '\uD83D\uDCC5',
+            label: 'Key earnings & events this week?',
+            answer: {
+              insights: [
+                { text: economicEvents.length > 0 ? `${economicEvents[0].name} scheduled for ${economicEvents[0].date}${economicEvents[0].impact === 'high' ? ' (high impact)' : ''}.` : 'No major economic events this week.', type: 'signal' },
+              ],
+            },
+          },
+          {
+            id: 'trade_setup',
+            icon: '\uD83C\uDFAF',
+            label: 'Any interesting setups forming?',
+            answer: {
+              insights: [
+                ...(gainers.length > 1 ? [{ text: `${gainers[1]?.symbol} showing strength at +${safeNumber(gainers[1]?.percentChange, 0).toFixed(1)}% — worth monitoring.`, type: 'positive' }] : []),
+                { text: 'Full setup analysis requires live intelligence. Tap refresh for AI analysis.', type: 'signal' },
+              ],
+            },
+          },
         ],
-        watchlistAlerts: [],
-        economicContext: economicEvents.length > 0
-          ? `${economicEvents[0].name} scheduled for ${economicEvents[0].date}${economicEvents[0].impact === 'high' ? ' (high impact)' : ''}.`
-          : 'No major economic events this week.',
       },
       scout: {
         discoveries,
@@ -1879,6 +2347,63 @@ const ResearchLandingPage = ({
     }
   }, [threadCache]);
 
+  const fetchTracker = useCallback(async (symbol, price, percentChange) => {
+    if (trackerCache[symbol]) return;
+    try {
+      const response = await fetch('/api/research-tracker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol, price, percentChange }),
+      });
+      const result = await response.json();
+      if (result.success && result.data) {
+        setTrackerCache(prev => ({ ...prev, [symbol]: result.data }));
+      }
+    } catch (err) {
+      console.warn('[ResearchLanding] Tracker fetch failed:', err);
+    }
+  }, [trackerCache]);
+
+  const fetchWeeklyReport = useCallback(async () => {
+    // Check 24h cache
+    try {
+      const cached = localStorage.getItem('research_weekly_report_cache');
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < 24 * 60 * 60 * 1000) {
+          setWeeklyReportData(data);
+          return;
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    setWeeklyReportLoading(true);
+    try {
+      const response = await fetch('/api/research-weekly-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          watchlist: watchlistStocks.map(s => s.symbol),
+          stockData: watchlistStocks,
+        }),
+      });
+      const result = await response.json();
+      if (result.success && result.data) {
+        setWeeklyReportData(result.data);
+        try {
+          localStorage.setItem('research_weekly_report_cache', JSON.stringify({
+            data: result.data,
+            timestamp: Date.now(),
+          }));
+        } catch (e) { /* ignore storage errors */ }
+      }
+    } catch (err) {
+      console.warn('[ResearchLanding] Weekly report fetch failed:', err);
+    } finally {
+      setWeeklyReportLoading(false);
+    }
+  }, [watchlistStocks]);
+
   // ─── Trigger mobile intelligence fetch ───────────────────
   useEffect(() => {
     if (isMobile && stocksData.length > 0) {
@@ -1916,6 +2441,12 @@ const ResearchLandingPage = ({
           handleOpenResearch={handleOpenResearch}
           fetchThread={fetchThread}
           threadCache={threadCache}
+          watchlistStocks={watchlistStocks}
+          fetchTracker={fetchTracker}
+          trackerCache={trackerCache}
+          weeklyReportData={weeklyReportData}
+          weeklyReportLoading={weeklyReportLoading}
+          onFetchWeeklyReport={fetchWeeklyReport}
         />
         {isOpen && researchAsset && (
           <AssetResearchModal
