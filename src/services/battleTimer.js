@@ -70,8 +70,8 @@ export function isJustCompleted(battle) {
 export function getBattleStatus(battle) {
   if (!battle) return 'waiting';
 
-  // V3 BaggerBomb battles use state.status directly
-  if (battle._v === 3) {
+  // V3/V4 BaggerBomb battles use state.status directly
+  if (battle._v === 3 || battle._v === 4) {
     const status = battle.state?.status;
     if (status === 'waiting') return 'waiting';
     if (status === 'active') return 'active';

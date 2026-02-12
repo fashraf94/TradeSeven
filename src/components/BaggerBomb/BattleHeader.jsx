@@ -377,6 +377,70 @@ export default function BattleHeader({
       {/* Bomb/Bust Counts */}
       <BombBustCounts player={player} opponent={opponent} />
 
+      {/* V4: Swap Button (between bomb/bust and free agent bar) */}
+      {battleVersion >= 4 && (
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          {swapMode?.active ? (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onCancelSwapMode}
+              style={{
+                padding: '8px 20px',
+                borderRadius: '20px',
+                border: 'none',
+                background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(220, 38, 38, 0.15))',
+                color: HOLO_COLORS.red,
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: `0 0 15px rgba(239, 68, 68, 0.2), 0 2px 8px rgba(0, 0, 0, 0.3)`,
+                letterSpacing: '0.5px',
+              }}
+            >
+              Cancel Swap
+            </motion.button>
+          ) : swapsRemaining > 0 ? (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onEnterSwapMode}
+              style={{
+                padding: '8px 20px',
+                borderRadius: '20px',
+                border: 'none',
+                background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.2), rgba(139, 92, 246, 0.2))',
+                color: HOLO_COLORS.cyan,
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: `0 0 15px rgba(0, 217, 255, 0.2), 0 2px 8px rgba(0, 0, 0, 0.3)`,
+                letterSpacing: '0.5px',
+              }}
+            >
+              <span style={{ fontSize: '14px' }}>🔄</span>
+              Swap ({swapsRemaining} left)
+            </motion.button>
+          ) : (
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                color: HOLO_COLORS.textMuted,
+              }}
+            >
+              No swaps today
+            </span>
+          )}
+        </div>
+      )}
+
       {/* V4: Free Agent Bar / V3: Session HUD */}
       {battleVersion >= 4 ? (
         <FreeAgentBar
@@ -392,6 +456,7 @@ export default function BattleHeader({
           onEnterSwapMode={onEnterSwapMode}
           onSelectFreeAgent={onSelectFreeAgent}
           onCancelSwapMode={onCancelSwapMode}
+          hideSwapButton
         />
       ) : (
         <SessionHUD
@@ -452,6 +517,19 @@ BattleHeader.propTypes = {
   totalDays: PropTypes.number,
   /** V4: Seconds until next rotation */
   rotationCountdown: PropTypes.number,
+  /** V4: Swap mode state */
+  swapMode: PropTypes.shape({
+    active: PropTypes.bool,
+    step: PropTypes.string,
+    selectedFreeAgent: PropTypes.object,
+    targetAsset: PropTypes.object,
+  }),
+  /** V4: Enter swap mode callback */
+  onEnterSwapMode: PropTypes.func,
+  /** V4: Select free agent callback */
+  onSelectFreeAgent: PropTypes.func,
+  /** V4: Cancel swap mode callback */
+  onCancelSwapMode: PropTypes.func,
 };
 
 BattleHeader.defaultProps = {

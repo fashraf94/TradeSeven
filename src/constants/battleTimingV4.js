@@ -170,7 +170,11 @@ export function getBattleEndTimeV4(tradingDayDates) {
  */
 export function getDailySwapsRemaining(swaps, currentDay) {
   if (!swaps || !swaps.remaining) return 0;
-  return swaps.remaining[`day${currentDay}`] ?? 0;
+  // Clamp to valid range — if before day 1 or after last day, use nearest valid day
+  const days = Object.keys(swaps.remaining).length;
+  if (days === 0) return 0;
+  const clampedDay = Math.max(1, Math.min(currentDay, days));
+  return swaps.remaining[`day${clampedDay}`] ?? 0;
 }
 
 /**

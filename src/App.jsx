@@ -14193,7 +14193,7 @@ export default function PortfolioDuel() {
 
     // Check battles array for user's active or waiting BaggerBomb V3 battles
     const userBaggerBombBattles = battles.filter(battle => {
-      if (battle._v !== 3) return false;
+      if (battle._v !== 3 && battle._v !== 4) return false;
       if (battle.archived) return false;
 
       const status = battle.state?.status;
@@ -19429,8 +19429,8 @@ export default function PortfolioDuel() {
     const calculateBattlePreviewData = (battle) => {
       if (!battle) return null;
 
-      // V3 BaggerBomb battles use totalScore instead of portfolio values
-      if (battle._v === 3) {
+      // V3/V4 BaggerBomb battles use totalScore instead of portfolio values
+      if (battle._v === 3 || battle._v === 4) {
         const isCreator = (battle.creator?.odUserId || battle.creator?.uid) === (user?.odUserId || user?.username) ||
                           battle.creator?.username === user?.username;
         const opponent = isCreator
@@ -20029,8 +20029,8 @@ export default function PortfolioDuel() {
                   setJoinBattleType={setJoinBattleType}
                   setCurrentDraft={setCurrentDraft}
                   onJoinLobby={async (lobby) => {
-                    // Handle BaggerBomb V3 lobbies
-                    if (lobby._v === 3) {
+                    // Handle BaggerBomb V3/V4 lobbies
+                    if (lobby._v === 3 || lobby._v === 4) {
                       setBattleToJoin(lobby);
                       setScreen('baggerBombJoinBuilder');
                       return;

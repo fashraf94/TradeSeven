@@ -12,7 +12,13 @@ import { HOLO_COLORS } from '../constants/holoTheme';
 import { motion } from 'framer-motion';
 import { stockAPI, POPULAR_CRYPTO, fetchHistoricalOHLCV } from '../services/eodhdAPI';
 import { getVolatilityThresholds } from '../services/volatilityService';
-import { flattenPortfolio, calculateAssetScoreV3 } from '../utils/baggerBombUtils';
+import {
+  flattenPortfolio,
+  calculateAssetScoreV3,
+  detectThresholdCross,
+  createThresholdEvent,
+  getBadgesFromHistory,
+} from '../utils/baggerBombUtils';
 import { generateFreeAgentPool } from '../services/freeAgentRotationService';
 import { getFreeAgentConfig } from '../constants/battleTimingV4';
 
@@ -104,6 +110,20 @@ export default function BaggerBombTrainingBattleViewV4({
     targetAsset: null,
   });
   const [isSwapExecuting, setIsSwapExecuting] = useState(false);
+
+  // Reset swap/trade state when switching between training battles
+  useEffect(() => {
+    const history = myData?.swaps?.history || [];
+    const remaining = myData?.swaps?.remaining?.day1 ?? 1;
+    setSwapUsed(history.length > 0 || remaining === 0);
+    setClosedTrades(myData?.closedTrades || []);
+    setLocalPortfolio(null);
+  }, [battle?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Training events for Live Feed
+  const [trainingEvents, setTrainingEvents] = useState([]);
+  const prevPlayerMultRef = useRef({});
+  const prevOppMultRef = useRef({});
 
   // Use local portfolio if swap has occurred in this session, otherwise use battle portfolio
   const myPortfolioRaw = localPortfolio || myData?.portfolio;
@@ -317,6 +337,50 @@ export default function BaggerBombTrainingBattleViewV4({
       tierMultiplier: score.tierMultiplier,
     };
   }, [currentPrices, startingPrices, thresholds]);
+
+  // Threshold detection for training events (both player + opponent)
+  useEffect(() => {
+    if (!currentPrices || Object.keys(currentPrices).length === 0) return;
+    if (!startingPrices || Object.keys(startingPrices).length === 0) return;
+
+    const detectForPortfolio = (portfolioRaw, prevMultRef, username) => {
+      const flat = flattenPortfolio(portfolioRaw);
+      flat.forEach((asset) => {
+        if (!asset) return;
+        const openPrice = asset.swapPrice || startingPrices[asset.symbol] || asset.price || 0;
+        const currentPrice = currentPrices[asset.symbol] || openPrice;
+        if (!openPrice || !currentPrice) return;
+
+        const priceChange = openPrice > 0 ? ((currentPrice - openPrice) / openPrice) * 100 : 0;
+        const baseATR = thresholds[asset.symbol]?.threshold || 2.5;
+        const currentMultiplier = baseATR > 0 ? priceChange / baseATR : 0;
+        const prevMultiplier = prevMultRef.current[asset.symbol] || 0;
+
+        const crossed = detectThresholdCross(prevMultiplier, currentMultiplier);
+        if (crossed) {
+          crossed.forEach((threshold) => {
+            const history = { maxMultiplier: Math.max(currentMultiplier, 0), minMultiplier: Math.min(currentMultiplier, 0) };
+            const existingBadges = getBadgesFromHistory(history);
+            if (!existingBadges.includes(threshold.name)) {
+              const event = createThresholdEvent(
+                username,
+                asset.symbol,
+                threshold.name,
+                currentMultiplier,
+                threshold.points
+              );
+              setTrainingEvents(prev => [event, ...prev].slice(0, 50));
+            }
+          });
+        }
+
+        prevMultRef.current[asset.symbol] = currentMultiplier;
+      });
+    };
+
+    detectForPortfolio(myPortfolioRaw, prevPlayerMultRef, myData?.username || 'You');
+    detectForPortfolio(oppData?.portfolio, prevOppMultRef, oppData?.username || 'CPU Opponent');
+  }, [currentPrices, startingPrices, thresholds, myPortfolioRaw, oppData?.portfolio, myData?.username, oppData?.username]);
 
   // Build enriched portfolio (pass tier for conviction multiplier)
   const buildEnrichedPortfolio = useCallback((rawPortfolio) => {
@@ -589,7 +653,7 @@ export default function BaggerBombTrainingBattleViewV4({
       battle={battle}
       player={player}
       opponent={opponent}
-      events={[]}
+      events={trainingEvents}
       onBack={onBack}
       nightMode={false}
       isTraining={true}

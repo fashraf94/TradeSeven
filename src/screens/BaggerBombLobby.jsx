@@ -310,8 +310,8 @@ export default function BaggerBombLobby({
     const own = [];
     const others = [];
 
-    // Filter: only include BaggerBomb V3 battles (excludes SnakeDraft lobbies)
-    const baggerBombBattles = openBattles.filter(battle => battle._v === 3);
+    // Filter: only include BaggerBomb V3/V4 battles (excludes SnakeDraft lobbies)
+    const baggerBombBattles = openBattles.filter(battle => battle._v === 3 || battle._v === 4);
 
     // Filter out expired lobbies (client-side filtering for immediate UX)
     const activeLobbies = filterActiveLobbies(baggerBombBattles);

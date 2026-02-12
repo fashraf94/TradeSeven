@@ -141,9 +141,10 @@ function NewBadge() {
 /**
  * Single event item with enhanced animations
  */
-function EventItem({ event, index, showNewBadge = false }) {
+function EventItem({ event, index, showNewBadge = false, isOpponent = false }) {
   const config = EVENT_CONFIG[event.type] || EVENT_CONFIG.bagger;
   const isPositive = (config.points || event.points || 0) > 0;
+  const accentColor = isOpponent ? HOLO_COLORS.red : HOLO_COLORS.cyan;
 
   return (
     <motion.div
@@ -172,7 +173,7 @@ function EventItem({ event, index, showNewBadge = false }) {
         gap: '12px',
         padding: '12px',
         borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}50`,
-        backgroundColor: showNewBadge ? `${HOLO_COLORS.cyan}08` : 'transparent',
+        backgroundColor: showNewBadge ? `${accentColor}08` : 'transparent',
         position: 'relative',
         overflow: 'hidden',
       }}
@@ -188,7 +189,7 @@ function EventItem({ event, index, showNewBadge = false }) {
             top: '10%',
             bottom: '10%',
             width: '3px',
-            backgroundColor: HOLO_COLORS.cyan,
+            backgroundColor: accentColor,
             borderRadius: '0 2px 2px 0',
             transformOrigin: 'center',
           }}
@@ -277,6 +278,7 @@ EventItem.propTypes = {
   }).isRequired,
   index: PropTypes.number,
   showNewBadge: PropTypes.bool,
+  isOpponent: PropTypes.bool,
 };
 
 /**
@@ -286,6 +288,7 @@ export default function EventFeed({
   events = [],
   maxDisplay = 20,
   emptyMessage = 'No explosions yet. Waiting for action...',
+  currentUser,
 }) {
   // Sort events by timestamp (newest first) and mark new ones
   const sortedEvents = useMemo(() => {
@@ -420,6 +423,7 @@ export default function EventFeed({
                 event={event}
                 index={index}
                 showNewBadge={event.isNewEvent}
+                isOpponent={currentUser && event.player !== currentUser}
               />
             ))}
           </AnimatePresence>
@@ -446,12 +450,15 @@ EventFeed.propTypes = {
   maxDisplay: PropTypes.number,
   /** Message to show when no events */
   emptyMessage: PropTypes.string,
+  /** Current user's username — used to distinguish opponent events */
+  currentUser: PropTypes.string,
 };
 
 EventFeed.defaultProps = {
   events: [],
   maxDisplay: 20,
   emptyMessage: 'No explosions yet. Waiting for action...',
+  currentUser: null,
 };
 
 // Export event config for use elsewhere

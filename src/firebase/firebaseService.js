@@ -4000,7 +4000,7 @@ export async function getOpenBaggerBombBattles(maxResults = 20) {
   try {
     const q = query(
       collection(db, 'battles'),
-      where('_v', '==', 3),
+      where('_v', 'in', [3, 4]),
       where('state.status', '==', 'waiting'),
       where('visibility', '==', 'public'),
       where('archived', '==', false),
@@ -4014,7 +4014,7 @@ export async function getOpenBaggerBombBattles(maxResults = 20) {
       .filter(isValidLobbyBattle)
       .slice(0, maxResults);
 
-    console.log(`✅ Found ${battles.length} open BaggerBomb V3 battles`);
+    console.log(`✅ Found ${battles.length} open BaggerBomb battles`);
     return battles;
   } catch (error) {
     console.error('❌ Error fetching open battles:', error);
@@ -4024,7 +4024,7 @@ export async function getOpenBaggerBombBattles(maxResults = 20) {
 }
 
 /**
- * Subscribe to open BaggerBomb V3 battles (real-time lobby updates)
+ * Subscribe to open BaggerBomb V3/V4 battles (real-time lobby updates)
  * Filters out stale battles (>24 hours) and invalid data
  *
  * @param {Function} callback - Callback function (battles) => void
@@ -4034,7 +4034,7 @@ export function subscribeToLobby(callback) {
   try {
     const q = query(
       collection(db, 'battles'),
-      where('_v', '==', 3),
+      where('_v', 'in', [3, 4]),
       where('state.status', '==', 'waiting'),
       where('visibility', '==', 'public'),
       where('archived', '==', false)
