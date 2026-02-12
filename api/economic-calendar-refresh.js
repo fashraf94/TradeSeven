@@ -49,36 +49,14 @@ function getWeekOf() {
   return monday.toISOString().split('T')[0];
 }
 
-const WEEKLY_PROMPT = (fromDate, toDate) => `Search the web for the upcoming US economic calendar from ${fromDate} to ${toDate}. Look at sources like ForexFactory, Investing.com, MarketWatch, or BLS.gov for scheduled releases.
+const WEEKLY_PROMPT = (fromDate, toDate) => `Search for this week's US economic calendar (${fromDate} to ${toDate}). Include: NFP, CPI, FOMC, Retail Sales, GDP, Jobless Claims, ISM PMI, PPI, UMich Sentiment, Durable Goods, PCE, Housing Starts, ADP, Consumer Confidence, and any other scheduled releases.
 
-For each event found, classify it into tiers:
-- Tier 1 (market-moving): Non-Farm Payrolls (NFP), CPI, FOMC Decision/Minutes, Retail Sales, GDP
-- Tier 2 (significant): Initial Jobless Claims, ISM Manufacturing PMI, PPI, University of Michigan Consumer Sentiment, Durable Goods Orders
-- Tier 3 (notable): ISM Services PMI, PCE Price Index, Housing Starts, ADP Employment, Consumer Confidence, Building Permits, Industrial Production, Trade Balance, Treasury Auctions
+Tier each event: 1 (market-moving), 2 (significant), 3 (notable). Grade volatility: A (1%+ swings), B (0.3-1%), C (<0.3%).
 
-For volatilityGrade use: "A" (major market mover, expect 1%+ index swings), "B" (moderate, 0.3-1% moves possible), "C" (minor, usually <0.3% impact).
+Return ONLY JSON:
+{"events":[{"name":"Full name","shortName":"NFP","date":"YYYY-MM-DD","time":"HH:MM ET or null","estimate":"string or null","previous":"string or null","actual":null,"tier":1,"volatilityGrade":"A","context":"Why it matters now","agency":"BLS"}],"weekSummary":"2-3 sentences"}
 
-Return ONLY a JSON object with this exact structure:
-{
-  "events": [
-    {
-      "name": "Full event name",
-      "shortName": "Abbreviated name (e.g. NFP, CPI, FOMC)",
-      "date": "YYYY-MM-DD",
-      "time": "HH:MM ET or null if TBD",
-      "estimate": "consensus estimate as string or null",
-      "previous": "previous reading as string or null",
-      "actual": null,
-      "tier": 1,
-      "volatilityGrade": "A",
-      "context": "One sentence on why this release matters right now",
-      "agency": "Releasing agency (e.g. BLS, Fed, Census Bureau)"
-    }
-  ],
-  "weekSummary": "2-3 sentence overview of the week's economic calendar and what traders should watch for"
-}
-
-Include ALL scheduled US economic events you find. Sort by date, then by tier (1 first).`;
+Sort by date then tier.`;
 
 const UPDATE_PROMPT = (events) => `Search the web for the actual released values of these US economic events. Check BLS.gov, Bureau of Economic Analysis, Federal Reserve, MarketWatch, CNBC, or Investing.com for the released data.
 
@@ -160,8 +138,8 @@ async function handleWeekly(req, res, weekOf) {
   const prompt = WEEKLY_PROMPT(fromDate, toDate);
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
+    model: 'claude-haiku-4-5-20241022',
+    max_tokens: 2000,
     tools: [{
       type: 'web_search_20250305',
       name: 'web_search',
@@ -244,8 +222,8 @@ async function handleUpdate(req, res, weekOf) {
   const prompt = UPDATE_PROMPT(pendingEvents);
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 2048,
+    model: 'claude-haiku-4-5-20241022',
+    max_tokens: 2000,
     tools: [{
       type: 'web_search_20250305',
       name: 'web_search',
