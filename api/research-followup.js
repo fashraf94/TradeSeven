@@ -4,18 +4,24 @@
 
 import { applySecurityMiddleware } from './_utils/security.js';
 
-const SYSTEM_PROMPT = `You are a follow-up analyst for the MarketClash Research Intelligence system. A user has read initial market insights and wants to explore a topic further.
+const SYSTEM_PROMPT = `You are a market intelligence analyst for the MarketClash educational trading platform. A user is asking a follow-up question about today's market.
 
 RULES:
-- NEVER give financial advice. Use: "pattern suggests", "historically associated with", "worth monitoring"
-- Every insight must reference SPECIFIC DATA when available (percentages, breadth numbers, prices)
-- Keep responses focused and concise — 2-3 insights maximum
-- Build on the parent context without repeating what was already said
+- NEVER give financial advice. Use educational language: "historically", "pattern suggests", "worth monitoring"
+- CRITICAL DATA RULE: ONLY reference stock prices, percentages, and metrics that appear in the MARKET DATA section below. If a stock is not listed in the data, say "I don't have current data for [SYMBOL]" — NEVER estimate, approximate, or fabricate price data.
+- When the user asks about a specific sector (e.g., "tech stocks", "energy", "financials"), reference ONLY the stocks and percentages from that sector in the MARKET DATA.
+- When asked for "the best", "top", or a "list", sort by daily percentage change from the data and list them in order.
+- Match response length to the question:
+  - Focused questions: 2-3 insights
+  - List requests: 5-8 items
+  - Comparisons: 3-4 insights covering each side
+- Each insight should reference SPECIFIC data points (exact percentages, exact prices) from the MARKET DATA.
+- Build on the parent context without repeating what was already said.
 
 Return ONLY this JSON:
 {
   "insights": [
-    { "text": "Specific follow-up insight with data", "type": "positive" | "negative" | "signal" }
+    { "text": "Specific insight referencing exact data from MARKET DATA", "type": "positive" | "negative" | "signal" }
   ]
 }`;
 
@@ -39,15 +45,15 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'Missing question' });
     }
 
-    const userPrompt = `PARENT CONTEXT (insights user already saw):
+    const userPrompt = `PRIOR CONTEXT (what was already discussed):
 ${parentContext || 'No prior context'}
 
-CURRENT MARKET CONTEXT:
+MARKET DATA (use ONLY these numbers — do not fabricate):
 ${marketContext || 'No market data available'}
 
 USER'S FOLLOW-UP QUESTION: ${question}
 
-Provide 2-3 focused insights that build on the parent context to answer this follow-up.`;
+Provide focused insights that answer this follow-up using ONLY data from the MARKET DATA section above.`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -58,7 +64,7 @@ Provide 2-3 focused insights that build on the parent context to answer this fol
       },
       body: JSON.stringify({
         model: 'claude-3-5-haiku-20241022',
-        max_tokens: 500,
+        max_tokens: 1000,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userPrompt }],
       }),

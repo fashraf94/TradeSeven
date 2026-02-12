@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
+import { SECTORS } from '../../constants/sectors';
 import { getTopMoversWithNews, getMarketNews, getMultipleStockNews } from '../../services/eodhdAPI';
 import { WEEK_AHEAD_EVENTS } from '../../data/weekAheadEvents';
 import { useAssetResearch } from '../../hooks/useAssetResearch';
@@ -2533,18 +2534,78 @@ const ResearchLandingPage = ({
   }, [marketBreadth, moversData, marketNews, economicEvents]);
 
   const buildMarketContextString = useCallback(() => {
+    // If no stock data loaded yet, return minimal context with grounding guard
+    if (!stocksData?.length && !allAssets?.length) {
+      return 'Market data is currently loading. Provide general educational analysis only. Do not cite specific stock prices.';
+    }
+
+    const parts = [];
+    const today = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    parts.push(`Market data as of ${today}:`);
+
+    // 1. Overall breadth
     const { stocksUp, stocksDown, ratio } = marketBreadth;
-    const gainers = (moversData.gainers || []).slice(0, 3);
-    const hotSector = intelData?.scout?.hotSector;
-    let ctx = `Breadth: ${stocksUp} up / ${stocksDown} down (ratio ${ratio.toFixed(2)})`;
+    parts.push(`\nMARKET BREADTH: ${stocksUp} stocks advancing, ${stocksDown} declining (${((ratio) * 100).toFixed(0)}% positive)`);
+
+    // 2. All stocks grouped by sector with real prices
+    const stocks = stocksData?.length ? stocksData : allAssets;
+    // Build reverse lookup: symbol → sector name from SECTORS constant
+    const sectorLookup = {};
+    Object.values(SECTORS).forEach(sec => {
+      (sec.topHoldings || []).forEach(sym => { sectorLookup[sym] = sec.name; });
+    });
+
+    const sectorMap = {};
+    stocks.forEach(stock => {
+      const symbol = stock.symbol || stock.ticker;
+      if (!symbol) return;
+      const change = safeNumber(stock.percentChange || stock.change24h, 0);
+      const price = safeNumber(stock.price, 0);
+      const sector = sectorLookup[symbol.toUpperCase()] || stock.sector || 'Other';
+      if (!sectorMap[sector]) sectorMap[sector] = [];
+      sectorMap[sector].push({ symbol, change, price });
+    });
+
+    // Sort sectors by average change (best first), format each
+    parts.push('\nSTOCKS BY SECTOR (sorted by daily change):');
+    Object.entries(sectorMap)
+      .sort(([, a], [, b]) => {
+        const avgA = a.reduce((sum, s) => sum + s.change, 0) / a.length;
+        const avgB = b.reduce((sum, s) => sum + s.change, 0) / b.length;
+        return avgB - avgA;
+      })
+      .forEach(([sector, sectorStocks]) => {
+        const sorted = [...sectorStocks].sort((a, b) => b.change - a.change);
+        const stockList = sorted
+          .map(s => `${s.symbol} ${s.change >= 0 ? '+' : ''}${s.change.toFixed(1)}%${s.price ? ` ($${s.price.toFixed(2)})` : ''}`)
+          .join(', ');
+        const avgChange = (sorted.reduce((sum, s) => sum + s.change, 0) / sorted.length).toFixed(1);
+        parts.push(`\n${sector.toUpperCase()} (avg ${avgChange >= 0 ? '+' : ''}${avgChange}%): ${stockList}`);
+      });
+
+    // 3. Top gainers/losers from moversData (may include stocks not in stocksData)
+    const gainers = (moversData.gainers || []).slice(0, 5);
+    const losers = (moversData.losers || []).slice(0, 5);
     if (gainers.length > 0) {
-      ctx += `\nTop movers: ${gainers.map(g => `${g.symbol} ${safeNumber(g.percentChange, 0) >= 0 ? '+' : ''}${safeNumber(g.percentChange, 0).toFixed(1)}%`).join(', ')}`;
+      parts.push(`\nTOP GAINERS: ${gainers.map(g => `${g.symbol} ${safeNumber(g.percentChange, 0) >= 0 ? '+' : ''}${safeNumber(g.percentChange, 0).toFixed(1)}%`).join(', ')}`);
     }
-    if (hotSector) {
-      ctx += `\nHot sector: ${hotSector.name} — ${hotSector.why || ''}`;
+    if (losers.length > 0) {
+      parts.push(`\nTOP DECLINERS: ${losers.map(l => `${l.symbol} ${safeNumber(l.percentChange, 0) >= 0 ? '+' : ''}${safeNumber(l.percentChange, 0).toFixed(1)}%`).join(', ')}`);
     }
-    return ctx;
-  }, [marketBreadth, moversData, intelData]);
+
+    // 4. Hot sector from cached intel
+    if (intelData?.scout?.hotSector) {
+      parts.push(`\nHOT SECTOR: ${intelData.scout.hotSector.name} — ${intelData.scout.hotSector.why || ''}`);
+    }
+
+    // 5. Scout discoveries (unusual movers)
+    if (intelData?.scout?.discoveries?.length) {
+      const disc = intelData.scout.discoveries.map(d => `${d.symbol} ${safeNumber(d.change, 0) > 0 ? '+' : ''}${safeNumber(d.change, 0)}% (${d.reason})`).join('; ');
+      parts.push(`\nUNUSUAL MOVERS: ${disc}`);
+    }
+
+    return parts.join('\n');
+  }, [stocksData, allAssets, marketBreadth, moversData, intelData]);
 
   const buildFallbackIntel = useCallback(() => {
     const gainers = (moversData.gainers || []).slice(0, 3);
