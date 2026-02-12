@@ -147,27 +147,53 @@ async function handleWeekly(req, res, weekOf) {
     messages: [{ role: 'user', content: prompt }],
   });
 
-  // Extract text from response
-  let responseText = '';
-  for (const block of response.content) {
-    if (block.type === 'text') {
-      responseText += block.text;
+  // Extract ALL text from response content blocks
+  const textBlocks = response.content
+    .filter(block => block.type === 'text')
+    .map(block => block.text);
+  const fullText = textBlocks.join('\n');
+
+  console.log('[EconomicCalendar] Raw text length:', fullText.length);
+  console.log('[EconomicCalendar] Raw text preview:', fullText.substring(0, 500));
+
+  // Try multiple parsing strategies
+  let parsed = null;
+
+  // Strategy 1: Direct JSON parse (entire text is JSON)
+  try {
+    parsed = JSON.parse(fullText.trim());
+  } catch (e) { /* not pure JSON */ }
+
+  // Strategy 2: Extract JSON object from text (handles markdown backticks, preamble, etc.)
+  if (!parsed) {
+    const cleaned = fullText.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+      } catch (e) { /* malformed JSON */ }
     }
   }
 
-  // Parse JSON from response
-  const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    console.error('[EconomicCalendarRefresh] No JSON found in response');
-    return res.status(200).json({ success: false, error: 'No structured response from AI' });
+  // Strategy 3: Extract JSON array (Claude might return events as array directly)
+  if (!parsed) {
+    const cleaned = fullText.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+    const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+    if (arrayMatch) {
+      try {
+        const eventsArr = JSON.parse(arrayMatch[0]);
+        parsed = { events: eventsArr, weekSummary: '' };
+      } catch (e) { /* malformed array */ }
+    }
   }
 
-  let parsed;
-  try {
-    parsed = JSON.parse(jsonMatch[0]);
-  } catch (e) {
-    console.error('[EconomicCalendarRefresh] JSON parse error:', e.message);
-    return res.status(200).json({ success: false, error: 'Failed to parse AI response' });
+  if (!parsed) {
+    console.error('[EconomicCalendar] Failed to parse. Full text:', fullText);
+    return res.status(200).json({
+      success: false,
+      error: 'No structured response from AI',
+      debug: fullText.substring(0, 1000),
+    });
   }
 
   const events = parsed.events || [];
@@ -231,26 +257,40 @@ async function handleUpdate(req, res, weekOf) {
     messages: [{ role: 'user', content: prompt }],
   });
 
-  let responseText = '';
-  for (const block of response.content) {
-    if (block.type === 'text') {
-      responseText += block.text;
+  // Extract ALL text from response content blocks
+  const updateTextBlocks = response.content
+    .filter(block => block.type === 'text')
+    .map(block => block.text);
+  const updateFullText = updateTextBlocks.join('\n');
+
+  console.log('[EconomicCalendar] Update raw text length:', updateFullText.length);
+
+  let updateParsed = null;
+
+  try {
+    updateParsed = JSON.parse(updateFullText.trim());
+  } catch (e) { /* not pure JSON */ }
+
+  if (!updateParsed) {
+    const cleaned = updateFullText.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        updateParsed = JSON.parse(jsonMatch[0]);
+      } catch (e) { /* malformed JSON */ }
     }
   }
 
-  const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    return res.status(200).json({ success: false, error: 'No structured response from AI' });
+  if (!updateParsed) {
+    console.error('[EconomicCalendar] Update parse failed. Full text:', updateFullText);
+    return res.status(200).json({
+      success: false,
+      error: 'No structured response from AI',
+      debug: updateFullText.substring(0, 1000),
+    });
   }
 
-  let parsed;
-  try {
-    parsed = JSON.parse(jsonMatch[0]);
-  } catch (e) {
-    return res.status(200).json({ success: false, error: 'Failed to parse AI response' });
-  }
-
-  const updates = parsed.updates || [];
+  const updates = updateParsed.updates || [];
 
   // Merge updates into events array
   const updatedEvents = calendarData.events.map(event => {
