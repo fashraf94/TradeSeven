@@ -1835,9 +1835,9 @@ const EconomicEventsBotCard = ({ buildMarketContextString, compact = false }) =>
   const cardRef = useRef(null);
 
   const questions = [
-    { id: 'upcoming', icon: '\uD83D\uDCC5', label: 'What events are coming this week?' },
-    { id: 'today', icon: '\uD83D\uDCCA', label: 'What economic data came out today?' },
-    { id: 'estimates', icon: '\uD83D\uDD2E', label: 'Key estimates to watch' },
+    { id: 'upcoming', icon: '📅', label: "What events are coming this week?" },
+    { id: 'today', icon: '📊', label: "What economic data came out today?" },
+    { id: 'impact', icon: '⚡', label: "How could this week's data move markets?" },
   ];
 
   const handleAsk = useCallback(async (question) => {
