@@ -48,7 +48,7 @@ const SENTIMENT_MAP = {
 };
 
 const DEFAULT_WATCHLIST = ['AAPL', 'NVDA', 'TSLA', 'GOOGL', 'MSFT', 'AMZN'];
-const TRENDING_TICKERS = ['NVDA', 'TSLA', 'AAPL', 'META', 'AMZN'];
+const TRENDING_TICKERS = ['NVDA', 'TSLA', 'AAPL', 'META', 'AMZN', 'GOOGL', 'MSFT', 'AMD', 'NFLX', 'JPM', 'V', 'BRK.B'];
 
 // ─── Mobile Config Constants ─────────────────────────────────
 const TAG_CONFIG = {
@@ -547,6 +547,170 @@ const QuickSearchInput = ({ allAssets, onSelectAsset }) => {
   );
 };
 
+// ─── DesktopIntelChat ─────────────────────────────────────────
+const INTEL_SUGGESTED_QUESTIONS = [
+  'What\'s driving the market today?',
+  'Which sectors are strongest right now?',
+  'Any risks I should watch for?',
+  'What are the top movers doing?',
+  'Any interesting setups forming?',
+];
+
+const DesktopIntelChat = ({ buildMarketContextString }) => {
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [messages.length]);
+
+  const handleSend = useCallback(async (text) => {
+    setMessages(prev => [...prev, { role: 'user', text }]);
+    setLoading(true);
+
+    const parentContext = messages
+      .filter(m => m.role === 'assistant')
+      .flatMap(m => m.insights || [])
+      .map(i => i.text)
+      .join('\n');
+    const marketContext = buildMarketContextString ? buildMarketContextString() : '';
+
+    try {
+      const res = await fetch('/api/research-followup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: text, parentContext, marketContext }),
+      });
+      const result = await res.json();
+      if (result.success && result.data?.insights) {
+        setMessages(prev => [...prev, { role: 'assistant', insights: result.data.insights }]);
+      } else {
+        setMessages(prev => [...prev, { role: 'assistant', insights: [{ text: 'Unable to fetch insights right now. Try again.', type: 'signal' }] }]);
+      }
+    } catch {
+      setMessages(prev => [...prev, { role: 'assistant', insights: [{ text: 'Connection error. Please try again.', type: 'signal' }] }]);
+    } finally {
+      setLoading(false);
+    }
+  }, [messages, buildMarketContextString]);
+
+  const handleClear = useCallback(() => { setMessages([]); }, []);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.25, duration: 0.4 }}
+      style={{
+        background: C.bgCard,
+        border: `1px solid ${C.purpleDim || C.purple + '30'}`,
+        borderRadius: '16px',
+        padding: '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: '260px',
+        maxHeight: '400px',
+      }}
+    >
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+        <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.purple }} />
+        <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', color: C.purple }}>INTEL CHAT</span>
+        <span style={{
+          fontSize: '9px',
+          fontWeight: 700,
+          padding: '2px 6px',
+          borderRadius: '4px',
+          background: `${C.purple}15`,
+          color: C.purple,
+          letterSpacing: '0.08em',
+          marginLeft: '4px',
+        }}>CLAUDE</span>
+        <div style={{ flex: 1 }} />
+        {messages.length > 0 && (
+          <button
+            onClick={handleClear}
+            style={{
+              fontSize: '10px',
+              fontWeight: 600,
+              color: C.textMuted,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '2px 6px',
+            }}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {/* Messages Area */}
+      <div style={{ flex: 1, overflowY: 'auto', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {messages.length === 0 ? (
+          <div>
+            <div style={{ fontSize: '12px', color: C.textSecondary, marginBottom: '12px', lineHeight: 1.5 }}>
+              Ask about today&apos;s market, sectors, or trading setups.
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {INTEL_SUGGESTED_QUESTIONS.map((q, i) => (
+                <FollowUpPill key={i} text={q} onClick={handleSend} />
+              ))}
+            </div>
+          </div>
+        ) : (
+          <>
+            {messages.map((msg, i) => (
+              <div key={i}>
+                {msg.role === 'user' ? (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <div style={{
+                      background: `${C.cyan}12`,
+                      border: `1px solid ${C.cyan}25`,
+                      borderRadius: '12px 12px 4px 12px',
+                      padding: '8px 12px',
+                      maxWidth: '85%',
+                      fontSize: '12px',
+                      color: C.cyan,
+                      lineHeight: 1.4,
+                    }}>
+                      {msg.text}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {(msg.insights || []).map((insight, j) => (
+                      <InsightBullet key={j} text={insight.text} type={insight.type} index={j} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            {loading && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 0' }}>
+                <div style={{ display: 'flex', gap: '3px' }}>
+                  {[0, 1, 2].map(i => (
+                    <div key={i} style={{
+                      width: 4, height: 4, borderRadius: '50%', background: C.purple,
+                      animation: `rlp-pulse 1s ease-in-out ${i * 0.15}s infinite`,
+                    }} />
+                  ))}
+                </div>
+                <span style={{ fontSize: '11px', color: C.textMuted }}>Thinking...</span>
+              </div>
+            )}
+          </>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input */}
+      <ChatInput placeholder="Ask about today's market..." onSend={handleSend} />
+    </motion.div>
+  );
+};
+
 // ─── Section Divider ─────────────────────────────────────────
 const SectionDivider = ({ label }) => (
   <div style={{
@@ -639,6 +803,97 @@ const InsightBullet = ({ text, type, index }) => {
       <span style={{ fontSize: '13px', color: C.textPrimary, lineHeight: 1.5 }}>
         {text}
       </span>
+    </div>
+  );
+};
+
+// ─── FollowUpPill ──────────────────────────────────────────
+const FollowUpPill = ({ text, onClick }) => (
+  <button
+    onClick={(e) => { e.stopPropagation(); onClick(text); }}
+    onMouseEnter={e => {
+      e.currentTarget.style.background = `${C.cyan}18`;
+      e.currentTarget.style.borderColor = `${C.cyan}40`;
+      e.currentTarget.style.color = C.cyan;
+    }}
+    onMouseLeave={e => {
+      e.currentTarget.style.background = C.bgElevated;
+      e.currentTarget.style.borderColor = C.border;
+      e.currentTarget.style.color = C.textSecondary;
+    }}
+    style={{
+      padding: '6px 12px',
+      borderRadius: 8,
+      fontSize: '11px',
+      fontWeight: 600,
+      background: C.bgElevated,
+      border: `1px solid ${C.border}`,
+      color: C.textSecondary,
+      cursor: 'pointer',
+      transition: 'all 0.2s',
+      whiteSpace: 'nowrap',
+    }}
+  >
+    {text}
+  </button>
+);
+
+// ─── ChatInput ─────────────────────────────────────────────
+const ChatInput = ({ placeholder, onSend, compact }) => {
+  const [value, setValue] = useState('');
+  const [focused, setFocused] = useState(false);
+
+  const handleSend = useCallback(() => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    onSend(trimmed);
+    setValue('');
+  }, [value, onSend]);
+
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <input
+        type="text"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSend(); } }}
+        onClick={e => e.stopPropagation()}
+        placeholder={placeholder || 'Ask a follow-up...'}
+        style={{
+          flex: 1,
+          padding: compact ? '8px 12px' : '10px 14px',
+          borderRadius: 10,
+          background: C.bgElevated,
+          border: `1px solid ${focused ? C.cyan + '66' : C.border}`,
+          color: C.textPrimary,
+          fontSize: compact ? '12px' : '13px',
+          outline: 'none',
+          boxSizing: 'border-box',
+          transition: 'border-color 0.2s',
+        }}
+      />
+      <button
+        onClick={e => { e.stopPropagation(); handleSend(); }}
+        style={{
+          width: compact ? 32 : 36,
+          height: compact ? 32 : 36,
+          borderRadius: 10,
+          background: value.trim() ? `${C.cyan}20` : C.bgElevated,
+          border: `1px solid ${value.trim() ? C.cyan + '30' : C.border}`,
+          color: value.trim() ? C.cyan : C.textMuted,
+          fontSize: compact ? 14 : 16,
+          cursor: value.trim() ? 'pointer' : 'default',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'all 0.2s',
+          flexShrink: 0,
+        }}
+      >
+        {'\u2191'}
+      </button>
     </div>
   );
 };
@@ -963,29 +1218,80 @@ const ToolStripButton = ({ icon, label, onClick, accent = C.textSecondary }) => 
   </button>
 );
 
-// ─── QuestionCard (V2) ──────────────────────────────────────
-const QuestionCard = ({ question, index }) => {
+// ─── QuestionCard (V3 — with follow-up chat) ───────────────
+const QuestionCard = ({ question, index, buildMarketContextString }) => {
   const [expanded, setExpanded] = useState(false);
   const [showAnswer, setShowAnswer] = useState(false);
+  const [followUpThread, setFollowUpThread] = useState([]);
+  const [followUpLoading, setFollowUpLoading] = useState(false);
+  const threadEndRef = useRef(null);
 
   const handleTap = useCallback(() => {
     if (expanded) {
       setExpanded(false);
       setShowAnswer(false);
+      setFollowUpThread([]);
       return;
     }
     setExpanded(true);
-    // 900ms cosmetic loading delay — answers are pre-loaded
     setTimeout(() => setShowAnswer(true), 900);
   }, [expanded]);
+
+  const handleFollowUp = useCallback(async (text) => {
+    const userCount = followUpThread.filter(m => m.role === 'user').length;
+    if (userCount >= 4) return;
+
+    setFollowUpLoading(true);
+    setFollowUpThread(prev => [...prev, { role: 'user', text }]);
+
+    try {
+      const parentContext = (question.answer?.insights || []).map(i => i.text).join('\n');
+      const marketContext = buildMarketContextString ? buildMarketContextString() : '';
+
+      const response = await fetch('/api/research-followup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: text, parentContext, marketContext }),
+      });
+      const result = await response.json();
+
+      if (result.success && result.data?.insights) {
+        setFollowUpThread(prev => [...prev, { role: 'assistant', insights: result.data.insights }]);
+      } else {
+        setFollowUpThread(prev => [...prev, {
+          role: 'assistant',
+          insights: [{ text: `Based on current data, this area shows dynamics worth monitoring in context of today's market activity.`, type: 'signal' }],
+        }]);
+      }
+    } catch (err) {
+      console.warn('[QuestionCard] Follow-up error:', err);
+      setFollowUpThread(prev => [...prev, {
+        role: 'assistant',
+        insights: [{ text: 'Unable to analyze further right now. Try again in a moment.', type: 'signal' }],
+      }]);
+    } finally {
+      setFollowUpLoading(false);
+    }
+  }, [followUpThread, question.answer, buildMarketContextString]);
+
+  useEffect(() => {
+    if (threadEndRef.current) {
+      threadEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [followUpThread.length]);
+
+  const userMsgCount = followUpThread.filter(m => m.role === 'user').length;
 
   return (
     <div
       onClick={handleTap}
       style={{
-        background: C.bgCard,
+        background: expanded ? `linear-gradient(135deg, ${C.bgCard}, ${C.cyan}04)` : C.bgCard,
         borderRadius: '12px',
         borderLeft: `3px solid ${C.cyan}`,
+        border: `1px solid ${expanded ? C.borderActive : C.border}`,
+        borderLeftWidth: '3px',
+        borderLeftColor: C.cyan,
         padding: '12px 14px',
         cursor: 'pointer',
         transition: 'all 0.2s',
@@ -994,22 +1300,29 @@ const QuestionCard = ({ question, index }) => {
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
-          <span style={{ fontSize: '18px' }}>{question.icon}</span>
-          <span style={{ fontSize: '13px', color: C.textPrimary, fontWeight: 500 }}>
+          <span style={{ fontSize: '16px', flexShrink: 0 }}>{question.icon}</span>
+          <span style={{
+            fontSize: '13px',
+            color: expanded ? C.cyan : C.textPrimary,
+            fontWeight: expanded ? 600 : 500,
+            transition: 'color 0.2s',
+          }}>
             {question.label}
           </span>
         </div>
-        <svg
-          width="14" height="14" viewBox="0 0 24 24" fill="none"
-          stroke={C.textMuted} strokeWidth="2"
-          style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}
-        >
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
+        <span style={{
+          fontSize: '10px',
+          color: C.textMuted,
+          transform: expanded ? 'rotate(180deg)' : 'rotate(0)',
+          transition: 'transform 0.3s',
+          flexShrink: 0,
+        }}>
+          {'\u25BC'}
+        </span>
       </div>
 
       {expanded && (
-        <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `1px solid ${C.border}` }}>
+        <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `1px solid ${C.border}`, animation: 'rlp-fadeSlideIn 0.3s ease both' }}>
           {!showAnswer ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 0' }}>
               {[0, 1, 2].map(i => (
@@ -1023,9 +1336,92 @@ const QuestionCard = ({ question, index }) => {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {/* Original insights */}
               {(question.answer?.insights || []).map((insight, i) => (
                 <InsightBullet key={i} text={insight.text} type={insight.type} index={i} />
               ))}
+
+              {/* Follow-up thread */}
+              {followUpThread.map((msg, i) => (
+                <div key={`fu-${i}`} style={{
+                  marginTop: i === 0 ? '8px' : '4px',
+                  animation: 'rlp-fadeSlideIn 0.3s ease-out both',
+                }}>
+                  {msg.role === 'user' ? (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+                      <span style={{
+                        padding: '8px 12px',
+                        borderRadius: '12px 12px 4px 12px',
+                        background: `${C.cyan}15`,
+                        border: `1px solid ${C.cyan}20`,
+                        fontSize: '12px',
+                        color: C.white,
+                        maxWidth: '80%',
+                      }}>{msg.text}</span>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {(msg.insights || []).map((insight, j) => (
+                        <InsightBullet key={j} text={insight.text} type={insight.type} index={j} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Follow-up loading */}
+              {followUpLoading && (
+                <div style={{ padding: '12px 0', marginTop: 6 }}>
+                  <span style={{ color: C.textMuted, fontSize: '11px', animation: 'rlp-pulse 1s infinite' }}>{'\u25C9'} Thinking...</span>
+                  {[80, 90].map((w, i) => (
+                    <div key={i} style={{
+                      height: 8, borderRadius: 4, background: C.bgElevated,
+                      marginTop: 6, width: `${w}%`,
+                      animation: `rlp-shimmer 1.5s infinite ${i * 0.15}s`,
+                    }} />
+                  ))}
+                </div>
+              )}
+
+              {/* Suggested follow-up pills */}
+              {question.followUps?.length > 0 && userMsgCount < 3 && !followUpLoading && (
+                <div style={{
+                  display: 'flex', flexWrap: 'wrap', gap: 6,
+                  marginTop: 10, paddingTop: 8,
+                  borderTop: `1px solid ${C.border}`,
+                }}>
+                  {question.followUps
+                    .filter(f => !followUpThread.some(t => t.role === 'user' && t.text === f))
+                    .map(f => (
+                      <FollowUpPill key={f} text={f} onClick={handleFollowUp} />
+                    ))}
+                </div>
+              )}
+
+              {/* Free-form chat input */}
+              {!followUpLoading && userMsgCount < 4 && (
+                <div style={{ marginTop: 8 }}>
+                  <ChatInput
+                    placeholder={`Ask about ${question.label.toLowerCase().replace('?', '')}...`}
+                    onSend={handleFollowUp}
+                    compact
+                  />
+                </div>
+              )}
+
+              {/* Max depth reached */}
+              {userMsgCount >= 4 && (
+                <div style={{
+                  marginTop: 8, padding: '8px 12px', borderRadius: 8,
+                  background: C.bgElevated, textAlign: 'center',
+                }}>
+                  <span style={{ fontSize: '11px', color: C.textMuted }}>
+                    Collapse and try another question for more insights
+                  </span>
+                </div>
+              )}
+
+              <div ref={threadEndRef} />
             </div>
           )}
         </div>
@@ -1373,7 +1769,7 @@ const WeeklyReport = ({ visible, onClose, reportData, reportLoading }) => {
 };
 
 // ─── BriefingTab (V2) ───────────────────────────────────────
-const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onShowWeeklyReport }) => {
+const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onShowWeeklyReport, buildMarketContextString }) => {
   if (loading) {
     return (
       <div style={{
@@ -1462,7 +1858,7 @@ const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onTog
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {briefer.questions.map((q, i) => (
-              <QuestionCard key={q.id || i} question={q} index={i} />
+              <QuestionCard key={q.id || i} question={q} index={i} buildMarketContextString={buildMarketContextString} />
             ))}
           </div>
         </div>
@@ -1567,6 +1963,7 @@ const MobileIntelligenceHub = ({
   weeklyReportData,
   weeklyReportLoading,
   onFetchWeeklyReport,
+  buildMarketContextString,
 }) => {
   const [activeTab, setActiveTab] = useState('briefing');
   const [expandedSymbol, setExpandedSymbol] = useState(null);
@@ -1730,6 +2127,7 @@ const MobileIntelligenceHub = ({
             trackerCache={trackerCache}
             trackerLoading={trackerLoading}
             onShowWeeklyReport={() => { onFetchWeeklyReport(); setShowWeeklyReport(true); }}
+            buildMarketContextString={buildMarketContextString}
           />
         ) : (
           <DiscoverTab
@@ -2181,6 +2579,20 @@ const ResearchLandingPage = ({
     };
   }, [marketBreadth, moversData, marketNews, economicEvents]);
 
+  const buildMarketContextString = useCallback(() => {
+    const { stocksUp, stocksDown, ratio } = marketBreadth;
+    const gainers = (moversData.gainers || []).slice(0, 3);
+    const hotSector = intelData?.scout?.hotSector;
+    let ctx = `Breadth: ${stocksUp} up / ${stocksDown} down (ratio ${ratio.toFixed(2)})`;
+    if (gainers.length > 0) {
+      ctx += `\nTop movers: ${gainers.map(g => `${g.symbol} ${safeNumber(g.percentChange, 0) >= 0 ? '+' : ''}${safeNumber(g.percentChange, 0).toFixed(1)}%`).join(', ')}`;
+    }
+    if (hotSector) {
+      ctx += `\nHot sector: ${hotSector.name} — ${hotSector.why || ''}`;
+    }
+    return ctx;
+  }, [marketBreadth, moversData, intelData]);
+
   const buildFallbackIntel = useCallback(() => {
     const gainers = (moversData.gainers || []).slice(0, 3);
     const { sentiment, stocksUp, stocksDown } = marketBreadth;
@@ -2229,6 +2641,7 @@ const ResearchLandingPage = ({
                 ...(gainers.length > 0 ? [{ text: `${gainers[0]?.symbol} leading gainers at +${safeNumber(gainers[0]?.percentChange, 0).toFixed(1)}%.`, type: 'positive' }] : []),
               ],
             },
+            followUps: ['Which sectors are strongest?', 'Any volume anomalies?'],
           },
           {
             id: 'sector_watch',
@@ -2239,6 +2652,7 @@ const ResearchLandingPage = ({
                 { text: 'Sector data requires live intelligence. Tap refresh for AI analysis.', type: 'signal' },
               ],
             },
+            followUps: ['Which sector has most momentum?', 'Any sectors showing weakness?'],
           },
           {
             id: 'risk_radar',
@@ -2249,6 +2663,7 @@ const ResearchLandingPage = ({
                 { text: sentiment === 'bearish' ? `Broad weakness with ${stocksDown} stocks declining — monitor positions.` : 'No major risk signals detected in current session.', type: sentiment === 'bearish' ? 'negative' : 'signal' },
               ],
             },
+            followUps: ['What are biggest macro risks?', 'How should I think about sizing?'],
           },
           {
             id: 'earnings_events',
@@ -2259,6 +2674,7 @@ const ResearchLandingPage = ({
                 { text: economicEvents.length > 0 ? `${economicEvents[0].name} scheduled for ${economicEvents[0].date}${economicEvents[0].impact === 'high' ? ' (high impact)' : ''}.` : 'No major economic events this week.', type: 'signal' },
               ],
             },
+            followUps: ['Which earnings could move markets?', 'Any surprises expected?'],
           },
           {
             id: 'trade_setup',
@@ -2270,6 +2686,7 @@ const ResearchLandingPage = ({
                 { text: 'Full setup analysis requires live intelligence. Tap refresh for AI analysis.', type: 'signal' },
               ],
             },
+            followUps: ['What timeframe for these setups?', 'Any contrarian plays?'],
           },
         ],
       },
@@ -2447,6 +2864,7 @@ const ResearchLandingPage = ({
           weeklyReportData={weeklyReportData}
           weeklyReportLoading={weeklyReportLoading}
           onFetchWeeklyReport={fetchWeeklyReport}
+          buildMarketContextString={buildMarketContextString}
         />
         {isOpen && researchAsset && (
           <AssetResearchModal
@@ -2608,9 +3026,10 @@ const ResearchLandingPage = ({
       {/* ═══ ZONE 2: Research Tools ═══ */}
       <SectionDivider label="RESEARCH TOOLS" />
 
+      {/* Row 1: 3 pathway cards */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gridTemplateColumns: 'repeat(3, 1fr)',
         gap: '12px',
       }}>
         {/* Build My Thesis */}
@@ -2658,7 +3077,15 @@ const ResearchLandingPage = ({
           tags={['Analyze Stock', 'My Patterns', 'Insights']}
           onClick={onAnalyzeStock}
         />
+      </div>
 
+      {/* Row 2: Quick Research + Intel Chat */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '12px',
+        marginTop: '12px',
+      }}>
         {/* Quick Research */}
         <PathwayCard
           index={3}
@@ -2679,6 +3106,9 @@ const ResearchLandingPage = ({
             onSelectAsset={handleOpenResearch}
           />
         </PathwayCard>
+
+        {/* Intel Chat */}
+        <DesktopIntelChat buildMarketContextString={buildMarketContextString} />
       </div>
 
       {/* ═══ ZONE 3: Bottom Row ═══ */}

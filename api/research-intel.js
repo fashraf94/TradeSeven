@@ -30,31 +30,36 @@ RESPONSE FORMAT — Return ONLY this JSON structure, no other text:
           "insights": [
             { "text": "Specific insight with data points", "type": "positive" | "negative" | "signal" }
           ]
-        }
+        },
+        "followUps": ["Contextual follow-up question 1", "Contextual follow-up question 2"]
       },
       {
         "id": "sector_watch",
         "icon": "🏭",
         "label": "Which sectors are leading or lagging?",
-        "answer": { "insights": [{ "text": "...", "type": "..." }] }
+        "answer": { "insights": [{ "text": "...", "type": "..." }] },
+        "followUps": ["...", "..."]
       },
       {
         "id": "risk_radar",
         "icon": "🛡️",
         "label": "Any risks I should watch for?",
-        "answer": { "insights": [{ "text": "...", "type": "..." }] }
+        "answer": { "insights": [{ "text": "...", "type": "..." }] },
+        "followUps": ["...", "..."]
       },
       {
         "id": "earnings_events",
         "icon": "📅",
         "label": "Key earnings & events this week?",
-        "answer": { "insights": [{ "text": "...", "type": "..." }] }
+        "answer": { "insights": [{ "text": "...", "type": "..." }] },
+        "followUps": ["...", "..."]
       },
       {
         "id": "trade_setup",
         "icon": "🎯",
         "label": "Any interesting setups forming?",
-        "answer": { "insights": [{ "text": "...", "type": "..." }] }
+        "answer": { "insights": [{ "text": "...", "type": "..." }] },
+        "followUps": ["...", "..."]
       }
     ]
   },
@@ -78,7 +83,7 @@ RESPONSE FORMAT — Return ONLY this JSON structure, no other text:
   }
 }
 
-Each question must have 2-4 insights. Provide 3-4 discoveries (NONE from watchlist/battles) and 1 hotSector.`;
+Each question must have 2-4 insights and 2-3 followUps (short contextual follow-up questions under 40 chars each). Provide 3-4 discoveries (NONE from watchlist/battles) and 1 hotSector.`;
 
 function buildUserPrompt(ctx) {
   return `TODAY'S MARKET DATA:
