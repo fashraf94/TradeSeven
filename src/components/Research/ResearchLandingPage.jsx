@@ -35,10 +35,14 @@ const C = {
   redDim: 'rgba(255,71,87,0.10)',
   amberDim: 'rgba(245,158,11,0.10)',
   purpleDim: 'rgba(167,139,250,0.10)',
-  bgDeep: '#080c12',
   bgSurface: '#1c2128',
   borderActive: 'rgba(0,217,255,0.18)',
 };
+
+// ─── Style Helpers ──────────────────────────────────────────
+const sectionLabel = (color, letterSpacing = '0.12em', fontSize = '9px') => ({
+  fontSize, fontWeight: 700, letterSpacing, color,
+});
 
 const SENTIMENT_MAP = {
   bullish:  { color: C.green, label: 'BULLISH' },
@@ -79,7 +83,45 @@ const KEYFRAMES = `
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
 }
+@keyframes rlp-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 `;
+
+// ─── ThinkingDots (shared loading indicator) ─────────────────
+const ThinkingDots = ({ label = 'Thinking...', dotSize = 6, delayStep = 0.2, padding = '8px 0', labelMarginLeft }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding }}>
+    <div style={{ display: 'flex', gap: '3px' }}>
+      {[0, 1, 2].map(i => (
+        <div key={i} style={{
+          width: dotSize, height: dotSize, borderRadius: '50%',
+          background: C.purple,
+          animation: `rlp-pulse 1s ease-in-out ${i * delayStep}s infinite`,
+        }} />
+      ))}
+    </div>
+    <span style={{ fontSize: '11px', color: C.textMuted, ...(labelMarginLeft && { marginLeft: labelMarginLeft }) }}>{label}</span>
+  </div>
+);
+
+// ─── UserBubble (shared chat message component) ─────────────
+const UserBubble = ({ text, bgAlpha = '15', borderAlpha = '20', textColor = C.white, maxWidth = '80%', marginBottom }) => (
+  <div style={{ display: 'flex', justifyContent: 'flex-end', ...(marginBottom !== undefined && { marginBottom }) }}>
+    <div style={{
+      background: `${C.cyan}${bgAlpha}`,
+      border: `1px solid ${C.cyan}${borderAlpha}`,
+      borderRadius: '12px 12px 4px 12px',
+      padding: '8px 12px',
+      maxWidth,
+      fontSize: '12px',
+      color: textColor,
+      lineHeight: 1.4,
+    }}>
+      {text}
+    </div>
+  </div>
+);
 
 // ─── ParticleField ───────────────────────────────────────────
 const ParticleField = ({ width, height }) => {
@@ -174,12 +216,7 @@ const SentimentPulse = ({ sentiment }) => {
         boxShadow: `0 0 8px ${s.color}`,
         animation: 'rlp-pulse 2s ease-in-out infinite',
       }} />
-      <span style={{
-        fontSize: '10px',
-        fontWeight: 700,
-        letterSpacing: '0.15em',
-        color: s.color,
-      }}>
+      <span style={{ ...sectionLabel(s.color, '0.15em', '10px') }}>
         {s.label}
       </span>
     </div>
@@ -588,7 +625,8 @@ const DesktopIntelChat = ({ buildMarketContextString }) => {
       } else {
         setMessages(prev => [...prev, { role: 'assistant', insights: [{ text: 'Unable to fetch insights right now. Try again.', type: 'signal' }] }]);
       }
-    } catch {
+    } catch (err) {
+      console.warn('[DesktopIntelChat] Send error:', err);
       setMessages(prev => [...prev, { role: 'assistant', insights: [{ text: 'Connection error. Please try again.', type: 'signal' }] }]);
     } finally {
       setLoading(false);
@@ -616,7 +654,7 @@ const DesktopIntelChat = ({ buildMarketContextString }) => {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
         <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.purple }} />
-        <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', color: C.purple }}>INTEL CHAT</span>
+        <span style={{ ...sectionLabel(C.purple, '0.12em', '10px') }}>INTEL CHAT</span>
         <span style={{
           fontSize: '9px',
           fontWeight: 700,
@@ -664,20 +702,7 @@ const DesktopIntelChat = ({ buildMarketContextString }) => {
             {messages.map((msg, i) => (
               <div key={i}>
                 {msg.role === 'user' ? (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <div style={{
-                      background: `${C.cyan}12`,
-                      border: `1px solid ${C.cyan}25`,
-                      borderRadius: '12px 12px 4px 12px',
-                      padding: '8px 12px',
-                      maxWidth: '85%',
-                      fontSize: '12px',
-                      color: C.cyan,
-                      lineHeight: 1.4,
-                    }}>
-                      {msg.text}
-                    </div>
-                  </div>
+                  <UserBubble text={msg.text} bgAlpha="12" borderAlpha="25" textColor={C.cyan} maxWidth="85%" />
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {(msg.insights || []).map((insight, j) => (
@@ -688,17 +713,7 @@ const DesktopIntelChat = ({ buildMarketContextString }) => {
               </div>
             ))}
             {loading && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 0' }}>
-                <div style={{ display: 'flex', gap: '3px' }}>
-                  {[0, 1, 2].map(i => (
-                    <div key={i} style={{
-                      width: 4, height: 4, borderRadius: '50%', background: C.purple,
-                      animation: `rlp-pulse 1s ease-in-out ${i * 0.15}s infinite`,
-                    }} />
-                  ))}
-                </div>
-                <span style={{ fontSize: '11px', color: C.textMuted }}>Thinking...</span>
-              </div>
+              <ThinkingDots label="Thinking..." dotSize={4} delayStep={0.15} padding="4px 0" />
             )}
           </>
         )}
@@ -725,10 +740,7 @@ const SectionDivider = ({ label }) => (
       background: `linear-gradient(90deg, transparent, ${C.cyan}66)`,
     }} />
     <span style={{
-      fontSize: '10px',
-      fontWeight: 700,
-      letterSpacing: '0.15em',
-      color: C.textMuted,
+      ...sectionLabel(C.textMuted, '0.15em', '10px'),
       whiteSpace: 'nowrap',
     }}>
       {label}
@@ -766,12 +778,7 @@ const SentimentBadge = ({ sentiment }) => {
         boxShadow: `0 0 6px ${s.color}`,
         animation: 'rlp-pulse 2s ease-in-out infinite',
       }} />
-      <span style={{
-        fontSize: '10px',
-        fontWeight: 700,
-        letterSpacing: '0.12em',
-        color: s.color,
-      }}>
+      <span style={{ ...sectionLabel(s.color, '0.12em', '10px') }}>
         {s.label}
       </span>
     </div>
@@ -904,10 +911,7 @@ const ThreadView = ({ data, symbol, onOpenResearch }) => {
   return (
     <div style={{ padding: '12px 0 4px' }}>
       <div style={{
-        fontSize: '9px',
-        fontWeight: 700,
-        letterSpacing: '0.15em',
-        color: C.purple,
+        ...sectionLabel(C.purple, '0.15em'),
         marginBottom: '10px',
       }}>
         DEEP DIVE: {symbol}
@@ -942,10 +946,7 @@ const ThreadView = ({ data, symbol, onOpenResearch }) => {
           marginBottom: '8px',
         }}>
           <div style={{
-            fontSize: '9px',
-            fontWeight: 700,
-            letterSpacing: '0.1em',
-            color: C.green,
+            ...sectionLabel(C.green, '0.1em'),
             marginBottom: '4px',
           }}>
             VERDICT
@@ -966,10 +967,7 @@ const ThreadView = ({ data, symbol, onOpenResearch }) => {
           marginBottom: '10px',
         }}>
           <div style={{
-            fontSize: '9px',
-            fontWeight: 700,
-            letterSpacing: '0.1em',
-            color: C.red,
+            ...sectionLabel(C.red, '0.1em'),
             marginBottom: '4px',
           }}>
             KEY RISK
@@ -1135,10 +1133,7 @@ const HotSectorCard = ({ sector }) => {
       padding: '14px',
     }}>
       <div style={{
-        fontSize: '9px',
-        fontWeight: 700,
-        letterSpacing: '0.12em',
-        color: C.textMuted,
+        ...sectionLabel(C.textMuted),
         marginBottom: '8px',
       }}>
         HOT SECTOR
@@ -1324,16 +1319,7 @@ const QuestionCard = ({ question, index, buildMarketContextString }) => {
       {expanded && (
         <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `1px solid ${C.border}`, animation: 'rlp-fadeSlideIn 0.3s ease both' }}>
           {!showAnswer ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 0' }}>
-              {[0, 1, 2].map(i => (
-                <div key={i} style={{
-                  width: '6px', height: '6px', borderRadius: '50%',
-                  background: C.purple,
-                  animation: `rlp-pulse 1s ease-in-out ${i * 0.2}s infinite`,
-                }} />
-              ))}
-              <span style={{ fontSize: '11px', color: C.textMuted, marginLeft: '4px' }}>Analyzing...</span>
-            </div>
+            <ThinkingDots label="Analyzing..." labelMarginLeft="4px" />
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {/* Original insights */}
@@ -1348,17 +1334,7 @@ const QuestionCard = ({ question, index, buildMarketContextString }) => {
                   animation: 'rlp-fadeSlideIn 0.3s ease-out both',
                 }}>
                   {msg.role === 'user' ? (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
-                      <span style={{
-                        padding: '8px 12px',
-                        borderRadius: '12px 12px 4px 12px',
-                        background: `${C.cyan}15`,
-                        border: `1px solid ${C.cyan}20`,
-                        fontSize: '12px',
-                        color: C.white,
-                        maxWidth: '80%',
-                      }}>{msg.text}</span>
-                    </div>
+                    <UserBubble text={msg.text} marginBottom={6} />
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       {(msg.insights || []).map((insight, j) => (
@@ -1510,16 +1486,7 @@ const TrackerStockCard = ({ stock, expanded, onToggle, trackerData, trackerLoadi
       {expanded && (
         <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: `1px solid ${C.border}` }}>
           {trackerLoading === stock.symbol ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '12px 0' }}>
-              {[0, 1, 2].map(i => (
-                <div key={i} style={{
-                  width: '6px', height: '6px', borderRadius: '50%',
-                  background: C.purple,
-                  animation: `rlp-pulse 1s ease-in-out ${i * 0.2}s infinite`,
-                }} />
-              ))}
-              <span style={{ fontSize: '11px', color: C.textMuted, marginLeft: '4px' }}>Analyzing {stock.symbol}...</span>
-            </div>
+            <ThinkingDots label={`Analyzing ${stock.symbol}...`} padding="12px 0" labelMarginLeft="4px" />
           ) : trackerData ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {sections.map(({ key, label, color }) => (
@@ -1558,10 +1525,7 @@ const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, tra
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', padding: '0 4px' }}>
         <div style={{
-          fontSize: '9px',
-          fontWeight: 700,
-          letterSpacing: '0.12em',
-          color: C.textMuted,
+          ...sectionLabel(C.textMuted),
         }}>
           TRACKER BOT
         </div>
@@ -1629,10 +1593,7 @@ const WeeklyReport = ({ visible, onClose, reportData, reportLoading }) => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '16px' }}>{'\uD83D\uDCCB'}</span>
             <span style={{
-              fontSize: '11px',
-              fontWeight: 700,
-              letterSpacing: '0.12em',
-              color: C.cyan,
+              ...sectionLabel(C.cyan, '0.12em', '11px'),
             }}>
               WEEKLY INTEL
             </span>
@@ -1743,10 +1704,7 @@ const WeeklyReport = ({ visible, onClose, reportData, reportLoading }) => {
                   borderLeft: `3px solid ${C.amber}`,
                 }}>
                   <div style={{
-                    fontSize: '9px',
-                    fontWeight: 700,
-                    letterSpacing: '0.12em',
-                    color: C.amber,
+                    ...sectionLabel(C.amber),
                     marginBottom: '6px',
                   }}>
                     OUTLOOK
@@ -1847,10 +1805,7 @@ const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onTog
       {briefer.questions?.length > 0 && (
         <div>
           <div style={{
-            fontSize: '9px',
-            fontWeight: 700,
-            letterSpacing: '0.12em',
-            color: C.textMuted,
+            ...sectionLabel(C.textMuted),
             marginBottom: '8px',
             padding: '0 4px',
           }}>
@@ -1916,10 +1871,7 @@ const DiscoverTab = ({ scout, expandedSymbol, onToggleCard, threadCache, threadL
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
       {/* Header */}
       <div style={{
-        fontSize: '9px',
-        fontWeight: 700,
-        letterSpacing: '0.15em',
-        color: C.textMuted,
+        ...sectionLabel(C.textMuted, '0.15em'),
         padding: '0 4px',
       }}>
         STOCKS YOU&apos;RE NOT WATCHING
@@ -2477,7 +2429,8 @@ const ResearchLandingPage = ({
         } else {
           setAiSummary(generateFallback());
         }
-      } catch {
+      } catch (err) {
+        console.warn('[ResearchLanding] AI summary fetch failed:', err);
         setAiSummary(generateFallback());
       } finally {
         setIsLoadingSummary(false);
@@ -2761,6 +2714,10 @@ const ResearchLandingPage = ({
       }
     } catch (err) {
       console.warn('[ResearchLanding] Thread fetch failed:', err);
+      setThreadCache(prev => ({ ...prev, [symbol]: {
+        bullets: ['Unable to load analysis. Try again in a moment.'],
+        verdict: null, risk: null
+      } }));
     }
   }, [threadCache]);
 
@@ -2778,6 +2735,10 @@ const ResearchLandingPage = ({
       }
     } catch (err) {
       console.warn('[ResearchLanding] Tracker fetch failed:', err);
+      setTrackerCache(prev => ({ ...prev, [symbol]: {
+        priceAction: 'Unable to load analysis. Try again later.',
+        technicalLevel: null, news: null, baggerBomb: null
+      } }));
     }
   }, [trackerCache]);
 
@@ -2816,6 +2777,7 @@ const ResearchLandingPage = ({
       }
     } catch (err) {
       console.warn('[ResearchLanding] Weekly report fetch failed:', err);
+      setWeeklyReportData({ summary: 'Weekly report unavailable. Try again later.', stocks: [], outlook: null });
     } finally {
       setWeeklyReportLoading(false);
     }
@@ -2910,10 +2872,7 @@ const ResearchLandingPage = ({
             marginBottom: '4px',
           }}>
             <div style={{
-              fontSize: '10px',
-              fontWeight: 700,
-              letterSpacing: '0.15em',
-              color: C.textMuted,
+              ...sectionLabel(C.textMuted, '0.15em', '10px'),
               textTransform: 'uppercase',
             }}>
               MARKET INTELLIGENCE
@@ -2958,7 +2917,7 @@ const ResearchLandingPage = ({
                   border: `2px solid ${C.purple}40`,
                   borderTop: `2px solid ${C.purple}`,
                   borderRadius: '50%',
-                  animation: 'spin 1s linear infinite',
+                  animation: 'rlp-spin 1s linear infinite',
                 }} />
                 <span style={{ color: C.textSecondary, fontSize: '13px' }}>
                   Analyzing market conditions...
@@ -2978,10 +2937,7 @@ const ResearchLandingPage = ({
             {/* Gainers */}
             <div>
               <div style={{
-                fontSize: '10px',
-                fontWeight: 700,
-                letterSpacing: '0.1em',
-                color: C.green,
+                ...sectionLabel(C.green, '0.1em', '10px'),
                 marginBottom: '6px',
                 textTransform: 'uppercase',
               }}>
@@ -3000,10 +2956,7 @@ const ResearchLandingPage = ({
             {/* Decliners */}
             <div>
               <div style={{
-                fontSize: '10px',
-                fontWeight: 700,
-                letterSpacing: '0.1em',
-                color: C.red,
+                ...sectionLabel(C.red, '0.1em', '10px'),
                 marginBottom: '6px',
                 textTransform: 'uppercase',
               }}>
@@ -3132,10 +3085,7 @@ const ResearchLandingPage = ({
           }}
         >
           <div style={{
-            fontSize: '10px',
-            fontWeight: 700,
-            letterSpacing: '0.15em',
-            color: C.textMuted,
+            ...sectionLabel(C.textMuted, '0.15em', '10px'),
             marginBottom: '12px',
             textTransform: 'uppercase',
           }}>
@@ -3172,10 +3122,7 @@ const ResearchLandingPage = ({
           }}
         >
           <div style={{
-            fontSize: '10px',
-            fontWeight: 700,
-            letterSpacing: '0.15em',
-            color: C.textMuted,
+            ...sectionLabel(C.textMuted, '0.15em', '10px'),
             marginBottom: '12px',
             textTransform: 'uppercase',
           }}>
