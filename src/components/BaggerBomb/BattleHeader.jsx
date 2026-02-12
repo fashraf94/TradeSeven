@@ -381,41 +381,52 @@ export default function BattleHeader({
       {battleVersion >= 4 && (
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           {swapMode?.active ? (
-            <button
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={onCancelSwapMode}
               style={{
-                padding: '6px 16px',
-                borderRadius: '12px',
-                border: `1px solid ${HOLO_COLORS.red}60`,
-                background: `${HOLO_COLORS.red}15`,
+                padding: '8px 20px',
+                borderRadius: '20px',
+                border: 'none',
+                background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(220, 38, 38, 0.15))',
                 color: HOLO_COLORS.red,
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              Cancel Swap
-            </button>
-          ) : swapsRemaining > 0 ? (
-            <button
-              onClick={onEnterSwapMode}
-              style={{
-                padding: '6px 16px',
-                borderRadius: '12px',
-                border: `1px solid ${HOLO_COLORS.cyan}50`,
-                background: `${HOLO_COLORS.cyan}15`,
-                color: HOLO_COLORS.cyan,
-                fontSize: '12px',
-                fontWeight: 600,
+                fontSize: '13px',
+                fontWeight: 700,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
+                boxShadow: `0 0 15px rgba(239, 68, 68, 0.2), 0 2px 8px rgba(0, 0, 0, 0.3)`,
+                letterSpacing: '0.5px',
+              }}
+            >
+              Cancel Swap
+            </motion.button>
+          ) : swapsRemaining > 0 ? (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onEnterSwapMode}
+              style={{
+                padding: '8px 20px',
+                borderRadius: '20px',
+                border: 'none',
+                background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.2), rgba(139, 92, 246, 0.2))',
+                color: HOLO_COLORS.cyan,
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: `0 0 15px rgba(0, 217, 255, 0.2), 0 2px 8px rgba(0, 0, 0, 0.3)`,
+                letterSpacing: '0.5px',
               }}
             >
               <span style={{ fontSize: '14px' }}>🔄</span>
               Swap ({swapsRemaining} left)
-            </button>
+            </motion.button>
           ) : (
             <span
               style={{

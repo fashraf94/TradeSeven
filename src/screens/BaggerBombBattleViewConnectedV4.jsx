@@ -2,7 +2,7 @@
 // Connects BaggerBombBattleView to real Firebase data via useBaggerBombBattleV4 hook
 // Features: Free agent rotation, swap modal, closed trades, multi-day battles
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { HOLO_COLORS } from '../constants/holoTheme';
@@ -45,6 +45,51 @@ export default function BaggerBombBattleViewConnectedV4({
     cumulativePoints,
     clearTrigger,
   } = useBaggerBombBattleV4(battleId, userId);
+
+  // Multi-step swap mode state (matches training view pattern)
+  const [swapMode, setSwapMode] = useState({
+    active: false,
+    selectedFreeAgent: null,
+    step: 'idle',
+    targetAsset: null,
+  });
+
+  const enterSwapMode = useCallback(() => {
+    if (swapsRemaining <= 0) return;
+    setSwapMode({ active: true, selectedFreeAgent: null, step: 'selectAgent', targetAsset: null });
+  }, [swapsRemaining]);
+
+  const selectFreeAgent = useCallback((agent) => {
+    setSwapMode(prev => ({ ...prev, selectedFreeAgent: agent, step: 'selectTarget' }));
+  }, []);
+
+  const selectSwapTarget = useCallback((asset, tier, slotIndex) => {
+    if (swapMode.selectedFreeAgent?.isCrypto && !asset.isCrypto) return;
+    if (!swapMode.selectedFreeAgent?.isCrypto && asset.isCrypto) return;
+    setSwapMode(prev => ({
+      ...prev,
+      targetAsset: { symbol: asset.symbol, name: asset.name, tier, slotIndex, isCrypto: asset.isCrypto },
+      step: 'confirming',
+    }));
+  }, [swapMode.selectedFreeAgent]);
+
+  const cancelSwapMode = useCallback(() => {
+    setSwapMode({ active: false, selectedFreeAgent: null, step: 'idle', targetAsset: null });
+  }, []);
+
+  const confirmSwap = useCallback(async () => {
+    if (!swapMode.targetAsset || !swapMode.selectedFreeAgent) return;
+    try {
+      await executeSwap({
+        outTier: swapMode.targetAsset.tier,
+        outSlotIndex: swapMode.targetAsset.slotIndex,
+        inSymbol: swapMode.selectedFreeAgent.symbol,
+      });
+      cancelSwapMode();
+    } catch (err) {
+      console.error('[V4 PvP] Swap confirm error:', err);
+    }
+  }, [swapMode, executeSwap, cancelSwapMode]);
 
   // Build trigger object for TriggerCelebration
   const triggerForCelebration = useMemo(() => {
@@ -149,16 +194,19 @@ export default function BaggerBombBattleViewConnectedV4({
         battleVersion={4}
         freeAgents={freeAgents}
         nextRotationAt={nextRotationAt}
-        startingPrices={openPrices}
+        freeAgentDailyOpens={{}}
         swapsRemaining={swapsRemaining}
-        onSwapRequest={handleSwapRequest}
         currentDay={currentTradingDay}
         totalDays={totalTradingDays}
         rotationCountdown={rotationCountdown}
         closedTrades={closedTrades}
-        swapModalState={swapModalState}
-        onCloseSwapModal={closeSwapModal}
-        onConfirmSwap={executeSwap}
+        // Multi-step swap mode props
+        swapMode={swapMode}
+        onEnterSwapMode={enterSwapMode}
+        onSelectFreeAgent={selectFreeAgent}
+        onSelectSwapTarget={selectSwapTarget}
+        onCancelSwapMode={cancelSwapMode}
+        onConfirmSwap={confirmSwap}
         isSwapExecuting={isSwapExecuting}
       />
 

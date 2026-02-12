@@ -221,10 +221,19 @@ AssetSide.propTypes = {
   onAssetSelect: PropTypes.func,
 };
 
+// Tier-specific badge colors
+const TIER_BADGE_STYLES = {
+  star:    { color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.12)', label: '2×' },
+  core:    { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)', label: '1.5×' },
+  support: { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)', label: '1×' },
+};
+
 /**
- * AllocationBadge - Center allocation indicator
+ * AllocationBadge - Center allocation indicator with tier-specific colors
  */
-function AllocationBadge({ allocation, isCrypto = false }) {
+function AllocationBadge({ tier = 'support', isCrypto = false }) {
+  const tierStyle = TIER_BADGE_STYLES[tier] || TIER_BADGE_STYLES.support;
+
   return (
     <div
       style={{
@@ -233,32 +242,32 @@ function AllocationBadge({ allocation, isCrypto = false }) {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '4px',
         flexShrink: 0,
       }}
     >
       <div
         style={{
-          padding: '6px 10px',
-          borderRadius: '6px',
-          backgroundColor: isCrypto ? `${HOLO_COLORS.purple}30` : `${HOLO_COLORS.primary}15`,
-          border: `1px solid ${isCrypto ? HOLO_COLORS.purple : HOLO_COLORS.primary}`,
-          fontSize: '14px',
+          padding: '4px 8px',
+          borderRadius: '8px',
+          backgroundColor: tierStyle.bg,
+          border: `1px solid ${tierStyle.color}40`,
+          fontSize: '13px',
           fontWeight: 700,
-          color: isCrypto ? HOLO_COLORS.purple : HOLO_COLORS.primary,
+          color: tierStyle.color,
+          whiteSpace: 'nowrap',
         }}
       >
-        {allocation}
+        {tierStyle.label}
       </div>
       {isCrypto && (
-        <span style={{ fontSize: '10px' }}>🔮</span>
+        <span style={{ fontSize: '10px', marginTop: '2px' }}>🔮</span>
       )}
     </div>
   );
 }
 
 AllocationBadge.propTypes = {
-  allocation: PropTypes.string.isRequired,
+  tier: PropTypes.oneOf(['star', 'core', 'support']),
   isCrypto: PropTypes.bool,
 };
 
@@ -268,6 +277,7 @@ AllocationBadge.propTypes = {
 export default function TacticalRow({
   leftAsset,
   rightAsset,
+  tier,
   allocationLabel = '10%',
   isCryptoSlot = false,
   onLeftThresholdCross,
@@ -307,7 +317,7 @@ export default function TacticalRow({
 
       {/* Center Allocation Badge */}
       <AllocationBadge
-        allocation={allocationLabel}
+        tier={tier}
         isCrypto={isCryptoSlot}
       />
 
@@ -347,6 +357,7 @@ TacticalRow.propTypes = {
     points: PropTypes.number,
     badges: PropTypes.arrayOf(PropTypes.string),
   }),
+  tier: PropTypes.oneOf(['star', 'core', 'support']),
   allocationLabel: PropTypes.string,
   isCryptoSlot: PropTypes.bool,
   onLeftThresholdCross: PropTypes.func,
@@ -362,6 +373,7 @@ TacticalRow.propTypes = {
 TacticalRow.defaultProps = {
   leftAsset: null,
   rightAsset: null,
+  tier: 'support',
   allocationLabel: '10%',
   isCryptoSlot: false,
   onLeftThresholdCross: null,

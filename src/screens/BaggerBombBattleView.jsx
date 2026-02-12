@@ -56,6 +56,13 @@ const TIERS = [
   },
 ];
 
+// Tier-specific badge colors (matches TacticalRow TIER_BADGE_STYLES)
+const TIER_HEADER_COLORS = {
+  star:    { color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.12)' },
+  core:    { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' },
+  support: { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
+};
+
 /**
  * Tab Toggle Component
  */
@@ -160,10 +167,12 @@ function TierHeader({ tier, nightMode }) {
         <span
           style={{
             fontSize: '11px',
-            color: mutedColor,
-            padding: '2px 6px',
-            backgroundColor: elevatedBg,
-            borderRadius: '4px',
+            color: TIER_HEADER_COLORS[tier.key]?.color || mutedColor,
+            fontWeight: 600,
+            padding: '2px 8px',
+            backgroundColor: TIER_HEADER_COLORS[tier.key]?.bg || elevatedBg,
+            borderRadius: '6px',
+            border: `1px solid ${TIER_HEADER_COLORS[tier.key]?.color || mutedColor}30`,
           }}
         >
           {tier.allocation} each
@@ -438,6 +447,7 @@ export default function BaggerBombBattleView({
                         key={`${tier.key}-${index}`}
                         leftAsset={playerAsset}
                         rightAsset={opponentAsset}
+                        tier={tier.key}
                         allocationLabel={tier.allocation}
                         isCryptoSlot={isCryptoSlot}
                         onLeftThresholdCross={
