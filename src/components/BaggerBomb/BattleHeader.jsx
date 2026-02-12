@@ -517,6 +517,19 @@ BattleHeader.propTypes = {
   totalDays: PropTypes.number,
   /** V4: Seconds until next rotation */
   rotationCountdown: PropTypes.number,
+  /** V4: Swap mode state */
+  swapMode: PropTypes.shape({
+    active: PropTypes.bool,
+    step: PropTypes.string,
+    selectedFreeAgent: PropTypes.object,
+    targetAsset: PropTypes.object,
+  }),
+  /** V4: Enter swap mode callback */
+  onEnterSwapMode: PropTypes.func,
+  /** V4: Select free agent callback */
+  onSelectFreeAgent: PropTypes.func,
+  /** V4: Cancel swap mode callback */
+  onCancelSwapMode: PropTypes.func,
 };
 
 BattleHeader.defaultProps = {

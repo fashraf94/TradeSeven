@@ -384,8 +384,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         crossed.forEach((threshold) => {
           const existingBadges = getBadgesFromHistory(assetHistory);
           if (!existingBadges.includes(threshold.name)) {
-            console.log(`🎯 [V4] Threshold crossed: ${asset.symbol} → ${threshold.name}`);
-
             const newHistory = updateAssetHistory(asset.symbol, currentMultiplier, assetHistory);
             setLocalHistory((prev) => ({
               ...prev,
@@ -445,8 +443,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         crossed.forEach((threshold) => {
           const existingBadges = getBadgesFromHistory(assetHistory);
           if (!existingBadges.includes(threshold.name)) {
-            console.log(`🎯 [V4-opp] Threshold crossed: ${asset.symbol} → ${threshold.name}`);
-
             const event = createThresholdEvent(
               oppData?.username || 'Opponent',
               asset.symbol,
@@ -603,7 +599,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
           transaction.update(battleRef, {
             [`state.dailyOpenPrices.${dayKey}`]: openPriceCapture,
           });
-          console.log(`✅ [V4] Captured daily open prices for ${dayKey}:`, Object.keys(openPriceCapture).length, 'symbols');
         }
       });
     } catch (err) {
@@ -622,7 +617,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     rotationInProgressRef.current = true;
     try {
       await rotateFreeAgents(battleId);
-      console.log('✅ [V4] Free agent rotation triggered');
     } catch (err) {
       console.error('Error during free agent rotation:', err);
     } finally {
@@ -667,7 +661,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         currentPrices
       );
 
-      console.log('✅ [V4] Swap executed:', result);
       closeSwapModal();
       return result;
     } catch (err) {
@@ -735,7 +728,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     const isInsideActiveHours = timeDecimal >= 9.5 && timeDecimal < 20;
 
     if (!isInsideActiveHours) {
-      console.log('[BaggerBomb V4] Outside active hours — polling disabled');
       return;
     }
 

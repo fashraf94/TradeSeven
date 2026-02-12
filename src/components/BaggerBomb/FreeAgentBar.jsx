@@ -83,7 +83,7 @@ function FreeAgentCard({ agent, priceChange, currentPrice, onTap, selectable, se
         minWidth: 0,
         padding: '10px 6px 8px',
         borderRadius: '10px',
-        background: 'linear-gradient(145deg, #161b22 0%, #0d1117 50%, #1a1025 100%)',
+        background: `linear-gradient(145deg, ${HOLO_COLORS.bgElevated} 0%, ${HOLO_COLORS.bgCard} 50%, #1a1025 100%)`,
         border: `2px solid ${borderColor}`,
         cursor: 'pointer',
         display: 'flex',

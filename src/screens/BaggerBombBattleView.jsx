@@ -359,7 +359,7 @@ export default function BaggerBombBattleView({
           {isTraining && (
             <span
               style={{
-                backgroundColor: '#8b5cf6',
+                backgroundColor: HOLO_COLORS.purple,
                 color: '#ffffff',
                 padding: '4px 8px',
                 borderRadius: '6px',
