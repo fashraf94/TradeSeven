@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { motion } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { SECTORS } from '../../constants/sectors';
-import { getTopMoversWithNews, getMarketNews, getMultipleStockNews } from '../../services/eodhdAPI';
+import { getTopMoversWithNews, getMarketNews } from '../../services/eodhdAPI';
 import { WEEK_AHEAD_EVENTS } from '../../data/weekAheadEvents';
 import { useAssetResearch } from '../../hooks/useAssetResearch';
 import AssetResearchModal from '../draft/AssetResearchModal';
@@ -395,55 +395,6 @@ const PathwayCard = ({ icon, title, subtitle, tags, accent, onClick, index, chil
       {/* Children (for Quick Search card) */}
       {children && <div style={{ marginTop: '16px' }}>{children}</div>}
     </motion.div>
-  );
-};
-
-// ─── WatchlistItem ───────────────────────────────────────────
-const WatchlistItem = ({ item, onClick }) => {
-  const getTimeAgo = (dateStr) => {
-    if (!dateStr) return '';
-    const diffMs = Date.now() - new Date(dateStr).getTime();
-    const mins = Math.floor(diffMs / 60000);
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.floor(diffMs / 3600000);
-    if (hrs < 24) return `${hrs}h ago`;
-    return `${Math.floor(hrs / 24)}d ago`;
-  };
-
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        padding: '10px 0',
-        borderBottom: `1px solid ${C.border}`,
-        cursor: 'pointer',
-        transition: 'background 0.15s',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-        <span style={{
-          fontFamily: 'monospace',
-          fontSize: '10px',
-          fontWeight: 700,
-          color: C.cyan,
-          background: `${C.cyan}15`,
-          padding: '2px 6px',
-          borderRadius: '4px',
-        }}>
-          {item.watchlistSymbol || 'NEWS'}
-        </span>
-        <span style={{ fontSize: '11px', color: C.textMuted }}>
-          {getTimeAgo(item.publishedAt)}
-        </span>
-      </div>
-      <div style={{
-        fontSize: '12px',
-        color: C.textPrimary,
-        lineHeight: 1.4,
-      }}>
-        {item.title}
-      </div>
-    </div>
   );
 };
 
@@ -1551,6 +1502,395 @@ const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, tra
   );
 };
 
+// ─── DesktopTrackerSection ───────────────────────────────────
+const DesktopTrackerSection = ({
+  watchlistStocks,
+  expandedTracker,
+  onToggleTracker,
+  trackerCache,
+  trackerLoading,
+  onShowWeeklyReport,
+}) => (
+  <div style={{
+    background: C.bgCard,
+    borderRadius: 16,
+    border: `1px solid ${C.border}`,
+    padding: '20px',
+    position: 'relative',
+    overflow: 'hidden',
+  }}>
+    {/* Accent line */}
+    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, ${C.cyan}60, ${C.cyan}20)` }} />
+
+    {/* Header */}
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 14 }}>{'\uD83E\uDD16'}</span>
+        <span style={{ ...sectionLabel(C.textMuted, '0.15em', '10px') }}>TRACKER BOT</span>
+      </div>
+      <span style={{ fontSize: 11, color: C.textMuted }}>Your watchlist, analyzed</span>
+    </div>
+
+    {/* Stock cards */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {watchlistStocks.map(stock => (
+        <TrackerStockCard
+          key={stock.symbol}
+          stock={stock}
+          expanded={expandedTracker === stock.symbol}
+          onToggle={() => onToggleTracker(stock.symbol)}
+          trackerData={trackerCache[stock.symbol]}
+          trackerLoading={trackerLoading === stock.symbol}
+        />
+      ))}
+    </div>
+
+    {/* Weekly Intel Report button */}
+    <button
+      onClick={onShowWeeklyReport}
+      style={{
+        width: '100%',
+        marginTop: 12,
+        padding: '10px',
+        borderRadius: 10,
+        background: `${C.cyan}08`,
+        border: `1px solid ${C.cyan}15`,
+        color: C.cyan,
+        fontSize: 13,
+        fontWeight: 700,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+      }}
+    >
+      {'\uD83D\uDCCB'} View Weekly Intel Report
+    </button>
+  </div>
+);
+
+// ─── MobileEconomicCalendar ─────────────────────────────────
+const MobileEconomicCalendar = ({ events, loading }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  // Only high-impact events in next 7 days
+  const todayStr = new Date().toISOString().split('T')[0];
+  const weekLater = new Date();
+  weekLater.setDate(weekLater.getDate() + 7);
+  const weekLaterStr = weekLater.toISOString().split('T')[0];
+
+  const highImpact = (events || []).filter(e =>
+    e.impact === 'high' && e.date >= todayStr && e.date <= weekLaterStr
+  );
+
+  const VISIBLE_COUNT = 4;
+  const visible = expanded ? highImpact : highImpact.slice(0, VISIBLE_COUNT);
+  const hasMore = highImpact.length > VISIBLE_COUNT;
+
+  return (
+    <div style={{
+      background: C.bgCard,
+      borderRadius: 12,
+      border: `1px solid ${C.border}`,
+      padding: '16px',
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+      {/* Accent line */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, ${C.amber}60, ${C.amber}20)` }} />
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 13 }}>{'\uD83D\uDCC5'}</span>
+          <span style={{ ...sectionLabel(C.textMuted, '0.12em', '9px') }}>ECONOMIC CALENDAR</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{
+            width: 5, height: 5, borderRadius: '50%',
+            background: C.green,
+            animation: 'rlp-pulse 2s ease-in-out infinite',
+          }} />
+          <span style={{ fontSize: 8, fontWeight: 700, color: C.green, letterSpacing: '0.08em' }}>LIVE</span>
+        </div>
+      </div>
+
+      {loading ? (
+        <ThinkingDots label="Loading events..." padding="8px 0" />
+      ) : highImpact.length === 0 ? (
+        <div style={{ fontSize: 11, color: C.textMuted, textAlign: 'center', padding: '8px 0' }}>
+          No high-impact events this week
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {visible.map((evt, i) => {
+            const dateObj = new Date(evt.date + 'T12:00:00');
+            const dayLabel = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+            const hasActual = evt.actual !== null && evt.actual !== undefined;
+            const hasEstimate = evt.estimate !== null && evt.estimate !== undefined;
+
+            // Beat/miss color
+            let resultColor = C.textMuted;
+            if (hasActual && hasEstimate) {
+              const act = parseFloat(evt.actual);
+              const est = parseFloat(evt.estimate);
+              if (!isNaN(act) && !isNaN(est)) {
+                resultColor = act > est ? C.green : act < est ? C.red : C.textSecondary;
+              }
+            }
+
+            return (
+              <div key={`${evt.date}-${i}`} style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '6px 0',
+                borderBottom: i < visible.length - 1 ? `1px solid ${C.border}` : 'none',
+              }}>
+                {/* Day badge */}
+                <span style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 9,
+                  fontWeight: 700,
+                  color: C.textMuted,
+                  background: `${C.textMuted}10`,
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  minWidth: 28,
+                  textAlign: 'center',
+                  textTransform: 'uppercase',
+                }}>
+                  {dayLabel}
+                </span>
+
+                {/* Event name */}
+                <span style={{
+                  flex: 1,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: C.textPrimary,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {evt.name}
+                </span>
+
+                {/* Actual value or dash */}
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: hasActual ? 700 : 400,
+                  color: hasActual ? resultColor : C.textMuted,
+                  fontFamily: "'JetBrains Mono', monospace",
+                  flexShrink: 0,
+                }}>
+                  {hasActual ? evt.actual : '\u2014'}
+                </span>
+              </div>
+            );
+          })}
+
+          {/* Show all toggle */}
+          {hasMore && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: C.cyan,
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: 'pointer',
+                padding: '6px 0 2px',
+                textAlign: 'center',
+              }}
+            >
+              {expanded ? 'Show less' : `Show all events \u2192`}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── DesktopEconomicCalendar ─────────────────────────────────
+const DesktopEconomicCalendar = ({ events, loading }) => {
+  // Group events by date
+  const groupedByDate = useMemo(() => {
+    if (!events?.length) return {};
+    const groups = {};
+    events.forEach(event => {
+      const dateKey = event.date;
+      if (!groups[dateKey]) groups[dateKey] = [];
+      groups[dateKey].push(event);
+    });
+    return groups;
+  }, [events]);
+
+  const dateKeys = Object.keys(groupedByDate).sort().slice(0, 14);
+
+  return (
+    <div style={{
+      background: C.bgCard,
+      borderRadius: 16,
+      border: `1px solid ${C.border}`,
+      padding: '20px',
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+      {/* Accent line */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, ${C.amber}60, ${C.amber}20)` }} />
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 14 }}>{'\uD83D\uDCC5'}</span>
+          <span style={{ ...sectionLabel(C.textMuted, '0.15em', '10px') }}>ECONOMIC CALENDAR</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{
+            width: 5, height: 5, borderRadius: '50%',
+            background: C.green,
+            animation: 'rlp-pulse 2s ease-in-out infinite',
+          }} />
+          <span style={{ fontSize: 9, fontWeight: 700, color: C.green, letterSpacing: '0.08em' }}>LIVE</span>
+        </div>
+      </div>
+
+      {loading ? (
+        <ThinkingDots label="Loading events..." />
+      ) : dateKeys.length === 0 ? (
+        <p style={{ fontSize: 12, color: C.textMuted, textAlign: 'center', padding: '20px 0', margin: 0 }}>No upcoming events found</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 400, overflowY: 'auto' }}>
+          {dateKeys.map(dateKey => {
+            const dayEvents = groupedByDate[dateKey];
+            const dateObj = new Date(dateKey + 'T12:00:00');
+            const isToday = new Date().toISOString().split('T')[0] === dateKey;
+            const dayLabel = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+            return (
+              <div key={dateKey}>
+                {/* Date header */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginBottom: 6,
+                }}>
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: isToday ? C.cyan : C.textSecondary,
+                    letterSpacing: '0.05em',
+                  }}>
+                    {isToday ? '\u25CF TODAY' : dayLabel.toUpperCase()}
+                  </span>
+                  <div style={{ flex: 1, height: 1, background: C.border }} />
+                </div>
+
+                {/* Events for this date */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {dayEvents.map((event, i) => {
+                    const hasActual = event.actual !== null && event.actual !== undefined;
+                    const hasEstimate = event.estimate !== null && event.estimate !== undefined;
+                    const hasPrevious = event.previous !== null && event.previous !== undefined;
+
+                    // Determine beat/miss
+                    let resultColor = C.textMuted;
+                    let resultLabel = null;
+                    if (hasActual && hasEstimate) {
+                      const act = parseFloat(event.actual);
+                      const est = parseFloat(event.estimate);
+                      if (!isNaN(act) && !isNaN(est)) {
+                        if (act > est) { resultColor = C.green; resultLabel = 'BEAT'; }
+                        else if (act < est) { resultColor = C.red; resultLabel = 'MISS'; }
+                        else { resultColor = C.textSecondary; resultLabel = 'IN LINE'; }
+                      }
+                    }
+
+                    return (
+                      <div key={`${dateKey}-${i}`} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '8px 10px',
+                        borderRadius: 8,
+                        background: event.impact === 'high' ? `${C.amber}06` : 'transparent',
+                        borderLeft: event.impact === 'high' ? `3px solid ${C.amber}` : `3px solid ${C.border}`,
+                      }}>
+                        {/* Event name + time */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{
+                              fontSize: 12,
+                              fontWeight: event.impact === 'high' ? 700 : 500,
+                              color: event.impact === 'high' ? C.white : C.textSecondary,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}>
+                              {event.name}
+                            </span>
+                            {event.impact === 'high' && (
+                              <span style={{
+                                padding: '1px 5px',
+                                borderRadius: 4,
+                                fontSize: 8,
+                                fontWeight: 700,
+                                background: `${C.amber}15`,
+                                color: C.amber,
+                                border: `1px solid ${C.amber}20`,
+                                flexShrink: 0,
+                              }}>HIGH</span>
+                            )}
+                          </div>
+                          {event.time && (
+                            <span style={{ fontSize: 10, color: C.textMuted }}>{event.time}</span>
+                          )}
+                        </div>
+
+                        {/* Data columns: Estimate | Previous | Actual */}
+                        <div style={{ display: 'flex', gap: 12, flexShrink: 0, alignItems: 'center' }}>
+                          {hasEstimate && (
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: 8, color: C.textMuted, letterSpacing: '0.08em' }}>EST</div>
+                              <div style={{ fontSize: 11, color: C.textSecondary, fontFamily: "'JetBrains Mono', monospace" }}>{event.estimate}</div>
+                            </div>
+                          )}
+                          {hasPrevious && (
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: 8, color: C.textMuted, letterSpacing: '0.08em' }}>PREV</div>
+                              <div style={{ fontSize: 11, color: C.textSecondary, fontFamily: "'JetBrains Mono', monospace" }}>{event.previous}</div>
+                            </div>
+                          )}
+                          {hasActual ? (
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: 8, color: resultColor, letterSpacing: '0.08em' }}>{resultLabel || 'ACT'}</div>
+                              <div style={{ fontSize: 11, color: resultColor, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{event.actual}</div>
+                            </div>
+                          ) : (
+                            <div style={{ textAlign: 'right', minWidth: 40 }}>
+                              <div style={{ fontSize: 8, color: C.textMuted, letterSpacing: '0.08em' }}>ACT</div>
+                              <div style={{ fontSize: 11, color: C.textMuted }}>{'\u2014'}</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── WeeklyReport (V2) ─────────────────────────────────────
 const WeeklyReport = ({ visible, onClose, reportData, reportLoading }) => {
   if (!visible) return null;
@@ -1728,7 +2068,7 @@ const WeeklyReport = ({ visible, onClose, reportData, reportLoading }) => {
 };
 
 // ─── BriefingTab (V2) ───────────────────────────────────────
-const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onShowWeeklyReport, buildMarketContextString }) => {
+const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onShowWeeklyReport, buildMarketContextString, economicEvents, economicEventsLoading }) => {
   if (loading) {
     return (
       <div style={{
@@ -1819,6 +2159,12 @@ const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onTog
           </div>
         </div>
       )}
+
+      {/* Economic Calendar */}
+      <MobileEconomicCalendar
+        events={economicEvents}
+        loading={economicEventsLoading}
+      />
 
       {/* Tracker Bot */}
       <TrackerSection
@@ -1917,16 +2263,19 @@ const MobileIntelligenceHub = ({
   weeklyReportLoading,
   onFetchWeeklyReport,
   buildMarketContextString,
+  expandedTracker,
+  trackerLoading,
+  handleToggleTracker,
+  showWeeklyReport,
+  setShowWeeklyReport,
+  economicEvents,
+  economicEventsLoading,
 }) => {
   const [activeTab, setActiveTab] = useState('briefing');
   const [expandedSymbol, setExpandedSymbol] = useState(null);
   const [threadLoading, setThreadLoading] = useState(null);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedTracker, setExpandedTracker] = useState(null);
-  const [trackerLoading, setTrackerLoading] = useState(null);
-  const [showWeeklyReport, setShowWeeklyReport] = useState(false);
-
   const briefer = intelData?.briefer;
   const scout = intelData?.scout;
 
@@ -1950,20 +2299,6 @@ const MobileIntelligenceHub = ({
     const asset = allAssets.find(a => a.symbol === symbol);
     if (asset) handleOpenResearch(asset);
   }, [allAssets, handleOpenResearch]);
-
-  const handleToggleTracker = useCallback(async (symbol) => {
-    if (expandedTracker === symbol) {
-      setExpandedTracker(null);
-      return;
-    }
-    setExpandedTracker(symbol);
-    if (!trackerCache[symbol]) {
-      setTrackerLoading(symbol);
-      const stock = watchlistStocks.find(s => s.symbol === symbol);
-      await fetchTracker(symbol, stock?.price, stock?.percentChange);
-      setTrackerLoading(null);
-    }
-  }, [expandedTracker, trackerCache, watchlistStocks, fetchTracker]);
 
   // Search results
   const searchResults = useMemo(() => {
@@ -2081,6 +2416,8 @@ const MobileIntelligenceHub = ({
             trackerLoading={trackerLoading}
             onShowWeeklyReport={() => { onFetchWeeklyReport(); setShowWeeklyReport(true); }}
             buildMarketContextString={buildMarketContextString}
+            economicEvents={economicEvents}
+            economicEventsLoading={economicEventsLoading}
           />
         ) : (
           <DiscoverTab
@@ -2238,13 +2575,6 @@ const MobileIntelligenceHub = ({
         />
       </div>
 
-      {/* Weekly Report Modal */}
-      <WeeklyReport
-        visible={showWeeklyReport}
-        onClose={() => setShowWeeklyReport(false)}
-        reportData={weeklyReportData}
-        reportLoading={weeklyReportLoading}
-      />
     </div>
   );
 };
@@ -2268,7 +2598,6 @@ const ResearchLandingPage = ({
   const [marketNews, setMarketNews] = useState([]);
   const [aiSummary, setAiSummary] = useState(null);
   const [isLoadingSummary, setIsLoadingSummary] = useState(true);
-  const [watchlistNews, setWatchlistNews] = useState([]);
   const [heroSize, setHeroSize] = useState({ w: 800, h: 320 });
   const heroRef = useRef(null);
 
@@ -2281,6 +2610,9 @@ const ResearchLandingPage = ({
   const [trackerCache, setTrackerCache] = useState({});
   const [weeklyReportData, setWeeklyReportData] = useState(null);
   const [weeklyReportLoading, setWeeklyReportLoading] = useState(false);
+  const [expandedTracker, setExpandedTracker] = useState(null);
+  const [trackerLoading, setTrackerLoading] = useState(null);
+  const [showWeeklyReport, setShowWeeklyReport] = useState(false);
 
   // ─── Asset Research Modal ────────────────────────────────
   const { researchAsset, isOpen, showResearch, hideResearch, getModalProps } = useAssetResearch();
@@ -2339,16 +2671,9 @@ const ResearchLandingPage = ({
       .slice(0, 3);
   }, [moversData, allAssets]);
 
-  // ─── Economic events ─────────────────────────────────────
-  const economicEvents = useMemo(() => {
-    const today = new Date();
-    const endDate = new Date(today);
-    endDate.setDate(endDate.getDate() + 7);
-    const fmt = d => d.toISOString().split('T')[0];
-    // Show all events or filter by upcoming week
-    return WEEK_AHEAD_EVENTS.filter(e => e.date >= fmt(today) && e.date <= fmt(endDate))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, []);
+  // ─── Economic events (live from EODHD) ─────────────────────
+  const [economicEvents, setEconomicEvents] = useState([]);
+  const [economicEventsLoading, setEconomicEventsLoading] = useState(false);
 
   // ─── Data fetching ───────────────────────────────────────
   useEffect(() => {
@@ -2372,35 +2697,66 @@ const ResearchLandingPage = ({
       }
     })();
 
-    // Fetch watchlist news
-    (async () => {
-      try {
-        let symbols;
-        try {
-          const saved = localStorage.getItem('user_watchlist');
-          if (saved) symbols = JSON.parse(saved);
-        } catch (e) { /* ignore */ }
-        if (!symbols?.length) symbols = DEFAULT_WATCHLIST;
-        symbols = symbols.slice(0, 8);
-
-        const newsMap = await getMultipleStockNews(symbols, 2);
-        const allNews = [];
-        const seen = new Set();
-        symbols.forEach(sym => {
-          (newsMap[sym] || []).forEach(item => {
-            if (!seen.has(item.title)) {
-              seen.add(item.title);
-              allNews.push({ ...item, watchlistSymbol: sym });
-            }
-          });
-        });
-        allNews.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
-        setWatchlistNews(allNews.slice(0, 5));
-      } catch (err) {
-        console.warn('[ResearchLanding] Failed to fetch watchlist news:', err);
-      }
-    })();
   }, []);
+
+  // ─── Economic events fetch ─────────────────────────────────
+  const fetchEconomicEvents = useCallback(async (force = false) => {
+    const CACHE_KEY = 'research_economic_events_cache';
+    const CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours
+
+    if (!force) {
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const { data, timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < CACHE_DURATION) {
+            setEconomicEvents(data);
+            return;
+          }
+        }
+      } catch (e) { /* ignore cache errors */ }
+    }
+
+    setEconomicEventsLoading(true);
+    try {
+      const response = await fetch('/api/economic-events');
+      const result = await response.json();
+
+      if (result.success && result.data?.events) {
+        setEconomicEvents(result.data.events);
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify({
+            data: result.data.events,
+            timestamp: Date.now(),
+          }));
+        } catch (e) { /* ignore storage errors */ }
+      } else {
+        // Fallback to static data if API fails
+        const today = new Date();
+        const endDate = new Date(today);
+        endDate.setDate(endDate.getDate() + 7);
+        const fmt = d => d.toISOString().split('T')[0];
+        setEconomicEvents(WEEK_AHEAD_EVENTS
+          .filter(e => e.date >= fmt(today) && e.date <= fmt(endDate))
+          .sort((a, b) => a.date.localeCompare(b.date)));
+      }
+    } catch (err) {
+      console.warn('[ResearchLanding] Economic events fetch failed:', err);
+      const today = new Date();
+      const endDate = new Date(today);
+      endDate.setDate(endDate.getDate() + 7);
+      const fmt = d => d.toISOString().split('T')[0];
+      setEconomicEvents(WEEK_AHEAD_EVENTS
+        .filter(e => e.date >= fmt(today) && e.date <= fmt(endDate))
+        .sort((a, b) => a.date.localeCompare(b.date)));
+    } finally {
+      setEconomicEventsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchEconomicEvents();
+  }, [fetchEconomicEvents]);
 
   // ─── AI Summary (desktop) ─────────────────────────────────
   useEffect(() => {
@@ -2604,8 +2960,53 @@ const ResearchLandingPage = ({
       parts.push(`\nUNUSUAL MOVERS: ${disc}`);
     }
 
+    // 6. Upcoming economic events
+    if (economicEvents?.length) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const upcoming = economicEvents
+        .filter(e => e.date >= todayStr)
+        .slice(0, 10);
+
+      if (upcoming.length) {
+        parts.push('\nUPCOMING ECONOMIC EVENTS:');
+        upcoming.forEach(e => {
+          const dateStr = new Date(e.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          let detail = `${dateStr}: ${e.name}`;
+          if (e.estimate !== null && e.estimate !== undefined) detail += ` (Estimate: ${e.estimate})`;
+          if (e.previous !== null && e.previous !== undefined) detail += ` (Previous: ${e.previous})`;
+          if (e.actual !== null && e.actual !== undefined) detail += ` (Actual: ${e.actual})`;
+          if (e.impact === 'high') detail += ' [HIGH IMPACT]';
+          parts.push(detail);
+        });
+      }
+
+      // Recent releases (last 3 days) that have actual values
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      const threeDaysAgoStr = threeDaysAgo.toISOString().split('T')[0];
+      const recent = economicEvents
+        .filter(e => e.date >= threeDaysAgoStr && e.date < todayStr && e.actual !== null && e.actual !== undefined)
+        .slice(0, 5);
+
+      if (recent.length) {
+        parts.push('\nRECENT ECONOMIC RELEASES:');
+        recent.forEach(e => {
+          const dateStr = new Date(e.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          let detail = `${dateStr}: ${e.name} — Actual: ${e.actual}`;
+          if (e.estimate !== null && e.estimate !== undefined) detail += `, Estimate was: ${e.estimate}`;
+          if (e.previous !== null && e.previous !== undefined) detail += `, Previous: ${e.previous}`;
+          const act = parseFloat(e.actual);
+          const est = parseFloat(e.estimate);
+          if (!isNaN(act) && !isNaN(est)) {
+            detail += act > est ? ' [BEAT]' : act < est ? ' [MISS]' : ' [IN LINE]';
+          }
+          parts.push(detail);
+        });
+      }
+    }
+
     return parts.join('\n');
-  }, [stocksData, allAssets, marketBreadth, moversData, intelData]);
+  }, [stocksData, allAssets, marketBreadth, moversData, intelData, economicEvents]);
 
   const buildFallbackIntel = useCallback(() => {
     const gainers = (moversData.gainers || []).slice(0, 3);
@@ -2803,6 +3204,20 @@ const ResearchLandingPage = ({
     }
   }, [trackerCache]);
 
+  const handleToggleTracker = useCallback(async (symbol) => {
+    if (expandedTracker === symbol) {
+      setExpandedTracker(null);
+      return;
+    }
+    setExpandedTracker(symbol);
+    if (!trackerCache[symbol]) {
+      setTrackerLoading(symbol);
+      const stock = watchlistStocks.find(s => s.symbol === symbol);
+      await fetchTracker(symbol, stock?.price, stock?.percentChange);
+      setTrackerLoading(null);
+    }
+  }, [expandedTracker, trackerCache, watchlistStocks, fetchTracker]);
+
   const fetchWeeklyReport = useCallback(async () => {
     // Check 24h cache
     try {
@@ -2888,6 +3303,19 @@ const ResearchLandingPage = ({
           weeklyReportLoading={weeklyReportLoading}
           onFetchWeeklyReport={fetchWeeklyReport}
           buildMarketContextString={buildMarketContextString}
+          expandedTracker={expandedTracker}
+          trackerLoading={trackerLoading}
+          handleToggleTracker={handleToggleTracker}
+          showWeeklyReport={showWeeklyReport}
+          setShowWeeklyReport={setShowWeeklyReport}
+          economicEvents={economicEvents}
+          economicEventsLoading={economicEventsLoading}
+        />
+        <WeeklyReport
+          visible={showWeeklyReport}
+          onClose={() => setShowWeeklyReport(false)}
+          reportData={weeklyReportData}
+          reportLoading={weeklyReportLoading}
         />
         {isOpen && researchAsset && (
           <AssetResearchModal
@@ -3130,115 +3558,30 @@ const ResearchLandingPage = ({
 
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gridTemplateColumns: '1fr 1fr',
         gap: '12px',
       }}>
-        {/* Watchlist */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.35, duration: 0.4 }}
-          style={{
-            background: C.bgCard,
-            border: `1px solid ${C.border}`,
-            borderRadius: '16px',
-            padding: '20px',
-          }}
-        >
-          <div style={{
-            ...sectionLabel(C.textMuted, '0.15em', '10px'),
-            marginBottom: '12px',
-            textTransform: 'uppercase',
-          }}>
-            YOUR WATCHLIST
-          </div>
-          {watchlistNews.length === 0 ? (
-            <div style={{ color: C.textSecondary, fontSize: '12px', padding: '12px 0' }}>
-              No recent watchlist news available.
-            </div>
-          ) : (
-            watchlistNews.map((item, i) => (
-              <WatchlistItem
-                key={item.title || i}
-                item={item}
-                onClick={() => {
-                  const asset = allAssets.find(a => a.symbol === item.watchlistSymbol);
-                  if (asset) handleOpenResearch(asset);
-                }}
-              />
-            ))
-          )}
-        </motion.div>
-
-        {/* Economic Calendar */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4, duration: 0.4 }}
-          style={{
-            background: C.bgCard,
-            border: `1px solid ${C.border}`,
-            borderRadius: '16px',
-            padding: '20px',
-          }}
-        >
-          <div style={{
-            ...sectionLabel(C.textMuted, '0.15em', '10px'),
-            marginBottom: '12px',
-            textTransform: 'uppercase',
-          }}>
-            ECONOMIC CALENDAR
-          </div>
-          {economicEvents.length === 0 ? (
-            <div style={{
-              color: C.textSecondary,
-              fontSize: '12px',
-              padding: '16px 0',
-              textAlign: 'center',
-            }}>
-              No major economic events this week.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {economicEvents.slice(0, 5).map((evt, i) => (
-                <div key={evt.name + i} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '8px 0',
-                  borderBottom: i < Math.min(economicEvents.length, 5) - 1 ? `1px solid ${C.border}` : 'none',
-                }}>
-                  <div style={{
-                    width: '6px',
-                    height: '6px',
-                    borderRadius: '50%',
-                    background: evt.impact === 'high' ? C.red : evt.impact === 'medium' ? C.amber : C.textMuted,
-                    flexShrink: 0,
-                  }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '12px', color: C.textPrimary, fontWeight: 500 }}>
-                      {evt.name}
-                    </div>
-                    <div style={{ fontSize: '10px', color: C.textMuted }}>
-                      {new Date(evt.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                      {evt.time ? ` \u00B7 ${evt.time} ET` : ''}
-                    </div>
-                  </div>
-                  <span style={{
-                    fontSize: '9px',
-                    fontWeight: 600,
-                    letterSpacing: '0.05em',
-                    color: evt.impact === 'high' ? C.red : evt.impact === 'medium' ? C.amber : C.textMuted,
-                    textTransform: 'uppercase',
-                  }}>
-                    {evt.impact}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </motion.div>
+        <DesktopTrackerSection
+          watchlistStocks={watchlistStocks}
+          expandedTracker={expandedTracker}
+          onToggleTracker={handleToggleTracker}
+          trackerCache={trackerCache}
+          trackerLoading={trackerLoading}
+          onShowWeeklyReport={() => { fetchWeeklyReport(); setShowWeeklyReport(true); }}
+        />
+        <DesktopEconomicCalendar
+          events={economicEvents}
+          loading={economicEventsLoading}
+        />
       </div>
+
+      {/* ═══ Weekly Report Modal (Desktop) ═══ */}
+      <WeeklyReport
+        visible={showWeeklyReport}
+        onClose={() => setShowWeeklyReport(false)}
+        reportData={weeklyReportData}
+        reportLoading={weeklyReportLoading}
+      />
 
       {/* ═══ Asset Research Modal ═══ */}
       {isOpen && researchAsset && (
