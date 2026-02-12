@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import ClashCard1v1 from './ClashCard1v1';
 import ClashCard1v1V3 from './ClashCard1v1V3';
+import ClashCard1v1V4 from './ClashCard1v1V4';
 import ClashCardDraft from './ClashCardDraft';
 import ClashCardTraining from './ClashCardTraining';
 import ClashCardTrainingV4 from './ClashCardTrainingV4';
@@ -16,7 +17,7 @@ function calculate1v1PreviewData(battle, username) {
   if (!battle) return null;
 
   // V3 BaggerBomb battles use totalScore instead of portfolio values
-  if (battle._v === 3) {
+  if (battle._v === 3 || battle._v === 4) {
     const isCreator = battle.creator?.username === username;
     const opponent = isCreator ? battle.opponent?.username : battle.creator?.username;
 
@@ -227,6 +228,19 @@ export default function ClashCard({
         myPosition={myPosition}
         myPoints={myPoints}
         leaderPoints={leaderPoints}
+        remainingMs={remainingMs}
+        onPress={onPress}
+        isMostUrgent={isMostUrgent}
+        currentUserId={currentUserId}
+      />
+    );
+  }
+
+  // V4 BAGGERBOMB battles - use hook-based component for live scores
+  if (battle._v === 4) {
+    return (
+      <ClashCard1v1V4
+        battle={battle}
         remainingMs={remainingMs}
         onPress={onPress}
         isMostUrgent={isMostUrgent}
