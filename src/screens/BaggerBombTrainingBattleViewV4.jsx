@@ -111,6 +111,15 @@ export default function BaggerBombTrainingBattleViewV4({
   });
   const [isSwapExecuting, setIsSwapExecuting] = useState(false);
 
+  // Reset swap/trade state when switching between training battles
+  useEffect(() => {
+    const history = myData?.swaps?.history || [];
+    const remaining = myData?.swaps?.remaining?.day1 ?? 1;
+    setSwapUsed(history.length > 0 || remaining === 0);
+    setClosedTrades(myData?.closedTrades || []);
+    setLocalPortfolio(null);
+  }, [battle?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Training events for Live Feed
   const [trainingEvents, setTrainingEvents] = useState([]);
   const prevPlayerMultRef = useRef({});

@@ -138,7 +138,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   // Swaps remaining
   const swapsRemaining = useMemo(() => {
-    return getDailySwapsRemaining(myData?.swaps, currentTradingDay);
+    if (!myData?.swaps?.remaining) return 3; // Default to max while data loads
+    return getDailySwapsRemaining(myData.swaps, currentTradingDay);
   }, [myData?.swaps, currentTradingDay]);
 
   // Closed trades

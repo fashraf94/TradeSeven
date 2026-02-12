@@ -106,6 +106,8 @@ export default function PortfolioSlot({
           cursor: disabled ? 'not-allowed' : 'pointer',
           opacity: disabled ? 0.5 : 1,
           transition: 'all 0.2s ease',
+          minWidth: 0,
+          overflow: 'hidden',
         }}
       >
         <div
@@ -161,6 +163,8 @@ export default function PortfolioSlot({
         padding: '12px',
         display: 'flex',
         flexDirection: 'column',
+        minWidth: 0,
+        overflow: 'hidden',
       }}
     >
       {/* Remove Button */}
