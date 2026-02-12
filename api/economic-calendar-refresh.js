@@ -1,5 +1,5 @@
 // api/economic-calendar-refresh.js
-// Cron endpoint: Claude + web search → Firebase Firestore
+// Cron endpoint: Claude → Firebase Firestore (weekly uses knowledge-based, update uses web search)
 // Modes: ?mode=weekly (full 14-day calendar) | ?mode=update (fill in actuals)
 // Schedule: Mon 4AM UTC (weekly), Wed/Fri 3PM UTC (update)
 
@@ -49,14 +49,50 @@ function getWeekOf() {
   return monday.toISOString().split('T')[0];
 }
 
-const WEEKLY_PROMPT = (fromDate, toDate) => `Search for this week's US economic calendar (${fromDate} to ${toDate}). Include: NFP, CPI, FOMC, Retail Sales, GDP, Jobless Claims, ISM PMI, PPI, UMich Sentiment, Durable Goods, PCE, Housing Starts, ADP, Consumer Confidence, and any other scheduled releases.
+const WEEKLY_PROMPT = (fromDate, toDate, weekOf) => `You are an economic calendar assistant. Today's date is ${fromDate}.
 
-Tier each event: 1 (market-moving), 2 (significant), 3 (notable). Grade volatility: A (1%+ swings), B (0.3-1%), C (<0.3%).
+List ALL major US economic data releases scheduled for the next 14 days (${fromDate} through ${toDate}).
 
-Return ONLY JSON:
-{"events":[{"name":"Full name","shortName":"NFP","date":"YYYY-MM-DD","time":"HH:MM ET or null","estimate":"string or null","previous":"string or null","actual":null,"tier":1,"volatilityGrade":"A","context":"Why it matters now","agency":"BLS"}],"weekSummary":"2-3 sentences"}
+Use your knowledge of the standard US economic calendar release schedule. The major monthly releases follow consistent patterns:
+- NFP/Jobs Report: First Friday of month, 8:30 AM ET
+- CPI: ~12th-15th of month, 8:30 AM ET
+- PPI: day after or near CPI, 8:30 AM ET
+- Retail Sales: ~15th-17th of month, 8:30 AM ET
+- FOMC: scheduled meeting dates (check if one falls in this window)
+- Initial Jobless Claims: every Thursday, 8:30 AM ET
+- ISM Manufacturing PMI: first business day of month, 10:00 AM ET
+- ISM Services PMI: third business day of month, 10:00 AM ET
+- Consumer Sentiment (U-Mich): two Fridays per month, 10:00 AM ET
+- PCE/Core PCE: last week of month, 8:30 AM ET
+- GDP: quarterly, ~30 days after quarter end
+- Durable Goods: ~4th week of month, 8:30 AM ET
+- Housing Starts: ~3rd week of month, 8:30 AM ET
+- Consumer Confidence: last Tuesday of month, 10:00 AM ET
+- ADP Employment: first Wednesday of month (2 days before NFP)
+- JOLTS: ~first week of month (for data 2 months prior)
 
-Sort by date then tier.`;
+For each event provide your best estimate of the scheduled date based on historical patterns.
+
+Return ONLY valid JSON (no backticks, no explanation):
+{
+  "weekOf": "${weekOf}",
+  "events": [
+    {
+      "name": "Consumer Price Index",
+      "shortName": "CPI",
+      "date": "YYYY-MM-DD",
+      "time": "8:30 AM ET",
+      "estimate": null,
+      "previous": null,
+      "actual": null,
+      "tier": 1,
+      "volatilityGrade": "Very High",
+      "context": "Brief 1-sentence context",
+      "agency": "Bureau of Labor Statistics"
+    }
+  ],
+  "weekSummary": "One sentence summary of the week"
+}`;
 
 const UPDATE_PROMPT = (events) => `Search the web for the actual released values of these US economic events. Check BLS.gov, Bureau of Economic Analysis, Federal Reserve, MarketWatch, CNBC, or Investing.com for the released data.
 
@@ -135,15 +171,11 @@ async function handleWeekly(req, res, weekOf) {
   futureDate.setDate(futureDate.getDate() + 14);
   const toDate = futureDate.toISOString().split('T')[0];
 
-  const prompt = WEEKLY_PROMPT(fromDate, toDate);
+  const prompt = WEEKLY_PROMPT(fromDate, toDate, weekOf);
 
   const response = await anthropic.messages.create({
     model: 'claude-3-5-haiku-20241022',
     max_tokens: 2000,
-    tools: [{
-      type: 'web_search_20250305',
-      name: 'web_search',
-    }],
     messages: [{ role: 'user', content: prompt }],
   });
 
