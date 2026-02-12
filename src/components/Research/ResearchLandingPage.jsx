@@ -29,6 +29,15 @@ const C = {
   textMuted: '#484f58',
   border: 'rgba(0,217,255,0.08)',
   borderHover: 'rgba(0,217,255,0.2)',
+  // Mobile dim variants
+  cyanDim: 'rgba(0,217,255,0.12)',
+  greenDim: 'rgba(0,255,136,0.10)',
+  redDim: 'rgba(255,71,87,0.10)',
+  amberDim: 'rgba(245,158,11,0.10)',
+  purpleDim: 'rgba(167,139,250,0.10)',
+  bgDeep: '#080c12',
+  bgSurface: '#1c2128',
+  borderActive: 'rgba(0,217,255,0.18)',
 };
 
 const SENTIMENT_MAP = {
@@ -41,6 +50,17 @@ const SENTIMENT_MAP = {
 const DEFAULT_WATCHLIST = ['AAPL', 'NVDA', 'TSLA', 'GOOGL', 'MSFT', 'AMZN'];
 const TRENDING_TICKERS = ['NVDA', 'TSLA', 'AAPL', 'META', 'AMZN'];
 
+// ─── Mobile Config Constants ─────────────────────────────────
+const TAG_CONFIG = {
+  momentum: { color: C.amber, label: 'MOMENTUM', icon: '\uD83D\uDD25' },
+  early_signal: { color: C.cyan, label: 'EARLY SIGNAL', icon: '\uD83D\uDCE1' },
+  breakout: { color: C.green, label: 'BREAKOUT', icon: '\uD83D\uDE80' },
+  earnings_play: { color: C.purple, label: 'EARNINGS', icon: '\uD83D\uDCCA' },
+};
+
+const INTEL_CACHE_KEY = 'research_intel_cache';
+const INTEL_CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
+
 // ─── Keyframe Styles (injected once) ────────────────────────
 const KEYFRAMES = `
 @keyframes rlp-pulse {
@@ -50,6 +70,10 @@ const KEYFRAMES = `
 @keyframes rlp-fadeSlideIn {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
+}
+@keyframes rlp-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 `;
 
@@ -133,7 +157,7 @@ const ParticleField = ({ width, height }) => {
   );
 };
 
-// ─── SentimentPulse ──────────────────────────────────────────
+// ─── SentimentPulse (Desktop) ────────────────────────────────
 const SentimentPulse = ({ sentiment }) => {
   const s = SENTIMENT_MAP[sentiment] || SENTIMENT_MAP.neutral;
   return (
@@ -471,7 +495,7 @@ const QuickSearchInput = ({ allAssets, onSelectAsset }) => {
                 </span>
               </div>
               <span style={{ fontSize: '11px', color: C.textMuted }}>
-                Open →
+                Open &rarr;
               </span>
             </div>
           ))}
@@ -550,6 +574,923 @@ const SectionDivider = ({ label }) => (
 );
 
 // ═══════════════════════════════════════════════════════════════
+// MOBILE SUB-COMPONENTS
+// ═══════════════════════════════════════════════════════════════
+
+// ─── SentimentBadge (Mobile — separate from desktop SentimentPulse) ──
+const SentimentBadge = ({ sentiment }) => {
+  const s = SENTIMENT_MAP[sentiment] || SENTIMENT_MAP.neutral;
+  return (
+    <div style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '6px',
+      padding: '4px 10px',
+      borderRadius: '20px',
+      border: `1px solid ${s.color}40`,
+      background: `${s.color}10`,
+    }}>
+      <div style={{
+        width: '6px',
+        height: '6px',
+        borderRadius: '50%',
+        background: s.color,
+        boxShadow: `0 0 6px ${s.color}`,
+        animation: 'rlp-pulse 2s ease-in-out infinite',
+      }} />
+      <span style={{
+        fontSize: '10px',
+        fontWeight: 700,
+        letterSpacing: '0.12em',
+        color: s.color,
+      }}>
+        {s.label}
+      </span>
+    </div>
+  );
+};
+
+// ─── InsightChip ─────────────────────────────────────────────
+const InsightChip = ({ text, type, index }) => {
+  const colorMap = { positive: C.green, negative: C.red, signal: C.cyan };
+  const accent = colorMap[type] || C.cyan;
+  return (
+    <div style={{
+      display: 'flex',
+      gap: '10px',
+      padding: '10px 12px',
+      background: C.bgCard,
+      borderRadius: '10px',
+      borderLeft: `3px solid ${accent}`,
+      animation: `rlp-fadeSlideIn 0.3s ease-out ${0.1 + index * 0.08}s both`,
+    }}>
+      <div style={{
+        width: '6px',
+        height: '6px',
+        borderRadius: '50%',
+        background: accent,
+        marginTop: '5px',
+        flexShrink: 0,
+      }} />
+      <span style={{ fontSize: '13px', color: C.textPrimary, lineHeight: 1.5 }}>
+        {text}
+      </span>
+    </div>
+  );
+};
+
+// ─── WatchlistAlert ──────────────────────────────────────────
+const WatchlistAlert = ({ symbol, note, type }) => {
+  const isOpportunity = type === 'opportunity';
+  const accent = isOpportunity ? C.green : C.amber;
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: '8px',
+      padding: '8px 0',
+    }}>
+      <span style={{
+        fontFamily: 'monospace',
+        fontSize: '10px',
+        fontWeight: 700,
+        color: accent,
+        background: `${accent}15`,
+        padding: '2px 6px',
+        borderRadius: '4px',
+        flexShrink: 0,
+      }}>
+        {symbol}
+      </span>
+      <span style={{ fontSize: '12px', color: C.textSecondary, lineHeight: 1.4 }}>
+        {note}
+      </span>
+    </div>
+  );
+};
+
+// ─── ThreadView ──────────────────────────────────────────────
+const ThreadView = ({ data, symbol, onOpenResearch }) => {
+  if (!data) return null;
+  return (
+    <div style={{ padding: '12px 0 4px' }}>
+      <div style={{
+        fontSize: '9px',
+        fontWeight: 700,
+        letterSpacing: '0.15em',
+        color: C.purple,
+        marginBottom: '10px',
+      }}>
+        DEEP DIVE: {symbol}
+      </div>
+
+      {/* Bullets */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+        {(data.bullets || []).map((bullet, i) => (
+          <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+            <div style={{
+              width: '4px',
+              height: '4px',
+              borderRadius: '50%',
+              background: C.cyan,
+              marginTop: '6px',
+              flexShrink: 0,
+            }} />
+            <span style={{ fontSize: '12px', color: C.textPrimary, lineHeight: 1.5 }}>
+              {bullet}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Verdict */}
+      {data.verdict && (
+        <div style={{
+          padding: '10px 12px',
+          background: C.greenDim,
+          borderRadius: '8px',
+          borderLeft: `3px solid ${C.green}`,
+          marginBottom: '8px',
+        }}>
+          <div style={{
+            fontSize: '9px',
+            fontWeight: 700,
+            letterSpacing: '0.1em',
+            color: C.green,
+            marginBottom: '4px',
+          }}>
+            VERDICT
+          </div>
+          <span style={{ fontSize: '12px', color: C.textPrimary, lineHeight: 1.5 }}>
+            {data.verdict}
+          </span>
+        </div>
+      )}
+
+      {/* Key Risk */}
+      {data.risk && (
+        <div style={{
+          padding: '10px 12px',
+          background: C.redDim,
+          borderRadius: '8px',
+          borderLeft: `3px solid ${C.red}`,
+          marginBottom: '10px',
+        }}>
+          <div style={{
+            fontSize: '9px',
+            fontWeight: 700,
+            letterSpacing: '0.1em',
+            color: C.red,
+            marginBottom: '4px',
+          }}>
+            KEY RISK
+          </div>
+          <span style={{ fontSize: '12px', color: C.textPrimary, lineHeight: 1.5 }}>
+            {data.risk}
+          </span>
+        </div>
+      )}
+
+      {/* Open Full Research button */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onOpenResearch(symbol); }}
+        style={{
+          width: '100%',
+          padding: '10px',
+          background: C.bgElevated,
+          border: `1px solid ${C.borderActive}`,
+          borderRadius: '8px',
+          color: C.cyan,
+          fontSize: '12px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          transition: 'background 0.15s',
+        }}
+      >
+        Open Full Research &rarr; {symbol}
+      </button>
+    </div>
+  );
+};
+
+// ─── DiscoveryCard ───────────────────────────────────────────
+const DiscoveryCard = ({ discovery, expanded, onToggle, threadData, threadLoading, onOpenResearch }) => {
+  const tag = TAG_CONFIG[discovery.actionTag] || TAG_CONFIG.momentum;
+  const changeVal = safeNumber(discovery.change, 0);
+  const isPositive = changeVal >= 0;
+
+  return (
+    <div
+      onClick={onToggle}
+      style={{
+        background: C.bgCard,
+        border: `1px solid ${expanded ? C.borderActive : C.border}`,
+        borderRadius: '12px',
+        padding: '14px',
+        cursor: 'pointer',
+        transition: 'all 0.2s',
+      }}
+    >
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Action tag */}
+          <span style={{
+            fontSize: '9px',
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            color: tag.color,
+            background: `${tag.color}15`,
+            border: `1px solid ${tag.color}30`,
+            borderRadius: '6px',
+            padding: '2px 6px',
+          }}>
+            {tag.icon} {tag.label}
+          </span>
+        </div>
+        {/* Expand indicator */}
+        <svg
+          width="14" height="14" viewBox="0 0 24 24"
+          fill="none" stroke={C.textMuted} strokeWidth="2"
+          style={{
+            transform: expanded ? 'rotate(180deg)' : 'rotate(0)',
+            transition: 'transform 0.2s',
+          }}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </div>
+
+      {/* Ticker + change */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '4px' }}>
+        <span style={{
+          fontFamily: 'monospace',
+          fontSize: '16px',
+          fontWeight: 700,
+          color: C.white,
+        }}>
+          {discovery.symbol}
+        </span>
+        <span style={{
+          fontFamily: 'monospace',
+          fontSize: '13px',
+          fontWeight: 600,
+          color: isPositive ? C.green : C.red,
+        }}>
+          {isPositive ? '+' : ''}{changeVal.toFixed(1)}%
+        </span>
+        {discovery.name && (
+          <span style={{ fontSize: '11px', color: C.textMuted }}>
+            {discovery.name}
+          </span>
+        )}
+      </div>
+
+      {/* Reason */}
+      <div style={{
+        fontSize: '12px',
+        color: C.textSecondary,
+        lineHeight: 1.5,
+      }}>
+        {discovery.reason}
+      </div>
+
+      {/* Expanded: Thread content */}
+      {expanded && (
+        <div style={{
+          marginTop: '12px',
+          paddingTop: '12px',
+          borderTop: `1px solid ${C.border}`,
+        }}>
+          {threadLoading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{
+                  width: '8px', height: '8px', borderRadius: '50%',
+                  background: C.purple, animation: 'rlp-pulse 1.5s ease-in-out infinite',
+                }} />
+                <span style={{ fontSize: '11px', color: C.textMuted }}>Analyzing {discovery.symbol}...</span>
+              </div>
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} style={{
+                  height: '12px',
+                  borderRadius: '4px',
+                  background: `linear-gradient(90deg, ${C.bgElevated}, ${C.bgSurface}, ${C.bgElevated})`,
+                  backgroundSize: '200% 100%',
+                  animation: 'rlp-shimmer 1.5s ease-in-out infinite',
+                  width: `${85 - i * 10}%`,
+                }} />
+              ))}
+            </div>
+          ) : threadData ? (
+            <ThreadView
+              data={threadData}
+              symbol={discovery.symbol}
+              onOpenResearch={onOpenResearch}
+            />
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── HotSectorCard ───────────────────────────────────────────
+const HotSectorCard = ({ sector }) => {
+  if (!sector) return null;
+  return (
+    <div style={{
+      background: `linear-gradient(135deg, ${C.bgCard}, ${C.cyan}06)`,
+      border: `1px solid ${C.cyanDim}`,
+      borderRadius: '12px',
+      padding: '14px',
+    }}>
+      <div style={{
+        fontSize: '9px',
+        fontWeight: 700,
+        letterSpacing: '0.12em',
+        color: C.textMuted,
+        marginBottom: '8px',
+      }}>
+        HOT SECTOR
+      </div>
+      <div style={{
+        fontSize: '15px',
+        fontWeight: 700,
+        color: C.white,
+        marginBottom: '4px',
+      }}>
+        {sector.emoji} {sector.name}
+      </div>
+      <div style={{
+        fontSize: '12px',
+        color: C.textSecondary,
+        lineHeight: 1.5,
+        marginBottom: '10px',
+      }}>
+        {sector.why}
+      </div>
+      {sector.topPicks?.length > 0 && (
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          {sector.topPicks.map(tick => (
+            <span key={tick} style={{
+              fontFamily: 'monospace',
+              fontSize: '11px',
+              fontWeight: 600,
+              color: C.cyan,
+              background: C.cyanDim,
+              borderRadius: '6px',
+              padding: '3px 8px',
+            }}>
+              {tick}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── ToolStripButton ─────────────────────────────────────────
+const ToolStripButton = ({ icon, label, onClick, accent = C.textSecondary }) => (
+  <button
+    onClick={onClick}
+    style={{
+      flex: 1,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '4px',
+      background: 'none',
+      border: 'none',
+      padding: '8px 4px',
+      cursor: 'pointer',
+    }}
+  >
+    <div style={{
+      width: '32px',
+      height: '32px',
+      borderRadius: '10px',
+      background: `${accent}12`,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    }}>
+      {icon}
+    </div>
+    <span style={{
+      fontSize: '9px',
+      fontWeight: 600,
+      letterSpacing: '0.04em',
+      color: C.textMuted,
+    }}>
+      {label}
+    </span>
+  </button>
+);
+
+// ─── BriefingTab ─────────────────────────────────────────────
+const BriefingTab = ({ briefer, loading }) => {
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '60px 20px',
+        gap: '12px',
+      }}>
+        <div style={{
+          width: '10px', height: '10px', borderRadius: '50%',
+          background: C.purple, animation: 'rlp-pulse 1.5s ease-in-out infinite',
+        }} />
+        <span style={{ fontSize: '12px', color: C.textMuted }}>Loading market intelligence...</span>
+      </div>
+    );
+  }
+
+  if (!briefer) {
+    return (
+      <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+        <span style={{ fontSize: '13px', color: C.textSecondary }}>
+          Intelligence unavailable. Pull down to refresh.
+        </span>
+      </div>
+    );
+  }
+
+  const dateStr = new Date().toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric',
+  });
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
+      {/* Headline card */}
+      <div style={{
+        background: C.bgCard,
+        borderRadius: '14px',
+        padding: '16px',
+        border: `1px solid ${C.border}`,
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '10px',
+        }}>
+          <SentimentBadge sentiment={briefer.sentiment} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{
+              background: `${C.purple}20`,
+              color: C.purple,
+              fontSize: '9px',
+              fontWeight: 600,
+              padding: '2px 6px',
+              borderRadius: '4px',
+            }}>
+              CLAUDE
+            </span>
+            <span style={{ fontSize: '10px', color: C.textMuted }}>{dateStr}</span>
+          </div>
+        </div>
+        <div style={{
+          fontSize: '16px',
+          fontWeight: 700,
+          color: C.white,
+          lineHeight: 1.4,
+        }}>
+          {briefer.headline}
+        </div>
+      </div>
+
+      {/* Key Insights */}
+      {briefer.keyInsights?.length > 0 && (
+        <div>
+          <div style={{
+            fontSize: '9px',
+            fontWeight: 700,
+            letterSpacing: '0.12em',
+            color: C.textMuted,
+            marginBottom: '8px',
+            padding: '0 4px',
+          }}>
+            KEY INSIGHTS
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {briefer.keyInsights.map((insight, i) => (
+              <InsightChip key={i} text={insight.text} type={insight.type} index={i} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Watchlist Alerts */}
+      {briefer.watchlistAlerts?.length > 0 && (
+        <div>
+          <div style={{
+            fontSize: '9px',
+            fontWeight: 700,
+            letterSpacing: '0.12em',
+            color: C.textMuted,
+            marginBottom: '6px',
+            padding: '0 4px',
+          }}>
+            YOUR WATCHLIST
+          </div>
+          <div style={{
+            background: C.bgCard,
+            borderRadius: '10px',
+            padding: '8px 12px',
+            border: `1px solid ${C.border}`,
+          }}>
+            {briefer.watchlistAlerts.map((alert, i) => (
+              <WatchlistAlert key={i} symbol={alert.symbol} note={alert.note} type={alert.type} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Economic Context */}
+      {briefer.economicContext && (
+        <div style={{
+          display: 'flex',
+          gap: '8px',
+          padding: '10px 12px',
+          background: C.bgCard,
+          borderRadius: '10px',
+          border: `1px solid ${C.border}`,
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.amber} strokeWidth="2" style={{ marginTop: '2px', flexShrink: 0 }}>
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
+          <span style={{ fontSize: '12px', color: C.textSecondary, lineHeight: 1.5 }}>
+            {briefer.economicContext}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── DiscoverTab ─────────────────────────────────────────────
+const DiscoverTab = ({ scout, expandedSymbol, onToggleCard, threadCache, threadLoading, onOpenResearch }) => {
+  if (!scout) {
+    return (
+      <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+        <span style={{ fontSize: '13px', color: C.textSecondary }}>
+          No discoveries available right now.
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
+      {/* Header */}
+      <div style={{
+        fontSize: '9px',
+        fontWeight: 700,
+        letterSpacing: '0.15em',
+        color: C.textMuted,
+        padding: '0 4px',
+      }}>
+        STOCKS YOU&apos;RE NOT WATCHING
+      </div>
+
+      {/* Discovery Cards */}
+      {(scout.discoveries || []).map((disc, i) => (
+        <DiscoveryCard
+          key={disc.symbol || i}
+          discovery={disc}
+          expanded={expandedSymbol === disc.symbol}
+          onToggle={() => onToggleCard(disc.symbol)}
+          threadData={threadCache[disc.symbol]}
+          threadLoading={threadLoading === disc.symbol}
+          onOpenResearch={onOpenResearch}
+        />
+      ))}
+
+      {/* Hot Sector */}
+      <HotSectorCard sector={scout.hotSector} />
+    </div>
+  );
+};
+
+// ─── MobileIntelligenceHub ───────────────────────────────────
+const MobileIntelligenceHub = ({
+  intelData,
+  intelLoading,
+  intelCacheTime,
+  onRefresh,
+  onBuildThesis,
+  onOpenMoneyMap,
+  onAnalyzeStock,
+  allAssets,
+  handleOpenResearch,
+  fetchThread,
+  threadCache,
+}) => {
+  const [activeTab, setActiveTab] = useState('briefing');
+  const [expandedSymbol, setExpandedSymbol] = useState(null);
+  const [threadLoading, setThreadLoading] = useState(null);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const briefer = intelData?.briefer;
+  const scout = intelData?.scout;
+
+  const handleToggleCard = useCallback(async (symbol) => {
+    if (expandedSymbol === symbol) {
+      setExpandedSymbol(null);
+      return;
+    }
+    setExpandedSymbol(symbol);
+
+    // Fetch thread if not cached
+    if (!threadCache[symbol]) {
+      setThreadLoading(symbol);
+      const disc = scout?.discoveries?.find(d => d.symbol === symbol);
+      await fetchThread(symbol, disc?.reason || '', { name: disc?.sector });
+      setThreadLoading(null);
+    }
+  }, [expandedSymbol, threadCache, scout, fetchThread]);
+
+  const handleOpenResearchFromThread = useCallback((symbol) => {
+    const asset = allAssets.find(a => a.symbol === symbol);
+    if (asset) handleOpenResearch(asset);
+  }, [allAssets, handleOpenResearch]);
+
+  // Search results
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim() || !allAssets?.length) return [];
+    const q = searchQuery.toLowerCase();
+    return allAssets
+      .filter(a => a.symbol.toLowerCase().includes(q) || a.name.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [searchQuery, allAssets]);
+
+  // Cache age
+  const cacheAge = intelCacheTime ? Math.floor((Date.now() - intelCacheTime) / 60000) : null;
+
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: 'calc(100vh - 60px)',
+      background: C.bgPrimary,
+      position: 'relative',
+    }}>
+      {/* Tab Bar + Refresh */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        padding: '8px 16px',
+        borderBottom: `1px solid ${C.border}`,
+        background: C.bgCard,
+      }}>
+        {/* Tabs */}
+        <div style={{
+          display: 'flex',
+          gap: '0',
+          flex: 1,
+          position: 'relative',
+        }}>
+          {['briefing', 'discover'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                flex: 1,
+                padding: '8px 0',
+                background: 'none',
+                border: 'none',
+                fontSize: '11px',
+                fontWeight: 700,
+                letterSpacing: '0.12em',
+                color: activeTab === tab ? C.cyan : C.textMuted,
+                cursor: 'pointer',
+                textTransform: 'uppercase',
+                transition: 'color 0.2s',
+              }}
+            >
+              {tab === 'briefing' ? 'BRIEFING' : 'DISCOVER'}
+            </button>
+          ))}
+          {/* Sliding indicator */}
+          <div style={{
+            position: 'absolute',
+            bottom: 0,
+            left: activeTab === 'briefing' ? '0%' : '50%',
+            width: '50%',
+            height: '2px',
+            background: C.cyan,
+            borderRadius: '1px',
+            transition: 'left 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+          }} />
+        </div>
+
+        {/* Refresh + Cache Age */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
+          {cacheAge !== null && (
+            <span style={{ fontSize: '9px', color: C.textMuted }}>
+              {cacheAge}m ago
+            </span>
+          )}
+          <button
+            onClick={onRefresh}
+            disabled={intelLoading}
+            style={{
+              background: 'none',
+              border: `1px solid ${C.border}`,
+              borderRadius: '6px',
+              padding: '4px 8px',
+              cursor: intelLoading ? 'default' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              opacity: intelLoading ? 0.5 : 1,
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Scrollable Content */}
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        paddingBottom: '80px',
+        WebkitOverflowScrolling: 'touch',
+      }}>
+        {activeTab === 'briefing' ? (
+          <BriefingTab briefer={briefer} loading={intelLoading} />
+        ) : (
+          <DiscoverTab
+            scout={scout}
+            expandedSymbol={expandedSymbol}
+            onToggleCard={handleToggleCard}
+            threadCache={threadCache}
+            threadLoading={threadLoading}
+            onOpenResearch={handleOpenResearchFromThread}
+          />
+        )}
+      </div>
+
+      {/* Search Overlay */}
+      {showSearch && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.85)',
+          zIndex: 50,
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '16px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <input
+              type="text"
+              autoFocus
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search stocks or crypto..."
+              style={{
+                flex: 1,
+                padding: '12px 14px',
+                background: C.bgCard,
+                border: `1px solid ${C.borderActive}`,
+                borderRadius: '10px',
+                color: C.textPrimary,
+                fontSize: '14px',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+            <button
+              onClick={() => { setShowSearch(false); setSearchQuery(''); }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: C.textMuted,
+                fontSize: '14px',
+                cursor: 'pointer',
+                padding: '8px',
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {searchResults.map(asset => (
+              <div
+                key={asset.symbol}
+                onClick={() => {
+                  handleOpenResearch(asset);
+                  setShowSearch(false);
+                  setSearchQuery('');
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '14px 12px',
+                  borderBottom: `1px solid ${C.border}`,
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{
+                    fontFamily: 'monospace',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    color: C.cyan,
+                  }}>
+                    {asset.symbol}
+                  </span>
+                  <span style={{ fontSize: '13px', color: C.textSecondary }}>
+                    {asset.name}
+                  </span>
+                </div>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2">
+                  <path d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Fixed Bottom Tool Strip */}
+      <div style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        display: 'flex',
+        padding: '6px 8px',
+        paddingBottom: 'max(6px, env(safe-area-inset-bottom))',
+        background: C.bgCard,
+        borderTop: `1px solid ${C.border}`,
+        zIndex: 40,
+      }}>
+        <ToolStripButton
+          accent={C.green}
+          label="Thesis"
+          onClick={onBuildThesis}
+          icon={
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="2">
+              <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" />
+            </svg>
+          }
+        />
+        <ToolStripButton
+          accent={C.cyan}
+          label="Map"
+          onClick={onOpenMoneyMap}
+          icon={
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.cyan} strokeWidth="1.5">
+              <circle cx="12" cy="12" r="10" />
+              <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+            </svg>
+          }
+        />
+        <ToolStripButton
+          accent={C.purple}
+          label="Technical"
+          onClick={onAnalyzeStock}
+          icon={
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.purple} strokeWidth="2">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+            </svg>
+          }
+        />
+        <ToolStripButton
+          accent={C.amber}
+          label="Search"
+          onClick={() => setShowSearch(true)}
+          icon={
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.amber} strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          }
+        />
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════
 const ResearchLandingPage = ({
@@ -572,6 +1513,13 @@ const ResearchLandingPage = ({
   const [heroSize, setHeroSize] = useState({ w: 800, h: 320 });
   const heroRef = useRef(null);
 
+  // ─── Mobile State ──────────────────────────────────────
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+  const [intelData, setIntelData] = useState(null);
+  const [intelLoading, setIntelLoading] = useState(false);
+  const [intelCacheTime, setIntelCacheTime] = useState(null);
+  const [threadCache, setThreadCache] = useState({});
+
   // ─── Asset Research Modal ────────────────────────────────
   const { researchAsset, isOpen, showResearch, hideResearch, getModalProps } = useAssetResearch();
 
@@ -592,7 +1540,7 @@ const ResearchLandingPage = ({
     else if (ratio < 0.4) sentiment = 'bearish';
     else if (ratio < 0.5) sentiment = 'cautious';
 
-    return { stocksUp, stocksDown, cryptoUp, cryptoDown, sentiment };
+    return { stocksUp, stocksDown, cryptoUp, cryptoDown, sentiment, ratio };
   }, [stocksData, cryptoData]);
 
   // ─── Top gainers/decliners from movers or props ──────────
@@ -677,7 +1625,7 @@ const ResearchLandingPage = ({
     })();
   }, []);
 
-  // ─── AI Summary ──────────────────────────────────────────
+  // ─── AI Summary (desktop) ─────────────────────────────────
   useEffect(() => {
     if (!stocksData.length && !cryptoData.length) return;
     const timer = setTimeout(async () => {
@@ -737,6 +1685,207 @@ const ResearchLandingPage = ({
     return () => obs.disconnect();
   }, []);
 
+  // ─── Resize listener (mobile detection) ──────────────────
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // ─── Mobile Intelligence Fetching ────────────────────────
+  const buildIntelContext = useCallback(() => {
+    // Watchlist from localStorage
+    let watchlist;
+    try {
+      const saved = localStorage.getItem('user_watchlist');
+      if (saved) watchlist = JSON.parse(saved);
+    } catch (e) { /* ignore */ }
+    if (!watchlist?.length) watchlist = DEFAULT_WATCHLIST;
+
+    // Battle stocks from localStorage
+    let battleStocks = [];
+    try {
+      const battles = JSON.parse(localStorage.getItem('portfolioDuelBattles') || '[]');
+      const symbolSet = new Set();
+      battles.forEach(battle => {
+        const portfolio = battle?.player1?.portfolio;
+        if (Array.isArray(portfolio)) {
+          // Flat array format
+          portfolio.forEach(item => {
+            if (typeof item === 'string') symbolSet.add(item);
+            else if (item?.symbol) symbolSet.add(item.symbol);
+          });
+        } else if (portfolio && typeof portfolio === 'object') {
+          // V3 tiered format: { star: [...], core: [...], support: [...] }
+          ['star', 'core', 'support'].forEach(tier => {
+            (portfolio[tier] || []).forEach(item => {
+              if (typeof item === 'string') symbolSet.add(item);
+              else if (item?.symbol) symbolSet.add(item.symbol);
+            });
+          });
+        }
+      });
+      battleStocks = [...symbolSet];
+    } catch (e) { /* ignore */ }
+
+    return {
+      stocksUp: marketBreadth.stocksUp,
+      stocksDown: marketBreadth.stocksDown,
+      breadthRatio: marketBreadth.ratio,
+      gainers: (moversData.gainers || []).slice(0, 5).map(s => ({
+        symbol: s.symbol,
+        name: s.name,
+        change: safeNumber(s.percentChange, 0),
+      })),
+      losers: (moversData.losers || []).slice(0, 5).map(s => ({
+        symbol: s.symbol,
+        name: s.name,
+        change: safeNumber(s.percentChange, 0),
+      })),
+      news: (marketNews || []).slice(0, 5).map(n => ({ title: n.title })),
+      watchlist,
+      battleStocks,
+      economicEvents: economicEvents.slice(0, 5).map(e => ({
+        date: e.date,
+        name: e.name,
+        impact: e.impact,
+      })),
+    };
+  }, [marketBreadth, moversData, marketNews, economicEvents]);
+
+  const buildFallbackIntel = useCallback(() => {
+    const gainers = (moversData.gainers || []).slice(0, 3);
+    const { sentiment, stocksUp, stocksDown } = marketBreadth;
+
+    // Watchlist from localStorage for exclusion
+    let watchlist;
+    try {
+      const saved = localStorage.getItem('user_watchlist');
+      if (saved) watchlist = JSON.parse(saved);
+    } catch (e) { /* ignore */ }
+    if (!watchlist?.length) watchlist = DEFAULT_WATCHLIST;
+    const watchSet = new Set(watchlist.map(s => s.toUpperCase()));
+
+    // Build discoveries from top movers NOT in watchlist
+    const allMovers = [...(moversData.gainers || []), ...(moversData.losers || [])];
+    const discoveries = allMovers
+      .filter(m => !watchSet.has(m.symbol?.toUpperCase()))
+      .slice(0, 3)
+      .map(m => ({
+        symbol: m.symbol,
+        name: m.name || m.symbol,
+        change: safeNumber(m.percentChange, 0),
+        reason: `Moving ${safeNumber(m.percentChange, 0) > 0 ? 'up' : 'down'} ${Math.abs(safeNumber(m.percentChange, 0)).toFixed(1)}% today with notable volume activity.`,
+        actionTag: safeNumber(m.percentChange, 0) > 3 ? 'momentum' : 'early_signal',
+        sector: m.sector || 'Unknown',
+      }));
+
+    return {
+      briefer: {
+        headline: sentiment === 'bullish'
+          ? `Markets up: ${stocksUp} stocks advancing`
+          : sentiment === 'bearish'
+            ? `Markets pressured: ${stocksDown} stocks declining`
+            : `Mixed session: ${stocksUp} up, ${stocksDown} down`,
+        sentiment,
+        keyInsights: [
+          {
+            text: `Market breadth shows ${stocksUp} stocks advancing vs ${stocksDown} declining.`,
+            type: sentiment === 'bullish' ? 'positive' : sentiment === 'bearish' ? 'negative' : 'signal',
+          },
+          ...(gainers.length > 0 ? [{
+            text: `${gainers[0]?.symbol} leading gainers at +${safeNumber(gainers[0]?.percentChange, 0).toFixed(1)}%.`,
+            type: 'positive',
+          }] : []),
+        ],
+        watchlistAlerts: [],
+        economicContext: economicEvents.length > 0
+          ? `${economicEvents[0].name} scheduled for ${economicEvents[0].date}${economicEvents[0].impact === 'high' ? ' (high impact)' : ''}.`
+          : 'No major economic events this week.',
+      },
+      scout: {
+        discoveries,
+        hotSector: null,
+      },
+    };
+  }, [moversData, marketBreadth, economicEvents]);
+
+  const fetchIntelligence = useCallback(async (force = false) => {
+    // Check cache first (unless forced)
+    if (!force) {
+      try {
+        const cached = localStorage.getItem(INTEL_CACHE_KEY);
+        if (cached) {
+          const { data, timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < INTEL_CACHE_DURATION) {
+            setIntelData(data);
+            setIntelCacheTime(timestamp);
+            return;
+          }
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    setIntelLoading(true);
+    try {
+      const context = buildIntelContext();
+      const response = await fetch('/api/research-intel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context }),
+      });
+
+      const result = await response.json();
+      if (result.success && result.data) {
+        const now = Date.now();
+        setIntelData(result.data);
+        setIntelCacheTime(now);
+        try {
+          localStorage.setItem(INTEL_CACHE_KEY, JSON.stringify({ data: result.data, timestamp: now }));
+        } catch (e) { /* ignore storage errors */ }
+      } else {
+        // Use fallback
+        const fallback = buildFallbackIntel();
+        setIntelData(fallback);
+        setIntelCacheTime(Date.now());
+      }
+    } catch (err) {
+      console.warn('[ResearchLanding] Intel fetch failed:', err);
+      const fallback = buildFallbackIntel();
+      setIntelData(fallback);
+      setIntelCacheTime(Date.now());
+    } finally {
+      setIntelLoading(false);
+    }
+  }, [buildIntelContext, buildFallbackIntel]);
+
+  const fetchThread = useCallback(async (symbol, discoveryContext, sectorContext) => {
+    if (threadCache[symbol]) return;
+
+    try {
+      const response = await fetch('/api/research-thread', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol, discoveryContext, sectorContext }),
+      });
+      const result = await response.json();
+      if (result.success && result.data) {
+        setThreadCache(prev => ({ ...prev, [symbol]: result.data }));
+      }
+    } catch (err) {
+      console.warn('[ResearchLanding] Thread fetch failed:', err);
+    }
+  }, [threadCache]);
+
+  // ─── Trigger mobile intelligence fetch ───────────────────
+  useEffect(() => {
+    if (isMobile && stocksData.length > 0) {
+      fetchIntelligence();
+    }
+  }, [isMobile, stocksData.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ─── Handle opening research modal from various sources ──
   const handleOpenResearch = useCallback((asset) => {
     showResearch(asset);
@@ -749,6 +1898,36 @@ const ResearchLandingPage = ({
   // ═══════════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════════
+
+  // ─── Mobile Layout ─────────────────────────────────────────
+  if (isMobile) {
+    return (
+      <>
+        <style>{KEYFRAMES}</style>
+        <MobileIntelligenceHub
+          intelData={intelData}
+          intelLoading={intelLoading}
+          intelCacheTime={intelCacheTime}
+          onRefresh={() => fetchIntelligence(true)}
+          onBuildThesis={onBuildThesis}
+          onOpenMoneyMap={onOpenMoneyMap}
+          onAnalyzeStock={onAnalyzeStock}
+          allAssets={allAssets}
+          handleOpenResearch={handleOpenResearch}
+          fetchThread={fetchThread}
+          threadCache={threadCache}
+        />
+        {isOpen && researchAsset && (
+          <AssetResearchModal
+            {...getModalProps()}
+            showActionButton={false}
+          />
+        )}
+      </>
+    );
+  }
+
+  // ─── Desktop Layout ────────────────────────────────────────
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
       {/* Inject keyframes */}
@@ -1073,7 +2252,7 @@ const ResearchLandingPage = ({
                     </div>
                     <div style={{ fontSize: '10px', color: C.textMuted }}>
                       {new Date(evt.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                      {evt.time ? ` · ${evt.time} ET` : ''}
+                      {evt.time ? ` \u00B7 ${evt.time} ET` : ''}
                     </div>
                   </div>
                   <span style={{
