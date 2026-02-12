@@ -1837,7 +1837,7 @@ const EconomicEventsBotCard = ({ buildMarketContextString, compact = false }) =>
   const questions = [
     { id: 'upcoming', icon: '📅', label: "What events are coming this week?" },
     { id: 'today', icon: '📊', label: "What economic data came out today?" },
-    { id: 'impact', icon: '⚡', label: "How could this week's data move markets?" },
+    { id: 'trends', icon: '📈', label: "What are the economic trends right now?" },
   ];
 
   const handleAsk = useCallback(async (question) => {
@@ -1854,12 +1854,18 @@ const EconomicEventsBotCard = ({ buildMarketContextString, compact = false }) =>
     try {
       const marketContext = buildMarketContextString ? buildMarketContextString() : '';
 
+      const contextByQuestion = {
+        upcoming: 'User is asking about upcoming economic events. Focus ONLY on the UPCOMING ECONOMIC EVENTS section of the market data. List each event with its date, time, tier, and what to expect. Be specific about dates and estimates.',
+        today: 'User is asking about economic data released today. Focus ONLY on the RECENT ECONOMIC RELEASES section of the market data. Report actual values, whether they beat or missed estimates, and the immediate market reaction. If nothing was released today, say so clearly.',
+        trends: 'User is asking about economic trends over time. Analyze the PREVIOUS values across multiple economic indicators to identify multi-month trends. Compare previous readings to spot patterns: Is inflation rising or falling? Are jobs strengthening or weakening? Is manufacturing expanding or contracting? Is consumer sentiment improving or declining? Use the actual numbers from the data to support each trend. This is about patterns over time, NOT about individual upcoming events.',
+      };
+
       const response = await fetch('/api/research-followup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question: question.label,
-          parentContext: 'User is asking about economic events and data releases. Focus ONLY on the UPCOMING ECONOMIC EVENTS and RECENT ECONOMIC RELEASES sections of the market data. Be specific about dates, estimates, previous values, and actual values.',
+          parentContext: contextByQuestion[question.id] || 'User is asking about economic events and data releases.',
           marketContext,
         }),
       });
