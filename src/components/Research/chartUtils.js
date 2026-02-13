@@ -188,3 +188,93 @@ export function calculateBombLevels(baselinePrice, threshold) {
     { price: baselinePrice * (1 - pct * 2.0), label: '-35 pts',    tier: 'meltdown',       color: 'rgba(239, 68, 68, 0.7)', lineWidth: 1.5, lineStyle: 2, points: -35 },
   ];
 }
+
+/**
+ * Detect candles where price crossed a bomb level threshold.
+ * Scans chart-ready data (oldest-first) for crossings.
+ *
+ * @param {Array} chartData - Oldest-first candles with { time, open, high, low, close }
+ * @param {Array} bombLevels - From calculateBombLevels()
+ * @returns {Array} Marker objects for lightweight-charts setMarkers()
+ */
+export function detectBombCrossings(chartData, bombLevels) {
+  if (!chartData || chartData.length < 2 || !bombLevels || bombLevels.length === 0) return [];
+
+  const markers = [];
+
+  for (let i = 1; i < chartData.length; i++) {
+    const prev = chartData[i - 1];
+    const curr = chartData[i];
+
+    bombLevels.forEach(level => {
+      if (level.tier === 'baseline') return; // Skip baseline crossings
+
+      // Upward crossing: previous close below level, current high reached level
+      const crossedUp = prev.close < level.price && curr.high >= level.price;
+      // Downward crossing: previous close above level, current low reached level
+      const crossedDown = prev.close > level.price && curr.low <= level.price;
+
+      if (crossedUp) {
+        markers.push({
+          time: curr.time,
+          position: 'belowBar',
+          color: level.color,
+          shape: 'arrowUp',
+          text: `${level.points > 0 ? '+' : ''}${level.points}`,
+        });
+      } else if (crossedDown) {
+        markers.push({
+          time: curr.time,
+          position: 'aboveBar',
+          color: level.color,
+          shape: 'arrowDown',
+          text: `${level.points}`,
+        });
+      }
+    });
+  }
+
+  // lightweight-charts requires markers sorted by time ascending
+  markers.sort((a, b) => {
+    const tA = typeof a.time === 'number' ? a.time : 0;
+    const tB = typeof b.time === 'number' ? b.time : 0;
+    return tA - tB;
+  });
+
+  return markers;
+}
+
+/**
+ * Calculate the nearest bomb level above and below the current price.
+ *
+ * @param {number} currentPrice - Latest price
+ * @param {Array} bombLevels - From calculateBombLevels()
+ * @returns {{ above: { tier, price, points, distance, pctAway } | null, below: { tier, price, points, distance, pctAway } | null }}
+ */
+export function calculateNearestLevel(currentPrice, bombLevels) {
+  if (!currentPrice || !bombLevels || bombLevels.length === 0) {
+    return { above: null, below: null };
+  }
+
+  let nearestAbove = null;
+  let nearestBelow = null;
+
+  bombLevels.forEach(level => {
+    const distance = level.price - currentPrice;
+    const pctAway = (distance / currentPrice) * 100;
+
+    if (distance > 0) {
+      // Level is above current price
+      if (!nearestAbove || distance < nearestAbove.distance) {
+        nearestAbove = { tier: level.tier, price: level.price, points: level.points, color: level.color, distance, pctAway };
+      }
+    } else if (distance < 0) {
+      // Level is below current price
+      if (!nearestBelow || Math.abs(distance) < Math.abs(nearestBelow.distance)) {
+        nearestBelow = { tier: level.tier, price: level.price, points: level.points, color: level.color, distance, pctAway };
+      }
+    }
+  });
+
+  return { above: nearestAbove, below: nearestBelow };
+}

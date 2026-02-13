@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { createChart, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts';
+import { createChart, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries } from 'lightweight-charts';
 import { HOLO_COLORS } from '../../constants/holoTheme';
-import { prepareChartData, formatTime, calculateBombLevels } from './chartUtils';
+import { prepareChartData, formatTime, calculateBombLevels, detectBombCrossings, calculateNearestLevel } from './chartUtils';
 
 const TIMEFRAMES = [
   { key: '1D', label: '1D' },
@@ -40,6 +40,17 @@ const StockChart = ({
     if (!isBombView || !bombData?.threshold || !bombData?.baselinePrice) return [];
     return calculateBombLevels(bombData.baselinePrice, bombData.threshold);
   }, [isBombView, bombData?.threshold, bombData?.baselinePrice]);
+
+  // Nearest bomb level to current price (for distance indicator)
+  const nearestLevel = useMemo(() => {
+    if (!isBombView || bombLevels.length === 0 || !ohlcvData || ohlcvData.length === 0) {
+      return { above: null, below: null };
+    }
+    // Get latest close price (ohlcvData is oldest-first, last element is most recent)
+    const latestClose = ohlcvData[ohlcvData.length - 1]?.close;
+    if (!latestClose) return { above: null, below: null };
+    return calculateNearestLevel(Number(latestClose), bombLevels);
+  }, [isBombView, bombLevels, ohlcvData]);
 
   // Auto-switch back to 1D if bombData removed while viewing bomb tab
   useEffect(() => {
@@ -91,6 +102,50 @@ const StockChart = ({
     chartRef.current = chart;
 
     if (isBombView) {
+      // Bomb view: Background zones between bomb levels (added first for z-order)
+      const zoneConfigs = [];
+      if (bombLevels.length >= 7) {
+        // Sort levels by price descending for zone pairing
+        const sorted = [...bombLevels].sort((a, b) => b.price - a.price);
+        // Zone pairs: [tenBagger→top], [doubleBagger→tenBagger], [bagger→doubleBagger], [baseline→bagger], [bust→baseline], [crash→bust], [meltdown→crash]
+        const zoneDefs = [
+          { upper: sorted[0], lower: sorted[1], color: 'rgba(255, 215, 0, 0.04)' },    // gold zone (tenBagger → doubleBagger)
+          { upper: sorted[1], lower: sorted[2], color: 'rgba(255, 149, 0, 0.05)' },    // orange zone (doubleBagger → bagger)
+          { upper: sorted[2], lower: sorted[3], color: 'rgba(0, 255, 136, 0.04)' },    // green zone (bagger → baseline)
+          { upper: sorted[3], lower: sorted[4], color: 'rgba(255, 255, 255, 0.02)' },  // neutral zone (baseline → bust)
+          { upper: sorted[4], lower: sorted[5], color: 'rgba(239, 68, 68, 0.04)' },    // light red (bust → crash)
+          { upper: sorted[5], lower: sorted[6], color: 'rgba(239, 68, 68, 0.07)' },    // medium red (crash → meltdown)
+        ];
+        zoneDefs.forEach(z => zoneConfigs.push(z));
+      }
+
+      // Render zone AreaSeries (before candles for z-order)
+      zoneConfigs.forEach(zone => {
+        try {
+          const areaSeries = chart.addSeries(AreaSeries, {
+            topColor: zone.color,
+            bottomColor: 'transparent',
+            lineColor: 'transparent',
+            lineWidth: 0,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+            autoscaleInfoProvider: () => null,
+          });
+          // Fill the zone at the upper level price across all time points
+          const zoneData = chartData.map(c => ({
+            time: c.time,
+            value: zone.upper.price,
+          }));
+          areaSeries.setData(zoneData);
+          areaSeries.applyOptions({
+            baseValue: { type: 'price', price: zone.lower.price },
+          });
+        } catch (zoneErr) {
+          console.warn('[StockChart] Zone render error:', zoneErr);
+        }
+      });
+
       // Bomb view: CandlestickSeries (hourly) with bomb level price lines
       const bombSeries = chart.addSeries(CandlestickSeries, {
         upColor: HOLO_COLORS.green,
@@ -120,6 +175,16 @@ const StockChart = ({
         bombSeries.setData(chartData);
       } catch (err) {
         console.error('[StockChart] bomb setData error:', err);
+      }
+
+      // Bomb crossing markers
+      try {
+        const markers = detectBombCrossings(chartData, bombLevels);
+        if (markers.length > 0) {
+          bombSeries.setMarkers(markers);
+        }
+      } catch (markerErr) {
+        console.warn('[StockChart] Bomb markers error:', markerErr);
       }
 
       // Volume histogram (same as normal chart)
@@ -405,11 +470,61 @@ const StockChart = ({
         )}
       </div>
 
-      {/* Chart container */}
-      <div
-        ref={chartContainerRef}
-        style={{ width: '100%', height: `${height}px` }}
-      />
+      {/* Chart container with distance indicator overlay */}
+      <div style={{ position: 'relative', width: '100%', height: `${height}px` }}>
+        <div
+          ref={chartContainerRef}
+          style={{ width: '100%', height: '100%' }}
+        />
+
+        {/* Distance-to-next-level indicator (bomb view only) */}
+        {isBombView && (nearestLevel.above || nearestLevel.below) && (() => {
+          // Pick the closer level
+          const above = nearestLevel.above;
+          const below = nearestLevel.below;
+          const closest = above && below
+            ? (Math.abs(above.pctAway) <= Math.abs(below.pctAway) ? above : below)
+            : (above || below);
+          if (!closest) return null;
+          const isClose = Math.abs(closest.pctAway) < 0.5;
+          const direction = closest.distance > 0 ? '\u2191' : '\u2193';
+          return (
+            <div style={{
+              position: 'absolute',
+              top: '8px',
+              right: '8px',
+              padding: '4px 10px',
+              borderRadius: '8px',
+              background: 'rgba(0, 0, 0, 0.75)',
+              border: `1px solid ${closest.color}`,
+              color: closest.color,
+              fontSize: '11px',
+              fontWeight: '700',
+              fontFamily: 'monospace',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              zIndex: 10,
+              pointerEvents: 'none',
+              animation: isClose ? 'bombPulse 1.5s ease-in-out infinite' : 'none',
+            }}>
+              <span>{direction}</span>
+              <span>{Math.abs(closest.pctAway).toFixed(2)}%</span>
+              <span style={{ opacity: 0.7 }}>to {closest.points > 0 ? '+' : ''}{closest.points}</span>
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* Pulse animation for close-to-level indicator */}
+      {isBombView && (
+        <style>{`
+          @keyframes bombPulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(245, 158, 11, 0.3); }
+            50% { opacity: 0.7; box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }
+          }
+        `}</style>
+      )}
     </div>
   );
 };
