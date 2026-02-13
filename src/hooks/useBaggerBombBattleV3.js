@@ -145,6 +145,18 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       const priceChange = ((currentPrice - openPrice) / openPrice) * 100;
       const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
 
+      // [DIAG-1] V3 calculateScores — per-asset scoring inputs
+      console.log('[DIAG-1] calculateScores', {
+        symbol: asset.symbol,
+        openPrice,
+        currentPrice: prices[asset.symbol],
+        priceChange,
+        'asset.baseATR': asset.baseATR,
+        'asset.tier': asset.tier,
+        'battle.thresholds': battle?.thresholds?.[asset.symbol],
+        assetHistory,
+      });
+
       const score = calculateAssetScoreV3(asset, priceChange, assetHistory);
       assetScores.push(score);
 
@@ -387,6 +399,20 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
 
         const assetHistory = existingHistory[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
         const updatedHistory = getHistoryUpdateIfChanged(currentMultiplier, assetHistory);
+
+        // [DIAG-3] History tracker — baseATR source comparison
+        if (updatedHistory) {
+          console.log('[DIAG-3] historyUpdate', {
+            symbol: asset.symbol,
+            'asset.baseATR': asset.baseATR,
+            'battle.thresholds': battle?.thresholds?.[asset.symbol]?.threshold,
+            resolvedBaseATR: baseATR,
+            priceChange,
+            currentMultiplier,
+            prevHistory: assetHistory,
+            newHistory: updatedHistory,
+          });
+        }
 
         if (updatedHistory) {
           // Update local state immediately (provides instant UI feedback)

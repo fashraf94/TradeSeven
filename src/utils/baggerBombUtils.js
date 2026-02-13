@@ -426,6 +426,17 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}) {
   const baseATR = asset.baseATR || 2.5;
   const multiplier = priceChange / baseATR;
 
+  // [DIAG-2] calculateAssetScoreV3 — scoring internals
+  console.log('[DIAG-2] scoreV3', {
+    symbol: asset.symbol,
+    'asset.baseATR': asset.baseATR,
+    resolvedBaseATR: baseATR,
+    priceChange,
+    multiplier,
+    'history.maxMultiplier': history.maxMultiplier,
+    effectiveMax: Math.max(history.maxMultiplier || 0, multiplier),
+  });
+
   // Conviction multiplier: Star 2x, Core 1.5x, Support 1x
   const tierMultiplier = CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support;
 
