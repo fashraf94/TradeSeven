@@ -503,7 +503,11 @@ export default function BaggerBombBattleView({
             price: currentPrices[researchAsset.symbol] || researchAsset.currentPrice || researchAsset.price || 0,
             percentChange: researchAsset.priceChange || 0,
             threshold: thresholds[researchAsset.symbol]?.threshold || researchAsset.baseATR || 2.5,
-            lockedPrice: openPrices[researchAsset.symbol] || 0,
+            lockedPrice: openPrices[researchAsset.symbol]
+              || battle?.state?.startingPrices?.[researchAsset.symbol]
+              || researchAsset.lockedPrice
+              || researchAsset.startPrice
+              || 0,
           }}
           onClose={() => setResearchAsset(null)}
           showActionButton={false}

@@ -389,6 +389,21 @@ const BaggerBombTab = ({ asset }) => {
   // Get base threshold (default 2.5% for unknown stocks)
   const baseThreshold = asset?.threshold || 2.5;
 
+  // Resolve baseline price for target price display (same logic as bombData)
+  const baselinePrice =
+    asset?.lockedPrice ||
+    asset?.baselinePrice ||
+    asset?.startPrice ||
+    asset?.startingPrice ||
+    asset?.basePrice ||
+    null;
+
+  // Format target price with commas and 2 decimals
+  const formatTargetPrice = (price) => {
+    if (!price || price <= 0) return null;
+    return `$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
   // Mock historical data (in production, fetch from API)
   const getHistoricalStats = (symbol) => {
     const mockData = {
@@ -460,25 +475,37 @@ const BaggerBombTab = ({ asset }) => {
           padding: '12px',
           marginBottom: '8px',
         }}>
-          {BAGGER_TIERS.map((tier, i) => (
-            <div key={tier.key} style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '8px 0',
-              borderBottom: i < BAGGER_TIERS.length - 1 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
-            }}>
-              <span style={{ color: '#00ff88', fontSize: '13px' }}>{tier.emoji} {tier.label}</span>
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
-                  +{(baseThreshold * tier.multiplier).toFixed(1)}%
-                </span>
-                <span style={{ color: '#00ff88', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
-                  +{tier.points} pts
-                </span>
+          {BAGGER_TIERS.map((tier, i) => {
+            const pct = baseThreshold * tier.multiplier;
+            const targetPrice = baselinePrice ? baselinePrice * (1 + pct / 100) : null;
+            return (
+              <div key={tier.key} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '8px 0',
+                borderBottom: i < BAGGER_TIERS.length - 1 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
+              }}>
+                <span style={{ color: '#00ff88', fontSize: '13px' }}>{tier.emoji} {tier.label}</span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
+                    +{pct.toFixed(1)}%
+                  </span>
+                  {targetPrice && (
+                    <>
+                      <span style={{ color: 'rgba(255, 255, 255, 0.3)', fontSize: '10px' }}>{'\u2192'}</span>
+                      <span style={{ color: 'rgba(255, 255, 255, 0.8)', fontFamily: 'monospace', fontSize: '11px', minWidth: '60px', textAlign: 'right' }}>
+                        {formatTargetPrice(targetPrice)}
+                      </span>
+                    </>
+                  )}
+                  <span style={{ color: '#00ff88', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px', minWidth: '48px', textAlign: 'right' }}>
+                    +{tier.points} pts
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Negative Thresholds */}
@@ -487,25 +514,37 @@ const BaggerBombTab = ({ asset }) => {
           borderRadius: '10px',
           padding: '12px',
         }}>
-          {BUST_TIERS.map((tier, i) => (
-            <div key={tier.key} style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '8px 0',
-              borderBottom: i < BUST_TIERS.length - 1 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
-            }}>
-              <span style={{ color: '#ff3366', fontSize: '13px' }}>{tier.emoji} {tier.label}</span>
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
-                  -{(baseThreshold * tier.multiplier).toFixed(1)}%
-                </span>
-                <span style={{ color: '#ff3366', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
-                  {tier.points} pts
-                </span>
+          {BUST_TIERS.map((tier, i) => {
+            const pct = baseThreshold * tier.multiplier;
+            const targetPrice = baselinePrice ? baselinePrice * (1 - pct / 100) : null;
+            return (
+              <div key={tier.key} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '8px 0',
+                borderBottom: i < BUST_TIERS.length - 1 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
+              }}>
+                <span style={{ color: '#ff3366', fontSize: '13px' }}>{tier.emoji} {tier.label}</span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
+                    -{pct.toFixed(1)}%
+                  </span>
+                  {targetPrice && (
+                    <>
+                      <span style={{ color: 'rgba(255, 255, 255, 0.3)', fontSize: '10px' }}>{'\u2192'}</span>
+                      <span style={{ color: 'rgba(255, 255, 255, 0.8)', fontFamily: 'monospace', fontSize: '11px', minWidth: '60px', textAlign: 'right' }}>
+                        {formatTargetPrice(targetPrice)}
+                      </span>
+                    </>
+                  )}
+                  <span style={{ color: '#ff3366', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px', minWidth: '48px', textAlign: 'right' }}>
+                    {tier.points} pts
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -672,6 +711,9 @@ const BaggerBombTab = ({ asset }) => {
           color: 'rgba(255, 255, 255, 0.7)',
         }}>
           <strong style={{ color: '#f59e0b' }}>Note:</strong> Threshold tiers are 1.0x, 1.5x, and 2.0x of the base threshold ({baseThreshold.toFixed(1)}%).
+          {baselinePrice > 0 && (
+            <span> Baseline: {formatTargetPrice(baselinePrice)}.</span>
+          )}
         </div>
       </div>
     </div>
@@ -722,10 +764,18 @@ const AssetResearchModal = ({
   // v2: Bomb chart data — only available when asset has battle context (threshold + baseline price)
   const bombData = useMemo(() => {
     const threshold = asset?.threshold;
-    const baselinePrice = asset?.lockedPrice || asset?.baselinePrice || asset?.startPrice;
-    if (!threshold || !baselinePrice) return null;
+    const baselinePrice =
+      asset?.lockedPrice ||
+      asset?.baselinePrice ||
+      asset?.startPrice ||
+      asset?.startingPrice ||
+      asset?.basePrice ||
+      asset?.draftPrice ||
+      null;
+    if (!threshold || threshold <= 0 || !baselinePrice || baselinePrice <= 0) return null;
     return { threshold, baselinePrice };
-  }, [asset?.threshold, asset?.lockedPrice, asset?.baselinePrice, asset?.startPrice]);
+  }, [asset?.threshold, asset?.lockedPrice, asset?.baselinePrice, asset?.startPrice,
+      asset?.startingPrice, asset?.basePrice, asset?.draftPrice]);
 
   // v2: Measure container height for drawer snap points
   useEffect(() => {
