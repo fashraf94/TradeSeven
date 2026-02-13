@@ -763,18 +763,6 @@ const AssetResearchModal = ({
 
   // v2: Bomb chart data — only available when asset has battle context (threshold + baseline price)
   const bombData = useMemo(() => {
-    // [DIAG-5] bombData resolution
-    console.log('[DIAG-5] bombData', {
-      symbol: asset?.symbol,
-      'asset.threshold': asset?.threshold,
-      'asset.lockedPrice': asset?.lockedPrice,
-      'asset.baselinePrice': asset?.baselinePrice,
-      'asset.startPrice': asset?.startPrice,
-      'asset.startingPrice': asset?.startingPrice,
-      'asset.basePrice': asset?.basePrice,
-      'asset.draftPrice': asset?.draftPrice,
-      'asset.price': asset?.price,
-    });
     const threshold = asset?.threshold;
     const baselinePrice =
       asset?.lockedPrice ||

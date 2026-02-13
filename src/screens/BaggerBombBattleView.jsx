@@ -495,18 +495,6 @@ export default function BaggerBombBattleView({
       </div>
 
       {/* Research Modal - opens when stock symbol is tapped */}
-      {researchAsset && (() => {
-        // [DIAG-4] Research modal asset construction
-        console.log('[DIAG-4] ResearchModal', {
-          'researchAsset.symbol': researchAsset.symbol,
-          'researchAsset.baseATR': researchAsset.baseATR,
-          'thresholds[symbol]': thresholds[researchAsset.symbol],
-          'openPrices[symbol]': openPrices[researchAsset.symbol],
-          'battle.startingPrices[symbol]': battle?.state?.startingPrices?.[researchAsset.symbol],
-          'currentPrices[symbol]': currentPrices[researchAsset.symbol],
-        });
-        return null;
-      })()}
       {researchAsset && (
         <AssetResearchModal
           asset={{

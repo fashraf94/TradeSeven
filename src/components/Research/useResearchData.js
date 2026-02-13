@@ -33,16 +33,6 @@ export default function useResearchData(symbol) {
 
     // Check in-memory cache
     if (cacheRef.current[cacheKey]) {
-      // [DIAG-6] useResearchData — CACHE HIT
-      const _cached = cacheRef.current[cacheKey];
-      const _newest = Array.isArray(_cached) ? _cached[0] : null;
-      console.log('[DIAG-6] chartData', {
-        symbol, cacheKey, source: 'CACHE_HIT',
-        candleCount: Array.isArray(_cached) ? _cached.length : 0,
-        newestDate: _newest?.date || _newest?.datetime,
-        newestClose: _newest?.close,
-        now: new Date().toISOString(),
-      });
       setRawData(cacheRef.current[cacheKey]);
       setError(null);
       return;
@@ -65,15 +55,6 @@ export default function useResearchData(symbol) {
           setError('No historical data available');
           setRawData(null);
         } else {
-          // [DIAG-6] useResearchData — FRESH FETCH
-          const _newest = Array.isArray(data) ? data[0] : null;
-          console.log('[DIAG-6] chartData', {
-            symbol, cacheKey, source: 'FRESH_FETCH',
-            candleCount: Array.isArray(data) ? data.length : 0,
-            newestDate: _newest?.date || _newest?.datetime,
-            newestClose: _newest?.close,
-            now: new Date().toISOString(),
-          });
           cacheRef.current[cacheKey] = data;
           setRawData(data);
         }

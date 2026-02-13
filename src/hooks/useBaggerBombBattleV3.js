@@ -127,12 +127,16 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       const openPrice = openPrices[asset.symbol] || asset.price || 0;
       const currentPrice = prices[asset.symbol] || openPrice;
 
+      // Resolve baseATR: prefer API-computed battle threshold over asset's stored value
+      // (asset.baseATR may be a stale sector default from portfolio builder)
+      const resolvedBaseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
+
       if (!openPrice || openPrice === 0) {
         assetScores.push({
           symbol: asset.symbol,
           priceChange: 0,
           multiplier: 0,
-          baseATR: asset.baseATR || 2.5,
+          baseATR: resolvedBaseATR,
           basePoints: 0,
           bonusPoints: 0,
           totalPoints: 0,
@@ -145,19 +149,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       const priceChange = ((currentPrice - openPrice) / openPrice) * 100;
       const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
 
-      // [DIAG-1] V3 calculateScores — per-asset scoring inputs
-      console.log('[DIAG-1] calculateScores', {
-        symbol: asset.symbol,
-        openPrice,
-        currentPrice: prices[asset.symbol],
-        priceChange,
-        'asset.baseATR': asset.baseATR,
-        'asset.tier': asset.tier,
-        'battle.thresholds': battle?.thresholds?.[asset.symbol],
-        assetHistory,
-      });
-
-      const score = calculateAssetScoreV3(asset, priceChange, assetHistory);
+      const score = calculateAssetScoreV3({ ...asset, baseATR: resolvedBaseATR }, priceChange, assetHistory);
       assetScores.push(score);
 
       totalBasePoints += score.basePoints;
@@ -322,7 +314,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       if (!openPrice || !currentPrice) return;
 
       const priceChange = ((currentPrice - openPrice) / openPrice) * 100;
-      const baseATR = asset.baseATR || battle?.thresholds?.[asset.symbol]?.threshold || 2.5;
+      const baseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
       const currentMultiplier = priceChange / baseATR;
 
       const prevMultiplier = prevMultipliersRef.current[asset.symbol] || 0;
@@ -394,25 +386,11 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
         if (!openPrice || !currentPrice) return;
 
         const priceChange = ((currentPrice - openPrice) / openPrice) * 100;
-        const baseATR = asset.baseATR || battle?.thresholds?.[asset.symbol]?.threshold || 2.5;
+        const baseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
         const currentMultiplier = priceChange / baseATR;
 
         const assetHistory = existingHistory[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
         const updatedHistory = getHistoryUpdateIfChanged(currentMultiplier, assetHistory);
-
-        // [DIAG-3] History tracker — baseATR source comparison
-        if (updatedHistory) {
-          console.log('[DIAG-3] historyUpdate', {
-            symbol: asset.symbol,
-            'asset.baseATR': asset.baseATR,
-            'battle.thresholds': battle?.thresholds?.[asset.symbol]?.threshold,
-            resolvedBaseATR: baseATR,
-            priceChange,
-            currentMultiplier,
-            prevHistory: assetHistory,
-            newHistory: updatedHistory,
-          });
-        }
 
         if (updatedHistory) {
           // Update local state immediately (provides instant UI feedback)

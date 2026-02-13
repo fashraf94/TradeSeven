@@ -1034,7 +1034,7 @@ export async function createBaggerBombBattleV3(battleData, lobbyTimeMinutes = 30
           ? {
               symbol: String(asset.symbol || '').toUpperCase(),
               name: String(asset.name || asset.symbol || ''),
-              baseATR: Number(asset.baseATR || thresholds[asset.symbol]?.threshold || 2.5),
+              baseATR: Number(thresholds[asset.symbol]?.threshold || asset.baseATR || 2.5),
               isCrypto: Boolean(asset.isCrypto),
             }
           : null
@@ -1053,7 +1053,7 @@ export async function createBaggerBombBattleV3(battleData, lobbyTimeMinutes = 30
           ? {
               symbol: String(asset.symbol || '').toUpperCase(),
               name: String(asset.name || asset.symbol || ''),
-              baseATR: Number(asset.baseATR || thresholds[asset.symbol]?.threshold || 2.5),
+              baseATR: Number(thresholds[asset.symbol]?.threshold || asset.baseATR || 2.5),
               isCrypto: false,
             }
           : null
@@ -1062,7 +1062,7 @@ export async function createBaggerBombBattleV3(battleData, lobbyTimeMinutes = 30
         ? {
             symbol: String(bench.crypto.symbol || '').toUpperCase(),
             name: String(bench.crypto.name || bench.crypto.symbol || ''),
-            baseATR: Number(bench.crypto.baseATR || thresholds[bench.crypto.symbol]?.threshold || 5.0),
+            baseATR: Number(thresholds[bench.crypto.symbol]?.threshold || bench.crypto.baseATR || 5.0),
             isCrypto: true,
           }
         : null,
@@ -1717,7 +1717,7 @@ export async function createBaggerBombBattleV4(battleData, lobbyTimeMinutes = 30
           ? {
               symbol: String(asset.symbol || '').toUpperCase(),
               name: String(asset.name || asset.symbol || ''),
-              baseATR: Number(asset.baseATR || thresholds[asset.symbol]?.threshold || 2.5),
+              baseATR: Number(thresholds[asset.symbol]?.threshold || asset.baseATR || 2.5),
               isCrypto: Boolean(asset.isCrypto),
             }
           : null
