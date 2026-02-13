@@ -133,7 +133,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { symbol, timeframe = '1d', days, type } = req.query;
+  const { symbol, timeframe = '1d', days, type, from: qFrom, to: qTo } = req.query;
 
   if (!symbol) {
     return res.status(400).json({ error: 'Missing symbol parameter' });
@@ -164,10 +164,13 @@ export default async function handler(req, res) {
     startDate.setDate(startDate.getDate() - numDays);
     const fromDate = startDate.toISOString().split('T')[0];
 
-    // For 1m spectate: use smart time range (market-hours-aware)
+    // For 1m spectate: use query params from/to if provided, else smart time range
     // For 1h: use startDate as before
     let intradayFromTs, intradayToTs;
-    if (timeframe === '1m') {
+    if (qFrom) {
+      intradayFromTs = parseInt(qFrom, 10);
+      intradayToTs = qTo ? parseInt(qTo, 10) : null;
+    } else if (timeframe === '1m') {
       const range = getSpectateTimeRange(isCrypto);
       intradayFromTs = range.from;
       intradayToTs = range.to;
@@ -315,6 +318,18 @@ export default async function handler(req, res) {
     }
 
     if (!Array.isArray(data) || data.length === 0) {
+      // For 1m spectate: return success with empty data (market may be closed)
+      if (timeframe === '1m') {
+        return res.status(200).json({
+          success: true,
+          symbol: upperSymbol,
+          timeframe: '1m',
+          requestedTimeframe: '1m',
+          description: config.description,
+          count: 0,
+          data: []
+        });
+      }
       return res.status(404).json({
         success: false,
         error: `No historical data found for ${upperSymbol}`

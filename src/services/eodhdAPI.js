@@ -766,7 +766,7 @@ export function clearEarningsCache() {
  * @param {string} timeframe - Timeframe: '1h' (hourly), '1d' (daily), '1w' (weekly)
  * @returns {Promise<Object>} Object with { data, actualTimeframe, fallbackMessage } or just data array for backwards compatibility
  */
-export async function fetchHistoricalOHLCV(symbol, timeframe = '1d', { days } = {}) {
+export async function fetchHistoricalOHLCV(symbol, timeframe = '1d', { days, from, to } = {}) {
   const upperSymbol = symbol.toUpperCase();
   const cacheKey = `ohlcv_${upperSymbol}_${timeframe}${days ? `_${days}d` : ''}`;
 
@@ -785,6 +785,8 @@ export async function fetchHistoricalOHLCV(symbol, timeframe = '1d', { days } = 
     let url = `${API_BASE}/stocks/historical?symbol=${upperSymbol}&timeframe=${timeframe}`;
     if (isCryptoSymbol) url += '&type=crypto';
     if (days) url += `&days=${days}`;
+    if (from) url += `&from=${from}`;
+    if (to) url += `&to=${to}`;
     const response = await fetchWithTimeout(url);
 
     if (!response.ok) {

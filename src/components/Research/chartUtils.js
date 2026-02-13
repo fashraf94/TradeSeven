@@ -11,11 +11,11 @@ export const isValidNumber = (val) => {
 };
 
 /**
- * Convert various time formats to what lightweight-charts expects:
- * - Unix timestamp in SECONDS for intraday
- * - 'YYYY-MM-DD' string for daily data
+ * Convert various time formats to Unix timestamp in SECONDS.
+ * Always returns a number — avoids mixed time types (string vs number)
+ * which cause "time must be of type BusinessDay" errors in lightweight-charts.
  */
-export const formatTime = (dateValue, isIntraday = false) => {
+export const formatTime = (dateValue) => {
   if (!dateValue) return null;
 
   if (typeof dateValue === 'number' && dateValue < 9999999999) {
@@ -26,12 +26,13 @@ export const formatTime = (dateValue, isIntraday = false) => {
   }
 
   if (typeof dateValue === 'string') {
-    if (isIntraday || dateValue.includes('T') || dateValue.includes(':')) {
-      const timestamp = new Date(dateValue).getTime();
-      if (isNaN(timestamp)) return null;
-      return Math.floor(timestamp / 1000);
-    }
-    return dateValue.split('T')[0];
+    // For date-only strings like '2026-02-13', append T00:00:00 for consistent parsing
+    const str = dateValue.includes('T') || dateValue.includes(':')
+      ? dateValue
+      : `${dateValue.split('T')[0]}T00:00:00`;
+    const timestamp = new Date(str).getTime();
+    if (isNaN(timestamp)) return null;
+    return Math.floor(timestamp / 1000);
   }
 
   return null;

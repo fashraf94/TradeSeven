@@ -225,11 +225,11 @@ const StockChart = ({
         console.error('[StockChart] bomb setData error:', err);
       }
 
-      // Bomb crossing markers
+      // Bomb crossing markers (safety: setMarkers may not exist in all versions)
       try {
         const markers = detectBombCrossings(chartData, bombLevels);
-        if (markers.length > 0) {
-          bombSeries.setMarkers(markers);
+        if (markers.length > 0 && typeof bombSeries.setMarkers === 'function') {
+          bombSeries.setMarkers(markers.sort((a, b) => a.time - b.time));
         }
       } catch (markerErr) {
         console.warn('[StockChart] Bomb markers error:', markerErr);
