@@ -1036,6 +1036,7 @@ const DraftRoomScreen = ({
             timeRemaining={draftTimeRemaining}
             canPick={canPickFromCategory(selectedDraftCategory)}
             onAcquire={(asset) => handlePick(asset)}
+            version={2}
             onClose={() => setDraftAssetInfoModal(null)}
           />
         )}

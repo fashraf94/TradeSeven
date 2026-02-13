@@ -327,6 +327,7 @@ const FreeAgencyMobile = ({
                 }
               : null
           }
+          version={2}
         />
       )}
     </div>

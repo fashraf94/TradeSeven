@@ -692,6 +692,7 @@ const CommandConsole = ({
           onClose={() => setSelectedAssetForResearch(null)}
           showActionButton={true}
           actionConfig={null}
+          version={2}
         />
       )}
     </div>

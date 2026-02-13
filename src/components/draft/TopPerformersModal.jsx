@@ -394,6 +394,7 @@ const TopPerformersModal = ({
           category={selectedAssetForResearch.category}
           onClose={() => setSelectedAssetForResearch(null)}
           showActionButton={false}
+          version={2}
         />
       )}
 

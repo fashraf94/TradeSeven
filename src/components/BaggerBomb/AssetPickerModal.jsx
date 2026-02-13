@@ -593,6 +593,7 @@ export default function AssetPickerModal({
             disabled: isAssetSelected(researchAsset),
           }}
           showActionButton={true}
+          version={2}
         />
       )}
     </AnimatePresence>
