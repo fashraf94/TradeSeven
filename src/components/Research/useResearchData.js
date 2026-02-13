@@ -21,13 +21,15 @@ export default function useResearchData(symbol) {
   const cacheRef = useRef({});  // In-memory cache keyed by `${symbol}_${apiTimeframe}`
 
   // Map UI timeframe to API timeframe
-  const apiTimeframe = (timeframe === '1D' || timeframe === 'bomb') ? '1d' : '1w'; // bomb shares daily cache with 1D
+  const isBomb = timeframe === 'bomb';
+  const apiTimeframe = isBomb ? '1h' : (timeframe === '1D' ? '1d' : '1w');
+  const bombDays = 20; // 20 trading days of hourly data (~140 candles)
 
   // Fetch data when symbol or API timeframe changes
   useEffect(() => {
     if (!symbol) return;
 
-    const cacheKey = `${symbol}_${apiTimeframe}`;
+    const cacheKey = isBomb ? `${symbol}_1h_bomb` : `${symbol}_${apiTimeframe}`;
 
     // Check in-memory cache
     if (cacheRef.current[cacheKey]) {
@@ -46,7 +48,7 @@ export default function useResearchData(symbol) {
     setLoading(true);
     setError(null);
 
-    fetchHistoricalOHLCV(symbol, apiTimeframe)
+    fetchHistoricalOHLCV(symbol, apiTimeframe, isBomb ? { days: bombDays } : undefined)
       .then(data => {
         if (thisRequest.aborted) return;
         if (!data || data.length === 0) {
@@ -70,7 +72,7 @@ export default function useResearchData(symbol) {
     return () => {
       thisRequest.aborted = true;
     };
-  }, [symbol, apiTimeframe]);
+  }, [symbol, apiTimeframe, isBomb]);
 
   // Process data based on UI timeframe
   const ohlcvData = useMemo(() => {
@@ -80,8 +82,8 @@ export default function useResearchData(symbol) {
     const reversed = [...rawData].reverse();
 
     if (timeframe === 'bomb') {
-      // Bomb view: last 20 daily candles (~1 month) for smooth line
-      return reversed.slice(-20);
+      // Bomb view: all hourly candles (~140 for 20 trading days)
+      return reversed;
     }
     if (timeframe === '1W') {
       // Weekly data, slice to ~52 most recent weeks (1 year)
@@ -139,13 +141,12 @@ export default function useResearchData(symbol) {
 
   // Retry function
   const retry = useCallback(() => {
-    const cacheKey = `${symbol}_${apiTimeframe}`;
+    const cacheKey = isBomb ? `${symbol}_1h_bomb` : `${symbol}_${apiTimeframe}`;
     delete cacheRef.current[cacheKey];
     setRawData(null);
     setError(null);
-    // Trigger re-fetch by toggling a dummy state
     setLoading(true);
-    fetchHistoricalOHLCV(symbol, apiTimeframe)
+    fetchHistoricalOHLCV(symbol, apiTimeframe, isBomb ? { days: bombDays } : undefined)
       .then(data => {
         if (!data || data.length === 0) {
           setError('No historical data available');
@@ -156,7 +157,7 @@ export default function useResearchData(symbol) {
       })
       .catch(err => setError(err.message || 'Failed to fetch data'))
       .finally(() => setLoading(false));
-  }, [symbol, apiTimeframe]);
+  }, [symbol, apiTimeframe, isBomb]);
 
   return {
     ohlcvData,       // Oldest-first, processed for current timeframe

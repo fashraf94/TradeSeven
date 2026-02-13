@@ -76,7 +76,7 @@ const StockChart = ({
       },
       timeScale: {
         borderColor: accentColor + '0.15)',
-        timeVisible: timeframe === '1D',
+        timeVisible: timeframe === '1D' || isBombView,
         secondsVisible: false,
       },
       rightPriceScale: {
@@ -91,14 +91,15 @@ const StockChart = ({
     chartRef.current = chart;
 
     if (isBombView) {
-      // Bomb view: LineSeries with threshold price lines (no area fill)
-      const bombSeries = chart.addSeries(LineSeries, {
-        color: '#00d9ff',
-        lineWidth: 2,
-        crosshairMarkerVisible: true,
-        crosshairMarkerRadius: 4,
-        lastValueVisible: true,
-        priceLineVisible: false,
+      // Bomb view: CandlestickSeries (hourly) with bomb level price lines
+      const bombSeries = chart.addSeries(CandlestickSeries, {
+        upColor: HOLO_COLORS.green,
+        downColor: '#ff4757',
+        borderUpColor: HOLO_COLORS.green,
+        borderDownColor: '#ff4757',
+        wickUpColor: HOLO_COLORS.green,
+        wickDownColor: '#ff4757',
+        // Ensure Y-axis auto-scales to include all bomb levels
         autoscaleInfoProvider: () => {
           if (bombLevels.length === 0) return null;
           const prices = bombLevels.map(l => l.price);
@@ -116,10 +117,29 @@ const StockChart = ({
       candleSeriesRef.current = bombSeries;
 
       try {
-        const lineData = chartData.map(c => ({ time: c.time, value: c.close }));
-        bombSeries.setData(lineData);
+        bombSeries.setData(chartData);
       } catch (err) {
         console.error('[StockChart] bomb setData error:', err);
+      }
+
+      // Volume histogram (same as normal chart)
+      try {
+        const volumeSeries = chart.addSeries(HistogramSeries, {
+          priceFormat: { type: 'volume' },
+          priceScaleId: 'volume',
+        });
+        volumeSeries.priceScale().applyOptions({
+          scaleMargins: { top: 0.8, bottom: 0 },
+        });
+        volumeSeries.setData(chartData.map(c => ({
+          time: c.time,
+          value: c.volume || 0,
+          color: c.close >= c.open
+            ? 'rgba(0, 255, 136, 0.3)'
+            : 'rgba(255, 71, 87, 0.3)',
+        })));
+      } catch (volErr) {
+        console.warn('[StockChart] Bomb volume error:', volErr);
       }
 
       // Draw 7 bomb level price lines
@@ -138,8 +158,6 @@ const StockChart = ({
           console.warn('[StockChart] Bomb level error:', e);
         }
       });
-
-      // No volume in bomb view
     } else {
       // Normal view: Candlestick + volume
       const candleSeries = chart.addSeries(CandlestickSeries, {

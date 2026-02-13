@@ -758,9 +758,9 @@ export function clearEarningsCache() {
  * @param {string} timeframe - Timeframe: '1h' (hourly), '1d' (daily), '1w' (weekly)
  * @returns {Promise<Object>} Object with { data, actualTimeframe, fallbackMessage } or just data array for backwards compatibility
  */
-export async function fetchHistoricalOHLCV(symbol, timeframe = '1d') {
+export async function fetchHistoricalOHLCV(symbol, timeframe = '1d', { days } = {}) {
   const upperSymbol = symbol.toUpperCase();
-  const cacheKey = `ohlcv_${upperSymbol}_${timeframe}`;
+  const cacheKey = `ohlcv_${upperSymbol}_${timeframe}${days ? `_${days}d` : ''}`;
 
   // Check cache (AGGRESSIVE tier - longer TTL for historical data)
   const cached = cacheService.get('historical', cacheKey);
@@ -773,9 +773,9 @@ export async function fetchHistoricalOHLCV(symbol, timeframe = '1d') {
   console.log(`[EODHD] Fetching ${timeframe} OHLCV for ${upperSymbol}...`);
 
   try {
-    const response = await fetchWithTimeout(
-      `${API_BASE}/stocks/historical?symbol=${upperSymbol}&timeframe=${timeframe}`
-    );
+    let url = `${API_BASE}/stocks/historical?symbol=${upperSymbol}&timeframe=${timeframe}`;
+    if (days) url += `&days=${days}`;
+    const response = await fetchWithTimeout(url);
 
     if (!response.ok) {
       throw new Error(`Proxy error: ${response.status}`);
@@ -794,7 +794,7 @@ export async function fetchHistoricalOHLCV(symbol, timeframe = '1d') {
 
       // Cache with longer TTL (historical data doesn't change)
       // Cache the actual timeframe's data to avoid re-fetching
-      const actualCacheKey = `ohlcv_${upperSymbol}_${result.timeframe}`;
+      const actualCacheKey = `ohlcv_${upperSymbol}_${result.timeframe}${days ? `_${days}d` : ''}`;
       cacheService.set('historical', actualCacheKey, result.data);
 
       console.log(`[EODHD] Got ${result.data.length} ${result.timeframe} OHLCV candles for ${upperSymbol}`);
