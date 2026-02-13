@@ -25,8 +25,10 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
 
   // Map UI timeframe to API timeframe
   const isBomb = timeframe === 'bomb';
-  const apiTimeframe = isBomb ? '1h' : (timeframe === '1D' ? '1d' : '1w');
+  const isSpectate = timeframe === 'spectate';
+  const apiTimeframe = isSpectate ? '1m' : isBomb ? '1h' : (timeframe === '1D' ? '1d' : '1w');
   const bombDays = 20; // 20 trading days of hourly data (~140 candles)
+  const spectateRefreshRef = useRef(null);
 
   // Fetch data when symbol or API timeframe changes
   useEffect(() => {
@@ -34,8 +36,8 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
 
     const cacheKey = isBomb ? `${symbol}_1h_bomb` : `${symbol}_${apiTimeframe}`;
 
-    // Check in-memory cache
-    if (cacheRef.current[cacheKey]) {
+    // Check in-memory cache (skip cache for spectate — always fetch fresh)
+    if (!isSpectate && cacheRef.current[cacheKey]) {
       setRawData(cacheRef.current[cacheKey]);
       setError(null);
       return;
@@ -51,14 +53,15 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
     setLoading(true);
     setError(null);
 
-    fetchHistoricalOHLCV(symbol, apiTimeframe, isBomb ? { days: bombDays } : undefined)
+    const fetchOpts = isSpectate ? { days: 1 } : isBomb ? { days: bombDays } : undefined;
+    fetchHistoricalOHLCV(symbol, apiTimeframe, fetchOpts)
       .then(data => {
         if (thisRequest.aborted) return;
         if (!data || data.length === 0) {
           setError('No historical data available');
           setRawData(null);
         } else {
-          cacheRef.current[cacheKey] = data;
+          if (!isSpectate) cacheRef.current[cacheKey] = data;
           setRawData(data);
         }
       })
@@ -75,7 +78,33 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
     return () => {
       thisRequest.aborted = true;
     };
-  }, [symbol, apiTimeframe, isBomb]);
+  }, [symbol, apiTimeframe, isBomb, isSpectate]);
+
+  // Auto-refresh spectate mode every 15 seconds
+  useEffect(() => {
+    if (spectateRefreshRef.current) {
+      clearInterval(spectateRefreshRef.current);
+      spectateRefreshRef.current = null;
+    }
+    if (!isSpectate || !symbol) return;
+
+    spectateRefreshRef.current = setInterval(() => {
+      fetchHistoricalOHLCV(symbol, '1m', { days: 1 })
+        .then(data => {
+          if (data && data.length > 0) {
+            setRawData(data);
+          }
+        })
+        .catch(() => { /* silent retry on next interval */ });
+    }, 15000);
+
+    return () => {
+      if (spectateRefreshRef.current) {
+        clearInterval(spectateRefreshRef.current);
+        spectateRefreshRef.current = null;
+      }
+    };
+  }, [isSpectate, symbol]);
 
   // Process data based on UI timeframe
   const ohlcvData = useMemo(() => {
@@ -85,7 +114,10 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
     const reversed = [...rawData].reverse();
 
     let result;
-    if (timeframe === 'bomb') {
+    if (timeframe === 'spectate') {
+      // Spectate view: last ~60 minutes of 1-minute candles
+      result = reversed.slice(-60);
+    } else if (timeframe === 'bomb') {
       // Bomb view: all hourly candles (~140 for 20 trading days)
       result = reversed;
     } else if (timeframe === '1W') {

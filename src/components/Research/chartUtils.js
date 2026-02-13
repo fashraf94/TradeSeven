@@ -183,9 +183,9 @@ export function calculateBombLevels(baselinePrice, threshold) {
     { price: baselinePrice * (1 + pct * 1.5), label: '\uD83D\uDCA3\uD83D\uDCA3 +30 pts', tier: 'doubleBagger', color: '#ff9500', lineWidth: 1.5, lineStyle: 0, points: 30 },
     { price: baselinePrice * (1 + pct * 1.0), label: '\uD83D\uDCA3 +15 pts', tier: 'bagger',        color: '#00ff88', lineWidth: 2,   lineStyle: 0, points: 15 },
     { price: baselinePrice,                    label: '\u2014 Baseline \u2014',   tier: 'baseline',      color: 'rgba(255,255,255,0.4)', lineWidth: 1, lineStyle: 1, points: 0 },
-    { price: baselinePrice * (1 - pct * 1.0), label: '-10 pts',    tier: 'bust',           color: 'rgba(239, 68, 68, 0.5)', lineWidth: 1, lineStyle: 2, points: -10 },
-    { price: baselinePrice * (1 - pct * 1.5), label: '-20 pts',    tier: 'crash',          color: 'rgba(239, 68, 68, 0.6)', lineWidth: 1, lineStyle: 2, points: -20 },
-    { price: baselinePrice * (1 - pct * 2.0), label: '-35 pts',    tier: 'meltdown',       color: 'rgba(239, 68, 68, 0.7)', lineWidth: 1.5, lineStyle: 2, points: -35 },
+    { price: baselinePrice * (1 - pct * 1.0), label: '\uD83D\uDCC9 Bust -10 pts',    tier: 'bust',           color: '#ef4444', lineWidth: 2, lineStyle: 0, points: -10 },
+    { price: baselinePrice * (1 - pct * 1.5), label: '\u26A0\uFE0F Crash -20 pts',    tier: 'crash',          color: '#f97316', lineWidth: 2, lineStyle: 0, points: -20 },
+    { price: baselinePrice * (1 - pct * 2.0), label: '\u2620\uFE0F Meltdown -35 pts',    tier: 'meltdown',       color: '#fbbf24', lineWidth: 2, lineStyle: 0, points: -35 },
   ];
 }
 

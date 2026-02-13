@@ -6,6 +6,12 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 
 // Timeframe configuration
 const TIMEFRAME_CONFIG = {
+  '1m': {
+    endpoint: 'intraday',
+    interval: '1m',
+    days: 1,         // Just today's 1-minute data
+    description: '1-minute intraday'
+  },
   '1h': {
     endpoint: 'intraday',
     interval: '1h',
@@ -102,9 +108,9 @@ export default async function handler(req, res) {
     let actualTimeframe = timeframe; // Track if we fell back to a different timeframe
     let fallbackMessage = null;
 
-    if (timeframe === '1h') {
-      // Fetch intraday data from EODHD
-      const intradayUrl = `https://eodhd.com/api/intraday/${eohdSymbol}?api_token=${API_KEY}&fmt=json&interval=1h&from=${Math.floor(startDate.getTime() / 1000)}`;
+    if (config.endpoint === 'intraday') {
+      // Fetch intraday data from EODHD (1h or 1m)
+      const intradayUrl = `https://eodhd.com/api/intraday/${eohdSymbol}?api_token=${API_KEY}&fmt=json&interval=${config.interval}&from=${Math.floor(startDate.getTime() / 1000)}`;
       console.log(`[API] Fetching intraday from: ${intradayUrl.replace(API_KEY, 'HIDDEN')}`);
 
       const response = await fetch(intradayUrl);

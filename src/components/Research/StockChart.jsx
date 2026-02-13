@@ -15,7 +15,7 @@ const TIMEFRAMES = [
 const StockChart = ({
   ohlcvData,         // Oldest-first processed OHLCV from useResearchData
   rawData,           // Newest-first raw data for SMA computation
-  timeframe,         // Current timeframe: '1D' | '1W' | 'bomb'
+  timeframe,         // Current timeframe: '1D' | '1W' | 'bomb' | 'spectate'
   onTimeframeChange, // (tf) => void
   levels,            // { support: [], resistance: [], currentPrice } from detectLevels
   smaData,           // { sma20: [{date,value}], sma50: [{date,value}] } (newest-first)
@@ -33,8 +33,12 @@ const StockChart = ({
 
   const [showSMA, setShowSMA] = useState(false);
   const [showSR, setShowSR] = useState(false);
+  const [isSpectateMode, setIsSpectateMode] = useState(false);
+  const [spectateLevel, setSpectateLevel] = useState(null);
+  const flashIntervalRef = useRef(null);
 
-  const isBombView = timeframe === 'bomb';
+  const isBombView = timeframe === 'bomb' || timeframe === 'spectate';
+  const isSpectateView = timeframe === 'spectate';
 
   const bombLevels = useMemo(() => {
     if (!isBombView || !bombData?.threshold || !bombData?.baselinePrice) return [];
@@ -52,9 +56,29 @@ const StockChart = ({
     return calculateNearestLevel(Number(latestClose), bombLevels);
   }, [isBombView, bombLevels, ohlcvData]);
 
+  // Determine which bomb levels have been triggered from chart data
+  const triggeredLevels = useMemo(() => {
+    if (!isBombView || bombLevels.length === 0 || !ohlcvData || ohlcvData.length === 0) return [];
+    const triggered = new Set();
+    const baseline = bombData?.baselinePrice;
+    if (!baseline || baseline <= 0) return [];
+
+    // Check if any candle's high/low crossed each level
+    ohlcvData.forEach(candle => {
+      const high = Number(candle.high);
+      const low = Number(candle.low);
+      bombLevels.forEach(level => {
+        if (level.tier === 'baseline') return;
+        if (level.points > 0 && high >= level.price) triggered.add(level.tier);
+        if (level.points < 0 && low <= level.price) triggered.add(level.tier);
+      });
+    });
+    return [...triggered];
+  }, [isBombView, bombLevels, ohlcvData, bombData?.baselinePrice]);
+
   // Auto-switch back to 1D if bombData removed while viewing bomb tab
   useEffect(() => {
-    if (timeframe === 'bomb' && !bombData) onTimeframeChange('1D');
+    if ((timeframe === 'bomb' || timeframe === 'spectate') && !bombData) onTimeframeChange('1D');
   }, [timeframe, bombData, onTimeframeChange]);
 
   // Prepare chart-ready data
@@ -113,8 +137,8 @@ const StockChart = ({
           { upper: sorted[1], lower: sorted[2], color: 'rgba(255, 149, 0, 0.05)' },    // orange zone (doubleBagger → bagger)
           { upper: sorted[2], lower: sorted[3], color: 'rgba(0, 255, 136, 0.04)' },    // green zone (bagger → baseline)
           { upper: sorted[3], lower: sorted[4], color: 'rgba(255, 255, 255, 0.02)' },  // neutral zone (baseline → bust)
-          { upper: sorted[4], lower: sorted[5], color: 'rgba(239, 68, 68, 0.04)' },    // light red (bust → crash)
-          { upper: sorted[5], lower: sorted[6], color: 'rgba(239, 68, 68, 0.07)' },    // medium red (crash → meltdown)
+          { upper: sorted[4], lower: sorted[5], color: 'rgba(239, 68, 68, 0.06)' },    // light red (bust → crash)
+          { upper: sorted[5], lower: sorted[6], color: 'rgba(239, 68, 68, 0.10)' },    // medium red (crash → meltdown)
         ];
         zoneDefs.forEach(z => zoneConfigs.push(z));
       }
@@ -207,16 +231,22 @@ const StockChart = ({
         console.warn('[StockChart] Bomb volume error:', volErr);
       }
 
-      // Draw 7 bomb level price lines
+      // Draw 7 bomb level price lines (with triggered-level styling)
       bombLevels.forEach(level => {
         try {
+          const isTriggered = triggeredLevels.includes(level.tier);
+          const isSpectateTarget = isSpectateView && spectateLevel?.tier === level.tier;
           const line = bombSeries.createPriceLine({
             price: level.price,
-            color: level.color,
-            lineWidth: level.lineWidth,
-            lineStyle: level.lineStyle,
-            axisLabelVisible: false,
-            title: level.label,
+            color: isSpectateView
+              ? (isSpectateTarget ? level.color : 'rgba(255,255,255,0.15)')
+              : level.color,
+            lineWidth: isTriggered ? 3 : (isSpectateTarget ? 4 : level.lineWidth),
+            lineStyle: isTriggered ? 0 : level.lineStyle,
+            axisLabelVisible: isTriggered || isSpectateTarget,
+            title: isTriggered
+              ? (level.points > 0 ? `\u2705 ${level.label} HIT!` : `\u274C ${level.label} HIT!`)
+              : level.label,
           });
           bombPriceLinesRef.current.push(line);
         } catch (e) {
@@ -286,7 +316,53 @@ const StockChart = ({
       chartRef.current = null;
       candleSeriesRef.current = null;
     };
-  }, [chartData, height, timeframe, isBombView, bombLevels]);
+  }, [chartData, height, timeframe, isBombView, isSpectateView, bombLevels, triggeredLevels, spectateLevel]);
+
+  // Bomb view: flash price lines when current price is within 0.5% of a threshold
+  useEffect(() => {
+    if (flashIntervalRef.current) {
+      clearInterval(flashIntervalRef.current);
+      flashIntervalRef.current = null;
+    }
+    if (!isBombView || bombLevels.length === 0 || bombPriceLinesRef.current.length === 0) return;
+    if (!chartData || chartData.length === 0) return;
+
+    const latestClose = chartData[chartData.length - 1]?.close;
+    if (!latestClose) return;
+
+    // Identify which levels are "close" (within 0.5%)
+    const closeIndices = [];
+    bombLevels.forEach((level, idx) => {
+      if (level.tier === 'baseline') return;
+      const dist = Math.abs(latestClose - level.price) / level.price;
+      if (dist < 0.005) closeIndices.push(idx);
+    });
+
+    if (closeIndices.length === 0) return;
+
+    let flashOn = true;
+    flashIntervalRef.current = setInterval(() => {
+      flashOn = !flashOn;
+      closeIndices.forEach(idx => {
+        const line = bombPriceLinesRef.current[idx];
+        const level = bombLevels[idx];
+        if (!line || !level) return;
+        try {
+          line.applyOptions({
+            color: flashOn ? level.color : 'rgba(255,255,255,0.08)',
+            lineWidth: flashOn ? 3 : 1,
+          });
+        } catch { /* line may be removed */ }
+      });
+    }, 500);
+
+    return () => {
+      if (flashIntervalRef.current) {
+        clearInterval(flashIntervalRef.current);
+        flashIntervalRef.current = null;
+      }
+    };
+  }, [isBombView, bombLevels, chartData]);
 
   // SMA overlay
   useEffect(() => {
@@ -441,7 +517,7 @@ const StockChart = ({
           {TIMEFRAMES.map(tf => (
             <button
               key={tf.key}
-              onClick={() => onTimeframeChange(tf.key)}
+              onClick={() => { setIsSpectateMode(false); setSpectateLevel(null); onTimeframeChange(tf.key); }}
               style={pillStyle(timeframe === tf.key)}
             >
               {tf.label}
@@ -449,8 +525,8 @@ const StockChart = ({
           ))}
           {bombData && (
             <button
-              onClick={() => onTimeframeChange('bomb')}
-              style={pillStyle(isBombView, 'bomb')}
+              onClick={() => { setIsSpectateMode(false); setSpectateLevel(null); onTimeframeChange('bomb'); }}
+              style={pillStyle(isBombView && !isSpectateView, 'bomb')}
             >
               {'\uD83D\uDCA3'}
             </button>
@@ -477,40 +553,108 @@ const StockChart = ({
           style={{ width: '100%', height: '100%' }}
         />
 
-        {/* Distance-to-next-level indicator (bomb view only) */}
+        {/* Spectate mode: Back button */}
+        {isSpectateView && (
+          <button
+            onClick={() => {
+              setIsSpectateMode(false);
+              setSpectateLevel(null);
+              onTimeframeChange('bomb');
+            }}
+            style={{
+              position: 'absolute',
+              top: '8px',
+              left: '8px',
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '8px',
+              padding: '4px 12px',
+              color: '#e0e0e0',
+              fontSize: '13px',
+              cursor: 'pointer',
+              zIndex: 10,
+            }}
+          >
+            {'\u2190'} Bomb Chart
+          </button>
+        )}
+
+        {/* Distance-to-next-level indicator (bomb/spectate view) */}
         {isBombView && (nearestLevel.above || nearestLevel.below) && (() => {
-          // Pick the closer level
           const above = nearestLevel.above;
           const below = nearestLevel.below;
           const closest = above && below
             ? (Math.abs(above.pctAway) <= Math.abs(below.pctAway) ? above : below)
             : (above || below);
           if (!closest) return null;
-          const isClose = Math.abs(closest.pctAway) < 0.5;
+          const absPct = Math.abs(closest.pctAway);
+          const isClose = absPct < 0.5;
           const direction = closest.distance > 0 ? '\u2191' : '\u2193';
+          const priceDist = Math.abs(closest.distance).toFixed(2);
+
+          if (isSpectateView) {
+            // Spectate mode: larger, centered indicator with live badge
+            const urgencyColor = absPct < 0.1 ? '#ef4444' : absPct < 0.3 ? '#ff9500' : '#e0e0e0';
+            const urgencyBg = absPct < 0.1 ? 'rgba(239,68,68,0.3)' : absPct < 0.3 ? 'rgba(255,149,0,0.25)' : 'rgba(255,255,255,0.1)';
+            const urgencyBorder = absPct < 0.1 ? '#ef4444' : absPct < 0.3 ? '#ff9500' : 'rgba(255,255,255,0.2)';
+            return (
+              <div style={{
+                position: 'absolute',
+                top: '52px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                background: urgencyBg,
+                border: `2px solid ${urgencyBorder}`,
+                borderRadius: '16px',
+                padding: '8px 20px',
+                fontSize: '16px',
+                fontWeight: 700,
+                fontFamily: 'monospace',
+                color: urgencyColor,
+                animation: absPct < 0.2 ? 'bombPulse 0.8s infinite' : absPct < 0.5 ? 'bombPulse 1.5s infinite' : 'none',
+                zIndex: 10,
+                textAlign: 'center',
+              }}>
+                <div>{direction} {absPct.toFixed(2)}% to {closest.points > 0 ? '+' : ''}{closest.points}</div>
+                <div style={{ fontSize: '11px', color: '#a0a0a0', marginTop: '2px' }}>
+                  ${priceDist} away {'\u2022'} LIVE
+                </div>
+              </div>
+            );
+          }
+
+          // Normal bomb view: small indicator in corner, clickable for spectate
           return (
-            <div style={{
-              position: 'absolute',
-              top: '8px',
-              right: '8px',
-              padding: '4px 10px',
-              borderRadius: '8px',
-              background: 'rgba(0, 0, 0, 0.75)',
-              border: `1px solid ${closest.color}`,
-              color: closest.color,
-              fontSize: '11px',
-              fontWeight: '700',
-              fontFamily: 'monospace',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              zIndex: 10,
-              pointerEvents: 'none',
-              animation: isClose ? 'bombPulse 1.5s ease-in-out infinite' : 'none',
-            }}>
+            <div
+              onClick={() => {
+                setIsSpectateMode(true);
+                setSpectateLevel(closest);
+                onTimeframeChange('spectate');
+              }}
+              style={{
+                position: 'absolute',
+                top: '8px',
+                right: '8px',
+                padding: '4px 10px',
+                borderRadius: '8px',
+                background: 'rgba(0, 0, 0, 0.75)',
+                border: `1px solid ${closest.color}`,
+                color: closest.color,
+                fontSize: '11px',
+                fontWeight: '700',
+                fontFamily: 'monospace',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                zIndex: 10,
+                cursor: 'pointer',
+                animation: isClose ? 'bombPulse 1.5s ease-in-out infinite' : 'none',
+              }}
+            >
               <span>{direction}</span>
-              <span>{Math.abs(closest.pctAway).toFixed(2)}%</span>
+              <span>{absPct.toFixed(2)}%</span>
               <span style={{ opacity: 0.7 }}>to {closest.points > 0 ? '+' : ''}{closest.points}</span>
+              <span style={{ fontSize: '9px', color: '#6e7681', marginLeft: '2px' }}>TAP</span>
             </div>
           );
         })()}
