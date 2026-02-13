@@ -32,6 +32,66 @@ const TIMEFRAME_CONFIG = {
   }
 };
 
+/**
+ * Compute the from/to Unix timestamps for 1-minute spectate data.
+ * - Crypto: always last 60 minutes (24/7 market)
+ * - Stocks during market hours (9:30-16:00 ET): last 60 minutes from now
+ * - Stocks after hours / weekends: 15:00-16:00 ET on the last trading day
+ */
+function getSpectateTimeRange(isCrypto) {
+  const now = new Date();
+  const nowUnix = Math.floor(now.getTime() / 1000);
+
+  if (isCrypto) {
+    return { from: nowUnix - 3600, to: nowUnix };
+  }
+
+  // Get the UTC-to-ET offset (handles DST automatically)
+  const utcStr = now.toLocaleString('en-US', { timeZone: 'UTC' });
+  const etStr = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const etOffsetMs = new Date(etStr).getTime() - new Date(utcStr).getTime();
+
+  // Current time expressed as ET (store in UTC fields for easy math)
+  const etNow = new Date(now.getTime() + etOffsetMs);
+  const etHour = etNow.getUTCHours();
+  const etMinute = etNow.getUTCMinutes();
+  const etTimeMin = etHour * 60 + etMinute;
+  const etDow = etNow.getUTCDay(); // 0=Sun, 6=Sat
+
+  const marketOpen = 9 * 60 + 30;  // 570
+  const marketClose = 16 * 60;     // 960
+  const isWeekday = etDow >= 1 && etDow <= 5;
+  const isMarketHours = isWeekday && etTimeMin >= marketOpen && etTimeMin <= marketClose;
+
+  if (isMarketHours) {
+    return { from: nowUnix - 3600, to: nowUnix };
+  }
+
+  // After hours: find last trading day's final hour (3:00-4:00 PM ET)
+  const targetET = new Date(etNow);
+
+  // Before market open on a weekday → use previous day
+  if (isWeekday && etTimeMin < marketOpen) {
+    targetET.setUTCDate(targetET.getUTCDate() - 1);
+  }
+  // Adjust weekends to Friday
+  const targetDow = targetET.getUTCDay();
+  if (targetDow === 0) targetET.setUTCDate(targetET.getUTCDate() - 2); // Sun → Fri
+  if (targetDow === 6) targetET.setUTCDate(targetET.getUTCDate() - 1); // Sat → Fri
+
+  // 3:00 PM and 4:00 PM ET on target day (in ET-as-UTC representation)
+  const fromET = new Date(targetET);
+  fromET.setUTCHours(15, 0, 0, 0);
+  const toET = new Date(targetET);
+  toET.setUTCHours(16, 0, 0, 0);
+
+  // Convert back from ET representation to real UTC
+  return {
+    from: Math.floor((fromET.getTime() - etOffsetMs) / 1000),
+    to: Math.floor((toET.getTime() - etOffsetMs) / 1000),
+  };
+}
+
 // Aggregate daily data to weekly candles
 const aggregateToWeekly = (dailyData) => {
   const weeks = {};
@@ -104,7 +164,17 @@ export default async function handler(req, res) {
     startDate.setDate(startDate.getDate() - numDays);
     const fromDate = startDate.toISOString().split('T')[0];
 
-    const intradayFromTs = Math.floor(startDate.getTime() / 1000);
+    // For 1m spectate: use smart time range (market-hours-aware)
+    // For 1h: use startDate as before
+    let intradayFromTs, intradayToTs;
+    if (timeframe === '1m') {
+      const range = getSpectateTimeRange(isCrypto);
+      intradayFromTs = range.from;
+      intradayToTs = range.to;
+    } else {
+      intradayFromTs = Math.floor(startDate.getTime() / 1000);
+      intradayToTs = null;
+    }
 
     let data;
     let actualTimeframe = timeframe; // Track if we fell back to a different timeframe
@@ -112,7 +182,8 @@ export default async function handler(req, res) {
 
     if (config.endpoint === 'intraday') {
       // Fetch intraday data from EODHD (1h or 1m)
-      const intradayUrl = `https://eodhd.com/api/intraday/${eohdSymbol}?api_token=${API_KEY}&fmt=json&interval=${config.interval}&from=${intradayFromTs}`;
+      let intradayUrl = `https://eodhd.com/api/intraday/${eohdSymbol}?api_token=${API_KEY}&fmt=json&interval=${config.interval}&from=${intradayFromTs}`;
+      if (intradayToTs) intradayUrl += `&to=${intradayToTs}`;
       console.log(`[API] Fetching intraday from: ${intradayUrl.replace(API_KEY, 'HIDDEN')}`);
 
       const response = await fetch(intradayUrl);

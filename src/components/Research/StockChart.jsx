@@ -337,13 +337,10 @@ const StockChart = ({
     }
 
     if (isSpectateView) {
-      // Spectate: wider candles, right margin for incoming candles, show last 60
+      // Spectate: wider candles, right margin, fit all returned candles
       chart.timeScale().applyOptions({ barSpacing: 8, rightOffset: 5 });
-      const count = chartData.length;
-      chart.timeScale().setVisibleLogicalRange({
-        from: Math.max(0, count - 60),
-        to: count + 5,
-      });
+      chart.timeScale().fitContent();
+      chart.timeScale().scrollToRealTime();
     } else {
       chart.timeScale().fitContent();
     }
