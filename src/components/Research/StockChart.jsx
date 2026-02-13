@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { createChart, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries } from 'lightweight-charts';
+import { createChart, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { prepareChartData, formatTime, calculateBombLevels } from './chartUtils';
 
@@ -91,15 +91,14 @@ const StockChart = ({
     chartRef.current = chart;
 
     if (isBombView) {
-      // Bomb view: AreaSeries line chart with threshold price lines
-      const areaSeries = chart.addSeries(AreaSeries, {
-        lineColor: '#00d9ff',
+      // Bomb view: LineSeries with threshold price lines (no area fill)
+      const bombSeries = chart.addSeries(LineSeries, {
+        color: '#00d9ff',
         lineWidth: 2,
-        topColor: 'rgba(0, 217, 255, 0.15)',
-        bottomColor: 'rgba(0, 217, 255, 0.02)',
-        priceLineVisible: false,
-        lastValueVisible: true,
         crosshairMarkerVisible: true,
+        crosshairMarkerRadius: 4,
+        lastValueVisible: true,
+        priceLineVisible: false,
         autoscaleInfoProvider: () => {
           if (bombLevels.length === 0) return null;
           const prices = bombLevels.map(l => l.price);
@@ -114,11 +113,11 @@ const StockChart = ({
           };
         },
       });
-      candleSeriesRef.current = areaSeries;
+      candleSeriesRef.current = bombSeries;
 
       try {
         const lineData = chartData.map(c => ({ time: c.time, value: c.close }));
-        areaSeries.setData(lineData);
+        bombSeries.setData(lineData);
       } catch (err) {
         console.error('[StockChart] bomb setData error:', err);
       }
@@ -126,12 +125,12 @@ const StockChart = ({
       // Draw 7 bomb level price lines
       bombLevels.forEach(level => {
         try {
-          const line = areaSeries.createPriceLine({
+          const line = bombSeries.createPriceLine({
             price: level.price,
             color: level.color,
             lineWidth: level.lineWidth,
             lineStyle: level.lineStyle,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
             title: level.label,
           });
           bombPriceLinesRef.current.push(line);

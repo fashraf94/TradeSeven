@@ -80,8 +80,8 @@ export default function useResearchData(symbol) {
     const reversed = [...rawData].reverse();
 
     if (timeframe === 'bomb') {
-      // Bomb view: last 5 daily candles as line data context
-      return reversed.slice(-5);
+      // Bomb view: last 20 daily candles (~1 month) for smooth line
+      return reversed.slice(-20);
     }
     if (timeframe === '1W') {
       // Weekly data, slice to ~52 most recent weeks (1 year)
