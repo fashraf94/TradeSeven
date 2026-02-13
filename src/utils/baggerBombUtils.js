@@ -432,10 +432,19 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}) {
   // Base points: 10 per 1% change, scaled by conviction tier
   const basePoints = priceChange * 10 * tierMultiplier;
 
-  // Get badges from history
+  // Use current multiplier for badge determination instead of stored history peak.
+  // Stored history.maxMultiplier may be corrupted (computed with wrong threshold
+  // from sector defaults instead of API-computed volatility). Using current
+  // multiplier sacrifices sticky-peak behavior temporarily, but daily reset at
+  // market close will naturally clean up. minMultiplier (bust side) is similarly
+  // corrected for consistency.
+  const effectiveMax = multiplier;
+  const effectiveMin = multiplier;
+
+  // Get badges from current multiplier
   const badges = getBadgesFromHistory({
-    maxMultiplier: Math.max(history.maxMultiplier || 0, multiplier),
-    minMultiplier: Math.min(history.minMultiplier || 0, multiplier),
+    maxMultiplier: effectiveMax,
+    minMultiplier: effectiveMin,
   });
 
   // Bonus points from badges (flat, NOT scaled by conviction)
@@ -452,8 +461,8 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}) {
     totalPoints: Math.round(basePoints + bonusPoints),
     badges,
     history: {
-      maxMultiplier: Math.max(history.maxMultiplier || 0, multiplier),
-      minMultiplier: Math.min(history.minMultiplier || 0, multiplier),
+      maxMultiplier: effectiveMax,
+      minMultiplier: effectiveMin,
     },
   };
 }
