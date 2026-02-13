@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
+import { getBattleStartDate } from '../../constants/battleTiming';
 
 /**
  * DailyScoresModal - Shows daily score breakdown for the battle
@@ -38,13 +39,12 @@ const DailyScoresModal = ({
       checkDate = new Date(battleStartDate + 'T12:00:00');
       checkDate.setHours(0, 0, 0, 0);
     } else {
-      // Legacy path: normalize battleStartTime
-      checkDate = new Date(battleStartTime);
+      // Legacy path: compute correct start date from battleStartTime
+      // This handles the case where battleStartDate is missing from Firestore
+      // getBattleStartDate defers to next trading day if completed during/after market hours
+      const computedStartDate = getBattleStartDate(battleStartTime);
+      checkDate = new Date(computedStartDate + 'T12:00:00');
       checkDate.setHours(0, 0, 0, 0);
-      // Skip to first weekday if started on weekend
-      while (checkDate.getDay() === 0 || checkDate.getDay() === 6) {
-        checkDate.setDate(checkDate.getDate() + 1);
-      }
     }
 
     let tradingDayCount = 0;
