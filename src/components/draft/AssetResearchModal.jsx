@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import FundamentalNews from '../Research/FundamentalNews';
 import LatestEarningsReport from '../Research/LatestEarningsReport';
@@ -713,6 +713,14 @@ const AssetResearchModal = ({
   // v2: Research data hook for chart + enhanced technical tab
   const researchData = useResearchData(version >= 2 ? asset?.symbol : null);
 
+  // v2: Bomb chart data — only available when asset has battle context (threshold + baseline price)
+  const bombData = useMemo(() => {
+    const threshold = asset?.threshold;
+    const baselinePrice = asset?.lockedPrice || asset?.baselinePrice || asset?.startPrice;
+    if (!threshold || !baselinePrice) return null;
+    return { threshold, baselinePrice };
+  }, [asset?.threshold, asset?.lockedPrice, asset?.baselinePrice, asset?.startPrice]);
+
   // v2: Measure container height for drawer snap points
   useEffect(() => {
     if (version < 2 || !v2ContainerRef.current) return;
@@ -1137,6 +1145,7 @@ const AssetResearchModal = ({
                   smaData={researchData.smaData}
                   activeHighlight={highlightedLevel}
                   height={chartHeight}
+                  bombData={bombData}
                 />
               )}
             </div>

@@ -21,7 +21,7 @@ export default function useResearchData(symbol) {
   const cacheRef = useRef({});  // In-memory cache keyed by `${symbol}_${apiTimeframe}`
 
   // Map UI timeframe to API timeframe
-  const apiTimeframe = timeframe === '1D' ? '1d' : '1w'; // Both 1W and 1M use weekly data
+  const apiTimeframe = (timeframe === '1D' || timeframe === 'bomb') ? '1d' : '1w'; // bomb shares daily cache with 1D
 
   // Fetch data when symbol or API timeframe changes
   useEffect(() => {
@@ -79,6 +79,10 @@ export default function useResearchData(symbol) {
     // Data from API is newest-first, reverse to oldest-first for processing
     const reversed = [...rawData].reverse();
 
+    if (timeframe === 'bomb') {
+      // Bomb view: last 5 daily candles as line data context
+      return reversed.slice(-5);
+    }
     if (timeframe === '1W') {
       // Weekly data, slice to ~52 most recent weeks (1 year)
       return reversed.slice(-52);

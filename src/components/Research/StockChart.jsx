@@ -1,12 +1,11 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { createChart, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts';
+import { createChart, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries } from 'lightweight-charts';
 import { HOLO_COLORS } from '../../constants/holoTheme';
-import { prepareChartData, formatTime } from './chartUtils';
+import { prepareChartData, formatTime, calculateBombLevels } from './chartUtils';
 
 const TIMEFRAMES = [
   { key: '1D', label: '1D' },
   { key: '1W', label: '1W' },
-  { key: '1M', label: '1M' },
 ];
 
 /**
@@ -16,12 +15,13 @@ const TIMEFRAMES = [
 const StockChart = ({
   ohlcvData,         // Oldest-first processed OHLCV from useResearchData
   rawData,           // Newest-first raw data for SMA computation
-  timeframe,         // Current timeframe: '1D' | '1W' | '1M'
+  timeframe,         // Current timeframe: '1D' | '1W' | 'bomb'
   onTimeframeChange, // (tf) => void
   levels,            // { support: [], resistance: [], currentPrice } from detectLevels
   smaData,           // { sma20: [{date,value}], sma50: [{date,value}] } (newest-first)
   activeHighlight,   // Optional: { price, type } for highlighted level
   height = 300,
+  bombData,          // { threshold: number, baselinePrice: number } | null
 }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -29,9 +29,22 @@ const StockChart = ({
   const smaSeriesRefs = useRef([]);
   const levelLinesRef = useRef([]);
   const highlightLineRef = useRef(null);
+  const bombPriceLinesRef = useRef([]);
 
   const [showSMA, setShowSMA] = useState(false);
   const [showSR, setShowSR] = useState(false);
+
+  const isBombView = timeframe === 'bomb';
+
+  const bombLevels = useMemo(() => {
+    if (!isBombView || !bombData?.threshold || !bombData?.baselinePrice) return [];
+    return calculateBombLevels(bombData.baselinePrice, bombData.threshold);
+  }, [isBombView, bombData?.threshold, bombData?.baselinePrice]);
+
+  // Auto-switch back to 1D if bombData removed while viewing bomb tab
+  useEffect(() => {
+    if (timeframe === 'bomb' && !bombData) onTimeframeChange('1D');
+  }, [timeframe, bombData, onTimeframeChange]);
 
   // Prepare chart-ready data
   const chartData = useMemo(() => {
@@ -45,27 +58,29 @@ const StockChart = ({
 
     const container = chartContainerRef.current;
 
+    const accentColor = isBombView ? 'rgba(245, 158, 11, ' : 'rgba(0, 255, 255, ';
+
     const chart = createChart(container, {
       layout: {
         background: { type: 'solid', color: HOLO_COLORS.bgDeep },
         textColor: 'rgba(255, 255, 255, 0.7)',
       },
       grid: {
-        vertLines: { color: 'rgba(0, 255, 255, 0.03)' },
-        horzLines: { color: 'rgba(0, 255, 255, 0.03)' },
+        vertLines: { color: accentColor + '0.03)' },
+        horzLines: { color: accentColor + '0.03)' },
       },
       crosshair: {
         mode: 0,
-        vertLine: { color: 'rgba(0, 255, 255, 0.3)', width: 1, style: 2, labelBackgroundColor: HOLO_COLORS.bgDeep },
-        horzLine: { color: 'rgba(0, 255, 255, 0.3)', width: 1, style: 2, labelBackgroundColor: HOLO_COLORS.bgDeep },
+        vertLine: { color: accentColor + '0.3)', width: 1, style: 2, labelBackgroundColor: HOLO_COLORS.bgDeep },
+        horzLine: { color: accentColor + '0.3)', width: 1, style: 2, labelBackgroundColor: HOLO_COLORS.bgDeep },
       },
       timeScale: {
-        borderColor: 'rgba(0, 255, 255, 0.15)',
+        borderColor: accentColor + '0.15)',
         timeVisible: timeframe === '1D',
         secondsVisible: false,
       },
       rightPriceScale: {
-        borderColor: 'rgba(0, 255, 255, 0.15)',
+        borderColor: accentColor + '0.15)',
       },
       width: container.clientWidth,
       height: height,
@@ -75,45 +90,98 @@ const StockChart = ({
 
     chartRef.current = chart;
 
-    // Candlestick series
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: HOLO_COLORS.green,
-      downColor: '#ff4757',
-      borderUpColor: HOLO_COLORS.green,
-      borderDownColor: '#ff4757',
-      wickUpColor: HOLO_COLORS.green,
-      wickDownColor: '#ff4757',
-    });
-    candleSeriesRef.current = candleSeries;
+    if (isBombView) {
+      // Bomb view: AreaSeries line chart with threshold price lines
+      const areaSeries = chart.addSeries(AreaSeries, {
+        lineColor: '#00d9ff',
+        lineWidth: 2,
+        topColor: 'rgba(0, 217, 255, 0.15)',
+        bottomColor: 'rgba(0, 217, 255, 0.02)',
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: true,
+        autoscaleInfoProvider: () => {
+          if (bombLevels.length === 0) return null;
+          const prices = bombLevels.map(l => l.price);
+          const min = Math.min(...prices);
+          const max = Math.max(...prices);
+          const padding = (max - min) * 0.1;
+          return {
+            priceRange: {
+              minValue: min - padding,
+              maxValue: max + padding,
+            },
+          };
+        },
+      });
+      candleSeriesRef.current = areaSeries;
 
-    try {
-      candleSeries.setData(chartData);
-    } catch (err) {
-      console.error('[StockChart] setData error:', err);
-    }
+      try {
+        const lineData = chartData.map(c => ({ time: c.time, value: c.close }));
+        areaSeries.setData(lineData);
+      } catch (err) {
+        console.error('[StockChart] bomb setData error:', err);
+      }
 
-    // Volume histogram
-    try {
-      const volumeSeries = chart.addSeries(HistogramSeries, {
-        priceFormat: { type: 'volume' },
-        priceScaleId: 'volume',
+      // Draw 7 bomb level price lines
+      bombLevels.forEach(level => {
+        try {
+          const line = areaSeries.createPriceLine({
+            price: level.price,
+            color: level.color,
+            lineWidth: level.lineWidth,
+            lineStyle: level.lineStyle,
+            axisLabelVisible: true,
+            title: level.label,
+          });
+          bombPriceLinesRef.current.push(line);
+        } catch (e) {
+          console.warn('[StockChart] Bomb level error:', e);
+        }
       });
 
-      volumeSeries.priceScale().applyOptions({
-        scaleMargins: { top: 0.8, bottom: 0 },
+      // No volume in bomb view
+    } else {
+      // Normal view: Candlestick + volume
+      const candleSeries = chart.addSeries(CandlestickSeries, {
+        upColor: HOLO_COLORS.green,
+        downColor: '#ff4757',
+        borderUpColor: HOLO_COLORS.green,
+        borderDownColor: '#ff4757',
+        wickUpColor: HOLO_COLORS.green,
+        wickDownColor: '#ff4757',
       });
+      candleSeriesRef.current = candleSeries;
 
-      const volumeData = chartData.map(c => ({
-        time: c.time,
-        value: c.volume || 0,
-        color: c.close >= c.open
-          ? 'rgba(0, 255, 136, 0.3)'
-          : 'rgba(255, 71, 87, 0.3)',
-      }));
+      try {
+        candleSeries.setData(chartData);
+      } catch (err) {
+        console.error('[StockChart] setData error:', err);
+      }
 
-      volumeSeries.setData(volumeData);
-    } catch (volErr) {
-      console.warn('[StockChart] Volume error:', volErr);
+      // Volume histogram
+      try {
+        const volumeSeries = chart.addSeries(HistogramSeries, {
+          priceFormat: { type: 'volume' },
+          priceScaleId: 'volume',
+        });
+
+        volumeSeries.priceScale().applyOptions({
+          scaleMargins: { top: 0.8, bottom: 0 },
+        });
+
+        const volumeData = chartData.map(c => ({
+          time: c.time,
+          value: c.volume || 0,
+          color: c.close >= c.open
+            ? 'rgba(0, 255, 136, 0.3)'
+            : 'rgba(255, 71, 87, 0.3)',
+        }));
+
+        volumeSeries.setData(volumeData);
+      } catch (volErr) {
+        console.warn('[StockChart] Volume error:', volErr);
+      }
     }
 
     chart.timeScale().fitContent();
@@ -131,15 +199,17 @@ const StockChart = ({
       smaSeriesRefs.current = [];
       levelLinesRef.current = [];
       highlightLineRef.current = null;
+      bombPriceLinesRef.current = [];
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
     };
-  }, [chartData, height, timeframe]);
+  }, [chartData, height, timeframe, isBombView, bombLevels]);
 
   // SMA overlay
   useEffect(() => {
     if (!chartRef.current || !candleSeriesRef.current) return;
+    if (isBombView) return;
 
     // Remove existing SMA series
     smaSeriesRefs.current.forEach(s => {
@@ -189,11 +259,12 @@ const StockChart = ({
         console.warn(`[StockChart] SMA ${key} error:`, e);
       }
     });
-  }, [showSMA, smaData, chartData, ohlcvData]);
+  }, [showSMA, smaData, chartData, ohlcvData, isBombView]);
 
   // S/R level overlay
   useEffect(() => {
     if (!candleSeriesRef.current) return;
+    if (isBombView) return;
 
     // Remove existing level lines
     levelLinesRef.current.forEach(line => {
@@ -224,11 +295,12 @@ const StockChart = ({
         console.warn('[StockChart] Level line error:', e);
       }
     });
-  }, [showSR, levels, chartData]);
+  }, [showSR, levels, chartData, isBombView]);
 
   // Active highlight line (from TechnicalTabV2 tap)
   useEffect(() => {
     if (!candleSeriesRef.current) return;
+    if (isBombView) return;
 
     if (highlightLineRef.current) {
       try { candleSeriesRef.current.removePriceLine(highlightLineRef.current); } catch { /* ok */ }
@@ -250,23 +322,26 @@ const StockChart = ({
     } catch (e) {
       console.warn('[StockChart] Highlight line error:', e);
     }
-  }, [activeHighlight, chartData]);
+  }, [activeHighlight, chartData, isBombView]);
 
-  const pillStyle = (active) => ({
-    padding: '4px 10px',
-    borderRadius: '12px',
-    border: active
-      ? '1px solid rgba(0, 217, 255, 0.5)'
-      : `1px solid ${HOLO_COLORS.borderSubtle}`,
-    background: active
-      ? 'rgba(0, 217, 255, 0.2)'
-      : HOLO_COLORS.borderSubtle,
-    color: active ? HOLO_COLORS.primary : HOLO_COLORS.textSecondary,
-    fontSize: '11px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  });
+  const pillStyle = (active, variant) => {
+    const isBomb = variant === 'bomb';
+    return {
+      padding: '4px 10px',
+      borderRadius: '12px',
+      border: active
+        ? `1px solid ${isBomb ? 'rgba(245, 158, 11, 0.5)' : 'rgba(0, 217, 255, 0.5)'}`
+        : `1px solid ${HOLO_COLORS.borderSubtle}`,
+      background: active
+        ? (isBomb ? 'rgba(245, 158, 11, 0.2)' : 'rgba(0, 217, 255, 0.2)')
+        : HOLO_COLORS.borderSubtle,
+      color: active ? (isBomb ? '#f59e0b' : HOLO_COLORS.primary) : HOLO_COLORS.textSecondary,
+      fontSize: '11px',
+      fontWeight: '600',
+      cursor: 'pointer',
+      transition: 'all 0.2s',
+    };
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', background: HOLO_COLORS.bgDeep }}>
@@ -277,7 +352,7 @@ const StockChart = ({
         justifyContent: 'space-between',
         padding: '6px 12px',
         background: HOLO_COLORS.bgCard,
-        borderBottom: '1px solid rgba(0, 255, 255, 0.05)',
+        borderBottom: `1px solid ${isBombView ? 'rgba(245, 158, 11, 0.1)' : 'rgba(0, 255, 255, 0.05)'}`,
       }}>
         {/* Timeframe pills */}
         <div style={{ display: 'flex', gap: '4px' }}>
@@ -290,17 +365,27 @@ const StockChart = ({
               {tf.label}
             </button>
           ))}
+          {bombData && (
+            <button
+              onClick={() => onTimeframeChange('bomb')}
+              style={pillStyle(isBombView, 'bomb')}
+            >
+              {'\uD83D\uDCA3'}
+            </button>
+          )}
         </div>
 
-        {/* Overlay toggles */}
-        <div style={{ display: 'flex', gap: '4px' }}>
-          <button onClick={() => setShowSMA(v => !v)} style={pillStyle(showSMA)}>
-            SMA
-          </button>
-          <button onClick={() => setShowSR(v => !v)} style={pillStyle(showSR)}>
-            S/R
-          </button>
-        </div>
+        {/* Overlay toggles - hidden in bomb view */}
+        {!isBombView && (
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button onClick={() => setShowSMA(v => !v)} style={pillStyle(showSMA)}>
+              SMA
+            </button>
+            <button onClick={() => setShowSR(v => !v)} style={pillStyle(showSR)}>
+              S/R
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Chart container */}
