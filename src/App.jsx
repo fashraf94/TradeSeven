@@ -102,6 +102,8 @@ import { ConfirmationPopup } from './components/shared';
 import ErrorBoundary, { CompactErrorFallback } from './components/ErrorBoundary';
 // Money Map screen
 import { MoneyMapScreen } from './components/Research/MoneyMap';
+// Research Landing Page (redesigned)
+import ResearchLandingPage from './components/Research/ResearchLandingPage';
 // Dashboard Components
 import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
 
@@ -9657,19 +9659,16 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
     switch (flowPhase) {
       case 1:
         return (
-          <MarketBriefing
+          <ResearchLandingPage
             stocksData={stocksData}
             cryptoData={cryptoData}
-            onContinue={() => setFlowPhase(2)}
             colors={c}
-            // Technical Research props
+            onBuildThesis={() => setFlowPhase(2)}
+            onOpenMoneyMap={() => setShowMoneyMap(true)}
             onAnalyzeStock={() => setShowStockSearchModal(true)}
             onMyPatterns={() => setShowTechnicalScreen('patterns')}
             onInsights={() => setShowTechnicalScreen('insights')}
             activePatternCount={patternStats.active || 0}
-            confirmationRate={patternStats.confirmationRate || null}
-            // Money Map
-            onOpenMoneyMap={() => setShowMoneyMap(true)}
           />
         );
 
@@ -9766,7 +9765,7 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
         );
 
       default:
-        return <MarketBriefing stocksData={stocksData} cryptoData={cryptoData} onContinue={() => setFlowPhase(2)} colors={c} />;
+        return <ResearchLandingPage stocksData={stocksData} cryptoData={cryptoData} colors={c} onBuildThesis={() => setFlowPhase(2)} onOpenMoneyMap={() => setShowMoneyMap(true)} onAnalyzeStock={() => setShowStockSearchModal(true)} onMyPatterns={() => setShowTechnicalScreen('patterns')} onInsights={() => setShowTechnicalScreen('insights')} activePatternCount={patternStats.active || 0} />;
     }
   };
 
