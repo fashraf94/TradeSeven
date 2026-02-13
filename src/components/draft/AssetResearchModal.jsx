@@ -1106,7 +1106,7 @@ const AssetResearchModal = ({
 
           {/* v2: Chart Section */}
           {version >= 2 && (
-            <div style={{ flexShrink: 0, position: 'relative', zIndex: 1, paddingBottom: '8px' }}>
+            <div style={{ flexShrink: 0, position: 'relative', zIndex: 1, paddingBottom: '28px' }}>
               {researchData.loading && !researchData.ohlcvData && (
                 <div style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1188,24 +1188,62 @@ const AssetResearchModal = ({
                       {'\u25CF'} {displayRating}
                     </span>
                   </div>
-                  {/* Key metrics grid */}
+                  {/* Company profile: sector/industry pills + description */}
+                  {profileLoading && (
+                    <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)' }}>
+                      <div style={{ height: '12px', width: '40%', borderRadius: '6px', background: 'linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite', marginBottom: '8px' }} />
+                      <div style={{ height: '10px', width: '90%', borderRadius: '5px', background: 'linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />
+                    </div>
+                  )}
+                  {profile && !profileLoading && (profile.sector !== 'Unknown' || profile.description) && (
+                    <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: profile.description ? '8px' : 0 }}>
+                        {profile.sector && profile.sector !== 'Unknown' && (
+                          <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '2px 8px', borderRadius: '8px', fontSize: '10px', fontWeight: '600' }}>
+                            {profile.sector}
+                          </span>
+                        )}
+                        {profile.industry && profile.industry !== 'Unknown' && (
+                          <span style={{ background: 'rgba(139, 92, 246, 0.15)', color: '#818cf8', padding: '2px 8px', borderRadius: '8px', fontSize: '10px', fontWeight: '600' }}>
+                            {profile.industry}
+                          </span>
+                        )}
+                      </div>
+                      {profile.description && (
+                        <>
+                          <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: '11px', lineHeight: '1.5', margin: 0, overflow: 'hidden', maxHeight: descExpanded ? 'none' : '48px' }}>
+                            {profile.description}
+                          </p>
+                          {profile.description.length > 150 && (
+                            <button
+                              onClick={() => setDescExpanded(!descExpanded)}
+                              style={{ color: '#14b8a6', background: 'none', border: 'none', fontSize: '10px', cursor: 'pointer', padding: '4px 0 0', fontWeight: '500' }}
+                            >
+                              {descExpanded ? 'Show less' : 'Read more'}
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {/* Key metrics grid — real API data, "—" when unavailable */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
                     {[
-                      { label: 'Market Cap', value: fundamentals.marketCap },
-                      { label: 'P/E Ratio', value: fundamentals.peRatio },
-                      { label: 'Rev Growth', value: fundamentals.revenueGrowth },
-                      { label: 'Margin', value: fundamentals.profitMargin },
+                      { label: 'Market Cap', value: profile?.marketCap ? formatLargeNumber(profile.marketCap, 1) : '\u2014' },
+                      { label: 'P/E Ratio', value: profile?.peRatio != null ? `${Number(profile.peRatio).toFixed(1)}x` : '\u2014' },
+                      { label: 'Rev Growth', value: profile?.revenueGrowthYOY != null ? `${(profile.revenueGrowthYOY * 100) >= 0 ? '+' : ''}${(profile.revenueGrowthYOY * 100).toFixed(0)}%` : '\u2014' },
+                      { label: 'Margin', value: profile?.profitMargin != null ? `${(profile.profitMargin * 100).toFixed(0)}%` : '\u2014' },
                     ].map(m => (
                       <div key={m.label} style={{
                         padding: '8px', borderRadius: '8px',
                         background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
                       }}>
                         <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginBottom: '2px' }}>{m.label}</div>
-                        <div style={{ fontSize: '13px', fontWeight: '600', color: '#e6edf3' }}>{m.value}</div>
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: m.value === '\u2014' ? 'rgba(255,255,255,0.25)' : '#e6edf3' }}>{m.value}</div>
                       </div>
                     ))}
                   </div>
-                  {/* Strengths & Weaknesses */}
+                  {/* Strengths & Weaknesses — curated qualitative data */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                     <div>
                       <div style={{ fontSize: '11px', fontWeight: '600', color: '#00ff88', marginBottom: '4px' }}>Strengths</div>
