@@ -9,8 +9,9 @@ const TIMEFRAME_CONFIG = {
   '1m': {
     endpoint: 'intraday',
     interval: '1m',
-    days: 1,         // Just today's 1-minute data
-    description: '1-minute intraday'
+    days: 1,
+    recentHours: 2,  // Override: only fetch last 2 hours of 1-minute data
+    description: '1-minute intraday (last 2 hours)'
   },
   '1h': {
     endpoint: 'intraday',
@@ -104,13 +105,18 @@ export default async function handler(req, res) {
     startDate.setDate(startDate.getDate() - numDays);
     const fromDate = startDate.toISOString().split('T')[0];
 
+    // For recentHours configs (e.g. 1m), use a tighter from timestamp
+    const intradayFromTs = config.recentHours
+      ? Math.floor((Date.now() - config.recentHours * 60 * 60 * 1000) / 1000)
+      : Math.floor(startDate.getTime() / 1000);
+
     let data;
     let actualTimeframe = timeframe; // Track if we fell back to a different timeframe
     let fallbackMessage = null;
 
     if (config.endpoint === 'intraday') {
       // Fetch intraday data from EODHD (1h or 1m)
-      const intradayUrl = `https://eodhd.com/api/intraday/${eohdSymbol}?api_token=${API_KEY}&fmt=json&interval=${config.interval}&from=${Math.floor(startDate.getTime() / 1000)}`;
+      const intradayUrl = `https://eodhd.com/api/intraday/${eohdSymbol}?api_token=${API_KEY}&fmt=json&interval=${config.interval}&from=${intradayFromTs}`;
       console.log(`[API] Fetching intraday from: ${intradayUrl.replace(API_KEY, 'HIDDEN')}`);
 
       const response = await fetch(intradayUrl);

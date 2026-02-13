@@ -277,6 +277,22 @@ const StockChart = ({
           console.warn('[StockChart] Bomb level error:', e);
         }
       });
+
+      // Spectate mode: add starting price context line
+      if (isSpectateView && bombData?.baselinePrice) {
+        try {
+          bombSeries.createPriceLine({
+            price: bombData.baselinePrice,
+            color: 'rgba(255, 255, 255, 0.35)',
+            lineWidth: 1,
+            lineStyle: 2, // Dashed
+            axisLabelVisible: true,
+            title: 'Start',
+          });
+        } catch (e) {
+          console.warn('[StockChart] Start line error:', e);
+        }
+      }
     } else {
       // Normal view: Candlestick + volume
       const candleSeries = chart.addSeries(CandlestickSeries, {
@@ -607,21 +623,21 @@ const StockChart = ({
           const priceDist = Math.abs(closest.distance).toFixed(2);
 
           if (isSpectateView) {
-            // Spectate mode: larger, centered indicator with live badge
+            // Spectate mode: compact indicator at top-right, not covering candles
             const urgencyColor = absPct < 0.1 ? '#ef4444' : absPct < 0.3 ? '#ff9500' : '#e0e0e0';
             const urgencyBg = absPct < 0.1 ? 'rgba(239,68,68,0.3)' : absPct < 0.3 ? 'rgba(255,149,0,0.25)' : 'rgba(255,255,255,0.1)';
             const urgencyBorder = absPct < 0.1 ? '#ef4444' : absPct < 0.3 ? '#ff9500' : 'rgba(255,255,255,0.2)';
+            const tierLabel = closest.tier ? closest.tier.charAt(0).toUpperCase() + closest.tier.slice(1) : '';
             return (
               <div style={{
                 position: 'absolute',
-                top: '52px',
-                left: '50%',
-                transform: 'translateX(-50%)',
+                top: '8px',
+                right: '8px',
                 background: urgencyBg,
-                border: `2px solid ${urgencyBorder}`,
-                borderRadius: '16px',
-                padding: '8px 20px',
-                fontSize: '16px',
+                border: `1px solid ${urgencyBorder}`,
+                borderRadius: '10px',
+                padding: '6px 14px',
+                fontSize: '13px',
                 fontWeight: 700,
                 fontFamily: 'monospace',
                 color: urgencyColor,
@@ -629,9 +645,9 @@ const StockChart = ({
                 zIndex: 10,
                 textAlign: 'center',
               }}>
-                <div>{direction} {absPct.toFixed(2)}% to {closest.points > 0 ? '+' : ''}{closest.points}</div>
-                <div style={{ fontSize: '11px', color: '#a0a0a0', marginTop: '2px' }}>
-                  ${priceDist} away {'\u2022'} LIVE
+                <div>{direction} {absPct.toFixed(2)}% to {tierLabel} ({closest.points > 0 ? '+' : ''}{closest.points} pts)</div>
+                <div style={{ fontSize: '10px', color: '#a0a0a0', marginTop: '2px' }}>
+                  ${priceDist} from ${closest.price?.toFixed(2)} {'\u2022'} SPECTATING
                 </div>
               </div>
             );
