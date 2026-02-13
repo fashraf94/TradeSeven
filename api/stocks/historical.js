@@ -9,9 +9,8 @@ const TIMEFRAME_CONFIG = {
   '1m': {
     endpoint: 'intraday',
     interval: '1m',
-    days: 1,
-    recentHours: 2,  // Override: only fetch last 2 hours of 1-minute data
-    description: '1-minute intraday (last 2 hours)'
+    days: 1,          // Full day of 1-minute data; frontend slices to last 60 candles
+    description: '1-minute intraday'
   },
   '1h': {
     endpoint: 'intraday',
@@ -105,10 +104,7 @@ export default async function handler(req, res) {
     startDate.setDate(startDate.getDate() - numDays);
     const fromDate = startDate.toISOString().split('T')[0];
 
-    // For recentHours configs (e.g. 1m), use a tighter from timestamp
-    const intradayFromTs = config.recentHours
-      ? Math.floor((Date.now() - config.recentHours * 60 * 60 * 1000) / 1000)
-      : Math.floor(startDate.getTime() / 1000);
+    const intradayFromTs = Math.floor(startDate.getTime() / 1000);
 
     let data;
     let actualTimeframe = timeframe; // Track if we fell back to a different timeframe
@@ -122,24 +118,13 @@ export default async function handler(req, res) {
       const response = await fetch(intradayUrl);
 
       if (!response.ok) {
-        // Fallback to daily if intraday not available
-        console.warn(`[API] Intraday API error (${response.status}) for ${upperSymbol}, falling back to daily`);
-        actualTimeframe = '1d';
-        fallbackMessage = 'Hourly data not available, showing daily';
-        const fallbackResponse = await fetch(
-          `https://eodhd.com/api/eod/${eohdSymbol}?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${fromDate}`
-        );
-        if (!fallbackResponse.ok) {
-          throw new Error(`EODHD API responded with ${fallbackResponse.status}`);
-        }
-        data = await fallbackResponse.json();
-      } else {
-        const intradayData = await response.json();
-        console.log(`[API] Intraday response type: ${typeof intradayData}, isArray: ${Array.isArray(intradayData)}, length: ${intradayData?.length || 0}`);
-
-        // Check if intraday data is valid and non-empty
-        if (!Array.isArray(intradayData) || intradayData.length === 0) {
-          console.warn(`[API] Intraday data empty or invalid for ${upperSymbol}, falling back to daily`);
+        if (timeframe === '1m') {
+          // Don't fall back to daily for 1m — daily candles are useless for spectate
+          console.warn(`[API] Intraday 1m API error (${response.status}) for ${upperSymbol}, no fallback`);
+          data = [];
+        } else {
+          // Fallback to daily if hourly not available
+          console.warn(`[API] Intraday API error (${response.status}) for ${upperSymbol}, falling back to daily`);
           actualTimeframe = '1d';
           fallbackMessage = 'Hourly data not available, showing daily';
           const fallbackResponse = await fetch(
@@ -149,6 +134,29 @@ export default async function handler(req, res) {
             throw new Error(`EODHD API responded with ${fallbackResponse.status}`);
           }
           data = await fallbackResponse.json();
+        }
+      } else {
+        const intradayData = await response.json();
+        console.log(`[API] Intraday response type: ${typeof intradayData}, isArray: ${Array.isArray(intradayData)}, length: ${intradayData?.length || 0}`);
+
+        // Check if intraday data is valid and non-empty
+        if (!Array.isArray(intradayData) || intradayData.length === 0) {
+          if (timeframe === '1m') {
+            // Don't fall back to daily for 1m — daily candles are useless for spectate
+            console.warn(`[API] Intraday 1m data empty for ${upperSymbol}, no fallback`);
+            data = [];
+          } else {
+            console.warn(`[API] Intraday data empty or invalid for ${upperSymbol}, falling back to daily`);
+            actualTimeframe = '1d';
+            fallbackMessage = 'Hourly data not available, showing daily';
+            const fallbackResponse = await fetch(
+              `https://eodhd.com/api/eod/${eohdSymbol}?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${fromDate}`
+            );
+            if (!fallbackResponse.ok) {
+              throw new Error(`EODHD API responded with ${fallbackResponse.status}`);
+            }
+            data = await fallbackResponse.json();
+          }
         } else {
           // Transform intraday format to match daily format
           // Filter out any candles with null/undefined values
@@ -186,18 +194,22 @@ export default async function handler(req, res) {
             console.log('[API] Processed intraday sample:', JSON.stringify(data[0], null, 2));
           }
 
-          // If all candles were filtered out, fall back to daily
+          // If all candles were filtered out, fall back to daily (skip for 1m)
           if (data.length === 0) {
-            console.warn(`[API] All intraday candles had null values, falling back to daily`);
-            actualTimeframe = '1d';
-            fallbackMessage = 'Hourly data not available, showing daily';
-            const fallbackResponse = await fetch(
-              `https://eodhd.com/api/eod/${eohdSymbol}?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${fromDate}`
-            );
-            if (!fallbackResponse.ok) {
-              throw new Error(`EODHD API responded with ${fallbackResponse.status}`);
+            if (timeframe === '1m') {
+              console.warn(`[API] All 1m candles filtered out for ${upperSymbol}, no fallback`);
+            } else {
+              console.warn(`[API] All intraday candles had null values, falling back to daily`);
+              actualTimeframe = '1d';
+              fallbackMessage = 'Hourly data not available, showing daily';
+              const fallbackResponse = await fetch(
+                `https://eodhd.com/api/eod/${eohdSymbol}?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${fromDate}`
+              );
+              if (!fallbackResponse.ok) {
+                throw new Error(`EODHD API responded with ${fallbackResponse.status}`);
+              }
+              data = await fallbackResponse.json();
             }
-            data = await fallbackResponse.json();
           }
         }
       }
