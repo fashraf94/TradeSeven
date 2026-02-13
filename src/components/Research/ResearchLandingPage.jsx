@@ -1504,11 +1504,14 @@ const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, tra
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', padding: '0 4px' }}>
         <div style={{
-          ...sectionLabel(C.textMuted),
+          fontSize: '11px',
+          fontWeight: 700,
+          letterSpacing: '2px',
+          textTransform: 'uppercase',
+          color: '#8b949e',
         }}>
           TRACKER BOT
         </div>
-        <span style={{ fontSize: '14px' }}>{'\uD83E\uDD16'}</span>
       </div>
       <div style={{ fontSize: '10px', color: C.textMuted, marginBottom: '10px', padding: '0 4px' }}>
         Your watchlist, analyzed
@@ -1533,13 +1536,13 @@ const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, tra
           onClick={() => setShowAddStock(!showAddStock)}
           style={{
             width: '100%',
-            padding: '10px',
-            borderRadius: 10,
-            background: C.bgElevated,
-            border: `1px dashed ${C.border}`,
-            color: C.textMuted,
-            fontSize: 12,
-            fontWeight: 600,
+            padding: '12px 16px',
+            borderRadius: 8,
+            background: 'rgba(0, 217, 255, 0.06)',
+            border: '1px dashed rgba(0, 217, 255, 0.4)',
+            color: 'rgba(0, 217, 255, 0.8)',
+            fontSize: 14,
+            fontWeight: 500,
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
@@ -1547,6 +1550,17 @@ const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, tra
             gap: 6,
             transition: 'all 0.2s ease',
             marginTop: 6,
+            letterSpacing: '0.5px',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.border = '1px dashed rgba(0, 217, 255, 0.7)';
+            e.currentTarget.style.background = 'rgba(0, 217, 255, 0.1)';
+            e.currentTarget.style.color = '#00d9ff';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.border = '1px dashed rgba(0, 217, 255, 0.4)';
+            e.currentTarget.style.background = 'rgba(0, 217, 255, 0.06)';
+            e.currentTarget.style.color = 'rgba(0, 217, 255, 0.8)';
           }}
         >
           <span style={{ fontSize: 14 }}>+</span> Track another stock
@@ -1670,8 +1684,7 @@ const DesktopTrackerSection = ({
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 14 }}>{'\uD83E\uDD16'}</span>
-          <span style={{ ...sectionLabel(C.textMuted, '0.15em', '10px') }}>TRACKER BOT</span>
+          <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: '#8b949e' }}>TRACKER BOT</span>
         </div>
         <span style={{ fontSize: 11, color: C.textMuted }}>Your watchlist, analyzed</span>
       </div>
@@ -1697,13 +1710,13 @@ const DesktopTrackerSection = ({
           onClick={() => setShowAddStock(!showAddStock)}
           style={{
             width: '100%',
-            padding: '10px',
-            borderRadius: 10,
-            background: C.bgElevated,
-            border: `1px dashed ${C.border}`,
-            color: C.textMuted,
-            fontSize: 12,
-            fontWeight: 600,
+            padding: '12px 16px',
+            borderRadius: 8,
+            background: 'rgba(0, 217, 255, 0.06)',
+            border: '1px dashed rgba(0, 217, 255, 0.4)',
+            color: 'rgba(0, 217, 255, 0.8)',
+            fontSize: 14,
+            fontWeight: 500,
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
@@ -1711,6 +1724,17 @@ const DesktopTrackerSection = ({
             gap: 6,
             transition: 'all 0.2s ease',
             marginTop: 6,
+            letterSpacing: '0.5px',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.border = '1px dashed rgba(0, 217, 255, 0.7)';
+            e.currentTarget.style.background = 'rgba(0, 217, 255, 0.1)';
+            e.currentTarget.style.color = '#00d9ff';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.border = '1px dashed rgba(0, 217, 255, 0.4)';
+            e.currentTarget.style.background = 'rgba(0, 217, 255, 0.06)';
+            e.currentTarget.style.color = 'rgba(0, 217, 255, 0.8)';
           }}
         >
           <span style={{ fontSize: 14 }}>+</span> Track another stock
@@ -1912,8 +1936,7 @@ const EconomicEventsBotCard = ({ buildMarketContextString, compact = false }) =>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: compact ? 10 : 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: compact ? 13 : 14 }}>{'\uD83D\uDCC5'}</span>
-          <span style={{ ...sectionLabel(C.textMuted, '0.12em', compact ? '9px' : '10px') }}>ECONOMIC EVENTS</span>
+          <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: '#8b949e' }}>ECONOMIC EVENTS</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.green, animation: 'rlp-pulse 2s ease-in-out infinite' }} />
@@ -3490,11 +3513,12 @@ const ResearchLandingPage = ({
             gap: '8px',
             marginBottom: '4px',
           }}>
-            <div style={{
-              ...sectionLabel(C.textMuted, '0.15em', '10px'),
-              textTransform: 'uppercase',
-            }}>
-              MARKET INTELLIGENCE
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '20px', height: '1px', background: `linear-gradient(90deg, transparent, ${C.cyan}66)` }} />
+              <span style={{ ...sectionLabel(C.textMuted, '0.15em', '10px'), whiteSpace: 'nowrap' }}>
+                MARKET INTELLIGENCE
+              </span>
+              <div style={{ width: '40px', height: '1px', background: `linear-gradient(90deg, ${C.cyan}66, transparent)` }} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <SentimentPulse sentiment={marketBreadth.sentiment} />
