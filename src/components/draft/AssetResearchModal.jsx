@@ -705,9 +705,15 @@ const AssetResearchModal = ({
   const v2ContainerRef = useRef(null);
   const { isMobile, isTablet } = useIsMobile();
 
-  // v2: Responsive chart height — v2 mobile uses ~50% of container (min 280px)
-  const chartHeight = version >= 2 && isMobile
-    ? Math.max(Math.round(v2ContainerHeight * 0.5), 280)
+  // v2: Responsive chart height — scale to container so date axis clears drawer at mid snap.
+  // Drawer mid-top sits at 50% (desktop/tablet) or 60% (mobile) of container.
+  // Mobile: 50% of container (min 280) — ample gap to the 60% drawer line.
+  // Desktop/tablet: capped at old fixed max but shrinks to 45% when container is small,
+  // guaranteeing ≥5% gap (~30px) between chart bottom and drawer top.
+  const chartHeight = version >= 2
+    ? isMobile
+      ? Math.max(Math.round(v2ContainerHeight * 0.5), 280)
+      : Math.min(isTablet ? 260 : 300, Math.round(v2ContainerHeight * 0.45))
     : isMobile ? 200 : isTablet ? 260 : 300;
 
   // v2: Research data hook for chart + enhanced technical tab
