@@ -375,6 +375,76 @@ export function getNextTradingDay() {
 }
 
 /**
+ * Determine the correct battle start date based on when a draft completes.
+ *
+ * Rules:
+ * - Weekday, before 9:30 AM ET  -> today (market hasn't opened yet)
+ * - Weekday, >= 9:30 AM ET      -> next trading day
+ * - Weekend                      -> Monday (next trading day)
+ *
+ * @param {Date|string} completionTime - When the draft completed (defaults to now)
+ * @returns {string} YYYY-MM-DD string in Eastern Time representing Day 1
+ */
+export function getBattleStartDate(completionTime) {
+  const completed = completionTime ? new Date(completionTime) : new Date();
+  const etString = completed.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const et = new Date(etString);
+
+  const dayOfWeek = et.getDay(); // 0=Sun, 6=Sat
+  const currentMinutesOfDay = et.getHours() * 60 + et.getMinutes();
+  const marketOpenMinutes = 9 * 60 + 30; // 9:30 AM = 570 minutes
+
+  let startDate = new Date(et);
+
+  if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+    // Weekday
+    if (currentMinutesOfDay >= marketOpenMinutes) {
+      // Market already open or closed — next trading day
+      startDate.setDate(startDate.getDate() + 1);
+      while (startDate.getDay() === 0 || startDate.getDay() === 6) {
+        startDate.setDate(startDate.getDate() + 1);
+      }
+    }
+    // else: before market open — today is Day 1
+  } else {
+    // Weekend — advance to Monday
+    while (startDate.getDay() === 0 || startDate.getDay() === 6) {
+      startDate.setDate(startDate.getDate() + 1);
+    }
+  }
+
+  const year = startDate.getFullYear();
+  const month = String(startDate.getMonth() + 1).padStart(2, '0');
+  const day = String(startDate.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Calculate the battle end date as 5 trading days from start.
+ * @param {string} startDate - YYYY-MM-DD string for Day 1
+ * @returns {string} YYYY-MM-DD string for Day 5
+ */
+export function calculateBattleEndDate(startDate) {
+  // Parse with noon time to avoid DST midnight edge cases
+  const date = new Date(startDate + 'T12:00:00');
+  let tradingDays = 0;
+
+  while (tradingDays < 5) {
+    const dayOfWeek = date.getDay();
+    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+      tradingDays++;
+      if (tradingDays === 5) break;
+    }
+    date.setDate(date.getDate() + 1);
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Get Snake Draft end date based on asset type
  * @param {string} assetType - 'stocks' or 'crypto'
  * @returns {Date}
@@ -474,6 +544,8 @@ export default {
 
   // Snake Draft utilities
   getNextTradingDay,
+  getBattleStartDate,
+  calculateBattleEndDate,
   getSnakeDraftEndDate,
   getDayName,
 

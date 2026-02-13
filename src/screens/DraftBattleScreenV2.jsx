@@ -345,8 +345,49 @@ const DraftBattleScreenV2 = ({
       }
 
       // STEP 3.5: Daily scoring - capture open prices and check current day
-      const tradingDay = getCurrentTradingDay(currentDraft.battleStartTime || currentDraft.createdAt);
+      const tradingDay = getCurrentTradingDay(
+        currentDraft.battleStartTime || currentDraft.createdAt,
+        currentDraft.battleStartDate
+      );
       setCurrentDay(tradingDay);
+
+      // If battle hasn't started yet (tradingDay === 0), show pre-battle state
+      if (tradingDay === 0) {
+        const preBattleStandings = (currentDraft.players || []).map((player, index) => ({
+          odUserId: player.odUserId,
+          displayName: player.displayName,
+          isMe: player.odUserId === currentUserId,
+          isCPU: player.isCPU || false,
+          totalPoints: 0,
+          todayPoints: 0,
+          previousPoints: 0,
+          totalBaggerBombs: 0,
+          totalBusts: 0,
+          totalGain: 0,
+          portfolio: (player.picks || []).map(symbol => ({
+            symbol,
+            gain: 0,
+            lockedPrice: currentDraft.lockedPrices?.[symbol] || 0,
+            currentPrice: 0,
+            category: player.pickCategories?.[symbol] || 'steady',
+            totalScore: 0,
+          })),
+          bestAsset: { symbol: '-', gain: 0, totalScore: 0 },
+          worstAsset: { symbol: '-', gain: 0, totalScore: 0 },
+          bestGainer: { symbol: '-', gain: 0 },
+          worstGainer: { symbol: '-', gain: 0 },
+          currentRank: index + 1,
+          previousRank: 0,
+        }));
+        setStandings(preBattleStandings);
+        setDailyData(currentDraft.dailyData || {});
+        setLastUpdated(new Date());
+        setError(null);
+        hasInitialLoadRef.current = true;
+        setLoading(false);
+        setIsRefreshing(false);
+        return;
+      }
 
       // Get daily data from draft
       const draftDailyData = currentDraft.dailyData || {};
@@ -936,6 +977,33 @@ const DraftBattleScreenV2 = ({
       {/* Refresh Indicator */}
       <RefreshIndicator visible={isRefreshing} lastUpdated={lastUpdated} />
 
+      {/* PRE-BATTLE BANNER - shown when battle hasn't started yet */}
+      {currentDay === 0 && currentDraft?.battleStartDate && (
+        <div style={{
+          margin: '12px 16px',
+          padding: '16px',
+          background: 'linear-gradient(135deg, rgba(0, 255, 255, 0.1) 0%, rgba(0, 255, 255, 0.03) 100%)',
+          borderRadius: '12px',
+          border: `1px solid ${HOLO_COLORS.cyan}44`,
+          textAlign: 'center',
+        }}>
+          <div style={{
+            fontSize: '14px',
+            fontWeight: 700,
+            color: HOLO_COLORS.cyan,
+            marginBottom: '4px',
+          }}>
+            Battle starts {currentDraft.battleStartDate} at market open
+          </div>
+          <div style={{
+            fontSize: '12px',
+            color: HOLO_COLORS.textMuted,
+          }}>
+            Scores will begin accumulating at 9:30 AM ET
+          </div>
+        </div>
+      )}
+
       {/* PRICE REPAIR WARNING */}
       {needsPriceRepair && (
         <div style={{
@@ -1076,6 +1144,7 @@ const DraftBattleScreenV2 = ({
         standings={standings}
         currentUserId={currentUserId}
         battleStartTime={currentDraft?.battleStartTime || currentDraft?.createdAt || currentDraft?.startTime}
+        battleStartDate={currentDraft?.battleStartDate}
         battleEndTime={currentDraft?.battleEndTime}
         dailyScores={formatDailyScoresForModal(currentDraft)}
         dailyData={currentDraft?.dailyData}

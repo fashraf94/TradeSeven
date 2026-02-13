@@ -64,19 +64,32 @@ function isWeekday() {
 }
 
 // Get current trading day number (1-5) for a battle
-function getCurrentTradingDay(battleStartTime) {
-  if (!battleStartTime) return 0;
+// Returns 0 if battleStartDate is in the future (battle hasn't started yet)
+function getCurrentTradingDay(battleStartTime, battleStartDate) {
+  if (!battleStartTime && !battleStartDate) return 0;
 
-  // Convert battleStartTime to Eastern Time before normalizing
-  // This ensures both dates are in the same ET reference frame,
-  // preventing off-by-one errors since this cron runs on Vercel (UTC)
-  const startDate = new Date(battleStartTime);
-  const startETString = startDate.toLocaleString('en-US', { timeZone: 'America/New_York' });
-  const startDay = new Date(startETString);
-  startDay.setHours(0, 0, 0, 0);
+  let startDay;
+
+  if (battleStartDate) {
+    // New path: use explicit battleStartDate (YYYY-MM-DD)
+    // Parse with noon time to avoid DST midnight edge cases
+    startDay = new Date(battleStartDate + 'T12:00:00');
+    startDay.setHours(0, 0, 0, 0);
+  } else {
+    // Legacy path: normalize battleStartTime to midnight ET
+    const startDate = new Date(battleStartTime);
+    const startETString = startDate.toLocaleString('en-US', { timeZone: 'America/New_York' });
+    startDay = new Date(startETString);
+    startDay.setHours(0, 0, 0, 0);
+  }
 
   const currentDay = new Date(getEasternTime());
   currentDay.setHours(0, 0, 0, 0);
+
+  // If current date is before battle start date, return 0 (not started)
+  if (currentDay < startDay) {
+    return 0;
+  }
 
   // Count trading days between start and now
   let tradingDays = 0;
@@ -161,7 +174,7 @@ async function fetchStockPrices(symbols) {
 // Record daily close scores for a single battle
 async function recordBattleScores(db, battle, currentPrices) {
   const battleId = battle.id;
-  const currentDay = getCurrentTradingDay(battle.battleStartTime || battle.createdAt);
+  const currentDay = getCurrentTradingDay(battle.battleStartTime || battle.createdAt, battle.battleStartDate);
   const dayKey = `day${currentDay}`;
 
   if (currentDay < 1 || currentDay > 5) {
