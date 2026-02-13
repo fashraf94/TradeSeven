@@ -36,6 +36,7 @@ import { AssetResearchModal } from '../draft';
  */
 const FreeAgencyMobile = ({
   containerStyle,
+  currentDraft,
   // From useSwapLogic
   freeAgents,
   playerRoster,
@@ -308,6 +309,12 @@ const FreeAgencyMobile = ({
             percentChange: livePrices[assetForResearch.symbol?.toUpperCase()]?.percentChange
               || assetForResearch.percentChange || 0,
             sector: assetForResearch.sector,
+            threshold: currentDraft?.thresholds?.[assetForResearch.symbol]?.threshold
+              || currentDraft?.thresholds?.[assetForResearch.symbol?.toUpperCase()]?.threshold
+              || null,
+            lockedPrice: currentDraft?.lockedPrices?.[assetForResearch.symbol]
+              || currentDraft?.lockedPrices?.[assetForResearch.symbol?.toUpperCase()]
+              || null,
           }}
           sector={assetForResearch.sector}
           category={assetForResearch.category}

@@ -15,8 +15,8 @@ const TIMEFRAME_CONFIG = {
   '1d': {
     endpoint: 'eod',
     interval: null,
-    days: 90,        // 3 months of daily data (~63 candles)
-    description: '3-month daily'
+    days: 180,       // 6 months of daily data (~126 candles)
+    description: '6-month daily'
   },
   '1w': {
     endpoint: 'eod',
