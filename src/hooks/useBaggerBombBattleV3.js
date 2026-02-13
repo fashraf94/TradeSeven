@@ -45,6 +45,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   // State
   const [battle, setBattle] = useState(null);
   const [currentPrices, setCurrentPrices] = useState({});
+  const [dailyExtremes, setDailyExtremes] = useState({}); // { AAPL: { high, low }, ... }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -110,7 +111,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   }, [battle, isCreator, localHistory]);
 
   // Calculate scores with history
-  const calculateScores = useCallback((portfolio, prices, openPrices, history) => {
+  const calculateScores = useCallback((portfolio, prices, openPrices, history, extremes = {}) => {
     if (!portfolio || portfolio.length === 0) {
       return { totalScore: 0, sessionScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
     }
@@ -149,7 +150,19 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       const priceChange = ((currentPrice - openPrice) / openPrice) * 100;
       const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
 
-      const score = calculateAssetScoreV3({ ...asset, baseATR: resolvedBaseATR }, priceChange, assetHistory);
+      // Compute high/low percent changes for intraday threshold detection
+      const assetExtremes = extremes[asset.symbol];
+      const extremeChanges = {};
+      if (assetExtremes && openPrice > 0) {
+        if (assetExtremes.high > 0) {
+          extremeChanges.highChange = ((assetExtremes.high - openPrice) / openPrice) * 100;
+        }
+        if (assetExtremes.low > 0) {
+          extremeChanges.lowChange = ((assetExtremes.low - openPrice) / openPrice) * 100;
+        }
+      }
+
+      const score = calculateAssetScoreV3({ ...asset, baseATR: resolvedBaseATR }, priceChange, assetHistory, extremeChanges);
       assetScores.push(score);
 
       totalBasePoints += score.basePoints;
@@ -173,8 +186,8 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
 
   // My scores
   const myScores = useMemo(() => {
-    return calculateScores(myPortfolioFlat, currentPrices, openPrices, combinedHistory);
-  }, [myPortfolioFlat, currentPrices, openPrices, combinedHistory, calculateScores]);
+    return calculateScores(myPortfolioFlat, currentPrices, openPrices, combinedHistory, dailyExtremes);
+  }, [myPortfolioFlat, currentPrices, openPrices, combinedHistory, dailyExtremes, calculateScores]);
 
   // Opponent scores — combine Firebase history with local opponent history
   // (mirrors combinedHistory pattern for own data, ensuring opponent badges
@@ -185,8 +198,8 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   }, [battle, isCreator, localOppHistory]);
 
   const oppScores = useMemo(() => {
-    return calculateScores(oppPortfolioFlat, currentPrices, openPrices, oppHistory || {});
-  }, [oppPortfolioFlat, currentPrices, openPrices, oppHistory, calculateScores]);
+    return calculateScores(oppPortfolioFlat, currentPrices, openPrices, oppHistory || {}, dailyExtremes);
+  }, [oppPortfolioFlat, currentPrices, openPrices, oppHistory, dailyExtremes, calculateScores]);
 
   // Add completed session scores
   const myTotalScore = useMemo(() => {
@@ -317,20 +330,49 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       const baseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
       const currentMultiplier = priceChange / baseATR;
 
+      // Also check intraday high/low for threshold crossings
+      const assetExtremes = dailyExtremes[asset.symbol];
+      let effectiveHighMultiplier = currentMultiplier;
+      let effectiveLowMultiplier = currentMultiplier;
+      if (assetExtremes && openPrice > 0) {
+        if (assetExtremes.high > 0) {
+          effectiveHighMultiplier = Math.max(currentMultiplier, ((assetExtremes.high - openPrice) / openPrice) * 100 / baseATR);
+        }
+        if (assetExtremes.low > 0) {
+          effectiveLowMultiplier = Math.min(currentMultiplier, ((assetExtremes.low - openPrice) / openPrice) * 100 / baseATR);
+        }
+      }
+
       const prevMultiplier = prevMultipliersRef.current[asset.symbol] || 0;
       const assetHistory = combinedHistory[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
 
-      // Check for threshold crossings
-      const crossed = detectThresholdCross(prevMultiplier, currentMultiplier);
-      if (crossed) {
+      // Check for threshold crossings using both current price and intraday extremes
+      const crossedCurrent = detectThresholdCross(prevMultiplier, currentMultiplier) || [];
+      const crossedHigh = effectiveHighMultiplier !== currentMultiplier
+        ? (detectThresholdCross(prevMultiplier, effectiveHighMultiplier) || [])
+        : [];
+      const crossedLow = effectiveLowMultiplier !== currentMultiplier
+        ? (detectThresholdCross(prevMultiplier, effectiveLowMultiplier) || [])
+        : [];
+
+      // Merge all crossings, deduplicate by name
+      const allCrossedMap = {};
+      [...crossedCurrent, ...crossedHigh, ...crossedLow].forEach(t => { allCrossedMap[t.name] = t; });
+      const crossed = Object.values(allCrossedMap);
+
+      if (crossed.length > 0) {
+        // Use the most extreme multiplier for history tracking
+        const extremeMultiplier = effectiveHighMultiplier >= Math.abs(effectiveLowMultiplier)
+          ? effectiveHighMultiplier : effectiveLowMultiplier;
+
         crossed.forEach((threshold) => {
           // Only trigger if not already earned
           const existingBadges = getBadgesFromHistory(assetHistory);
           if (!existingBadges.includes(threshold.name)) {
             console.log(`🎯 Threshold crossed: ${asset.symbol} → ${threshold.name}`);
 
-            // Update local history
-            const newHistory = updateAssetHistory(asset.symbol, currentMultiplier, assetHistory);
+            // Update local history using the extreme multiplier
+            const newHistory = updateAssetHistory(asset.symbol, extremeMultiplier, assetHistory);
             setLocalHistory((prev) => ({
               ...prev,
               [asset.symbol]: newHistory,
@@ -365,7 +407,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       // Update prev multiplier ref
       prevMultipliersRef.current[asset.symbol] = currentMultiplier;
     });
-  }, [currentPrices, openPrices, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger]);
+  }, [currentPrices, openPrices, dailyExtremes, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger]);
 
   // Continuous history tracking — ensures maxMultiplier/minMultiplier are always
   // recorded for BOTH player and opponent portfolios on every price poll.
@@ -389,8 +431,26 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
         const baseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
         const currentMultiplier = priceChange / baseATR;
 
+        // Use intraday high/low for peak tracking — if the high crossed a threshold,
+        // maxMultiplier should reflect that even if the price later reversed
+        const assetExtremes = dailyExtremes[asset.symbol];
+        let highMultiplier = currentMultiplier;
+        let lowMultiplier = currentMultiplier;
+        if (assetExtremes && openPrice > 0) {
+          if (assetExtremes.high > 0) {
+            highMultiplier = Math.max(currentMultiplier, ((assetExtremes.high - openPrice) / openPrice) * 100 / baseATR);
+          }
+          if (assetExtremes.low > 0) {
+            lowMultiplier = Math.min(currentMultiplier, ((assetExtremes.low - openPrice) / openPrice) * 100 / baseATR);
+          }
+        }
+
         const assetHistory = existingHistory[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
-        const updatedHistory = getHistoryUpdateIfChanged(currentMultiplier, assetHistory);
+        // Check both extremes against history — first high (for bombs), then low (for busts)
+        let updatedHistory = getHistoryUpdateIfChanged(highMultiplier, assetHistory);
+        const historyAfterHigh = updatedHistory || assetHistory;
+        const updatedFromLow = getHistoryUpdateIfChanged(lowMultiplier, historyAfterHigh);
+        updatedHistory = updatedFromLow || updatedHistory;
 
         if (updatedHistory) {
           // Update local state immediately (provides instant UI feedback)
@@ -413,7 +473,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     // Track opponent portfolio history (redundant recording — if opponent's client
     // is offline, this client still records their peaks)
     processPortfolio(oppPortfolioFlat, oppHistory, setLocalOppHistory, false);
-  }, [currentPrices, openPrices, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
+  }, [currentPrices, openPrices, dailyExtremes, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
 
   // Fetch prices — uses frozen close prices from Firebase when a session has ended,
   // ensuring both players see identical scores for completed sessions
@@ -459,6 +519,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       const cryptoSymbols = allSymbols.filter((s) => isCrypto(s));
 
       const newPrices = {};
+      const newExtremes = {};
 
       // Fetch stock prices
       for (const symbol of stockSymbols) {
@@ -466,6 +527,9 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
           const data = await stockAPI.getStockPrice(symbol);
           if (data?.price) {
             newPrices[symbol] = data.price;
+            if (data.high > 0 || data.low > 0) {
+              newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
+            }
           }
         } catch (err) {
           console.warn(`Failed to fetch price for ${symbol}:`, err);
@@ -478,6 +542,9 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
           const data = await stockAPI.getCryptoPrice(symbol);
           if (data?.price) {
             newPrices[symbol] = data.price;
+            if (data.high > 0 || data.low > 0) {
+              newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
+            }
           }
         } catch (err) {
           console.warn(`Failed to fetch crypto price for ${symbol}:`, err);
@@ -486,6 +553,9 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
 
       if (Object.keys(newPrices).length > 0) {
         setCurrentPrices((prev) => ({ ...prev, ...newPrices }));
+      }
+      if (Object.keys(newExtremes).length > 0) {
+        setDailyExtremes((prev) => ({ ...prev, ...newExtremes }));
       }
     } catch (err) {
       console.error('Error fetching prices:', err);

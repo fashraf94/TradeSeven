@@ -455,6 +455,23 @@ const BaggerBombTab = ({ asset }) => {
         </div>
       </div>
 
+      {/* Starting Price */}
+      {baselinePrice && baselinePrice > 0 && (
+        <div style={{
+          color: '#a0a0a0',
+          fontSize: '13px',
+          marginTop: '-12px',
+          marginBottom: '12px',
+        }}>
+          Starting Price: <span style={{ color: '#e0e0e0', fontWeight: 600 }}>
+            ${baselinePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+          <span style={{ color: '#6e7681', marginLeft: '8px' }}>
+            (resets daily at market open)
+          </span>
+        </div>
+      )}
+
       {/* THRESHOLDS Section */}
       <div style={{ marginBottom: '20px' }}>
         <div style={{
