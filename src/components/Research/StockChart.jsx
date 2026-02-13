@@ -35,7 +35,7 @@ const StockChart = ({
   const [showSR, setShowSR] = useState(false);
   const [isSpectateMode, setIsSpectateMode] = useState(false);
   const [spectateLevel, setSpectateLevel] = useState(null);
-  const flashIntervalRef = useRef(null);
+
 
   const isBombView = timeframe === 'bomb' || timeframe === 'spectate';
   const isSpectateView = timeframe === 'spectate';
@@ -56,15 +56,31 @@ const StockChart = ({
     return calculateNearestLevel(Number(latestClose), bombLevels);
   }, [isBombView, bombLevels, ohlcvData]);
 
-  // Determine which bomb levels have been triggered from chart data
+  // Determine which bomb levels have been triggered from TODAY's chart data only
+  // (previous days' candles were at different baselines so they'd cause false HITs)
   const triggeredLevels = useMemo(() => {
     if (!isBombView || bombLevels.length === 0 || !ohlcvData || ohlcvData.length === 0) return [];
     const triggered = new Set();
     const baseline = bombData?.baselinePrice;
     if (!baseline || baseline <= 0) return [];
 
-    // Check if any candle's high/low crossed each level
-    ohlcvData.forEach(candle => {
+    // Only consider candles from today's trading session
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayStartUnix = Math.floor(todayStart.getTime() / 1000);
+
+    const todayCandles = ohlcvData.filter(candle => {
+      // Handle both unix timestamp and date string formats
+      const t = candle.time || candle.timestamp;
+      if (typeof t === 'number') return t >= todayStartUnix;
+      const dateStr = candle.date || candle.datetime || '';
+      if (!dateStr) return false;
+      const candleDate = new Date(dateStr);
+      return candleDate >= todayStart;
+    });
+
+    // Check if any of today's candles crossed each level
+    todayCandles.forEach(candle => {
       const high = Number(candle.high);
       const low = Number(candle.low);
       bombLevels.forEach(level => {
@@ -178,19 +194,27 @@ const StockChart = ({
         borderDownColor: '#ff4757',
         wickUpColor: HOLO_COLORS.green,
         wickDownColor: '#ff4757',
-        // Ensure Y-axis auto-scales to include all bomb levels
         autoscaleInfoProvider: () => {
+          if (isSpectateView && spectateLevel && chartData.length > 0) {
+            // Spectate: tight Y-axis around current price and focused threshold
+            const currentPrice = chartData[chartData.length - 1]?.close;
+            if (currentPrice) {
+              const thresholdPrice = spectateLevel.price;
+              const lo = Math.min(currentPrice, thresholdPrice);
+              const hi = Math.max(currentPrice, thresholdPrice);
+              const range = hi - lo;
+              // 40% padding, minimum 0.2% of current price
+              const padding = Math.max(range * 0.4, currentPrice * 0.002);
+              return { priceRange: { minValue: lo - padding, maxValue: hi + padding } };
+            }
+          }
+          // Normal bomb view: fit all bomb levels
           if (bombLevels.length === 0) return null;
           const prices = bombLevels.map(l => l.price);
           const min = Math.min(...prices);
           const max = Math.max(...prices);
           const padding = (max - min) * 0.1;
-          return {
-            priceRange: {
-              minValue: min - padding,
-              maxValue: max + padding,
-            },
-          };
+          return { priceRange: { minValue: min - padding, maxValue: max + padding } };
         },
       });
       candleSeriesRef.current = bombSeries;
@@ -296,7 +320,17 @@ const StockChart = ({
       }
     }
 
-    chart.timeScale().fitContent();
+    if (isSpectateView) {
+      // Spectate: wider candles, right margin for incoming candles, show last 60
+      chart.timeScale().applyOptions({ barSpacing: 8, rightOffset: 5 });
+      const count = chartData.length;
+      chart.timeScale().setVisibleLogicalRange({
+        from: Math.max(0, count - 60),
+        to: count + 5,
+      });
+    } else {
+      chart.timeScale().fitContent();
+    }
 
     // ResizeObserver for responsive
     const resizeObserver = new ResizeObserver(() => {
@@ -318,50 +352,30 @@ const StockChart = ({
     };
   }, [chartData, height, timeframe, isBombView, isSpectateView, bombLevels, triggeredLevels, spectateLevel]);
 
-  // Bomb view: flash price lines when current price is within 0.5% of a threshold
+  // Bomb view: subtle style enhancement when price is within 0.5% of a threshold
+  // No animation — just thicker line + brighter color to signal proximity
   useEffect(() => {
-    if (flashIntervalRef.current) {
-      clearInterval(flashIntervalRef.current);
-      flashIntervalRef.current = null;
-    }
     if (!isBombView || bombLevels.length === 0 || bombPriceLinesRef.current.length === 0) return;
     if (!chartData || chartData.length === 0) return;
 
     const latestClose = chartData[chartData.length - 1]?.close;
     if (!latestClose) return;
 
-    // Identify which levels are "close" (within 0.5%)
-    const closeIndices = [];
     bombLevels.forEach((level, idx) => {
       if (level.tier === 'baseline') return;
+      const line = bombPriceLinesRef.current[idx];
+      if (!line) return;
       const dist = Math.abs(latestClose - level.price) / level.price;
-      if (dist < 0.005) closeIndices.push(idx);
-    });
-
-    if (closeIndices.length === 0) return;
-
-    let flashOn = true;
-    flashIntervalRef.current = setInterval(() => {
-      flashOn = !flashOn;
-      closeIndices.forEach(idx => {
-        const line = bombPriceLinesRef.current[idx];
-        const level = bombLevels[idx];
-        if (!line || !level) return;
-        try {
+      const isClose = dist < 0.005;
+      try {
+        if (isClose) {
           line.applyOptions({
-            color: flashOn ? level.color : 'rgba(255,255,255,0.08)',
-            lineWidth: flashOn ? 3 : 1,
+            lineWidth: 3,
+            lineStyle: 0, // Solid when close
           });
-        } catch { /* line may be removed */ }
-      });
-    }, 500);
-
-    return () => {
-      if (flashIntervalRef.current) {
-        clearInterval(flashIntervalRef.current);
-        flashIntervalRef.current = null;
-      }
-    };
+        }
+      } catch { /* line may be removed */ }
+    });
   }, [isBombView, bombLevels, chartData]);
 
   // SMA overlay
