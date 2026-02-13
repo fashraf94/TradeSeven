@@ -190,6 +190,7 @@ export default function BaggerBombBattleViewConnectedV4({
         nightMode={false}
         thresholds={thresholds}
         currentPrices={currentPrices}
+        openPrices={openPrices}
         // V4 props
         battleVersion={4}
         freeAgents={freeAgents}

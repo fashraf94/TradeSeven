@@ -210,6 +210,7 @@ export default function BaggerBombBattleView({
   isTraining = false,
   thresholds = {},
   currentPrices = {},
+  openPrices = {},
   // V4 props
   battleVersion = 3,
   freeAgents,
@@ -502,6 +503,7 @@ export default function BaggerBombBattleView({
             price: currentPrices[researchAsset.symbol] || researchAsset.currentPrice || researchAsset.price || 0,
             percentChange: researchAsset.priceChange || 0,
             threshold: thresholds[researchAsset.symbol]?.threshold || researchAsset.baseATR || 2.5,
+            lockedPrice: openPrices[researchAsset.symbol] || 0,
           }}
           onClose={() => setResearchAsset(null)}
           showActionButton={false}
