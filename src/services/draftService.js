@@ -43,6 +43,11 @@ const removeUndefined = (obj) => {
   if (Array.isArray(obj)) {
     return obj.map(item => removeUndefined(item));
   }
+  // Pass through Firebase FieldValue sentinels (serverTimestamp, arrayUnion, etc.)
+  // These have an isEqual method and must not be destructured into plain objects
+  if (obj && typeof obj === 'object' && typeof obj.isEqual === 'function') {
+    return obj;
+  }
   if (typeof obj === 'object' && !(obj instanceof Date) && !(obj instanceof Timestamp)) {
     const cleaned = {};
     Object.keys(obj).forEach(key => {

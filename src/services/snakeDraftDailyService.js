@@ -4,7 +4,7 @@
 
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { getEasternTime } from '../constants/battleTiming';
+import { getEasternTime, getBattleStartDate } from '../constants/battleTiming';
 import { calculateSnakeDraftAssetScore } from './scoring/baggerBombCalculator';
 
 // Constants
@@ -94,10 +94,10 @@ export function getCurrentTradingDay(battleStartTime, battleStartDate) {
     startDay = new Date(battleStartDate + 'T12:00:00');
     startDay.setHours(0, 0, 0, 0);
   } else {
-    // Legacy path: normalize battleStartTime to midnight ET
-    const startDate = new Date(battleStartTime);
-    const startETString = startDate.toLocaleString('en-US', { timeZone: 'America/New_York' });
-    startDay = new Date(startETString);
+    // Legacy path: compute battleStartDate on-the-fly as safety net
+    // This ensures drafts completed during/after market hours still defer to next trading day
+    const computedStartDate = getBattleStartDate(battleStartTime);
+    startDay = new Date(computedStartDate + 'T12:00:00');
     startDay.setHours(0, 0, 0, 0);
   }
 
