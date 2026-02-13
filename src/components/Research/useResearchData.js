@@ -9,9 +9,12 @@ import { aggregateToMonthly } from './chartUtils';
  * Manages OHLCV data, technical indicators, and S/R levels.
  *
  * @param {string} symbol - Stock/crypto ticker
+ * @param {Object} options - Optional configuration
+ * @param {number} options.currentPrice - Live price for synthetic candle (from header)
+ * @param {boolean} options.isCrypto - Whether the asset is crypto (trades 24/7)
  * @returns {Object} { ohlcvData, timeframe, setTimeframe, indicators, levels, smaData, loading, error }
  */
-export default function useResearchData(symbol) {
+export default function useResearchData(symbol, { currentPrice, isCrypto } = {}) {
   const [rawData, setRawData] = useState(null);    // Raw API response (newest-first)
   const [timeframe, setTimeframe] = useState('1D');  // UI timeframe: '1D' | '1W' | '1M'
   const [loading, setLoading] = useState(false);
@@ -81,21 +84,93 @@ export default function useResearchData(symbol) {
     // Data from API is newest-first, reverse to oldest-first for processing
     const reversed = [...rawData].reverse();
 
+    let result;
     if (timeframe === 'bomb') {
       // Bomb view: all hourly candles (~140 for 20 trading days)
-      return reversed;
-    }
-    if (timeframe === '1W') {
+      result = reversed;
+    } else if (timeframe === '1W') {
       // Weekly data, slice to ~52 most recent weeks (1 year)
-      return reversed.slice(-52);
-    }
-    if (timeframe === '1M') {
+      result = reversed.slice(-52);
+    } else if (timeframe === '1M') {
       // Aggregate weekly data into monthly
-      return aggregateToMonthly(reversed);
+      result = aggregateToMonthly(reversed);
+    } else {
+      // 1D: daily data as-is
+      result = reversed;
     }
-    // 1D: daily data as-is
-    return reversed;
-  }, [rawData, timeframe]);
+
+    // Append synthetic "live" candle if the last candle is stale and we have a live price.
+    // This bridges the gap between EODHD historical data (which only includes completed
+    // periods) and the live price shown in the header.
+    if (currentPrice && currentPrice > 0 && result && result.length > 0) {
+      const lastCandle = result[result.length - 1];
+      const lastDateStr = lastCandle.date || lastCandle.datetime || '';
+
+      if (timeframe === 'bomb') {
+        // Hourly: append if last candle is >1 hour old
+        const lastTime = lastCandle.timestamp
+          ? lastCandle.timestamp * 1000
+          : new Date(lastDateStr).getTime();
+        const hourMs = 60 * 60 * 1000;
+        if (lastTime && (Date.now() - lastTime) > hourMs) {
+          const nowHour = new Date();
+          nowHour.setMinutes(0, 0, 0);
+          result = [...result, {
+            date: nowHour.toISOString(),
+            datetime: nowHour.toISOString(),
+            timestamp: Math.floor(nowHour.getTime() / 1000),
+            open: lastCandle.close,
+            high: Math.max(currentPrice, lastCandle.close),
+            low: Math.min(currentPrice, lastCandle.close),
+            close: currentPrice,
+            volume: 0,
+          }];
+        }
+      } else if (timeframe === '1W') {
+        // Weekly: append if last candle is from a previous week
+        const lastDate = new Date(lastDateStr);
+        const monday = new Date();
+        monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7)); // This Monday
+        monday.setHours(0, 0, 0, 0);
+        if (lastDate < monday) {
+          const mondayStr = monday.toISOString().split('T')[0];
+          result = [...result, {
+            date: mondayStr,
+            open: lastCandle.close,
+            high: Math.max(currentPrice, lastCandle.close),
+            low: Math.min(currentPrice, lastCandle.close),
+            close: currentPrice,
+            volume: 0,
+          }];
+        }
+      } else if (timeframe === '1D') {
+        // Daily: append if last candle is from a previous day
+        const lastDate = new Date(lastDateStr);
+        lastDate.setHours(0, 0, 0, 0);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // For stocks, skip weekends (Sat=6, Sun=0); crypto trades 24/7
+        const dayOfWeek = today.getDay();
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+        const shouldAppend = isCrypto ? true : !isWeekend;
+
+        if (lastDate < today && shouldAppend) {
+          const todayStr = today.toISOString().split('T')[0];
+          result = [...result, {
+            date: todayStr,
+            open: lastCandle.close,
+            high: Math.max(currentPrice, lastCandle.close),
+            low: Math.min(currentPrice, lastCandle.close),
+            close: currentPrice,
+            volume: 0,
+          }];
+        }
+      }
+    }
+
+    return result;
+  }, [rawData, timeframe, currentPrice, isCrypto]);
 
   // Compute closing prices (newest-first, as expected by indicator functions)
   const closingPrices = useMemo(() => {

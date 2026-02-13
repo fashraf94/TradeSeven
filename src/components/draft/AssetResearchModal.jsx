@@ -759,7 +759,10 @@ const AssetResearchModal = ({
     : isMobile ? 200 : isTablet ? 260 : 300;
 
   // v2: Research data hook for chart + enhanced technical tab
-  const researchData = useResearchData(version >= 2 ? asset?.symbol : null);
+  const researchData = useResearchData(version >= 2 ? asset?.symbol : null, {
+    currentPrice: asset?.price || asset?.currentPrice || 0,
+    isCrypto: isCrypto,
+  });
 
   // v2: Bomb chart data — only available when asset has battle context (threshold + baseline price)
   const bombData = useMemo(() => {

@@ -773,7 +773,9 @@ export async function fetchHistoricalOHLCV(symbol, timeframe = '1d', { days } = 
   console.log(`[EODHD] Fetching ${timeframe} OHLCV for ${upperSymbol}...`);
 
   try {
+    const isCryptoSymbol = POPULAR_CRYPTO_SYMBOLS.includes(upperSymbol);
     let url = `${API_BASE}/stocks/historical?symbol=${upperSymbol}&timeframe=${timeframe}`;
+    if (isCryptoSymbol) url += '&type=crypto';
     if (days) url += `&days=${days}`;
     const response = await fetchWithTimeout(url);
 

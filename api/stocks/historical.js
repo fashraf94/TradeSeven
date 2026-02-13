@@ -67,7 +67,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { symbol, timeframe = '1d', days } = req.query;
+  const { symbol, timeframe = '1d', days, type } = req.query;
 
   if (!symbol) {
     return res.status(400).json({ error: 'Missing symbol parameter' });
@@ -83,6 +83,10 @@ export default async function handler(req, res) {
   try {
     const upperSymbol = symbol.toUpperCase();
     const config = TIMEFRAME_CONFIG[timeframe] || TIMEFRAME_CONFIG['1d'];
+
+    // Determine EODHD symbol suffix based on asset type
+    const isCrypto = type === 'crypto';
+    const eohdSymbol = isCrypto ? `${upperSymbol}-USD.CC` : `${upperSymbol}.US`;
 
     // Use custom days if provided, otherwise use config default
     const numDays = days ? Math.min(parseInt(days, 10), 1095) : config.days;
@@ -100,7 +104,7 @@ export default async function handler(req, res) {
 
     if (timeframe === '1h') {
       // Fetch intraday data from EODHD
-      const intradayUrl = `https://eodhd.com/api/intraday/${upperSymbol}.US?api_token=${API_KEY}&fmt=json&interval=1h&from=${Math.floor(startDate.getTime() / 1000)}`;
+      const intradayUrl = `https://eodhd.com/api/intraday/${eohdSymbol}?api_token=${API_KEY}&fmt=json&interval=1h&from=${Math.floor(startDate.getTime() / 1000)}`;
       console.log(`[API] Fetching intraday from: ${intradayUrl.replace(API_KEY, 'HIDDEN')}`);
 
       const response = await fetch(intradayUrl);
@@ -111,7 +115,7 @@ export default async function handler(req, res) {
         actualTimeframe = '1d';
         fallbackMessage = 'Hourly data not available, showing daily';
         const fallbackResponse = await fetch(
-          `https://eodhd.com/api/eod/${upperSymbol}.US?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${fromDate}`
+          `https://eodhd.com/api/eod/${eohdSymbol}?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${fromDate}`
         );
         if (!fallbackResponse.ok) {
           throw new Error(`EODHD API responded with ${fallbackResponse.status}`);
@@ -127,7 +131,7 @@ export default async function handler(req, res) {
           actualTimeframe = '1d';
           fallbackMessage = 'Hourly data not available, showing daily';
           const fallbackResponse = await fetch(
-            `https://eodhd.com/api/eod/${upperSymbol}.US?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${fromDate}`
+            `https://eodhd.com/api/eod/${eohdSymbol}?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${fromDate}`
           );
           if (!fallbackResponse.ok) {
             throw new Error(`EODHD API responded with ${fallbackResponse.status}`);
@@ -176,7 +180,7 @@ export default async function handler(req, res) {
             actualTimeframe = '1d';
             fallbackMessage = 'Hourly data not available, showing daily';
             const fallbackResponse = await fetch(
-              `https://eodhd.com/api/eod/${upperSymbol}.US?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${fromDate}`
+              `https://eodhd.com/api/eod/${eohdSymbol}?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${fromDate}`
             );
             if (!fallbackResponse.ok) {
               throw new Error(`EODHD API responded with ${fallbackResponse.status}`);
@@ -188,7 +192,7 @@ export default async function handler(req, res) {
     } else {
       // Fetch daily EOD data from EODHD
       const response = await fetch(
-        `https://eodhd.com/api/eod/${upperSymbol}.US?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${fromDate}`
+        `https://eodhd.com/api/eod/${eohdSymbol}?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${fromDate}`
       );
 
       if (!response.ok) {
