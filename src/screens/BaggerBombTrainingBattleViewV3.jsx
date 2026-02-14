@@ -15,6 +15,7 @@ import {
   calculateAssetScore,
   isCrypto,
 } from '../hooks/useBaggerBombBattle';
+import { useWebSocketPrices } from '../hooks/useWebSocketPrices';
 
 const PRICE_POLL_INTERVAL = 60000; // 60 seconds
 
@@ -76,6 +77,15 @@ export default function BaggerBombTrainingBattleViewV3({
 
     return [...new Set(symbols)];
   }, [myData, oppData]);
+
+  // WebSocket real-time prices — merge into currentPrices
+  const { prices: wsPrices } = useWebSocketPrices(allSymbols);
+
+  useEffect(() => {
+    if (Object.keys(wsPrices).length > 0) {
+      setCurrentPrices(prev => ({ ...prev, ...wsPrices }));
+    }
+  }, [wsPrices]);
 
   // Fetch current prices
   const fetchPrices = useCallback(async () => {

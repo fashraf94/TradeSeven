@@ -38,6 +38,7 @@ import {
 } from '../../services/breakoutDetectionService';
 import { getVolatilityThresholds } from '../../services/volatilityService';
 import { stockAPI, POPULAR_CRYPTO } from '../../services/eodhdAPI';
+import { useWebSocketPrices } from '../../hooks/useWebSocketPrices';
 import { flattenPortfolio } from '../../utils/baggerBombUtils';
 
 // Constants
@@ -128,6 +129,26 @@ export default function BaggerBombBattleViewRedesign({
   };
 
   const currentSession = useMemo(() => getCurrentSession(), []);
+
+  // Collect all symbols for WebSocket subscription
+  const allWsSymbols = useMemo(() => {
+    const allSymbols = [
+      ...myPortfolio.map(a => a?.symbol).filter(Boolean),
+      ...oppPortfolio.map(a => a?.symbol).filter(Boolean),
+      ...flattenBench(myData?.bench).map(a => a?.symbol).filter(Boolean),
+      ...flattenBench(oppData?.bench).map(a => a?.symbol).filter(Boolean),
+    ];
+    return [...new Set(allSymbols)];
+  }, [myPortfolio, oppPortfolio, myData?.bench, oppData?.bench]);
+
+  // WebSocket real-time prices — merge into currentPrices
+  const { prices: wsPrices } = useWebSocketPrices(allWsSymbols);
+
+  useEffect(() => {
+    if (Object.keys(wsPrices).length > 0) {
+      setCurrentPrices(prev => ({ ...prev, ...wsPrices }));
+    }
+  }, [wsPrices]);
 
   // ==================== PRICE FETCHING ====================
   const fetchPrices = useCallback(async () => {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useWebSocketPrices } from '../hooks/useWebSocketPrices';
 import { HOLO_COLORS, GLOW_EFFECTS, RANK_CONFIG, CATEGORY_CONFIG, HOLO_BACKGROUND, HOLO_ANIMATIONS } from '../constants/holoTheme';
 import {
   AltitudeMap,
@@ -95,6 +96,26 @@ const DraftBattleScreenV2 = ({
   const refreshIntervalRef = useRef(null);
   const timerIntervalRef = useRef(null);
   const hasInitialLoadRef = useRef(false);
+
+  // WebSocket real-time prices for snake draft
+  const draftWsSymbols = useMemo(() => {
+    if (!currentDraft?.players) return [];
+    const symbols = new Set();
+    currentDraft.players.forEach(player => {
+      (player.picks || []).forEach(symbol => symbols.add(symbol.toUpperCase()));
+    });
+    return Array.from(symbols);
+  }, [currentDraft?.players]);
+
+  const { prices: wsPrices } = useWebSocketPrices(draftWsSymbols);
+  const wsPricesRef = useRef({});
+
+  // Keep ref in sync with latest WS prices
+  useEffect(() => {
+    if (Object.keys(wsPrices).length > 0) {
+      wsPricesRef.current = { ...wsPricesRef.current, ...wsPrices };
+    }
+  }, [wsPrices]);
 
   // ============================================
   // DERIVED VALUES - Preserved from original
@@ -342,6 +363,15 @@ const DraftBattleScreenV2 = ({
         allPrices = await stockAPIModule.getAllCryptoPrices(symbolList);
       } else {
         allPrices = await stockAPIModule.getAllStockPrices(symbolList);
+      }
+
+      // Overlay real-time WebSocket prices (more current than polled batch)
+      if (Object.keys(wsPricesRef.current).length > 0) {
+        Object.entries(wsPricesRef.current).forEach(([symbol, price]) => {
+          if (allPrices[symbol]) {
+            allPrices[symbol] = { ...allPrices[symbol], price };
+          }
+        });
       }
 
       // STEP 3.5: Daily scoring - capture open prices and check current day
