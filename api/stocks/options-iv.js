@@ -3,6 +3,7 @@
 // Fetches options data and calculates expected move from ATM straddle
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
 
 export default async function handler(req, res) {
   // Apply security middleware
@@ -23,6 +24,7 @@ export default async function handler(req, res) {
   }
 
   const { symbol } = req.query;
+  const noCache = req.query?.nocache === '1';
 
   if (!symbol) {
     return res.status(400).json({ error: 'Symbol required' });
@@ -37,6 +39,18 @@ export default async function handler(req, res) {
 
   const upperSymbol = symbol.toUpperCase();
   const tickerWithExchange = `${upperSymbol}.US`;
+
+  // Check cache
+  const tier = CACHE_TIERS.TECHNICAL;
+  const cacheKey = `options_iv_${upperSymbol}`;
+  if (!noCache) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      console.log(`[OptionsIV] Cache hit for ${upperSymbol}`);
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+      return res.status(200).json(cached);
+    }
+  }
 
   console.log(`[OptionsIV] Fetching options data for ${upperSymbol}...`);
 
@@ -197,7 +211,7 @@ export default async function handler(req, res) {
 
     console.log(`[OptionsIV] ${upperSymbol}: Straddle $${straddlePrice.toFixed(2)}, Expected Move: ${expectedMovePercent.toFixed(1)}%, IV: ${(avgIV * 100).toFixed(0)}%`);
 
-    return res.status(200).json({
+    const responseData = {
       success: true,
       symbol: upperSymbol,
       currentPrice: Math.round(currentPrice * 100) / 100,
@@ -211,7 +225,13 @@ export default async function handler(req, res) {
       putPrice: Math.round(putPrice * 100) / 100,
       daysToExpiry: Math.ceil((new Date(nearestExpiry) - new Date()) / (1000 * 60 * 60 * 24)),
       calculatedAt: new Date().toISOString()
-    });
+    };
+
+    if (!noCache) {
+      setInCache(cacheKey, responseData, tier.memoryTTL);
+    }
+    setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+    return res.status(200).json(responseData);
 
   } catch (error) {
     console.error(`[OptionsIV] Error for ${upperSymbol}:`, error);

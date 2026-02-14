@@ -3,6 +3,7 @@
 // Timeframes: 1h (hourly), 1d (daily), 1w (weekly)
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
 
 // Timeframe configuration
 const TIMEFRAME_CONFIG = {
@@ -135,6 +136,7 @@ export default async function handler(req, res) {
   }
 
   const { symbol, timeframe = '1d', days, type, from: qFrom, to: qTo } = req.query;
+  const noCache = req.query?.nocache === '1';
 
   if (!symbol) {
     return res.status(400).json({ error: 'Missing symbol parameter' });
@@ -157,6 +159,17 @@ export default async function handler(req, res) {
 
     // Use custom days if provided, otherwise use config default
     const numDays = days ? Math.min(parseInt(days, 10), 1095) : config.days;
+
+    // Check server-side cache
+    const cacheKey = `historical_${upperSymbol}_${timeframe}_${numDays}`;
+    const tier = CACHE_TIERS.TECHNICAL;
+    if (!noCache) {
+      const cached = getFromCache(cacheKey);
+      if (cached) {
+        setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+        return res.status(200).json(cached);
+      }
+    }
 
     console.log(`[API] Fetching ${config.description} OHLCV for: ${upperSymbol} (${numDays} days)`);
 
@@ -401,7 +414,7 @@ export default async function handler(req, res) {
     console.log(`[API] Returning ${ohlcv.length} ${actualTimeframe} OHLCV candles for ${upperSymbol}`);
 
     const responseConfig = TIMEFRAME_CONFIG[actualTimeframe] || config;
-    return res.status(200).json({
+    const responseData = {
       success: true,
       symbol: upperSymbol,
       timeframe: actualTimeframe,
@@ -410,7 +423,15 @@ export default async function handler(req, res) {
       fallbackMessage: fallbackMessage,
       count: ohlcv.length,
       data: ohlcv
-    });
+    };
+
+    // Cache the successful response
+    if (!noCache) {
+      setInCache(cacheKey, responseData, tier.memoryTTL);
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+    }
+
+    return res.status(200).json(responseData);
 
   } catch (error) {
     console.error('[API] Historical OHLCV error:', error.message);

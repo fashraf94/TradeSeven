@@ -3,6 +3,7 @@
 // EODHD Financial News API for general market news
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
 
 export default async function handler(req, res) {
   // Apply security middleware (CORS, security headers, rate limiting, preflight)
@@ -11,11 +12,22 @@ export default async function handler(req, res) {
   }
 
   const { limit = 10, offset = 0 } = req.query;
+  const noCache = req.query?.nocache === '1';
 
   const API_KEY = process.env.EODHD_API_KEY;
 
   if (!API_KEY) {
     return res.status(500).json({ error: 'API not configured' });
+  }
+
+  // Check cache
+  const cacheKey = `market_news_${limit}_${offset}`;
+  if (!noCache) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      setCacheHeaders(res, CACHE_TIERS.NEWS.sMaxAge, CACHE_TIERS.NEWS.staleWhileRevalidate);
+      return res.status(200).json(cached);
+    }
   }
 
   try {
@@ -52,11 +64,10 @@ export default async function handler(req, res) {
 
     console.log(`[API] Got ${news.length} market news items`);
 
-    return res.status(200).json({
-      success: true,
-      news,
-      count: news.length
-    });
+    const responseData = { success: true, news, count: news.length };
+    setInCache(cacheKey, responseData, CACHE_TIERS.NEWS.memoryTTL);
+    setCacheHeaders(res, CACHE_TIERS.NEWS.sMaxAge, CACHE_TIERS.NEWS.staleWhileRevalidate);
+    return res.status(200).json(responseData);
 
   } catch (error) {
     console.error('[API] Market news error:', error.message);

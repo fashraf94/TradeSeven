@@ -6,6 +6,7 @@
 // get HIGHER thresholds (harder to score touchdowns)
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
 
 // ============================================
 // DEFAULT THRESHOLDS (fallback when API fails)
@@ -297,6 +298,7 @@ export default async function handler(req, res) {
   }
 
   const { symbols, type = 'stock' } = req.query;
+  const noCache = req.query?.nocache === '1';
 
   // Validate symbols parameter
   if (!symbols) {
@@ -341,6 +343,18 @@ export default async function handler(req, res) {
       });
     }
 
+    const sortedSymbols = symbolList.join(',');
+    const cacheKey = 'vol_thresholds_' + sortedSymbols + '_' + type;
+    const tier = CACHE_TIERS.TECHNICAL;
+
+    if (!noCache) {
+      const cached = getFromCache(cacheKey);
+      if (cached) {
+        setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+        return res.status(200).json(cached);
+      }
+    }
+
     console.log(`[Volatility] Processing ${symbolList.length} ${type} symbols:`, symbolList.join(', '));
 
     // Process all symbols (in parallel for speed, but with care for rate limits)
@@ -353,13 +367,18 @@ export default async function handler(req, res) {
       thresholds[result.symbol] = result;
     });
 
-    return res.status(200).json({
+    const responseData = {
       success: true,
       thresholds,
       calculatedAt: new Date().toISOString(),
       type,
       count: Object.keys(thresholds).length
-    });
+    };
+    if (!noCache) {
+      setInCache(cacheKey, responseData, tier.memoryTTL);
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+    }
+    return res.status(200).json(responseData);
 
   } catch (error) {
     console.error('[Volatility] Handler error:', error.message);

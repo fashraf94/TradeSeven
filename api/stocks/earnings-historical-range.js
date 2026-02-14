@@ -5,6 +5,7 @@
 // Returns events that reported within the specified date range
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
 
 // Priority stocks to check for historical earnings
 const PRIORITY_STOCKS = [
@@ -75,6 +76,7 @@ export default async function handler(req, res) {
   }
 
   const { startDate, endDate } = req.query;
+  const noCache = req.query?.nocache === '1';
 
   if (!startDate || !endDate) {
     return res.status(400).json({ error: 'startDate and endDate required (YYYY-MM-DD format)' });
@@ -84,6 +86,17 @@ export default async function handler(req, res) {
   if (!API_KEY) {
     console.error('[historical-range] EODHD_API_KEY not configured');
     return res.status(500).json({ error: 'API key not configured' });
+  }
+
+  const cacheKey = `earnings_hist_range_${startDate}_${endDate}`;
+  const tier = CACHE_TIERS.TECHNICAL;
+
+  if (!noCache) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+      return res.status(200).json(cached);
+    }
   }
 
   console.log(`[historical-range] Fetching earnings from ${startDate} to ${endDate}`);
@@ -186,7 +199,7 @@ export default async function handler(req, res) {
     events.forEach(e => console.log(`  - ${e.symbol}: ${e.reportDate} (${e.companyName})`));
   }
 
-  return res.status(200).json({
+  const responseData = {
     success: true,
     startDate,
     endDate,
@@ -194,5 +207,12 @@ export default async function handler(req, res) {
     stocksChecked: stocksToCheck.length,
     events,
     errors: errors.length > 0 ? errors : undefined
-  });
+  };
+
+  if (!noCache) {
+    setInCache(cacheKey, responseData, tier.memoryTTL);
+    setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+  }
+
+  return res.status(200).json(responseData);
 }

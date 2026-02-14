@@ -3,6 +3,7 @@
 // Called when user taps "View Weekly Intel Report" in the mobile Research Intelligence Hub
 
 import { applySecurityMiddleware } from './_utils/security.js';
+import { getFromCache, setInCache, CACHE_TIERS } from './_utils/serverCache.js';
 
 const SYSTEM_PROMPT = `You are the MarketClash Weekly Intel Report generator. You produce a concise weekly portfolio summary for educational purposes.
 
@@ -31,6 +32,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+  const noCache = req.query?.nocache === '1';
 
   const API_KEY = process.env.CLAUDE_API_KEY;
   if (!API_KEY) {
@@ -41,6 +43,15 @@ export default async function handler(req, res) {
     const { watchlist, stockData } = req.body;
     if (!watchlist?.length) {
       return res.status(400).json({ success: false, error: 'Missing watchlist' });
+    }
+
+    // Check memory cache
+    const cacheKey = `weekly_report_${watchlist.sort().join(',')}`;
+    if (!noCache) {
+      const cached = getFromCache(cacheKey);
+      if (cached) {
+        return res.status(200).json(cached);
+      }
     }
 
     const stockSummary = (stockData || []).map(s =>
@@ -82,7 +93,9 @@ Provide a weekly performance summary, per-stock verdicts with signals, and a for
       return res.status(200).json({ success: false, error: 'No structured response' });
     }
 
-    return res.status(200).json({ success: true, data: JSON.parse(jsonMatch[0]) });
+    const responseData = { success: true, data: JSON.parse(jsonMatch[0]) };
+    setInCache(cacheKey, responseData, CACHE_TIERS.AI_INTEL.memoryTTL);
+    return res.status(200).json(responseData);
 
   } catch (error) {
     console.error('[Research Weekly Report] Error:', error.message);
