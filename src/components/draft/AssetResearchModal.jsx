@@ -580,6 +580,7 @@ const AssetResearchModal = ({
               setActiveTab={setActiveTab}
               onSnapStateChange={handleDrawerSnapChange}
               isCrypto={isCrypto}
+              hasBombData={!!bombData}
             >
               {activeTab === 'fundamental' && (
                 <div style={{ padding: '8px 0' }}>
@@ -809,25 +810,27 @@ const AssetResearchModal = ({
               >
                 Technical
               </button>
-              <button
-                onClick={() => setActiveTab('baggerbomb')}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  border: activeTab === 'baggerbomb' ? '1px solid #00ff88' : '1px solid rgba(255, 255, 255, 0.1)',
-                  background: activeTab === 'baggerbomb' ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                  color: activeTab === 'baggerbomb' ? '#00ff88' : 'rgba(255, 255, 255, 0.6)',
-                  fontWeight: '600',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  textAlign: 'center',
-                  flexShrink: 0,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                💣 Bomb
-              </button>
+              {bombData && (
+                <button
+                  onClick={() => setActiveTab('baggerbomb')}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    border: activeTab === 'baggerbomb' ? '1px solid #00ff88' : '1px solid rgba(255, 255, 255, 0.1)',
+                    background: activeTab === 'baggerbomb' ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                    color: activeTab === 'baggerbomb' ? '#00ff88' : 'rgba(255, 255, 255, 0.6)',
+                    fontWeight: '600',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    textAlign: 'center',
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  💣 Bomb
+                </button>
+              )}
               <button
                 onClick={() => setActiveTab('news')}
                 style={{
