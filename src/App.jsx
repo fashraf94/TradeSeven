@@ -16961,6 +16961,7 @@ export default function PortfolioDuel() {
     // GUIDED RESEARCH FLOW MODE
     if (researchViewMode === 'guided') {
       return (
+        <ErrorBoundary name="Research Hub" onNavigateDashboard={() => { setShowResearchMode(false); setScreen('dashboard'); }}>
         <div style={{
           position: 'fixed',
           top: 0,
@@ -17024,6 +17025,7 @@ export default function PortfolioDuel() {
             showToast={showToast}
           />
         </div>
+        </ErrorBoundary>
       );
     }
 
@@ -17685,7 +17687,7 @@ export default function PortfolioDuel() {
     const canFinalize = currentWeekNotes.length >= RESEARCH_REQUIREMENTS.minimumNotes &&
                         assetsWithNotes.length >= RESEARCH_REQUIREMENTS.minimumAssets;
 
-    // ASSET DETAIL PAGE
+    // ASSET DETAIL PAGE (wrapped in shared Research Hub boundary)
     if (selectedAssetDetail) {
       const isStock = selectedAssetType === 'stock';
       const fundamentals = isStock ? stockFundamentals[selectedAssetDetail.symbol] : null;
@@ -17764,6 +17766,7 @@ export default function PortfolioDuel() {
       );
 
       return (
+        <ErrorBoundary name="Research Hub" onNavigateDashboard={() => { setShowResearchMode(false); setScreen('dashboard'); }}>
         <div style={containerStyle}>
           <div style={{ minHeight: '100vh', background: colors.background }}>
             {/* Header */}
@@ -18280,11 +18283,13 @@ export default function PortfolioDuel() {
             </div>
           </div>
         </div>
+        </ErrorBoundary>
       );
     }
 
     // MAIN RESEARCH MODE VIEW
     return (
+      <ErrorBoundary name="Research Hub" onNavigateDashboard={() => { setShowResearchMode(false); setScreen('dashboard'); }}>
       <div style={containerStyle}>
         <div style={{ minHeight: '100vh', background: colors.background }}>
           {/* Header */}
@@ -19087,6 +19092,7 @@ export default function PortfolioDuel() {
           </div>
         </div>
       </div>
+      </ErrorBoundary>
     );
   }
 
@@ -19504,7 +19510,7 @@ export default function PortfolioDuel() {
     const nextRank = currentRankIndex < ranks.length - 1 ? ranks[currentRankIndex + 1] : 'Max Rank';
 
     return (
-      <ErrorBoundary>
+      <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen('home'); }}>
         <div style={containerStyle}>
           {/* Animated Desktop Background */}
           <DesktopBackground isDesktop={isDesktop} />
@@ -22410,6 +22416,7 @@ export default function PortfolioDuel() {
   // PORTFOLIO BUILDER SCREEN (Create Game) - EXTRACTED TO BuilderScreen.jsx
   if (screen === 'builder') {
     return (
+      <ErrorBoundary name="Portfolio Builder" onNavigateDashboard={() => setScreen('dashboard')}>
       <BuilderScreen
         // Layout
         isDesktop={isDesktop}
@@ -22462,12 +22469,14 @@ export default function PortfolioDuel() {
         // Navigation
         setScreen={setScreen}
       />
+      </ErrorBoundary>
     );
   }
 
   // BAGGERBOMB TRAINING PORTFOLIO BUILDER SCREEN (V4 - No Bench, 1 Swap)
   if (screen === 'trainingPortfolioBuilderTD') {
     return (
+      <ErrorBoundary name="Training Builder" onNavigateDashboard={() => setScreen('dashboard')}>
       <SlotBasedBuilder
         stocks={stocksData}
         crypto={cryptoData}
@@ -22478,12 +22487,14 @@ export default function PortfolioDuel() {
           setScreen('dashboard');
         }}
       />
+      </ErrorBoundary>
     );
   }
 
   // BAGGERBOMB LOBBY - Find and join open battles
   if (screen === 'baggerBombLobby') {
     return (
+      <ErrorBoundary name="BaggerBomb Lobby" onNavigateDashboard={() => setScreen('dashboard')}>
       <Suspense fallback={<LoadingFallback />}>
         <BaggerBombLobby
           user={user}
@@ -22510,12 +22521,14 @@ export default function PortfolioDuel() {
           }}
         />
       </Suspense>
+      </ErrorBoundary>
     );
   }
 
   // BAGGERBOMB SETUP - Time selection before portfolio builder
   if (screen === 'baggerBombSetup') {
     return (
+      <ErrorBoundary name="BaggerBomb Setup" onNavigateDashboard={() => setScreen('dashboard')}>
       <Suspense fallback={<LoadingFallback />}>
         <BaggerBombSetupScreen
           onBack={() => setScreen('baggerBombLobby')}
@@ -22525,12 +22538,14 @@ export default function PortfolioDuel() {
           }}
         />
       </Suspense>
+      </ErrorBoundary>
     );
   }
 
   // BAGGERBOMB CREATE BATTLE - New SlotBasedBuilder (V4: no bench)
   if (screen === 'baggerBombBuilder') {
     return (
+      <ErrorBoundary name="BaggerBomb Builder" onNavigateDashboard={() => setScreen('dashboard')}>
       <SlotBasedBuilder
         stocks={stocksData}
         crypto={cryptoData}
@@ -22566,6 +22581,7 @@ export default function PortfolioDuel() {
           setScreen('baggerBombSetup');
         }}
       />
+      </ErrorBoundary>
     );
   }
 
@@ -22573,6 +22589,7 @@ export default function PortfolioDuel() {
   if (screen === 'baggerBombJoinBuilder') {
     const joinBattleVersion = battleToJoin?._v || 3;
     return (
+      <ErrorBoundary name="Join Battle Builder" onNavigateDashboard={() => setScreen('dashboard')}>
       <SlotBasedBuilder
         stocks={stocksData}
         crypto={cryptoData}
@@ -22617,12 +22634,14 @@ export default function PortfolioDuel() {
           setScreen('baggerBombLobby');
         }}
       />
+      </ErrorBoundary>
     );
   }
 
   // BAGGERBOMB JOIN BATTLE (Legacy - via code, defaults to V4)
   if (screen === 'joinPortfolioBuilderTD') {
     return (
+      <ErrorBoundary name="Join Battle" onNavigateDashboard={() => setScreen('dashboard')}>
       <SlotBasedBuilder
         stocks={stocksData}
         crypto={cryptoData}
@@ -22669,12 +22688,14 @@ export default function PortfolioDuel() {
           setScreen('join');
         }}
       />
+      </ErrorBoundary>
     );
   }
 
   // JOIN GAME SCREEN - Extracted to JoinScreen component
   if (screen === 'join') {
     return (
+      <ErrorBoundary name="Join Battle" onNavigateDashboard={() => setScreen('dashboard')}>
       <JoinScreen
         isDesktop={isDesktop}
         joinCode={joinCode}
@@ -22695,6 +22716,7 @@ export default function PortfolioDuel() {
           }
         }}
       />
+      </ErrorBoundary>
     );
   }
 
@@ -22704,6 +22726,7 @@ export default function PortfolioDuel() {
   // DRAFT SETUP SCREEN - Extracted to DraftSetupScreen component
   if (screen === 'draftSetup') {
     return (
+      <ErrorBoundary name="Draft Setup" onNavigateDashboard={() => setScreen('dashboard')}>
       <DraftSetupScreen
         user={user}
         assetType={assetType}
@@ -22714,12 +22737,14 @@ export default function PortfolioDuel() {
           setScreen('draftLobby');
         }}
       />
+      </ErrorBoundary>
     );
   }
 
   // DRAFT JOIN SCREEN - Snake Draft Lobby Browser
   if (screen === 'draftJoin') {
     return (
+      <ErrorBoundary name="Draft Join" onNavigateDashboard={() => setScreen('dashboard')}>
       <DraftJoinScreen
         user={user}
         lobbyBattles={lobbyBattles}
@@ -22732,12 +22757,14 @@ export default function PortfolioDuel() {
         }}
         onCreateDraft={() => setScreen('draftSetup')}
       />
+      </ErrorBoundary>
     );
   }
 
   // DRAFT TRAINING SCREEN - Extracted to DraftTrainingScreen component
   if (screen === 'draftTraining') {
     return (
+      <ErrorBoundary name="Draft Training" onNavigateDashboard={() => setScreen('dashboard')}>
       <DraftTrainingScreen
         user={user}
         assetType={assetType}
@@ -22748,12 +22775,14 @@ export default function PortfolioDuel() {
           setScreen('draftRoom');
         }}
       />
+      </ErrorBoundary>
     );
   }
 
   // DRAFT LOBBY SCREEN - Extracted to DraftLobbyScreen component
   if (screen === 'draftLobby') {
     return (
+      <ErrorBoundary name="Draft Lobby" onNavigateDashboard={() => setScreen('dashboard')}>
       <DraftLobbyScreen
         user={user}
         currentDraft={currentDraft}
@@ -22762,12 +22791,14 @@ export default function PortfolioDuel() {
         onStartDraft={() => {}}
         onLeaveLobby={() => setScreen('dashboard')}
       />
+      </ErrorBoundary>
     );
   }
 
   // DRAFT ROOM SCREEN - Holographic War Room (Phase 5 Integration)
   if (screen === 'draftRoom') {
     return (
+      <ErrorBoundary name="Draft Room" onNavigateDashboard={() => setScreen('dashboard')}>
       <DraftRoomScreen
         containerStyle={containerStyle}
         draftState={draftState}
@@ -22787,6 +22818,7 @@ export default function PortfolioDuel() {
         getSectorColor={getSectorColor}
         setCurrentDraft={setCurrentDraft}
       />
+      </ErrorBoundary>
     );
   }
 
@@ -22796,16 +22828,19 @@ export default function PortfolioDuel() {
   // DRAFT HISTORY SCREEN - Phase 4
   if (screen === 'draftHistory') {
     return (
+      <ErrorBoundary name="Draft History" onNavigateDashboard={() => setScreen('dashboard')}>
       <DraftHistoryScreen
         user={user}
         onBack={() => setScreen('dashboard')}
       />
+      </ErrorBoundary>
     );
   }
 
   // DRAFT RESULTS SCREEN - Using Snake Draft Grid Layout (DraftCompleteScreen)
   if (screen === 'draftResults') {
     return (
+      <ErrorBoundary name="Draft Results" onNavigateDashboard={() => setScreen('dashboard')}>
       <DraftCompleteScreen
         containerStyle={containerStyle}
         currentDraft={currentDraft}
@@ -22816,6 +22851,7 @@ export default function PortfolioDuel() {
         }}
         onNavigate={setScreen}
       />
+      </ErrorBoundary>
     );
   }
 
@@ -22825,6 +22861,7 @@ export default function PortfolioDuel() {
   // DRAFT BATTLE VIEW SCREEN - Now using V2 (Altitude Map Redesign) as production
   if (screen === 'draftBattle') {
     return (
+      <ErrorBoundary name="Draft Battle" onNavigateDashboard={() => setScreen('dashboard')}>
       <DraftBattleScreenV2
         containerStyle={containerStyle}
         user={user}
@@ -22833,6 +22870,7 @@ export default function PortfolioDuel() {
         setScreen={setScreen}
         logger={logger}
       />
+      </ErrorBoundary>
     );
   }
 
@@ -22840,6 +22878,7 @@ export default function PortfolioDuel() {
   // Use 'draftBattleLegacy' to access the old design if needed
   if (screen === 'draftBattleLegacy') {
     return (
+      <ErrorBoundary name="Draft Battle" onNavigateDashboard={() => setScreen('dashboard')}>
       <DraftBattleScreen
         containerStyle={containerStyle}
         user={user}
@@ -22848,6 +22887,7 @@ export default function PortfolioDuel() {
         setScreen={setScreen}
         logger={logger}
       />
+      </ErrorBoundary>
     );
   }
 
@@ -22857,6 +22897,7 @@ export default function PortfolioDuel() {
   // FREE AGENCY SCREEN - V2 with Holographic War Room theme (Mobile + Desktop)
   if (screen === 'freeAgency') {
     return (
+      <ErrorBoundary name="Free Agency" onNavigateDashboard={() => setScreen('dashboard')}>
       <FreeAgencyScreenV2
         containerStyle={containerStyle}
         currentDraft={currentDraft}
@@ -22864,18 +22905,21 @@ export default function PortfolioDuel() {
         setScreen={setScreen}
         logger={logger}
       />
+      </ErrorBoundary>
     );
   }
 
   // Legacy Free Agency Screen (kept for backwards compatibility)
   if (screen === 'freeAgencyLegacy') {
     return (
+      <ErrorBoundary name="Free Agency" onNavigateDashboard={() => setScreen('dashboard')}>
       <FreeAgencyScreen
         containerStyle={containerStyle}
         currentDraft={currentDraft}
         user={user}
         onBack={() => setScreen('draftResults')}
       />
+      </ErrorBoundary>
     );
   }
 
@@ -22886,6 +22930,7 @@ export default function PortfolioDuel() {
   // BATTLE VIEW SCREEN - Extracted to BattleViewScreen component
   if (screen === 'battle' && currentBattle) {
     return (
+      <ErrorBoundary name="Battle View" onNavigateDashboard={() => setScreen('dashboard')}>
       <BattleViewScreen
         containerStyle={containerStyle}
         isDesktop={isDesktop}
@@ -22902,6 +22947,7 @@ export default function PortfolioDuel() {
         BaggerBombBattleViewConnectedV4={BaggerBombBattleViewConnectedV4}
         BaggerBombTrainingBattleViewV4={BaggerBombTrainingBattleViewV4}
       />
+      </ErrorBoundary>
     );
   }
 
@@ -22911,6 +22957,7 @@ export default function PortfolioDuel() {
   // PREVIOUS BATTLES SCREEN - Extracted to PreviousBattlesScreen component
   if (screen === 'previousBattles') {
     return (
+      <ErrorBoundary name="Previous Battles" onNavigateDashboard={() => setScreen('dashboard')}>
       <PreviousBattlesScreen
         containerStyle={containerStyle}
         isDesktop={isDesktop}
@@ -22927,6 +22974,7 @@ export default function PortfolioDuel() {
           setScreen('battle');
         }}
       />
+      </ErrorBoundary>
     );
   }
 
@@ -22936,6 +22984,7 @@ export default function PortfolioDuel() {
   // WINS SCREEN
   if (screen === 'wins') {
     return (
+      <ErrorBoundary name="Wins" onNavigateDashboard={() => setScreen('dashboard')}>
       <WinsScreen
         user={user}
         previousBattles={previousBattles}
@@ -22946,12 +22995,14 @@ export default function PortfolioDuel() {
         onViewBattle={(battle) => { setSelectedPreviousBattle(battle); setScreen('previousBattles'); }}
         onNavigate={setScreen}
       />
+      </ErrorBoundary>
     );
   }
 
   // LOSSES SCREEN
   if (screen === 'losses') {
     return (
+      <ErrorBoundary name="Losses" onNavigateDashboard={() => setScreen('dashboard')}>
       <LossesScreen
         user={user}
         previousBattles={previousBattles}
@@ -22962,12 +23013,14 @@ export default function PortfolioDuel() {
         onViewBattle={(battle) => { setSelectedPreviousBattle(battle); setScreen('previousBattles'); }}
         onNavigate={setScreen}
       />
+      </ErrorBoundary>
     );
   }
 
   // BATTLE HISTORY SCREEN - Extracted to BattleHistoryScreen component
   if (screen === 'battleHistory') {
     return (
+      <ErrorBoundary name="Battle History" onNavigateDashboard={() => setScreen('dashboard')}>
       <BattleHistoryScreen
         containerStyle={containerStyle}
         colors={colors}
@@ -22982,6 +23035,7 @@ export default function PortfolioDuel() {
         sendRematchRequest={sendRematchRequest}
         BattleHistoryCard={BattleHistoryCard}
       />
+      </ErrorBoundary>
     );
   }
 
@@ -22990,17 +23044,20 @@ export default function PortfolioDuel() {
   // PROFILE SCREEN - REDESIGNED
   if (screen === 'profile') {
     return (
+      <ErrorBoundary name="Profile" onNavigateDashboard={() => setScreen('dashboard')}>
       <ProfileScreen
         user={user}
         isDesktop={isDesktop}
         onBack={() => setScreen('dashboard')}
       />
+      </ErrorBoundary>
     );
   }
 
   // STONK OPTIONS ARENA V2
   if (screen === 'stonkOptionsArena') {
     return (
+      <ErrorBoundary name="Options Arena" onNavigateDashboard={() => setScreen('dashboard')}>
       <Suspense fallback={
         <div style={{
           minHeight: '100vh',
@@ -23021,6 +23078,7 @@ export default function PortfolioDuel() {
           user={user}
         />
       </Suspense>
+      </ErrorBoundary>
     );
   }
 
@@ -23038,6 +23096,7 @@ export default function PortfolioDuel() {
         top: screen === 'earningsGame' ? 'auto' : '-9999px',
         left: screen === 'earningsGame' ? 'auto' : '-9999px'
       }}>
+        <ErrorBoundary name="Earnings Game" onNavigateDashboard={() => setScreen('dashboard')}>
         <EarningsGameScreen
           user={user}
           onBack={() => setScreen('dashboard')}
@@ -23045,6 +23104,7 @@ export default function PortfolioDuel() {
           colors={colors}
           isDesktop={isDesktop}
         />
+        </ErrorBoundary>
       </div>
 
       {/* Only show default content when NOT on earningsGame */}

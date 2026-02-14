@@ -2,6 +2,7 @@
 // Endpoint: /api/crypto/prices?symbols=BTC,ETH,SOL
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
 
 export default async function handler(req, res) {
   // Apply security middleware (CORS, security headers, rate limiting, preflight)
@@ -10,9 +11,22 @@ export default async function handler(req, res) {
   }
 
   const { symbols } = req.query;
+  const noCache = req.query?.nocache === '1';
 
   if (!symbols) {
     return res.status(400).json({ error: 'Missing symbols parameter' });
+  }
+
+  const tier = CACHE_TIERS.PRICE;
+  const sortedSymbols = symbols.split(',').map(s => s.trim().toUpperCase()).sort().join(',');
+  const cacheKey = `crypto_prices_${sortedSymbols}`;
+
+  if (!noCache) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+      return res.status(200).json(cached);
+    }
   }
 
   const API_KEY = process.env.EODHD_API_KEY;
@@ -57,11 +71,17 @@ export default async function handler(req, res) {
 
     console.log('[API] Returning prices for:', Object.keys(prices).join(', '));
 
-    return res.status(200).json({
+    const responseData = {
       success: true,
       prices,
       count: Object.keys(prices).length
-    });
+    };
+
+    if (!noCache) {
+      setInCache(cacheKey, responseData, tier.memoryTTL);
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+    }
+    return res.status(200).json(responseData);
 
   } catch (error) {
     console.error('[API] Crypto prices error:', error.message);

@@ -126,8 +126,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     const hasDailyOpen = dailyOpen && Object.keys(dailyOpen).length > 0;
     const hasStarting = startingPrices && Object.keys(startingPrices).length > 0;
 
-    return hasDailyOpen ? dailyOpen : hasStarting ? startingPrices : {};
-  }, [battle, currentTradingDay]);
+    return hasDailyOpen ? dailyOpen : hasStarting ? startingPrices : currentPrices || {};
+  }, [battle, currentTradingDay, currentPrices]);
 
   // Free agents data
   const freeAgents = useMemo(() => {

@@ -7,6 +7,7 @@
 // Legacy SMA:     /api/stocks/prices?symbols=XLK&type=sma&period=50
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
 
 export default async function handler(req, res) {
   // Apply security middleware (CORS, security headers, rate limiting, preflight)
@@ -16,6 +17,7 @@ export default async function handler(req, res) {
   }
 
   const { symbols, type, days, period } = req.query;
+  const noCache = req.query?.nocache === '1';
 
   if (!symbols) {
     return res.status(400).json({ error: 'Missing symbols parameter' });
@@ -30,14 +32,14 @@ export default async function handler(req, res) {
   // Route based on request type
   switch (type) {
     case 'historical':
-      return handleHistoricalRequest(req, res, symbols, days, API_KEY);
+      return handleHistoricalRequest(req, res, symbols, days, API_KEY, noCache);
     case 'technical':
-      return handleTechnicalRequest(req, res, API_KEY);
+      return handleTechnicalRequest(req, res, API_KEY, null, noCache);
     case 'sma':
       // Legacy support - redirect to technical handler
-      return handleTechnicalRequest(req, res, API_KEY, 'sma');
+      return handleTechnicalRequest(req, res, API_KEY, 'sma', noCache);
     default:
-      return handleCurrentPrices(req, res, symbols, API_KEY);
+      return handleCurrentPrices(req, res, symbols, API_KEY, noCache);
   }
 }
 
@@ -45,7 +47,19 @@ export default async function handler(req, res) {
  * Handle current price requests
  * GET /api/stocks/prices?symbols=AAPL,MSFT,GOOGL
  */
-async function handleCurrentPrices(req, res, symbols, API_KEY) {
+async function handleCurrentPrices(req, res, symbols, API_KEY, noCache) {
+  const tier = CACHE_TIERS.PRICE;
+  const sortedSymbols = symbols.split(',').map(s => s.trim().toUpperCase()).sort().join(',');
+  const cacheKey = `stock_prices_${sortedSymbols}`;
+
+  if (!noCache) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+      return res.status(200).json(cached);
+    }
+  }
+
   try {
     const symbolList = symbols.split(',').map(s => `${s.trim()}.US`).join(',');
     const url = `https://eodhd.com/api/real-time/${symbolList}?api_token=${API_KEY}&fmt=json`;
@@ -100,13 +114,19 @@ async function handleCurrentPrices(req, res, symbols, API_KEY) {
       }
     });
 
-    return res.status(200).json({
+    const responseData = {
       success: true,
       prices,
       count: Object.keys(prices).length,
       dataTimestamp: oldestTimestamp ? new Date(oldestTimestamp * 1000).toISOString() : null,
       fetchedAt: new Date().toISOString()
-    });
+    };
+
+    if (!noCache) {
+      setInCache(cacheKey, responseData, tier.memoryTTL);
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+    }
+    return res.status(200).json(responseData);
 
   } catch (error) {
     console.error('[API] Stock prices error:', error.message);
@@ -121,10 +141,21 @@ async function handleCurrentPrices(req, res, symbols, API_KEY) {
  * Handle historical price requests
  * GET /api/stocks/prices?symbols=XLK&type=historical&days=180
  */
-async function handleHistoricalRequest(req, res, symbols, days, API_KEY) {
+async function handleHistoricalRequest(req, res, symbols, days, API_KEY, noCache) {
+  const tier = CACHE_TIERS.TECHNICAL;
+  const symbol = symbols.split(',')[0].trim().toUpperCase();
+  const daysNum = parseInt(days, 10) || 180;
+  const cacheKey = `stock_historical_${symbol}_${daysNum}`;
+
+  if (!noCache) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+      return res.status(200).json(cached);
+    }
+  }
+
   try {
-    const symbol = symbols.split(',')[0].trim().toUpperCase();
-    const daysNum = parseInt(days, 10) || 180;
 
     const endDate = new Date().toISOString().split('T')[0];
     const startDate = new Date(Date.now() - daysNum * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -148,14 +179,20 @@ async function handleHistoricalRequest(req, res, symbols, days, API_KEY) {
 
     console.log(`[API] Received ${data.length} data points for ${symbol}`);
 
-    return res.status(200).json({
+    const responseData = {
       success: true,
       symbol,
       data,
       count: data.length,
       from: startDate,
       to: endDate
-    });
+    };
+
+    if (!noCache) {
+      setInCache(cacheKey, responseData, tier.memoryTTL);
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+    }
+    return res.status(200).json(responseData);
 
   } catch (error) {
     console.error('[API] Historical error:', error.message);
@@ -173,7 +210,7 @@ async function handleHistoricalRequest(req, res, symbols, days, API_KEY) {
  *
  * Supported functions: rsi, macd, sma, ema, atr
  */
-async function handleTechnicalRequest(req, res, API_KEY, legacyFunction = null) {
+async function handleTechnicalRequest(req, res, API_KEY, legacyFunction = null, noCache = false) {
   const { symbols, period = '14' } = req.query;
   const fn = legacyFunction || req.query.function;
 
@@ -185,9 +222,20 @@ async function handleTechnicalRequest(req, res, API_KEY, legacyFunction = null) 
     return res.status(400).json({ error: 'Function required (rsi, macd, sma, ema, atr)' });
   }
 
+  const tier = CACHE_TIERS.TECHNICAL;
+  const symbol = symbols.split(',')[0].trim().toUpperCase();
+  const periodNum = parseInt(period, 10) || 14;
+  const cacheKey = `stock_technical_${symbol}_${fn.toLowerCase()}_${periodNum}`;
+
+  if (!noCache) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+      return res.status(200).json(cached);
+    }
+  }
+
   try {
-    const symbol = symbols.split(',')[0].trim().toUpperCase();
-    const periodNum = parseInt(period, 10) || 14;
 
     // Build URL based on function type
     let url;
@@ -273,6 +321,10 @@ async function handleTechnicalRequest(req, res, API_KEY, legacyFunction = null) 
       result.latestDate = latest.date;
     }
 
+    if (!noCache) {
+      setInCache(cacheKey, result, tier.memoryTTL);
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+    }
     return res.status(200).json(result);
 
   } catch (error) {

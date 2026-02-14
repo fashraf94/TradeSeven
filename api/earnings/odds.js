@@ -40,6 +40,7 @@
  */
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
 import {
   SECTOR_BEAT_RATES,
   DEFAULT_BEAT_RATE,
@@ -70,6 +71,7 @@ export default async function handler(req, res) {
   }
 
   const { symbol, sector } = req.query;
+  const noCache = req.query?.nocache === '1';
 
   if (!symbol) {
     return res.status(400).json({ error: 'Symbol required' });
@@ -79,6 +81,16 @@ export default async function handler(req, res) {
   if (!apiKey) {
     console.error('[Odds] EODHD_API_KEY not configured');
     return res.status(500).json({ error: 'API key not configured' });
+  }
+
+  // Check cache before doing any work
+  const cacheKey = `earnings_odds_${symbol.toUpperCase()}_${sector || 'default'}`;
+  if (!noCache) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      setCacheHeaders(res, CACHE_TIERS.EARNINGS.sMaxAge, CACHE_TIERS.EARNINGS.staleWhileRevalidate);
+      return res.status(200).json(cached);
+    }
   }
 
   const upperSymbol = symbol.toUpperCase();
@@ -232,7 +244,7 @@ export default async function handler(req, res) {
 
     console.log(`[Odds] ${upperSymbol}: Final probability = ${result.probabilityPercent}% (confidence: ${result.confidence})`);
 
-    return res.status(200).json({
+    const responseData = {
       success: true,
       symbol: upperSymbol,
       ...result,
@@ -247,7 +259,11 @@ export default async function handler(req, res) {
         sector: sector || 'default'
       },
       calculatedAt: new Date().toISOString()
-    });
+    };
+
+    setInCache(cacheKey, responseData, CACHE_TIERS.EARNINGS.memoryTTL);
+    setCacheHeaders(res, CACHE_TIERS.EARNINGS.sMaxAge, CACHE_TIERS.EARNINGS.staleWhileRevalidate);
+    return res.status(200).json(responseData);
 
   } catch (error) {
     console.error(`[Odds] Error for ${upperSymbol}:`, error);

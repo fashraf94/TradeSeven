@@ -3,6 +3,7 @@
 // No external API for macro events - only EODHD for earnings (separate endpoint)
 
 import { applySecurityMiddleware } from './_utils/security.js';
+import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from './_utils/serverCache.js';
 
 export default async function handler(req, res) {
   // Apply security middleware (CORS, security headers, rate limiting, preflight)
@@ -12,9 +13,21 @@ export default async function handler(req, res) {
   }
 
   const { from, to } = req.query;
+  const noCache = req.query?.nocache === '1';
 
   if (!from || !to) {
     return res.status(400).json({ error: 'Missing from/to date parameters' });
+  }
+
+  const tier = CACHE_TIERS.CALENDAR;
+  const cacheKey = `week_ahead_events_${from}_${to}`;
+
+  if (!noCache) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+      return res.status(200).json(cached);
+    }
   }
 
   try {
@@ -33,10 +46,15 @@ export default async function handler(req, res) {
 
     console.log(`[Week Ahead] Found ${events.length} static events for ${from} to ${to}`);
 
-    res.status(200).json({
+    const responseData = {
       events,
       meta: { count: events.length, dateRange: { from, to }, source: 'static' }
-    });
+    };
+    if (!noCache) {
+      setInCache(cacheKey, responseData, tier.memoryTTL);
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+    }
+    res.status(200).json(responseData);
 
   } catch (error) {
     console.error('[Week Ahead] Error:', error);

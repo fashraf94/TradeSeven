@@ -3,6 +3,7 @@
 // Fetches upcoming earnings from EODHD calendar API
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
 
 export default async function handler(req, res) {
   // Apply security middleware
@@ -11,6 +12,7 @@ export default async function handler(req, res) {
   }
 
   const { days = 14 } = req.query;
+  const noCache = req.query?.nocache === '1';
   const daysInt = Math.min(parseInt(days) || 14, 30); // Max 30 days
 
   const API_KEY = process.env.EODHD_API_KEY;
@@ -18,6 +20,18 @@ export default async function handler(req, res) {
   if (!API_KEY) {
     console.error('[EarningsCalendar] EODHD_API_KEY not configured');
     return res.status(500).json({ error: 'API not configured' });
+  }
+
+  // Check cache
+  const tier = CACHE_TIERS.TECHNICAL;
+  const cacheKey = `earnings_calendar_${daysInt}`;
+  if (!noCache) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      console.log(`[EarningsCalendar] Cache hit for days=${daysInt}`);
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+      return res.status(200).json(cached);
+    }
   }
 
   try {
@@ -83,16 +97,19 @@ export default async function handler(req, res) {
 
     console.log(`[EarningsCalendar] Filtered US earnings: ${events.length}`);
 
-    // Cache for 1 hour
-    res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=7200');
-
-    return res.status(200).json({
+    const responseData = {
       success: true,
       fromDate,
       toDate,
       count: events.length,
       events
-    });
+    };
+
+    if (!noCache) {
+      setInCache(cacheKey, responseData, tier.memoryTTL);
+    }
+    setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+    return res.status(200).json(responseData);
 
   } catch (error) {
     console.error('[EarningsCalendar] Fetch error:', error.message);

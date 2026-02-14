@@ -2324,6 +2324,7 @@ export async function createTrainingBattle(battleData) {
       _v: 2,
       type: 'baggerbomb_training',
       status: 'active',
+      userId: String(battleData.userId || 'anonymous'),
 
       creator: {
         uid: String(battleData.userId || 'anonymous'),

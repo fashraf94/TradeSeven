@@ -2,6 +2,7 @@
 // Endpoint: /api/crypto/metrics?symbol=BTC
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
 
 export default async function handler(req, res) {
   // Apply security middleware (CORS, security headers, rate limiting, preflight)
@@ -10,6 +11,7 @@ export default async function handler(req, res) {
   }
 
   const { symbol } = req.query;
+  const noCache = req.query?.nocache === '1';
 
   if (!symbol) {
     return res.status(400).json({ error: 'Missing symbol parameter' });
@@ -20,6 +22,17 @@ export default async function handler(req, res) {
   if (!API_KEY) {
     console.error('EODHD_API_KEY not configured');
     return res.status(500).json({ error: 'API not configured' });
+  }
+
+  const cacheKey = `crypto_metrics_${symbol.toUpperCase()}`;
+  const tier = CACHE_TIERS.TECHNICAL;
+
+  if (!noCache) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+      return res.status(200).json(cached);
+    }
   }
 
   try {
@@ -127,10 +140,12 @@ export default async function handler(req, res) {
     };
 
     console.log(`[API] Returning crypto metrics for ${upperSymbol}`);
-    return res.status(200).json({
-      success: true,
-      data: result
-    });
+    const responseData = { success: true, data: result };
+    if (!noCache) {
+      setInCache(cacheKey, responseData, tier.memoryTTL);
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+    }
+    return res.status(200).json(responseData);
 
   } catch (error) {
     console.error('[API] Crypto metrics error:', error.message);

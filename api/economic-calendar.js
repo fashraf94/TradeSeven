@@ -3,6 +3,7 @@
 // Called by frontend ResearchLandingPage to get enriched event data
 
 import { applySecurityMiddleware } from './_utils/security.js';
+import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from './_utils/serverCache.js';
 
 // Firebase Admin lazy init
 let firestoreInstance = null;
@@ -35,23 +36,45 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const noCache = req.query?.nocache === '1';
+  const tier = CACHE_TIERS.CALENDAR;
+  const cacheKey = 'economic_calendar';
+
+  if (!noCache) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+      return res.status(200).json(cached);
+    }
+  }
+
   try {
     const db = await getFirestore();
     const doc = await db.collection('economicCalendar').doc('latest').get();
 
     if (!doc.exists) {
-      return res.status(200).json({
+      const emptyResponse = {
         success: true,
         data: { events: [], weekOf: null, weekSummary: '', updatedAt: null },
-      });
+      };
+      if (!noCache) {
+        setInCache(cacheKey, emptyResponse, tier.memoryTTL);
+        setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+      }
+      return res.status(200).json(emptyResponse);
     }
 
     const { events, weekOf, weekSummary, updatedAt } = doc.data();
 
-    return res.status(200).json({
+    const responseData = {
       success: true,
       data: { events: events || [], weekOf, weekSummary: weekSummary || '', updatedAt },
-    });
+    };
+    if (!noCache) {
+      setInCache(cacheKey, responseData, tier.memoryTTL);
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+    }
+    return res.status(200).json(responseData);
   } catch (error) {
     console.error('[EconomicCalendar] Error:', error.message);
     return res.status(200).json({ success: false, error: error.message });

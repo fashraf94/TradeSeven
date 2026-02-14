@@ -3,6 +3,7 @@
 // Powers the mobile Research Intelligence Hub
 
 import { applySecurityMiddleware } from './_utils/security.js';
+import { getFromCache, setInCache, CACHE_TIERS } from './_utils/serverCache.js';
 
 const SYSTEM_PROMPT = `You are the MarketClash Research Intelligence system. You produce STRUCTURED JSON intelligence for a competitive trading game app. Your output powers two views:
 
@@ -116,10 +117,20 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+  const noCache = req.query?.nocache === '1';
 
   const API_KEY = process.env.CLAUDE_API_KEY;
   if (!API_KEY) {
     return res.status(500).json({ success: false, error: 'AI service not configured' });
+  }
+
+  // Check memory cache
+  const cacheKey = `research_intel_v2`;
+  if (!noCache) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      return res.status(200).json(cached);
+    }
   }
 
   try {
@@ -157,7 +168,9 @@ export default async function handler(req, res) {
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
-    return res.status(200).json({ success: true, data: parsed });
+    const responseData = { success: true, data: parsed };
+    setInCache(cacheKey, responseData, CACHE_TIERS.AI_INTEL.memoryTTL);
+    return res.status(200).json(responseData);
 
   } catch (error) {
     console.error('[Research Intel] Error:', error.message);

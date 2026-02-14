@@ -2,6 +2,7 @@
 // Fetches earnings only for stocks tracked in MarketClash
 
 import { applySecurityMiddleware } from './_utils/security.js';
+import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from './_utils/serverCache.js';
 
 const TRACKED_STOCKS = [
   'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA',
@@ -54,6 +55,7 @@ export default async function handler(req, res) {
 
   const API_KEY = process.env.EODHD_API_KEY;
   const { from, to } = req.query;
+  const noCache = req.query?.nocache === '1';
 
   // Check if API key exists
   if (!API_KEY) {
@@ -63,6 +65,17 @@ export default async function handler(req, res) {
 
   if (!from || !to) {
     return res.status(400).json({ error: 'Missing from/to date parameters' });
+  }
+
+  const tier = CACHE_TIERS.CALENDAR;
+  const cacheKey = `week_ahead_earnings_${from}_${to}`;
+
+  if (!noCache) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+      return res.status(200).json(cached);
+    }
   }
 
   try {
@@ -150,6 +163,10 @@ export default async function handler(req, res) {
     earnings.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
     console.log(`[Earnings] Returning ${earnings.length} earnings`);
+    if (!noCache) {
+      setInCache(cacheKey, earnings, tier.memoryTTL);
+      setCacheHeaders(res, tier.sMaxAge, tier.staleWhileRevalidate);
+    }
     res.status(200).json(earnings);
 
   } catch (error) {
