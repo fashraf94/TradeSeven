@@ -160,12 +160,21 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
 
       if (isHourlyFallback) {
         // Hourly fallback: filter to only the most recent trading day
-        const lastTrading = new Date();
+        // Use ET date to determine "today" — not the server's local timezone
+        const nowET = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+        const lastTrading = new Date(nowET); // parsed as local date
         const dow = lastTrading.getDay();
         if (dow === 0) lastTrading.setDate(lastTrading.getDate() - 2); // Sun → Fri
         if (dow === 6) lastTrading.setDate(lastTrading.getDate() - 1); // Sat → Fri
-        lastTrading.setHours(0, 0, 0, 0);
-        const dayStartUnix = Math.floor(lastTrading.getTime() / 1000);
+
+        // Get the ET date string (YYYY-MM-DD) for matching
+        const etDateStr = lastTrading.toISOString().slice(0, 10);
+
+        // Helper: get the ET date of a unix timestamp as YYYY-MM-DD
+        const getETDate = (unixTs) => {
+          const d = new Date(unixTs * 1000);
+          return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); // en-CA → YYYY-MM-DD
+        };
 
         // Helper: check if a candle falls within US market hours (9:30-16:00 ET)
         const isMarketHours = (unixTs) => {
@@ -181,7 +190,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
 
         let todayCandles = reversed.filter(c => {
           const t = c.timestamp || Math.floor(new Date(c.date || c.datetime || 0).getTime() / 1000);
-          return t >= dayStartUnix && isMarketHours(t);
+          return getETDate(t) === etDateStr && isMarketHours(t);
         });
 
         // If empty (holiday), try the previous trading day
@@ -190,13 +199,19 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
           prev.setDate(prev.getDate() - 1);
           if (prev.getDay() === 0) prev.setDate(prev.getDate() - 2);
           if (prev.getDay() === 6) prev.setDate(prev.getDate() - 1);
-          const prevUnix = Math.floor(prev.getTime() / 1000);
-          const nextDayUnix = prevUnix + 86400;
+          const prevDateStr = prev.toISOString().slice(0, 10);
           todayCandles = reversed.filter(c => {
             const t = c.timestamp || Math.floor(new Date(c.date || c.datetime || 0).getTime() / 1000);
-            return t >= prevUnix && t < nextDayUnix && isMarketHours(t);
+            return getETDate(t) === prevDateStr && isMarketHours(t);
           });
         }
+
+        console.log('[Spectate] Hourly fallback — target ET date:', etDateStr,
+          'candles found:', todayCandles.length,
+          todayCandles.map(c => {
+            const t = c.timestamp || Math.floor(new Date(c.date || c.datetime || 0).getTime() / 1000);
+            return new Date(t * 1000).toLocaleString('en-US', { timeZone: 'America/New_York' });
+          }));
 
         result = todayCandles;
       } else {

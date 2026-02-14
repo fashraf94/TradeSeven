@@ -111,6 +111,18 @@ const StockChart = ({
 
     const accentColor = isBombView ? 'rgba(245, 158, 11, ' : 'rgba(0, 255, 255, ';
 
+    // For intraday bomb/spectate views, format times in ET
+    const useETTimezone = isBombView;
+    const etTimeFormatter = (timestamp) => {
+      const date = new Date(timestamp * 1000);
+      return date.toLocaleTimeString('en-US', {
+        timeZone: 'America/New_York',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      });
+    };
+
     const chart = createChart(container, {
       layout: {
         background: { type: 'solid', color: HOLO_COLORS.bgDeep },
@@ -125,10 +137,18 @@ const StockChart = ({
         vertLine: { color: accentColor + '0.3)', width: 1, style: 2, labelBackgroundColor: HOLO_COLORS.bgDeep },
         horzLine: { color: accentColor + '0.3)', width: 1, style: 2, labelBackgroundColor: HOLO_COLORS.bgDeep },
       },
+      ...(useETTimezone ? {
+        localization: {
+          timeFormatter: etTimeFormatter,
+        },
+      } : {}),
       timeScale: {
         borderColor: accentColor + '0.15)',
         timeVisible: timeframe === '1D' || isBombView,
         secondsVisible: false,
+        ...(useETTimezone ? {
+          tickMarkFormatter: (time) => etTimeFormatter(time),
+        } : {}),
       },
       rightPriceScale: {
         borderColor: accentColor + '0.15)',
@@ -340,8 +360,13 @@ const StockChart = ({
       // Spectate: wider candles, right margin, fit all returned candles
       // barSpacing 12+ makes hourly fallback candles large and readable
       chart.timeScale().applyOptions({ barSpacing: 12, rightOffset: 3 });
-      chart.timeScale().fitContent();
-      chart.timeScale().scrollToRealTime();
+      // Wait a frame for chart to process data before fitting
+      requestAnimationFrame(() => {
+        if (chartRef.current) {
+          chart.timeScale().fitContent();
+          chart.timeScale().scrollToRealTime();
+        }
+      });
     } else {
       chart.timeScale().fitContent();
     }
