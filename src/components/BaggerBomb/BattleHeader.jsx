@@ -280,6 +280,9 @@ export default function BattleHeader({
   battleVersion = 3,
   freeAgentConfig = {},
 }) {
+  // Destructure V4 swap props used locally (rest is spread to FreeAgentBar)
+  const { swapMode, onCancelSwapMode, onEnterSwapMode, swapsRemaining } = freeAgentConfig;
+
   // Determine who is leading
   const playerLeading = player.totalPoints > opponent.totalPoints;
   const opponentLeading = opponent.totalPoints > player.totalPoints;
