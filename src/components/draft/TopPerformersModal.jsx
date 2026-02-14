@@ -61,6 +61,8 @@ const TopPerformersModal = ({
             // Price data
             price: asset.currentPrice || asset.price,
             lockedPrice: asset.lockedPrice,
+            baselinePrice: asset.baselinePrice,
+            previousClose: asset.previousClose,
             currentPrice: asset.currentPrice,
             owners: existing?.owners || [],
           });

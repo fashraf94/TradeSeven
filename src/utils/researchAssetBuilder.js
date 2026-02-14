@@ -1,6 +1,6 @@
 // researchAssetBuilder.js — Normalizes asset data into the shape expected by AssetResearchModal.
-// Replaces 5 duplicated inline object-building patterns across:
-//   BaggerBombBattleView, FreeAgentBar, TopPerformersModal, FreeAgencyMobile, FreeAgencyDesktop
+// Replaces duplicated inline object-building patterns across:
+//   BaggerBombBattleView, FreeAgentBar, TopPerformersModal, FreeAgencyMobile, FreeAgencyDesktop, CommandConsole
 
 /** Default threshold when no volatility data is available */
 export const DEFAULT_THRESHOLD = 2.5;
@@ -40,13 +40,31 @@ export function buildResearchAsset(asset, options = {}) {
   const sym = asset.symbol;
 
   // --- Price resolution ---
+  // Handles: livePrices map, currentPrice (Snake Draft/standings), price (BaggerBomb),
+  //          latestPrice, close, lastPrice (various API shapes)
   const liveEntry = lookup(livePrices, sym);
   const livePrice = typeof liveEntry === 'object' ? liveEntry?.price : liveEntry;
-  const price = livePrice || asset.currentPrice || asset.price || 0;
+  const price = livePrice
+    || asset.currentPrice
+    || asset.price
+    || asset.latestPrice
+    || asset.close
+    || asset.lastPrice
+    || 0;
 
   // --- Percent change resolution ---
+  // Handles: explicit override, livePrices percentChange, priceChange, gain (Snake Draft),
+  //          percentChange, dailyChange (FreeAgency), gainPercent, changePercent
   const livePct = typeof liveEntry === 'object' ? liveEntry?.percentChange : undefined;
-  const pctChange = percentChange ?? livePct ?? asset.priceChange ?? asset.gain ?? asset.percentChange ?? 0;
+  const pctChange = percentChange
+    ?? livePct
+    ?? asset.priceChange
+    ?? asset.gain
+    ?? asset.percentChange
+    ?? asset.dailyChange
+    ?? asset.gainPercent
+    ?? asset.changePercent
+    ?? 0;
 
   // --- Threshold resolution ---
   const thresholdEntry = lookup(thresholds, sym);
@@ -56,9 +74,13 @@ export function buildResearchAsset(asset, options = {}) {
     || (useDefaultThreshold ? DEFAULT_THRESHOLD : null);
 
   // --- Locked / baseline price resolution ---
+  // Handles: openPrices map, startingPrices map, lockedPrice (draft-time),
+  //          baselinePrice (Snake Draft previousClose), previousClose, startPrice
   const lockedPrice = lookup(openPrices, sym)
     || lookup(startingPrices, sym)
     || asset.lockedPrice
+    || asset.baselinePrice
+    || asset.previousClose
     || asset.startPrice
     || null;
 
