@@ -79,9 +79,10 @@ function getSpectateTimeRange(isCrypto) {
   if (targetDow === 0) targetET.setUTCDate(targetET.getUTCDate() - 2); // Sun → Fri
   if (targetDow === 6) targetET.setUTCDate(targetET.getUTCDate() - 1); // Sat → Fri
 
-  // 3:00 PM and 4:00 PM ET on target day (in ET-as-UTC representation)
+  // Full trading session 9:30 AM – 4:00 PM ET on last trading day
+  // (widened from 3-4 PM — EODHD may not retain 1m data for narrow after-hours windows)
   const fromET = new Date(targetET);
-  fromET.setUTCHours(15, 0, 0, 0);
+  fromET.setUTCHours(9, 30, 0, 0);
   const toET = new Date(targetET);
   toET.setUTCHours(16, 0, 0, 0);
 
@@ -188,6 +189,9 @@ export default async function handler(req, res) {
       let intradayUrl = `https://eodhd.com/api/intraday/${eohdSymbol}?api_token=${API_KEY}&fmt=json&interval=${config.interval}&from=${intradayFromTs}`;
       if (intradayToTs) intradayUrl += `&to=${intradayToTs}`;
       console.log(`[API] Fetching intraday from: ${intradayUrl.replace(API_KEY, 'HIDDEN')}`);
+      if (timeframe === '1m') {
+        console.log(`[API] 1m from/to: { from: ${intradayFromTs}, to: ${intradayToTs}, fromDate: ${new Date(intradayFromTs * 1000).toISOString()}, toDate: ${intradayToTs ? new Date(intradayToTs * 1000).toISOString() : 'null'} }`);
+      }
 
       const response = await fetch(intradayUrl);
 
@@ -216,9 +220,41 @@ export default async function handler(req, res) {
         // Check if intraday data is valid and non-empty
         if (!Array.isArray(intradayData) || intradayData.length === 0) {
           if (timeframe === '1m') {
-            // Don't fall back to daily for 1m — daily candles are useless for spectate
-            console.warn(`[API] Intraday 1m data empty for ${upperSymbol}, no fallback`);
-            data = [];
+            // 1m empty — try 5m as server-side fallback
+            console.warn(`[API] Intraday 1m data empty for ${upperSymbol}, trying 5m fallback`);
+            const url5m = `https://eodhd.com/api/intraday/${eohdSymbol}?api_token=${API_KEY}&fmt=json&interval=5m&from=${intradayFromTs}${intradayToTs ? `&to=${intradayToTs}` : ''}`;
+            try {
+              const resp5m = await fetch(url5m);
+              const data5m = resp5m.ok ? await resp5m.json() : [];
+              if (Array.isArray(data5m) && data5m.length > 0) {
+                console.log(`[API] 5m fallback returned ${data5m.length} candles for ${upperSymbol}`);
+                // Use intradayData variable to proceed through the transform pipeline below
+                // by reassigning and letting the code fall through to the transform block
+                data = data5m
+                  .filter(c => c && c.timestamp != null && c.open != null && c.high != null && c.low != null && c.close != null)
+                  .map(c => {
+                    const dt = new Date(c.timestamp * 1000);
+                    return {
+                      date: dt.toISOString(),
+                      datetime: dt.toISOString(),
+                      timestamp: c.timestamp,
+                      open: parseFloat(c.open) || 0,
+                      high: parseFloat(c.high) || 0,
+                      low: parseFloat(c.low) || 0,
+                      close: parseFloat(c.close) || 0,
+                      volume: parseInt(c.volume, 10) || 0
+                    };
+                  })
+                  .sort((a, b) => b.timestamp - a.timestamp);
+                fallbackMessage = '5-minute data (1-minute not available)';
+              } else {
+                console.warn(`[API] 5m fallback also empty for ${upperSymbol}`);
+                data = [];
+              }
+            } catch (e5m) {
+              console.warn(`[API] 5m fallback error for ${upperSymbol}:`, e5m.message);
+              data = [];
+            }
           } else {
             console.warn(`[API] Intraday data empty or invalid for ${upperSymbol}, falling back to daily`);
             actualTimeframe = '1d';
@@ -268,10 +304,25 @@ export default async function handler(req, res) {
             console.log('[API] Processed intraday sample:', JSON.stringify(data[0], null, 2));
           }
 
-          // If all candles were filtered out, fall back to daily (skip for 1m)
+          // If all candles were filtered out, fall back to daily (try 5m for 1m first)
           if (data.length === 0) {
             if (timeframe === '1m') {
-              console.warn(`[API] All 1m candles filtered out for ${upperSymbol}, no fallback`);
+              console.warn(`[API] All 1m candles filtered out for ${upperSymbol}, trying 5m fallback`);
+              try {
+                const url5m = `https://eodhd.com/api/intraday/${eohdSymbol}?api_token=${API_KEY}&fmt=json&interval=5m&from=${intradayFromTs}${intradayToTs ? `&to=${intradayToTs}` : ''}`;
+                const resp5m = await fetch(url5m);
+                const data5m = resp5m.ok ? await resp5m.json() : [];
+                if (Array.isArray(data5m) && data5m.length > 0) {
+                  data = data5m
+                    .filter(c => c && c.timestamp != null && c.open != null && c.high != null && c.low != null && c.close != null)
+                    .map(c => {
+                      const dt = new Date(c.timestamp * 1000);
+                      return { date: dt.toISOString(), datetime: dt.toISOString(), timestamp: c.timestamp, open: parseFloat(c.open) || 0, high: parseFloat(c.high) || 0, low: parseFloat(c.low) || 0, close: parseFloat(c.close) || 0, volume: parseInt(c.volume, 10) || 0 };
+                    })
+                    .sort((a, b) => b.timestamp - a.timestamp);
+                  fallbackMessage = '5-minute data (1-minute not available)';
+                }
+              } catch { /* 5m fallback failed, data stays [] */ }
             } else {
               console.warn(`[API] All intraday candles had null values, falling back to daily`);
               actualTimeframe = '1d';

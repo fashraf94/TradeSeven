@@ -58,8 +58,22 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
       .then(data => {
         if (thisRequest.aborted) return;
         if (!data || data.length === 0) {
-          setError('No historical data available');
-          setRawData(null);
+          if (isSpectate) {
+            // Spectate fallback: use cached 1h bomb data if available
+            const bombCacheKey = `${symbol}_1h_bomb`;
+            const cachedBomb = cacheRef.current[bombCacheKey];
+            if (cachedBomb && cachedBomb.length > 0) {
+              console.log('[useResearchData] Spectate 1m empty, falling back to cached 1h bomb data');
+              setRawData(cachedBomb);
+              setError(null);
+            } else {
+              setError('1-minute data not available — try during market hours (9:30 AM – 4:00 PM ET)');
+              setRawData(null);
+            }
+          } else {
+            setError('No historical data available');
+            setRawData(null);
+          }
         } else {
           if (!isSpectate) cacheRef.current[cacheKey] = data;
           setRawData(data);
@@ -81,21 +95,38 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
   }, [symbol, apiTimeframe, isBomb, isSpectate]);
 
   // Auto-refresh spectate mode every 15 seconds
+  // Guard: stop polling after 3 consecutive empty responses (EODHD has no 1m data)
+  const emptyCountRef = useRef(0);
   useEffect(() => {
     if (spectateRefreshRef.current) {
       clearInterval(spectateRefreshRef.current);
       spectateRefreshRef.current = null;
     }
-    if (!isSpectate || !symbol) return;
+    if (!isSpectate || !symbol) {
+      emptyCountRef.current = 0;
+      return;
+    }
 
+    emptyCountRef.current = 0; // Reset on fresh spectate entry
     spectateRefreshRef.current = setInterval(() => {
+      if (emptyCountRef.current >= 3) {
+        console.log('[useResearchData] Spectate: stopped polling after 3 empty responses');
+        clearInterval(spectateRefreshRef.current);
+        spectateRefreshRef.current = null;
+        return;
+      }
       fetchHistoricalOHLCV(symbol, '1m', { days: 1 })
         .then(data => {
           if (data && data.length > 0) {
+            emptyCountRef.current = 0;
             setRawData(data);
+          } else {
+            emptyCountRef.current++;
           }
         })
-        .catch(() => { /* silent retry on next interval */ });
+        .catch(() => {
+          emptyCountRef.current++;
+        });
     }, 15000);
 
     return () => {

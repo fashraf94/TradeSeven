@@ -606,6 +606,25 @@ const StockChart = ({
           </button>
         )}
 
+        {/* Spectate mode: empty data message */}
+        {isSpectateView && chartData.length === 0 && (
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            color: '#a0a0a0',
+            fontSize: '14px',
+            textAlign: 'center',
+            zIndex: 5,
+          }}>
+            <div>1-minute data not available after market hours</div>
+            <div style={{ fontSize: '12px', marginTop: '4px', color: '#6e7681' }}>
+              Spectate mode is available during market hours (9:30 AM – 4:00 PM ET)
+            </div>
+          </div>
+        )}
+
         {/* Distance-to-next-level indicator (bomb/spectate view) */}
         {isBombView && (nearestLevel.above || nearestLevel.below) && (() => {
           const above = nearestLevel.above;
