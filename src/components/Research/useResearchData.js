@@ -146,8 +146,51 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
 
     let result;
     if (timeframe === 'spectate') {
-      // Spectate view: last ~60 minutes of 1-minute candles
-      result = reversed.slice(-60);
+      // Detect if data is 1-minute (real) or 1-hour (fallback from bomb cache)
+      // 1m data has >20 candles in a single day; 1h has ~7
+      const sample = reversed[0];
+      const sampleDate = sample?.date || sample?.datetime || '';
+      const isHourlyFallback = reversed.length > 10 && (() => {
+        // If two adjacent candles are ~1 hour apart, it's hourly data
+        if (reversed.length < 2) return false;
+        const t0 = reversed[0]?.timestamp || Math.floor(new Date(reversed[0]?.date || reversed[0]?.datetime || 0).getTime() / 1000);
+        const t1 = reversed[1]?.timestamp || Math.floor(new Date(reversed[1]?.date || reversed[1]?.datetime || 0).getTime() / 1000);
+        return Math.abs(t1 - t0) >= 1800; // >30 min gap = hourly data
+      })();
+
+      if (isHourlyFallback) {
+        // Hourly fallback: filter to only the most recent trading day
+        const lastTrading = new Date();
+        const dow = lastTrading.getDay();
+        if (dow === 0) lastTrading.setDate(lastTrading.getDate() - 2); // Sun → Fri
+        if (dow === 6) lastTrading.setDate(lastTrading.getDate() - 1); // Sat → Fri
+        lastTrading.setHours(0, 0, 0, 0);
+        const dayStartUnix = Math.floor(lastTrading.getTime() / 1000);
+
+        let todayCandles = reversed.filter(c => {
+          const t = c.timestamp || Math.floor(new Date(c.date || c.datetime || 0).getTime() / 1000);
+          return t >= dayStartUnix;
+        });
+
+        // If empty (holiday), try the previous trading day
+        if (todayCandles.length === 0) {
+          const prev = new Date(lastTrading);
+          prev.setDate(prev.getDate() - 1);
+          if (prev.getDay() === 0) prev.setDate(prev.getDate() - 2);
+          if (prev.getDay() === 6) prev.setDate(prev.getDate() - 1);
+          const prevUnix = Math.floor(prev.getTime() / 1000);
+          const nextDayUnix = prevUnix + 86400;
+          todayCandles = reversed.filter(c => {
+            const t = c.timestamp || Math.floor(new Date(c.date || c.datetime || 0).getTime() / 1000);
+            return t >= prevUnix && t < nextDayUnix;
+          });
+        }
+
+        result = todayCandles;
+      } else {
+        // Real 1m data: last ~60 candles
+        result = reversed.slice(-60);
+      }
     } else if (timeframe === 'bomb') {
       // Bomb view: all hourly candles (~140 for 20 trading days)
       result = reversed;

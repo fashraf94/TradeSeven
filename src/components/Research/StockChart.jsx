@@ -338,7 +338,8 @@ const StockChart = ({
 
     if (isSpectateView) {
       // Spectate: wider candles, right margin, fit all returned candles
-      chart.timeScale().applyOptions({ barSpacing: 8, rightOffset: 5 });
+      // barSpacing 12+ makes hourly fallback candles large and readable
+      chart.timeScale().applyOptions({ barSpacing: 12, rightOffset: 3 });
       chart.timeScale().fitContent();
       chart.timeScale().scrollToRealTime();
     } else {
