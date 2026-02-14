@@ -261,6 +261,9 @@ export function calculateNearestLevel(currentPrice, bombLevels) {
   let nearestBelow = null;
 
   bombLevels.forEach(level => {
+    // Skip baseline — it's a reference point, not an actionable level
+    if (level.tier === 'baseline') return;
+
     const distance = level.price - currentPrice;
     const pctAway = (distance / currentPrice) * 100;
 

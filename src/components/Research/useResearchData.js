@@ -167,9 +167,21 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
         lastTrading.setHours(0, 0, 0, 0);
         const dayStartUnix = Math.floor(lastTrading.getTime() / 1000);
 
+        // Helper: check if a candle falls within US market hours (9:30-16:00 ET)
+        const isMarketHours = (unixTs) => {
+          const d = new Date(unixTs * 1000);
+          const etStr = d.toLocaleString('en-US', {
+            timeZone: 'America/New_York',
+            hour: 'numeric', minute: 'numeric', hour12: false
+          });
+          const [h, m] = etStr.split(':').map(Number);
+          const mins = h * 60 + m;
+          return mins >= 570 && mins <= 960; // 9:30 AM (570) to 4:00 PM (960)
+        };
+
         let todayCandles = reversed.filter(c => {
           const t = c.timestamp || Math.floor(new Date(c.date || c.datetime || 0).getTime() / 1000);
-          return t >= dayStartUnix;
+          return t >= dayStartUnix && isMarketHours(t);
         });
 
         // If empty (holiday), try the previous trading day
@@ -182,7 +194,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
           const nextDayUnix = prevUnix + 86400;
           todayCandles = reversed.filter(c => {
             const t = c.timestamp || Math.floor(new Date(c.date || c.datetime || 0).getTime() / 1000);
-            return t >= prevUnix && t < nextDayUnix;
+            return t >= prevUnix && t < nextDayUnix && isMarketHours(t);
           });
         }
 
