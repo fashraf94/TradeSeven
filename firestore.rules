@@ -158,6 +158,19 @@ service cloud.firestore {
 
 
     // =============================================
+    // ERROR LOGGING
+    // Write-only — clients can create error logs, nobody reads via client
+    // =============================================
+
+    // Error logs — written by ErrorBoundary on render crashes
+    match /errorLogs/{logId} {
+      allow read: if false;
+      allow create: if true;
+      allow update, delete: if false;
+    }
+
+
+    // =============================================
     // CATCH-ALL: Deny everything else
     // Any new collections must be explicitly added above
     // =============================================

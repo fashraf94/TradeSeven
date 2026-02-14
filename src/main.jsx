@@ -7,6 +7,7 @@ import './styles/holographic.css'
 import App from './App.jsx'
 import { Analytics } from '@vercel/analytics/react';
 import { UserProvider } from './contexts';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Initialize Firebase on app startup
 console.log('Loading Firebase...');
@@ -19,9 +20,11 @@ console.log('Debug utilities loaded');
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <UserProvider>
-      <App />
-    </UserProvider>
+    <ErrorBoundary name="MarketClash App">
+      <UserProvider>
+        <App />
+      </UserProvider>
+    </ErrorBoundary>
     <Analytics />
   </StrictMode>,
 )
