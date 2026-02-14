@@ -11,11 +11,11 @@ export const isValidNumber = (val) => {
 };
 
 /**
- * Convert various time formats to what lightweight-charts expects:
- * - Unix timestamp in SECONDS for intraday
- * - 'YYYY-MM-DD' string for daily data
+ * Convert various time formats to Unix timestamp in SECONDS.
+ * Always returns a number — avoids mixed time types (string vs number)
+ * which cause "time must be of type BusinessDay" errors in lightweight-charts.
  */
-export const formatTime = (dateValue, isIntraday = false) => {
+export const formatTime = (dateValue) => {
   if (!dateValue) return null;
 
   if (typeof dateValue === 'number' && dateValue < 9999999999) {
@@ -26,12 +26,13 @@ export const formatTime = (dateValue, isIntraday = false) => {
   }
 
   if (typeof dateValue === 'string') {
-    if (isIntraday || dateValue.includes('T') || dateValue.includes(':')) {
-      const timestamp = new Date(dateValue).getTime();
-      if (isNaN(timestamp)) return null;
-      return Math.floor(timestamp / 1000);
-    }
-    return dateValue.split('T')[0];
+    // For date-only strings like '2026-02-13', append T00:00:00 for consistent parsing
+    const str = dateValue.includes('T') || dateValue.includes(':')
+      ? dateValue
+      : `${dateValue.split('T')[0]}T00:00:00`;
+    const timestamp = new Date(str).getTime();
+    if (isNaN(timestamp)) return null;
+    return Math.floor(timestamp / 1000);
   }
 
   return null;
@@ -166,3 +167,118 @@ export const prepareChartData = (rawData) => {
 
   return deduplicateByTime(formatted);
 };
+
+/**
+ * Calculate 7 bomb-level price lines from a baseline price and threshold percentage.
+ * Used by StockChart in "bomb" timeframe view to show BaggerBomb scoring zones.
+ *
+ * @param {number} baselinePrice - The locked/baseline price for the asset
+ * @param {number} threshold - The threshold percentage (e.g. 2.5 for 2.5%)
+ * @returns {Array} 7 level objects with { price, label, tier, color, lineWidth, lineStyle, points }
+ */
+export function calculateBombLevels(baselinePrice, threshold) {
+  if (!baselinePrice || !threshold || baselinePrice <= 0 || threshold <= 0) return [];
+  const pct = threshold / 100;
+  return [
+    { price: baselinePrice * (1 + pct * 2.0), label: '\uD83D\uDD25 +50 pts', tier: 'tenBagger',    color: '#ffd700', lineWidth: 1.5, lineStyle: 0, points: 50 },
+    { price: baselinePrice * (1 + pct * 1.5), label: '\uD83D\uDCA3\uD83D\uDCA3 +30 pts', tier: 'doubleBagger', color: '#ff9500', lineWidth: 1.5, lineStyle: 0, points: 30 },
+    { price: baselinePrice * (1 + pct * 1.0), label: '\uD83D\uDCA3 +15 pts', tier: 'bagger',        color: '#00ff88', lineWidth: 2,   lineStyle: 0, points: 15 },
+    { price: baselinePrice,                    label: '\u2014 Baseline \u2014',   tier: 'baseline',      color: 'rgba(255,255,255,0.4)', lineWidth: 1, lineStyle: 1, points: 0 },
+    { price: baselinePrice * (1 - pct * 1.0), label: '\uD83D\uDCC9 Bust -10 pts',    tier: 'bust',           color: '#ef4444', lineWidth: 2, lineStyle: 0, points: -10 },
+    { price: baselinePrice * (1 - pct * 1.5), label: '\u26A0\uFE0F Crash -20 pts',    tier: 'crash',          color: '#f97316', lineWidth: 2, lineStyle: 0, points: -20 },
+    { price: baselinePrice * (1 - pct * 2.0), label: '\u2620\uFE0F Meltdown -35 pts',    tier: 'meltdown',       color: '#fbbf24', lineWidth: 2, lineStyle: 0, points: -35 },
+  ];
+}
+
+/**
+ * Detect candles where price crossed a bomb level threshold.
+ * Scans chart-ready data (oldest-first) for crossings.
+ *
+ * @param {Array} chartData - Oldest-first candles with { time, open, high, low, close }
+ * @param {Array} bombLevels - From calculateBombLevels()
+ * @returns {Array} Marker objects for lightweight-charts setMarkers()
+ */
+export function detectBombCrossings(chartData, bombLevels) {
+  if (!chartData || chartData.length < 2 || !bombLevels || bombLevels.length === 0) return [];
+
+  const markers = [];
+
+  for (let i = 1; i < chartData.length; i++) {
+    const prev = chartData[i - 1];
+    const curr = chartData[i];
+
+    bombLevels.forEach(level => {
+      if (level.tier === 'baseline') return; // Skip baseline crossings
+
+      // Upward crossing: previous close below level, current high reached level
+      const crossedUp = prev.close < level.price && curr.high >= level.price;
+      // Downward crossing: previous close above level, current low reached level
+      const crossedDown = prev.close > level.price && curr.low <= level.price;
+
+      if (crossedUp) {
+        markers.push({
+          time: curr.time,
+          position: 'belowBar',
+          color: level.color,
+          shape: 'arrowUp',
+          text: `${level.points > 0 ? '+' : ''}${level.points}`,
+        });
+      } else if (crossedDown) {
+        markers.push({
+          time: curr.time,
+          position: 'aboveBar',
+          color: level.color,
+          shape: 'arrowDown',
+          text: `${level.points}`,
+        });
+      }
+    });
+  }
+
+  // lightweight-charts requires markers sorted by time ascending
+  markers.sort((a, b) => {
+    const tA = typeof a.time === 'number' ? a.time : 0;
+    const tB = typeof b.time === 'number' ? b.time : 0;
+    return tA - tB;
+  });
+
+  return markers;
+}
+
+/**
+ * Calculate the nearest bomb level above and below the current price.
+ *
+ * @param {number} currentPrice - Latest price
+ * @param {Array} bombLevels - From calculateBombLevels()
+ * @returns {{ above: { tier, price, points, distance, pctAway } | null, below: { tier, price, points, distance, pctAway } | null }}
+ */
+export function calculateNearestLevel(currentPrice, bombLevels) {
+  if (!currentPrice || !bombLevels || bombLevels.length === 0) {
+    return { above: null, below: null };
+  }
+
+  let nearestAbove = null;
+  let nearestBelow = null;
+
+  bombLevels.forEach(level => {
+    // Skip baseline — it's a reference point, not an actionable level
+    if (level.tier === 'baseline') return;
+
+    const distance = level.price - currentPrice;
+    const pctAway = (distance / currentPrice) * 100;
+
+    if (distance > 0) {
+      // Level is above current price
+      if (!nearestAbove || distance < nearestAbove.distance) {
+        nearestAbove = { tier: level.tier, price: level.price, points: level.points, color: level.color, distance, pctAway };
+      }
+    } else if (distance < 0) {
+      // Level is below current price
+      if (!nearestBelow || Math.abs(distance) < Math.abs(nearestBelow.distance)) {
+        nearestBelow = { tier: level.tier, price: level.price, points: level.points, color: level.color, distance, pctAway };
+      }
+    }
+  });
+
+  return { above: nearestAbove, below: nearestBelow };
+}

@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
 import AssetTile from './AssetTile';
 import AssetResearchModal from './AssetResearchModal';
+import { buildResearchAsset } from '../../utils/researchAssetBuilder';
 import { UserIcon, TrophyIcon, SwapIcon, ScoutIcon, FireIcon, SnowflakeIcon, HoloIconAnimations } from './HoloIcons';
 
 // Panel state constants for draggable bottom sheet
@@ -669,29 +670,13 @@ const CommandConsole = ({
       {/* Asset Research Modal */}
       {selectedAssetForResearch && (
         <AssetResearchModal
-          asset={{
-            symbol: selectedAssetForResearch.symbol,
-            name: selectedAssetForResearch.name || selectedAssetForResearch.symbol,
-            price: selectedAssetForResearch.price || selectedAssetForResearch.currentPrice || 0,
-            percentChange: selectedAssetForResearch.gain || selectedAssetForResearch.percentChange || 0,
-            sector: selectedAssetForResearch.sector,
-            // BaggerBomb scoring data - ensures consistent thresholds across all views
-            threshold: selectedAssetForResearch.threshold,
-            baggerBombs: selectedAssetForResearch.baggerBombs,
-            busts: selectedAssetForResearch.busts,
-            basePoints: selectedAssetForResearch.basePoints,
-            baggerBombPoints: selectedAssetForResearch.baggerBombPoints,
-            bustPoints: selectedAssetForResearch.bustPoints,
-            totalScore: selectedAssetForResearch.totalScore,
-            gain: selectedAssetForResearch.gain,
-            lockedPrice: selectedAssetForResearch.lockedPrice,
-            currentPrice: selectedAssetForResearch.currentPrice,
-          }}
+          asset={buildResearchAsset(selectedAssetForResearch)}
           sector={selectedAssetForResearch.sector}
           category={selectedAssetForResearch.category}
           onClose={() => setSelectedAssetForResearch(null)}
           showActionButton={true}
           actionConfig={null}
+          version={2}
         />
       )}
     </div>

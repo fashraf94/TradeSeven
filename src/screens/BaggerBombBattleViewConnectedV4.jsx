@@ -190,22 +190,23 @@ export default function BaggerBombBattleViewConnectedV4({
         nightMode={false}
         thresholds={thresholds}
         currentPrices={currentPrices}
-        // V4 props
+        openPrices={openPrices}
         battleVersion={4}
-        freeAgents={freeAgents}
-        nextRotationAt={nextRotationAt}
-        freeAgentDailyOpens={{}}
-        swapsRemaining={swapsRemaining}
-        currentDay={currentTradingDay}
-        totalDays={totalTradingDays}
-        rotationCountdown={rotationCountdown}
+        freeAgentConfig={{
+          freeAgents,
+          nextRotationAt,
+          freeAgentDailyOpens: {},
+          swapsRemaining,
+          currentDay: currentTradingDay,
+          totalDays: totalTradingDays,
+          rotationCountdown,
+          swapMode,
+          onEnterSwapMode: enterSwapMode,
+          onSelectFreeAgent: selectFreeAgent,
+          onCancelSwapMode: cancelSwapMode,
+        }}
         closedTrades={closedTrades}
-        // Multi-step swap mode props
-        swapMode={swapMode}
-        onEnterSwapMode={enterSwapMode}
-        onSelectFreeAgent={selectFreeAgent}
         onSelectSwapTarget={selectSwapTarget}
-        onCancelSwapMode={cancelSwapMode}
         onConfirmSwap={confirmSwap}
         isSwapExecuting={isSwapExecuting}
       />

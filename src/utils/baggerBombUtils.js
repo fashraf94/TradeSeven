@@ -418,24 +418,37 @@ export function createThresholdEvent(player, symbol, thresholdName, multiplier, 
 /**
  * Calculate asset score with new threshold system
  * @param {Object} asset - Asset with symbol, baseATR
- * @param {number} priceChange - Percent change from open
+ * @param {number} priceChange - Percent change from open (current price)
  * @param {Object} history - Asset history with maxMultiplier, minMultiplier
+ * @param {Object} extremes - Optional { highChange, lowChange } percent changes from open at daily high/low
  * @returns {Object} Score breakdown
  */
-export function calculateAssetScoreV3(asset, priceChange, history = {}) {
+export function calculateAssetScoreV3(asset, priceChange, history = {}, extremes = {}) {
   const baseATR = asset.baseATR || 2.5;
   const multiplier = priceChange / baseATR;
 
   // Conviction multiplier: Star 2x, Core 1.5x, Support 1x
   const tierMultiplier = CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support;
 
-  // Base points: 10 per 1% change, scaled by conviction tier
+  // Base points: 10 per 1% change, scaled by conviction tier (uses CURRENT price, not extremes)
   const basePoints = priceChange * 10 * tierMultiplier;
 
-  // Get badges from history
+  // For badge/threshold detection, use intraday high/low extremes when available.
+  // A threshold is "cemented" once the price touches it at ANY point during the day:
+  // - Positive bombs (bagger/doubleBagger/tenBagger): triggered by intraday HIGH
+  // - Negative busts (bust/crash/meltdown): triggered by intraday LOW
+  const highMultiplier = extremes.highChange != null ? extremes.highChange / baseATR : multiplier;
+  const lowMultiplier = extremes.lowChange != null ? extremes.lowChange / baseATR : multiplier;
+
+  // effectiveMax = best positive multiplier reached (for bombs)
+  // effectiveMin = worst negative multiplier reached (for busts)
+  const effectiveMax = Math.max(highMultiplier, multiplier);
+  const effectiveMin = Math.min(lowMultiplier, multiplier);
+
+  // Get badges from intraday extremes
   const badges = getBadgesFromHistory({
-    maxMultiplier: Math.max(history.maxMultiplier || 0, multiplier),
-    minMultiplier: Math.min(history.minMultiplier || 0, multiplier),
+    maxMultiplier: effectiveMax,
+    minMultiplier: effectiveMin,
   });
 
   // Bonus points from badges (flat, NOT scaled by conviction)
@@ -452,8 +465,8 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}) {
     totalPoints: Math.round(basePoints + bonusPoints),
     badges,
     history: {
-      maxMultiplier: Math.max(history.maxMultiplier || 0, multiplier),
-      minMultiplier: Math.min(history.minMultiplier || 0, multiplier),
+      maxMultiplier: effectiveMax,
+      minMultiplier: effectiveMin,
     },
   };
 }

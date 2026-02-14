@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
+import { getBattleStartDate } from '../../constants/battleTiming';
 
 /**
  * DailyScoresModal - Shows daily score breakdown for the battle
@@ -17,6 +18,7 @@ const DailyScoresModal = ({
   standings,          // Current standings with player data
   currentUserId,      // Current user's ID for highlighting
   battleStartTime,    // When the battle started
+  battleStartDate,    // YYYY-MM-DD for Day 1 (new: correct start date)
   battleEndTime,      // When the battle ends
   dailyScores = null, // Daily score snapshots from Firebase (formatted for modal)
   dailyData = null,   // Full daily data with detailed asset breakdowns
@@ -24,25 +26,29 @@ const DailyScoresModal = ({
 }) => {
   // Calculate battle day info - only trading days (Mon-Fri)
   const battleDays = useMemo(() => {
-    if (!battleStartTime) return [];
+    if (!battleStartDate && !battleStartTime) return [];
 
-    const startDate = new Date(battleStartTime);
     const now = new Date();
     const totalDays = 5; // Snake Draft is 5 trading days
-
     const days = [];
 
-    // Find actual trading days starting from battle start
-    let tradingDayCount = 0;
-    let checkDate = new Date(startDate);
-    checkDate.setHours(0, 0, 0, 0);
+    let checkDate;
 
-    // Find the first trading day (if battle starts on weekend, move to Monday)
-    while (checkDate.getDay() === 0 || checkDate.getDay() === 6) {
-      checkDate.setDate(checkDate.getDate() + 1);
+    if (battleStartDate) {
+      // New path: use explicit YYYY-MM-DD start date
+      checkDate = new Date(battleStartDate + 'T12:00:00');
+      checkDate.setHours(0, 0, 0, 0);
+    } else {
+      // Legacy path: compute correct start date from battleStartTime
+      // This handles the case where battleStartDate is missing from Firestore
+      // getBattleStartDate defers to next trading day if completed during/after market hours
+      const computedStartDate = getBattleStartDate(battleStartTime);
+      checkDate = new Date(computedStartDate + 'T12:00:00');
+      checkDate.setHours(0, 0, 0, 0);
     }
 
-    // Now iterate to find 5 trading days
+    let tradingDayCount = 0;
+
     while (tradingDayCount < totalDays) {
       const dayOfWeek = checkDate.getDay();
 
@@ -83,7 +89,7 @@ const DailyScoresModal = ({
     }
 
     return days;
-  }, [battleStartTime]);
+  }, [battleStartTime, battleStartDate]);
 
   // Calculate daily scores for each day
   // Uses dailyData for accurate recorded scores, dailyScores for formatted totals
@@ -281,6 +287,26 @@ const DailyScoresModal = ({
           overflowY: 'auto',
           padding: '16px 20px',
         }}>
+          {/* Pre-battle banner when all days are upcoming */}
+          {battleStartDate && currentDay === 0 && (
+            <div style={{
+              padding: '12px 16px',
+              marginBottom: '16px',
+              background: 'rgba(0, 255, 255, 0.08)',
+              borderRadius: '10px',
+              border: `1px solid ${HOLO_COLORS.cyan}44`,
+              textAlign: 'center',
+            }}>
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 600,
+                color: HOLO_COLORS.cyan,
+              }}>
+                Battle starts {battleStartDate} at market open (9:30 AM ET)
+              </span>
+            </div>
+          )}
+
           {/* Daily Scores */}
           {dailyStandings.map((day, dayIdx) => (
             <div key={day.dayNumber} style={{ marginBottom: '20px' }}>

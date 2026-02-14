@@ -21,6 +21,7 @@ import {
 } from '../utils/baggerBombUtils';
 import { generateFreeAgentPool } from '../services/freeAgentRotationService';
 import { getFreeAgentConfig } from '../constants/battleTimingV4';
+import { DEFAULT_THRESHOLD } from '../utils/researchAssetBuilder';
 
 const PRICE_POLL_INTERVAL = 60000; // 60 seconds
 
@@ -312,7 +313,7 @@ export default function BaggerBombTrainingBattleViewV4({
     const openPrice = asset.swapPrice || startingPrices[asset.symbol] || asset.price || 0;
     const currentPrice = currentPrices[asset.symbol] || openPrice;
     const threshold = thresholds[asset.symbol] || {};
-    const baseATR = threshold.threshold || 2.5;
+    const baseATR = threshold.threshold || DEFAULT_THRESHOLD;
     const priceChange = openPrice > 0 ? ((currentPrice - openPrice) / openPrice) * 100 : 0;
     const multiplier = baseATR > 0 ? priceChange / baseATR : 0;
 
@@ -352,7 +353,7 @@ export default function BaggerBombTrainingBattleViewV4({
         if (!openPrice || !currentPrice) return;
 
         const priceChange = openPrice > 0 ? ((currentPrice - openPrice) / openPrice) * 100 : 0;
-        const baseATR = thresholds[asset.symbol]?.threshold || 2.5;
+        const baseATR = thresholds[asset.symbol]?.threshold || DEFAULT_THRESHOLD;
         const currentMultiplier = baseATR > 0 ? priceChange / baseATR : 0;
         const prevMultiplier = prevMultRef.current[asset.symbol] || 0;
 
@@ -659,22 +660,22 @@ export default function BaggerBombTrainingBattleViewV4({
       isTraining={true}
       thresholds={thresholds}
       currentPrices={currentPrices}
-      // V4 props
       battleVersion={4}
-      freeAgents={freeAgents}
-      startingPrices={startingPrices}
-      freeAgentDailyOpens={freeAgentDailyOpens}
-      swapsRemaining={swapUsed ? 0 : 1}
-      currentDay={1}
-      totalDays={1}
-      rotationCountdown={rotationCountdown}
+      freeAgentConfig={{
+        freeAgents,
+        nextRotationAt: null,
+        freeAgentDailyOpens,
+        swapsRemaining: swapUsed ? 0 : 1,
+        currentDay: 1,
+        totalDays: 1,
+        rotationCountdown,
+        swapMode,
+        onEnterSwapMode: enterSwapMode,
+        onSelectFreeAgent: selectFreeAgent,
+        onCancelSwapMode: cancelSwapMode,
+      }}
       closedTrades={closedTrades}
-      // Swap mode props
-      swapMode={swapMode}
-      onEnterSwapMode={enterSwapMode}
-      onSelectFreeAgent={selectFreeAgent}
       onSelectSwapTarget={selectSwapTarget}
-      onCancelSwapMode={cancelSwapMode}
       onConfirmSwap={confirmSwap}
       isSwapExecuting={isSwapExecuting}
     />

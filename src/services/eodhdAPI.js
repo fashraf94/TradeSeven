@@ -155,7 +155,9 @@ export async function getMultipleStockPrices(symbols) {
           previousClose: parseFloat(priceData.previousClose) || 0,
           open: parseFloat(priceData.open) || 0,
           change: parseFloat(priceData.change) || 0,
-          percentChange: parseFloat(priceData.changePercent) || 0
+          percentChange: parseFloat(priceData.changePercent) || 0,
+          high: parseFloat(priceData.high) || 0,
+          low: parseFloat(priceData.low) || 0,
         };
 
         // Cache with LIGHT tier (2-minute TTL)
@@ -210,17 +212,19 @@ export const getAllStockPrices = getMultipleStockPrices;
 export async function getStockPrice(symbol) {
   const prices = await getMultipleStockPrices([symbol]);
   const upper = symbol.toUpperCase();
+  const p = prices[upper];
+  const price = p?.price || FALLBACK_STOCK_PRICES[upper] || 100;
   return {
     symbol: upper,
-    price: prices[upper]?.price || FALLBACK_STOCK_PRICES[upper] || 100,
-    change: prices[upper]?.change || 0,
-    percentChange: prices[upper]?.percentChange || 0,
-    high: prices[upper]?.price || 100,
-    low: prices[upper]?.price || 100,
-    open: prices[upper]?.price || 100,
-    previousClose: prices[upper]?.price || 100,
-    week52High: (prices[upper]?.price || 100) * 1.25,
-    week52Low: (prices[upper]?.price || 100) * 0.75
+    price,
+    change: p?.change || 0,
+    percentChange: p?.percentChange || 0,
+    high: p?.high || price,
+    low: p?.low || price,
+    open: p?.open || price,
+    previousClose: p?.previousClose || price,
+    week52High: price * 1.25,
+    week52Low: price * 0.75
   };
 }
 
@@ -306,7 +310,9 @@ export async function getMultipleCryptoPrices(symbols) {
         if (price > 0) {
           const normalized = {
             price: price,
-            change24h: parseFloat(priceData.changePercent) || 0
+            change24h: parseFloat(priceData.changePercent) || 0,
+            high: parseFloat(priceData.high) || 0,
+            low: parseFloat(priceData.low) || 0,
           };
 
           // Cache with LIGHT tier (5-minute TTL)
@@ -391,6 +397,8 @@ export async function getCryptoPrice(symbol) {
     symbol: upper,
     price,
     change24h: prices[upper]?.change24h || prices[lower]?.change24h || 0,
+    high: prices[upper]?.high || prices[lower]?.high || price,
+    low: prices[upper]?.low || prices[lower]?.low || price,
     marketCap: 0,
     volume24h: 0
   };
@@ -758,9 +766,9 @@ export function clearEarningsCache() {
  * @param {string} timeframe - Timeframe: '1h' (hourly), '1d' (daily), '1w' (weekly)
  * @returns {Promise<Object>} Object with { data, actualTimeframe, fallbackMessage } or just data array for backwards compatibility
  */
-export async function fetchHistoricalOHLCV(symbol, timeframe = '1d') {
+export async function fetchHistoricalOHLCV(symbol, timeframe = '1d', { days, from, to } = {}) {
   const upperSymbol = symbol.toUpperCase();
-  const cacheKey = `ohlcv_${upperSymbol}_${timeframe}`;
+  const cacheKey = `ohlcv_${upperSymbol}_${timeframe}${days ? `_${days}d` : ''}`;
 
   // Check cache (AGGRESSIVE tier - longer TTL for historical data)
   const cached = cacheService.get('historical', cacheKey);
@@ -773,9 +781,13 @@ export async function fetchHistoricalOHLCV(symbol, timeframe = '1d') {
   console.log(`[EODHD] Fetching ${timeframe} OHLCV for ${upperSymbol}...`);
 
   try {
-    const response = await fetchWithTimeout(
-      `${API_BASE}/stocks/historical?symbol=${upperSymbol}&timeframe=${timeframe}`
-    );
+    const isCryptoSymbol = POPULAR_CRYPTO_SYMBOLS.includes(upperSymbol);
+    let url = `${API_BASE}/stocks/historical?symbol=${upperSymbol}&timeframe=${timeframe}`;
+    if (isCryptoSymbol) url += '&type=crypto';
+    if (days) url += `&days=${days}`;
+    if (from) url += `&from=${from}`;
+    if (to) url += `&to=${to}`;
+    const response = await fetchWithTimeout(url);
 
     if (!response.ok) {
       throw new Error(`Proxy error: ${response.status}`);
@@ -794,7 +806,7 @@ export async function fetchHistoricalOHLCV(symbol, timeframe = '1d') {
 
       // Cache with longer TTL (historical data doesn't change)
       // Cache the actual timeframe's data to avoid re-fetching
-      const actualCacheKey = `ohlcv_${upperSymbol}_${result.timeframe}`;
+      const actualCacheKey = `ohlcv_${upperSymbol}_${result.timeframe}${days ? `_${days}d` : ''}`;
       cacheService.set('historical', actualCacheKey, result.data);
 
       console.log(`[EODHD] Got ${result.data.length} ${result.timeframe} OHLCV candles for ${upperSymbol}`);

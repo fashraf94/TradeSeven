@@ -20,6 +20,7 @@ import { db } from '../firebase/config';
 import { getAssetPool, generateSnakeOrder, generateDraftCode, shuffleArray } from './draftAssets';
 import { getVolatilityThresholds } from './volatilityService';
 import { initializeFreeAgents, calculateBattleEndTime } from './freeAgencyService';
+import { getBattleStartDate, calculateBattleEndDate } from '../constants/battleTiming';
 import { logDraftToAnalytics } from './draftAnalyticsService';
 // EODHD API - All-in-one provider (replaces Finnhub + CoinGecko)
 import {
@@ -41,6 +42,11 @@ const removeUndefined = (obj) => {
   if (obj === null || obj === undefined) return obj;
   if (Array.isArray(obj)) {
     return obj.map(item => removeUndefined(item));
+  }
+  // Pass through Firebase FieldValue sentinels (serverTimestamp, arrayUnion, etc.)
+  // These have an isEqual method and must not be destructured into plain objects
+  if (obj && typeof obj === 'object' && typeof obj.isEqual === 'function') {
+    return obj;
   }
   if (typeof obj === 'object' && !(obj instanceof Date) && !(obj instanceof Timestamp)) {
     const cleaned = {};
@@ -442,6 +448,12 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
     // Calculate battle end time
     const battleEndTime = calculateBattleEndTime(draft.type, now);
 
+    // Compute the correct battle start date
+    // If draft completes during/after market hours, battle starts next trading day
+    // If draft completes before market open, battle starts today
+    const battleStartDate = getBattleStartDate(now);
+    const battleEndDate = calculateBattleEndDate(battleStartDate);
+
     // Store original picks for each player (before any swaps)
     const playersWithOriginalPicks = updatedPlayers.map(player => ({
       ...player,
@@ -466,6 +478,8 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
     updateData.status = 'battle';
     updateData.completedAt = serverTimestamp();
     updateData.battleStartTime = now;
+    updateData.battleStartDate = battleStartDate;
+    updateData.battleEndDate = battleEndDate;
     updateData.battleEndTime = battleEndTime;
     updateData.freeAgents = freeAgents;
     updateData.swapHistory = [];

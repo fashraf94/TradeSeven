@@ -3,6 +3,7 @@ import { HOLO_COLORS, CATEGORY_CONFIG, GLOW_EFFECTS } from '../../constants/holo
 import { TrophyIcon, UserIcon } from './HoloIcons';
 import AssetResearchModal from './AssetResearchModal';
 import ScoreBreakdownPopover from './ScoreBreakdownPopover';
+import { buildResearchAsset } from '../../utils/researchAssetBuilder';
 
 /**
  * TopPerformersModal - Shows top 5 performing assets across all portfolios
@@ -60,6 +61,8 @@ const TopPerformersModal = ({
             // Price data
             price: asset.currentPrice || asset.price,
             lockedPrice: asset.lockedPrice,
+            baselinePrice: asset.baselinePrice,
+            previousClose: asset.previousClose,
             currentPrice: asset.currentPrice,
             owners: existing?.owners || [],
           });
@@ -372,28 +375,12 @@ const TopPerformersModal = ({
       {/* Asset Research Modal */}
       {selectedAssetForResearch && (
         <AssetResearchModal
-          asset={{
-            symbol: selectedAssetForResearch.symbol,
-            name: selectedAssetForResearch.name || selectedAssetForResearch.symbol,
-            price: selectedAssetForResearch.price || selectedAssetForResearch.currentPrice || 0,
-            percentChange: selectedAssetForResearch.gain || 0,
-            sector: selectedAssetForResearch.sector,
-            // BaggerBomb scoring data
-            threshold: selectedAssetForResearch.threshold,
-            baggerBombs: selectedAssetForResearch.baggerBombs,
-            busts: selectedAssetForResearch.busts,
-            basePoints: selectedAssetForResearch.basePoints,
-            baggerBombPoints: selectedAssetForResearch.baggerBombPoints,
-            bustPoints: selectedAssetForResearch.bustPoints,
-            totalScore: selectedAssetForResearch.totalScore,
-            gain: selectedAssetForResearch.gain,
-            lockedPrice: selectedAssetForResearch.lockedPrice,
-            currentPrice: selectedAssetForResearch.currentPrice,
-          }}
+          asset={buildResearchAsset(selectedAssetForResearch)}
           sector={selectedAssetForResearch.sector}
           category={selectedAssetForResearch.category}
           onClose={() => setSelectedAssetForResearch(null)}
           showActionButton={false}
+          version={2}
         />
       )}
 

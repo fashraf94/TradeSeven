@@ -7,6 +7,7 @@ import { motion } from 'framer-motion';
 import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
 import SessionHUD from './SessionHUD';
 import FreeAgentBar from './FreeAgentBar';
+import { transformSessionScores } from '../../utils/battleHelpers';
 
 /**
  * Default avatar component when no image provided
@@ -275,38 +276,21 @@ export default function BattleHeader({
   sessionTimeRemaining,
   sessionScores,
   completedSessions,
-  // V4 props
+  // V4 props (grouped)
   battleVersion = 3,
-  freeAgents,
-  nextRotationAt,
-  currentPrices,
-  freeAgentDailyOpens,
-  swapsRemaining,
-  currentDay,
-  totalDays,
-  rotationCountdown,
-  // Swap mode props
-  swapMode,
-  onEnterSwapMode,
-  onSelectFreeAgent,
-  onCancelSwapMode,
+  freeAgentConfig = {},
 }) {
+  // Destructure V4 swap props used locally (rest is spread to FreeAgentBar)
+  const { swapMode, onCancelSwapMode, onEnterSwapMode, swapsRemaining } = freeAgentConfig;
+
   // Determine who is leading
   const playerLeading = player.totalPoints > opponent.totalPoints;
   const opponentLeading = opponent.totalPoints > player.totalPoints;
 
-  // Calculate session scores for SessionHUD
-  const hudSessionScores = useMemo(() => {
-    if (!sessionScores) return {};
-    const result = {};
-    Object.entries(sessionScores).forEach(([key, scores]) => {
-      result[key] = {
-        player: scores.creator ?? scores.player ?? 0,
-        opponent: scores.opponent ?? 0,
-      };
-    });
-    return result;
-  }, [sessionScores]);
+  const hudSessionScores = useMemo(
+    () => transformSessionScores(sessionScores),
+    [sessionScores]
+  );
 
   return (
     <div
@@ -444,18 +428,7 @@ export default function BattleHeader({
       {/* V4: Free Agent Bar / V3: Session HUD */}
       {battleVersion >= 4 ? (
         <FreeAgentBar
-          freeAgents={freeAgents || []}
-          nextRotationAt={nextRotationAt}
-          currentPrices={currentPrices || {}}
-          freeAgentDailyOpens={freeAgentDailyOpens || {}}
-          swapsRemaining={swapsRemaining || 0}
-          currentDay={currentDay || 1}
-          totalDays={totalDays || 3}
-          rotationCountdown={rotationCountdown || 0}
-          swapMode={swapMode}
-          onEnterSwapMode={onEnterSwapMode}
-          onSelectFreeAgent={onSelectFreeAgent}
-          onCancelSwapMode={onCancelSwapMode}
+          {...freeAgentConfig}
           hideSwapButton
         />
       ) : (
@@ -501,35 +474,8 @@ BattleHeader.propTypes = {
   completedSessions: PropTypes.arrayOf(PropTypes.string),
   /** Battle version (3 or 4) */
   battleVersion: PropTypes.number,
-  /** V4: Free agents array */
-  freeAgents: PropTypes.array,
-  /** V4: ISO timestamp of next rotation */
-  nextRotationAt: PropTypes.string,
-  /** V4: Current prices */
-  currentPrices: PropTypes.object,
-  /** V4: Daily open prices for free agent cards */
-  freeAgentDailyOpens: PropTypes.object,
-  /** V4: Swaps remaining today */
-  swapsRemaining: PropTypes.number,
-  /** V4: Current trading day */
-  currentDay: PropTypes.number,
-  /** V4: Total trading days */
-  totalDays: PropTypes.number,
-  /** V4: Seconds until next rotation */
-  rotationCountdown: PropTypes.number,
-  /** V4: Swap mode state */
-  swapMode: PropTypes.shape({
-    active: PropTypes.bool,
-    step: PropTypes.string,
-    selectedFreeAgent: PropTypes.object,
-    targetAsset: PropTypes.object,
-  }),
-  /** V4: Enter swap mode callback */
-  onEnterSwapMode: PropTypes.func,
-  /** V4: Select free agent callback */
-  onSelectFreeAgent: PropTypes.func,
-  /** V4: Cancel swap mode callback */
-  onCancelSwapMode: PropTypes.func,
+  /** V4: Grouped free agent config (spread to FreeAgentBar) */
+  freeAgentConfig: PropTypes.object,
 };
 
 BattleHeader.defaultProps = {
@@ -538,12 +484,5 @@ BattleHeader.defaultProps = {
   sessionScores: {},
   completedSessions: [],
   battleVersion: 3,
-  freeAgents: [],
-  nextRotationAt: null,
-  currentPrices: {},
-  freeAgentDailyOpens: {},
-  swapsRemaining: 0,
-  currentDay: 1,
-  totalDays: 3,
-  rotationCountdown: 0,
+  freeAgentConfig: {},
 };

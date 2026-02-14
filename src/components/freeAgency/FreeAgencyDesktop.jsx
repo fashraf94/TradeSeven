@@ -10,7 +10,7 @@ import SwapConfirmModal from './shared/SwapConfirmModal';
 import FreeAgencyLoadingSkeleton from './shared/FreeAgencyLoadingSkeleton';
 import FreeAgencyErrorState from './shared/FreeAgencyErrorState';
 import SwapSuccessToast from './shared/SwapSuccessToast';
-import { AssetResearchModal } from '../draft';
+import FreeAgencyResearchModal from './shared/FreeAgencyResearchModal';
 
 /**
  * FreeAgencyDesktop - Desktop-optimized layout for Free Agency
@@ -26,6 +26,7 @@ import { AssetResearchModal } from '../draft';
  */
 const FreeAgencyDesktop = ({
   containerStyle,
+  currentDraft,
   // From useSwapLogic
   freeAgents,
   playerRoster,
@@ -334,38 +335,15 @@ const FreeAgencyDesktop = ({
         isSwapping={isSwapping}
       />
 
-      {/* Asset Research Modal */}
-      {assetForResearch && (
-        <AssetResearchModal
-          asset={{
-            symbol: assetForResearch.symbol,
-            name: assetForResearch.name || assetForResearch.symbol,
-            price: livePrices[assetForResearch.symbol?.toUpperCase()]?.price
-              || assetForResearch.price || 0,
-            percentChange: livePrices[assetForResearch.symbol?.toUpperCase()]?.percentChange
-              || assetForResearch.percentChange || 0,
-            sector: assetForResearch.sector,
-          }}
-          sector={assetForResearch.sector}
-          category={assetForResearch.category}
-          onClose={() => setAssetForResearch(null)}
-          showActionButton={true}
-          actionConfig={
-            // Show "Select" button if this is a free agent and swap is allowed
-            canSwap && !selectedAdd?.symbol
-              ? {
-                  label: `Select ${assetForResearch.symbol}`,
-                  onClick: () => {
-                    handleSelectAdd(assetForResearch);
-                    setAssetForResearch(null);
-                  },
-                  variant: 'primary',
-                  disabled: false,
-                }
-              : null
-          }
-        />
-      )}
+      <FreeAgencyResearchModal
+        asset={assetForResearch}
+        currentDraft={currentDraft}
+        livePrices={livePrices}
+        canSwap={canSwap}
+        selectedAdd={selectedAdd}
+        onSelectAdd={handleSelectAdd}
+        onClose={() => setAssetForResearch(null)}
+      />
     </div>
   );
 };

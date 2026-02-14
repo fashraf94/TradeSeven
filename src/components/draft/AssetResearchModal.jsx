@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import FundamentalNews from '../Research/FundamentalNews';
 import LatestEarningsReport from '../Research/LatestEarningsReport';
 import { HOLO_COLORS, CATEGORY_CONFIG, getSectorColor, getRatingColor } from '../../constants/holoTheme';
-import { BAGGER_TIERS, BUST_TIERS } from '../../constants/baggerBombScoring';
 import { getCompanyProfile } from '../../services/fundamentalsService';
 import { formatLargeNumber } from '../../utils/formatters';
 import ChartHeader from '../Research/ChartHeader';
@@ -12,6 +11,8 @@ import useResearchData from '../Research/useResearchData';
 import AnalysisDrawer from '../Research/AnalysisDrawer';
 import TechnicalTabV2 from '../Research/TechnicalTabV2';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import TechnicalAnalysisTab from './ResearchTabs/TechnicalAnalysisTab';
+import BaggerBombTab from './ResearchTabs/BaggerBombTab';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -67,617 +68,6 @@ const getMockFundamentals = (symbol) => {
   return { ...defaults, ...(stockData[symbol] || {}) };
 };
 
-// Helper function for safe number formatting
-const safeToFixed = (value, decimals = 2) => {
-  if (value === undefined || value === null || isNaN(value)) {
-    return decimals === 0 ? '0' : '0.' + '0'.repeat(decimals);
-  }
-  return Number(value).toFixed(decimals);
-};
-
-// Mock technical data (in production, fetch from API)
-const getMockTechnicalData = (symbol, price) => {
-  const safePrice = price || 100; // Default to 100 if price is undefined
-  const defaults = {
-    rsi: 50,
-    macdSignal: 'neutral',
-    vs50DayMA: 0,
-    volumeRatio: 1.0,
-    support: safePrice * 0.95,
-    resistance: safePrice * 1.05,
-    currentPrice: safePrice,
-    trend7Day: 0,
-    todayChange: 0,
-    momentum: 'neutral',
-    quickTake: 'Consolidating around current levels. Monitor for clearer signal.'
-  };
-
-  // Custom technical data for popular stocks
-  const stockTechnical = {
-    'AAPL': { rsi: 58, macdSignal: 'bullish', vs50DayMA: 2.3, volumeRatio: 1.2, trend7Day: 1.8, todayChange: 0.45, momentum: 'bullish', quickTake: 'Strong momentum with support from services growth. Watch for breakout above resistance.' },
-    'MSFT': { rsi: 62, macdSignal: 'bullish', vs50DayMA: 3.1, volumeRatio: 0.9, trend7Day: 2.1, todayChange: 0.72, momentum: 'bullish', quickTake: 'AI tailwinds driving positive sentiment. Consolidating near highs.' },
-    'GOOGL': { rsi: 45, macdSignal: 'neutral', vs50DayMA: -1.2, volumeRatio: 1.1, trend7Day: -0.8, todayChange: -0.35, momentum: 'neutral', quickTake: 'Trading sideways amid regulatory concerns. Wait for clearer direction.' },
-    'AMZN': { rsi: 55, macdSignal: 'bullish', vs50DayMA: 1.8, volumeRatio: 1.3, trend7Day: 1.5, todayChange: 0.28, momentum: 'bullish', quickTake: 'AWS growth supporting price. Breaking out of consolidation pattern.' },
-    'NVDA': { rsi: 72, macdSignal: 'bullish', vs50DayMA: 8.5, volumeRatio: 1.8, trend7Day: 5.2, todayChange: 2.1, momentum: 'bullish', quickTake: 'Overbought but momentum strong. AI demand continues to drive gains.' },
-    'TSLA': { rsi: 38, macdSignal: 'bearish', vs50DayMA: -4.2, volumeRatio: 1.5, trend7Day: -3.8, todayChange: -1.2, momentum: 'bearish', quickTake: 'Testing support levels. High volatility expected around earnings.' },
-    'META': { rsi: 65, macdSignal: 'bullish', vs50DayMA: 4.1, volumeRatio: 1.0, trend7Day: 2.8, todayChange: 0.95, momentum: 'bullish', quickTake: 'Strong ad revenue driving gains. Approaching resistance levels.' },
-    'JPM': { rsi: 52, macdSignal: 'neutral', vs50DayMA: 0.5, volumeRatio: 0.8, trend7Day: 0.3, todayChange: -0.15, momentum: 'neutral', quickTake: 'Stable trading range. Interest rate expectations driving sentiment.' }
-  };
-
-  const data = { ...defaults, ...(stockTechnical[symbol] || {}) };
-
-  // Calculate support/resistance based on current price
-  if (price) {
-    data.currentPrice = price;
-    data.support = price * (1 - Math.abs(data.vs50DayMA || 5) / 100);
-    data.resistance = price * (1 + Math.abs(data.vs50DayMA || 5) / 100);
-  }
-
-  return data;
-};
-
-/**
- * TechnicalAnalysisTab - Comprehensive technical analysis display
- */
-const TechnicalAnalysisTab = ({ asset, fundamentals }) => {
-  const tech = getMockTechnicalData(asset.symbol, asset.price);
-
-  // Determine status based on RSI and MACD
-  const getStatus = () => {
-    if (tech.rsi > 70) return { text: 'Overbought', color: '#ef4444', icon: '↑' };
-    if (tech.rsi < 30) return { text: 'Oversold', color: '#22c55e', icon: '↓' };
-    if (tech.macdSignal === 'bullish') return { text: 'Bullish', color: '#22c55e', icon: '↑' };
-    if (tech.macdSignal === 'bearish') return { text: 'Bearish', color: '#ef4444', icon: '↓' };
-    return { text: 'Consolidating', color: '#f59e0b', icon: '→' };
-  };
-
-  const status = getStatus();
-
-  // Generate mini sparkline for 7-day trend
-  const generateSparkline = () => {
-    const isPositive = tech.trend7Day >= 0;
-    const points = [];
-    const baseY = 40;
-    const variance = Math.abs(tech.trend7Day) * 3;
-
-    for (let i = 0; i <= 6; i++) {
-      const x = (i / 6) * 100;
-      const randomVariance = (Math.random() - 0.5) * variance;
-      const trendOffset = isPositive ? -((i / 6) * variance) : ((i / 6) * variance);
-      const y = baseY + trendOffset + randomVariance;
-      points.push(`${x},${Math.max(10, Math.min(70, y))}`);
-    }
-
-    return points.join(' ');
-  };
-
-  return (
-    <div>
-      {/* Status Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: `${status.color}20`,
-            color: status.color,
-            padding: '6px 12px',
-            borderRadius: '6px',
-            fontSize: '13px',
-            fontWeight: '600',
-          }}
-        >
-          <span>{status.icon}</span>
-          <span>{status.text}</span>
-        </div>
-        <span style={{
-          color: tech.todayChange >= 0 ? '#22c55e' : '#ef4444',
-          fontSize: '13px',
-          fontWeight: '600'
-        }}>
-          Today: {tech.todayChange >= 0 ? '+' : ''}{safeToFixed(tech.todayChange, 2)}%
-        </span>
-      </div>
-
-      {/* RSI Gauge */}
-      <div style={{ marginBottom: '20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-          <span style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '13px' }}>RSI (14)</span>
-          <span style={{ color: '#fff', fontWeight: '700', fontSize: '14px' }}>{Math.round(tech.rsi)}</span>
-        </div>
-        <div
-          style={{
-            height: '10px',
-            borderRadius: '5px',
-            background: 'linear-gradient(to right, #22c55e 0%, #22c55e 30%, #f59e0b 30%, #f59e0b 70%, #ef4444 70%, #ef4444 100%)',
-            position: 'relative',
-          }}
-        >
-          <div
-            style={{
-              position: 'absolute',
-              left: `${tech.rsi}%`,
-              top: '-3px',
-              width: '6px',
-              height: '16px',
-              background: '#fff',
-              borderRadius: '3px',
-              transform: 'translateX(-50%)',
-              boxShadow: '0 0 8px rgba(255, 255, 255, 0.8)',
-            }}
-          />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          <span style={{ color: '#22c55e' }}>Oversold</span>
-          <span style={{ color: '#f59e0b' }}>Neutral</span>
-          <span style={{ color: '#ef4444' }}>Overbought</span>
-        </div>
-      </div>
-
-      {/* Technical Indicators */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '8px', overflow: 'hidden', marginBottom: '16px' }}>
-        {/* MACD Signal */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: 'rgba(255, 255, 255, 0.02)' }}>
-          <span style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '13px' }}>MACD Signal</span>
-          <span style={{
-            color: tech.macdSignal === 'bullish' ? '#22c55e' : tech.macdSignal === 'bearish' ? '#ef4444' : 'rgba(255, 255, 255, 0.5)',
-            fontSize: '13px',
-            fontWeight: '600'
-          }}>
-            {tech.macdSignal === 'bullish' ? '▲ Bullish Cross' : tech.macdSignal === 'bearish' ? '▼ Bearish Cross' : '— Neutral'}
-          </span>
-        </div>
-
-        {/* vs 50-Day MA */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: 'rgba(255, 255, 255, 0.02)' }}>
-          <span style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '13px' }}>vs 50-Day MA</span>
-          <span style={{
-            color: tech.vs50DayMA >= 0 ? '#22c55e' : '#ef4444',
-            fontSize: '13px',
-            fontWeight: '600'
-          }}>
-            {tech.vs50DayMA >= 0 ? 'Above' : 'Below'} ({tech.vs50DayMA >= 0 ? '+' : ''}{safeToFixed(tech.vs50DayMA, 1)}%)
-          </span>
-        </div>
-
-        {/* Volume */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: 'rgba(255, 255, 255, 0.02)' }}>
-          <span style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '13px' }}>Volume</span>
-          <span style={{ color: '#fff', fontSize: '13px', fontWeight: '600' }}>
-            {safeToFixed(tech.volumeRatio, 1)}x avg
-          </span>
-        </div>
-
-        {/* 52-Week Range */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: 'rgba(255, 255, 255, 0.02)' }}>
-          <span style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '13px' }}>52-Week Range</span>
-          <span style={{ color: '#fff', fontSize: '13px', fontWeight: '600' }}>
-            ${fundamentals.low52w} - ${fundamentals.high52w}
-          </span>
-        </div>
-      </div>
-
-      {/* Support / Current / Resistance */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '16px' }}>
-        <div style={{ background: 'rgba(239, 68, 68, 0.1)', borderRadius: '10px', padding: '12px', textAlign: 'center', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-          <div style={{ color: '#ef4444', fontSize: '10px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Support</div>
-          <div style={{ color: '#fff', fontSize: '16px', fontWeight: '700', fontFamily: 'monospace' }}>${safeToFixed(tech.support, 2)}</div>
-        </div>
-        <div style={{ background: 'rgba(0, 217, 255, 0.1)', borderRadius: '10px', padding: '12px', textAlign: 'center', border: '1px solid rgba(0, 217, 255, 0.2)' }}>
-          <div style={{ color: '#00d9ff', fontSize: '10px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Current</div>
-          <div style={{ color: '#fff', fontSize: '16px', fontWeight: '700', fontFamily: 'monospace' }}>${safeToFixed(tech.currentPrice, 2)}</div>
-        </div>
-        <div style={{ background: 'rgba(34, 197, 94, 0.1)', borderRadius: '10px', padding: '12px', textAlign: 'center', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
-          <div style={{ color: '#22c55e', fontSize: '10px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Resistance</div>
-          <div style={{ color: '#fff', fontSize: '16px', fontWeight: '700', fontFamily: 'monospace' }}>${safeToFixed(tech.resistance, 2)}</div>
-        </div>
-      </div>
-
-      {/* Trading Signals Section */}
-      <div style={{ marginTop: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-          <div style={{ background: 'rgba(0, 217, 255, 0.15)', padding: '6px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00d9ff" strokeWidth="2">
-              <path d="M3 3v18h18" />
-              <path d="M18 17V9" />
-              <path d="M13 17V5" />
-              <path d="M8 17v-3" />
-            </svg>
-          </div>
-          <span style={{ fontWeight: '700', color: '#fff', fontSize: '12px', letterSpacing: '0.5px' }}>TRADING SIGNALS</span>
-        </div>
-
-        {/* 7-Day Trend Chart */}
-        <div
-          style={{
-            background: 'rgba(255, 255, 255, 0.03)',
-            borderRadius: '10px',
-            padding: '14px',
-            marginBottom: '12px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-            <span style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '12px' }}>7-Day Trend</span>
-            <span style={{ color: tech.trend7Day >= 0 ? '#22c55e' : '#ef4444', fontWeight: '700', fontSize: '13px' }}>
-              {tech.trend7Day >= 0 ? '+' : ''}{safeToFixed(tech.trend7Day, 2)}%
-            </span>
-          </div>
-          {/* Mini sparkline chart */}
-          <svg width="100%" height="50" viewBox="0 0 100 80" preserveAspectRatio="none">
-            <defs>
-              <linearGradient id="sparklineGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor={tech.trend7Day >= 0 ? '#22c55e' : '#ef4444'} stopOpacity="0.3" />
-                <stop offset="100%" stopColor={tech.trend7Day >= 0 ? '#22c55e' : '#ef4444'} stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            <polygon
-              points={`0,80 ${generateSparkline()} 100,80`}
-              fill="url(#sparklineGradient)"
-            />
-            <polyline
-              points={generateSparkline()}
-              fill="none"
-              stroke={tech.trend7Day >= 0 ? '#22c55e' : '#ef4444'}
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </div>
-
-        {/* Today / Volume / Momentum boxes */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-          <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
-            <div style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '10px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>TODAY</div>
-            <div style={{ color: tech.todayChange >= 0 ? '#22c55e' : '#ef4444', fontSize: '15px', fontWeight: '700' }}>
-              {tech.todayChange >= 0 ? '+' : ''}{safeToFixed(tech.todayChange, 2)}%
-            </div>
-          </div>
-          <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
-            <div style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '10px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>VOLUME</div>
-            <div style={{ color: '#fff', fontSize: '15px', fontWeight: '700' }}>{safeToFixed(tech.volumeRatio, 1)}x</div>
-            <div style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '10px' }}>
-              {tech.volumeRatio > 1.3 ? 'High' : tech.volumeRatio < 0.7 ? 'Low' : 'Normal'}
-            </div>
-          </div>
-          <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
-            <div style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '10px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>MOMENTUM</div>
-            <div style={{
-              color: tech.momentum === 'bullish' ? '#22c55e' : tech.momentum === 'bearish' ? '#ef4444' : 'rgba(255, 255, 255, 0.5)',
-              fontSize: '15px',
-              fontWeight: '700'
-            }}>
-              {tech.momentum === 'bullish' ? '▲' : tech.momentum === 'bearish' ? '▼' : '—'}
-            </div>
-            <div style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '10px', textTransform: 'capitalize' }}>{tech.momentum}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Take */}
-      {tech.quickTake && (
-        <div
-          style={{
-            marginTop: '16px',
-            background: 'rgba(245, 158, 11, 0.08)',
-            borderLeft: '3px solid #f59e0b',
-            borderRadius: '0 10px 10px 0',
-            padding: '14px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-            <span style={{ fontSize: '14px' }}>🤖</span>
-            <span style={{ color: '#f59e0b', fontWeight: '700', fontSize: '11px', letterSpacing: '0.5px' }}>QUICK TAKE</span>
-          </div>
-          <p style={{ color: 'rgba(255, 255, 255, 0.85)', fontSize: '13px', margin: 0, lineHeight: '1.5' }}>{tech.quickTake}</p>
-        </div>
-      )}
-    </div>
-  );
-};
-
-/**
- * BaggerBombTab - BaggerBomb scoring stats for an asset
- *
- * Shows:
- * - Threshold tiers (1.0x, 1.5x, 2.0x of base threshold)
- * - This battle stats
- * - Historical 30-day stats (mock)
- */
-const BaggerBombTab = ({ asset }) => {
-  // Get base threshold (default 2.5% for unknown stocks)
-  const baseThreshold = asset?.threshold || 2.5;
-
-  // Mock historical data (in production, fetch from API)
-  const getHistoricalStats = (symbol) => {
-    const mockData = {
-      'AAPL': { hitRate: 35, avgMove: 1.8, daysAboveThreshold: 10 },
-      'TSLA': { hitRate: 55, avgMove: 3.2, daysAboveThreshold: 17 },
-      'NVDA': { hitRate: 48, avgMove: 2.8, daysAboveThreshold: 14 },
-      'MSFT': { hitRate: 32, avgMove: 1.6, daysAboveThreshold: 9 },
-      'GOOGL': { hitRate: 38, avgMove: 2.1, daysAboveThreshold: 11 },
-      'AMZN': { hitRate: 42, avgMove: 2.3, daysAboveThreshold: 12 },
-      'META': { hitRate: 45, avgMove: 2.5, daysAboveThreshold: 13 },
-    };
-    return mockData[symbol] || { hitRate: 40, avgMove: 2.0, daysAboveThreshold: 12 };
-  };
-
-  const historical = getHistoricalStats(asset?.symbol);
-
-  // This battle stats (from asset object if available)
-  const currentBaggerBombs = asset?.baggerBombs || 0;
-  const currentBusts = asset?.busts || 0;
-  const currentBaggerBombPoints = asset?.baggerBombPoints || 0;
-  const currentBustPoints = asset?.bustPoints || 0;
-
-  return (
-    <div>
-      {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        marginBottom: '20px',
-      }}>
-        <span style={{ fontSize: '24px' }}>💣</span>
-        <div>
-          <h3 style={{
-            margin: 0,
-            fontSize: '16px',
-            fontWeight: 700,
-            color: '#00ff88',
-          }}>
-            BAGGERBOMB STATS
-          </h3>
-          <p style={{
-            margin: '2px 0 0',
-            fontSize: '11px',
-            color: 'rgba(255, 255, 255, 0.5)',
-          }}>
-            Volatility scoring for {asset?.symbol}
-          </p>
-        </div>
-      </div>
-
-      {/* THRESHOLDS Section */}
-      <div style={{ marginBottom: '20px' }}>
-        <div style={{
-          fontSize: '10px',
-          fontWeight: 700,
-          color: 'rgba(255, 255, 255, 0.5)',
-          textTransform: 'uppercase',
-          letterSpacing: '1px',
-          marginBottom: '10px',
-        }}>
-          THRESHOLDS
-        </div>
-
-        {/* Positive Thresholds */}
-        <div style={{
-          background: 'rgba(0, 255, 136, 0.05)',
-          borderRadius: '10px',
-          padding: '12px',
-          marginBottom: '8px',
-        }}>
-          {BAGGER_TIERS.map((tier, i) => (
-            <div key={tier.key} style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '8px 0',
-              borderBottom: i < BAGGER_TIERS.length - 1 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
-            }}>
-              <span style={{ color: '#00ff88', fontSize: '13px' }}>{tier.emoji} {tier.label}</span>
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
-                  +{(baseThreshold * tier.multiplier).toFixed(1)}%
-                </span>
-                <span style={{ color: '#00ff88', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
-                  +{tier.points} pts
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Negative Thresholds */}
-        <div style={{
-          background: 'rgba(255, 51, 102, 0.05)',
-          borderRadius: '10px',
-          padding: '12px',
-        }}>
-          {BUST_TIERS.map((tier, i) => (
-            <div key={tier.key} style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '8px 0',
-              borderBottom: i < BUST_TIERS.length - 1 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
-            }}>
-              <span style={{ color: '#ff3366', fontSize: '13px' }}>{tier.emoji} {tier.label}</span>
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontFamily: 'monospace', fontSize: '12px' }}>
-                  -{(baseThreshold * tier.multiplier).toFixed(1)}%
-                </span>
-                <span style={{ color: '#ff3366', fontWeight: 700, fontFamily: 'monospace', fontSize: '12px' }}>
-                  {tier.points} pts
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* THIS BATTLE Section */}
-      <div style={{ marginBottom: '20px' }}>
-        <div style={{
-          fontSize: '10px',
-          fontWeight: 700,
-          color: 'rgba(255, 255, 255, 0.5)',
-          textTransform: 'uppercase',
-          letterSpacing: '1px',
-          marginBottom: '10px',
-        }}>
-          THIS BATTLE
-        </div>
-
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '10px',
-        }}>
-          {/* BaggerBombs */}
-          <div style={{
-            background: currentBaggerBombs > 0 ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.03)',
-            borderRadius: '10px',
-            padding: '14px',
-            textAlign: 'center',
-            border: currentBaggerBombs > 0 ? '1px solid rgba(0, 255, 136, 0.3)' : 'none',
-          }}>
-            <div style={{ fontSize: '24px', marginBottom: '6px' }}>
-              {currentBaggerBombs > 0 ? '💣'.repeat(Math.min(currentBaggerBombs, 3)) : '💣'}
-            </div>
-            <div style={{
-              fontSize: '18px',
-              fontWeight: 700,
-              color: currentBaggerBombs > 0 ? '#00ff88' : 'rgba(255, 255, 255, 0.3)',
-            }}>
-              {currentBaggerBombs}x
-            </div>
-            <div style={{
-              fontSize: '10px',
-              color: 'rgba(255, 255, 255, 0.5)',
-              marginTop: '4px',
-            }}>
-              {currentBaggerBombPoints > 0 ? `+${currentBaggerBombPoints} pts` : 'No hits yet'}
-            </div>
-          </div>
-
-          {/* Busts */}
-          <div style={{
-            background: currentBusts > 0 ? 'rgba(255, 51, 102, 0.1)' : 'rgba(255, 255, 255, 0.03)',
-            borderRadius: '10px',
-            padding: '14px',
-            textAlign: 'center',
-            border: currentBusts > 0 ? '1px solid rgba(255, 51, 102, 0.3)' : 'none',
-          }}>
-            <div style={{ fontSize: '24px', marginBottom: '6px' }}>
-              {currentBusts > 0 ? '📉'.repeat(Math.min(currentBusts, 3)) : '📉'}
-            </div>
-            <div style={{
-              fontSize: '18px',
-              fontWeight: 700,
-              color: currentBusts > 0 ? '#ff3366' : 'rgba(255, 255, 255, 0.3)',
-            }}>
-              {currentBusts}x
-            </div>
-            <div style={{
-              fontSize: '10px',
-              color: 'rgba(255, 255, 255, 0.5)',
-              marginTop: '4px',
-            }}>
-              {currentBustPoints < 0 ? `${currentBustPoints} pts` : 'No busts'}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* HISTORICAL Section */}
-      <div>
-        <div style={{
-          fontSize: '10px',
-          fontWeight: 700,
-          color: 'rgba(255, 255, 255, 0.5)',
-          textTransform: 'uppercase',
-          letterSpacing: '1px',
-          marginBottom: '10px',
-        }}>
-          HISTORICAL (30 DAYS)
-        </div>
-
-        <div style={{
-          background: 'rgba(0, 217, 255, 0.05)',
-          borderRadius: '10px',
-          padding: '14px',
-        }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr 1fr',
-            gap: '12px',
-            textAlign: 'center',
-          }}>
-            <div>
-              <div style={{
-                fontSize: '20px',
-                fontWeight: 700,
-                color: historical.hitRate >= 50 ? '#00ff88' : historical.hitRate >= 30 ? '#f59e0b' : '#ff3366',
-              }}>
-                {historical.hitRate}%
-              </div>
-              <div style={{
-                fontSize: '9px',
-                color: 'rgba(255, 255, 255, 0.5)',
-                marginTop: '4px',
-                textTransform: 'uppercase',
-              }}>
-                Hit Rate
-              </div>
-            </div>
-            <div>
-              <div style={{
-                fontSize: '20px',
-                fontWeight: 700,
-                color: '#00d9ff',
-              }}>
-                {historical.avgMove.toFixed(1)}%
-              </div>
-              <div style={{
-                fontSize: '9px',
-                color: 'rgba(255, 255, 255, 0.5)',
-                marginTop: '4px',
-                textTransform: 'uppercase',
-              }}>
-                Avg Daily Move
-              </div>
-            </div>
-            <div>
-              <div style={{
-                fontSize: '20px',
-                fontWeight: 700,
-                color: '#fff',
-              }}>
-                {historical.daysAboveThreshold}/30
-              </div>
-              <div style={{
-                fontSize: '9px',
-                color: 'rgba(255, 255, 255, 0.5)',
-                marginTop: '4px',
-                textTransform: 'uppercase',
-              }}>
-                Days Hit
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Note */}
-        <div style={{
-          marginTop: '12px',
-          padding: '10px',
-          background: 'rgba(245, 158, 11, 0.08)',
-          borderLeft: '3px solid #f59e0b',
-          borderRadius: '0 8px 8px 0',
-          fontSize: '11px',
-          color: 'rgba(255, 255, 255, 0.7)',
-        }}>
-          <strong style={{ color: '#f59e0b' }}>Note:</strong> Threshold tiers are 1.0x, 1.5x, and 2.0x of the base threshold ({baseThreshold.toFixed(1)}%).
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const AssetResearchModal = ({
   asset,
   sector,
@@ -705,13 +95,38 @@ const AssetResearchModal = ({
   const v2ContainerRef = useRef(null);
   const { isMobile, isTablet } = useIsMobile();
 
-  // v2: Responsive chart height — v2 mobile uses ~50% of container (min 280px)
-  const chartHeight = version >= 2 && isMobile
-    ? Math.max(Math.round(v2ContainerHeight * 0.5), 280)
+  // v2: Responsive chart height — scale to container so date axis clears drawer at mid snap.
+  // Drawer mid-top sits at 50% (desktop/tablet) or 60% (mobile) of container.
+  // Mobile: 50% of container (min 280) — ample gap to the 60% drawer line.
+  // Desktop/tablet: capped at old fixed max but shrinks to 45% when container is small,
+  // guaranteeing ≥5% gap (~30px) between chart bottom and drawer top.
+  const chartHeight = version >= 2
+    ? isMobile
+      ? Math.max(Math.round(v2ContainerHeight * 0.5), 280)
+      : Math.min(isTablet ? 260 : 300, Math.round(v2ContainerHeight * 0.45))
     : isMobile ? 200 : isTablet ? 260 : 300;
 
   // v2: Research data hook for chart + enhanced technical tab
-  const researchData = useResearchData(version >= 2 ? asset?.symbol : null);
+  const researchData = useResearchData(version >= 2 ? asset?.symbol : null, {
+    currentPrice: asset?.price || asset?.currentPrice || 0,
+    isCrypto: isCrypto,
+  });
+
+  // v2: Bomb chart data — only available when asset has battle context (threshold + baseline price)
+  const bombData = useMemo(() => {
+    const threshold = asset?.threshold;
+    const baselinePrice =
+      asset?.lockedPrice ||
+      asset?.baselinePrice ||
+      asset?.startPrice ||
+      asset?.startingPrice ||
+      asset?.basePrice ||
+      asset?.draftPrice ||
+      null;
+    if (!threshold || threshold <= 0 || !baselinePrice || baselinePrice <= 0) return null;
+    return { threshold, baselinePrice };
+  }, [asset?.threshold, asset?.lockedPrice, asset?.baselinePrice, asset?.startPrice,
+      asset?.startingPrice, asset?.basePrice, asset?.draftPrice]);
 
   // v2: Measure container height for drawer snap points
   useEffect(() => {
@@ -1092,7 +507,7 @@ const AssetResearchModal = ({
 
           {/* v2: Chart Section */}
           {version >= 2 && (
-            <div style={{ flexShrink: 0, position: 'relative', zIndex: 1 }}>
+            <div style={{ flexShrink: 0, position: 'relative', zIndex: 1, paddingBottom: '28px' }}>
               {researchData.loading && !researchData.ohlcvData && (
                 <div style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1137,6 +552,7 @@ const AssetResearchModal = ({
                   smaData={researchData.smaData}
                   activeHighlight={highlightedLevel}
                   height={chartHeight}
+                  bombData={bombData}
                 />
               )}
             </div>
@@ -1164,6 +580,7 @@ const AssetResearchModal = ({
               setActiveTab={setActiveTab}
               onSnapStateChange={handleDrawerSnapChange}
               isCrypto={isCrypto}
+              hasBombData={!!bombData}
             >
               {activeTab === 'fundamental' && (
                 <div style={{ padding: '8px 0' }}>
@@ -1173,24 +590,62 @@ const AssetResearchModal = ({
                       {'\u25CF'} {displayRating}
                     </span>
                   </div>
-                  {/* Key metrics grid */}
+                  {/* Company profile: sector/industry pills + description */}
+                  {profileLoading && (
+                    <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)' }}>
+                      <div style={{ height: '12px', width: '40%', borderRadius: '6px', background: 'linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite', marginBottom: '8px' }} />
+                      <div style={{ height: '10px', width: '90%', borderRadius: '5px', background: 'linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />
+                    </div>
+                  )}
+                  {profile && !profileLoading && (profile.sector !== 'Unknown' || profile.description) && (
+                    <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: profile.description ? '8px' : 0 }}>
+                        {profile.sector && profile.sector !== 'Unknown' && (
+                          <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '2px 8px', borderRadius: '8px', fontSize: '10px', fontWeight: '600' }}>
+                            {profile.sector}
+                          </span>
+                        )}
+                        {profile.industry && profile.industry !== 'Unknown' && (
+                          <span style={{ background: 'rgba(139, 92, 246, 0.15)', color: '#818cf8', padding: '2px 8px', borderRadius: '8px', fontSize: '10px', fontWeight: '600' }}>
+                            {profile.industry}
+                          </span>
+                        )}
+                      </div>
+                      {profile.description && (
+                        <>
+                          <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: '11px', lineHeight: '1.5', margin: 0, overflow: 'hidden', maxHeight: descExpanded ? 'none' : '48px' }}>
+                            {profile.description}
+                          </p>
+                          {profile.description.length > 150 && (
+                            <button
+                              onClick={() => setDescExpanded(!descExpanded)}
+                              style={{ color: '#14b8a6', background: 'none', border: 'none', fontSize: '10px', cursor: 'pointer', padding: '4px 0 0', fontWeight: '500' }}
+                            >
+                              {descExpanded ? 'Show less' : 'Read more'}
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {/* Key metrics grid — real API data, "—" when unavailable */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
                     {[
-                      { label: 'Market Cap', value: fundamentals.marketCap },
-                      { label: 'P/E Ratio', value: fundamentals.peRatio },
-                      { label: 'Rev Growth', value: fundamentals.revenueGrowth },
-                      { label: 'Margin', value: fundamentals.profitMargin },
+                      { label: 'Market Cap', value: profile?.marketCap ? formatLargeNumber(profile.marketCap, 1) : '\u2014' },
+                      { label: 'P/E Ratio', value: profile?.peRatio != null ? `${Number(profile.peRatio).toFixed(1)}x` : '\u2014' },
+                      { label: 'Rev Growth', value: profile?.revenueGrowthYOY != null ? `${(profile.revenueGrowthYOY * 100) >= 0 ? '+' : ''}${(profile.revenueGrowthYOY * 100).toFixed(0)}%` : '\u2014' },
+                      { label: 'Margin', value: profile?.profitMargin != null ? `${(profile.profitMargin * 100).toFixed(0)}%` : '\u2014' },
                     ].map(m => (
                       <div key={m.label} style={{
                         padding: '8px', borderRadius: '8px',
                         background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
                       }}>
                         <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginBottom: '2px' }}>{m.label}</div>
-                        <div style={{ fontSize: '13px', fontWeight: '600', color: '#e6edf3' }}>{m.value}</div>
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: m.value === '\u2014' ? 'rgba(255,255,255,0.25)' : '#e6edf3' }}>{m.value}</div>
                       </div>
                     ))}
                   </div>
-                  {/* Strengths & Weaknesses */}
+                  {/* Strengths & Weaknesses — curated qualitative data */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                     <div>
                       <div style={{ fontSize: '11px', fontWeight: '600', color: '#00ff88', marginBottom: '4px' }}>Strengths</div>
@@ -1355,25 +810,27 @@ const AssetResearchModal = ({
               >
                 Technical
               </button>
-              <button
-                onClick={() => setActiveTab('baggerbomb')}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  border: activeTab === 'baggerbomb' ? '1px solid #00ff88' : '1px solid rgba(255, 255, 255, 0.1)',
-                  background: activeTab === 'baggerbomb' ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                  color: activeTab === 'baggerbomb' ? '#00ff88' : 'rgba(255, 255, 255, 0.6)',
-                  fontWeight: '600',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  textAlign: 'center',
-                  flexShrink: 0,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                💣 Bomb
-              </button>
+              {bombData && (
+                <button
+                  onClick={() => setActiveTab('baggerbomb')}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    border: activeTab === 'baggerbomb' ? '1px solid #00ff88' : '1px solid rgba(255, 255, 255, 0.1)',
+                    background: activeTab === 'baggerbomb' ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                    color: activeTab === 'baggerbomb' ? '#00ff88' : 'rgba(255, 255, 255, 0.6)',
+                    fontWeight: '600',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    textAlign: 'center',
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  💣 Bomb
+                </button>
+              )}
               <button
                 onClick={() => setActiveTab('news')}
                 style={{

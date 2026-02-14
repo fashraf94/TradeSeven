@@ -63,20 +63,65 @@ function isWeekday() {
   return day >= 1 && day <= 5;
 }
 
-// Get current trading day number (1-5) for a battle
-function getCurrentTradingDay(battleStartTime) {
-  if (!battleStartTime) return 0;
+// Determine the correct battle start date (YYYY-MM-DD in ET).
+// Duplicated from battleTiming.js since serverless functions can't import from src/.
+function getBattleStartDate(completionTime) {
+  const completed = new Date(completionTime);
+  const etString = completed.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const et = new Date(etString);
 
-  // Convert battleStartTime to Eastern Time before normalizing
-  // This ensures both dates are in the same ET reference frame,
-  // preventing off-by-one errors since this cron runs on Vercel (UTC)
-  const startDate = new Date(battleStartTime);
-  const startETString = startDate.toLocaleString('en-US', { timeZone: 'America/New_York' });
-  const startDay = new Date(startETString);
-  startDay.setHours(0, 0, 0, 0);
+  const dayOfWeek = et.getDay();
+  const currentMinutes = et.getHours() * 60 + et.getMinutes();
+  const marketOpenMinutes = 9 * 60 + 30;
+
+  let startDate = new Date(et);
+
+  if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+    if (currentMinutes >= marketOpenMinutes) {
+      startDate.setDate(startDate.getDate() + 1);
+      while (startDate.getDay() === 0 || startDate.getDay() === 6) {
+        startDate.setDate(startDate.getDate() + 1);
+      }
+    }
+  } else {
+    while (startDate.getDay() === 0 || startDate.getDay() === 6) {
+      startDate.setDate(startDate.getDate() + 1);
+    }
+  }
+
+  const year = startDate.getFullYear();
+  const month = String(startDate.getMonth() + 1).padStart(2, '0');
+  const day = String(startDate.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Get current trading day number (1-5) for a battle
+// Returns 0 if battleStartDate is in the future (battle hasn't started yet)
+function getCurrentTradingDay(battleStartTime, battleStartDate) {
+  if (!battleStartTime && !battleStartDate) return 0;
+
+  let startDay;
+
+  if (battleStartDate) {
+    // New path: use explicit battleStartDate (YYYY-MM-DD)
+    // Parse with noon time to avoid DST midnight edge cases
+    startDay = new Date(battleStartDate + 'T12:00:00');
+    startDay.setHours(0, 0, 0, 0);
+  } else {
+    // Legacy path: compute correct start date from battleStartTime
+    // getBattleStartDate defers to next trading day if completed during/after market hours
+    const computedStartDate = getBattleStartDate(battleStartTime);
+    startDay = new Date(computedStartDate + 'T12:00:00');
+    startDay.setHours(0, 0, 0, 0);
+  }
 
   const currentDay = new Date(getEasternTime());
   currentDay.setHours(0, 0, 0, 0);
+
+  // If current date is before battle start date, return 0 (not started)
+  if (currentDay < startDay) {
+    return 0;
+  }
 
   // Count trading days between start and now
   let tradingDays = 0;
@@ -161,7 +206,7 @@ async function fetchStockPrices(symbols) {
 // Record daily close scores for a single battle
 async function recordBattleScores(db, battle, currentPrices) {
   const battleId = battle.id;
-  const currentDay = getCurrentTradingDay(battle.battleStartTime || battle.createdAt);
+  const currentDay = getCurrentTradingDay(battle.battleStartTime || battle.createdAt, battle.battleStartDate);
   const dayKey = `day${currentDay}`;
 
   if (currentDay < 1 || currentDay > 5) {

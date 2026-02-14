@@ -9,9 +9,12 @@ import { aggregateToMonthly } from './chartUtils';
  * Manages OHLCV data, technical indicators, and S/R levels.
  *
  * @param {string} symbol - Stock/crypto ticker
+ * @param {Object} options - Optional configuration
+ * @param {number} options.currentPrice - Live price for synthetic candle (from header)
+ * @param {boolean} options.isCrypto - Whether the asset is crypto (trades 24/7)
  * @returns {Object} { ohlcvData, timeframe, setTimeframe, indicators, levels, smaData, loading, error }
  */
-export default function useResearchData(symbol) {
+export default function useResearchData(symbol, { currentPrice, isCrypto } = {}) {
   const [rawData, setRawData] = useState(null);    // Raw API response (newest-first)
   const [timeframe, setTimeframe] = useState('1D');  // UI timeframe: '1D' | '1W' | '1M'
   const [loading, setLoading] = useState(false);
@@ -21,16 +24,20 @@ export default function useResearchData(symbol) {
   const cacheRef = useRef({});  // In-memory cache keyed by `${symbol}_${apiTimeframe}`
 
   // Map UI timeframe to API timeframe
-  const apiTimeframe = timeframe === '1D' ? '1d' : '1w'; // Both 1W and 1M use weekly data
+  const isBomb = timeframe === 'bomb';
+  const isSpectate = timeframe === 'spectate';
+  const apiTimeframe = isSpectate ? '1m' : isBomb ? '1h' : (timeframe === '1D' ? '1d' : '1w');
+  const bombDays = 20; // 20 trading days of hourly data (~140 candles)
+  const spectateRefreshRef = useRef(null);
 
   // Fetch data when symbol or API timeframe changes
   useEffect(() => {
     if (!symbol) return;
 
-    const cacheKey = `${symbol}_${apiTimeframe}`;
+    const cacheKey = isBomb ? `${symbol}_1h_bomb` : `${symbol}_${apiTimeframe}`;
 
-    // Check in-memory cache
-    if (cacheRef.current[cacheKey]) {
+    // Check in-memory cache (skip cache for spectate — always fetch fresh)
+    if (!isSpectate && cacheRef.current[cacheKey]) {
       setRawData(cacheRef.current[cacheKey]);
       setError(null);
       return;
@@ -46,14 +53,29 @@ export default function useResearchData(symbol) {
     setLoading(true);
     setError(null);
 
-    fetchHistoricalOHLCV(symbol, apiTimeframe)
+    const fetchOpts = isSpectate ? { days: 1 } : isBomb ? { days: bombDays } : undefined;
+    fetchHistoricalOHLCV(symbol, apiTimeframe, fetchOpts)
       .then(data => {
         if (thisRequest.aborted) return;
         if (!data || data.length === 0) {
-          setError('No historical data available');
-          setRawData(null);
+          if (isSpectate) {
+            // Spectate fallback: use cached 1h bomb data if available
+            const bombCacheKey = `${symbol}_1h_bomb`;
+            const cachedBomb = cacheRef.current[bombCacheKey];
+            if (cachedBomb && cachedBomb.length > 0) {
+              console.log('[useResearchData] Spectate 1m empty, falling back to cached 1h bomb data');
+              setRawData(cachedBomb);
+              setError(null);
+            } else {
+              setError('1-minute data not available — try during market hours (9:30 AM – 4:00 PM ET)');
+              setRawData(null);
+            }
+          } else {
+            setError('No historical data available');
+            setRawData(null);
+          }
         } else {
-          cacheRef.current[cacheKey] = data;
+          if (!isSpectate) cacheRef.current[cacheKey] = data;
           setRawData(data);
         }
       })
@@ -70,7 +92,50 @@ export default function useResearchData(symbol) {
     return () => {
       thisRequest.aborted = true;
     };
-  }, [symbol, apiTimeframe]);
+  }, [symbol, apiTimeframe, isBomb, isSpectate]);
+
+  // Auto-refresh spectate mode every 15 seconds
+  // Guard: stop polling after 3 consecutive empty responses (EODHD has no 1m data)
+  const emptyCountRef = useRef(0);
+  useEffect(() => {
+    if (spectateRefreshRef.current) {
+      clearInterval(spectateRefreshRef.current);
+      spectateRefreshRef.current = null;
+    }
+    if (!isSpectate || !symbol) {
+      emptyCountRef.current = 0;
+      return;
+    }
+
+    emptyCountRef.current = 0; // Reset on fresh spectate entry
+    spectateRefreshRef.current = setInterval(() => {
+      if (emptyCountRef.current >= 3) {
+        console.log('[useResearchData] Spectate: stopped polling after 3 empty responses');
+        clearInterval(spectateRefreshRef.current);
+        spectateRefreshRef.current = null;
+        return;
+      }
+      fetchHistoricalOHLCV(symbol, '1m', { days: 1 })
+        .then(data => {
+          if (data && data.length > 0) {
+            emptyCountRef.current = 0;
+            setRawData(data);
+          } else {
+            emptyCountRef.current++;
+          }
+        })
+        .catch(() => {
+          emptyCountRef.current++;
+        });
+    }, 15000);
+
+    return () => {
+      if (spectateRefreshRef.current) {
+        clearInterval(spectateRefreshRef.current);
+        spectateRefreshRef.current = null;
+      }
+    };
+  }, [isSpectate, symbol]);
 
   // Process data based on UI timeframe
   const ohlcvData = useMemo(() => {
@@ -79,17 +144,166 @@ export default function useResearchData(symbol) {
     // Data from API is newest-first, reverse to oldest-first for processing
     const reversed = [...rawData].reverse();
 
-    if (timeframe === '1W') {
+    let result;
+    if (timeframe === 'spectate') {
+      // Detect if data is 1-minute (real) or 1-hour (fallback from bomb cache)
+      // 1m data has >20 candles in a single day; 1h has ~7
+      const sample = reversed[0];
+      const sampleDate = sample?.date || sample?.datetime || '';
+      const isHourlyFallback = reversed.length > 10 && (() => {
+        // If two adjacent candles are ~1 hour apart, it's hourly data
+        if (reversed.length < 2) return false;
+        const t0 = reversed[0]?.timestamp || Math.floor(new Date(reversed[0]?.date || reversed[0]?.datetime || 0).getTime() / 1000);
+        const t1 = reversed[1]?.timestamp || Math.floor(new Date(reversed[1]?.date || reversed[1]?.datetime || 0).getTime() / 1000);
+        return Math.abs(t1 - t0) >= 1800; // >30 min gap = hourly data
+      })();
+
+      if (isHourlyFallback) {
+        // Hourly fallback: filter to only the most recent trading day
+        // Use ET date to determine "today" — not the server's local timezone
+        const nowET = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+        const lastTrading = new Date(nowET); // parsed as local date
+        const dow = lastTrading.getDay();
+        if (dow === 0) lastTrading.setDate(lastTrading.getDate() - 2); // Sun → Fri
+        if (dow === 6) lastTrading.setDate(lastTrading.getDate() - 1); // Sat → Fri
+
+        // Get the ET date string (YYYY-MM-DD) for matching
+        const etDateStr = lastTrading.toISOString().slice(0, 10);
+
+        // Helper: get the ET date of a unix timestamp as YYYY-MM-DD
+        const getETDate = (unixTs) => {
+          const d = new Date(unixTs * 1000);
+          return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); // en-CA → YYYY-MM-DD
+        };
+
+        // Helper: check if a candle falls within US market hours (9:30-16:00 ET)
+        const isMarketHours = (unixTs) => {
+          const d = new Date(unixTs * 1000);
+          const etStr = d.toLocaleString('en-US', {
+            timeZone: 'America/New_York',
+            hour: 'numeric', minute: 'numeric', hour12: false
+          });
+          const [h, m] = etStr.split(':').map(Number);
+          const mins = h * 60 + m;
+          return mins >= 570 && mins <= 960; // 9:30 AM (570) to 4:00 PM (960)
+        };
+
+        let todayCandles = reversed.filter(c => {
+          const t = c.timestamp || Math.floor(new Date(c.date || c.datetime || 0).getTime() / 1000);
+          return getETDate(t) === etDateStr && isMarketHours(t);
+        });
+
+        // If empty (holiday), try the previous trading day
+        if (todayCandles.length === 0) {
+          const prev = new Date(lastTrading);
+          prev.setDate(prev.getDate() - 1);
+          if (prev.getDay() === 0) prev.setDate(prev.getDate() - 2);
+          if (prev.getDay() === 6) prev.setDate(prev.getDate() - 1);
+          const prevDateStr = prev.toISOString().slice(0, 10);
+          todayCandles = reversed.filter(c => {
+            const t = c.timestamp || Math.floor(new Date(c.date || c.datetime || 0).getTime() / 1000);
+            return getETDate(t) === prevDateStr && isMarketHours(t);
+          });
+        }
+
+        console.log('[Spectate] Hourly fallback — target ET date:', etDateStr,
+          'candles found:', todayCandles.length,
+          todayCandles.map(c => {
+            const t = c.timestamp || Math.floor(new Date(c.date || c.datetime || 0).getTime() / 1000);
+            return new Date(t * 1000).toLocaleString('en-US', { timeZone: 'America/New_York' });
+          }));
+
+        result = todayCandles;
+      } else {
+        // Real 1m data: last ~60 candles
+        result = reversed.slice(-60);
+      }
+    } else if (timeframe === 'bomb') {
+      // Bomb view: all hourly candles (~140 for 20 trading days)
+      result = reversed;
+    } else if (timeframe === '1W') {
       // Weekly data, slice to ~52 most recent weeks (1 year)
-      return reversed.slice(-52);
-    }
-    if (timeframe === '1M') {
+      result = reversed.slice(-52);
+    } else if (timeframe === '1M') {
       // Aggregate weekly data into monthly
-      return aggregateToMonthly(reversed);
+      result = aggregateToMonthly(reversed);
+    } else {
+      // 1D: daily data as-is
+      result = reversed;
     }
-    // 1D: daily data as-is
-    return reversed;
-  }, [rawData, timeframe]);
+
+    // Append synthetic "live" candle if the last candle is stale and we have a live price.
+    // This bridges the gap between EODHD historical data (which only includes completed
+    // periods) and the live price shown in the header.
+    if (currentPrice && currentPrice > 0 && result && result.length > 0) {
+      const lastCandle = result[result.length - 1];
+      const lastDateStr = lastCandle.date || lastCandle.datetime || '';
+
+      if (timeframe === 'bomb' || timeframe === 'spectate') {
+        // Hourly (bomb or spectate fallback): append if last candle is >1 hour old
+        const lastTime = lastCandle.timestamp
+          ? lastCandle.timestamp * 1000
+          : new Date(lastDateStr).getTime();
+        const hourMs = 60 * 60 * 1000;
+        if (lastTime && (Date.now() - lastTime) > hourMs) {
+          const nowHour = new Date();
+          nowHour.setMinutes(0, 0, 0);
+          result = [...result, {
+            date: nowHour.toISOString(),
+            datetime: nowHour.toISOString(),
+            timestamp: Math.floor(nowHour.getTime() / 1000),
+            open: lastCandle.close,
+            high: Math.max(currentPrice, lastCandle.close),
+            low: Math.min(currentPrice, lastCandle.close),
+            close: currentPrice,
+            volume: 0,
+          }];
+        }
+      } else if (timeframe === '1W') {
+        // Weekly: append if last candle is from a previous week
+        const lastDate = new Date(lastDateStr);
+        const monday = new Date();
+        monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7)); // This Monday
+        monday.setHours(0, 0, 0, 0);
+        if (lastDate < monday) {
+          const mondayStr = monday.toISOString().split('T')[0];
+          result = [...result, {
+            date: mondayStr,
+            open: lastCandle.close,
+            high: Math.max(currentPrice, lastCandle.close),
+            low: Math.min(currentPrice, lastCandle.close),
+            close: currentPrice,
+            volume: 0,
+          }];
+        }
+      } else if (timeframe === '1D') {
+        // Daily: append if last candle is from a previous day
+        const lastDate = new Date(lastDateStr);
+        lastDate.setHours(0, 0, 0, 0);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // For stocks, skip weekends (Sat=6, Sun=0); crypto trades 24/7
+        const dayOfWeek = today.getDay();
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+        const shouldAppend = isCrypto ? true : !isWeekend;
+
+        if (lastDate < today && shouldAppend) {
+          const todayStr = today.toISOString().split('T')[0];
+          result = [...result, {
+            date: todayStr,
+            open: lastCandle.close,
+            high: Math.max(currentPrice, lastCandle.close),
+            low: Math.min(currentPrice, lastCandle.close),
+            close: currentPrice,
+            volume: 0,
+          }];
+        }
+      }
+    }
+
+    return result;
+  }, [rawData, timeframe, currentPrice, isCrypto]);
 
   // Compute closing prices (newest-first, as expected by indicator functions)
   const closingPrices = useMemo(() => {
@@ -135,13 +349,12 @@ export default function useResearchData(symbol) {
 
   // Retry function
   const retry = useCallback(() => {
-    const cacheKey = `${symbol}_${apiTimeframe}`;
+    const cacheKey = isBomb ? `${symbol}_1h_bomb` : `${symbol}_${apiTimeframe}`;
     delete cacheRef.current[cacheKey];
     setRawData(null);
     setError(null);
-    // Trigger re-fetch by toggling a dummy state
     setLoading(true);
-    fetchHistoricalOHLCV(symbol, apiTimeframe)
+    fetchHistoricalOHLCV(symbol, apiTimeframe, isBomb ? { days: bombDays } : undefined)
       .then(data => {
         if (!data || data.length === 0) {
           setError('No historical data available');
@@ -152,7 +365,7 @@ export default function useResearchData(symbol) {
       })
       .catch(err => setError(err.message || 'Failed to fetch data'))
       .finally(() => setLoading(false));
-  }, [symbol, apiTimeframe]);
+  }, [symbol, apiTimeframe, isBomb]);
 
   return {
     ohlcvData,       // Oldest-first, processed for current timeframe

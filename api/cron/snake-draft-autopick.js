@@ -109,6 +109,60 @@ function calculateBattleEndTime(portfolioType, now) {
 }
 
 /**
+ * Determine the correct battle start date (YYYY-MM-DD in ET).
+ * Duplicated from battleTiming.js since serverless functions can't import from src/.
+ */
+function getBattleStartDate(completionTime) {
+  const completed = new Date(completionTime);
+  const etString = completed.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const et = new Date(etString);
+
+  const dayOfWeek = et.getDay();
+  const currentMinutes = et.getHours() * 60 + et.getMinutes();
+  const marketOpenMinutes = 9 * 60 + 30;
+
+  let startDate = new Date(et);
+
+  if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+    if (currentMinutes >= marketOpenMinutes) {
+      startDate.setDate(startDate.getDate() + 1);
+      while (startDate.getDay() === 0 || startDate.getDay() === 6) {
+        startDate.setDate(startDate.getDate() + 1);
+      }
+    }
+  } else {
+    while (startDate.getDay() === 0 || startDate.getDay() === 6) {
+      startDate.setDate(startDate.getDate() + 1);
+    }
+  }
+
+  const year = startDate.getFullYear();
+  const month = String(startDate.getMonth() + 1).padStart(2, '0');
+  const day = String(startDate.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Calculate the battle end date as 5 trading days from start.
+ * Duplicated from battleTiming.js since serverless functions can't import from src/.
+ */
+function calculateBattleEndDate(startDateStr) {
+  const date = new Date(startDateStr + 'T12:00:00');
+  let tradingDays = 0;
+  while (tradingDays < 5) {
+    if (date.getDay() >= 1 && date.getDay() <= 5) {
+      tradingDays++;
+      if (tradingDays === 5) break;
+    }
+    date.setDate(date.getDate() + 1);
+  }
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Execute autopick for a single draft using a Firestore transaction
  * to prevent race conditions with concurrent clients/cron runs.
  */
@@ -250,11 +304,15 @@ async function executeAutopick(db, draftId) {
       };
 
       const battleEndTime = calculateBattleEndTime(draft.type, now);
+      const battleStartDate = getBattleStartDate(now);
+      const battleEndDate = calculateBattleEndDate(battleStartDate);
 
       updateData.players = playersWithOriginalPicks;
       updateData.status = 'battle';
       updateData.completedAt = FieldValue.serverTimestamp();
       updateData.battleStartTime = now;
+      updateData.battleStartDate = battleStartDate;
+      updateData.battleEndDate = battleEndDate;
       updateData.battleEndTime = battleEndTime;
       updateData.freeAgents = freeAgents;
       updateData.swapHistory = [];

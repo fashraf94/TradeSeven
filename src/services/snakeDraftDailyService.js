@@ -4,7 +4,7 @@
 
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { getEasternTime } from '../constants/battleTiming';
+import { getEasternTime, getBattleStartDate } from '../constants/battleTiming';
 import { calculateSnakeDraftAssetScore } from './scoring/baggerBombCalculator';
 
 // Constants
@@ -80,22 +80,35 @@ function calculatePlayerScores(players, openPrices, currentPrices, thresholds) {
 /**
  * Get the current trading day number (1-5) for a battle
  * @param {string|Date} battleStartTime - When the battle started
- * @returns {number} Current trading day (1-5), or 0 if before battle, or 6 if after battle
+ * @param {string} battleStartDate - (Optional) YYYY-MM-DD of Day 1 in ET
+ * @returns {number} Current trading day (1-5), or 0 if before battle start
  */
-export function getCurrentTradingDay(battleStartTime) {
-  if (!battleStartTime) return 0;
+export function getCurrentTradingDay(battleStartTime, battleStartDate) {
+  if (!battleStartTime && !battleStartDate) return 0;
 
-  // Convert battleStartTime to Eastern Time before normalizing
-  // This ensures both dates are in the same ET reference frame,
-  // preventing off-by-one errors for non-ET users and the Vercel server (UTC)
-  const startDate = new Date(battleStartTime);
-  const startETString = startDate.toLocaleString('en-US', { timeZone: 'America/New_York' });
-  const startDay = new Date(startETString);
-  startDay.setHours(0, 0, 0, 0);
+  let startDay;
+
+  if (battleStartDate) {
+    // New path: use explicit battleStartDate (YYYY-MM-DD)
+    // Parse with noon time to avoid DST midnight edge cases
+    startDay = new Date(battleStartDate + 'T12:00:00');
+    startDay.setHours(0, 0, 0, 0);
+  } else {
+    // Legacy path: compute battleStartDate on-the-fly as safety net
+    // This ensures drafts completed during/after market hours still defer to next trading day
+    const computedStartDate = getBattleStartDate(battleStartTime);
+    startDay = new Date(computedStartDate + 'T12:00:00');
+    startDay.setHours(0, 0, 0, 0);
+  }
 
   // getEasternTime() from battleTiming.js already returns an ET-shifted Date
   const currentDay = new Date(getEasternTime());
   currentDay.setHours(0, 0, 0, 0);
+
+  // If current date is before battle start date, return 0 (not started)
+  if (currentDay < startDay) {
+    return 0;
+  }
 
   // Count trading days between start and now
   let tradingDays = 0;
@@ -174,7 +187,12 @@ export async function captureDailyOpenPrices(draftId, currentPrices) {
     }
 
     const draft = draftSnap.data();
-    const currentDay = getCurrentTradingDay(draft.battleStartTime || draft.createdAt);
+    const currentDay = getCurrentTradingDay(draft.battleStartTime || draft.createdAt, draft.battleStartDate);
+
+    // Battle hasn't started yet (battleStartDate is in the future)
+    if (currentDay === 0) {
+      return false;
+    }
 
     if (currentDay < MIN_TRADING_DAY || currentDay > MAX_TRADING_DAY) {
       return false;
@@ -244,7 +262,7 @@ export async function recordDailyCloseScores(draftId, currentPrices, thresholds 
     }
 
     const draft = draftSnap.data();
-    const currentDay = getCurrentTradingDay(draft.battleStartTime || draft.createdAt);
+    const currentDay = getCurrentTradingDay(draft.battleStartTime || draft.createdAt, draft.battleStartDate);
 
     if (currentDay < MIN_TRADING_DAY || currentDay > MAX_TRADING_DAY) {
       return false;
@@ -425,7 +443,7 @@ export async function checkAndCompleteBattle(draftId) {
       return false;
     }
 
-    const currentDay = getCurrentTradingDay(draft.battleStartTime || draft.createdAt);
+    const currentDay = getCurrentTradingDay(draft.battleStartTime || draft.createdAt, draft.battleStartDate);
 
     // Only complete after day 5 is recorded
     if (currentDay < 5 || !draft.dailyData?.day5?.recorded) {
