@@ -236,6 +236,38 @@ export const getOpponentScore = (battle, myUsername) => {
 };
 
 /**
+ * Transform raw sessionScores (creator/opponent keyed) into player/opponent display format.
+ * Extracted from BattleHeader useMemo for testability.
+ */
+export const transformSessionScores = (sessionScores) => {
+  if (!sessionScores) return {};
+  const result = {};
+  Object.entries(sessionScores).forEach(([key, scores]) => {
+    result[key] = {
+      player: scores.creator ?? scores.player ?? 0,
+      opponent: scores.opponent ?? 0,
+    };
+  });
+  return result;
+};
+
+/**
+ * Calculate daily price change percentages for an array of agents.
+ * Returns an array of numbers (or null when data is unavailable), matching agent order.
+ * Extracted from FreeAgentBar useMemo for testability.
+ */
+export const calculateAgentPriceChanges = (agents, currentPrices, dailyOpens) => {
+  return agents.map((agent) => {
+    const current = currentPrices[agent.symbol];
+    const dailyOpen = dailyOpens[agent.symbol];
+    if (current && dailyOpen && dailyOpen > 0) {
+      return ((current - dailyOpen) / dailyOpen) * 100;
+    }
+    return null;
+  });
+};
+
+/**
  * Default export with all helpers
  */
 export default {
@@ -252,5 +284,7 @@ export default {
   getBattleStatus,
   didUserWin,
   getUserScore,
-  getOpponentScore
+  getOpponentScore,
+  transformSessionScores,
+  calculateAgentPriceChanges
 };

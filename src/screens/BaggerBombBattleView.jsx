@@ -29,6 +29,7 @@ import EventFeed from '../components/BaggerBomb/EventFeed';
 // Import modals for research and score breakdown
 import AssetResearchModal from '../components/draft/AssetResearchModal';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
+import { buildResearchAsset } from '../utils/researchAssetBuilder';
 
 // Tier configuration
 const TIERS = [
@@ -213,24 +214,24 @@ export default function BaggerBombBattleView({
   openPrices = {},
   // V4 props
   battleVersion = 3,
-  freeAgents,
-  nextRotationAt,
-  freeAgentDailyOpens,
-  swapsRemaining,
-  currentDay,
-  totalDays,
-  rotationCountdown,
+  freeAgentConfig = {},
   closedTrades,
-  // Swap mode props (V4 multi-step flow)
-  swapMode,
-  onEnterSwapMode,
-  onSelectFreeAgent,
   onSelectSwapTarget,
-  onCancelSwapMode,
   onConfirmSwap,
   isSwapExecuting,
 }) {
   const isV4 = battleVersion >= 4;
+
+  // Destructure freeAgentConfig for local use
+  const {
+    freeAgents,
+    freeAgentDailyOpens,
+    swapsRemaining,
+    currentDay,
+    totalDays,
+    swapMode,
+    onCancelSwapMode,
+  } = freeAgentConfig;
   const [activeTab, setActiveTab] = useState('matchups');
   const [researchAsset, setResearchAsset] = useState(null);
   const [breakdownAsset, setBreakdownAsset] = useState(null);
@@ -387,19 +388,7 @@ export default function BaggerBombBattleView({
           sessionScores={sessionScores}
           completedSessions={completedSessions}
           battleVersion={battleVersion}
-          freeAgents={freeAgents}
-          nextRotationAt={nextRotationAt}
-          currentPrices={currentPrices}
-          freeAgentDailyOpens={freeAgentDailyOpens}
-          swapsRemaining={swapsRemaining}
-          currentDay={currentDay}
-          totalDays={totalDays}
-          rotationCountdown={rotationCountdown}
-          swapMode={swapMode}
-          onEnterSwapMode={onEnterSwapMode}
-          onSelectFreeAgent={onSelectFreeAgent}
-          onCancelSwapMode={onCancelSwapMode}
-          thresholds={thresholds}
+          freeAgentConfig={{ ...freeAgentConfig, currentPrices, thresholds }}
         />
       </div>
 
@@ -498,18 +487,13 @@ export default function BaggerBombBattleView({
       {/* Research Modal - opens when stock symbol is tapped */}
       {researchAsset && (
         <AssetResearchModal
-          asset={{
-            symbol: researchAsset.symbol,
-            name: researchAsset.name || researchAsset.symbol,
-            price: currentPrices[researchAsset.symbol] || researchAsset.currentPrice || researchAsset.price || 0,
-            percentChange: researchAsset.priceChange || 0,
-            threshold: thresholds[researchAsset.symbol]?.threshold || researchAsset.baseATR || 2.5,
-            lockedPrice: openPrices[researchAsset.symbol]
-              || battle?.state?.startingPrices?.[researchAsset.symbol]
-              || researchAsset.lockedPrice
-              || researchAsset.startPrice
-              || 0,
-          }}
+          asset={buildResearchAsset(researchAsset, {
+            livePrices: currentPrices,
+            thresholds,
+            openPrices,
+            startingPrices: battle?.state?.startingPrices,
+            useDefaultThreshold: true,
+          })}
           onClose={() => setResearchAsset(null)}
           showActionButton={false}
           version={2}
@@ -727,6 +711,18 @@ BaggerBombBattleView.propTypes = {
   nightMode: PropTypes.bool,
   /** Whether this is a training battle (shows Training badge) */
   isTraining: PropTypes.bool,
+  /** V4 battle version (3 or 4) */
+  battleVersion: PropTypes.number,
+  /** V4: Grouped free agent config passed through to BattleHeader/FreeAgentBar */
+  freeAgentConfig: PropTypes.object,
+  /** V4: Closed trades from swaps */
+  closedTrades: PropTypes.array,
+  /** V4: Select swap target callback */
+  onSelectSwapTarget: PropTypes.func,
+  /** V4: Confirm swap callback */
+  onConfirmSwap: PropTypes.func,
+  /** V4: Whether swap is being executed */
+  isSwapExecuting: PropTypes.bool,
 };
 
 BaggerBombBattleView.defaultProps = {

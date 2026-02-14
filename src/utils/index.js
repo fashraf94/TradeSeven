@@ -31,6 +31,11 @@ export {
 } from './timerFormatters';
 
 export {
+  buildResearchAsset,
+  DEFAULT_THRESHOLD,
+} from './researchAssetBuilder';
+
+export {
   LOBBY_CONFIG,
   EXPIRATION_WARNING,
   isSnakeDraft,

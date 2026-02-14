@@ -7,6 +7,8 @@ import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import AssetResearchModal from '../draft/AssetResearchModal';
+import { buildResearchAsset } from '../../utils/researchAssetBuilder';
+import { calculateAgentPriceChanges } from '../../utils/battleHelpers';
 
 /**
  * Format seconds to MM:SS
@@ -221,17 +223,10 @@ export default function FreeAgentBar({
     document.head.appendChild(style);
   }, []);
 
-  // Calculate daily price changes for each free agent (from market open, not battle start)
-  const agentChanges = useMemo(() => {
-    return freeAgents.map((agent) => {
-      const current = currentPrices[agent.symbol];
-      const dailyOpen = freeAgentDailyOpens[agent.symbol];
-      if (current && dailyOpen && dailyOpen > 0) {
-        return ((current - dailyOpen) / dailyOpen) * 100;
-      }
-      return null;
-    });
-  }, [freeAgents, currentPrices, freeAgentDailyOpens]);
+  const agentChanges = useMemo(
+    () => calculateAgentPriceChanges(freeAgents, currentPrices, freeAgentDailyOpens),
+    [freeAgents, currentPrices, freeAgentDailyOpens]
+  );
 
   const canSwap = swapsRemaining > 0;
   const isSwapActive = swapMode?.active;
@@ -240,15 +235,12 @@ export default function FreeAgentBar({
 
   const handleCardTap = (agent) => {
     const idx = freeAgents.findIndex(a => a.symbol === agent.symbol);
-    setResearchAsset({
-      symbol: agent.symbol,
-      name: agent.name || agent.symbol,
-      price: currentPrices[agent.symbol] || 0,
+    setResearchAsset(buildResearchAsset(agent, {
+      livePrices: currentPrices,
+      thresholds,
+      openPrices: freeAgentDailyOpens,
       percentChange: idx >= 0 ? agentChanges[idx] || 0 : 0,
-      isCrypto: agent.isCrypto,
-      threshold: thresholds[agent.symbol]?.threshold || agent.baseATR || null,
-      lockedPrice: freeAgentDailyOpens[agent.symbol] || currentPrices[agent.symbol] || null,
-    });
+    }));
   };
 
   return (
