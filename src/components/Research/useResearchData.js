@@ -239,8 +239,8 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
       const lastCandle = result[result.length - 1];
       const lastDateStr = lastCandle.date || lastCandle.datetime || '';
 
-      if (timeframe === 'bomb') {
-        // Hourly: append if last candle is >1 hour old
+      if (timeframe === 'bomb' || timeframe === 'spectate') {
+        // Hourly (bomb or spectate fallback): append if last candle is >1 hour old
         const lastTime = lastCandle.timestamp
           ? lastCandle.timestamp * 1000
           : new Date(lastDateStr).getTime();

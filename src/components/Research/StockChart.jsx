@@ -216,15 +216,18 @@ const StockChart = ({
         wickDownColor: '#ff4757',
         autoscaleInfoProvider: () => {
           if (isSpectateView && spectateLevel && chartData.length > 0) {
-            // Spectate: tight Y-axis around current price and focused threshold
-            const currentPrice = chartData[chartData.length - 1]?.close;
-            if (currentPrice) {
+            // Spectate: tight Y-axis around current price, threshold, AND all visible candle data
+            const latestClose = chartData[chartData.length - 1]?.close;
+            if (latestClose) {
               const thresholdPrice = spectateLevel.price;
-              const lo = Math.min(currentPrice, thresholdPrice);
-              const hi = Math.max(currentPrice, thresholdPrice);
+              // Include all candle highs/lows so no data is clipped
+              const allHighs = chartData.map(c => c.high);
+              const allLows = chartData.map(c => c.low);
+              const lo = Math.min(latestClose, thresholdPrice, ...allLows);
+              const hi = Math.max(latestClose, thresholdPrice, ...allHighs);
               const range = hi - lo;
-              // 40% padding, minimum 0.2% of current price
-              const padding = Math.max(range * 0.4, currentPrice * 0.002);
+              // 15% padding, minimum 0.2% of current price
+              const padding = Math.max(range * 0.15, latestClose * 0.002);
               return { priceRange: { minValue: lo - padding, maxValue: hi + padding } };
             }
           }
