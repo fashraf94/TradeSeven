@@ -196,6 +196,8 @@ export default function FreeAgentBar({
   onSelectFreeAgent,
   onCancelSwapMode,
   hideSwapButton = false,
+  // Bomb data for research modal
+  thresholds = {},
 }) {
   const [researchAsset, setResearchAsset] = useState(null);
 
@@ -244,6 +246,8 @@ export default function FreeAgentBar({
       price: currentPrices[agent.symbol] || 0,
       percentChange: idx >= 0 ? agentChanges[idx] || 0 : 0,
       isCrypto: agent.isCrypto,
+      threshold: thresholds[agent.symbol]?.threshold || agent.baseATR || null,
+      lockedPrice: freeAgentDailyOpens[agent.symbol] || currentPrices[agent.symbol] || null,
     });
   };
 
@@ -472,4 +476,5 @@ FreeAgentBar.propTypes = {
   onSelectFreeAgent: PropTypes.func,
   onCancelSwapMode: PropTypes.func,
   hideSwapButton: PropTypes.bool,
+  thresholds: PropTypes.object,
 };

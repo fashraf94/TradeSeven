@@ -290,6 +290,8 @@ export default function BattleHeader({
   onEnterSwapMode,
   onSelectFreeAgent,
   onCancelSwapMode,
+  // Bomb data for research modal
+  thresholds = {},
 }) {
   // Determine who is leading
   const playerLeading = player.totalPoints > opponent.totalPoints;
@@ -457,6 +459,7 @@ export default function BattleHeader({
           onSelectFreeAgent={onSelectFreeAgent}
           onCancelSwapMode={onCancelSwapMode}
           hideSwapButton
+          thresholds={thresholds}
         />
       ) : (
         <SessionHUD
@@ -530,6 +533,8 @@ BattleHeader.propTypes = {
   onSelectFreeAgent: PropTypes.func,
   /** V4: Cancel swap mode callback */
   onCancelSwapMode: PropTypes.func,
+  /** Volatility thresholds for bomb data in research modal */
+  thresholds: PropTypes.object,
 };
 
 BattleHeader.defaultProps = {

@@ -399,6 +399,7 @@ export default function BaggerBombBattleView({
           onEnterSwapMode={onEnterSwapMode}
           onSelectFreeAgent={onSelectFreeAgent}
           onCancelSwapMode={onCancelSwapMode}
+          thresholds={thresholds}
         />
       </div>
 
