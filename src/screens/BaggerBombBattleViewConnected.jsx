@@ -60,18 +60,40 @@ export default function BaggerBombBattleViewConnected({
   } = useBaggerBombBattleV3(battleId, userId, { realtimePrices: wsPrices });
 
   // Extract symbols from battle data for WebSocket subscription
+  // V3 player.portfolio is tiered: { star: [...], core: [...], support: [...] }
+  // V3 also has bench: { stocks: [...], crypto: [...] } or array
   useEffect(() => {
-    if (!player && !opponent) return;
+    if (!player?.portfolio && !opponent?.portfolio) return;
+
+    const flattenPortfolio = (p) => {
+      if (!p) return [];
+      if (Array.isArray(p)) return p;
+      return [...(p.star || []), ...(p.core || []), ...(p.support || [])];
+    };
+    const flattenBench = (b) => {
+      if (!b) return [];
+      if (Array.isArray(b)) return b;
+      return [...(b.stocks || []), ...(b.crypto ? [b.crypto] : [])];
+    };
+
     const allAssets = [
-      ...(player?.assets || []),
-      ...(opponent?.assets || []),
+      ...flattenPortfolio(player?.portfolio),
+      ...flattenPortfolio(opponent?.portfolio),
+      ...flattenBench(player?.bench),
+      ...flattenBench(opponent?.bench),
     ];
-    const symbols = [...new Set(allAssets.map(a => a?.symbol).filter(Boolean))];
+    const symbols = [...new Set(allAssets.map(a => a?.symbol).filter(Boolean))].sort();
+
+    console.log('[WebSocket Debug]', 'V3 Symbol extraction useEffect running.', {
+      playerPortfolioKeys: player?.portfolio ? Object.keys(player.portfolio) : null,
+      extractedSymbols: symbols,
+    });
+
     setWsSymbols(prev => {
       if (prev.length === symbols.length && prev.every((s, i) => s === symbols[i])) return prev;
       return symbols;
     });
-  }, [player, opponent]);
+  }, [player?.portfolio, opponent?.portfolio, player?.bench, opponent?.bench]);
 
   // Auto night mode based on session
   const isNightMode = useNightMode(currentSessionId);

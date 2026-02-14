@@ -53,18 +53,33 @@ export default function BaggerBombBattleViewConnectedV4({
   } = useBaggerBombBattleV4(battleId, userId, { realtimePrices: wsPrices });
 
   // Extract symbols from battle data for WebSocket subscription
+  // player.portfolio is tiered: { star: [...], core: [...], support: [...] }
   useEffect(() => {
-    if (!player && !opponent) return;
-    const allAssets = [
-      ...(player?.assets || []),
-      ...(opponent?.assets || []),
+    if (!player?.portfolio && !opponent?.portfolio) return;
+
+    const flattenPortfolio = (p) => [
+      ...(p?.star || []),
+      ...(p?.core || []),
+      ...(p?.support || []),
     ];
-    const symbols = [...new Set(allAssets.map(a => a?.symbol).filter(Boolean))];
+
+    const allAssets = [
+      ...flattenPortfolio(player?.portfolio),
+      ...flattenPortfolio(opponent?.portfolio),
+    ];
+    const symbols = [...new Set(allAssets.map(a => a?.symbol).filter(Boolean))].sort();
+
+    console.log('[WebSocket Debug]', 'Symbol extraction useEffect running.', {
+      playerPortfolioKeys: player?.portfolio ? Object.keys(player.portfolio) : null,
+      opponentPortfolioKeys: opponent?.portfolio ? Object.keys(opponent.portfolio) : null,
+      extractedSymbols: symbols,
+    });
+
     setWsSymbols(prev => {
       if (prev.length === symbols.length && prev.every((s, i) => s === symbols[i])) return prev;
       return symbols;
     });
-  }, [player, opponent]);
+  }, [player?.portfolio, opponent?.portfolio]);
 
   // Multi-step swap mode state (matches training view pattern)
   const [swapMode, setSwapMode] = useState({
