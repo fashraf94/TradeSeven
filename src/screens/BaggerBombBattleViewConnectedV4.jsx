@@ -19,6 +19,7 @@ export default function BaggerBombBattleViewConnectedV4({
   userId,
   onBack,
 }) {
+  console.log('[WebSocket Debug]', 'Component mounted: BaggerBombBattleViewConnectedV4', { battleId, userId });
   // WebSocket real-time prices (called unconditionally before battle hook)
   const [wsSymbols, setWsSymbols] = useState([]);
   const { prices: wsPrices, status: wsStatus } = useWebSocketPrices(wsSymbols);

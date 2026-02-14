@@ -18,6 +18,8 @@ const FLUSH_INTERVAL_MS = 1000;
 export function useWebSocketPrices(symbols, options = {}) {
   const { enabled = true } = options;
 
+  console.log('[WebSocket Debug]', 'useWebSocketPrices called with symbols:', symbols, 'enabled:', enabled);
+
   const [prices, setPrices] = useState({});
   const [status, setStatus] = useState('disconnected');
 

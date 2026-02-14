@@ -119,6 +119,8 @@ class WebSocketManager {
   subscribe(symbols) {
     if (!symbols || symbols.length === 0) return;
 
+    console.log('[WebSocket Debug]', 'wsManager.subscribe called with:', symbols);
+
     const stockSymbols = symbols.filter(s => !isCrypto(s));
     const cryptoSymbols = symbols.filter(s => isCrypto(s));
 

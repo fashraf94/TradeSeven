@@ -71,6 +71,8 @@ export default function BaggerBombTrainingBattleViewV4({
   user,
   onBack,
 }) {
+  console.log('[WebSocket Debug]', 'Component mounted: BaggerBombTrainingBattleViewV4');
+
   // State
   const [currentPrices, setCurrentPrices] = useState({});
   const [loadingPrices, setLoadingPrices] = useState(true);
