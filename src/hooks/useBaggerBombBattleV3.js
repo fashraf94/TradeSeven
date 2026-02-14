@@ -99,10 +99,10 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     const prices = hasCurrentSessionPrices ? currentSessionPrices
       : hasStartingPrices ? startingPrices
       : hasMorningBellPrices ? morningBellPrices
-      : {};
+      : currentPrices || {};
 
     return prices;
-  }, [battle, currentSessionId]);
+  }, [battle, currentSessionId, currentPrices]);
 
   // Combine battle history with local updates
   const combinedHistory = useMemo(() => {

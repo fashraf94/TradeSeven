@@ -56,7 +56,9 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.resource.data.userId is string
                     && request.resource.data.userId.size() > 0;
-      allow update, delete: if resource.data.userId == request.resource.data.userId;
+      allow update: if resource.data.creator.odUserId is string
+                    && resource.data.creator.odUserId.size() > 0;
+      allow delete: if false;
     }
 
     // Game plan notes — single user ownership
@@ -64,7 +66,9 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.resource.data.userId is string
                     && request.resource.data.userId.size() > 0;
-      allow update, delete: if resource.data.userId == request.resource.data.userId;
+      allow update: if resource.data.userId is string
+                    && resource.data.userId.size() > 0;
+      allow delete: if false;
     }
 
     // Tracked patterns — single user ownership
@@ -72,7 +76,9 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.resource.data.userId is string
                     && request.resource.data.userId.size() > 0;
-      allow update, delete: if resource.data.userId == request.resource.data.userId;
+      allow update: if resource.data.userId is string
+                    && resource.data.userId.size() > 0;
+      allow delete: if false;
     }
 
     // Draft user stats — document ID is the userId
@@ -87,7 +93,8 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.resource.data.odUserId is string
                     && request.resource.data.odUserId.size() > 0;
-      allow update: if resource.data.odUserId == request.resource.data.odUserId;
+      allow update: if resource.data.odUserId is string
+                    && resource.data.odUserId.size() > 0;
       allow delete: if false;
     }
 
@@ -96,7 +103,8 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.resource.data.odUserId is string
                     && request.resource.data.odUserId.size() > 0;
-      allow update: if resource.data.odUserId == request.resource.data.odUserId;
+      allow update: if resource.data.odUserId is string
+                    && resource.data.odUserId.size() > 0;
       allow delete: if false;
     }
 
@@ -105,7 +113,8 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.resource.data.odUserId is string
                     && request.resource.data.odUserId.size() > 0;
-      allow update: if resource.data.odUserId == request.resource.data.odUserId;
+      allow update: if resource.data.odUserId is string
+                    && resource.data.odUserId.size() > 0;
       allow delete: if false;
     }
 
