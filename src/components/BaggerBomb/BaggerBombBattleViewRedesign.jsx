@@ -148,32 +148,20 @@ export default function BaggerBombBattleViewRedesign({
       const stockSymbols = uniqueSymbols.filter(s => !isCrypto(s));
       const cryptoSymbols = uniqueSymbols.filter(s => isCrypto(s));
 
-      // Fetch prices using stockAPI
+      // Batch fetch: 2 HTTP requests total instead of N individual calls
       const combinedPrices = {};
 
-      // Fetch stock prices
-      for (const symbol of stockSymbols) {
-        try {
-          const data = await stockAPI.getStockPrice(symbol);
-          if (data?.price) {
-            combinedPrices[symbol] = data.price;
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch price for ${symbol}`);
-        }
-      }
+      const [stockData, cryptoData] = await Promise.all([
+        stockSymbols.length > 0 ? stockAPI.getMultipleStockPrices(stockSymbols) : {},
+        cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : {},
+      ]);
 
-      // Fetch crypto prices
-      for (const symbol of cryptoSymbols) {
-        try {
-          const data = await stockAPI.getCryptoPrice(symbol);
-          if (data?.price) {
-            combinedPrices[symbol] = data.price;
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch crypto price for ${symbol}`);
-        }
-      }
+      Object.entries(stockData).forEach(([symbol, data]) => {
+        if (data?.price) combinedPrices[symbol] = data.price;
+      });
+      Object.entries(cryptoData).forEach(([symbol, data]) => {
+        if (data?.price) combinedPrices[symbol] = data.price;
+      });
 
       // Fallback to starting prices if no current prices fetched
       if (Object.keys(combinedPrices).length === 0 && battle?.state?.startingPrices) {

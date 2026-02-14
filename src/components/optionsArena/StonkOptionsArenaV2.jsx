@@ -149,9 +149,10 @@ const StonkOptionsArenaV2 = ({
       const missingSymbols = DEFAULT_STOCKS.filter(s => !newPrices[s]);
 
       if (stockAPI && missingSymbols.length > 0) {
-        for (const symbol of missingSymbols) {
-          try {
-            const data = await stockAPI.getStockPrice(symbol);
+        // Batch fetch: 1 HTTP request instead of N individual calls
+        try {
+          const batchData = await stockAPI.getMultipleStockPrices(missingSymbols);
+          Object.entries(batchData).forEach(([symbol, data]) => {
             if (data?.price) {
               newPrices[symbol] = data.price;
             } else {
@@ -159,7 +160,17 @@ const StonkOptionsArenaV2 = ({
               failedSymbols.push(symbol);
               usedFallback = true;
             }
-          } catch (e) {
+          });
+          // Check for any symbols not in response
+          for (const symbol of missingSymbols) {
+            if (!newPrices[symbol]) {
+              newPrices[symbol] = getFallbackPrice(symbol);
+              failedSymbols.push(symbol);
+              usedFallback = true;
+            }
+          }
+        } catch (e) {
+          for (const symbol of missingSymbols) {
             newPrices[symbol] = getFallbackPrice(symbol);
             failedSymbols.push(symbol);
             usedFallback = true;

@@ -521,35 +521,28 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       const newPrices = {};
       const newExtremes = {};
 
-      // Fetch stock prices
-      for (const symbol of stockSymbols) {
-        try {
-          const data = await stockAPI.getStockPrice(symbol);
-          if (data?.price) {
-            newPrices[symbol] = data.price;
-            if (data.high > 0 || data.low > 0) {
-              newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
-            }
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch price for ${symbol}:`, err);
-        }
-      }
+      // Batch fetch: 2 HTTP requests total instead of N individual calls
+      const [stockData, cryptoData] = await Promise.all([
+        stockSymbols.length > 0 ? stockAPI.getMultipleStockPrices(stockSymbols) : {},
+        cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : {},
+      ]);
 
-      // Fetch crypto prices
-      for (const symbol of cryptoSymbols) {
-        try {
-          const data = await stockAPI.getCryptoPrice(symbol);
-          if (data?.price) {
-            newPrices[symbol] = data.price;
-            if (data.high > 0 || data.low > 0) {
-              newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
-            }
+      Object.entries(stockData).forEach(([symbol, data]) => {
+        if (data?.price) {
+          newPrices[symbol] = data.price;
+          if (data.high > 0 || data.low > 0) {
+            newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
           }
-        } catch (err) {
-          console.warn(`Failed to fetch crypto price for ${symbol}:`, err);
         }
-      }
+      });
+      Object.entries(cryptoData).forEach(([symbol, data]) => {
+        if (data?.price) {
+          newPrices[symbol] = data.price;
+          if (data.high > 0 || data.low > 0) {
+            newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
+          }
+        }
+      });
 
       if (Object.keys(newPrices).length > 0) {
         setCurrentPrices((prev) => ({ ...prev, ...newPrices }));

@@ -515,27 +515,18 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
       const newPrices = {};
 
-      for (const symbol of stockSymbols) {
-        try {
-          const data = await stockAPI.getStockPrice(symbol);
-          if (data?.price) {
-            newPrices[symbol] = data.price;
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch price for ${symbol}:`, err);
-        }
-      }
+      // Batch fetch: 2 HTTP requests total instead of N individual calls
+      const [stockData, cryptoData] = await Promise.all([
+        stockSymbols.length > 0 ? stockAPI.getMultipleStockPrices(stockSymbols) : {},
+        cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : {},
+      ]);
 
-      for (const symbol of cryptoSymbols) {
-        try {
-          const data = await stockAPI.getCryptoPrice(symbol);
-          if (data?.price) {
-            newPrices[symbol] = data.price;
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch crypto price for ${symbol}:`, err);
-        }
-      }
+      Object.entries(stockData).forEach(([symbol, data]) => {
+        if (data?.price) newPrices[symbol] = data.price;
+      });
+      Object.entries(cryptoData).forEach(([symbol, data]) => {
+        if (data?.price) newPrices[symbol] = data.price;
+      });
 
       if (Object.keys(newPrices).length > 0) {
         setCurrentPrices((prev) => ({ ...prev, ...newPrices }));
