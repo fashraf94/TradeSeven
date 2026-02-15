@@ -1129,8 +1129,8 @@ const DraftBattleScreenV2 = ({
             {/* Refresh indicator */}
             <div style={{
               textAlign: 'center',
-              color: HOLO_COLORS.textMuted,
               fontSize: '11px',
+              color: '#6e7681',
               marginTop: '24px',
               padding: '8px',
               borderTop: `1px solid ${HOLO_COLORS.borderSubtle}`,
@@ -1145,6 +1145,7 @@ const DraftBattleScreenV2 = ({
                   height: '6px',
                   background: HOLO_COLORS.green,
                   borderRadius: '50%',
+                  boxShadow: `0 0 4px ${HOLO_COLORS.green}80`,
                   animation: 'holoPulse 2s ease-in-out infinite',
                 }} />
                 Prices update every minute
