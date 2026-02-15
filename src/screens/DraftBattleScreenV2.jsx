@@ -25,6 +25,7 @@ import {
   formatDailyScoresForModal,
   calculateCumulativeScores,
 } from '../services/snakeDraftDailyService';
+import { isMarketOpen, getNextTradingDay } from '../utils/marketHolidays';
 
 /**
  * Utility to refresh draft data from Firebase
@@ -1009,31 +1010,41 @@ const DraftBattleScreenV2 = ({
       <RefreshIndicator visible={isRefreshing} lastUpdated={lastUpdated} />
 
       {/* PRE-BATTLE BANNER - shown when battle hasn't started yet */}
-      {currentDay === 0 && currentDraft?.battleStartDate && (
-        <div style={{
-          margin: '12px 16px',
-          padding: '16px',
-          background: 'linear-gradient(135deg, rgba(0, 255, 255, 0.1) 0%, rgba(0, 255, 255, 0.03) 100%)',
-          borderRadius: '12px',
-          border: `1px solid ${HOLO_COLORS.cyan}44`,
-          textAlign: 'center',
-        }}>
+      {currentDay === 0 && currentDraft?.battleStartDate && (() => {
+        // Resolve start date — if it falls on a non-trading day, show the next trading day
+        let displayDate = new Date(currentDraft.battleStartDate + 'T12:00:00');
+        if (!isMarketOpen(displayDate)) {
+          displayDate = getNextTradingDay(displayDate);
+        }
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const formatted = `${dayNames[displayDate.getDay()]} ${monthNames[displayDate.getMonth()]} ${displayDate.getDate()}`;
+        return (
           <div style={{
-            fontSize: '14px',
-            fontWeight: 700,
-            color: HOLO_COLORS.cyan,
-            marginBottom: '4px',
+            margin: '12px 16px',
+            padding: '16px',
+            background: 'linear-gradient(135deg, rgba(0, 255, 255, 0.1) 0%, rgba(0, 255, 255, 0.03) 100%)',
+            borderRadius: '12px',
+            border: `1px solid ${HOLO_COLORS.cyan}44`,
+            textAlign: 'center',
           }}>
-            Battle starts {currentDraft.battleStartDate} at market open
+            <div style={{
+              fontSize: '14px',
+              fontWeight: 700,
+              color: HOLO_COLORS.cyan,
+              marginBottom: '4px',
+            }}>
+              Battle starts {formatted} at market open
+            </div>
+            <div style={{
+              fontSize: '12px',
+              color: HOLO_COLORS.textMuted,
+            }}>
+              Scores will begin accumulating at 9:30 AM ET
+            </div>
           </div>
-          <div style={{
-            fontSize: '12px',
-            color: HOLO_COLORS.textMuted,
-          }}>
-            Scores will begin accumulating at 9:30 AM ET
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* PRICE REPAIR WARNING */}
       {needsPriceRepair && (

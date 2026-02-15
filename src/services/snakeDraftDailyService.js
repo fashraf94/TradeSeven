@@ -6,6 +6,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getEasternTime, getBattleStartDate } from '../constants/battleTiming';
 import { calculateSnakeDraftAssetScore } from './scoring/baggerBombCalculator';
+import { isMarketHoliday, formatDateString } from '../utils/marketHolidays';
 
 // Constants
 const MARKET_OPEN_HOUR = 9;
@@ -116,8 +117,8 @@ export function getCurrentTradingDay(battleStartTime, battleStartDate) {
 
   while (checkDate <= currentDay && tradingDays < 6) {
     const dayOfWeek = checkDate.getDay();
-    // Count weekdays only (Mon-Fri)
-    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+    // Count trading days only (Mon-Fri, excluding market holidays)
+    if (dayOfWeek >= 1 && dayOfWeek <= 5 && !isMarketHoliday(formatDateString(checkDate))) {
       tradingDays++;
     }
     checkDate.setDate(checkDate.getDate() + 1);
