@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
 import { UserIcon, BotIcon } from '../../components/draft/HoloIcons';
+import HoldToLaunchButton from '../../components/draft/HoldToLaunchButton';
 import {
   STEADY_STOCKS,
   RISKY_STOCKS,
@@ -606,39 +607,10 @@ const DraftCompleteScreen = ({
             ))}
           </div>
 
-          {/* View Battle Standings Button */}
-          <button
-            onClick={() => onNavigate('draftBattle')}
-            style={{
-              width: '100%',
-              marginTop: '24px',
-              padding: '18px',
-              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-              color: '#ffffff',
-              fontWeight: 'bold',
-              fontSize: '16px',
-              border: 'none',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)',
-              transition: 'transform 0.2s ease, box-shadow 0.2s ease'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 6px 20px rgba(16, 185, 129, 0.4)';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 14px rgba(16, 185, 129, 0.3)';
-            }}
-          >
-            <span style={{ fontSize: '18px' }}>&#x1F4CA;</span>
-            VIEW BATTLE STANDINGS
-          </button>
+          {/* Hold-to-Launch Battle Button */}
+          <div style={{ marginTop: '24px' }}>
+            <HoldToLaunchButton onComplete={() => onNavigate('draftBattle')} />
+          </div>
         </div>
       </div>
     </div>
