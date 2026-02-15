@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
 
 /**
  * HoloAssetCard - Holographic Asset Module Card
@@ -83,6 +84,11 @@ const HoloAssetCard = ({
   const sectorColor = SECTOR_COLORS[sector] || SECTOR_COLORS.default;
   const accentColor = sectorColor.primary;
   const accentGlow = sectorColor.glow;
+
+  // Category color for INFO button dot
+  const categoryColor = category === 'steady' ? '#00d9ff'
+    : category === 'risky' ? '#f59e0b'
+    : '#10b981';
 
   // Handle pick with animation
   const handleAcquire = useCallback(() => {
@@ -247,8 +253,10 @@ const HoloAssetCard = ({
           {formatChange(displayDataChange)}
         </div>
 
-        {/* GET INFO Button */}
-        <button
+        {/* INFO Button */}
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           onClick={(e) => {
             e.stopPropagation();
             onGetInfo?.();
@@ -256,24 +264,39 @@ const HoloAssetCard = ({
           style={{
             width: '100%',
             marginTop: '6px',
-            padding: '6px 4px',
-            fontSize: '9px',
+            padding: '6px 8px',
+            fontSize: '10px',
             fontWeight: '600',
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.15)',
-            borderRadius: '4px',
+            letterSpacing: '0.5px',
+            background: 'rgba(255, 255, 255, 0.03)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '6px',
             color: '#8b949e',
             cursor: 'pointer',
-            transition: 'all 0.15s ease',
+            transition: 'all 0.2s ease',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '4px',
+            gap: '5px',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(0, 217, 255, 0.06)';
+            e.currentTarget.style.borderColor = 'rgba(0, 217, 255, 0.25)';
+            e.currentTarget.style.boxShadow = '0 0 12px rgba(0, 217, 255, 0.1)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+            e.currentTarget.style.boxShadow = 'none';
           }}
         >
-          <span style={{ fontSize: '10px' }}>🔍</span>
+          <span style={{
+            width: 5, height: 5, borderRadius: '50%',
+            background: categoryColor,
+            boxShadow: `0 0 6px ${categoryColor}80`,
+          }} />
           INFO
-        </button>
+        </motion.button>
 
         {/* Selection Indicator */}
         {isSelected && (
@@ -564,47 +587,50 @@ const HoloAssetCard = ({
 
         {/* Action Button - GET INFO only (picking is done by clicking card + Command Deck confirmation) */}
         <div style={{ display: 'flex', gap: '6px', flexDirection: 'column' }}>
-          {/* GET INFO Button - ALWAYS visible and clickable for ALL assets */}
+          {/* INFO Button - ALWAYS visible and clickable for ALL assets */}
           {onGetInfo && (
-            <button
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={(e) => {
                 e.stopPropagation();
                 onGetInfo?.();
               }}
               style={{
                 width: '100%',
-                padding: '8px 12px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                borderRadius: '6px',
-                color: '#ffffff',
-                fontSize: '11px',
+                padding: '8px 14px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '8px',
+                color: '#8b949e',
+                fontSize: '12px',
                 fontWeight: '600',
+                letterSpacing: '0.5px',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '5px',
+                gap: '6px',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.35)';
-                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.background = 'rgba(0, 217, 255, 0.06)';
+                e.currentTarget.style.borderColor = 'rgba(0, 217, 255, 0.25)';
+                e.currentTarget.style.boxShadow = '0 0 12px rgba(0, 217, 255, 0.1)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
-                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                e.currentTarget.style.boxShadow = 'none';
               }}
             >
-              {/* Magnifying glass icon */}
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8"/>
-                <path d="M21 21l-4.35-4.35"/>
-              </svg>
-              GET INFO
-            </button>
+              <span style={{
+                width: 6, height: 6, borderRadius: '50%',
+                background: categoryColor,
+                boxShadow: `0 0 6px ${categoryColor}80`,
+              }} />
+              INFO
+            </motion.button>
           )}
 
           {/* LOCKED indicator - shown below GET INFO for locked assets */}

@@ -1,16 +1,18 @@
-import React from 'react';
+import React, { useState, useCallback, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 /**
- * CommandDeckConfirmButton - Confirm Pick Button for Command Deck
+ * CommandDeckConfirmButton - "DRAFT NOW" Confirm Button for Command Deck
  *
  * Replaces the YOU panel with a prominent confirm button.
  * Features slanted shape matching War Room aesthetic.
  *
  * States:
  * - Disabled (not your turn): Gray, "WAITING FOR [PLAYER]..."
- * - Ready (your turn, no selection): Gray, "SELECT A STOCK"
- * - Active (your turn, asset selected): Green glow, "CONFIRM: [SYMBOL]"
- * - Loading: "CONFIRMING..."
+ * - Ready (your turn, no selection): Muted, "SELECT A STOCK"
+ * - Active (your turn, asset selected): Pulsing cyan glow, "DRAFT NOW"
+ * - Confirming: Particle burst + "LOCKED IN" flash
+ * - Loading: "CONFIRMING..." spinner
  */
 
 const CommandDeckConfirmButton = ({
@@ -20,110 +22,210 @@ const CommandDeckConfirmButton = ({
   isLoading = false,
   currentPickerName = 'opponent',
 }) => {
-  const isDisabled = !selectedAsset || !isYourTurn || isLoading;
-  const hasSelection = !!selectedAsset && isYourTurn;
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [particles, setParticles] = useState([]);
+  const buttonRef = useRef(null);
+
+  const isDisabled = !selectedAsset || !isYourTurn || isLoading || isConfirming;
+  const hasSelection = !!selectedAsset && isYourTurn && !isConfirming;
+  const isReady = hasSelection && !isLoading;
+
+  const handleDraft = useCallback(() => {
+    if (!selectedAsset || !isYourTurn || isLoading || isConfirming) return;
+
+    setIsConfirming(true);
+
+    // Generate burst particles
+    const newParticles = Array.from({ length: 6 }, (_, i) => ({
+      id: Date.now() + i,
+      angle: (i / 6) * 360,
+      distance: 40 + Math.random() * 30,
+    }));
+    setParticles(newParticles);
+
+    // Execute draft after animation
+    setTimeout(() => {
+      setParticles([]);
+      onConfirm?.(selectedAsset);
+      setIsConfirming(false);
+    }, 600);
+  }, [selectedAsset, isYourTurn, isLoading, isConfirming, onConfirm]);
 
   return (
-    <button
-      onClick={() => !isDisabled && onConfirm?.(selectedAsset)}
-      disabled={isDisabled}
-      className={hasSelection ? 'confirm-btn-ready' : ''}
-      style={{
-        // Slanted shape like the old YOU panel
-        clipPath: 'polygon(20px 0, calc(100% - 20px) 0, 100% 100%, 0 100%)',
-
-        background: isLoading
-          ? 'linear-gradient(180deg, #00cc6a 0%, #009952 100%)'
-          : hasSelection
-            ? 'linear-gradient(180deg, #00ff88 0%, #00cc6a 100%)'
-            : isYourTurn
-              ? 'rgba(255, 255, 255, 0.15)'
-              : 'rgba(255, 255, 255, 0.08)',
-
-        color: hasSelection || isLoading ? '#0a0e14' : 'rgba(255, 255, 255, 0.5)',
-
-        padding: '16px 48px',
-        border: hasSelection
-          ? '2px solid #00ff88'
-          : isYourTurn
-            ? '1px solid rgba(255, 255, 255, 0.2)'
-            : '1px solid rgba(255, 255, 255, 0.1)',
-        fontSize: '16px',
-        fontWeight: '700',
-        letterSpacing: '1px',
-        textTransform: 'uppercase',
-        cursor: isDisabled ? 'not-allowed' : 'pointer',
-        transition: 'all 0.2s ease',
-
-        boxShadow: hasSelection
-          ? '0 0 30px rgba(0, 255, 136, 0.5), 0 0 60px rgba(0, 255, 136, 0.25), inset 0 0 20px rgba(0, 255, 136, 0.1)'
-          : 'none',
-
-        minWidth: '220px',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-      onMouseEnter={(e) => {
-        if (!isDisabled) {
-          e.currentTarget.style.transform = 'scale(1.02)';
-          if (hasSelection) {
-            e.currentTarget.style.boxShadow = '0 0 40px rgba(0, 255, 136, 0.6), 0 0 80px rgba(0, 255, 136, 0.3), inset 0 0 25px rgba(0, 255, 136, 0.15)';
-          }
-        }
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = 'scale(1)';
-        if (hasSelection) {
-          e.currentTarget.style.boxShadow = '0 0 30px rgba(0, 255, 136, 0.5), 0 0 60px rgba(0, 255, 136, 0.25), inset 0 0 20px rgba(0, 255, 136, 0.1)';
-        }
-      }}
-    >
-      {/* Scanline overlay for depth */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background: `repeating-linear-gradient(
-            0deg,
-            transparent,
-            transparent 2px,
-            rgba(0, 0, 0, 0.03) 2px,
-            rgba(0, 0, 0, 0.03) 4px
-          )`,
-          pointerEvents: 'none',
-        }}
-      />
-
-      {/* Button content */}
-      <span style={{ position: 'relative', zIndex: 1 }}>
-        {isLoading ? (
-          <span style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
-            <span className="confirm-spinner" style={{
-              width: '14px',
-              height: '14px',
-              border: '2px solid rgba(10, 14, 20, 0.3)',
-              borderTopColor: '#0a0e14',
+    <div style={{ position: 'relative' }}>
+      {/* Particle burst layer */}
+      <AnimatePresence>
+        {particles.map((p) => (
+          <motion.div
+            key={p.id}
+            initial={{ opacity: 1, scale: 1, x: 0, y: 0 }}
+            animate={{
+              opacity: 0,
+              scale: 0.5,
+              x: Math.cos((p.angle * Math.PI) / 180) * p.distance,
+              y: Math.sin((p.angle * Math.PI) / 180) * p.distance,
+            }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5, ease: 'easeOut' }}
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              width: 6,
+              height: 6,
               borderRadius: '50%',
-              animation: 'spin 0.8s linear infinite',
-            }} />
-            CONFIRMING...
-          </span>
-        ) : !isYourTurn ? (
-          <span style={{ fontSize: '13px' }}>
-            WAITING FOR {currentPickerName.toUpperCase()}...
-          </span>
-        ) : selectedAsset ? (
-          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-            <span style={{ fontSize: '11px', opacity: 0.8 }}>CONFIRM PICK</span>
-            <span style={{ fontSize: '18px', fontWeight: '800' }}>{selectedAsset.symbol}</span>
-          </span>
-        ) : (
-          <span style={{ fontSize: '14px' }}>SELECT A STOCK</span>
-        )}
-      </span>
+              background: '#00d9ff',
+              boxShadow: '0 0 8px #00d9ff',
+              pointerEvents: 'none',
+              zIndex: 10,
+            }}
+          />
+        ))}
+      </AnimatePresence>
 
-      {/* Animations and classes consolidated in index.css: spin, confirm-pulse, .confirm-btn-ready */}
-    </button>
+      {/* Main button */}
+      <motion.button
+        ref={buttonRef}
+        onClick={handleDraft}
+        disabled={isDisabled && !isConfirming}
+        className={isReady ? 'confirm-btn-ready' : ''}
+        whileHover={isReady ? { scale: 1.03 } : {}}
+        whileTap={isReady ? { scale: 0.96 } : {}}
+        animate={
+          isConfirming
+            ? {
+                scale: [1, 1.08, 1],
+                boxShadow: [
+                  '0 0 20px rgba(0, 217, 255, 0.3)',
+                  '0 0 50px rgba(0, 217, 255, 0.8)',
+                  '0 0 20px rgba(0, 217, 255, 0.3)',
+                ],
+              }
+            : isReady
+              ? {
+                  boxShadow: [
+                    '0 0 15px rgba(0, 217, 255, 0.3)',
+                    '0 0 25px rgba(0, 217, 255, 0.5)',
+                    '0 0 15px rgba(0, 217, 255, 0.3)',
+                  ],
+                }
+              : {}
+        }
+        transition={
+          isConfirming
+            ? { duration: 0.5, ease: 'easeOut' }
+            : { duration: 2, repeat: Infinity, ease: 'easeInOut' }
+        }
+        style={{
+          // Slanted shape like the old YOU panel
+          clipPath: 'polygon(20px 0, calc(100% - 20px) 0, 100% 100%, 0 100%)',
+
+          background: isLoading
+            ? 'linear-gradient(135deg, #0891b2 0%, #06b6d4 100%)'
+            : isConfirming
+              ? 'linear-gradient(135deg, #06b6d4 0%, #22d3ee 100%)'
+              : isReady
+                ? 'linear-gradient(135deg, #0891b2 0%, #06b6d4 100%)'
+                : isYourTurn
+                  ? 'rgba(255, 255, 255, 0.15)'
+                  : 'rgba(255, 255, 255, 0.08)',
+
+          color: isReady || isLoading || isConfirming ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
+
+          padding: '16px 48px',
+          border: isReady || isConfirming
+            ? '2px solid rgba(0, 217, 255, 0.4)'
+            : isYourTurn
+              ? '1px solid rgba(255, 255, 255, 0.2)'
+              : '1px solid rgba(255, 255, 255, 0.1)',
+          fontSize: '16px',
+          fontWeight: '700',
+          letterSpacing: '2px',
+          textTransform: 'uppercase',
+          cursor: isDisabled && !isConfirming ? 'not-allowed' : 'pointer',
+
+          minWidth: '220px',
+          position: 'relative',
+          overflow: 'hidden',
+          width: '100%',
+        }}
+      >
+        {/* Scanline overlay for depth */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: `repeating-linear-gradient(
+              0deg,
+              transparent,
+              transparent 2px,
+              rgba(0, 0, 0, 0.03) 2px,
+              rgba(0, 0, 0, 0.03) 4px
+            )`,
+            pointerEvents: 'none',
+          }}
+        />
+
+        {/* Shimmer overlay (only when ready, not confirming) */}
+        {isReady && !isConfirming && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: '-200%',
+              width: '200%',
+              height: '100%',
+              background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 50%, transparent 100%)',
+              animation: 'commandDeckShimmer 3s infinite',
+              pointerEvents: 'none',
+            }}
+          />
+        )}
+
+        {/* Button content */}
+        <span style={{ position: 'relative', zIndex: 1 }}>
+          {isLoading ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+              <span
+                className="confirm-spinner"
+                style={{
+                  width: '14px',
+                  height: '14px',
+                  border: '2px solid rgba(255, 255, 255, 0.3)',
+                  borderTopColor: '#ffffff',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite',
+                }}
+              />
+              CONFIRMING...
+            </span>
+          ) : isConfirming ? (
+            <span style={{ fontSize: '16px', fontWeight: '800' }}>LOCKED IN</span>
+          ) : !isYourTurn ? (
+            <span style={{ fontSize: '13px' }}>
+              WAITING FOR {currentPickerName.toUpperCase()}...
+            </span>
+          ) : selectedAsset ? (
+            <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+              <span style={{ fontSize: '11px', opacity: 0.8 }}>DRAFT NOW</span>
+              <span style={{ fontSize: '18px', fontWeight: '800' }}>{selectedAsset.symbol}</span>
+            </span>
+          ) : (
+            <span style={{ fontSize: '14px' }}>SELECT A STOCK</span>
+          )}
+        </span>
+
+        {/* Animations */}
+      </motion.button>
+
+      {/* CSS for shimmer animation */}
+      <style>{`
+        @keyframes commandDeckShimmer {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(100%); }
+        }
+      `}</style>
+    </div>
   );
 };
 
