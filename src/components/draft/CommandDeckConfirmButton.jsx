@@ -10,8 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
  * States:
  * - Disabled (not your turn): Gray, "WAITING FOR [PLAYER]..."
  * - Ready (your turn, no selection): Muted, "SELECT A STOCK"
- * - Active (your turn, asset selected): Pulsing cyan glow, "DRAFT NOW"
- * - Confirming: Particle burst + "LOCKED IN" flash
+ * - Active (your turn, asset selected): Pulsing green glow, "DRAFT NOW"
  * - Loading: "CONFIRMING..." spinner
  */
 
@@ -22,34 +21,31 @@ const CommandDeckConfirmButton = ({
   isLoading = false,
   currentPickerName = 'opponent',
 }) => {
-  const [isConfirming, setIsConfirming] = useState(false);
   const [particles, setParticles] = useState([]);
   const buttonRef = useRef(null);
 
-  const isDisabled = !selectedAsset || !isYourTurn || isLoading || isConfirming;
-  const hasSelection = !!selectedAsset && isYourTurn && !isConfirming;
+  const isDisabled = !selectedAsset || !isYourTurn || isLoading;
+  const hasSelection = !!selectedAsset && isYourTurn;
   const isReady = hasSelection && !isLoading;
 
   const handleDraft = useCallback(() => {
-    if (!selectedAsset || !isYourTurn || isLoading || isConfirming) return;
+    if (!selectedAsset || !isYourTurn || isLoading) return;
 
-    setIsConfirming(true);
+    // Haptic feedback — single short thud, fails silently on desktop
+    try { navigator.vibrate?.(15); } catch {}
 
-    // Generate burst particles
+    // Fire-and-forget particle burst
     const newParticles = Array.from({ length: 6 }, (_, i) => ({
       id: Date.now() + i,
       angle: (i / 6) * 360,
       distance: 40 + Math.random() * 30,
     }));
     setParticles(newParticles);
+    setTimeout(() => setParticles([]), 600);
 
-    // Execute draft after animation
-    setTimeout(() => {
-      setParticles([]);
-      onConfirm?.(selectedAsset);
-      setIsConfirming(false);
-    }, 600);
-  }, [selectedAsset, isYourTurn, isLoading, isConfirming, onConfirm]);
+    // Confirm immediately — no delay
+    onConfirm?.(selectedAsset);
+  }, [selectedAsset, isYourTurn, isLoading, onConfirm]);
 
   return (
     <div style={{ position: 'relative' }}>
@@ -74,8 +70,8 @@ const CommandDeckConfirmButton = ({
               width: 6,
               height: 6,
               borderRadius: '50%',
-              background: '#00d9ff',
-              boxShadow: '0 0 8px #00d9ff',
+              background: '#10b981',
+              boxShadow: '0 0 8px #10b981',
               pointerEvents: 'none',
               zIndex: 10,
             }}
@@ -87,54 +83,39 @@ const CommandDeckConfirmButton = ({
       <motion.button
         ref={buttonRef}
         onClick={handleDraft}
-        disabled={isDisabled && !isConfirming}
+        disabled={isDisabled}
         className={isReady ? 'confirm-btn-ready' : ''}
         whileHover={isReady ? { scale: 1.03 } : {}}
         whileTap={isReady ? { scale: 0.96 } : {}}
         animate={
-          isConfirming
+          isReady
             ? {
-                scale: [1, 1.08, 1],
                 boxShadow: [
-                  '0 0 20px rgba(0, 217, 255, 0.3)',
-                  '0 0 50px rgba(0, 217, 255, 0.8)',
-                  '0 0 20px rgba(0, 217, 255, 0.3)',
+                  '0 0 15px rgba(16, 185, 129, 0.3)',
+                  '0 0 25px rgba(16, 185, 129, 0.5)',
+                  '0 0 15px rgba(16, 185, 129, 0.3)',
                 ],
               }
-            : isReady
-              ? {
-                  boxShadow: [
-                    '0 0 15px rgba(0, 217, 255, 0.3)',
-                    '0 0 25px rgba(0, 217, 255, 0.5)',
-                    '0 0 15px rgba(0, 217, 255, 0.3)',
-                  ],
-                }
-              : {}
+            : {}
         }
-        transition={
-          isConfirming
-            ? { duration: 0.5, ease: 'easeOut' }
-            : { duration: 2, repeat: Infinity, ease: 'easeInOut' }
-        }
+        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
         style={{
           // Slanted shape like the old YOU panel
           clipPath: 'polygon(20px 0, calc(100% - 20px) 0, 100% 100%, 0 100%)',
 
           background: isLoading
-            ? 'linear-gradient(135deg, #0891b2 0%, #06b6d4 100%)'
-            : isConfirming
-              ? 'linear-gradient(135deg, #06b6d4 0%, #22d3ee 100%)'
-              : isReady
-                ? 'linear-gradient(135deg, #0891b2 0%, #06b6d4 100%)'
-                : isYourTurn
-                  ? 'rgba(255, 255, 255, 0.15)'
-                  : 'rgba(255, 255, 255, 0.08)',
+            ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+            : isReady
+              ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+              : isYourTurn
+                ? 'rgba(255, 255, 255, 0.15)'
+                : 'rgba(255, 255, 255, 0.08)',
 
-          color: isReady || isLoading || isConfirming ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
+          color: isReady || isLoading ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
 
           padding: '16px 48px',
-          border: isReady || isConfirming
-            ? '2px solid rgba(0, 217, 255, 0.4)'
+          border: isReady
+            ? '2px solid rgba(16, 185, 129, 0.4)'
             : isYourTurn
               ? '1px solid rgba(255, 255, 255, 0.2)'
               : '1px solid rgba(255, 255, 255, 0.1)',
@@ -142,7 +123,7 @@ const CommandDeckConfirmButton = ({
           fontWeight: '700',
           letterSpacing: '2px',
           textTransform: 'uppercase',
-          cursor: isDisabled && !isConfirming ? 'not-allowed' : 'pointer',
+          cursor: isDisabled ? 'not-allowed' : 'pointer',
 
           minWidth: '220px',
           position: 'relative',
@@ -166,8 +147,8 @@ const CommandDeckConfirmButton = ({
           }}
         />
 
-        {/* Shimmer overlay (only when ready, not confirming) */}
-        {isReady && !isConfirming && (
+        {/* Shimmer overlay (only when ready) */}
+        {isReady && (
           <div
             style={{
               position: 'absolute',
@@ -199,8 +180,6 @@ const CommandDeckConfirmButton = ({
               />
               CONFIRMING...
             </span>
-          ) : isConfirming ? (
-            <span style={{ fontSize: '16px', fontWeight: '800' }}>LOCKED IN</span>
           ) : !isYourTurn ? (
             <span style={{ fontSize: '13px' }}>
               WAITING FOR {currentPickerName.toUpperCase()}...
