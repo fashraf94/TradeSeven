@@ -88,3 +88,11 @@ export const CACHE_TIERS = {
   // Earnings data - changes daily at most
   EARNINGS: { sMaxAge: 3600, staleWhileRevalidate: 600, memoryTTL: 3600 },
 };
+
+/**
+ * Get current in-memory cache size (for health checks)
+ * @returns {number} Number of entries in memory cache
+ */
+export function getCacheSize() {
+  return memoryCache.size;
+}

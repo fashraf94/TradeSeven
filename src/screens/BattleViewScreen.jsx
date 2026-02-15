@@ -17,16 +17,6 @@ const BattleViewScreen = ({
   BaggerBombBattleViewConnectedV4,
   BaggerBombTrainingBattleViewV4,
 }) => {
-  // Debug: Log battle routing decision
-  console.log('🎮 BATTLE ROUTING DEBUG:', {
-    screen: 'battle',
-    hasBattle: !!currentBattle,
-    battleVersion: currentBattle?._v,
-    isTraining: currentBattle?.isTraining,
-    hasCreatorObj: !!currentBattle?.creator,
-    battleType: currentBattle?.portfolioType
-  });
-
   // V4 battles
   if (currentBattle._v >= 4) {
     // V4 Training battles
