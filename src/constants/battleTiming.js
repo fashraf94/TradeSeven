@@ -3,6 +3,8 @@
 //
 // All times are in Eastern Time (ET)
 
+import { isMarketHoliday, formatDateString } from '../utils/marketHolidays';
+
 // ============================================
 // PVP 1V1 TIMING CONSTANTS
 // ============================================
@@ -396,19 +398,22 @@ export function getBattleStartDate(completionTime) {
 
   let startDate = new Date(et);
 
-  if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-    // Weekday
+  const isNonTradingDay = (d) =>
+    d.getDay() === 0 || d.getDay() === 6 || isMarketHoliday(formatDateString(d));
+
+  if (dayOfWeek >= 1 && dayOfWeek <= 5 && !isMarketHoliday(formatDateString(startDate))) {
+    // Trading day
     if (currentMinutesOfDay >= marketOpenMinutes) {
       // Market already open or closed — next trading day
       startDate.setDate(startDate.getDate() + 1);
-      while (startDate.getDay() === 0 || startDate.getDay() === 6) {
+      while (isNonTradingDay(startDate)) {
         startDate.setDate(startDate.getDate() + 1);
       }
     }
     // else: before market open — today is Day 1
   } else {
-    // Weekend — advance to Monday
-    while (startDate.getDay() === 0 || startDate.getDay() === 6) {
+    // Weekend or holiday — advance to next trading day
+    while (isNonTradingDay(startDate)) {
       startDate.setDate(startDate.getDate() + 1);
     }
   }
@@ -431,7 +436,7 @@ export function calculateBattleEndDate(startDate) {
 
   while (tradingDays < 5) {
     const dayOfWeek = date.getDay();
-    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+    if (dayOfWeek >= 1 && dayOfWeek <= 5 && !isMarketHoliday(formatDateString(date))) {
       tradingDays++;
       if (tradingDays === 5) break;
     }

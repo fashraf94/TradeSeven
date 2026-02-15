@@ -253,6 +253,20 @@ const AltitudeMap = ({
     return path;
   }, [standings, containerHeight, isMobile, playerGroups, minPoints, range]);
 
+  // Energy node positions — midpoints between consecutive players along the river
+  const energyNodes = useMemo(() => {
+    if (standings.length < 2) return [];
+    const pathPoints = standings.map((player) => ({
+      x: getXPosition(player),
+      y: getAdjustedYPosition(player),
+    }));
+    const sorted = [...pathPoints].sort((a, b) => a.y - b.y);
+    return sorted.slice(0, -1).map((pt, i) => ({
+      x: (pt.x + sorted[i + 1].x) / 2,
+      y: (pt.y + sorted[i + 1].y) / 2,
+    }));
+  }, [standings, containerHeight, isMobile, playerGroups, minPoints, range]);
+
   // Don't render if no standings
   if (!standings.length) {
     return (
@@ -275,16 +289,17 @@ const AltitudeMap = ({
       width: '100%',
       overflow: 'visible',
     }}>
-      {/* Background Grid */}
+      {/* Background Grid — faint cyan topographic pattern */}
       <div style={{
         position: 'absolute',
         inset: 0,
-        background: `
-          linear-gradient(0deg, transparent 0%, transparent 99%, ${HOLO_COLORS.borderSubtle}33 100%),
-          linear-gradient(90deg, transparent 0%, transparent 99%, ${HOLO_COLORS.borderSubtle}22 100%)
+        backgroundImage: `
+          linear-gradient(rgba(0, 217, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0, 217, 255, 0.03) 1px, transparent 1px)
         `,
-        backgroundSize: '100% 50px, 50px 100%',
-        opacity: 0.5,
+        backgroundSize: '40px 40px',
+        pointerEvents: 'none',
+        zIndex: 0,
       }} />
 
       {/* Y-Axis Track */}
@@ -438,6 +453,33 @@ const AltitudeMap = ({
             />
           );
         })}
+
+        {/* Energy nodes — gentle pulsing dots at river bends */}
+        {energyNodes.map((node, i) => (
+          <circle
+            key={`energy-${i}`}
+            cx={node.x}
+            cy={node.y}
+            r="3"
+            fill="#00d9ff"
+            opacity="0.5"
+          >
+            <animate
+              attributeName="opacity"
+              values="0.3;0.7;0.3"
+              dur="2.5s"
+              begin={`${i * 0.5}s`}
+              repeatCount="indefinite"
+            />
+            <animate
+              attributeName="r"
+              values="2;3.5;2"
+              dur="2.5s"
+              begin={`${i * 0.5}s`}
+              repeatCount="indefinite"
+            />
+          </circle>
+        ))}
       </svg>
 
       {/* User's Tether Line (connecting user pod to center axis) */}

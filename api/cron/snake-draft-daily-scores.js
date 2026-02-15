@@ -56,11 +56,31 @@ function getEasternTime() {
   return new Date(etString);
 }
 
-// Check if it's a weekday (trading day)
-function isWeekday() {
+// 2026 US Stock Market Holidays (NYSE/NASDAQ)
+// Duplicated from src/utils/marketHolidays.js since serverless functions can't import from src/.
+const US_MARKET_HOLIDAYS_2026 = [
+  '2026-01-01', '2026-01-19', '2026-02-16', '2026-04-03',
+  '2026-05-25', '2026-06-19', '2026-07-03', '2026-09-07',
+  '2026-11-26', '2026-12-25',
+];
+
+function isMarketHoliday(dateStr) {
+  return US_MARKET_HOLIDAYS_2026.includes(dateStr);
+}
+
+function formatDateStr(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// Check if today is a trading day (weekday + not a market holiday)
+function isTradingDay() {
   const et = getEasternTime();
   const day = et.getDay();
-  return day >= 1 && day <= 5;
+  if (day < 1 || day > 5) return false;
+  return !isMarketHoliday(formatDateStr(et));
 }
 
 // Determine the correct battle start date (YYYY-MM-DD in ET).
@@ -76,15 +96,18 @@ function getBattleStartDate(completionTime) {
 
   let startDate = new Date(et);
 
-  if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+  const isNonTradingDay = (d) =>
+    d.getDay() === 0 || d.getDay() === 6 || isMarketHoliday(formatDateStr(d));
+
+  if (dayOfWeek >= 1 && dayOfWeek <= 5 && !isMarketHoliday(formatDateStr(startDate))) {
     if (currentMinutes >= marketOpenMinutes) {
       startDate.setDate(startDate.getDate() + 1);
-      while (startDate.getDay() === 0 || startDate.getDay() === 6) {
+      while (isNonTradingDay(startDate)) {
         startDate.setDate(startDate.getDate() + 1);
       }
     }
   } else {
-    while (startDate.getDay() === 0 || startDate.getDay() === 6) {
+    while (isNonTradingDay(startDate)) {
       startDate.setDate(startDate.getDate() + 1);
     }
   }
@@ -129,7 +152,7 @@ function getCurrentTradingDay(battleStartTime, battleStartDate) {
 
   while (checkDate <= currentDay && tradingDays < 6) {
     const dayOfWeek = checkDate.getDay();
-    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+    if (dayOfWeek >= 1 && dayOfWeek <= 5 && !isMarketHoliday(formatDateStr(checkDate))) {
       tradingDays++;
     }
     checkDate.setDate(checkDate.getDate() + 1);
@@ -371,12 +394,12 @@ export default async function handler(req, res) {
   const startTime = Date.now();
   logInfo('Starting Snake Draft daily score cron job');
 
-  // Check if it's a weekday
-  if (!isWeekday()) {
-    logInfo('Skipping - not a trading day (weekend)');
+  // Check if it's a trading day (weekday + not a market holiday)
+  if (!isTradingDay()) {
+    logInfo('Skipping - not a trading day (weekend or market holiday)');
     return res.status(200).json({
       success: true,
-      message: 'Skipped - weekend',
+      message: 'Skipped - market closed (weekend or holiday)',
       processed: 0,
     });
   }

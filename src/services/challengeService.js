@@ -4,6 +4,8 @@
 // Includes: Double Down & Market Close challenges
 // =====================================================
 
+import { isMarketHoliday, formatDateString } from '../utils/marketHolidays';
+
 /**
  * Challenge Types
  */
@@ -67,13 +69,12 @@ function getCurrentEST() {
 function isTradingDay() {
   const est = getCurrentEST();
   const dayOfWeek = est.getDay(); // 0 = Sunday, 6 = Saturday
-  
+
   // Not Saturday or Sunday
   if (dayOfWeek === 0 || dayOfWeek === 6) return false;
-  
-  // TODO: Add NYSE holiday calendar check
-  // For now, just check weekdays
-  return true;
+
+  // Check NYSE holiday calendar
+  return !isMarketHoliday(formatDateString(est));
 }
 
 /**

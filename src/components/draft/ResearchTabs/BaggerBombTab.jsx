@@ -41,6 +41,21 @@ const BaggerBombTab = ({ asset }) => {
   const currentBaggerBombPoints = asset?.baggerBombPoints || 0;
   const currentBustPoints = asset?.bustPoints || 0;
 
+  // Show informational message when threshold/baseline data unavailable
+  if (!baselinePrice) {
+    return (
+      <div style={{ padding: '20px', textAlign: 'center', color: '#8b949e' }}>
+        <div style={{ fontSize: '24px', marginBottom: '8px' }}>📊</div>
+        <div style={{ fontSize: '13px', fontWeight: 600, color: '#e6edf3' }}>
+          BaggerBomb thresholds update during market hours
+        </div>
+        <div style={{ fontSize: '12px', marginTop: '6px', color: '#6e7681' }}>
+          Check back when markets are open.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* Header */}

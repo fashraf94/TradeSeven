@@ -31,6 +31,7 @@ const AnalysisDrawer = ({
   children,
   isCrypto = false,
   hasBombData = false,
+  isGameContext = false,
 }) => {
   const { isMobile } = useIsMobile();
   const {
@@ -151,7 +152,7 @@ const AnalysisDrawer = ({
           <style>{`.drawer-tabs-scroll::-webkit-scrollbar { display: none; }`}</style>
           {TAB_CONFIGS.filter(t => {
             if (isCrypto && ['fundamental', 'earnings'].includes(t.key)) return false;
-            if (t.key === 'baggerbomb' && !hasBombData) return false;
+            if (t.key === 'baggerbomb' && !hasBombData && !isGameContext) return false;
             return true;
           }).map(tab => (
             <button

@@ -69,7 +69,7 @@ const DraftRoomScreen = ({
   const [showLastPickBanner, setShowLastPickBanner] = useState(false);
   const [categoryTransition, setCategoryTransition] = useState(false);
   const prevPickerRef = useRef(null);
-  const prevLastPickRef = useRef(null);
+  const prevLastPickIdRef = useRef(null);
   const prevCategoryRef = useRef(selectedDraftCategory);
 
   // Roster drawer state (slide-up panel showing user's picks)
@@ -159,19 +159,27 @@ const DraftRoomScreen = ({
     }
   }, [roomDraft?.currentPlayerId, user]);
 
-  // Detect new last pick - show animated banner
+  // Last pick info — memoize by identity fields to prevent re-render flashes
+  // when price cache refreshes produce new object references
+  const stableLastPick = useMemo(() => {
+    const lp = draftState?.lastPick;
+    if (!lp) return null;
+    return { displayName: lp.displayName, symbol: lp.symbol, category: lp.category, round: lp.round, playerId: lp.playerId };
+  }, [draftState?.lastPick?.symbol, draftState?.lastPick?.round, draftState?.lastPick?.playerId]);
+
+  // Detect new last pick - show animated banner (compare by identity, not reference)
   useEffect(() => {
-    const lastPick = draftState?.lastPick;
-    if (lastPick && lastPick !== prevLastPickRef.current) {
-      if (prevLastPickRef.current !== null) {
+    if (!stableLastPick) return;
+    const pickId = `${stableLastPick.symbol}-${stableLastPick.round}`;
+    if (pickId !== prevLastPickIdRef.current) {
+      if (prevLastPickIdRef.current !== null) {
         setShowLastPickBanner(true);
-        // Auto-hide after 5 seconds
         const timer = setTimeout(() => setShowLastPickBanner(false), 5000);
         return () => clearTimeout(timer);
       }
-      prevLastPickRef.current = lastPick;
+      prevLastPickIdRef.current = pickId;
     }
-  }, [draftState?.lastPick]);
+  }, [stableLastPick]);
 
   // Category tab transition effect
   useEffect(() => {
@@ -304,9 +312,6 @@ const DraftRoomScreen = ({
     if (draftTimeRemaining > 30) return 'warning';
     return 'critical';
   };
-
-  // Last pick info
-  const lastPick = draftState?.lastPick;
 
   // Available assets for current category
   const availableAssets = roomDraft?.availableAssets?.[selectedDraftCategory] || [];
@@ -585,7 +590,7 @@ const DraftRoomScreen = ({
                       riskyPicked: player.categories?.risky || 0,
                       defensivePicked: player.categories?.defensive || 0,
                     }}
-                    lastPick={lastPick?.playerId === player.odUserId ? lastPick?.symbol : null}
+                    lastPick={stableLastPick?.playerId === player.odUserId ? stableLastPick?.symbol : null}
                     pickProgress={isCurrentPicker && draftTimeRemaining > 0 ? 1 - (draftTimeRemaining / 120) : 0}
                   />
                 </React.Fragment>
@@ -678,8 +683,8 @@ const DraftRoomScreen = ({
             })}
           </div>
 
-          {/* Last Pick Info - Animated Banner */}
-          {lastPick && (
+          {/* Last Pick Info - Animated Banner (uses stableLastPick to avoid flash on price updates) */}
+          {stableLastPick && (
             <div
               className={showLastPickBanner ? 'last-pick-banner-animate' : ''}
               style={{
@@ -698,19 +703,19 @@ const DraftRoomScreen = ({
                 transition: 'all 0.3s ease',
               }}
             >
-              Last Pick: <span style={{ color: '#e6edf3', fontWeight: '600' }}>{lastPick.displayName}</span>
+              Last Pick: <span style={{ color: '#e6edf3', fontWeight: '600' }}>{stableLastPick.displayName}</span>
               {' picked '}
               <span style={{
-                color: lastPick.category === 'steady' ? '#10b981'
-                     : lastPick.category === 'risky' ? '#f59e0b'
+                color: stableLastPick.category === 'steady' ? '#10b981'
+                     : stableLastPick.category === 'risky' ? '#f59e0b'
                      : '#3b82f6',
                 fontWeight: '700',
-                textShadow: showLastPickBanner ? `0 0 10px ${lastPick.category === 'steady' ? '#10b981' : lastPick.category === 'risky' ? '#f59e0b' : '#3b82f6'}` : 'none',
+                textShadow: showLastPickBanner ? `0 0 10px ${stableLastPick.category === 'steady' ? '#10b981' : stableLastPick.category === 'risky' ? '#f59e0b' : '#3b82f6'}` : 'none',
               }}>
-                {lastPick.symbol}
+                {stableLastPick.symbol}
               </span>
               <span style={{ color: '#6e7681', marginLeft: '4px' }}>
-                ({lastPick.category})
+                ({stableLastPick.category})
               </span>
             </div>
           )}

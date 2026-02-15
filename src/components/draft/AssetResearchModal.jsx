@@ -85,6 +85,7 @@ const AssetResearchModal = ({
   version = 1,
 }) => {
   const isCrypto = asset?.isCrypto || asset?.category === 'crypto';
+  const isGameContext = onAcquire !== null || showActionButton;
   const [activeTab, setActiveTab] = useState(isCrypto ? 'technical' : 'fundamental');
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -581,6 +582,7 @@ const AssetResearchModal = ({
               onSnapStateChange={handleDrawerSnapChange}
               isCrypto={isCrypto}
               hasBombData={!!bombData}
+              isGameContext={isGameContext}
             >
               {activeTab === 'fundamental' && (
                 <div style={{ padding: '8px 0' }}>
@@ -810,7 +812,7 @@ const AssetResearchModal = ({
               >
                 Technical
               </button>
-              {bombData && (
+              {(bombData || isGameContext) && (
                 <button
                   onClick={() => setActiveTab('baggerbomb')}
                   style={{

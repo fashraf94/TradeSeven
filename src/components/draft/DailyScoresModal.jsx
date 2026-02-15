@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
 import { getBattleStartDate } from '../../constants/battleTiming';
+import { isMarketHoliday, formatDateString } from '../../utils/marketHolidays';
 
 /**
  * DailyScoresModal - Shows daily score breakdown for the battle
@@ -52,8 +53,8 @@ const DailyScoresModal = ({
     while (tradingDayCount < totalDays) {
       const dayOfWeek = checkDate.getDay();
 
-      // Skip weekends
-      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+      // Skip weekends and market holidays
+      if (dayOfWeek >= 1 && dayOfWeek <= 5 && !isMarketHoliday(formatDateString(checkDate))) {
         tradingDayCount++;
 
         const dayDate = new Date(checkDate);

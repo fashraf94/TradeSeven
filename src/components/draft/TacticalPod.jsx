@@ -11,6 +11,14 @@ import { BotIcon, StarIcon } from './HoloIcons';
  * BaggerBomb Scoring Update: Now shows total points as primary score
  * with BaggerBomb (💣) and Bust (📉) indicators.
  */
+
+// Rank-based glow shadows for pod depth
+const RANK_GLOWS = {
+  1: '0 0 20px rgba(251, 191, 36, 0.3), inset 0 0 15px rgba(251, 191, 36, 0.1)',   // Gold
+  2: '0 0 20px rgba(0, 217, 255, 0.3), inset 0 0 15px rgba(0, 217, 255, 0.1)',     // Cyan
+  3: '0 0 15px rgba(249, 115, 22, 0.25), inset 0 0 10px rgba(249, 115, 22, 0.08)', // Orange
+  4: '0 0 15px rgba(239, 68, 68, 0.2), inset 0 0 10px rgba(239, 68, 68, 0.06)',    // Red
+};
 const TacticalPod = ({
   player,           // { odUserId, displayName, totalPoints, totalGain, totalBaggerBombs, totalBusts, isMe, isCPU, currentRank, previousRank }
   rank,             // 1-4
@@ -29,6 +37,20 @@ const TacticalPod = ({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Score pulse detection — briefly animate when points change
+  const [prevScore, setPrevScore] = useState(player.totalPoints || 0);
+  const [isPulsing, setIsPulsing] = useState(false);
+
+  useEffect(() => {
+    const currentScore = player.totalPoints || 0;
+    if (currentScore !== prevScore) {
+      setIsPulsing(true);
+      setPrevScore(currentScore);
+      const timer = setTimeout(() => setIsPulsing(false), 600);
+      return () => clearTimeout(timer);
+    }
+  }, [player.totalPoints, prevScore]);
 
   // Responsive dimensions - Phase 5.6: Reduced mobile sizes to prevent overlap
   const podWidth = isMobile ? 75 : 110;
@@ -120,6 +142,7 @@ const TacticalPod = ({
         filter: isBeingScouted
           ? `drop-shadow(0 0 15px ${HOLO_COLORS.amber}) drop-shadow(0 0 30px ${HOLO_COLORS.amber}66)`
           : colors.glow !== 'none' ? `drop-shadow(${colors.glow})` : 'none',
+        boxShadow: isUser ? RANK_GLOWS[2] : (RANK_GLOWS[rank] || 'none'),
         animation: isBeingScouted
           ? 'scoutedPulse 1.5s ease-in-out infinite'
           : isUser || rank === 1 ? 'holoPulse 3s ease-in-out infinite' : 'none',
@@ -145,14 +168,15 @@ const TacticalPod = ({
             top: isMobile ? '6px' : '8px',
             left: '50%',
             transform: 'translateX(-50%)',
-            background: colors.labelBg,
+            background: `linear-gradient(135deg, ${colors.labelBg} 0%, ${colors.labelBg}cc 100%)`,
             color: colors.labelColor,
             fontSize: rankFontSize,
             fontWeight: 800,
             padding: isMobile ? '2px 6px' : '2px 8px',
             borderRadius: '4px',
             letterSpacing: '0.5px',
-            boxShadow: colors.glow !== 'none' ? `0 0 8px ${colors.border}` : 'none',
+            boxShadow: `0 2px 8px rgba(0, 0, 0, 0.4), 0 0 12px ${colors.border}40`,
+            border: `1px solid ${colors.border}60`,
           }}>
             {RANK_CONFIG[rank]?.label || `${rank}TH`}
           </div>
@@ -203,6 +227,7 @@ const TacticalPod = ({
               : '0 0 8px rgba(255, 51, 102, 0.6)',
             marginTop: isMobile ? '2px' : '4px',
             fontFamily: 'monospace',
+            animation: isPulsing ? 'scorePulse 0.5s ease-out' : 'none',
           }}>
             {(player.totalPoints || 0) >= 0 ? '+' : ''}{(player.totalPoints || 0).toFixed(0)} pts
           </div>
@@ -296,6 +321,11 @@ const TacticalPod = ({
         @keyframes scoutedPulse {
           0%, 100% { filter: drop-shadow(0 0 15px ${HOLO_COLORS.amber}) drop-shadow(0 0 30px rgba(245, 158, 11, 0.4)); }
           50% { filter: drop-shadow(0 0 20px ${HOLO_COLORS.amber}) drop-shadow(0 0 40px rgba(245, 158, 11, 0.6)); }
+        }
+        @keyframes scorePulse {
+          0% { transform: scale(1); }
+          40% { transform: scale(1.15); }
+          100% { transform: scale(1); }
         }
       `}</style>
 
