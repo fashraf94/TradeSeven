@@ -159,6 +159,14 @@ const DraftRoomScreen = ({
     }
   }, [roomDraft?.currentPlayerId, user]);
 
+  // Last pick info — memoize by identity fields to prevent re-render flashes
+  // when price cache refreshes produce new object references
+  const stableLastPick = useMemo(() => {
+    const lp = draftState?.lastPick;
+    if (!lp) return null;
+    return { displayName: lp.displayName, symbol: lp.symbol, category: lp.category, round: lp.round, playerId: lp.playerId };
+  }, [draftState?.lastPick?.symbol, draftState?.lastPick?.round, draftState?.lastPick?.playerId]);
+
   // Detect new last pick - show animated banner (compare by identity, not reference)
   useEffect(() => {
     if (!stableLastPick) return;
@@ -304,14 +312,6 @@ const DraftRoomScreen = ({
     if (draftTimeRemaining > 30) return 'warning';
     return 'critical';
   };
-
-  // Last pick info — memoize by identity fields to prevent re-render flashes
-  // when price cache refreshes produce new object references
-  const stableLastPick = useMemo(() => {
-    const lp = draftState?.lastPick;
-    if (!lp) return null;
-    return { displayName: lp.displayName, symbol: lp.symbol, category: lp.category, round: lp.round, playerId: lp.playerId };
-  }, [draftState?.lastPick?.symbol, draftState?.lastPick?.round, draftState?.lastPick?.playerId]);
 
   // Available assets for current category
   const availableAssets = roomDraft?.availableAssets?.[selectedDraftCategory] || [];
