@@ -14064,6 +14064,62 @@ export default function PortfolioDuel() {
     return () => clearInterval(interval);
   }, [screen, draftState?.pickDeadline, draftState?.currentPlayerId]);
 
+  // Timer-expired autopick - hard backstop when timer hits 0
+  // Any client can trigger this (not just host), solving the host-leaves problem
+  useEffect(() => {
+    if (screen !== 'draftRoom') return;
+    if (!draftState || draftState.status !== 'active') return;
+    if (draftTimeRemaining > 0) return;
+
+    const currentPlayer = draftState.players?.find(
+      p => p.odUserId === draftState.currentPlayerId
+    );
+
+    // Skip if no current player or if CPU (handled by existing CPU/Absent autopick)
+    if (!currentPlayer || currentPlayer.isCPU) return;
+
+    // Random delay (500-2500ms) to avoid race conditions from multiple clients
+    const delay = Math.floor(Math.random() * 2000) + 500;
+    const timerExpiredAutopick = setTimeout(async () => {
+      try {
+        const draftService = await import('./services/draftService');
+        await draftService.handleAutopick(draftState.id, draftState.currentPlayerId);
+      } catch (error) {
+        // Race condition (another client picked) is expected - log quietly
+        console.log('[Draft] Timer-expired autopick attempted:', error.message);
+      }
+    }, delay);
+
+    return () => clearTimeout(timerExpiredAutopick);
+  }, [screen, draftState?.id, draftState?.status, draftState?.currentPlayerId, draftTimeRemaining]);
+
+  // Absent player autopick - triggers when it's our turn but we've left the draft screen
+  // Training mode: waits full timer (120s) to give player time to return
+  // PvP mode: picks quickly (3-4s) so other players aren't stuck waiting
+  useEffect(() => {
+    if (screen === 'draftRoom') return;
+    if (!draftState || draftState.status !== 'active') return;
+
+    const currentUserId = user?.odUserId || user?.username;
+    if (!currentUserId) return;
+    if (draftState.currentPlayerId !== currentUserId) return;
+
+    const delay = draftState.isTraining
+      ? 120 * 1000
+      : 3000 + Math.floor(Math.random() * 1000);
+
+    const absentAutopick = setTimeout(async () => {
+      try {
+        const draftService = await import('./services/draftService');
+        await draftService.handleAutopick(draftState.id, currentUserId);
+      } catch (error) {
+        console.log('[Draft] Absent-player autopick attempted:', error.message);
+      }
+    }, delay);
+
+    return () => clearTimeout(absentAutopick);
+  }, [screen, draftState?.id, draftState?.status, draftState?.currentPlayerId, user]);
+
   // CPU/Absent player autopick with 3-second countdown - Draft Fixes
   useEffect(() => {
     if (screen !== 'draftRoom') return;
