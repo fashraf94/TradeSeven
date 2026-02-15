@@ -2,13 +2,14 @@
 // Connects the UI components to real Firebase data via useBaggerBombBattleV3 hook
 // Features: Chain trigger celebrations, night mode theme
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { HOLO_COLORS } from '../constants/holoTheme';
 import BaggerBombBattleView from './BaggerBombBattleView';
 import TriggerCelebration from '../components/BaggerBomb/TriggerCelebration';
 import useBaggerBombBattleV3 from '../hooks/useBaggerBombBattleV3';
+import { useWebSocketPrices } from '../hooks/useWebSocketPrices';
 import { SESSION_CONFIG } from '../utils/baggerBombUtils';
 
 /**
@@ -29,6 +30,10 @@ export default function BaggerBombBattleViewConnected({
   userId,
   onBack,
 }) {
+  // WebSocket real-time prices (called unconditionally before battle hook)
+  const [wsSymbols, setWsSymbols] = useState([]);
+  const { prices: wsPrices, status: wsStatus } = useWebSocketPrices(wsSymbols);
+
   // Use the V3 hook (threshold triggers are now managed by the hook)
   const {
     battle,
@@ -51,7 +56,38 @@ export default function BaggerBombBattleViewConnected({
     chainCount,
     cumulativePoints,
     clearTrigger,
-  } = useBaggerBombBattleV3(battleId, userId);
+  } = useBaggerBombBattleV3(battleId, userId, { realtimePrices: wsPrices });
+
+  // Extract symbols from battle data for WebSocket subscription
+  // V3 player.portfolio is tiered: { star: [...], core: [...], support: [...] }
+  // V3 also has bench: { stocks: [...], crypto: [...] } or array
+  useEffect(() => {
+    if (!player?.portfolio && !opponent?.portfolio) return;
+
+    const flattenPortfolio = (p) => {
+      if (!p) return [];
+      if (Array.isArray(p)) return p;
+      return [...(p.star || []), ...(p.core || []), ...(p.support || [])];
+    };
+    const flattenBench = (b) => {
+      if (!b) return [];
+      if (Array.isArray(b)) return b;
+      return [...(b.stocks || []), ...(b.crypto ? [b.crypto] : [])];
+    };
+
+    const allAssets = [
+      ...flattenPortfolio(player?.portfolio),
+      ...flattenPortfolio(opponent?.portfolio),
+      ...flattenBench(player?.bench),
+      ...flattenBench(opponent?.bench),
+    ];
+    const symbols = [...new Set(allAssets.map(a => a?.symbol).filter(Boolean))].sort();
+
+    setWsSymbols(prev => {
+      if (prev.length === symbols.length && prev.every((s, i) => s === symbols[i])) return prev;
+      return symbols;
+    });
+  }, [player?.portfolio, opponent?.portfolio, player?.bench, opponent?.bench]);
 
   // Auto night mode based on session
   const isNightMode = useNightMode(currentSessionId);
@@ -160,6 +196,7 @@ export default function BaggerBombBattleViewConnected({
         thresholds={thresholds}
         currentPrices={currentPrices}
         openPrices={openPrices}
+        wsStatus={wsStatus}
       />
 
       {/* Threshold Trigger Celebration Overlay with Chain Support */}

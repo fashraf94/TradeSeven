@@ -13831,8 +13831,13 @@ export default function PortfolioDuel() {
   }, []);
 
   // Fetch current prices when entering battle view
+  // Only needed for V1 classic battles — V2+ battles manage their own prices via hooks/components
   useEffect(() => {
     if (screen !== 'battle' || !currentBattle) return;
+
+    // V2+ battles have their own price management (hooks, connected components)
+    // Skip App.jsx polling to avoid duplicate API calls
+    if (currentBattle._v >= 2) return;
 
     async function fetchBattlePrices() {
       setLoadingBattlePrices(true);
@@ -13840,7 +13845,7 @@ export default function PortfolioDuel() {
       try {
         // ⭐ If battle is completed, use stored ending prices instead of fetching live
         const battleStatus = battleTimer.getBattleStatus(currentBattle);
-        
+
         if (battleStatus === 'completed' && currentBattle.endingPrices) {
           console.log('📊 Using stored ending prices for completed battle');
           setBattlePrices(currentBattle.endingPrices);
@@ -13856,32 +13861,27 @@ export default function PortfolioDuel() {
         const opponentPortfolio = safePortfolioArray(currentBattle.opponentPortfolio || currentBattle.opponent?.portfolio);
         const allAssets = [...creatorPortfolio, ...opponentPortfolio];
 
-        const uniqueSymbols = getAllBattleSymbols(currentBattle);
+        // Batch fetch: 2 HTTP requests total instead of N individual calls
+        const allSymbols = [...new Set(allAssets.map(a => a.symbol).filter(Boolean))];
+        const stockSymbols = allSymbols.filter(s => !POPULAR_CRYPTO.some(c => c.symbol === s));
+        const cryptoSymbols = allSymbols.filter(s => POPULAR_CRYPTO.some(c => c.symbol === s));
 
-        // Fetch current prices for each asset
+        const [stockData, cryptoData] = await Promise.all([
+          stockSymbols.length > 0 ? stockAPI.getMultipleStockPrices(stockSymbols) : {},
+          cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : {},
+        ]);
+
         const priceMap = {};
+        Object.entries(stockData).forEach(([symbol, data]) => {
+          if (data?.price) priceMap[symbol] = data.price;
+        });
+        Object.entries(cryptoData).forEach(([symbol, data]) => {
+          if (data?.price) priceMap[symbol] = data.price;
+        });
 
+        // Fill in fallbacks from asset data for any missing symbols
         for (const asset of allAssets) {
-          if (priceMap[asset.symbol]) continue; // Skip if already fetched
-
-          try {
-            // Determine if it's crypto or stock
-            const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === asset.symbol);
-
-            let currentPrice;
-            if (isCrypto) {
-              const cryptoData = POPULAR_CRYPTO.find(c => c.symbol === asset.symbol);
-              // Use symbol (ETH) not id (ethereum) - EODHD expects symbol format
-              const data = await stockAPI.getCryptoPrice(cryptoData.symbol);
-              currentPrice = data.price;
-            } else {
-              const data = await stockAPI.getStockPrice(asset.symbol);
-              currentPrice = data.price;
-            }
-
-            priceMap[asset.symbol] = currentPrice;
-          } catch (error) {
-            console.error(`Error fetching price for ${asset.symbol}:`, error);
+          if (!priceMap[asset.symbol] && asset.price) {
             priceMap[asset.symbol] = asset.price;
           }
         }

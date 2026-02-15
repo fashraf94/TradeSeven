@@ -49,13 +49,19 @@ const isCrypto = (symbol) => {
 // ==================== THE HOOK ====================
 
 export function useBaggerBombBattleV4(battleId, userId, options = {}) {
-  const { onThresholdCross } = options;
+  const { onThresholdCross, realtimePrices } = options;
 
   // State
   const [battle, setBattle] = useState(null);
   const [currentPrices, setCurrentPrices] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Merge polled prices with real-time WebSocket prices (WS takes priority)
+  const effectivePrices = useMemo(() => {
+    if (!realtimePrices || Object.keys(realtimePrices).length === 0) return currentPrices;
+    return { ...currentPrices, ...realtimePrices };
+  }, [currentPrices, realtimePrices]);
 
   // Local history tracking (for real-time updates before Firebase sync)
   const [localHistory, setLocalHistory] = useState({});
@@ -126,8 +132,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     const hasDailyOpen = dailyOpen && Object.keys(dailyOpen).length > 0;
     const hasStarting = startingPrices && Object.keys(startingPrices).length > 0;
 
-    return hasDailyOpen ? dailyOpen : hasStarting ? startingPrices : currentPrices || {};
-  }, [battle, currentTradingDay, currentPrices]);
+    return hasDailyOpen ? dailyOpen : hasStarting ? startingPrices : effectivePrices || {};
+  }, [battle, currentTradingDay, effectivePrices]);
 
   // Free agents data
   const freeAgents = useMemo(() => {
@@ -219,12 +225,12 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   // My scores (continuous, no session accumulation)
   const myScores = useMemo(() => {
-    return calculateScores(myPortfolioFlat, currentPrices, openPrices, combinedHistory);
-  }, [myPortfolioFlat, currentPrices, openPrices, combinedHistory, calculateScores]);
+    return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory);
+  }, [myPortfolioFlat, effectivePrices, openPrices, combinedHistory, calculateScores]);
 
   const oppScores = useMemo(() => {
-    return calculateScores(oppPortfolioFlat, currentPrices, openPrices, oppHistory || {});
-  }, [oppPortfolioFlat, currentPrices, openPrices, oppHistory, calculateScores]);
+    return calculateScores(oppPortfolioFlat, effectivePrices, openPrices, oppHistory || {});
+  }, [oppPortfolioFlat, effectivePrices, openPrices, oppHistory, calculateScores]);
 
   // V4: Total score = current active score + locked closed trade points
   const closedTradePoints = useMemo(() => {
@@ -361,7 +367,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   // Player threshold detection
   useEffect(() => {
-    if (!currentPrices || Object.keys(currentPrices).length === 0) return;
+    if (!effectivePrices || Object.keys(effectivePrices).length === 0) return;
     if (!battle || !battleId) return;
 
     myPortfolioFlat.forEach((asset) => {
@@ -369,7 +375,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
       // For swapped-in assets, use swapPrice
       const assetOpenPrice = asset.swapPrice || openPrices[asset.symbol];
-      const currentPrice = currentPrices[asset.symbol];
+      const currentPrice = effectivePrices[asset.symbol];
       if (!assetOpenPrice || !currentPrice) return;
 
       const priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
@@ -417,18 +423,18 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
       prevMultipliersRef.current[asset.symbol] = currentMultiplier;
     });
-  }, [currentPrices, openPrices, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger, myData?.username, pushLocalEvent]);
+  }, [effectivePrices, openPrices, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger, myData?.username, pushLocalEvent]);
 
   // Opponent threshold detection (display-only — no Firestore writes, no celebration)
   useEffect(() => {
-    if (!currentPrices || Object.keys(currentPrices).length === 0) return;
+    if (!effectivePrices || Object.keys(effectivePrices).length === 0) return;
     if (!battle || !battleId) return;
 
     oppPortfolioFlat.forEach((asset) => {
       if (!asset) return;
 
       const assetOpenPrice = asset.swapPrice || openPrices[asset.symbol];
-      const currentPrice = currentPrices[asset.symbol];
+      const currentPrice = effectivePrices[asset.symbol];
       if (!assetOpenPrice || !currentPrice) return;
 
       const priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
@@ -458,12 +464,12 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
       prevOppMultipliersRef.current[asset.symbol] = currentMultiplier;
     });
-  }, [currentPrices, openPrices, oppPortfolioFlat, battle, battleId, oppHistory, oppData?.username, pushLocalEvent]);
+  }, [effectivePrices, openPrices, oppPortfolioFlat, battle, battleId, oppHistory, oppData?.username, pushLocalEvent]);
 
   // ==================== CONTINUOUS HISTORY TRACKING ====================
 
   useEffect(() => {
-    if (!currentPrices || Object.keys(currentPrices).length === 0) return;
+    if (!effectivePrices || Object.keys(effectivePrices).length === 0) return;
     if (!battle || !battleId || battleId.startsWith('training_')) return;
 
     const processPortfolio = (portfolioFlat, existingHistory, setHistoryFn, isOwnPortfolio) => {
@@ -471,7 +477,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         if (!asset) return;
 
         const assetOpenPrice = asset.swapPrice || openPrices[asset.symbol];
-        const currentPrice = currentPrices[asset.symbol];
+        const currentPrice = effectivePrices[asset.symbol];
         if (!assetOpenPrice || !currentPrice) return;
 
         const priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
@@ -496,7 +502,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
     processPortfolio(myPortfolioFlat, combinedHistory, setLocalHistory, true);
     processPortfolio(oppPortfolioFlat, oppHistory, setLocalOppHistory, false);
-  }, [currentPrices, openPrices, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
+  }, [effectivePrices, openPrices, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
 
   // ==================== PRICE FETCHING ====================
 
@@ -515,27 +521,18 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
       const newPrices = {};
 
-      for (const symbol of stockSymbols) {
-        try {
-          const data = await stockAPI.getStockPrice(symbol);
-          if (data?.price) {
-            newPrices[symbol] = data.price;
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch price for ${symbol}:`, err);
-        }
-      }
+      // Batch fetch: 2 HTTP requests total instead of N individual calls
+      const [stockData, cryptoData] = await Promise.all([
+        stockSymbols.length > 0 ? stockAPI.getMultipleStockPrices(stockSymbols) : {},
+        cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : {},
+      ]);
 
-      for (const symbol of cryptoSymbols) {
-        try {
-          const data = await stockAPI.getCryptoPrice(symbol);
-          if (data?.price) {
-            newPrices[symbol] = data.price;
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch crypto price for ${symbol}:`, err);
-        }
-      }
+      Object.entries(stockData).forEach(([symbol, data]) => {
+        if (data?.price) newPrices[symbol] = data.price;
+      });
+      Object.entries(cryptoData).forEach(([symbol, data]) => {
+        if (data?.price) newPrices[symbol] = data.price;
+      });
 
       if (Object.keys(newPrices).length > 0) {
         setCurrentPrices((prev) => ({ ...prev, ...newPrices }));
@@ -567,7 +564,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     }
 
     // Need current prices to capture
-    if (Object.keys(currentPrices).length === 0) return;
+    if (Object.keys(effectivePrices).length === 0) return;
 
     try {
       const battleRef = doc(db, 'battles', battleId);
@@ -590,8 +587,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         const openPriceCapture = {};
         const symbols = [...new Set(allAssets.map((a) => a.symbol))];
         symbols.forEach((symbol) => {
-          if (currentPrices[symbol]) {
-            openPriceCapture[symbol] = currentPrices[symbol];
+          if (effectivePrices[symbol]) {
+            openPriceCapture[symbol] = effectivePrices[symbol];
           }
         });
 
@@ -604,7 +601,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     } catch (err) {
       console.error(`Error capturing daily open prices for ${dayKey}:`, err);
     }
-  }, [battleId, battle, currentTradingDay, totalTradingDays, currentPrices]);
+  }, [battleId, battle, currentTradingDay, totalTradingDays, effectivePrices]);
 
   // ==================== FREE AGENT ROTATION ====================
 
@@ -658,7 +655,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         outSlotIndex,
         inSymbol,
         currentTradingDay,
-        currentPrices
+        effectivePrices
       );
 
       closeSwapModal();
@@ -669,7 +666,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     } finally {
       setIsSwapExecuting(false);
     }
-  }, [battleId, battle, playerId, currentTradingDay, currentPrices, isSwapExecuting, closeSwapModal]);
+  }, [battleId, battle, playerId, currentTradingDay, effectivePrices, isSwapExecuting, closeSwapModal]);
 
   // ==================== EFFECTS ====================
 
@@ -737,10 +734,10 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   // Capture daily open prices when prices arrive for a new day
   useEffect(() => {
-    if (Object.keys(currentPrices).length > 0 && currentTradingDay > 0) {
+    if (Object.keys(effectivePrices).length > 0 && currentTradingDay > 0) {
       captureDailyOpenPrices();
     }
-  }, [currentPrices, currentTradingDay, captureDailyOpenPrices]);
+  }, [effectivePrices, currentTradingDay, captureDailyOpenPrices]);
 
   // Free agent rotation countdown + auto-trigger
   useEffect(() => {
@@ -802,8 +799,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     // Events for EventFeed (local threshold detections for both player + opponent)
     events: localEvents,
 
-    // Prices
-    currentPrices,
+    // Prices (effectivePrices = polled + real-time WebSocket overlay)
+    currentPrices: effectivePrices,
     openPrices,
     thresholds: battle?.thresholds || {},
 

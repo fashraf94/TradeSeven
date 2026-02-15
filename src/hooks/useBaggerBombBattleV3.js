@@ -40,7 +40,7 @@ const isCrypto = (symbol) => {
 // ==================== THE HOOK ====================
 
 export function useBaggerBombBattleV3(battleId, userId, options = {}) {
-  const { onThresholdCross } = options;
+  const { onThresholdCross, realtimePrices } = options;
 
   // State
   const [battle, setBattle] = useState(null);
@@ -48,6 +48,12 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   const [dailyExtremes, setDailyExtremes] = useState({}); // { AAPL: { high, low }, ... }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Merge polled prices with real-time WebSocket prices (WS takes priority)
+  const effectivePrices = useMemo(() => {
+    if (!realtimePrices || Object.keys(realtimePrices).length === 0) return currentPrices;
+    return { ...currentPrices, ...realtimePrices };
+  }, [currentPrices, realtimePrices]);
 
   // Local history tracking (for real-time updates before Firebase sync)
   const [localHistory, setLocalHistory] = useState({});
@@ -99,10 +105,10 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     const prices = hasCurrentSessionPrices ? currentSessionPrices
       : hasStartingPrices ? startingPrices
       : hasMorningBellPrices ? morningBellPrices
-      : currentPrices || {};
+      : effectivePrices || {};
 
     return prices;
-  }, [battle, currentSessionId, currentPrices]);
+  }, [battle, currentSessionId, effectivePrices]);
 
   // Combine battle history with local updates
   const combinedHistory = useMemo(() => {
@@ -186,8 +192,8 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
 
   // My scores
   const myScores = useMemo(() => {
-    return calculateScores(myPortfolioFlat, currentPrices, openPrices, combinedHistory, dailyExtremes);
-  }, [myPortfolioFlat, currentPrices, openPrices, combinedHistory, dailyExtremes, calculateScores]);
+    return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes);
+  }, [myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores]);
 
   // Opponent scores — combine Firebase history with local opponent history
   // (mirrors combinedHistory pattern for own data, ensuring opponent badges
@@ -198,8 +204,8 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   }, [battle, isCreator, localOppHistory]);
 
   const oppScores = useMemo(() => {
-    return calculateScores(oppPortfolioFlat, currentPrices, openPrices, oppHistory || {}, dailyExtremes);
-  }, [oppPortfolioFlat, currentPrices, openPrices, oppHistory, dailyExtremes, calculateScores]);
+    return calculateScores(oppPortfolioFlat, effectivePrices, openPrices, oppHistory || {}, dailyExtremes);
+  }, [oppPortfolioFlat, effectivePrices, openPrices, oppHistory, dailyExtremes, calculateScores]);
 
   // Add completed session scores
   const myTotalScore = useMemo(() => {
@@ -316,14 +322,14 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
 
   // Detect threshold crossings when prices update
   useEffect(() => {
-    if (!currentPrices || Object.keys(currentPrices).length === 0) return;
+    if (!effectivePrices || Object.keys(effectivePrices).length === 0) return;
     if (!battle || !battleId) return;
 
     myPortfolioFlat.forEach((asset) => {
       if (!asset) return;
 
       const openPrice = openPrices[asset.symbol];
-      const currentPrice = currentPrices[asset.symbol];
+      const currentPrice = effectivePrices[asset.symbol];
       if (!openPrice || !currentPrice) return;
 
       const priceChange = ((currentPrice - openPrice) / openPrice) * 100;
@@ -407,7 +413,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       // Update prev multiplier ref
       prevMultipliersRef.current[asset.symbol] = currentMultiplier;
     });
-  }, [currentPrices, openPrices, dailyExtremes, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger]);
+  }, [effectivePrices, openPrices, dailyExtremes, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger]);
 
   // Continuous history tracking — ensures maxMultiplier/minMultiplier are always
   // recorded for BOTH player and opponent portfolios on every price poll.
@@ -416,7 +422,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   // Writes to Firebase only when values actually change (getHistoryUpdateIfChanged
   // returns null when no update is needed), minimizing write costs.
   useEffect(() => {
-    if (!currentPrices || Object.keys(currentPrices).length === 0) return;
+    if (!effectivePrices || Object.keys(effectivePrices).length === 0) return;
     if (!battle || !battleId || battleId.startsWith('training_')) return;
 
     const processPortfolio = (portfolioFlat, existingHistory, setHistoryFn, isOwnPortfolio) => {
@@ -424,7 +430,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
         if (!asset) return;
 
         const openPrice = openPrices[asset.symbol];
-        const currentPrice = currentPrices[asset.symbol];
+        const currentPrice = effectivePrices[asset.symbol];
         if (!openPrice || !currentPrice) return;
 
         const priceChange = ((currentPrice - openPrice) / openPrice) * 100;
@@ -473,7 +479,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     // Track opponent portfolio history (redundant recording — if opponent's client
     // is offline, this client still records their peaks)
     processPortfolio(oppPortfolioFlat, oppHistory, setLocalOppHistory, false);
-  }, [currentPrices, openPrices, dailyExtremes, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
+  }, [effectivePrices, openPrices, dailyExtremes, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
 
   // Fetch prices — uses frozen close prices from Firebase when a session has ended,
   // ensuring both players see identical scores for completed sessions
@@ -521,35 +527,28 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       const newPrices = {};
       const newExtremes = {};
 
-      // Fetch stock prices
-      for (const symbol of stockSymbols) {
-        try {
-          const data = await stockAPI.getStockPrice(symbol);
-          if (data?.price) {
-            newPrices[symbol] = data.price;
-            if (data.high > 0 || data.low > 0) {
-              newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
-            }
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch price for ${symbol}:`, err);
-        }
-      }
+      // Batch fetch: 2 HTTP requests total instead of N individual calls
+      const [stockData, cryptoData] = await Promise.all([
+        stockSymbols.length > 0 ? stockAPI.getMultipleStockPrices(stockSymbols) : {},
+        cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : {},
+      ]);
 
-      // Fetch crypto prices
-      for (const symbol of cryptoSymbols) {
-        try {
-          const data = await stockAPI.getCryptoPrice(symbol);
-          if (data?.price) {
-            newPrices[symbol] = data.price;
-            if (data.high > 0 || data.low > 0) {
-              newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
-            }
+      Object.entries(stockData).forEach(([symbol, data]) => {
+        if (data?.price) {
+          newPrices[symbol] = data.price;
+          if (data.high > 0 || data.low > 0) {
+            newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
           }
-        } catch (err) {
-          console.warn(`Failed to fetch crypto price for ${symbol}:`, err);
         }
-      }
+      });
+      Object.entries(cryptoData).forEach(([symbol, data]) => {
+        if (data?.price) {
+          newPrices[symbol] = data.price;
+          if (data.high > 0 || data.low > 0) {
+            newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
+          }
+        }
+      });
 
       if (Object.keys(newPrices).length > 0) {
         setCurrentPrices((prev) => ({ ...prev, ...newPrices }));
@@ -741,8 +740,8 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     // Events for EventFeed
     events: battle?.events || [],
 
-    // Prices
-    currentPrices,
+    // Prices (effectivePrices = polled + real-time WebSocket overlay)
+    currentPrices: effectivePrices,
     openPrices,
     thresholds: battle?.thresholds || {},
 

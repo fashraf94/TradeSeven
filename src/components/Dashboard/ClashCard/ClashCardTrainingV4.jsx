@@ -46,19 +46,30 @@ export default function ClashCardTrainingV4({ battle, user, remainingMs, onPress
     if (allSymbols.length === 0) return;
     try {
       const prices = {};
+
+      // Batch fetch: 2 HTTP requests total instead of N individual calls
+      const stockSymbols = allSymbols.filter(s => !isCryptoSymbol(s));
+      const cryptoSymbols = allSymbols.filter(s => isCryptoSymbol(s));
+
+      const [stockData, cryptoData] = await Promise.all([
+        stockSymbols.length > 0 ? stockAPI.getMultipleStockPrices(stockSymbols) : {},
+        cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : {},
+      ]);
+
+      Object.entries(stockData).forEach(([symbol, data]) => {
+        if (data?.price) prices[symbol] = data.price;
+      });
+      Object.entries(cryptoData).forEach(([symbol, data]) => {
+        if (data?.price) prices[symbol] = data.price;
+      });
+
+      // Fill in startingPrices fallback for any symbols not returned by batch
       for (const symbol of allSymbols) {
-        try {
-          if (isCryptoSymbol(symbol)) {
-            const data = await stockAPI.getCryptoPrice(symbol);
-            if (data?.price) prices[symbol] = data.price;
-          } else {
-            const data = await stockAPI.getStockPrice(symbol);
-            if (data?.price) prices[symbol] = data.price;
-          }
-        } catch {
-          if (startingPrices[symbol]) prices[symbol] = startingPrices[symbol];
+        if (!prices[symbol] && startingPrices[symbol]) {
+          prices[symbol] = startingPrices[symbol];
         }
       }
+
       if (Object.keys(prices).length > 0) {
         setCurrentPrices(prev => ({ ...prev, ...prices }));
       }

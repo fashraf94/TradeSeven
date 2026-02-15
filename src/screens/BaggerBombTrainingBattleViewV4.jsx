@@ -11,6 +11,7 @@ import BaggerBombBattleView from './BaggerBombBattleView';
 import { HOLO_COLORS } from '../constants/holoTheme';
 import { motion } from 'framer-motion';
 import { stockAPI, POPULAR_CRYPTO, fetchHistoricalOHLCV } from '../services/eodhdAPI';
+import { useWebSocketPrices } from '../hooks/useWebSocketPrices';
 import { getVolatilityThresholds } from '../services/volatilityService';
 import {
   flattenPortfolio,
@@ -144,6 +145,15 @@ export default function BaggerBombTrainingBattleViewV4({
     return [...new Set(symbols)];
   }, [myPortfolioRaw, oppData, freeAgents]);
 
+  // WebSocket real-time prices — merge into currentPrices
+  const { prices: wsPrices, status: wsStatus } = useWebSocketPrices(allSymbols);
+
+  useEffect(() => {
+    if (Object.keys(wsPrices).length > 0) {
+      setCurrentPrices(prev => ({ ...prev, ...wsPrices }));
+    }
+  }, [wsPrices]);
+
   // --- Initialize free agents from battle data on mount ---
   useEffect(() => {
     const battleAgents = battle?.freeAgents?.current || [];
@@ -213,17 +223,27 @@ export default function BaggerBombTrainingBattleViewV4({
 
     try {
       const prices = {};
+
+      // Batch fetch: 2 HTTP requests total instead of N individual calls
+      const stockSymbols = allSymbols.filter(s => !isCryptoSymbol(s));
+      const cryptoSymbols = allSymbols.filter(s => isCryptoSymbol(s));
+
+      const [stockData, cryptoData] = await Promise.all([
+        stockSymbols.length > 0 ? stockAPI.getMultipleStockPrices(stockSymbols) : {},
+        cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : {},
+      ]);
+
+      Object.entries(stockData).forEach(([symbol, data]) => {
+        if (data?.price) prices[symbol] = data.price;
+      });
+      Object.entries(cryptoData).forEach(([symbol, data]) => {
+        if (data?.price) prices[symbol] = data.price;
+      });
+
+      // Fill in startingPrices fallback for any symbols not returned by batch
       for (const symbol of allSymbols) {
-        try {
-          if (isCryptoSymbol(symbol)) {
-            const data = await stockAPI.getCryptoPrice(symbol);
-            if (data?.price) prices[symbol] = data.price;
-          } else {
-            const data = await stockAPI.getStockPrice(symbol);
-            if (data?.price) prices[symbol] = data.price;
-          }
-        } catch (err) {
-          if (startingPrices[symbol]) prices[symbol] = startingPrices[symbol];
+        if (!prices[symbol] && startingPrices[symbol]) {
+          prices[symbol] = startingPrices[symbol];
         }
       }
 
