@@ -96,8 +96,6 @@ export default function BaggerBombBattleViewRedesign({
   onBack,
   isTraining = false
 }) {
-  console.log('[WebSocket Debug]', 'Component mounted: BaggerBombBattleViewRedesign');
-
   // ==================== STATE ====================
   const [currentPrices, setCurrentPrices] = useState({});
   const [loadingPrices, setLoadingPrices] = useState(true);

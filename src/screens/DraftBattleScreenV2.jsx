@@ -57,7 +57,6 @@ const DraftBattleScreenV2 = ({
   setScreen,
   logger = console,
 }) => {
-  console.log('[WebSocket Debug]', 'Component mounted: DraftBattleScreenV2');
 
   // ============================================
   // STATE - Preserved from original

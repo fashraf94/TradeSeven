@@ -19,7 +19,6 @@ export default function BaggerBombBattleViewConnectedV4({
   userId,
   onBack,
 }) {
-  console.log('[WebSocket Debug]', 'Component mounted: BaggerBombBattleViewConnectedV4', { battleId, userId });
   // WebSocket real-time prices (called unconditionally before battle hook)
   const [wsSymbols, setWsSymbols] = useState([]);
   const { prices: wsPrices, status: wsStatus } = useWebSocketPrices(wsSymbols);
@@ -68,12 +67,6 @@ export default function BaggerBombBattleViewConnectedV4({
       ...flattenPortfolio(opponent?.portfolio),
     ];
     const symbols = [...new Set(allAssets.map(a => a?.symbol).filter(Boolean))].sort();
-
-    console.log('[WebSocket Debug]', 'Symbol extraction useEffect running.', {
-      playerPortfolioKeys: player?.portfolio ? Object.keys(player.portfolio) : null,
-      opponentPortfolioKeys: opponent?.portfolio ? Object.keys(opponent.portfolio) : null,
-      extractedSymbols: symbols,
-    });
 
     setWsSymbols(prev => {
       if (prev.length === symbols.length && prev.every((s, i) => s === symbols[i])) return prev;
