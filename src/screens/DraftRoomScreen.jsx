@@ -590,7 +590,7 @@ const DraftRoomScreen = ({
                       riskyPicked: player.categories?.risky || 0,
                       defensivePicked: player.categories?.defensive || 0,
                     }}
-                    lastPick={lastPick?.playerId === player.odUserId ? lastPick?.symbol : null}
+                    lastPick={stableLastPick?.playerId === player.odUserId ? stableLastPick?.symbol : null}
                     pickProgress={isCurrentPicker && draftTimeRemaining > 0 ? 1 - (draftTimeRemaining / 120) : 0}
                   />
                 </React.Fragment>
