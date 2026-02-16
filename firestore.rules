@@ -61,6 +61,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Bug reports — user-submitted via ClashBot widget
+    match /bugReports/{reportId} {
+      allow create: if request.resource.data.userId is string
+                    && request.resource.data.userId.size() > 0;
+      allow read: if true;
+      allow update: if true;  // Open for beta — tighten with admin roles later
+      allow delete: if false;
+    }
+
     // Game plan notes — single user ownership
     match /gamePlanNotes/{noteId} {
       allow read: if true;

@@ -1,5 +1,7 @@
 import React from 'react';
+import { Bug } from 'lucide-react';
 import DesktopBackground from '../components/DesktopBackground';
+import { ADMIN_USERS } from '../components/ClashBot/BugReportAdmin';
 
 // Style override to neutralize App.css
 const containerStyle = {
@@ -16,7 +18,8 @@ const containerStyle = {
 const ProfileScreen = ({
   user,
   isDesktop,
-  onBack
+  onBack,
+  setScreen,
 }) => {
   const userStats = {
     xp: user.xp || 0,
@@ -469,6 +472,58 @@ const ProfileScreen = ({
               </div>
             </div>
           </div>
+
+          {/* ADMIN TOOLS — only visible for admin users */}
+          {ADMIN_USERS.includes(user?.username) && setScreen && (
+            <>
+              <h3 style={{
+                fontSize: '16px',
+                fontWeight: 'bold',
+                color: '#ffffff',
+                marginBottom: '12px',
+                marginTop: '24px'
+              }}>
+                Admin Tools
+              </h3>
+
+              <button
+                onClick={() => setScreen('bugReportAdmin')}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '16px',
+                  backgroundColor: '#161b22',
+                  border: '2px solid #8b5cf6',
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  outline: 'none',
+                }}
+              >
+                <div style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <Bug size={20} color="#8b5cf6" />
+                </div>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#ffffff' }}>
+                    Bug Reports
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#8b949e', marginTop: 2 }}>
+                    Review and triage ClashBot reports
+                  </div>
+                </div>
+              </button>
+            </>
+          )}
 
         </div>
       </div>

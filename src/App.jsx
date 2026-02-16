@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import ClashBotWidget from './components/ClashBot/ClashBotWidget';
+import BugReportAdmin from './components/ClashBot/BugReportAdmin';
 import { loadBattlesSafe, saveBattlesSafe, isSameBattles } from './services/LocalStorage';
 import { useUser } from './contexts/UserContext';
 import * as battleTimer from './services/battleTimer';
@@ -16980,6 +16982,11 @@ export default function PortfolioDuel() {
     );
   };
 
+  // ============================================
+  // SCREEN ROUTING (wrapped in function for unified return with ClashBot widget)
+  // ============================================
+  const getScreenContent = () => {
+
   // LOGIN SCREEN - Extracted to HomeScreen component
   if (screen === 'home') {
     return (
@@ -23149,6 +23156,18 @@ export default function PortfolioDuel() {
 
   // BATTLE HISTORY OLD CODE REMOVED - See src/screens/BattleHistoryScreen.jsx
 
+  // BUG REPORT ADMIN — ClashBot triage view
+  if (screen === 'bugReportAdmin') {
+    return (
+      <BugReportAdmin
+        user={user}
+        colors={colors}
+        isDesktop={isDesktop}
+        onBack={() => setScreen('profile')}
+      />
+    );
+  }
+
   // PROFILE SCREEN - REDESIGNED
   if (screen === 'profile') {
     return (
@@ -23157,6 +23176,7 @@ export default function PortfolioDuel() {
         user={user}
         isDesktop={isDesktop}
         onBack={() => setScreen('dashboard')}
+        setScreen={setScreen}
       />
       </ErrorBoundary>
     );
@@ -23190,8 +23210,15 @@ export default function PortfolioDuel() {
     );
   }
 
-  // EARNINGS GAME SCREEN - No longer conditionally returned, moved to final return block with CSS display toggle
+  // No screen matched — return null to fall through to unified return
+  return null;
+  }; // end getScreenContent
 
+  const screenContent = getScreenContent();
+
+  // ============================================
+  // UNIFIED RETURN — EarningsGame (always mounted) + active screen + ClashBot widget
+  // ============================================
   return (
     <>
       {/* EarningsGame - ALWAYS MOUNTED to prevent state loss from Firestore battle updates */}
@@ -23215,8 +23242,11 @@ export default function PortfolioDuel() {
         </ErrorBoundary>
       </div>
 
-      {/* Only show default content when NOT on earningsGame */}
-      {screen !== 'earningsGame' && (
+      {/* Active screen content from routing */}
+      {screenContent}
+
+      {/* Only show default content when NOT on earningsGame and no screen matched */}
+      {!screenContent && screen !== 'earningsGame' && (
         <>
       <ChallengeModal />
       {/* Toast Notification */}
@@ -23245,6 +23275,18 @@ export default function PortfolioDuel() {
       )}
 
         </>
+      )}
+
+      {/* ClashBot Bug Reporter — persistent floating widget on all screens when logged in */}
+      {user && (
+        <ClashBotWidget
+          user={user}
+          screen={screen}
+          gameMode={gameMode}
+          currentBattle={currentBattle}
+          colors={colors}
+          isDesktop={isDesktop}
+        />
       )}
     </>
   );
