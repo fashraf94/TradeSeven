@@ -968,16 +968,6 @@ const DraftBattleScreenV2 = ({
         gap: '8px',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{
-            color: HOLO_COLORS.textPrimary,
-            fontWeight: 600,
-            background: HOLO_COLORS.bgCard,
-            padding: '4px 8px',
-            borderRadius: '4px',
-          }}>
-            {currentDraft?.code || 'DRAFT'}
-          </span>
-          <span style={{ color: HOLO_COLORS.textMuted }}>-</span>
           <span style={{ color: HOLO_COLORS.textSecondary }}>
             {battleType === 'crypto' ? 'Crypto' : 'Stocks'}
           </span>
