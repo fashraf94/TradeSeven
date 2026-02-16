@@ -21802,6 +21802,57 @@ export default function PortfolioDuel() {
                   You'll draft against 3 CPU opponents
                 </p>
 
+                {/* Asset Type Toggle */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '8px',
+                  marginBottom: '12px'
+                }}>
+                  <button
+                    onClick={() => setTrainingConfirmType('stocks')}
+                    style={{
+                      padding: '10px',
+                      borderRadius: '8px',
+                      border: trainingConfirmType === 'stocks' ? '2px solid #22c55e' : '2px solid #21262d',
+                      background: trainingConfirmType === 'stocks' ? 'rgba(34, 197, 94, 0.1)' : '#0d1117',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <span style={{ fontSize: '16px' }}>{'\uD83D\uDCC8'}</span>
+                    <span style={{
+                      color: trainingConfirmType === 'stocks' ? '#22c55e' : '#8b949e',
+                      fontWeight: '600',
+                      fontSize: '13px'
+                    }}>Stocks</span>
+                  </button>
+                  <button
+                    onClick={() => setTrainingConfirmType('crypto')}
+                    style={{
+                      padding: '10px',
+                      borderRadius: '8px',
+                      border: trainingConfirmType === 'crypto' ? '2px solid #f59e0b' : '2px solid #21262d',
+                      background: trainingConfirmType === 'crypto' ? 'rgba(245, 158, 11, 0.1)' : '#0d1117',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <span style={{ fontSize: '16px' }}>{'\u20BF'}</span>
+                    <span style={{
+                      color: trainingConfirmType === 'crypto' ? '#f59e0b' : '#8b949e',
+                      fontWeight: '600',
+                      fontSize: '13px'
+                    }}>Crypto</span>
+                  </button>
+                </div>
+
                 {/* Details */}
                 <div style={{
                   background: '#0d1117',

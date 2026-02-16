@@ -122,9 +122,24 @@ export const CRYPTO_SYMBOLS = new Set([
   // Gaming / Metaverse
   'SAND', 'MANA', 'AXS', 'IMX', 'GALA', 'ENJ',
   // AI / Data
-  'RNDR', 'FET', 'OCEAN', 'TAO',
-  // Stablecoins (for reference, though they won't be used in battles)
-  'USDT', 'USDC'
+  'RNDR', 'RENDER', 'FET', 'OCEAN', 'TAO',
+  // Stablecoins
+  'USDT', 'USDC',
+  // Draft crypto symbols (for OHLCV chart detection)
+  'ICP', 'HBAR', 'XMR', 'ETC', 'SUI', 'SUI20947', 'INJ',
+  'FLOKI', 'BONK', 'WIF', 'ASI', 'AGIX', 'AKT',
+  '1INCH', 'SUSHI', 'CAKE', 'SEI',
+  'DAI', 'FRAX', 'TUSD',
+  'LDO', 'RPL', 'FXS', 'CBETH',
+  'GRT', 'BAND', 'API3',
+  'CRO', 'KCS', 'OKB', 'LEO',
+  'ZEC', 'DASH', 'WBTC',
+  'ENS', 'QNT', 'THETA', 'HNT', 'AR',
+  'FTM', 'EGLD', 'RUNE', 'KAVA', 'CELO',
+  // Verified replacement symbols
+  'PENDLE', 'DYDX', 'CFX', 'SSV', 'MINA', 'STORJ', 'HIGH',
+  // Verified round 3 replacements
+  'TWT', 'WOO', 'OSMO', 'JOE',
 ]);
 
 // ============================================

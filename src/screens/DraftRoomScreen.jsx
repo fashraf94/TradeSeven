@@ -15,7 +15,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 // Import DraftAdvisor - will be passed or imported
 import DraftAdvisor from '../components/DraftAdvisor';
 // Import EODHD API for real-time prices
-import { getMultipleStockPrices } from '../services/eodhdAPI';
+import { getMultipleStockPrices, getMultipleCryptoPrices } from '../services/eodhdAPI';
 // Import Holographic components
 import {
   HoloAssetCard,
@@ -132,7 +132,10 @@ const DraftRoomScreen = ({
         const symbolsArray = Array.from(allSymbols);
         console.log('[DraftRoom] Fetching prices for', symbolsArray.length, 'symbols');
 
-        const prices = await getMultipleStockPrices(symbolsArray);
+        const isCryptoDraft = roomDraft?.type === 'crypto';
+        const prices = isCryptoDraft
+          ? await getMultipleCryptoPrices(symbolsArray)
+          : await getMultipleStockPrices(symbolsArray);
         setLivePrices(prices);
         setPricesLoading(false);
       } catch (error) {
@@ -872,6 +875,7 @@ const DraftRoomScreen = ({
                       ...asset,
                       price: displayPrice,
                       percentChange: displayChange,
+                      isCrypto: roomDraft?.type === 'crypto',
                     })}
                     compact={isPhone}
                   />

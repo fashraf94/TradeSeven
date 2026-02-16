@@ -41,9 +41,16 @@ const CRYPTO_DEFAULTS = {
   'SAND': 8.0, 'MANA': 8.0, 'AXS': 8.0, 'IMX': 7.0,
   'GALA': 10.0, 'ENJ': 7.0,
   // AI / Data
-  'RNDR': 8.0, 'FET': 8.0, 'OCEAN': 8.0, 'TAO': 10.0,
+  'RNDR': 8.0, 'RENDER': 8.0, 'FET': 8.0, 'OCEAN': 8.0, 'TAO': 10.0,
+  'ASI': 8.0,
   // Stablecoins (very low threshold - shouldn't move much)
   'USDT': 0.5, 'USDC': 0.5,
+  // Draft defensive crypto
+  'FTM': 7.0, 'EGLD': 7.0, 'RUNE': 8.0, 'KAVA': 7.0, 'CELO': 7.0,
+  // Verified replacement symbols
+  'PENDLE': 7.0, 'DYDX': 7.0, 'CFX': 8.0, 'SSV': 8.0,
+  'MINA': 8.0, 'STORJ': 7.0, 'HIGH': 8.0, 'SUI20947': 8.0,
+  'TWT': 7.0, 'WOO': 8.0, 'OSMO': 7.0, 'JOE': 8.0,
   'DEFAULT': 5.0
 };
 

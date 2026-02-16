@@ -840,6 +840,98 @@ Provide your sentiment score and summary.`;
   }
 }
 
+// Handle crypto-health type for Bitcoin on-chain health AI summary
+async function handleCryptoHealth(req, res, API_KEY) {
+  const { onChainData, symbol } = req.body;
+
+  console.log('[AI Advisor] Crypto health analysis for:', symbol || 'BTC');
+
+  if (!onChainData) {
+    return res.status(200).json({ success: false, error: 'No on-chain data provided' });
+  }
+
+  const systemPrompt = `You are a Bitcoin on-chain analyst helping a stock trader understand crypto fundamentals through a gaming app called MarketClash. The user plays "BaggerBomb" — a game where assets that cross volatility thresholds score points (BaggerBombs for upside, Busts for downside).
+
+Your job is to explain what Bitcoin's on-chain data means in plain English, using stock market analogies wherever possible. The user has 13 years of stock trading experience but is new to crypto.
+
+RULES:
+- Keep each section insight to 1-2 sentences
+- Use stock market analogies (P/E ratio, insider buying, short interest, etc.)
+- Frame the BaggerBomb outlook in terms of probability of explosive moves vs sharp drops
+- Never give financial advice — frame everything as educational context for a game
+- Be specific with numbers from the data provided
+- If a metric is missing or null, skip it — don't mention unavailable data`;
+
+  const userPrompt = `Here is the current Bitcoin on-chain data:
+
+MVRV Z-Score: ${onChainData.mvrv?.latest ?? 'N/A'} (7d change: ${onChainData.mvrv?.change7d != null ? onChainData.mvrv.change7d.toFixed(2) : 'N/A'})
+NUPL: ${onChainData.nupl?.latest != null ? onChainData.nupl.latest.toFixed(3) : 'N/A'}
+Fear & Greed Index: ${onChainData.fearGreed?.latest ?? 'N/A'}
+Exchange Net Flow (latest): ${onChainData.exchangeNetflow?.latest ?? 'N/A'}
+BTC ETF Balance: ${onChainData.etfBalance?.latest ?? 'N/A'} BTC (7d change: ${onChainData.etfBalance?.change7d ?? 'N/A'})
+Whale Holdings (1K-10K BTC) 30d change: ${onChainData.whaleCoins?.change30d ?? 'N/A'}
+BTC Funding Rate: ${onChainData.fundingRate?.latest ?? 'N/A'}%
+Open Interest: ${onChainData.openInterest?.latest ?? 'N/A'}
+Active Addresses: ${onChainData.activeAddresses?.latest ?? 'N/A'}
+
+Provide your analysis as JSON with this exact structure:
+{
+  "overallVerdict": "2-sentence summary of Bitcoin's current health",
+  "valuationInsight": "1-2 sentences about MVRV (use P/E ratio analogy)",
+  "sentimentInsight": "1-2 sentences about NUPL + Fear & Greed",
+  "smartMoneyInsight": "1-2 sentences about exchange flows + ETF flows + whale activity (use insider buying analogy)",
+  "leverageInsight": "1-2 sentences about funding rate + open interest (use short interest analogy)",
+  "baggerBombOutlook": {
+    "bombProbability": "LOW|MEDIUM|HIGH",
+    "bustRisk": "LOW|MEDIUM|HIGH",
+    "reasoning": "2-3 sentences connecting on-chain data to BaggerBomb game mechanics"
+  }
+}
+
+Respond with ONLY the JSON, no markdown formatting.`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-haiku-20241022',
+        max_tokens: 800,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.error || !response.ok) {
+      console.error('[AI Advisor] Crypto health error:', data.error);
+      return res.status(200).json({ success: false, error: 'AI unavailable' });
+    }
+
+    const text = data.content?.[0]?.text || '';
+
+    // Parse JSON from response (strip any markdown fences)
+    const clean = text.replace(/```json|```/g, '').trim();
+
+    try {
+      const parsed = JSON.parse(clean);
+      return res.status(200).json({ success: true, ...parsed });
+    } catch (parseError) {
+      console.warn('[AI Advisor] Could not parse crypto health JSON, returning raw text');
+      return res.status(200).json({ success: true, rawAnalysis: text });
+    }
+
+  } catch (error) {
+    console.error('[AI Advisor] Crypto health error:', error.message);
+    return res.status(200).json({ success: false, error: error.message });
+  }
+}
+
 export default async function handler(req, res) {
   // Apply security middleware (CORS, security headers, rate limiting, preflight)
   // Lower rate limit for AI endpoint (20/min) - this costs money!
@@ -877,6 +969,11 @@ export default async function handler(req, res) {
     // Handle news-sentiment type for AI news sentiment analysis
     if (type === 'news-sentiment') {
       return await handleNewsSentiment(req, res, API_KEY);
+    }
+
+    // Handle crypto-health type for Bitcoin on-chain health AI summary
+    if (type === 'crypto-health') {
+      return await handleCryptoHealth(req, res, API_KEY);
     }
 
     // Handle technical-analysis advisorType for AI-powered technical analysis

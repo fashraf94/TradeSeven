@@ -53,7 +53,8 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
     setLoading(true);
     setError(null);
 
-    const fetchOpts = isSpectate ? { days: 1 } : isBomb ? { days: bombDays } : undefined;
+    const cryptoOpt = isCrypto ? { type: 'crypto' } : {};
+    const fetchOpts = isSpectate ? { days: 1, ...cryptoOpt } : isBomb ? { days: bombDays, ...cryptoOpt } : isCrypto ? cryptoOpt : undefined;
     fetchHistoricalOHLCV(symbol, apiTimeframe, fetchOpts)
       .then(data => {
         if (thisRequest.aborted) return;
@@ -115,7 +116,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
         spectateRefreshRef.current = null;
         return;
       }
-      fetchHistoricalOHLCV(symbol, '1m', { days: 1 })
+      fetchHistoricalOHLCV(symbol, '1m', { days: 1, ...(isCrypto ? { type: 'crypto' } : {}) })
         .then(data => {
           if (data && data.length > 0) {
             emptyCountRef.current = 0;
@@ -354,7 +355,9 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
     setRawData(null);
     setError(null);
     setLoading(true);
-    fetchHistoricalOHLCV(symbol, apiTimeframe, isBomb ? { days: bombDays } : undefined)
+    const retryOpts = isBomb ? { days: bombDays } : {};
+    if (isCrypto) retryOpts.type = 'crypto';
+    fetchHistoricalOHLCV(symbol, apiTimeframe, Object.keys(retryOpts).length > 0 ? retryOpts : undefined)
       .then(data => {
         if (!data || data.length === 0) {
           setError('No historical data available');
@@ -365,7 +368,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto } = {})
       })
       .catch(err => setError(err.message || 'Failed to fetch data'))
       .finally(() => setLoading(false));
-  }, [symbol, apiTimeframe, isBomb]);
+  }, [symbol, apiTimeframe, isBomb, isCrypto]);
 
   return {
     ohlcvData,       // Oldest-first, processed for current timeframe

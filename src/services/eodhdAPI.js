@@ -51,6 +51,7 @@ import cacheService from './cacheService.js';
 
 // Import API monitor for tracking
 import { apiMonitor } from './apiMonitor.js';
+import { CRYPTO_SYMBOLS } from './sessionScoringService.js';
 
 const IS_DEV = import.meta.env.DEV;
 
@@ -766,7 +767,7 @@ export function clearEarningsCache() {
  * @param {string} timeframe - Timeframe: '1h' (hourly), '1d' (daily), '1w' (weekly)
  * @returns {Promise<Object>} Object with { data, actualTimeframe, fallbackMessage } or just data array for backwards compatibility
  */
-export async function fetchHistoricalOHLCV(symbol, timeframe = '1d', { days, from, to } = {}) {
+export async function fetchHistoricalOHLCV(symbol, timeframe = '1d', { days, from, to, type } = {}) {
   const upperSymbol = symbol.toUpperCase();
   const cacheKey = `ohlcv_${upperSymbol}_${timeframe}${days ? `_${days}d` : ''}`;
 
@@ -781,7 +782,7 @@ export async function fetchHistoricalOHLCV(symbol, timeframe = '1d', { days, fro
   console.log(`[EODHD] Fetching ${timeframe} OHLCV for ${upperSymbol}...`);
 
   try {
-    const isCryptoSymbol = POPULAR_CRYPTO_SYMBOLS.includes(upperSymbol);
+    const isCryptoSymbol = type === 'crypto' || POPULAR_CRYPTO_SYMBOLS.includes(upperSymbol) || CRYPTO_SYMBOLS.has(upperSymbol);
     let url = `${API_BASE}/stocks/historical?symbol=${upperSymbol}&timeframe=${timeframe}`;
     if (isCryptoSymbol) url += '&type=crypto';
     if (days) url += `&days=${days}`;
