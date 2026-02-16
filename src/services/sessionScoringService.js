@@ -123,8 +123,18 @@ export const CRYPTO_SYMBOLS = new Set([
   'SAND', 'MANA', 'AXS', 'IMX', 'GALA', 'ENJ',
   // AI / Data
   'RNDR', 'FET', 'OCEAN', 'TAO',
-  // Stablecoins (for reference, though they won't be used in battles)
-  'USDT', 'USDC'
+  // Stablecoins
+  'USDT', 'USDC',
+  // Draft crypto symbols (for OHLCV chart detection)
+  'ICP', 'HBAR', 'XMR', 'ETC', 'SUI', 'INJ',
+  'FLOKI', 'BONK', 'WIF', 'AGIX', 'AKT',
+  '1INCH', 'SUSHI', 'CAKE', 'SEI',
+  'DAI', 'FRAX', 'TUSD',
+  'LDO', 'RPL', 'FXS', 'CBETH',
+  'GRT', 'BAND', 'API3',
+  'CRO', 'KCS', 'OKB', 'LEO',
+  'ZEC', 'DASH', 'WBTC',
+  'ENS', 'QNT', 'THETA', 'HNT', 'AR',
 ]);
 
 // ============================================

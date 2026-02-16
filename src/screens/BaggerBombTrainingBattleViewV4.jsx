@@ -316,7 +316,7 @@ export default function BaggerBombTrainingBattleViewV4({
       const opens = {};
       await Promise.all(freeAgents.map(async (agent) => {
         try {
-          const candles = await fetchHistoricalOHLCV(agent.symbol, '1d');
+          const candles = await fetchHistoricalOHLCV(agent.symbol, '1d', isCryptoSymbol(agent.symbol) ? { type: 'crypto' } : undefined);
           if (candles && candles.length > 0) {
             const todayCandle = candles[candles.length - 1];
             if (todayCandle?.open) opens[agent.symbol] = todayCandle.open;
