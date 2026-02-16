@@ -53,6 +53,9 @@ const CRYPTO_DEFAULTS = {
   'USDT': 0.5, 'USDC': 0.5,
   // Draft defensive crypto
   'FTM': 7.0, 'EGLD': 7.0, 'RUNE': 8.0, 'KAVA': 7.0, 'CELO': 7.0,
+  // Verified replacement symbols
+  'PENDLE': 7.0, 'DYDX': 7.0, 'CFX': 8.0, 'SSV': 8.0,
+  'MINA': 8.0, 'STORJ': 7.0, 'HIGH': 8.0, 'SUI20947': 8.0,
   'DEFAULT': 5.0
 };
 

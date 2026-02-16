@@ -126,7 +126,7 @@ export const CRYPTO_SYMBOLS = new Set([
   // Stablecoins
   'USDT', 'USDC',
   // Draft crypto symbols (for OHLCV chart detection)
-  'ICP', 'HBAR', 'XMR', 'ETC', 'SUI', 'INJ',
+  'ICP', 'HBAR', 'XMR', 'ETC', 'SUI', 'SUI20947', 'INJ',
   'FLOKI', 'BONK', 'WIF', 'ASI', 'AGIX', 'AKT',
   '1INCH', 'SUSHI', 'CAKE', 'SEI',
   'DAI', 'FRAX', 'TUSD',
@@ -136,6 +136,8 @@ export const CRYPTO_SYMBOLS = new Set([
   'ZEC', 'DASH', 'WBTC',
   'ENS', 'QNT', 'THETA', 'HNT', 'AR',
   'FTM', 'EGLD', 'RUNE', 'KAVA', 'CELO',
+  // Verified replacement symbols
+  'PENDLE', 'DYDX', 'CFX', 'SSV', 'MINA', 'STORJ', 'HIGH',
 ]);
 
 // ============================================

@@ -316,6 +316,14 @@ export const FALLBACK_CRYPTO_PRICES = {
   'RUNE': 5,
   'KAVA': 0.60,
   'CELO': 0.50,
+  'PENDLE': 1.23,
+  'DYDX': 0.11,
+  'CFX': 0.05,
+  'SSV': 3.22,
+  'MINA': 0.07,
+  'STORJ': 0.11,
+  'HIGH': 0.15,
+  'SUI20947': 0.97,
 };
 
 // ============================================
