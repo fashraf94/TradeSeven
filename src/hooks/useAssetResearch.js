@@ -84,6 +84,8 @@ export function useAssetResearch(options = {}) {
         price: researchAsset.price || researchAsset.currentPrice || 0,
         percentChange: researchAsset.percentChange || researchAsset.change || 0,
         threshold: researchAsset.baseATR || researchAsset.threshold || 0,
+        isCrypto: researchAsset.isCrypto,
+        category: researchAsset.category,
       },
       sector: researchAsset.sector,
       onClose: hideResearch,

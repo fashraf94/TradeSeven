@@ -83,7 +83,7 @@ const AssetResearchModal = ({
   // actionConfig: { label: string, onClick: fn, variant: 'primary'|'danger'|'secondary', disabled?: boolean }
   actionConfig = null,
   showActionButton = true,
-  version = 1,
+  version = 2,
   defaultTab = null,
 }) => {
   const isCrypto = asset?.isCrypto || asset?.category === 'crypto';
