@@ -108,16 +108,19 @@ const CommandDeckConfirmButton = ({
             : isReady
               ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
               : isYourTurn
-                ? 'rgba(255, 255, 255, 0.15)'
-                : 'rgba(255, 255, 255, 0.08)',
+                ? 'rgba(255, 255, 255, 0.05)'
+                : 'rgba(255, 255, 255, 0.03)',
+
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
 
           color: isReady || isLoading ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
 
           padding: '16px 48px',
           border: isReady
-            ? '2px solid rgba(16, 185, 129, 0.4)'
+            ? '2px solid rgba(16, 185, 129, 0.5)'
             : isYourTurn
-              ? '1px solid rgba(255, 255, 255, 0.2)'
+              ? '1.5px solid rgba(255, 255, 255, 0.2)'
               : '1px solid rgba(255, 255, 255, 0.1)',
           fontSize: '16px',
           fontWeight: '700',
