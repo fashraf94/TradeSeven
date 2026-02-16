@@ -14,6 +14,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import TechnicalAnalysisTab from './ResearchTabs/TechnicalAnalysisTab';
 import BaggerBombTab from './ResearchTabs/BaggerBombTab';
 import HealthTab from '../Research/HealthTab';
+import { CRYPTO_SYMBOLS } from '../../services/sessionScoringService';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -86,7 +87,7 @@ const AssetResearchModal = ({
   version = 2,
   defaultTab = null,
 }) => {
-  const isCrypto = asset?.isCrypto || asset?.category === 'crypto';
+  const isCrypto = asset?.isCrypto || asset?.category === 'crypto' || CRYPTO_SYMBOLS.has(asset?.symbol);
   const isGameContext = onAcquire !== null || showActionButton;
   const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'health' : 'fundamental'));
   const [profile, setProfile] = useState(null);

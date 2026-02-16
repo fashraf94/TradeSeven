@@ -872,6 +872,7 @@ const DraftRoomScreen = ({
                       ...asset,
                       price: displayPrice,
                       percentChange: displayChange,
+                      isCrypto: roomDraft?.type === 'crypto',
                     })}
                     compact={isPhone}
                   />
