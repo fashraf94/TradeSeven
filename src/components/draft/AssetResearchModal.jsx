@@ -13,6 +13,7 @@ import TechnicalTabV2 from '../Research/TechnicalTabV2';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import TechnicalAnalysisTab from './ResearchTabs/TechnicalAnalysisTab';
 import BaggerBombTab from './ResearchTabs/BaggerBombTab';
+import HealthTab from '../Research/HealthTab';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -87,7 +88,7 @@ const AssetResearchModal = ({
 }) => {
   const isCrypto = asset?.isCrypto || asset?.category === 'crypto';
   const isGameContext = onAcquire !== null || showActionButton;
-  const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'technical' : 'fundamental'));
+  const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'health' : 'fundamental'));
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
@@ -150,7 +151,7 @@ const AssetResearchModal = ({
 
   // Reset tab default when asset changes (crypto → technical, stock → fundamental)
   useEffect(() => {
-    setActiveTab(defaultTab || (isCrypto ? 'technical' : 'fundamental'));
+    setActiveTab(defaultTab || (isCrypto ? 'health' : 'fundamental'));
   }, [asset?.symbol]);
 
   useEffect(() => {
@@ -670,6 +671,10 @@ const AssetResearchModal = ({
                 </div>
               )}
 
+              {activeTab === 'health' && (
+                <HealthTab asset={asset} symbol={asset?.symbol} />
+              )}
+
               {activeTab === 'technical' && (
                 <TechnicalTabV2
                   asset={asset}
@@ -752,6 +757,27 @@ const AssetResearchModal = ({
                   display: none;
                 }
               `}</style>
+              {isCrypto && (
+              <button
+                onClick={() => setActiveTab('health')}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: activeTab === 'health' ? '1px solid #f59e0b' : '1px solid rgba(255, 255, 255, 0.1)',
+                  background: activeTab === 'health' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  color: activeTab === 'health' ? '#f59e0b' : 'rgba(255, 255, 255, 0.6)',
+                  fontWeight: '600',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  textAlign: 'center',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {'\u26D3\uFE0F'} Health
+              </button>
+              )}
               {!isCrypto && (
               <button
                 onClick={() => setActiveTab('fundamental')}
@@ -1194,6 +1220,10 @@ const AssetResearchModal = ({
                   </div>
                 </div>
               </div>
+            )}
+
+            {activeTab === 'health' && (
+              <HealthTab asset={asset} symbol={asset?.symbol} />
             )}
 
             {activeTab === 'technical' && (

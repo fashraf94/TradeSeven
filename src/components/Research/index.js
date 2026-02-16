@@ -12,6 +12,7 @@ export { default as AnalysisDrawer } from './AnalysisDrawer';
 export { default as useDrawerSnap } from './useDrawerSnap';
 export { default as CollapsibleSection } from './CollapsibleSection';
 export { default as TechnicalTabV2 } from './TechnicalTabV2';
+export { default as HealthTab } from './HealthTab';
 export { ChartSkeleton, LevelsSkeleton, DrawerSkeleton } from './ResearchSkeletons';
 
 // Research Landing Page (redesigned dashboard)
