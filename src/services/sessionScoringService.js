@@ -127,7 +127,7 @@ export const CRYPTO_SYMBOLS = new Set([
   'USDT', 'USDC',
   // Draft crypto symbols (for OHLCV chart detection)
   'ICP', 'HBAR', 'XMR', 'ETC', 'SUI', 'INJ',
-  'FLOKI', 'BONK', 'WIF', 'AGIX', 'AKT',
+  'FLOKI', 'BONK', 'WIF', 'ASI', 'AGIX', 'AKT',
   '1INCH', 'SUSHI', 'CAKE', 'SEI',
   'DAI', 'FRAX', 'TUSD',
   'LDO', 'RPL', 'FXS', 'CBETH',
@@ -135,6 +135,7 @@ export const CRYPTO_SYMBOLS = new Set([
   'CRO', 'KCS', 'OKB', 'LEO',
   'ZEC', 'DASH', 'WBTC',
   'ENS', 'QNT', 'THETA', 'HNT', 'AR',
+  'FTM', 'EGLD', 'RUNE', 'KAVA', 'CELO',
 ]);
 
 // ============================================

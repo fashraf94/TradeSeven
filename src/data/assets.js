@@ -274,6 +274,7 @@ export const FALLBACK_CRYPTO_PRICES = {
   'WIF': 2.50,
   'FET': 1.50,
   'AGIX': 0.80,
+  'ASI': 0.80,
   'AKT': 3,
   'TAO': 500,
   'SAND': 0.50,
@@ -310,6 +311,11 @@ export const FALLBACK_CRYPTO_PRICES = {
   'HNT': 5,
   'AR': 8,
   'RNDR': 7.80,
+  'FTM': 0.50,
+  'EGLD': 30,
+  'RUNE': 5,
+  'KAVA': 0.60,
+  'CELO': 0.50,
 };
 
 // ============================================

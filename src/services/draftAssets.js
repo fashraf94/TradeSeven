@@ -162,7 +162,7 @@ export const RISKY_CRYPTO = [
   { id: 'dogwifcoin', symbol: 'WIF', name: 'dogwifhat' },
   { id: 'render-token', symbol: 'RNDR', name: 'Render' },
   { id: 'fetch-ai', symbol: 'FET', name: 'Fetch.ai' },
-  { id: 'singularitynet', symbol: 'AGIX', name: 'SingularityNET' },
+  { id: 'artificial-superintelligence-alliance', symbol: 'ASI', name: 'ASI Alliance' },
   { id: 'akash-network', symbol: 'AKT', name: 'Akash Network' },
   { id: 'bittensor', symbol: 'TAO', name: 'Bittensor' },
   { id: 'the-sandbox', symbol: 'SAND', name: 'The Sandbox' },
@@ -182,11 +182,11 @@ export const RISKY_CRYPTO = [
 ];
 
 export const DEFENSIVE_CRYPTO = [
-  { id: 'tether', symbol: 'USDT', name: 'Tether' },
-  { id: 'usd-coin', symbol: 'USDC', name: 'USD Coin' },
-  { id: 'dai', symbol: 'DAI', name: 'Dai' },
-  { id: 'frax', symbol: 'FRAX', name: 'Frax' },
-  { id: 'true-usd', symbol: 'TUSD', name: 'TrueUSD' },
+  { id: 'fantom', symbol: 'FTM', name: 'Fantom' },
+  { id: 'elrond-erd-2', symbol: 'EGLD', name: 'MultiversX' },
+  { id: 'thorchain', symbol: 'RUNE', name: 'THORChain' },
+  { id: 'kava', symbol: 'KAVA', name: 'Kava' },
+  { id: 'celo', symbol: 'CELO', name: 'Celo' },
   { id: 'lido-dao', symbol: 'LDO', name: 'Lido DAO' },
   { id: 'rocket-pool', symbol: 'RPL', name: 'Rocket Pool' },
   { id: 'frax-share', symbol: 'FXS', name: 'Frax Share' },

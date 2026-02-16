@@ -48,8 +48,11 @@ const CRYPTO_DEFAULTS = {
   'GALA': 10.0, 'ENJ': 7.0,
   // AI / Data
   'RNDR': 8.0, 'RENDER': 8.0, 'FET': 8.0, 'OCEAN': 8.0, 'TAO': 10.0,
+  'ASI': 8.0,
   // Stablecoins (very low threshold - shouldn't move much)
   'USDT': 0.5, 'USDC': 0.5,
+  // Draft defensive crypto
+  'FTM': 7.0, 'EGLD': 7.0, 'RUNE': 8.0, 'KAVA': 7.0, 'CELO': 7.0,
   'DEFAULT': 5.0
 };
 
