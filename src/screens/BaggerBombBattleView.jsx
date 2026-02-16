@@ -2,7 +2,7 @@
 // Sleeper-style side-by-side matchup view with tiers
 // Features: Night mode theme for NIGHT_GAME session (4-8 PM ET)
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, Moon } from 'lucide-react';
@@ -30,6 +30,7 @@ import EventFeed from '../components/BaggerBomb/EventFeed';
 import AssetResearchModal from '../components/draft/AssetResearchModal';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
 import { buildResearchAsset } from '../utils/researchAssetBuilder';
+import { isSwapLocked } from '../utils/baggerBombUtils';
 
 // Tier configuration
 const TIERS = [
@@ -242,6 +243,14 @@ export default function BaggerBombBattleView({
     setResearchDefaultTab('baggerbomb');
   }, []);
 
+  // Orange Zone swap lock toast
+  const [swapBlockedToast, setSwapBlockedToast] = useState(null);
+  useEffect(() => {
+    if (!swapBlockedToast) return;
+    const timer = setTimeout(() => setSwapBlockedToast(null), 3000);
+    return () => clearTimeout(timer);
+  }, [swapBlockedToast]);
+
   // Apply night mode color scheme when active
   const colors = useMemo(() => {
     if (nightMode) {
@@ -439,6 +448,16 @@ export default function BaggerBombBattleView({
                     const slotIsCrypto = Boolean(playerAsset?.isCrypto);
                     const typeMismatch = isSwapTarget && (Boolean(selectedIsCrypto) !== slotIsCrypto);
 
+                    // Orange Zone swap lock — block swaps when stock is near a threshold
+                    let orangeLocked = false;
+                    if (isSwapTarget && playerAsset?.symbol) {
+                      const oPrice = playerAsset.swapPrice || battle?.state?.startingPrices?.[playerAsset.symbol] || openPrices[playerAsset.symbol] || 0;
+                      const cPrice = currentPrices[playerAsset.symbol] || oPrice;
+                      const bATR = thresholds[playerAsset.symbol]?.threshold || 2.5;
+                      const mult = oPrice > 0 ? ((cPrice - oPrice) / oPrice) * 100 / bATR : 0;
+                      orangeLocked = isSwapLocked(mult, bATR).locked;
+                    }
+
                     return (
                       <TacticalRow
                         key={`${tier.key}-${index}`}
@@ -462,10 +481,15 @@ export default function BaggerBombBattleView({
                         onSymbolClick={(asset) => { setResearchAsset(asset); setResearchDefaultTab(null); }}
                         onPointsClick={(asset) => setBreakdownAsset(asset)}
                         swapTargetMode={isSwapTarget}
-                        onLeftAssetSelect={isSwapTarget ? (asset) =>
-                          onSelectSwapTarget(asset, tier.key, index) : undefined}
+                        onLeftAssetSelect={isSwapTarget ? (asset) => {
+                          if (orangeLocked) {
+                            setSwapBlockedToast(playerAsset.symbol);
+                            return;
+                          }
+                          onSelectSwapTarget(asset, tier.key, index);
+                        } : undefined}
                         opponentDimmed={swapMode?.active}
-                        leftDisabled={typeMismatch}
+                        leftDisabled={typeMismatch || orangeLocked}
                       />
                     );
                   })}
@@ -662,6 +686,36 @@ export default function BaggerBombBattleView({
           </motion.div>
         </div>
       )}
+
+      {/* Orange Zone Swap Blocked Toast */}
+      <AnimatePresence>
+        {swapBlockedToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            style={{
+              position: 'fixed',
+              bottom: '100px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              backgroundColor: 'rgba(245, 158, 11, 0.95)',
+              color: '#000',
+              padding: '12px 20px',
+              borderRadius: '12px',
+              fontSize: '13px',
+              fontWeight: 600,
+              zIndex: 200,
+              maxWidth: '90vw',
+              textAlign: 'center',
+              boxShadow: '0 4px 20px rgba(245, 158, 11, 0.4)',
+            }}
+          >
+            {`\uD83D\uDD12 ${swapBlockedToast} is in the danger zone \u2014 too close to a threshold to swap!`}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

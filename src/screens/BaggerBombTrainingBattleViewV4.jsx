@@ -20,6 +20,7 @@ import {
   createThresholdEvent,
   getBadgesFromHistory,
   detectRedZone,
+  isSwapLocked,
 } from '../utils/baggerBombUtils';
 import { generateFreeAgentPool } from '../services/freeAgentRotationService';
 import { getFreeAgentConfig } from '../constants/battleTimingV4';
@@ -495,12 +496,20 @@ export default function BaggerBombTrainingBattleViewV4({
   const selectSwapTarget = useCallback((asset, tier, slotIndex) => {
     if (swapMode.selectedFreeAgent?.isCrypto && !asset.isCrypto) return;
     if (!swapMode.selectedFreeAgent?.isCrypto && asset.isCrypto) return;
+
+    // Orange zone swap lock — safety net (UI also blocks in BaggerBombBattleView)
+    const oPrice = asset.swapPrice || startingPrices[asset.symbol] || asset.price || 0;
+    const cPrice = currentPrices[asset.symbol] || oPrice;
+    const bATR = thresholds[asset.symbol]?.threshold || DEFAULT_THRESHOLD;
+    const mult = oPrice > 0 ? ((cPrice - oPrice) / oPrice) * 100 / bATR : 0;
+    if (isSwapLocked(mult, bATR).locked) return;
+
     setSwapMode(prev => ({
       ...prev,
       targetAsset: { symbol: asset.symbol, name: asset.name, tier, slotIndex, isCrypto: asset.isCrypto },
       step: 'confirming',
     }));
-  }, [swapMode.selectedFreeAgent]);
+  }, [swapMode.selectedFreeAgent, startingPrices, currentPrices, thresholds]);
 
   const cancelSwapMode = useCallback(() => {
     setSwapMode({ active: false, selectedFreeAgent: null, step: 'idle', targetAsset: null });

@@ -233,6 +233,51 @@ export function detectRedZone(currentMultiplier, existingBadges = []) {
 }
 
 /**
+ * Check if a stock is in the Orange Zone — too close to a threshold to swap.
+ * A stock is locked when it's within 0.5 percentage points of its next threshold
+ * in either direction (positive or negative).
+ *
+ * @param {number} currentMultiplier - priceChange / baseATR
+ * @param {number} baseATR - The asset's volatility threshold (percentage)
+ * @returns {{ locked: boolean, direction: string|null, distancePercent: number|null, message: string|null }}
+ */
+export function isSwapLocked(currentMultiplier, baseATR) {
+  const ORANGE_ZONE_PCT = 0.5;
+  if (!baseATR || baseATR <= 0) return { locked: false, direction: null, distancePercent: null, message: null };
+
+  const POSITIVE_THRESHOLDS = [
+    THRESHOLD_MULTIPLIERS.bagger,       // 1.0
+    THRESHOLD_MULTIPLIERS.doubleBagger,  // 1.5
+    THRESHOLD_MULTIPLIERS.tenBagger,     // 2.0
+  ];
+  const NEGATIVE_THRESHOLDS = [
+    THRESHOLD_MULTIPLIERS.bust,      // -1.0
+    THRESHOLD_MULTIPLIERS.crash,     // -1.5
+    THRESHOLD_MULTIPLIERS.meltdown,  // -2.0
+  ];
+
+  // Check positive direction: find next threshold above current multiplier
+  const nextPositive = POSITIVE_THRESHOLDS.find(t => currentMultiplier < t);
+  if (nextPositive != null) {
+    const distPct = (nextPositive - currentMultiplier) * baseATR;
+    if (distPct <= ORANGE_ZONE_PCT && distPct > 0) {
+      return { locked: true, direction: 'positive', distancePercent: distPct, message: 'approaching BaggerBomb' };
+    }
+  }
+
+  // Check negative direction: find next threshold below current multiplier
+  const nextNegative = NEGATIVE_THRESHOLDS.find(t => currentMultiplier > t);
+  if (nextNegative != null) {
+    const distPct = (currentMultiplier - nextNegative) * baseATR;
+    if (distPct <= ORANGE_ZONE_PCT && distPct > 0) {
+      return { locked: true, direction: 'negative', distancePercent: distPct, message: 'approaching Bust' };
+    }
+  }
+
+  return { locked: false, direction: null, distancePercent: null, message: null };
+}
+
+/**
  * Calculate total points from badges
  * @param {string[]} badges - Array of badge names
  * @returns {number} Total points

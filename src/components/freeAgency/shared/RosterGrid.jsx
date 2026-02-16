@@ -20,6 +20,7 @@ const RosterGrid = ({
   onSelectDrop,
   onMoreInfo,
   canSwap,
+  orangeZoneLocked = {},  // Orange Zone swap lock status by symbol
 }) => {
   const categories = ['steady', 'risky', 'defensive'];
   const isActive = selectedAdd !== null;
@@ -110,6 +111,7 @@ const RosterGrid = ({
                   onSelect={onSelectDrop}
                   onMoreInfo={onMoreInfo}
                   disabled={!canSwap || !isActive || !isMatchingCategory}
+                  isLocked={!!orangeZoneLocked[asset.symbol]}
                   compact={false}
                 />
               ))}
