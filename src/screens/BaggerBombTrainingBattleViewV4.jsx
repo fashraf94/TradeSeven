@@ -19,6 +19,7 @@ import {
   detectThresholdCross,
   createThresholdEvent,
   getBadgesFromHistory,
+  detectRedZone,
 } from '../utils/baggerBombUtils';
 import { generateFreeAgentPool } from '../services/freeAgentRotationService';
 import { getFreeAgentConfig } from '../constants/battleTimingV4';
@@ -126,6 +127,9 @@ export default function BaggerBombTrainingBattleViewV4({
   const [trainingEvents, setTrainingEvents] = useState([]);
   const prevPlayerMultRef = useRef({});
   const prevOppMultRef = useRef({});
+  const playerHistoryRef = useRef({});
+  const oppHistoryRef = useRef({});
+  const redZoneActiveRef = useRef(new Set());
 
   // Use local portfolio if swap has occurred in this session, otherwise use battle portfolio
   const myPortfolioRaw = localPortfolio || myData?.portfolio;
@@ -364,7 +368,7 @@ export default function BaggerBombTrainingBattleViewV4({
     if (!currentPrices || Object.keys(currentPrices).length === 0) return;
     if (!startingPrices || Object.keys(startingPrices).length === 0) return;
 
-    const detectForPortfolio = (portfolioRaw, prevMultRef, username) => {
+    const detectForPortfolio = (portfolioRaw, prevMultRef, historyRef, username) => {
       const flat = flattenPortfolio(portfolioRaw);
       flat.forEach((asset) => {
         if (!asset) return;
@@ -377,11 +381,13 @@ export default function BaggerBombTrainingBattleViewV4({
         const currentMultiplier = baseATR > 0 ? priceChange / baseATR : 0;
         const prevMultiplier = prevMultRef.current[asset.symbol] || 0;
 
+        // Use accumulated history (checked BEFORE current update) for deduplication
+        const assetHistory = historyRef.current[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
+
         const crossed = detectThresholdCross(prevMultiplier, currentMultiplier);
         if (crossed) {
           crossed.forEach((threshold) => {
-            const history = { maxMultiplier: Math.max(currentMultiplier, 0), minMultiplier: Math.min(currentMultiplier, 0) };
-            const existingBadges = getBadgesFromHistory(history);
+            const existingBadges = getBadgesFromHistory(assetHistory);
             if (!existingBadges.includes(threshold.name)) {
               const event = createThresholdEvent(
                 username,
@@ -395,12 +401,46 @@ export default function BaggerBombTrainingBattleViewV4({
           });
         }
 
+        // Update accumulated history AFTER the check
+        historyRef.current[asset.symbol] = {
+          maxMultiplier: Math.max(assetHistory.maxMultiplier, currentMultiplier),
+          minMultiplier: Math.min(assetHistory.minMultiplier, currentMultiplier),
+        };
+
+        // Red Zone detection — within 25% of next threshold
+        const updatedBadges = getBadgesFromHistory(historyRef.current[asset.symbol]);
+        const rz = detectRedZone(currentMultiplier, updatedBadges);
+        const rzKey = rz ? `${asset.symbol}_${rz.direction}_${rz.targetMultiple}` : null;
+
+        if (rz && rzKey && !redZoneActiveRef.current.has(rzKey)) {
+          redZoneActiveRef.current.add(rzKey);
+          setTrainingEvents(prev => [{
+            id: `${Date.now()}-${asset.symbol}-redzone-${rz.targetThreshold}`,
+            timestamp: new Date().toISOString(),
+            type: 'redzone',
+            player: username,
+            symbol: asset.symbol,
+            direction: rz.direction,
+            targetThreshold: rz.targetThreshold,
+            targetMultiple: rz.targetMultiple,
+            progress: rz.progress,
+            multiplier: currentMultiplier,
+            points: 0,
+          }, ...prev].slice(0, 50));
+        }
+        // Clear stale red zone keys for this symbol
+        redZoneActiveRef.current.forEach(key => {
+          if (key.startsWith(`${asset.symbol}_`) && key !== rzKey) {
+            redZoneActiveRef.current.delete(key);
+          }
+        });
+
         prevMultRef.current[asset.symbol] = currentMultiplier;
       });
     };
 
-    detectForPortfolio(myPortfolioRaw, prevPlayerMultRef, myData?.username || 'You');
-    detectForPortfolio(oppData?.portfolio, prevOppMultRef, oppData?.username || 'CPU Opponent');
+    detectForPortfolio(myPortfolioRaw, prevPlayerMultRef, playerHistoryRef, myData?.username || 'You');
+    detectForPortfolio(oppData?.portfolio, prevOppMultRef, oppHistoryRef, oppData?.username || 'CPU Opponent');
   }, [currentPrices, startingPrices, thresholds, myPortfolioRaw, oppData?.portfolio, myData?.username, oppData?.username]);
 
   // Build enriched portfolio (pass tier for conviction multiplier)

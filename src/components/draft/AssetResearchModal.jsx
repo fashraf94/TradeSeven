@@ -83,10 +83,11 @@ const AssetResearchModal = ({
   actionConfig = null,
   showActionButton = true,
   version = 1,
+  defaultTab = null,
 }) => {
   const isCrypto = asset?.isCrypto || asset?.category === 'crypto';
   const isGameContext = onAcquire !== null || showActionButton;
-  const [activeTab, setActiveTab] = useState(isCrypto ? 'technical' : 'fundamental');
+  const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'technical' : 'fundamental'));
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
@@ -149,7 +150,7 @@ const AssetResearchModal = ({
 
   // Reset tab default when asset changes (crypto → technical, stock → fundamental)
   useEffect(() => {
-    setActiveTab(isCrypto ? 'technical' : 'fundamental');
+    setActiveTab(defaultTab || (isCrypto ? 'technical' : 'fundamental'));
   }, [asset?.symbol]);
 
   useEffect(() => {

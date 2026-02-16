@@ -82,6 +82,12 @@ const EVENT_CONFIG = {
     color: '#991b1b',
     points: -35,
   },
+  redzone: {
+    icon: '🎯',
+    label: 'Red Zone',
+    color: HOLO_COLORS.amber,
+    points: 0,
+  },
 };
 
 // Time threshold for "NEW" badge (60 seconds)
@@ -141,10 +147,14 @@ function NewBadge() {
 /**
  * Single event item with enhanced animations
  */
-function EventItem({ event, index, showNewBadge = false, isOpponent = false }) {
+function EventItem({ event, index, showNewBadge = false, isOpponent = false, onRedZoneTap }) {
   const config = EVENT_CONFIG[event.type] || EVENT_CONFIG.bagger;
   const isPositive = (config.points || event.points || 0) > 0;
   const accentColor = isOpponent ? HOLO_COLORS.red : HOLO_COLORS.cyan;
+  const isRedZone = event.type === 'redzone';
+  const rzColor = isRedZone
+    ? (event.direction === 'negative' ? HOLO_COLORS.red : HOLO_COLORS.amber)
+    : null;
 
   return (
     <motion.div
@@ -173,13 +183,15 @@ function EventItem({ event, index, showNewBadge = false, isOpponent = false }) {
         gap: '12px',
         padding: '12px',
         borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}50`,
-        backgroundColor: showNewBadge ? `${accentColor}08` : 'transparent',
+        backgroundColor: isRedZone
+          ? (event.direction === 'negative' ? 'rgba(255, 51, 102, 0.08)' : 'rgba(245, 158, 11, 0.08)')
+          : showNewBadge ? `${accentColor}08` : 'transparent',
         position: 'relative',
         overflow: 'hidden',
       }}
     >
-      {/* Left Accent Line for new events */}
-      {showNewBadge && (
+      {/* Left Accent Line */}
+      {(showNewBadge || isRedZone) && (
         <motion.div
           initial={{ scaleY: 0 }}
           animate={{ scaleY: 1 }}
@@ -189,7 +201,7 @@ function EventItem({ event, index, showNewBadge = false, isOpponent = false }) {
             top: '10%',
             bottom: '10%',
             width: '3px',
-            backgroundColor: accentColor,
+            backgroundColor: isRedZone ? rzColor : accentColor,
             borderRadius: '0 2px 2px 0',
             transformOrigin: 'center',
           }}
@@ -220,48 +232,106 @@ function EventItem({ event, index, showNewBadge = false, isOpponent = false }) {
         } : {}}
         style={{ fontSize: '18px' }}
       >
-        {config.icon}
+        {isRedZone ? (event.direction === 'negative' ? '⚠️' : '🎯') : config.icon}
       </motion.span>
 
       {/* Event Details */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ color: HOLO_COLORS.textPrimary, fontWeight: 500 }}>
-          {event.player || event.username || 'Player'}
-        </span>
-        <span style={{ color: HOLO_COLORS.textMuted }}>{': '}</span>
-        <span style={{ color: HOLO_COLORS.textSecondary }}>
-          {event.symbol}
-        </span>
-        <span style={{ color: HOLO_COLORS.textMuted }}>{' '}</span>
-        <span style={{ color: config.color, fontWeight: 500 }}>
-          {config.label}
-        </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {isRedZone ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+              <span style={{ color: HOLO_COLORS.textPrimary, fontWeight: 500, fontSize: '13px' }}>
+                {event.player || 'Player'}
+              </span>
+              <span style={{ color: HOLO_COLORS.textMuted, fontSize: '13px' }}>{': '}</span>
+              <span style={{ color: HOLO_COLORS.textSecondary, fontWeight: 600, fontSize: '13px' }}>
+                {event.symbol}
+              </span>
+              <span style={{ color: rzColor, fontWeight: 500, fontSize: '12px' }}>
+                approaching {EVENT_CONFIG[event.targetThreshold]?.label || event.targetThreshold}!
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* Progress bar */}
+              <div style={{
+                width: '50px', height: '4px', borderRadius: '2px',
+                backgroundColor: `${rzColor}30`,
+                overflow: 'hidden', flexShrink: 0,
+              }}>
+                <div style={{
+                  width: `${event.progress || 0}%`, height: '100%',
+                  backgroundColor: rzColor,
+                  borderRadius: '2px',
+                  transition: 'width 0.3s ease',
+                }} />
+              </div>
+              <span style={{ fontSize: '10px', color: rzColor, fontWeight: 600 }}>
+                {event.progress || 0}%
+              </span>
+              {onRedZoneTap && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onRedZoneTap(event); }}
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '10px',
+                    fontWeight: 600,
+                    color: rzColor,
+                    backgroundColor: `${rzColor}15`,
+                    border: `1px solid ${rzColor}40`,
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    marginLeft: 'auto',
+                  }}
+                >
+                  View Chart
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ color: HOLO_COLORS.textPrimary, fontWeight: 500 }}>
+              {event.player || event.username || 'Player'}
+            </span>
+            <span style={{ color: HOLO_COLORS.textMuted }}>{': '}</span>
+            <span style={{ color: HOLO_COLORS.textSecondary }}>
+              {event.symbol}
+            </span>
+            <span style={{ color: HOLO_COLORS.textMuted }}>{' '}</span>
+            <span style={{ color: config.color, fontWeight: 500 }}>
+              {config.label}
+            </span>
 
-        {/* NEW Badge */}
-        <AnimatePresence>
-          {showNewBadge && <NewBadge />}
-        </AnimatePresence>
+            {/* NEW Badge */}
+            <AnimatePresence>
+              {showNewBadge && <NewBadge />}
+            </AnimatePresence>
+          </div>
+        )}
       </div>
 
-      {/* Points with glow effect for positive */}
-      <motion.span
-        initial={showNewBadge ? { scale: 0.5 } : {}}
-        animate={showNewBadge ? {
-          scale: [1, 1.2, 1],
-        } : { scale: 1 }}
-        transition={{ duration: 0.3, delay: 0.1 }}
-        style={{
-          fontSize: '14px',
-          fontWeight: 700,
-          color: isPositive ? HOLO_COLORS.green : HOLO_COLORS.red,
-          fontVariantNumeric: 'tabular-nums',
-          textShadow: showNewBadge
-            ? `0 0 10px ${isPositive ? HOLO_COLORS.green : HOLO_COLORS.red}60`
-            : 'none',
-        }}
-      >
-        {isPositive ? '+' : ''}{event.points || config.points}
-      </motion.span>
+      {/* Points (hidden for red zone events) */}
+      {!isRedZone && (
+        <motion.span
+          initial={showNewBadge ? { scale: 0.5 } : {}}
+          animate={showNewBadge ? {
+            scale: [1, 1.2, 1],
+          } : { scale: 1 }}
+          transition={{ duration: 0.3, delay: 0.1 }}
+          style={{
+            fontSize: '14px',
+            fontWeight: 700,
+            color: isPositive ? HOLO_COLORS.green : HOLO_COLORS.red,
+            fontVariantNumeric: 'tabular-nums',
+            textShadow: showNewBadge
+              ? `0 0 10px ${isPositive ? HOLO_COLORS.green : HOLO_COLORS.red}60`
+              : 'none',
+          }}
+        >
+          {isPositive ? '+' : ''}{event.points || config.points}
+        </motion.span>
+      )}
     </motion.div>
   );
 }
@@ -279,6 +349,7 @@ EventItem.propTypes = {
   index: PropTypes.number,
   showNewBadge: PropTypes.bool,
   isOpponent: PropTypes.bool,
+  onRedZoneTap: PropTypes.func,
 };
 
 /**
@@ -289,6 +360,7 @@ export default function EventFeed({
   maxDisplay = 20,
   emptyMessage = 'No explosions yet. Waiting for action...',
   currentUser,
+  onRedZoneTap,
 }) {
   // Sort events by timestamp (newest first) and mark new ones
   const sortedEvents = useMemo(() => {
@@ -424,6 +496,7 @@ export default function EventFeed({
                 index={index}
                 showNewBadge={event.isNewEvent}
                 isOpponent={currentUser && event.player !== currentUser}
+                onRedZoneTap={event.type === 'redzone' ? onRedZoneTap : undefined}
               />
             ))}
           </AnimatePresence>
@@ -452,6 +525,8 @@ EventFeed.propTypes = {
   emptyMessage: PropTypes.string,
   /** Current user's username — used to distinguish opponent events */
   currentUser: PropTypes.string,
+  /** Callback when user taps a Red Zone event's "View Chart" button */
+  onRedZoneTap: PropTypes.func,
 };
 
 EventFeed.defaultProps = {

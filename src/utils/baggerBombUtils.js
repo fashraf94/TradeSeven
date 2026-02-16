@@ -174,6 +174,65 @@ export function getBadgesFromHistory(history) {
 }
 
 /**
+ * Detect if a stock is in the "Red Zone" — within 25% of its next uncrossed threshold.
+ * @param {number} currentMultiplier - Current price multiplier (priceChange / baseATR)
+ * @param {string[]} existingBadges - Badges already earned for this asset
+ * @returns {Object|null} { targetThreshold, targetMultiple, direction, progress } or null
+ */
+export function detectRedZone(currentMultiplier, existingBadges = []) {
+  const POSITIVE_THRESHOLDS = [
+    { name: 'bagger', mult: THRESHOLD_MULTIPLIERS.bagger },
+    { name: 'doubleBagger', mult: THRESHOLD_MULTIPLIERS.doubleBagger },
+    { name: 'tenBagger', mult: THRESHOLD_MULTIPLIERS.tenBagger },
+  ];
+  const NEGATIVE_THRESHOLDS = [
+    { name: 'bust', mult: THRESHOLD_MULTIPLIERS.bust },
+    { name: 'crash', mult: THRESHOLD_MULTIPLIERS.crash },
+    { name: 'meltdown', mult: THRESHOLD_MULTIPLIERS.meltdown },
+  ];
+
+  // Check positive direction — find the next uncrossed positive threshold
+  if (currentMultiplier > 0) {
+    const nextPositive = POSITIVE_THRESHOLDS.find(
+      t => !existingBadges.includes(t.name) && currentMultiplier < t.mult
+    );
+    if (nextPositive) {
+      const zoneStart = nextPositive.mult * 0.75;
+      if (currentMultiplier >= zoneStart) {
+        const progress = ((currentMultiplier - zoneStart) / (nextPositive.mult * 0.25)) * 100;
+        return {
+          targetThreshold: nextPositive.name,
+          targetMultiple: nextPositive.mult,
+          direction: 'positive',
+          progress: Math.min(Math.round(progress), 100),
+        };
+      }
+    }
+  }
+
+  // Check negative direction — find the next uncrossed negative threshold
+  if (currentMultiplier < 0) {
+    const nextNegative = NEGATIVE_THRESHOLDS.find(
+      t => !existingBadges.includes(t.name) && currentMultiplier > t.mult
+    );
+    if (nextNegative) {
+      const zoneStart = nextNegative.mult * 0.75; // e.g., -0.75 for bust at -1.0
+      if (currentMultiplier <= zoneStart) {
+        const progress = ((zoneStart - currentMultiplier) / (Math.abs(nextNegative.mult) * 0.25)) * 100;
+        return {
+          targetThreshold: nextNegative.name,
+          targetMultiple: nextNegative.mult,
+          direction: 'negative',
+          progress: Math.min(Math.round(progress), 100),
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Calculate total points from badges
  * @param {string[]} badges - Array of badge names
  * @returns {number} Total points

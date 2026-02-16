@@ -2,7 +2,7 @@
 // Sleeper-style side-by-side matchup view with tiers
 // Features: Night mode theme for NIGHT_GAME session (4-8 PM ET)
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, Moon } from 'lucide-react';
@@ -234,7 +234,13 @@ export default function BaggerBombBattleView({
   } = freeAgentConfig;
   const [activeTab, setActiveTab] = useState('matchups');
   const [researchAsset, setResearchAsset] = useState(null);
+  const [researchDefaultTab, setResearchDefaultTab] = useState(null);
   const [breakdownAsset, setBreakdownAsset] = useState(null);
+
+  const handleRedZoneTap = useCallback((event) => {
+    setResearchAsset({ symbol: event.symbol, name: event.symbol });
+    setResearchDefaultTab('baggerbomb');
+  }, []);
 
   // Apply night mode color scheme when active
   const colors = useMemo(() => {
@@ -406,7 +412,7 @@ export default function BaggerBombBattleView({
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.2 }}
             >
-              <EventFeed events={events || []} currentUser={player?.username} />
+              <EventFeed events={events || []} currentUser={player?.username} onRedZoneTap={handleRedZoneTap} />
             </motion.div>
           ) : (
             <motion.div
@@ -453,7 +459,7 @@ export default function BaggerBombBattleView({
                                 onThresholdCross('opponent', opponentAsset?.symbol, name, mult)
                             : undefined
                         }
-                        onSymbolClick={(asset) => setResearchAsset(asset)}
+                        onSymbolClick={(asset) => { setResearchAsset(asset); setResearchDefaultTab(null); }}
                         onPointsClick={(asset) => setBreakdownAsset(asset)}
                         swapTargetMode={isSwapTarget}
                         onLeftAssetSelect={isSwapTarget ? (asset) =>
@@ -494,9 +500,10 @@ export default function BaggerBombBattleView({
             startingPrices: battle?.state?.startingPrices,
             useDefaultThreshold: true,
           })}
-          onClose={() => setResearchAsset(null)}
+          onClose={() => { setResearchAsset(null); setResearchDefaultTab(null); }}
           showActionButton={false}
           version={2}
+          defaultTab={researchDefaultTab}
         />
       )}
 
