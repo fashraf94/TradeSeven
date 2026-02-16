@@ -122,7 +122,7 @@ export const CRYPTO_SYMBOLS = new Set([
   // Gaming / Metaverse
   'SAND', 'MANA', 'AXS', 'IMX', 'GALA', 'ENJ',
   // AI / Data
-  'RNDR', 'FET', 'OCEAN', 'TAO',
+  'RNDR', 'RENDER', 'FET', 'OCEAN', 'TAO',
   // Stablecoins
   'USDT', 'USDC',
   // Draft crypto symbols (for OHLCV chart detection)

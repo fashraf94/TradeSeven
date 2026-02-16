@@ -47,7 +47,7 @@ const CRYPTO_DEFAULTS = {
   'SAND': 8.0, 'MANA': 8.0, 'AXS': 8.0, 'IMX': 7.0,
   'GALA': 10.0, 'ENJ': 7.0,
   // AI / Data
-  'RNDR': 8.0, 'FET': 8.0, 'OCEAN': 8.0, 'TAO': 10.0,
+  'RNDR': 8.0, 'RENDER': 8.0, 'FET': 8.0, 'OCEAN': 8.0, 'TAO': 10.0,
   // Stablecoins (very low threshold - shouldn't move much)
   'USDT': 0.5, 'USDC': 0.5,
   'DEFAULT': 5.0
