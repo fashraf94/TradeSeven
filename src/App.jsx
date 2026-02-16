@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import ClashBotWidget from './components/ClashBot/ClashBotWidget';
+import BugReportAdmin from './components/ClashBot/BugReportAdmin';
 import { loadBattlesSafe, saveBattlesSafe, isSameBattles } from './services/LocalStorage';
 import { useUser } from './contexts/UserContext';
 import * as battleTimer from './services/battleTimer';
@@ -23155,6 +23156,18 @@ export default function PortfolioDuel() {
 
   // BATTLE HISTORY OLD CODE REMOVED - See src/screens/BattleHistoryScreen.jsx
 
+  // BUG REPORT ADMIN — ClashBot triage view
+  if (screen === 'bugReportAdmin') {
+    return (
+      <BugReportAdmin
+        user={user}
+        colors={colors}
+        isDesktop={isDesktop}
+        onBack={() => setScreen('profile')}
+      />
+    );
+  }
+
   // PROFILE SCREEN - REDESIGNED
   if (screen === 'profile') {
     return (
@@ -23163,6 +23176,7 @@ export default function PortfolioDuel() {
         user={user}
         isDesktop={isDesktop}
         onBack={() => setScreen('dashboard')}
+        setScreen={setScreen}
       />
       </ErrorBoundary>
     );
