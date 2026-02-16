@@ -96,8 +96,17 @@ const RosterGauges = ({
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
+              padding: '8px 14px',
+              borderRadius: 10,
+              background: 'rgba(255, 255, 255, 0.03)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              border: `1.5px solid ${color}40`,
+              boxShadow: data.picked > 0
+                ? `0 0 ${4 + data.picked * 4}px ${color}${isComplete ? '40' : '25'}, inset 0 0 8px ${color}08`
+                : 'none',
               cursor: onGaugeClick ? 'pointer' : 'default',
-              transition: 'transform 0.2s ease',
+              transition: 'all 0.3s ease',
             }}
             onMouseEnter={(e) => {
               if (onGaugeClick) {

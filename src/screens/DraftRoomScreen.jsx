@@ -83,6 +83,12 @@ const DraftRoomScreen = ({
   const [livePrices, setLivePrices] = useState({});
   const [pricesLoading, setPricesLoading] = useState(true);
 
+  // Stock search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
+  const [mobileSearchQuery, setMobileSearchQuery] = useState('');
+  const pendingSearchAsset = useRef(null);
+
   // Phone detection for mobile-optimized layout (< 768px)
   const [isPhone, setIsPhone] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
 
@@ -198,9 +204,19 @@ const DraftRoomScreen = ({
     }
   }, [roomDraft?.currentPlayerId, user]);
 
-  // Also clear selection when category changes
+  // Clear selection when category changes (unless search selected a cross-category asset)
   useEffect(() => {
-    setSelectedAsset(null);
+    if (pendingSearchAsset.current) {
+      setSelectedAsset(pendingSearchAsset.current);
+      pendingSearchAsset.current = null;
+    } else {
+      setSelectedAsset(null);
+    }
+  }, [selectedDraftCategory]);
+
+  // Clear desktop search when category changes
+  useEffect(() => {
+    setSearchQuery('');
   }, [selectedDraftCategory]);
 
   // Mobile drawer swipe handlers
@@ -316,6 +332,14 @@ const DraftRoomScreen = ({
   // Available assets for current category
   const availableAssets = roomDraft?.availableAssets?.[selectedDraftCategory] || [];
 
+  // Desktop search filtering (filters current category only)
+  const filteredAssets = searchQuery
+    ? availableAssets.filter(a =>
+        a.symbol?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.name?.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : availableAssets;
+
   // Category counts
   const getCategoryCount = (cat) => roomDraft?.availableAssets?.[cat]?.length || 0;
 
@@ -375,6 +399,18 @@ const DraftRoomScreen = ({
     } catch (error) {
       console.error('Pick failed:', error);
       alert(error.message || 'Failed to make pick');
+    }
+  };
+
+  // Handle stock selection from search (supports cross-category selection)
+  const handleSearchSelect = (asset, category) => {
+    setShowMobileSearch(false);
+    setSearchQuery('');
+    if (category !== selectedDraftCategory) {
+      pendingSearchAsset.current = asset;
+      setSelectedDraftCategory(category);
+    } else {
+      setSelectedAsset(asset);
     }
   };
 
@@ -526,13 +562,6 @@ const DraftRoomScreen = ({
               fontWeight: '500',
             }}>
               Round {currentRound}/{totalRounds}
-              <span style={{
-                color: '#6e7681',
-                marginLeft: '12px',
-                fontSize: '12px'
-              }}>
-                Code: {roomDraft?.code}
-              </span>
             </div>
           </div>
 
@@ -806,7 +835,7 @@ const DraftRoomScreen = ({
                 transition: 'opacity 0.2s ease, transform 0.2s ease',
               }}
             >
-              {availableAssets.map((asset) => {
+              {filteredAssets.map((asset) => {
                 // Check if this asset was picked by another player
                 const pickedInfo = pickedAssets.get(asset.symbol);
                 const isLocked = !!pickedInfo;
@@ -849,20 +878,33 @@ const DraftRoomScreen = ({
                 );
               })}
 
-              {/* Empty state when no assets */}
-              {availableAssets.length === 0 && (
+              {/* Empty state when no assets or no search results */}
+              {filteredAssets.length === 0 && (
                 <div style={{
                   gridColumn: '1 / -1',
                   textAlign: 'center',
                   padding: '40px',
                   color: '#6e7681',
                 }}>
-                  <div style={{ fontSize: '24px', marginBottom: '8px' }}>
-                    No assets available in this category
-                  </div>
-                  <div style={{ fontSize: '14px' }}>
-                    Try selecting a different category
-                  </div>
+                  {searchQuery ? (
+                    <>
+                      <div style={{ fontSize: '24px', marginBottom: '8px' }}>
+                        No matches for "{searchQuery}"
+                      </div>
+                      <div style={{ fontSize: '14px' }}>
+                        Try a different search term
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: '24px', marginBottom: '8px' }}>
+                        No assets available in this category
+                      </div>
+                      <div style={{ fontSize: '14px' }}>
+                        Try selecting a different category
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -883,35 +925,52 @@ const DraftRoomScreen = ({
             background: 'rgba(10, 14, 20, 0.98)',
             backdropFilter: 'blur(10px)',
             display: 'grid',
-            gridTemplateColumns: 'auto 1fr',
-            gap: '16px',
+            gridTemplateColumns: isPhone ? 'auto auto 1fr' : 'auto auto 1fr',
+            gap: isPhone ? '8px' : '16px',
             alignItems: 'center',
             boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.5)',
             zIndex: 10,
           }}
         >
-          {/* Left: Roster Power Cores - Tap to open roster drawer */}
-          <div
-            onClick={() => setRosterDrawerOpen(true)}
-            style={{ cursor: 'pointer' }}
-            title="View your roster"
-          >
-            {isPhone ? (
-              <RosterGaugesCompact
-                steady={{
-                  picked: myPlayer?.categories?.steady || 0,
-                  required: 3,
-                }}
-                risky={{
-                  picked: myPlayer?.categories?.risky || 0,
-                  required: 3,
-                }}
-                defensive={{
-                  picked: myPlayer?.categories?.defensive || 0,
-                  required: 3,
-                }}
-              />
-            ) : (
+          {/* Left: Roster */}
+          {isPhone ? (
+            /* Mobile: Compact ROSTER button */
+            <button
+              onClick={() => setRosterDrawerOpen(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 12px',
+                borderRadius: 10,
+                background: 'rgba(255, 255, 255, 0.03)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                border: '1.5px solid rgba(0, 217, 255, 0.3)',
+                boxShadow: '0 0 10px rgba(0, 217, 255, 0.15)',
+                color: '#00d9ff',
+                fontSize: 12,
+                fontWeight: 700,
+                letterSpacing: '0.5px',
+                cursor: 'pointer',
+              }}
+            >
+              {/* ClipboardList icon */}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                <path d="M12 11h4" /><path d="M12 16h4" />
+                <path d="M8 11h.01" /><path d="M8 16h.01" />
+              </svg>
+              {(myPlayer?.categories?.steady || 0) + (myPlayer?.categories?.risky || 0) + (myPlayer?.categories?.defensive || 0)}/9
+            </button>
+          ) : (
+            /* Desktop: Full roster gauges */
+            <div
+              onClick={() => setRosterDrawerOpen(true)}
+              style={{ cursor: 'pointer' }}
+              title="View your roster"
+            >
               <RosterGauges
                 steady={{
                   picked: myPlayer?.categories?.steady || 0,
@@ -926,10 +985,77 @@ const DraftRoomScreen = ({
                   required: 3,
                 }}
               />
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* Center: Confirm Pick Button */}
+          {/* Middle: Search */}
+          {isPhone ? (
+            /* Mobile: Compact search button */
+            <button
+              onClick={() => setShowMobileSearch(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 40,
+                height: 40,
+                borderRadius: 10,
+                background: 'rgba(255, 255, 255, 0.03)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                border: '1.5px solid rgba(255, 255, 255, 0.1)',
+                color: '#8b949e',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+            </button>
+          ) : (
+            /* Desktop: Search input */
+            <div style={{ position: 'relative' }}>
+              <svg
+                width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="#6e7681" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search stocks..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  padding: '8px 14px 8px 36px',
+                  borderRadius: 10,
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
+                  border: '1.5px solid rgba(255, 255, 255, 0.1)',
+                  color: '#e6edf3',
+                  fontSize: 13,
+                  outline: 'none',
+                  width: 180,
+                  transition: 'all 0.2s ease',
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = 'rgba(0, 217, 255, 0.4)';
+                  e.target.style.boxShadow = '0 0 10px rgba(0, 217, 255, 0.15)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                  e.target.style.boxShadow = 'none';
+                }}
+              />
+            </div>
+          )}
+
+          {/* Right: Confirm Pick Button */}
           <div style={{
             display: 'flex',
             justifyContent: 'center',
@@ -946,8 +1072,6 @@ const DraftRoomScreen = ({
               compact={isPhone}
             />
           </div>
-
-          {/* AI Tools removed - keeping research modals only */}
         </footer>
 
         {/* Autopick Warning Banner */}
@@ -1045,6 +1169,191 @@ const DraftRoomScreen = ({
             onClose={() => setDraftAssetInfoModal(null)}
           />
         )}
+
+        {/* Mobile Search Modal - Slide-up overlay for stock search */}
+        {showMobileSearch && (() => {
+          const catColors = { steady: '#00ffff', risky: '#f59e0b', defensive: '#10b981' };
+          const catLabels = { steady: 'S', risky: 'R', defensive: 'D' };
+          const q = mobileSearchQuery.toLowerCase();
+          const allResults = [
+            ...(roomDraft?.availableAssets?.steady || []).map(a => ({ ...a, category: 'steady' })),
+            ...(roomDraft?.availableAssets?.risky || []).map(a => ({ ...a, category: 'risky' })),
+            ...(roomDraft?.availableAssets?.defensive || []).map(a => ({ ...a, category: 'defensive' })),
+          ].filter(a => !q ||
+            a.symbol?.toLowerCase().includes(q) ||
+            a.name?.toLowerCase().includes(q)
+          );
+
+          return (
+            <>
+              {/* Backdrop */}
+              <div
+                onClick={() => { setShowMobileSearch(false); setMobileSearchQuery(''); }}
+                style={{
+                  position: 'fixed',
+                  inset: 0,
+                  background: 'rgba(0, 0, 0, 0.6)',
+                  backdropFilter: 'blur(4px)',
+                  WebkitBackdropFilter: 'blur(4px)',
+                  zIndex: 600,
+                }}
+              />
+              {/* Panel */}
+              <div
+                style={{
+                  position: 'fixed',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  maxHeight: '70vh',
+                  background: 'var(--holo-bg-dark, #0a0e14)',
+                  borderTopLeftRadius: 16,
+                  borderTopRightRadius: 16,
+                  border: '1px solid rgba(0, 217, 255, 0.2)',
+                  boxShadow: '0 -8px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 217, 255, 0.1)',
+                  zIndex: 601,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  animation: 'roster-drawer-slide-up 0.3s ease-out',
+                }}
+              >
+                {/* Search Header */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '12px 16px',
+                  borderBottom: '1px solid var(--holo-border, rgba(0, 255, 255, 0.15))',
+                }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00d9ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.3-4.3" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search stocks..."
+                    autoFocus
+                    value={mobileSearchQuery}
+                    onChange={(e) => setMobileSearchQuery(e.target.value)}
+                    style={{
+                      flex: 1,
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#e6edf3',
+                      fontSize: 15,
+                      outline: 'none',
+                    }}
+                  />
+                  <button
+                    onClick={() => { setShowMobileSearch(false); setMobileSearchQuery(''); }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#6e7681',
+                      fontSize: 20,
+                      cursor: 'pointer',
+                      padding: '4px 8px',
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                {/* Results List */}
+                <div style={{ flex: 1, overflow: 'auto', padding: '8px 0' }}>
+                  {allResults.length === 0 && mobileSearchQuery && (
+                    <div style={{ textAlign: 'center', padding: 24, color: '#6e7681', fontSize: 14 }}>
+                      No matches for "{mobileSearchQuery}"
+                    </div>
+                  )}
+                  {allResults.map((asset) => {
+                    const isLocked = pickedAssets.has(asset.symbol);
+                    const catColor = catColors[asset.category];
+                    const upperSymbol = asset.symbol?.toUpperCase();
+                    const livePrice = livePrices[upperSymbol];
+                    const displayPrice = livePrice?.price ?? asset.price ?? 0;
+
+                    return (
+                      <button
+                        key={`${asset.category}-${asset.symbol}`}
+                        onClick={() => {
+                          if (isLocked || !isMyTurn) return;
+                          handleSearchSelect(asset, asset.category);
+                          setMobileSearchQuery('');
+                        }}
+                        disabled={isLocked || !isMyTurn}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          width: '100%',
+                          padding: '10px 16px',
+                          background: 'transparent',
+                          border: 'none',
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                          color: isLocked ? '#6e7681' : '#e6edf3',
+                          cursor: isLocked || !isMyTurn ? 'not-allowed' : 'pointer',
+                          opacity: isLocked ? 0.5 : 1,
+                          textAlign: 'left',
+                          transition: 'background 0.15s',
+                        }}
+                      >
+                        {/* Category badge */}
+                        <span style={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: 4,
+                          background: `${catColor}20`,
+                          border: `1px solid ${catColor}60`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: catColor,
+                          flexShrink: 0,
+                        }}>
+                          {catLabels[asset.category]}
+                        </span>
+                        {/* Symbol */}
+                        <span style={{ fontWeight: 700, fontSize: 14, width: 55, flexShrink: 0 }}>
+                          {asset.symbol}
+                        </span>
+                        {/* Name */}
+                        <span style={{
+                          flex: 1,
+                          fontSize: 13,
+                          color: '#8b949e',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {asset.name}
+                        </span>
+                        {/* Price */}
+                        <span style={{
+                          fontFamily: 'monospace',
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: isLocked ? '#6e7681' : '#e6edf3',
+                          flexShrink: 0,
+                        }}>
+                          {displayPrice > 0 ? `$${displayPrice.toFixed(2)}` : '—'}
+                        </span>
+                        {/* Locked indicator */}
+                        {isLocked && (
+                          <span style={{ fontSize: 10, color: '#ff3366', flexShrink: 0 }}>
+                            LOCKED
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          );
+        })()}
 
         {/* Roster Drawer - Slide-up panel showing user's picks */}
         {rosterDrawerOpen && (

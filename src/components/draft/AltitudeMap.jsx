@@ -399,7 +399,7 @@ const AltitudeMap = ({
             <stop offset="100%" stopColor={HOLO_COLORS.amber} stopOpacity="0.5" />
           </linearGradient>
 
-          {/* Glow filter */}
+          {/* Glow filter (tight — used by connection dots) */}
           <filter id="snakeGlow" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
             <feMerge>
@@ -408,23 +408,37 @@ const AltitudeMap = ({
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
+
+          {/* Wide soft glow filter for river pulse */}
+          <filter id="riverGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="6" result="blur" />
+          </filter>
         </defs>
 
-        {/* The snake path */}
+        {/* The snake path — layered: glow → main → centerline */}
         {snakePath && (
           <>
-            {/* Glow layer */}
+            {/* Wide pulsing glow layer */}
             <path
               d={snakePath}
               fill="none"
-              stroke={HOLO_COLORS.cyan}
-              strokeWidth="6"
+              stroke="url(#snakeGradient)"
+              strokeWidth="15"
               strokeLinecap="round"
               strokeLinejoin="round"
-              opacity="0.3"
-              filter="url(#snakeGlow)"
-            />
-            {/* Main path */}
+              filter="url(#riverGlow)"
+            >
+              <animate
+                attributeName="opacity"
+                values="0.15;0.3;0.15"
+                dur="3s"
+                repeatCount="indefinite"
+                calcMode="spline"
+                keySplines="0.4 0 0.6 1;0.4 0 0.6 1"
+              />
+            </path>
+
+            {/* Main river path */}
             <path
               d={snakePath}
               fill="none"
@@ -432,6 +446,19 @@ const AltitudeMap = ({
               strokeWidth="3"
               strokeLinecap="round"
               strokeLinejoin="round"
+              opacity="0.85"
+            />
+
+            {/* Thin bright centerline for depth */}
+            <path
+              d={snakePath}
+              fill="none"
+              stroke="url(#snakeGradient)"
+              strokeWidth="1"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity="0.5"
+              filter="url(#riverGlow)"
             />
           </>
         )}
