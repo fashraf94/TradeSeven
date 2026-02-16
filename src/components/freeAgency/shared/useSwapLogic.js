@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { isSwapLocked } from '../../../utils/baggerBombUtils';
 
 /**
  * useSwapLogic - Shared business logic hook for FreeAgency screens
@@ -40,6 +41,7 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
   const [isSwapping, setIsSwapping] = useState(false);
   const [swapSuccess, setSwapSuccess] = useState(null);
   const [swapError, setSwapError] = useState(null);
+  const [swapBlockedMessage, setSwapBlockedMessage] = useState(null);
 
   // ===========================================
   // DERIVED VALUES
@@ -55,6 +57,30 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
       ...playerRoster.defensive
     ];
   }, [playerRoster]);
+
+  // Orange Zone swap lock — compute lock status for all roster assets
+  const orangeZoneLocked = useMemo(() => {
+    const result = {};
+    const lockedPrices = currentDraft?.lockedPrices;
+    const draftThresholds = currentDraft?.thresholds;
+    if (!lockedPrices || !draftThresholds || !livePrices || Object.keys(livePrices).length === 0) return result;
+
+    allRosterAssets.forEach(asset => {
+      const symbol = asset.symbol;
+      if (!symbol) return;
+      const lockedPrice = lockedPrices[symbol];
+      const livePrice = typeof livePrices[symbol] === 'object' ? livePrices[symbol]?.price : livePrices[symbol];
+      const thresholdData = draftThresholds[symbol];
+      const threshold = typeof thresholdData === 'object' ? thresholdData?.threshold : thresholdData;
+      if (!lockedPrice || !livePrice || !threshold || threshold <= 0) return;
+
+      const priceChange = ((livePrice - lockedPrice) / lockedPrice) * 100;
+      const multiplier = priceChange / threshold;
+      const lockStatus = isSwapLocked(multiplier, threshold);
+      if (lockStatus.locked) result[symbol] = lockStatus;
+    });
+    return result;
+  }, [allRosterAssets, currentDraft, livePrices]);
 
   // Get free agents for selected category
   const filteredFreeAgents = useMemo(() => {
@@ -207,6 +233,12 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
   const handleSelectDrop = useCallback((asset) => {
     if (!canSwap) return;
 
+    // Orange Zone swap lock — block stocks near a threshold
+    if (orangeZoneLocked[asset.symbol]?.locked) {
+      setSwapBlockedMessage(`${asset.symbol} is in the danger zone — too close to a threshold to swap!`);
+      return;
+    }
+
     // If a free agent is already selected, ensure same category
     if (selectedAdd && asset.category !== selectedAdd.category) {
       logger.warn('[FreeAgency] Category mismatch - cannot select');
@@ -238,7 +270,7 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
     }
 
     logger.log('[FreeAgency] Selected to drop:', asset.symbol);
-  }, [canSwap, selectedAdd, selectedDrop, selectionOrder, logger]);
+  }, [canSwap, selectedAdd, selectedDrop, selectionOrder, orangeZoneLocked, logger]);
 
   const handleCancelSelection = useCallback(() => {
     setSelectedAdd(null);
@@ -329,6 +361,9 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
     swapSuccess,
     setSwapSuccess,  // Exposed for SwapSuccessToast dismiss
     swapError,
+    swapBlockedMessage,
+    setSwapBlockedMessage,
+    orangeZoneLocked,
 
     // Selection state
     selectedDrop,

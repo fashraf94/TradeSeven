@@ -11,7 +11,7 @@
 import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getDailySwapsRemaining, getCurrentTradingDay } from '../constants/battleTimingV4';
-import { calculateAssetScoreV3 } from '../utils/baggerBombUtils';
+import { calculateAssetScoreV3, isSwapLocked } from '../utils/baggerBombUtils';
 import { CONVICTION_MULTIPLIERS } from '../constants/baggerBombScoring';
 
 // ============================================
@@ -29,7 +29,7 @@ import { CONVICTION_MULTIPLIERS } from '../constants/baggerBombScoring';
  * @param {number} currentDay - Current trading day (1-indexed)
  * @returns {{ valid: boolean, error?: string }}
  */
-export function validateSwap(battle, playerId, outTier, outSlotIndex, inSymbol, currentDay) {
+export function validateSwap(battle, playerId, outTier, outSlotIndex, inSymbol, currentDay, currentPrices = {}) {
   const player = battle[playerId];
   if (!player) {
     return { valid: false, error: 'Player not found' };
@@ -63,6 +63,20 @@ export function validateSwap(battle, playerId, outTier, outSlotIndex, inSymbol, 
       return { valid: false, error: 'Crypto can only replace the crypto slot (Support slot 3)' };
     } else {
       return { valid: false, error: 'Stocks can only replace stock slots' };
+    }
+  }
+
+  // Orange Zone swap lock — block swaps when stock is near a threshold
+  if (currentPrices && Object.keys(currentPrices).length > 0) {
+    const openPrice = outAsset.swapPrice || battle?.state?.startingPrices?.[outAsset.symbol] || 0;
+    const curPrice = currentPrices[outAsset.symbol] || openPrice;
+    const baseATR = battle?.thresholds?.[outAsset.symbol]?.threshold || 2.5;
+    if (openPrice > 0 && baseATR > 0) {
+      const multiplier = ((curPrice - openPrice) / openPrice) * 100 / baseATR;
+      const lockStatus = isSwapLocked(multiplier, baseATR);
+      if (lockStatus.locked) {
+        return { valid: false, error: `${outAsset.symbol} is in the danger zone — too close to a threshold to swap` };
+      }
     }
   }
 

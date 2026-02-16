@@ -23,6 +23,7 @@ const RosterSection = ({
   onSelectDrop,
   onMoreInfo,
   canSwap,
+  orangeZoneLocked = {},  // Orange Zone swap lock status by symbol
 }) => {
   // Flatten roster with gains for display
   const allAssets = [
@@ -136,6 +137,7 @@ const RosterSection = ({
               onSelect={onSelectDrop}
               onMoreInfo={onMoreInfo}
               disabled={!canSwap}
+              isLocked={!!orangeZoneLocked[asset.symbol]}
               compact
             />
           ))

@@ -18,9 +18,11 @@ const RosterAssetCard = ({
   onMoreInfo,        // Callback for info button
   disabled = false,
   compact = false,
+  isLocked = false,  // Orange Zone swap lock
 }) => {
   const categoryConfig = CATEGORY_CONFIG[asset.category] || CATEGORY_CONFIG.steady;
   const gain = asset.gain || 0;
+  const effectiveDisabled = disabled || isLocked;
 
   return (
     <HoloCard
@@ -29,7 +31,7 @@ const RosterAssetCard = ({
       accentColor="red"
       size={compact ? 'sm' : 'md'}
       selected={isSelected}
-      disabled={disabled}
+      disabled={effectiveDisabled}
       onClick={() => onSelect(asset)}
       style={{
         position: 'relative',
@@ -38,10 +40,13 @@ const RosterAssetCard = ({
         paddingTop: isSelected ? '18px' : undefined,
         marginTop: isSelected ? '12px' : '0',
         textAlign: 'left',
+        opacity: isLocked ? 0.5 : undefined,
         // Add inset shadow for selected state (unique to this card)
         boxShadow: isSelected
           ? `0 0 15px ${HOLO_COLORS.red}44, inset 0 0 20px ${HOLO_COLORS.red}11`
-          : undefined,
+          : isLocked
+            ? `0 0 8px rgba(245, 158, 11, 0.3)`
+            : undefined,
       }}
     >
       {/* Selected indicator - "DROP" badge */}
@@ -123,10 +128,10 @@ const RosterAssetCard = ({
         <div style={{
           fontSize: compact ? '13px' : '14px',
           fontWeight: 700,
-          color: HOLO_COLORS.textPrimary,
+          color: isLocked ? '#f59e0b' : HOLO_COLORS.textPrimary,
           marginBottom: '4px',
         }}>
-          {asset.symbol}
+          {isLocked ? '\uD83D\uDD12 ' : ''}{asset.symbol}
         </div>
 
         {/* Gain */}

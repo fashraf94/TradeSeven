@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { HOLO_COLORS, HOLO_BACKGROUND, HOLO_ANIMATIONS } from '../../constants/holoTheme';
 import WindowStatus from './shared/WindowStatus';
 import SwapsRemaining from './shared/SwapsRemaining';
@@ -68,9 +68,19 @@ const FreeAgencyMobile = ({
   handleBack,
   loadData,
   livePrices = {},
+  orangeZoneLocked = {},
+  swapBlockedMessage,
+  setSwapBlockedMessage,
 }) => {
   // State for asset research modal
   const [assetForResearch, setAssetForResearch] = useState(null);
+
+  // Auto-dismiss swap blocked toast after 3 seconds
+  useEffect(() => {
+    if (!swapBlockedMessage) return;
+    const timer = setTimeout(() => setSwapBlockedMessage && setSwapBlockedMessage(null), 3000);
+    return () => clearTimeout(timer);
+  }, [swapBlockedMessage, setSwapBlockedMessage]);
 
   // Dynamic guidance text based on selection state
   const getGuidanceText = () => {
@@ -255,6 +265,7 @@ const FreeAgencyMobile = ({
           onSelectDrop={handleSelectDrop}
           onMoreInfo={(asset) => setAssetForResearch(asset)}
           canSwap={canSwap}
+          orangeZoneLocked={orangeZoneLocked}
         />
 
         {/* Free Agent Grid - Free Agents */}
@@ -307,6 +318,27 @@ const FreeAgencyMobile = ({
         onSelectAdd={handleSelectAdd}
         onClose={() => setAssetForResearch(null)}
       />
+
+      {/* Swap Blocked Toast (Orange Zone) */}
+      {swapBlockedMessage && (
+        <div style={{
+          position: 'fixed',
+          bottom: '100px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(245, 158, 11, 0.95)',
+          color: '#000',
+          padding: '10px 20px',
+          borderRadius: '8px',
+          fontSize: '13px',
+          fontWeight: 600,
+          zIndex: 100,
+          boxShadow: '0 4px 20px rgba(245, 158, 11, 0.4)',
+          whiteSpace: 'nowrap',
+        }}>
+          {'\uD83D\uDD12'} {swapBlockedMessage}
+        </div>
+      )}
     </div>
   );
 };

@@ -19,6 +19,7 @@ import {
   getHistoryUpdateIfChanged,
   flattenPortfolio,
   THRESHOLD_POINTS,
+  detectRedZone,
 } from '../utils/baggerBombUtils';
 import { CONVICTION_MULTIPLIERS } from '../constants/baggerBombScoring';
 import {
@@ -68,6 +69,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   const [localOppHistory, setLocalOppHistory] = useState({});
   const prevMultipliersRef = useRef({});
   const prevOppMultipliersRef = useRef({});
+  const redZoneActiveRef = useRef(new Set());
 
   // Local events for EventFeed (both player + opponent)
   const [localEvents, setLocalEvents] = useState([]);
@@ -422,6 +424,33 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       }
 
       prevMultipliersRef.current[asset.symbol] = currentMultiplier;
+
+      // Red Zone detection — within 25% of next threshold
+      const rzBadges = getBadgesFromHistory(combinedHistory[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 });
+      const rz = detectRedZone(currentMultiplier, rzBadges);
+      const rzKey = rz ? `${asset.symbol}_${rz.direction}_${rz.targetMultiple}` : null;
+
+      if (rz && rzKey && !redZoneActiveRef.current.has(rzKey)) {
+        redZoneActiveRef.current.add(rzKey);
+        pushLocalEvent({
+          id: `${Date.now()}-${asset.symbol}-redzone-${rz.targetThreshold}`,
+          timestamp: new Date().toISOString(),
+          type: 'redzone',
+          player: myData?.username || 'You',
+          symbol: asset.symbol,
+          direction: rz.direction,
+          targetThreshold: rz.targetThreshold,
+          targetMultiple: rz.targetMultiple,
+          progress: rz.progress,
+          multiplier: currentMultiplier,
+          points: 0,
+        });
+      }
+      redZoneActiveRef.current.forEach(key => {
+        if (key.startsWith(`${asset.symbol}_`) && key !== rzKey) {
+          redZoneActiveRef.current.delete(key);
+        }
+      });
     });
   }, [effectivePrices, openPrices, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger, myData?.username, pushLocalEvent]);
 
@@ -463,6 +492,33 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       }
 
       prevOppMultipliersRef.current[asset.symbol] = currentMultiplier;
+
+      // Red Zone detection for opponent
+      const oppRzBadges = getBadgesFromHistory(assetHistory);
+      const oppRz = detectRedZone(currentMultiplier, oppRzBadges);
+      const oppRzKey = oppRz ? `${asset.symbol}_opp_${oppRz.direction}_${oppRz.targetMultiple}` : null;
+
+      if (oppRz && oppRzKey && !redZoneActiveRef.current.has(oppRzKey)) {
+        redZoneActiveRef.current.add(oppRzKey);
+        pushLocalEvent({
+          id: `${Date.now()}-${asset.symbol}-redzone-opp-${oppRz.targetThreshold}`,
+          timestamp: new Date().toISOString(),
+          type: 'redzone',
+          player: oppData?.username || 'Opponent',
+          symbol: asset.symbol,
+          direction: oppRz.direction,
+          targetThreshold: oppRz.targetThreshold,
+          targetMultiple: oppRz.targetMultiple,
+          progress: oppRz.progress,
+          multiplier: currentMultiplier,
+          points: 0,
+        });
+      }
+      redZoneActiveRef.current.forEach(key => {
+        if (key.startsWith(`${asset.symbol}_opp_`) && key !== oppRzKey) {
+          redZoneActiveRef.current.delete(key);
+        }
+      });
     });
   }, [effectivePrices, openPrices, oppPortfolioFlat, battle, battleId, oppHistory, oppData?.username, pushLocalEvent]);
 
