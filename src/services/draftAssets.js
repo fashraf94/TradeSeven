@@ -155,10 +155,10 @@ export const STEADY_CRYPTO = [
 
 export const RISKY_CRYPTO = [
   { id: 'dogecoin', symbol: 'DOGE', name: 'Dogecoin' },
-  { id: 'shiba-inu', symbol: 'SHIB', name: 'Shiba Inu' },
+  { id: 'trust-wallet-token', symbol: 'TWT', name: 'Trust Wallet' },
   { id: 'conflux-token', symbol: 'CFX', name: 'Conflux' },
-  { id: 'floki', symbol: 'FLOKI', name: 'Floki' },
-  { id: 'bonk', symbol: 'BONK', name: 'Bonk' },
+  { id: 'woo-network', symbol: 'WOO', name: 'WOO Network' },
+  { id: 'osmosis', symbol: 'OSMO', name: 'Osmosis' },
   { id: 'dogwifcoin', symbol: 'WIF', name: 'dogwifhat' },
   { id: 'render-token', symbol: 'RENDER', name: 'Render' },
   { id: 'fetch-ai', symbol: 'FET', name: 'Fetch.ai' },
@@ -168,7 +168,7 @@ export const RISKY_CRYPTO = [
   { id: 'the-sandbox', symbol: 'SAND', name: 'The Sandbox' },
   { id: 'decentraland', symbol: 'MANA', name: 'Decentraland' },
   { id: 'axie-infinity', symbol: 'AXS', name: 'Axie Infinity' },
-  { id: 'gala', symbol: 'GALA', name: 'Gala' },
+  { id: 'joe', symbol: 'JOE', name: 'Trader Joe' },
   { id: 'mina-protocol', symbol: 'MINA', name: 'Mina Protocol' },
   { id: 'curve-dao-token', symbol: 'CRV', name: 'Curve DAO' },
   { id: '1inch', symbol: '1INCH', name: '1inch' },

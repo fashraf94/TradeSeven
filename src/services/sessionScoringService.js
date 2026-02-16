@@ -138,6 +138,8 @@ export const CRYPTO_SYMBOLS = new Set([
   'FTM', 'EGLD', 'RUNE', 'KAVA', 'CELO',
   // Verified replacement symbols
   'PENDLE', 'DYDX', 'CFX', 'SSV', 'MINA', 'STORJ', 'HIGH',
+  // Verified round 3 replacements
+  'TWT', 'WOO', 'OSMO', 'JOE',
 ]);
 
 // ============================================

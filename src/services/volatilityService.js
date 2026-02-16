@@ -56,6 +56,7 @@ const CRYPTO_DEFAULTS = {
   // Verified replacement symbols
   'PENDLE': 7.0, 'DYDX': 7.0, 'CFX': 8.0, 'SSV': 8.0,
   'MINA': 8.0, 'STORJ': 7.0, 'HIGH': 8.0, 'SUI20947': 8.0,
+  'TWT': 7.0, 'WOO': 8.0, 'OSMO': 7.0, 'JOE': 8.0,
   'DEFAULT': 5.0
 };
 
