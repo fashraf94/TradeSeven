@@ -85,6 +85,7 @@ import { safePortfolioArray, getUserPortfolioFlat, getOpponentPortfolioFlat, get
 import { flattenPortfolio, flattenBench } from './utils/baggerBombUtils';
 // Snake Draft asset pools
 import { STEADY_STOCKS, RISKY_STOCKS, DEFENSIVE_STOCKS, STEADY_CRYPTO, RISKY_CRYPTO, DEFENSIVE_CRYPTO } from './services/draftAssets';
+import { createInitialFreeAgents } from './services/freeAgentRotationService';
 // Recommendation Engine
 import {
   getRecommendations,
@@ -15685,7 +15686,6 @@ export default function PortfolioDuel() {
 
       freeAgents: (() => {
         try {
-          const { createInitialFreeAgents } = require('./services/freeAgentRotationService');
           const initial = createInitialFreeAgents();
           // Add starting prices for free agents so price display works
           (initial.current || []).forEach(agent => {
@@ -15709,6 +15709,7 @@ export default function PortfolioDuel() {
       startingPrices,
       playerIds: [odUserId, 'cpu'],
       creatorId: odUserId,
+      userId: odUserId,
     };
 
     // Save to Firebase
