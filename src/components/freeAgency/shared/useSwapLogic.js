@@ -181,8 +181,10 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
 
     const fetchPrices = async () => {
       try {
-        const { getMultipleStockPrices } = await import('../../../services/eodhdAPI');
-        const prices = await getMultipleStockPrices(Array.from(allSymbols));
+        const { getMultipleStockPrices, getMultipleCryptoPrices } = await import('../../../services/eodhdAPI');
+        const prices = portfolioType === 'crypto'
+          ? await getMultipleCryptoPrices(Array.from(allSymbols))
+          : await getMultipleStockPrices(Array.from(allSymbols));
         setLivePrices(prices);
       } catch (err) {
         logger.error('[FreeAgency] Failed to fetch prices:', err);
