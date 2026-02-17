@@ -499,6 +499,13 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         crossed.forEach((threshold) => {
           const existingBadges = getBadgesFromHistory(assetHistory);
           if (!existingBadges.includes(threshold.name)) {
+            // Update opponent history locally (mirrors player detection)
+            const newHistory = updateAssetHistory(asset.symbol, currentMultiplier, assetHistory);
+            setLocalOppHistory((prev) => ({
+              ...prev,
+              [asset.symbol]: newHistory,
+            }));
+
             const event = createThresholdEvent(
               oppData?.username || 'Opponent',
               asset.symbol,
@@ -508,6 +515,18 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
             );
 
             pushLocalEvent(event);
+
+            // Persist to Firebase (same as player events) — skip in training mode
+            if (battleId && !battleId.startsWith('training_')) {
+              // Dedup: both clients may detect the same opponent crossing
+              const alreadyInFirebase = (battle?.events || []).some(e =>
+                e.symbol === event.symbol && e.type === event.type && e.player === event.player
+              );
+              if (!alreadyInFirebase) {
+                addBaggerBombEvent(battleId, event).catch(console.error);
+              }
+              updateAssetHistoryInBattle(battleId, !isCreator, asset.symbol, newHistory).catch(console.error);
+            }
           }
         });
       }
@@ -550,7 +569,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         });
       }
     });
-  }, [effectivePrices, openPrices, oppPortfolioFlat, battle, battleId, oppHistory, oppData?.username, pushLocalEvent]);
+  }, [effectivePrices, openPrices, oppPortfolioFlat, battle, battleId, isCreator, oppHistory, oppData?.username, pushLocalEvent]);
 
   // ==================== CONTINUOUS HISTORY TRACKING ====================
 

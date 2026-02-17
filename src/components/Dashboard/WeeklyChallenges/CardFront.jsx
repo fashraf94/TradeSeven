@@ -34,7 +34,7 @@ export default function CardFront({ challenge, state, progress, accentColor, car
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      justifyContent: 'flex-start',
+      justifyContent: 'center',
       gap: '8px',
       padding: isMobileCard ? '14px 10px 12px' : '20px 14px 16px',
       filter: isLocked ? 'grayscale(0.7)' : 'none',
