@@ -88,6 +88,12 @@ const EVENT_CONFIG = {
     color: HOLO_COLORS.amber,
     points: 0,
   },
+  swap: {
+    icon: '🔄',
+    label: 'Swap',
+    color: HOLO_COLORS.cyan,
+    points: 0,
+  },
 };
 
 // Time threshold for "NEW" badge (60 seconds)
@@ -152,6 +158,7 @@ function EventItem({ event, index, showNewBadge = false, isOpponent = false, onR
   const isPositive = (config.points || event.points || 0) > 0;
   const accentColor = isOpponent ? HOLO_COLORS.red : HOLO_COLORS.cyan;
   const isRedZone = event.type === 'redzone';
+  const isSwap = event.type === 'swap';
   const rzColor = isRedZone
     ? (event.direction === 'negative' ? HOLO_COLORS.red : HOLO_COLORS.amber)
     : null;
@@ -185,6 +192,7 @@ function EventItem({ event, index, showNewBadge = false, isOpponent = false, onR
         borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}50`,
         backgroundColor: isRedZone
           ? (event.direction === 'negative' ? 'rgba(255, 51, 102, 0.08)' : 'rgba(245, 158, 11, 0.08)')
+          : isSwap ? `${accentColor}06`
           : showNewBadge ? `${accentColor}08` : 'transparent',
         position: 'relative',
         overflow: 'hidden',
@@ -232,12 +240,29 @@ function EventItem({ event, index, showNewBadge = false, isOpponent = false, onR
         } : {}}
         style={{ fontSize: '18px' }}
       >
-        {isRedZone ? (event.direction === 'negative' ? '⚠️' : '🎯') : config.icon}
+        {isSwap ? '🔄' : isRedZone ? (event.direction === 'negative' ? '⚠️' : '🎯') : config.icon}
       </motion.span>
 
       {/* Event Details */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        {isRedZone ? (
+        {isSwap ? (
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+            <span style={{ color: HOLO_COLORS.textPrimary, fontWeight: 500, fontSize: '13px' }}>
+              {event.player || 'Player'}
+            </span>
+            <span style={{ color: HOLO_COLORS.textMuted, fontSize: '13px' }}> swapped </span>
+            <span style={{ color: HOLO_COLORS.red, fontWeight: 600, fontSize: '13px' }}>
+              {event.removedSymbol}
+            </span>
+            <span style={{ color: HOLO_COLORS.textMuted, fontSize: '13px' }}> → </span>
+            <span style={{ color: HOLO_COLORS.green, fontWeight: 600, fontSize: '13px' }}>
+              {event.addedSymbol}
+            </span>
+            <AnimatePresence>
+              {showNewBadge && <NewBadge />}
+            </AnimatePresence>
+          </div>
+        ) : isRedZone ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
               <span style={{ color: HOLO_COLORS.textPrimary, fontWeight: 500, fontSize: '13px' }}>
@@ -311,8 +336,8 @@ function EventItem({ event, index, showNewBadge = false, isOpponent = false, onR
         )}
       </div>
 
-      {/* Points (hidden for red zone events) */}
-      {!isRedZone && (
+      {/* Points (hidden for red zone and swap events) */}
+      {!isRedZone && !isSwap && (
         <motion.span
           initial={showNewBadge ? { scale: 0.5 } : {}}
           animate={showNewBadge ? {

@@ -713,6 +713,30 @@ export default function BaggerBombTrainingBattleViewV4({
     };
   }, [oppData, buildEnrichedPortfolio, calculateTotalPoints, countBadges]);
 
+  // Merge local training events with Firebase battle.events (for swap history)
+  const mergedTrainingEvents = useMemo(() => {
+    const firebaseEvents = (battle?.events || []).map(e => {
+      if (e.type === 'swap') {
+        const username = e.playerId === 'creator'
+          ? (battle?.creator?.username || 'You')
+          : (battle?.opponent?.username || 'CPU Opponent');
+        return {
+          ...e,
+          id: e.id || `swap_${e.timestamp}_${e.removedSymbol}`,
+          player: username,
+          symbol: e.removedSymbol || e.addedSymbol,
+        };
+      }
+      return e;
+    });
+    const localIds = new Set(trainingEvents.map(e => e.id));
+    const uniqueFirebase = firebaseEvents.filter(e => {
+      const eid = e.id || `fb_${e.timestamp}_${e.symbol}_${e.type}`;
+      return !localIds.has(eid);
+    });
+    return [...trainingEvents, ...uniqueFirebase];
+  }, [trainingEvents, battle?.events, battle?.creator?.username, battle?.opponent?.username]);
+
   // Loading
   if (loadingPrices && Object.keys(currentPrices).length === 0) {
     return (
@@ -745,7 +769,7 @@ export default function BaggerBombTrainingBattleViewV4({
       battle={battle}
       player={player}
       opponent={opponent}
-      events={trainingEvents}
+      events={mergedTrainingEvents}
       onBack={onBack}
       nightMode={false}
       isTraining={true}

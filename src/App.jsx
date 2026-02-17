@@ -20055,8 +20055,7 @@ export default function PortfolioDuel() {
                   setShowOptionsArenaModal={setShowOptionsArenaModal}
                 />
 
-                {/* Weekly Challenges — hidden for beta, re-enable when ready */}
-                {false && (
+                {/* Weekly Challenges */}
                 <WeeklyChallengesPanel
                   showWeeklyChallenges={showWeeklyChallenges}
                   setShowWeeklyChallenges={setShowWeeklyChallenges}
@@ -20069,7 +20068,6 @@ export default function PortfolioDuel() {
                   acceptChallenge={acceptChallenge}
                   colors={colors}
                 />
-                )}
 
                 {/* Live Feed - community activity */}
                 <LiveFeed
@@ -20156,8 +20154,7 @@ export default function PortfolioDuel() {
                   setShowOptionsArenaModal={setShowOptionsArenaModal}
                 />
 
-                {/* Weekly Challenges — hidden for beta, re-enable when ready */}
-                {false && (
+                {/* Weekly Challenges */}
                 <WeeklyChallengesPanel
                   showWeeklyChallenges={showWeeklyChallenges}
                   setShowWeeklyChallenges={setShowWeeklyChallenges}
@@ -20170,7 +20167,6 @@ export default function PortfolioDuel() {
                   acceptChallenge={acceptChallenge}
                   colors={colors}
                 />
-                )}
 
                 {/* Your Activity - personal timeline */}
                 <YourActivity

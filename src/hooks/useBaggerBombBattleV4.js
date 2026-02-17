@@ -844,6 +844,38 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     return () => clearInterval(interval);
   }, [battle?.freeAgents?.nextRotationAt, triggerRotation]);
 
+  // ==================== MERGE LOCAL + FIREBASE EVENTS ====================
+  // Local events capture real-time threshold crossings detected in-browser.
+  // Firebase battle.events stores the full history (thresholds + swaps from both players).
+  // Merge them so the feed shows historical events even after a page reload.
+
+  const mergedEvents = useMemo(() => {
+    const firebaseEvents = (battle?.events || []).map(e => {
+      // Normalize swap events to match EventFeed format
+      if (e.type === 'swap') {
+        const username = e.playerId === 'creator'
+          ? (battle?.creator?.username || 'Creator')
+          : (battle?.opponent?.username || 'Opponent');
+        return {
+          ...e,
+          id: e.id || `swap_${e.timestamp}_${e.removedSymbol}`,
+          player: username,
+          symbol: e.removedSymbol || e.addedSymbol,
+        };
+      }
+      return e;
+    });
+
+    // Deduplicate: skip Firebase events whose id already exists in localEvents
+    const localIds = new Set(localEvents.map(e => e.id));
+    const uniqueFirebase = firebaseEvents.filter(e => {
+      const eid = e.id || `fb_${e.timestamp}_${e.symbol}_${e.type}`;
+      return !localIds.has(eid);
+    });
+
+    return [...localEvents, ...uniqueFirebase];
+  }, [localEvents, battle?.events, battle?.creator?.username, battle?.opponent?.username]);
+
   // ==================== RETURN ====================
 
   return {
@@ -882,8 +914,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     closedTrades,
     closedTradePoints,
 
-    // Events for EventFeed (local threshold detections for both player + opponent)
-    events: localEvents,
+    // Events for EventFeed (local detections + Firebase history including swaps)
+    events: mergedEvents,
 
     // Prices (effectivePrices = polled + real-time WebSocket overlay)
     currentPrices: effectivePrices,
