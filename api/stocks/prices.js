@@ -9,6 +9,14 @@
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
 
+/** Safely convert a Unix epoch timestamp (seconds) to a Date. Returns null if invalid. */
+function safeDateFromEpoch(timestamp) {
+  const ts = Number(timestamp);
+  if (!(ts > 0) || !isFinite(ts)) return null;
+  const d = new Date(ts * 1000);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 export default async function handler(req, res) {
   // Apply security middleware (CORS, security headers, rate limiting, preflight)
   // Higher limit for this endpoint since it handles historical/technical data that requires multiple calls
@@ -80,7 +88,7 @@ async function handleCurrentPrices(req, res, symbols, API_KEY, noCache) {
     // Log EODHD response timestamp to track data staleness
     if (dataArray.length > 0) {
       const sampleItem = dataArray[0];
-      const eodhTimestamp = sampleItem.timestamp ? new Date(sampleItem.timestamp * 1000) : null;
+      const eodhTimestamp = safeDateFromEpoch(sampleItem.timestamp);
       console.log('[EODHD] Response data age:', {
         symbol: sampleItem.code,
         price: sampleItem.close,
@@ -118,7 +126,7 @@ async function handleCurrentPrices(req, res, symbols, API_KEY, noCache) {
       success: true,
       prices,
       count: Object.keys(prices).length,
-      dataTimestamp: oldestTimestamp ? new Date(oldestTimestamp * 1000).toISOString() : null,
+      dataTimestamp: safeDateFromEpoch(oldestTimestamp)?.toISOString() ?? null,
       fetchedAt: new Date().toISOString()
     };
 
