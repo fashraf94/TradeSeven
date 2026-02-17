@@ -34,7 +34,8 @@ export default function CardFront({ challenge, state, progress, accentColor, car
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      justifyContent: 'space-between',
+      justifyContent: 'flex-start',
+      gap: '8px',
       padding: isMobileCard ? '14px 10px 12px' : '20px 14px 16px',
       filter: isLocked ? 'grayscale(0.7)' : 'none',
       opacity: isLocked ? 0.5 : 1,
@@ -42,13 +43,13 @@ export default function CardFront({ challenge, state, progress, accentColor, car
     }}>
       {/* Center: Silhouette area */}
       <div style={{
-        flex: 1,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         position: 'relative',
         width: '100%',
-        minHeight: 0, // Allow flex shrinking
+        minHeight: 0,
+        height: isMobileCard ? '90px' : '110px',
       }}>
         {/* Silhouette with glow - scaled for card size */}
         <div style={{
