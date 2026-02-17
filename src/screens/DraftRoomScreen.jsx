@@ -89,6 +89,40 @@ const DraftRoomScreen = ({
   const [mobileSearchQuery, setMobileSearchQuery] = useState('');
   const pendingSearchAsset = useRef(null);
 
+  // Lock body scroll when mobile search modal is open (prevents iOS scroll-through)
+  useEffect(() => {
+    if (showMobileSearch) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
+    } else {
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+    };
+  }, [showMobileSearch]);
+
+  // Track actual visible viewport height (accounts for iOS virtual keyboard)
+  const [viewportHeight, setViewportHeight] = useState(
+    typeof window !== 'undefined' ? window.innerHeight : 800
+  );
+
+  useEffect(() => {
+    if (!showMobileSearch) return;
+    const vv = window.visualViewport;
+    if (vv) {
+      const onResize = () => setViewportHeight(vv.height);
+      onResize();
+      vv.addEventListener('resize', onResize);
+      return () => vv.removeEventListener('resize', onResize);
+    }
+  }, [showMobileSearch]);
+
   // Phone detection for mobile-optimized layout (< 768px)
   const [isPhone, setIsPhone] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
 
@@ -1209,7 +1243,7 @@ const DraftRoomScreen = ({
                   bottom: 0,
                   left: 0,
                   right: 0,
-                  maxHeight: '70vh',
+                  maxHeight: `${viewportHeight * 0.7}px`,
                   background: 'var(--holo-bg-dark, #0a0e14)',
                   borderTopLeftRadius: 16,
                   borderTopRightRadius: 16,
@@ -1264,7 +1298,7 @@ const DraftRoomScreen = ({
                   </button>
                 </div>
                 {/* Results List */}
-                <div style={{ flex: 1, overflow: 'auto', padding: '8px 0' }}>
+                <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '8px 0' }}>
                   {allResults.length === 0 && mobileSearchQuery && (
                     <div style={{ textAlign: 'center', padding: 24, color: '#6e7681', fontSize: 14 }}>
                       No matches for "{mobileSearchQuery}"
