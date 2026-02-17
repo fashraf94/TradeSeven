@@ -76,7 +76,7 @@ export default function BaggerBombTrainingBattleViewV4({
   // State
   const [currentPrices, setCurrentPrices] = useState({});
   const [loadingPrices, setLoadingPrices] = useState(true);
-  const [thresholds, setThresholds] = useState({});
+  const [thresholds, setThresholds] = useState(battle?.thresholds || {});
 
   // Determine if user is creator
   const isCreator = battle?.creator?.uid === user?.uid ||
@@ -279,12 +279,17 @@ export default function BaggerBombTrainingBattleViewV4({
     }
   }, [allSymbols, startingPrices, freeAgents, battle?.id, playerId]);
 
-  // Load thresholds
+  // Load thresholds — use stored battle thresholds; only fetch from API for missing symbols (e.g. free agents)
   useEffect(() => {
     const loadThresholds = async () => {
       if (allSymbols.length === 0) return;
-      const stockSymbols = allSymbols.filter(s => !isCryptoSymbol(s));
-      const cryptoSymbols = allSymbols.filter(s => isCryptoSymbol(s));
+      // Only fetch for symbols not already in stored battle thresholds
+      const storedThresholds = battle?.thresholds || {};
+      const missingSymbols = allSymbols.filter(s => !storedThresholds[s]);
+      if (missingSymbols.length === 0) return;
+
+      const stockSymbols = missingSymbols.filter(s => !isCryptoSymbol(s));
+      const cryptoSymbols = missingSymbols.filter(s => isCryptoSymbol(s));
 
       try {
         const [stockT, cryptoT] = await Promise.all([
@@ -297,7 +302,7 @@ export default function BaggerBombTrainingBattleViewV4({
       }
     };
     loadThresholds();
-  }, [allSymbols]);
+  }, [allSymbols, battle?.thresholds]);
 
   // Price polling
   useEffect(() => {
