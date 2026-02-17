@@ -14,9 +14,9 @@ import { aggregateToMonthly } from './chartUtils';
  * @param {boolean} options.isCrypto - Whether the asset is crypto (trades 24/7)
  * @returns {Object} { ohlcvData, timeframe, setTimeframe, indicators, levels, smaData, loading, error }
  */
-export default function useResearchData(symbol, { currentPrice, isCrypto } = {}) {
+export default function useResearchData(symbol, { currentPrice, isCrypto, initialTimeframe } = {}) {
   const [rawData, setRawData] = useState(null);    // Raw API response (newest-first)
-  const [timeframe, setTimeframe] = useState('1D');  // UI timeframe: '1D' | '1W' | '1M'
+  const [timeframe, setTimeframe] = useState(initialTimeframe || '1D');  // UI timeframe: '1D' | '1W' | '1M' | 'bomb' | 'spectate'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 

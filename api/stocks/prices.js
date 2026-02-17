@@ -57,7 +57,8 @@ export default async function handler(req, res) {
  */
 async function handleCurrentPrices(req, res, symbols, API_KEY, noCache) {
   const tier = CACHE_TIERS.PRICE;
-  const sortedSymbols = symbols.split(',').map(s => s.trim().toUpperCase()).sort().join(',');
+  // Strip .US suffix — EODHD real-time API wants bare symbols
+  const sortedSymbols = symbols.split(',').map(s => s.trim().toUpperCase().replace(/\.US$/i, '')).sort().join(',');
   const cacheKey = `stock_prices_${sortedSymbols}`;
 
   if (!noCache) {
@@ -69,7 +70,7 @@ async function handleCurrentPrices(req, res, symbols, API_KEY, noCache) {
   }
 
   try {
-    const symbolList = symbols.split(',').map(s => `${s.trim()}.US`).join(',');
+    const symbolList = symbols.split(',').map(s => `${s.trim().replace(/\.US$/i, '')}.US`).join(',');
     const url = `https://eodhd.com/api/real-time/${symbolList}?api_token=${API_KEY}&fmt=json`;
 
     console.log('[API] Fetching stock prices:', symbolList);

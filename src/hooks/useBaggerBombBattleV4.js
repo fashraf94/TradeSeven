@@ -446,11 +446,15 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
           points: 0,
         });
       }
-      redZoneActiveRef.current.forEach(key => {
-        if (key.startsWith(`${asset.symbol}_`) && key !== rzKey) {
-          redZoneActiveRef.current.delete(key);
-        }
-      });
+      // Only clear stale red zone keys when transitioning to a DIFFERENT target.
+      // When rz is null (left zone), preserve keys to prevent re-trigger on oscillation.
+      if (rzKey) {
+        redZoneActiveRef.current.forEach(key => {
+          if (key.startsWith(`${asset.symbol}_`) && key !== rzKey) {
+            redZoneActiveRef.current.delete(key);
+          }
+        });
+      }
     });
   }, [effectivePrices, openPrices, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger, myData?.username, pushLocalEvent]);
 
@@ -514,11 +518,15 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
           points: 0,
         });
       }
-      redZoneActiveRef.current.forEach(key => {
-        if (key.startsWith(`${asset.symbol}_opp_`) && key !== oppRzKey) {
-          redZoneActiveRef.current.delete(key);
-        }
-      });
+      // Only clear stale red zone keys when transitioning to a DIFFERENT target.
+      // When oppRz is null (left zone), preserve keys to prevent re-trigger on oscillation.
+      if (oppRzKey) {
+        redZoneActiveRef.current.forEach(key => {
+          if (key.startsWith(`${asset.symbol}_opp_`) && key !== oppRzKey) {
+            redZoneActiveRef.current.delete(key);
+          }
+        });
+      }
     });
   }, [effectivePrices, openPrices, oppPortfolioFlat, battle, battleId, oppHistory, oppData?.username, pushLocalEvent]);
 
