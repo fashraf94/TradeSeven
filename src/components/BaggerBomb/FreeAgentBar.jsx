@@ -239,6 +239,8 @@ export default function FreeAgentBar({
       livePrices: currentPrices,
       thresholds,
       openPrices: freeAgentDailyOpens,
+      startingPrices: currentPrices,   // Fallback so lockedPrice is never null
+      useDefaultThreshold: true,        // Ensure threshold >= 2.5% even if not fetched yet
       percentChange: idx >= 0 ? agentChanges[idx] || 0 : 0,
     }));
   };
@@ -436,6 +438,8 @@ export default function FreeAgentBar({
           onClose={() => setResearchAsset(null)}
           showActionButton={false}
           version={2}
+          defaultTab="baggerbomb"
+          defaultTimeframe="bomb"
         />
       )}
     </div>
