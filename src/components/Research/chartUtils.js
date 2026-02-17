@@ -250,9 +250,10 @@ export function detectBombCrossings(chartData, bombLevels) {
  *
  * @param {number} currentPrice - Latest price
  * @param {Array} bombLevels - From calculateBombLevels()
+ * @param {Array} [triggeredTiers=[]] - Tier names already triggered (e.g., ['bagger', 'bust'])
  * @returns {{ above: { tier, price, points, distance, pctAway } | null, below: { tier, price, points, distance, pctAway } | null }}
  */
-export function calculateNearestLevel(currentPrice, bombLevels) {
+export function calculateNearestLevel(currentPrice, bombLevels, triggeredTiers = []) {
   if (!currentPrice || !bombLevels || bombLevels.length === 0) {
     return { above: null, below: null };
   }
@@ -263,6 +264,9 @@ export function calculateNearestLevel(currentPrice, bombLevels) {
   bombLevels.forEach(level => {
     // Skip baseline — it's a reference point, not an actionable level
     if (level.tier === 'baseline') return;
+
+    // Skip already-triggered levels — advance to next uncrossed target
+    if (triggeredTiers.length > 0 && triggeredTiers.includes(level.tier)) return;
 
     const distance = level.price - currentPrice;
     const pctAway = (distance / currentPrice) * 100;
