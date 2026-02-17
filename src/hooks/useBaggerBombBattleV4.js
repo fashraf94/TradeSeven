@@ -360,8 +360,20 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   const pushLocalEvent = useCallback((event) => {
     setLocalEvents(prev => {
-      const updated = [event, ...prev];
-      return updated.slice(0, 50); // Cap at 50 events
+      // Dedup: skip if an identical redzone event exists within 10 minutes
+      if (event.type === 'redzone') {
+        const DEDUP_WINDOW = 10 * 60 * 1000;
+        const now = Date.now();
+        const isDuplicate = prev.some(e =>
+          e.type === 'redzone' &&
+          e.symbol === event.symbol &&
+          e.targetThreshold === event.targetThreshold &&
+          e.direction === event.direction &&
+          (now - new Date(e.timestamp).getTime()) < DEDUP_WINDOW
+        );
+        if (isDuplicate) return prev; // Don't add duplicate
+      }
+      return [event, ...prev].slice(0, 50);
     });
   }, []);
 
@@ -431,6 +443,11 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       const rzKey = rz ? `${asset.symbol}_${rz.direction}_${rz.targetMultiple}` : null;
 
       if (rz && rzKey && !redZoneActiveRef.current.has(rzKey)) {
+        console.log('[RedZone] Generating event:', {
+          symbol: asset.symbol, target: rz.targetThreshold,
+          rzKey, alreadyInRef: false,
+          refSize: redZoneActiveRef.current.size, calledFrom: 'hook_player',
+        });
         redZoneActiveRef.current.add(rzKey);
         pushLocalEvent({
           id: `${Date.now()}-${asset.symbol}-redzone-${rz.targetThreshold}`,
@@ -482,6 +499,13 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         crossed.forEach((threshold) => {
           const existingBadges = getBadgesFromHistory(assetHistory);
           if (!existingBadges.includes(threshold.name)) {
+            // Update opponent history locally (mirrors player detection)
+            const newHistory = updateAssetHistory(asset.symbol, currentMultiplier, assetHistory);
+            setLocalOppHistory((prev) => ({
+              ...prev,
+              [asset.symbol]: newHistory,
+            }));
+
             const event = createThresholdEvent(
               oppData?.username || 'Opponent',
               asset.symbol,
@@ -491,6 +515,18 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
             );
 
             pushLocalEvent(event);
+
+            // Persist to Firebase (same as player events) — skip in training mode
+            if (battleId && !battleId.startsWith('training_')) {
+              // Dedup: both clients may detect the same opponent crossing
+              const alreadyInFirebase = (battle?.events || []).some(e =>
+                e.symbol === event.symbol && e.type === event.type && e.player === event.player
+              );
+              if (!alreadyInFirebase) {
+                addBaggerBombEvent(battleId, event).catch(console.error);
+              }
+              updateAssetHistoryInBattle(battleId, !isCreator, asset.symbol, newHistory).catch(console.error);
+            }
           }
         });
       }
@@ -503,6 +539,11 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       const oppRzKey = oppRz ? `${asset.symbol}_opp_${oppRz.direction}_${oppRz.targetMultiple}` : null;
 
       if (oppRz && oppRzKey && !redZoneActiveRef.current.has(oppRzKey)) {
+        console.log('[RedZone] Generating event:', {
+          symbol: asset.symbol, target: oppRz.targetThreshold,
+          rzKey: oppRzKey, alreadyInRef: false,
+          refSize: redZoneActiveRef.current.size, calledFrom: 'hook_opponent',
+        });
         redZoneActiveRef.current.add(oppRzKey);
         pushLocalEvent({
           id: `${Date.now()}-${asset.symbol}-redzone-opp-${oppRz.targetThreshold}`,
@@ -528,7 +569,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         });
       }
     });
-  }, [effectivePrices, openPrices, oppPortfolioFlat, battle, battleId, oppHistory, oppData?.username, pushLocalEvent]);
+  }, [effectivePrices, openPrices, oppPortfolioFlat, battle, battleId, isCreator, oppHistory, oppData?.username, pushLocalEvent]);
 
   // ==================== CONTINUOUS HISTORY TRACKING ====================
 
@@ -822,6 +863,38 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     return () => clearInterval(interval);
   }, [battle?.freeAgents?.nextRotationAt, triggerRotation]);
 
+  // ==================== MERGE LOCAL + FIREBASE EVENTS ====================
+  // Local events capture real-time threshold crossings detected in-browser.
+  // Firebase battle.events stores the full history (thresholds + swaps from both players).
+  // Merge them so the feed shows historical events even after a page reload.
+
+  const mergedEvents = useMemo(() => {
+    const firebaseEvents = (battle?.events || []).map(e => {
+      // Normalize swap events to match EventFeed format
+      if (e.type === 'swap') {
+        const username = e.playerId === 'creator'
+          ? (battle?.creator?.username || 'Creator')
+          : (battle?.opponent?.username || 'Opponent');
+        return {
+          ...e,
+          id: e.id || `swap_${e.timestamp}_${e.removedSymbol}`,
+          player: username,
+          symbol: e.removedSymbol || e.addedSymbol,
+        };
+      }
+      return e;
+    });
+
+    // Deduplicate: skip Firebase events whose id already exists in localEvents
+    const localIds = new Set(localEvents.map(e => e.id));
+    const uniqueFirebase = firebaseEvents.filter(e => {
+      const eid = e.id || `fb_${e.timestamp}_${e.symbol}_${e.type}`;
+      return !localIds.has(eid);
+    });
+
+    return [...localEvents, ...uniqueFirebase];
+  }, [localEvents, battle?.events, battle?.creator?.username, battle?.opponent?.username]);
+
   // ==================== RETURN ====================
 
   return {
@@ -860,8 +933,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     closedTrades,
     closedTradePoints,
 
-    // Events for EventFeed (local threshold detections for both player + opponent)
-    events: localEvents,
+    // Events for EventFeed (local detections + Firebase history including swaps)
+    events: mergedEvents,
 
     // Prices (effectivePrices = polled + real-time WebSocket overlay)
     currentPrices: effectivePrices,

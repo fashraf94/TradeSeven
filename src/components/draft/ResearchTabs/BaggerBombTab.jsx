@@ -1,12 +1,34 @@
 // BaggerBombTab — BaggerBomb scoring stats for an asset.
 // Extracted from AssetResearchModal for modularity.
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BAGGER_TIERS, BUST_TIERS } from '../../../constants/baggerBombScoring';
 import { DEFAULT_THRESHOLD } from '../../../utils/researchAssetBuilder';
+import { getVolatilityThresholds } from '../../../services/volatilityService';
 
 const BaggerBombTab = ({ asset }) => {
-  const baseThreshold = asset?.threshold || DEFAULT_THRESHOLD;
+  // On-demand threshold fetch when not provided via props
+  const [fetchedThreshold, setFetchedThreshold] = useState(null);
+
+  useEffect(() => {
+    if (asset?.threshold) return; // Already have threshold from props
+    const symbol = asset?.symbol;
+    if (!symbol) return;
+    let cancelled = false;
+
+    const isCrypto = asset?.isCrypto;
+    getVolatilityThresholds([symbol], isCrypto ? 'crypto' : 'stock')
+      .then(result => {
+        if (!cancelled && result[symbol]) {
+          setFetchedThreshold(result[symbol].threshold);
+        }
+      })
+      .catch(() => {}); // Silent — falls back to DEFAULT_THRESHOLD
+
+    return () => { cancelled = true; };
+  }, [asset?.symbol, asset?.threshold, asset?.isCrypto]);
+
+  const baseThreshold = asset?.threshold || fetchedThreshold || DEFAULT_THRESHOLD;
 
   const baselinePrice =
     asset?.lockedPrice ||
@@ -14,6 +36,8 @@ const BaggerBombTab = ({ asset }) => {
     asset?.startPrice ||
     asset?.startingPrice ||
     asset?.basePrice ||
+    asset?.price ||         // Fallback to current price for free agents
+    asset?.currentPrice ||
     null;
 
   const formatTargetPrice = (price) => {

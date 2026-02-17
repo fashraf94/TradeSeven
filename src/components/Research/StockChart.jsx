@@ -45,17 +45,6 @@ const StockChart = ({
     return calculateBombLevels(bombData.baselinePrice, bombData.threshold);
   }, [isBombView, bombData?.threshold, bombData?.baselinePrice]);
 
-  // Nearest bomb level to current price (for distance indicator)
-  const nearestLevel = useMemo(() => {
-    if (!isBombView || bombLevels.length === 0 || !ohlcvData || ohlcvData.length === 0) {
-      return { above: null, below: null };
-    }
-    // Get latest close price (ohlcvData is oldest-first, last element is most recent)
-    const latestClose = ohlcvData[ohlcvData.length - 1]?.close;
-    if (!latestClose) return { above: null, below: null };
-    return calculateNearestLevel(Number(latestClose), bombLevels);
-  }, [isBombView, bombLevels, ohlcvData]);
-
   // Determine which bomb levels have been triggered from TODAY's chart data only
   // (previous days' candles were at different baselines so they'd cause false HITs)
   const triggeredLevels = useMemo(() => {
@@ -91,6 +80,18 @@ const StockChart = ({
     });
     return [...triggered];
   }, [isBombView, bombLevels, ohlcvData, bombData?.baselinePrice]);
+
+  // Nearest bomb level to current price (for distance indicator)
+  // Filters out already-triggered levels so the annotation advances to the next uncrossed target
+  const nearestLevel = useMemo(() => {
+    if (!isBombView || bombLevels.length === 0 || !ohlcvData || ohlcvData.length === 0) {
+      return { above: null, below: null };
+    }
+    // Get latest close price (ohlcvData is oldest-first, last element is most recent)
+    const latestClose = ohlcvData[ohlcvData.length - 1]?.close;
+    if (!latestClose) return { above: null, below: null };
+    return calculateNearestLevel(Number(latestClose), bombLevels, triggeredLevels);
+  }, [isBombView, bombLevels, ohlcvData, triggeredLevels]);
 
   // Auto-switch back to 1D if bombData removed while viewing bomb tab
   useEffect(() => {

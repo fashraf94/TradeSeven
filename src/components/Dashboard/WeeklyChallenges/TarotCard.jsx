@@ -25,7 +25,7 @@ export default function TarotCard({
   onAccept,
   scrollProgress = 0,
   cardWidth = 160,
-  cardHeight = 320,
+  cardHeight = 230,
 }) {
   const [isFlipped, setIsFlipped] = useState(false);
   const [showSpotlight, setShowSpotlight] = useState(false);

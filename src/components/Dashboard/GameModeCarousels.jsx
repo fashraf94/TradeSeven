@@ -112,7 +112,7 @@ export default function GameModeCarousels({
       id: 'bagger-bomb',
       theme: 'baggerBomb',
       title: 'BaggerBomb',
-      description: 'Score points with breakout bonuses and explosive returns',
+      description: '1v1 battle — Score points with breakout bonuses and explosive returns',
       duration: null,
       isTraining: false,
       onClick: () => {
@@ -126,9 +126,8 @@ export default function GameModeCarousels({
       description: 'Pick strikes & win big with binary options trading',
       duration: null,
       isTraining: false,
-      onClick: () => {
-        setShowOptionsArenaModal(true);
-      },
+      disabled: true,
+      onClick: null,
     },
   ];
 
@@ -201,16 +200,42 @@ export default function GameModeCarousels({
           <InfiniteCarousel
             items={competeCards}
             renderCard={(card, index) => (
-              <ThemedGameCard
+              <div
                 key={`${card.id}-${index}`}
-                theme={card.theme}
-                title={card.title}
-                description={card.description}
-                duration={card.duration}
-                onClick={card.onClick}
-                index={index % competeCards.length}
-                isTraining={card.isTraining}
-              />
+                style={{
+                  position: 'relative',
+                  ...(card.disabled ? { opacity: 0.4, pointerEvents: 'none' } : {}),
+                }}
+              >
+                <ThemedGameCard
+                  theme={card.theme}
+                  title={card.title}
+                  description={card.description}
+                  duration={card.duration}
+                  onClick={card.disabled ? undefined : card.onClick}
+                  index={index % competeCards.length}
+                  isTraining={card.isTraining}
+                />
+                {card.disabled && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '20px',
+                    right: '20px',
+                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                    color: '#000',
+                    fontSize: '10px',
+                    fontWeight: '700',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    zIndex: 2,
+                    pointerEvents: 'none',
+                  }}>
+                    Coming Soon
+                  </span>
+                )}
+              </div>
             )}
           />
         </div>

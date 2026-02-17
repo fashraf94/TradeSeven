@@ -420,7 +420,7 @@ export default function BaggerBombTrainingBattleViewV4({
 
         if (rz && rzKey && !redZoneActiveRef.current.has(rzKey)) {
           redZoneActiveRef.current.add(rzKey);
-          setTrainingEvents(prev => [{
+          const newEvent = {
             id: `${Date.now()}-${asset.symbol}-redzone-${rz.targetThreshold}`,
             timestamp: new Date().toISOString(),
             type: 'redzone',
@@ -432,7 +432,21 @@ export default function BaggerBombTrainingBattleViewV4({
             progress: rz.progress,
             multiplier: currentMultiplier,
             points: 0,
-          }, ...prev].slice(0, 50));
+          };
+          setTrainingEvents(prev => {
+            // Dedup: skip if an identical redzone event exists within 10 minutes
+            const DEDUP_WINDOW = 10 * 60 * 1000;
+            const now = Date.now();
+            const isDuplicate = prev.some(e =>
+              e.type === 'redzone' &&
+              e.symbol === newEvent.symbol &&
+              e.targetThreshold === newEvent.targetThreshold &&
+              e.direction === newEvent.direction &&
+              (now - new Date(e.timestamp).getTime()) < DEDUP_WINDOW
+            );
+            if (isDuplicate) return prev; // Don't add duplicate
+            return [newEvent, ...prev].slice(0, 50);
+          });
         }
         // Only clear stale red zone keys when transitioning to a DIFFERENT target.
         // When rz is null (left zone), preserve keys to prevent re-trigger on oscillation.
@@ -699,6 +713,30 @@ export default function BaggerBombTrainingBattleViewV4({
     };
   }, [oppData, buildEnrichedPortfolio, calculateTotalPoints, countBadges]);
 
+  // Merge local training events with Firebase battle.events (for swap history)
+  const mergedTrainingEvents = useMemo(() => {
+    const firebaseEvents = (battle?.events || []).map(e => {
+      if (e.type === 'swap') {
+        const username = e.playerId === 'creator'
+          ? (battle?.creator?.username || 'You')
+          : (battle?.opponent?.username || 'CPU Opponent');
+        return {
+          ...e,
+          id: e.id || `swap_${e.timestamp}_${e.removedSymbol}`,
+          player: username,
+          symbol: e.removedSymbol || e.addedSymbol,
+        };
+      }
+      return e;
+    });
+    const localIds = new Set(trainingEvents.map(e => e.id));
+    const uniqueFirebase = firebaseEvents.filter(e => {
+      const eid = e.id || `fb_${e.timestamp}_${e.symbol}_${e.type}`;
+      return !localIds.has(eid);
+    });
+    return [...trainingEvents, ...uniqueFirebase];
+  }, [trainingEvents, battle?.events, battle?.creator?.username, battle?.opponent?.username]);
+
   // Loading
   if (loadingPrices && Object.keys(currentPrices).length === 0) {
     return (
@@ -731,7 +769,7 @@ export default function BaggerBombTrainingBattleViewV4({
       battle={battle}
       player={player}
       opponent={opponent}
-      events={trainingEvents}
+      events={mergedTrainingEvents}
       onBack={onBack}
       nightMode={false}
       isTraining={true}

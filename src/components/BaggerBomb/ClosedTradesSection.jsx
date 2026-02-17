@@ -42,7 +42,11 @@ function ClosedTradeRow({ trade }) {
     swappedOutAt,
   } = trade;
 
-  const isPositive = lockedPoints >= 0;
+  // Guard against NaN/null (destructuring default only catches undefined)
+  const safeLockedPoints = Number.isFinite(lockedPoints) ? lockedPoints : 0;
+  const safeLockedGainPct = Number.isFinite(lockedGainPct) ? lockedGainPct : 0;
+
+  const isPositive = safeLockedPoints >= 0;
   const pointColor = isPositive ? HOLO_COLORS.green : HOLO_COLORS.red;
 
   // Tier label
@@ -112,7 +116,7 @@ function ClosedTradeRow({ trade }) {
             fontVariantNumeric: 'tabular-nums',
           }}
         >
-          {isPositive ? '+' : ''}{lockedPoints.toFixed(1)}
+          {isPositive ? '+' : ''}{safeLockedPoints.toFixed(1)}
         </div>
         <div
           style={{
@@ -122,7 +126,7 @@ function ClosedTradeRow({ trade }) {
             fontVariantNumeric: 'tabular-nums',
           }}
         >
-          {lockedGainPct >= 0 ? '+' : ''}{lockedGainPct.toFixed(2)}%
+          {safeLockedGainPct >= 0 ? '+' : ''}{safeLockedGainPct.toFixed(2)}%
         </div>
       </div>
     </div>

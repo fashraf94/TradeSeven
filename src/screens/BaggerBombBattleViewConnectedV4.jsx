@@ -10,6 +10,7 @@ import BaggerBombBattleView from './BaggerBombBattleView';
 import TriggerCelebration from '../components/BaggerBomb/TriggerCelebration';
 import useBaggerBombBattleV4 from '../hooks/useBaggerBombBattleV4';
 import { useWebSocketPrices } from '../hooks/useWebSocketPrices';
+import { stockAPI } from '../services/eodhdAPI';
 
 /**
  * BaggerBombBattleViewConnectedV4 - Connected wrapper for V4 battles
@@ -129,6 +130,37 @@ export default function BaggerBombBattleViewConnectedV4({
     };
   }, [activeTrigger]);
 
+  // Fetch daily open prices for free agents (for price change display)
+  const [freeAgentDailyOpens, setFreeAgentDailyOpens] = useState({});
+  const freeAgentSymbolsKey = useMemo(
+    () => (freeAgents || []).map(a => a.symbol).sort().join(','),
+    [freeAgents]
+  );
+
+  useEffect(() => {
+    if (!freeAgentSymbolsKey) return;
+    let cancelled = false;
+    const symbols = freeAgentSymbolsKey.split(',').filter(Boolean);
+
+    const fetchDailyOpens = async () => {
+      try {
+        const priceData = await stockAPI.getMultipleStockPrices(symbols);
+        if (cancelled) return;
+        const opens = {};
+        symbols.forEach(sym => {
+          const data = priceData[sym] || priceData[sym.toUpperCase()];
+          if (data?.previousClose) opens[sym] = data.previousClose;
+        });
+        setFreeAgentDailyOpens(opens);
+      } catch (err) {
+        // Silent — fallback to 0% change
+      }
+    };
+
+    fetchDailyOpens();
+    return () => { cancelled = true; };
+  }, [freeAgentSymbolsKey]);
+
   // Loading state
   if (loading) {
     return (
@@ -224,7 +256,7 @@ export default function BaggerBombBattleViewConnectedV4({
         freeAgentConfig={{
           freeAgents,
           nextRotationAt,
-          freeAgentDailyOpens: {},
+          freeAgentDailyOpens,
           swapsRemaining,
           currentDay: currentTradingDay,
           totalDays: totalTradingDays,

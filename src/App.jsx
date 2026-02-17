@@ -17059,20 +17059,6 @@ export default function PortfolioDuel() {
             >
               ← Exit Research
             </button>
-            <button
-              onClick={() => setResearchViewMode('classic')}
-              style={{
-                background: 'rgba(139, 148, 158, 0.1)',
-                border: '1px solid #2d3548',
-                borderRadius: '8px',
-                padding: '8px 12px',
-                color: '#8b949e',
-                fontSize: '12px',
-                cursor: 'pointer',
-              }}
-            >
-              Classic View
-            </button>
           </div>
 
           {/* ResearchFlow Component */}
