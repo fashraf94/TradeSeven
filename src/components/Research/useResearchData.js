@@ -194,17 +194,27 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
           return getETDate(t) === etDateStr && isMarketHours(t);
         });
 
-        // If empty (holiday), try the previous trading day
+        // If empty (holiday/multi-day weekend/no data yet), find the most recent
+        // trading day from the actual candle data instead of guessing calendar dates
         if (todayCandles.length === 0) {
-          const prev = new Date(lastTrading);
-          prev.setDate(prev.getDate() - 1);
-          if (prev.getDay() === 0) prev.setDate(prev.getDate() - 2);
-          if (prev.getDay() === 6) prev.setDate(prev.getDate() - 1);
-          const prevDateStr = prev.toISOString().slice(0, 10);
-          todayCandles = reversed.filter(c => {
-            const t = c.timestamp || Math.floor(new Date(c.date || c.datetime || 0).getTime() / 1000);
-            return getETDate(t) === prevDateStr && isMarketHours(t);
-          });
+          const mostRecentDate = (() => {
+            for (let i = reversed.length - 1; i >= 0; i--) {
+              const t = reversed[i].timestamp || Math.floor(new Date(reversed[i].date || reversed[i].datetime || 0).getTime() / 1000);
+              if (isMarketHours(t)) return getETDate(t);
+            }
+            return null;
+          })();
+          if (mostRecentDate) {
+            todayCandles = reversed.filter(c => {
+              const t = c.timestamp || Math.floor(new Date(c.date || c.datetime || 0).getTime() / 1000);
+              return getETDate(t) === mostRecentDate && isMarketHours(t);
+            });
+          }
+        }
+
+        // Final fallback: if still empty (e.g., all candles outside market hours), use last 24
+        if (todayCandles.length === 0) {
+          todayCandles = reversed.slice(-24);
         }
 
         console.log('[Spectate] Hourly fallback — target ET date:', etDateStr,

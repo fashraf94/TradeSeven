@@ -360,8 +360,20 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   const pushLocalEvent = useCallback((event) => {
     setLocalEvents(prev => {
-      const updated = [event, ...prev];
-      return updated.slice(0, 50); // Cap at 50 events
+      // Dedup: skip if an identical redzone event exists within 10 minutes
+      if (event.type === 'redzone') {
+        const DEDUP_WINDOW = 10 * 60 * 1000;
+        const now = Date.now();
+        const isDuplicate = prev.some(e =>
+          e.type === 'redzone' &&
+          e.symbol === event.symbol &&
+          e.targetThreshold === event.targetThreshold &&
+          e.direction === event.direction &&
+          (now - new Date(e.timestamp).getTime()) < DEDUP_WINDOW
+        );
+        if (isDuplicate) return prev; // Don't add duplicate
+      }
+      return [event, ...prev].slice(0, 50);
     });
   }, []);
 
@@ -431,6 +443,11 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       const rzKey = rz ? `${asset.symbol}_${rz.direction}_${rz.targetMultiple}` : null;
 
       if (rz && rzKey && !redZoneActiveRef.current.has(rzKey)) {
+        console.log('[RedZone] Generating event:', {
+          symbol: asset.symbol, target: rz.targetThreshold,
+          rzKey, alreadyInRef: false,
+          refSize: redZoneActiveRef.current.size, calledFrom: 'hook_player',
+        });
         redZoneActiveRef.current.add(rzKey);
         pushLocalEvent({
           id: `${Date.now()}-${asset.symbol}-redzone-${rz.targetThreshold}`,
@@ -503,6 +520,11 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       const oppRzKey = oppRz ? `${asset.symbol}_opp_${oppRz.direction}_${oppRz.targetMultiple}` : null;
 
       if (oppRz && oppRzKey && !redZoneActiveRef.current.has(oppRzKey)) {
+        console.log('[RedZone] Generating event:', {
+          symbol: asset.symbol, target: oppRz.targetThreshold,
+          rzKey: oppRzKey, alreadyInRef: false,
+          refSize: redZoneActiveRef.current.size, calledFrom: 'hook_opponent',
+        });
         redZoneActiveRef.current.add(oppRzKey);
         pushLocalEvent({
           id: `${Date.now()}-${asset.symbol}-redzone-opp-${oppRz.targetThreshold}`,

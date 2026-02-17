@@ -420,7 +420,7 @@ export default function BaggerBombTrainingBattleViewV4({
 
         if (rz && rzKey && !redZoneActiveRef.current.has(rzKey)) {
           redZoneActiveRef.current.add(rzKey);
-          setTrainingEvents(prev => [{
+          const newEvent = {
             id: `${Date.now()}-${asset.symbol}-redzone-${rz.targetThreshold}`,
             timestamp: new Date().toISOString(),
             type: 'redzone',
@@ -432,7 +432,21 @@ export default function BaggerBombTrainingBattleViewV4({
             progress: rz.progress,
             multiplier: currentMultiplier,
             points: 0,
-          }, ...prev].slice(0, 50));
+          };
+          setTrainingEvents(prev => {
+            // Dedup: skip if an identical redzone event exists within 10 minutes
+            const DEDUP_WINDOW = 10 * 60 * 1000;
+            const now = Date.now();
+            const isDuplicate = prev.some(e =>
+              e.type === 'redzone' &&
+              e.symbol === newEvent.symbol &&
+              e.targetThreshold === newEvent.targetThreshold &&
+              e.direction === newEvent.direction &&
+              (now - new Date(e.timestamp).getTime()) < DEDUP_WINDOW
+            );
+            if (isDuplicate) return prev; // Don't add duplicate
+            return [newEvent, ...prev].slice(0, 50);
+          });
         }
         // Only clear stale red zone keys when transitioning to a DIFFERENT target.
         // When rz is null (left zone), preserve keys to prevent re-trigger on oscillation.

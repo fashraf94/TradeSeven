@@ -362,14 +362,27 @@ export default function EventFeed({
   currentUser,
   onRedZoneTap,
 }) {
-  // Sort events by timestamp (newest first) and mark new ones
+  // Sort events by timestamp (newest first), dedup redzone events, and mark new ones
   const sortedEvents = useMemo(() => {
-    return [...events]
+    const sorted = [...events]
       .sort((a, b) => {
         const timeA = new Date(a.timestamp).getTime();
         const timeB = new Date(b.timestamp).getTime();
         return timeB - timeA;
-      })
+      });
+
+    // Dedup redzone events: keep only the most recent per symbol+target+direction
+    const seenRedZone = new Set();
+    const deduped = sorted.filter(event => {
+      if (event.type === 'redzone') {
+        const key = `${event.symbol}-${event.targetThreshold}-${event.direction}`;
+        if (seenRedZone.has(key)) return false;
+        seenRedZone.add(key);
+      }
+      return true;
+    });
+
+    return deduped
       .slice(0, maxDisplay)
       .map((event) => ({
         ...event,
