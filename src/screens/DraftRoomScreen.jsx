@@ -107,22 +107,6 @@ const DraftRoomScreen = ({
     };
   }, [showMobileSearch]);
 
-  // Track actual visible viewport height (accounts for iOS virtual keyboard)
-  const [viewportHeight, setViewportHeight] = useState(
-    typeof window !== 'undefined' ? window.innerHeight : 800
-  );
-
-  useEffect(() => {
-    if (!showMobileSearch) return;
-    const vv = window.visualViewport;
-    if (vv) {
-      const onResize = () => setViewportHeight(vv.height);
-      onResize();
-      vv.addEventListener('resize', onResize);
-      return () => vv.removeEventListener('resize', onResize);
-    }
-  }, [showMobileSearch]);
-
   // Phone detection for mobile-optimized layout (< 768px)
   const [isPhone, setIsPhone] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
 
@@ -1236,69 +1220,88 @@ const DraftRoomScreen = ({
                   zIndex: 600,
                 }}
               />
-              {/* Panel */}
+              {/* Panel — centered overlay */}
               <div
                 style={{
                   position: 'fixed',
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  maxHeight: `${viewportHeight * 0.7}px`,
+                  top: '10%',
+                  left: '5%',
+                  right: '5%',
+                  bottom: '10%',
                   background: 'var(--holo-bg-dark, #0a0e14)',
-                  borderTopLeftRadius: 16,
-                  borderTopRightRadius: 16,
+                  borderRadius: 16,
                   border: '1px solid rgba(0, 217, 255, 0.2)',
-                  boxShadow: '0 -8px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 217, 255, 0.1)',
+                  boxShadow: '0 8px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 217, 255, 0.1)',
                   zIndex: 601,
                   display: 'flex',
                   flexDirection: 'column',
                   overflow: 'hidden',
-                  animation: 'roster-drawer-slide-up 0.3s ease-out',
                 }}
               >
                 {/* Search Header */}
                 <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '12px 16px',
-                  borderBottom: '1px solid var(--holo-border, rgba(0, 255, 255, 0.15))',
+                  padding: 16,
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                  flexShrink: 0,
                 }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00d9ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="11" cy="11" r="8" />
-                    <path d="m21 21-4.3-4.3" />
-                  </svg>
-                  <input
-                    type="text"
-                    placeholder="Search stocks..."
-                    autoFocus
-                    value={mobileSearchQuery}
-                    onChange={(e) => setMobileSearchQuery(e.target.value)}
-                    style={{
-                      flex: 1,
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#e6edf3',
-                      fontSize: 15,
-                      outline: 'none',
-                    }}
-                  />
-                  <button
-                    onClick={() => { setShowMobileSearch(false); setMobileSearchQuery(''); }}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#6e7681',
-                      fontSize: 20,
-                      cursor: 'pointer',
-                      padding: '4px 8px',
-                    }}
-                  >
-                    ✕
-                  </button>
+                  {/* Title row with close button */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 12,
+                  }}>
+                    <span style={{ color: '#ffffff', fontSize: 16, fontWeight: 600 }}>
+                      Search Stocks
+                    </span>
+                    <button
+                      onClick={() => { setShowMobileSearch(false); setMobileSearchQuery(''); }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'rgba(255, 255, 255, 0.6)',
+                        fontSize: 24,
+                        cursor: 'pointer',
+                        padding: '4px 8px',
+                        lineHeight: 1,
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {/* Search input */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    background: 'rgba(255, 255, 255, 0.06)',
+                    borderRadius: 8,
+                    padding: '8px 12px',
+                    border: '1px solid rgba(0, 217, 255, 0.15)',
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00d9ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="11" cy="11" r="8" />
+                      <path d="m21 21-4.3-4.3" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Search stocks..."
+                      autoFocus
+                      value={mobileSearchQuery}
+                      onChange={(e) => setMobileSearchQuery(e.target.value)}
+                      style={{
+                        flex: 1,
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#e6edf3',
+                        fontSize: 15,
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
                 </div>
                 {/* Results List */}
-                <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '8px 0' }}>
+                <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '8px 16px', minHeight: 0 }}>
                   {allResults.length === 0 && mobileSearchQuery && (
                     <div style={{ textAlign: 'center', padding: 24, color: '#6e7681', fontSize: 14 }}>
                       No matches for "{mobileSearchQuery}"
