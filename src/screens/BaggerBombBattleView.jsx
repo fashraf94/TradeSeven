@@ -478,7 +478,7 @@ export default function BaggerBombBattleView({
                                 onThresholdCross('opponent', opponentAsset?.symbol, name, mult)
                             : undefined
                         }
-                        onSymbolClick={(asset) => { setResearchAsset(asset); setResearchDefaultTab(null); }}
+                        onSymbolClick={(asset) => { setResearchAsset(asset); setResearchDefaultTab('baggerbomb'); }}
                         onPointsClick={(asset) => setBreakdownAsset(asset)}
                         swapTargetMode={isSwapTarget}
                         onLeftAssetSelect={isSwapTarget ? (asset) => {
@@ -528,6 +528,7 @@ export default function BaggerBombBattleView({
           showActionButton={false}
           version={2}
           defaultTab={researchDefaultTab}
+          defaultTimeframe="bomb"
         />
       )}
 

@@ -86,6 +86,7 @@ const AssetResearchModal = ({
   showActionButton = true,
   version = 2,
   defaultTab = null,
+  defaultTimeframe = null,
 }) => {
   const isCrypto = asset?.isCrypto || asset?.category === 'crypto' || CRYPTO_SYMBOLS.has(asset?.symbol);
   const isGameContext = onAcquire !== null || showActionButton;
@@ -114,6 +115,7 @@ const AssetResearchModal = ({
   const researchData = useResearchData(version >= 2 ? asset?.symbol : null, {
     currentPrice: asset?.price || asset?.currentPrice || 0,
     isCrypto: isCrypto,
+    initialTimeframe: defaultTimeframe,
   });
 
   // v2: Bomb chart data — only available when asset has battle context (threshold + baseline price)
@@ -150,10 +152,10 @@ const AssetResearchModal = ({
     setDrawerSnapState(state);
   }, []);
 
-  // Reset tab default when asset changes (crypto → technical, stock → fundamental)
+  // Reset tab default when asset or defaultTab changes (e.g. "View Chart" click while modal is open)
   useEffect(() => {
     setActiveTab(defaultTab || (isCrypto ? 'health' : 'fundamental'));
-  }, [asset?.symbol]);
+  }, [asset?.symbol, defaultTab]);
 
   useEffect(() => {
     if (asset?.symbol && !isCrypto) {

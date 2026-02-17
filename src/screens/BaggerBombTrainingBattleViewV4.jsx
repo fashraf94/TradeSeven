@@ -434,12 +434,15 @@ export default function BaggerBombTrainingBattleViewV4({
             points: 0,
           }, ...prev].slice(0, 50));
         }
-        // Clear stale red zone keys for this symbol
-        redZoneActiveRef.current.forEach(key => {
-          if (key.startsWith(`${asset.symbol}_`) && key !== rzKey) {
-            redZoneActiveRef.current.delete(key);
-          }
-        });
+        // Only clear stale red zone keys when transitioning to a DIFFERENT target.
+        // When rz is null (left zone), preserve keys to prevent re-trigger on oscillation.
+        if (rzKey) {
+          redZoneActiveRef.current.forEach(key => {
+            if (key.startsWith(`${asset.symbol}_`) && key !== rzKey) {
+              redZoneActiveRef.current.delete(key);
+            }
+          });
+        }
 
         prevMultRef.current[asset.symbol] = currentMultiplier;
       });
