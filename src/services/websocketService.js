@@ -240,6 +240,7 @@ class WebSocketManager {
       };
 
       this._stockWs.onmessage = (event) => {
+        console.log('[WebSocket] Raw stock message received:', typeof event.data === 'string' ? event.data.slice(0, 200) : event.data);
         this._handleMessage(event.data);
       };
 
