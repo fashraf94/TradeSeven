@@ -42,10 +42,6 @@ class WebSocketManager {
     this._cryptoReconnectTimer = null;
     this._maxReconnectDelay = 30000;
 
-    // Heartbeat
-    this._stockHeartbeat = null;
-    this._cryptoHeartbeat = null;
-
     // Grace period for closing idle connections
     this._stockCloseTimer = null;
     this._cryptoCloseTimer = null;
@@ -231,12 +227,9 @@ class WebSocketManager {
           this._sendSubscribe(this._stockWs, allSymbols, 'stock');
         }
 
-        // Start heartbeat
-        this._stockHeartbeat = setInterval(() => {
-          if (this._stockWs?.readyState === WebSocket.OPEN) {
-            this._stockWs.send(JSON.stringify({ action: 'heartbeat' }));
-          }
-        }, 30000);
+        // No application-level heartbeat needed — EODHD uses WebSocket
+        // protocol-level ping/pong for keepalive. Sending unsupported
+        // actions (like 'heartbeat') causes 422 errors.
       };
 
       this._stockWs.onmessage = (event) => {
@@ -304,11 +297,8 @@ class WebSocketManager {
           this._sendSubscribe(this._cryptoWs, allSymbols, 'crypto');
         }
 
-        this._cryptoHeartbeat = setInterval(() => {
-          if (this._cryptoWs?.readyState === WebSocket.OPEN) {
-            this._cryptoWs.send(JSON.stringify({ action: 'heartbeat' }));
-          }
-        }, 30000);
+        // No application-level heartbeat needed — EODHD uses WebSocket
+        // protocol-level ping/pong for keepalive.
       };
 
       this._cryptoWs.onmessage = (event) => {
@@ -394,17 +384,12 @@ class WebSocketManager {
   // ==================== CLEANUP ====================
 
   _cleanupStock() {
-    if (this._stockHeartbeat) {
-      clearInterval(this._stockHeartbeat);
-      this._stockHeartbeat = null;
-    }
+    // Reserved for future cleanup (heartbeat was removed — EODHD
+    // handles keepalive at the WebSocket protocol level)
   }
 
   _cleanupCrypto() {
-    if (this._cryptoHeartbeat) {
-      clearInterval(this._cryptoHeartbeat);
-      this._cryptoHeartbeat = null;
-    }
+    // Reserved for future cleanup
   }
 
   _scheduleClose(type) {
