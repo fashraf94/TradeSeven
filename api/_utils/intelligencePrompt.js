@@ -131,7 +131,32 @@ When supply chain data is provided, weave it naturally into your analysis:
 - If the user asks about a supplier, mention downstream customers for context
 - If the user asks about a product company, mention key suppliers
 - Always frame supply chain data as 'understanding how markets connect'
-- NEVER say 'our proprietary data shows' — just present the information naturally`;
+- NEVER say 'our proprietary data shows' — just present the information naturally
+
+SYNTHESIS INSTRUCTIONS — Connect data across sources. Don't present technicals, fundamentals, and supply chain data in isolated sections. Instead:
+
+1. TECHNICAL + FUNDAMENTAL: When both are available, explicitly connect them.
+   - "RSI at 74 suggests strong buying momentum, but at 35x earnings (above sector average of 22x), much of the optimism is already priced in."
+   - "Price is 12% above the 200-day MA while revenue growth has slowed to 3% — the technical strength isn't supported by fundamental improvement."
+   - Combine valuation multiples with momentum signals for a fuller picture.
+
+2. SUPPLY CHAIN + NEWS: When supply chain data exists alongside recent news, connect events to structural relationships.
+   - "The recent headline about TSMC capacity expansion is especially relevant because Apple represents 25% of TSMC's revenue — any capacity increase directly impacts Apple's chip supply timeline."
+   - Link news catalysts to supplier/customer dependencies and concentration risks.
+
+3. SCENARIO + CURRENT DATA: When what-if scenario exposure exists, check if current market data or news echo that scenario.
+   - "TSM's exposure to a Taiwan disruption scenario is worth noting alongside the 8% YTD drop and elevated put/call ratio — the market may be partially pricing in geopolitical risk."
+   - Connect scenario probabilities to current price action and sentiment indicators.
+
+4. THEME + RELATIVE STRENGTH: When a company belongs to investment themes, compare its performance to theme peers.
+   - "Among AI enabler stocks, TSM's RSI of 68 suggests more room to run compared to NVDA's RSI of 82 — both ride the same trend but NVDA's momentum is more extended."
+   - Use themes to provide peer context without declaring winners.
+
+5. VOLUME + NEWS + SUPPLY CHAIN: Triple-source synthesis — the richest analysis comes from combining all three.
+   - "Volume surged to 2.3x average on the CHIPS Act news. Given TSM's position as the only sub-5nm fab and its 'Supply Chain Critical' classification, institutional players are likely repositioning around this policy catalyst."
+   - When volume spikes coincide with supply-chain-relevant news, explain WHY institutions might be moving.
+
+KEY PRINCIPLE: The goal of synthesis is to show users how different data sources CONFIRM or CONTRADICT each other. Confirming signals across sources = stronger evidence. Contradicting signals = important nuance worth highlighting.`;
 
 // ============================================
 // QUESTION TYPE DETECTION (returns array)
@@ -538,6 +563,36 @@ export function buildIntelligencePrompt(question, stockData, context = {}, compa
   const educationBlock = buildIndicatorEducation(questionTypes, stockData);
   if (educationBlock) {
     sections.push(`\nINDICATOR REFERENCE (use in your educationalNote — highlight common mistakes):\n${educationBlock}`);
+  }
+
+  // Synthesis hints — tell Claude which data sources are available for cross-referencing
+  const synthesisSources = [];
+  if (dataFieldsNeeded.has('technicals') && stockData.technicals) synthesisSources.push('technicals');
+  if (dataFieldsNeeded.has('fundamentals') && stockData.fundamentals && !stockData.isCrypto) synthesisSources.push('fundamentals');
+  if (dataFieldsNeeded.has('news') && stockData.news?.length > 0) synthesisSources.push('news');
+  if (dataFieldsNeeded.has('earnings') && stockData.earnings && !stockData.isCrypto) synthesisSources.push('earnings');
+
+  // Check if supply chain data was injected (appended in appendAssetData)
+  const hasSupplyChain = !!getSupplyChainContext(stockData.symbol);
+  if (hasSupplyChain) synthesisSources.push('supply_chain');
+
+  if (synthesisSources.length >= 2) {
+    const hints = [];
+    if (synthesisSources.includes('technicals') && synthesisSources.includes('fundamentals')) {
+      hints.push('Connect technical momentum signals with fundamental valuation — do they confirm or contradict?');
+    }
+    if (synthesisSources.includes('supply_chain') && synthesisSources.includes('news')) {
+      hints.push('Link recent news to supply chain relationships and concentration risks.');
+    }
+    if (synthesisSources.includes('supply_chain') && synthesisSources.includes('technicals')) {
+      hints.push('Consider whether technical signals align with supply chain positioning and scenario exposure.');
+    }
+    if (synthesisSources.includes('news') && synthesisSources.includes('earnings')) {
+      hints.push('Connect recent news narratives with earnings trajectory — are they aligned?');
+    }
+    if (hints.length > 0) {
+      sections.push(`\nSYNTHESIS HINTS (connect these data sources in your analysis):\nAvailable sources: ${synthesisSources.join(', ')}\n${hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`);
+    }
   }
 
   // Stale data warning (check both assets in comparison mode)
