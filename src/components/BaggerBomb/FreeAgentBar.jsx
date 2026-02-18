@@ -219,6 +219,10 @@ export default function FreeAgentBar({
         0%, 75%, 100% { left: -100%; }
         35% { left: 150%; }
       }
+      @keyframes pulseGlow {
+        0%, 100% { box-shadow: 0 0 10px rgba(0, 217, 255, 0.2), inset 0 0 10px rgba(0, 217, 255, 0.03); }
+        50% { box-shadow: 0 0 25px rgba(0, 217, 255, 0.5), 0 0 40px rgba(0, 217, 255, 0.2), inset 0 0 15px rgba(0, 217, 255, 0.05); }
+      }
     `;
     document.head.appendChild(style);
   }, []);
@@ -251,7 +255,13 @@ export default function FreeAgentBar({
         padding: '8px 4px',
         backgroundColor: HOLO_COLORS.bgCard,
         borderRadius: '8px',
-        border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+        border: isSelectingAgent
+          ? '1px solid rgba(0, 217, 255, 0.6)'
+          : `1px solid ${HOLO_COLORS.borderSubtle}`,
+        ...(isSelectingAgent ? {
+          animation: 'pulseGlow 2s ease-in-out infinite',
+          transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
+        } : {}),
       }}
     >
       {/* Header Row: Day label + Swap pill button */}
