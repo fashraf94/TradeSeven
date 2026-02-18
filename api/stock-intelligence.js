@@ -145,24 +145,49 @@ export default async function handler(req, res) {
         throw new Error('Parsed object missing expected fields');
       }
     } catch (parseError) {
-      // All parsing strategies failed — clean up the raw text for display
-      console.warn(`${LOG_PREFIX} JSON parse failed, using fallback:`, parseError.message);
-      const fallbackText = rawText
+      // All parsing strategies failed — extract fields individually from broken JSON
+      console.warn(`${LOG_PREFIX} JSON parse failed, attempting field extraction:`, parseError.message);
+
+      const cleaned = rawText
         .replace(/```json\s*/gi, '')
         .replace(/```\s*/g, '')
-        .replace(/^\s*\{/, '')
-        .replace(/\}\s*$/, '')
-        .replace(/"headline"\s*:\s*"[^"]*",?\s*/g, '')
-        .replace(/"(content|bullCase|bearCase|educationalNote|dataPoints)"\s*:/g, '')
-        .replace(/[{}"]/g, '')
         .trim();
+
+      // Extract a string field: "fieldName": "value (may contain escaped quotes)"
+      const extractStr = (field) => {
+        const re = new RegExp(`"${field}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`, 's');
+        const m = cleaned.match(re);
+        return m ? m[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\t/g, '\t') : '';
+      };
+
+      // Extract an object field: "fieldName": { ... } — brace-counting for nested objects
+      const extractObj = (field) => {
+        const marker = `"${field}"`;
+        const startIdx = cleaned.indexOf(marker);
+        if (startIdx === -1) return {};
+        const braceStart = cleaned.indexOf('{', startIdx + marker.length);
+        if (braceStart === -1) return {};
+        let depth = 0;
+        for (let i = braceStart; i < cleaned.length; i++) {
+          if (cleaned[i] === '{') depth++;
+          else if (cleaned[i] === '}') {
+            depth--;
+            if (depth === 0) {
+              try { return JSON.parse(cleaned.substring(braceStart, i + 1)); }
+              catch { return {}; }
+            }
+          }
+        }
+        return {};
+      };
+
       analysis = {
-        headline: `${cleanSymbol} Analysis`,
-        content: fallbackText || 'Analysis could not be fully parsed. Please try rephrasing your question.',
-        dataPoints: {},
-        bullCase: '',
-        bearCase: '',
-        educationalNote: '',
+        headline: extractStr('headline') || `${cleanSymbol} Analysis`,
+        content: extractStr('content') || 'Analysis could not be fully parsed. Please try rephrasing your question.',
+        dataPoints: extractObj('dataPoints'),
+        bullCase: extractStr('bullCase'),
+        bearCase: extractStr('bearCase'),
+        educationalNote: extractStr('educationalNote'),
       };
     }
 

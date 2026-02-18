@@ -454,8 +454,7 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
       });
       const data = await res.json();
 
-      // Safety net: if backend fallback was triggered and analysis.content
-      // contains raw JSON, try to extract structured fields from it
+      // Safety net A: if analysis.content contains raw JSON, try to reparse entirely
       if (data.success && data.analysis && typeof data.analysis.content === 'string') {
         const c = data.analysis.content;
         if (c.includes('"headline"') && c.includes('"content"')) {
@@ -468,6 +467,39 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
           } catch {
             // Keep original analysis — secondary parse failed
           }
+        }
+      }
+
+      // Safety net B: if dataPoints is empty but content has data-point-like text,
+      // the backend fallback likely dumped structured data into content.
+      // Try to extract key-value pairs from content patterns like "value: 32.4x"
+      if (data.success && data.analysis &&
+          (!data.analysis.dataPoints || Object.keys(data.analysis.dataPoints).length === 0) &&
+          typeof data.analysis.content === 'string' &&
+          data.analysis.content.includes('value:')) {
+        try {
+          const text = data.analysis.content;
+          // Pattern: "MetricName:\n    value: xxx," or "MetricName:\n  value: xxx,"
+          const blockPattern = /([A-Z][A-Za-z_/ ]+?):\s*\n\s*value:\s*([^\n,]+)/g;
+          const extracted = {};
+          let match;
+          while ((match = blockPattern.exec(text)) !== null) {
+            const name = match[1].trim();
+            const value = match[2].trim();
+            // Also try to grab context on the next line
+            const contextMatch = text.slice(match.index + match[0].length).match(/^\s*,?\s*\n?\s*context:\s*([^\n,]+)/);
+            extracted[name] = { value, context: contextMatch ? contextMatch[1].trim() : '' };
+          }
+          if (Object.keys(extracted).length > 0) {
+            data.analysis.dataPoints = extracted;
+            // Clean the content: strip the extracted data-point blocks
+            data.analysis.content = text
+              .replace(/[A-Z][A-Za-z_/ ]+?:\s*\n\s*value:[^\n]*(?:\n\s*(?:context|explanation):[^\n]*)*/g, '')
+              .replace(/\n{3,}/g, '\n\n')
+              .trim();
+          }
+        } catch {
+          // Extraction failed — keep content as-is
         }
       }
 
