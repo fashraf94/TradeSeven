@@ -36,6 +36,13 @@ import {
   executeSwap as executeSwapService,
   getSwapStatus,
 } from '../services/swapServiceV4';
+import {
+  isAfterDailyEndV4,
+  needsDayBanking,
+  bankDailyScores,
+  checkAndBankPreviousDays,
+  getBankedScoreTotal,
+} from '../services/dailyScoringV4Service';
 
 // ==================== CONSTANTS ====================
 
@@ -234,7 +241,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     return calculateScores(oppPortfolioFlat, effectivePrices, openPrices, oppHistory || {});
   }, [oppPortfolioFlat, effectivePrices, openPrices, oppHistory, calculateScores]);
 
-  // V4: Total score = current active score + locked closed trade points
+  // V4: Total score = banked previous days + current active score + locked closed trade points
   const closedTradePoints = useMemo(() => {
     return closedTrades.reduce((sum, t) => sum + (t.lockedPoints || 0), 0);
   }, [closedTrades]);
@@ -244,13 +251,23 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     return oppClosed.reduce((sum, t) => sum + (t.lockedPoints || 0), 0);
   }, [oppData?.closedTrades]);
 
+  // Banked previous days' active portfolio scores
+  const bankedScore = useMemo(() => {
+    return getBankedScoreTotal(battle?.state?.dailyScores, playerId);
+  }, [battle?.state?.dailyScores, playerId]);
+
+  const oppBankedScore = useMemo(() => {
+    const oppRole = isCreator ? 'opponent' : 'creator';
+    return getBankedScoreTotal(battle?.state?.dailyScores, oppRole);
+  }, [battle?.state?.dailyScores, isCreator]);
+
   const myTotalScore = useMemo(() => {
-    return Math.round(myScores.totalScore + closedTradePoints);
-  }, [myScores.totalScore, closedTradePoints]);
+    return Math.round(bankedScore + myScores.totalScore + closedTradePoints);
+  }, [bankedScore, myScores.totalScore, closedTradePoints]);
 
   const oppTotalScore = useMemo(() => {
-    return Math.round(oppScores.totalScore + oppClosedTradePoints);
-  }, [oppScores.totalScore, oppClosedTradePoints]);
+    return Math.round(oppBankedScore + oppScores.totalScore + oppClosedTradePoints);
+  }, [oppBankedScore, oppScores.totalScore, oppClosedTradePoints]);
 
   // ==================== BUILD PLAYER/OPPONENT OBJECTS ====================
 
@@ -844,6 +861,48 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     }
   }, [effectivePrices, currentTradingDay, captureDailyOpenPrices]);
 
+  // Bank daily scores at end of day (client-side primary) + day-transition fallback
+  const bankingInProgressRef = useRef(false);
+  useEffect(() => {
+    if (!battle || !battleId || battleId.startsWith('training_')) return;
+    if (Object.keys(effectivePrices).length === 0) return;
+    if (currentTradingDay <= 0 || currentTradingDay > totalTradingDays) return;
+    if (bankingInProgressRef.current) return;
+
+    const runBanking = async () => {
+      bankingInProgressRef.current = true;
+      try {
+        // Primary: bank current day if daily end has passed
+        if (isAfterDailyEndV4() && needsDayBanking(battle, currentTradingDay)) {
+          await bankDailyScores(battleId, currentTradingDay, effectivePrices);
+        }
+        // Fallback: bank any previous days that were missed
+        if (currentTradingDay > 1) {
+          await checkAndBankPreviousDays(battleId, currentTradingDay, effectivePrices);
+        }
+      } catch (err) {
+        console.error('[DailyScoringV4] Banking error:', err);
+      } finally {
+        bankingInProgressRef.current = false;
+      }
+    };
+
+    runBanking();
+  }, [battle, battleId, currentTradingDay, totalTradingDays, effectivePrices]);
+
+  // Reset local history caches on day transition (Firebase history gets reset by bankDailyScores)
+  const prevTradingDayRef = useRef(currentTradingDay);
+  useEffect(() => {
+    if (currentTradingDay > 0 && currentTradingDay !== prevTradingDayRef.current && prevTradingDayRef.current > 0) {
+      setLocalHistory({});
+      setLocalOppHistory({});
+      prevMultipliersRef.current = {};
+      prevOppMultipliersRef.current = {};
+      redZoneActiveRef.current = new Set();
+    }
+    prevTradingDayRef.current = currentTradingDay;
+  }, [currentTradingDay]);
+
   // Free agent rotation countdown + auto-trigger
   useEffect(() => {
     if (!battle?.freeAgents?.nextRotationAt) return;
@@ -932,6 +991,10 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     // Closed trades
     closedTrades,
     closedTradePoints,
+
+    // Banked daily scores (previous days)
+    bankedScore,
+    oppBankedScore,
 
     // Events for EventFeed (local detections + Firebase history including swaps)
     events: mergedEvents,
