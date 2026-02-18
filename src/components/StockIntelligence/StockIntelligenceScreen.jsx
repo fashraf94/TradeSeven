@@ -43,6 +43,14 @@ const FOLLOWUP_MAP = {
   general:      ["Dive deeper into technicals", "What are the risk factors?"],
 };
 
+// Supply chain follow-up pills — shown when meta.hasSupplyChainData is true
+const SUPPLY_CHAIN_PILLS = {
+  products: "What products use {SYMBOL}'s components?",
+  themes:   "What investment themes is {SYMBOL} part of?",
+  scenarios: "What are the supply chain risks?",
+  general:  "Who are {SYMBOL}'s key competitors?",
+};
+
 // ─── Pulsing Dots (loading indicator) ───────────────────────
 const DOTS_KEYFRAMES = `
 @keyframes pulseDot {
@@ -252,6 +260,20 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
     if (!pills.includes('Tell me more')) pills.push('Tell me more');
     return pills.slice(0, 4);
   }, [lastAssistantMsg, lastQuestionTypes, selectedSymbol]);
+
+  // Supply chain follow-up pills (only when supply chain data exists for symbol)
+  const supplyChainPills = useMemo(() => {
+    if (!lastAssistantMsg?.meta?.hasSupplyChainData || !selectedSymbol) return [];
+    const coverage = lastAssistantMsg.meta.supplyChainCoverage || [];
+    const sym = selectedSymbol.symbol;
+    const pills = [];
+    for (const type of coverage) {
+      const template = SUPPLY_CHAIN_PILLS[type];
+      if (template) pills.push(template.replace('{SYMBOL}', sym));
+    }
+    pills.push(SUPPLY_CHAIN_PILLS.general.replace('{SYMBOL}', sym));
+    return pills.slice(0, 3);
+  }, [lastAssistantMsg, selectedSymbol]);
 
   // ─── Handlers ─────────────────────────────────────────────
   const handleSelectSymbol = useCallback((asset) => {
@@ -681,6 +703,34 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
                 onMouseLeave={e => {
                   e.currentTarget.style.background = C.bgCard;
                   e.currentTarget.style.borderColor = `${C.cyan}25`;
+                }}
+              >
+                {pill}
+              </button>
+            ))}
+            {/* Supply chain follow-up pills (amber accent) */}
+            {supplyChainPills.map((pill) => (
+              <button
+                key={pill}
+                onClick={() => handleAsk(pill)}
+                style={{
+                  background: C.bgCard,
+                  border: `1px solid ${C.amber || '#f59e0b'}25`,
+                  borderRadius: '16px',
+                  padding: '6px 12px',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  color: C.amber || '#f59e0b',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = `${C.amber || '#f59e0b'}0a`;
+                  e.currentTarget.style.borderColor = `${C.amber || '#f59e0b'}50`;
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = C.bgCard;
+                  e.currentTarget.style.borderColor = `${C.amber || '#f59e0b'}25`;
                 }}
               >
                 {pill}

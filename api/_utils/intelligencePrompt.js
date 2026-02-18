@@ -1,3 +1,5 @@
+import { getSupplyChainContext } from './supplyChainLookup.js';
+
 /**
  * Intelligence Prompt — System prompt and prompt assembly for the Stock Intelligence Agent.
  *
@@ -117,7 +119,19 @@ COMPARISON MODE — When comparing two assets:
 - Never declare a "winner" — present the data and let the user draw conclusions
 - Highlight meaningful DIFFERENCES, not just raw numbers
 - Use relative framing: "AAPL trades at 28x earnings while MSFT trades at 35x, but MSFT's revenue growth of 15% outpaces AAPL's 8%"
-- End with: "These metrics paint different pictures depending on what matters most to you as an investor."`;
+- End with: "These metrics paint different pictures depending on what matters most to you as an investor."
+
+SUPPLY CHAIN INTELLIGENCE:
+When supply chain data is provided, weave it naturally into your analysis:
+- Connect a company's market position to its supply chain role
+- Highlight concentration risks (heavy dependence on one customer/supplier)
+- Reference product teardowns to make abstract companies tangible (e.g., 'TSMC makes the chip inside your iPhone')
+- Note scenario vulnerabilities when relevant to the question
+- Present supply chain relationships as educational context, not trading signals
+- If the user asks about a supplier, mention downstream customers for context
+- If the user asks about a product company, mention key suppliers
+- Always frame supply chain data as 'understanding how markets connect'
+- NEVER say 'our proprietary data shows' — just present the information naturally`;
 
 // ============================================
 // QUESTION TYPE DETECTION (returns array)
@@ -601,5 +615,11 @@ function appendAssetData(sections, assetData, dataFieldsNeeded) {
   // Crypto-specific note
   if (assetData.isCrypto) {
     sections.push('\nNOTE: This is a cryptocurrency — it trades 24/7. Volume patterns differ from traditional stocks (no market open/close surges). Skip fundamental analysis (no P/E, EPS, etc.).');
+  }
+
+  // Supply chain intelligence (if available for this ticker)
+  const supplyChain = getSupplyChainContext(assetData.symbol);
+  if (supplyChain) {
+    sections.push(`\n${supplyChain}`);
   }
 }

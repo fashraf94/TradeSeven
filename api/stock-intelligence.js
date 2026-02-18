@@ -6,6 +6,7 @@
 import { applySecurityMiddleware } from './_utils/security.js';
 import { getStockAnalysisData } from './_utils/marketDataCache.js';
 import { buildIntelligencePrompt, detectComparisonSymbols } from './_utils/intelligencePrompt.js';
+import { getSupplyChainCoverage } from './_utils/supplyChainLookup.js';
 
 const LOG_PREFIX = '[StockIntelligence]';
 
@@ -151,7 +152,10 @@ export default async function handler(req, res) {
       tokens: usage,
     });
 
-    // 11. Return structured response
+    // 11. Supply chain coverage check
+    const scCoverage = getSupplyChainCoverage(cleanSymbol);
+
+    // 12. Return structured response
     return res.status(200).json({
       success: true,
       analysis,
@@ -164,6 +168,12 @@ export default async function handler(req, res) {
         cacheStatus: stockData.cacheStatus,
         staleData: stockData.staleData || false,
         staleFields: stockData.staleFields || [],
+        hasSupplyChainData: scCoverage.hasCompany,
+        supplyChainCoverage: [
+          ...(scCoverage.hasProducts ? ['products'] : []),
+          ...(scCoverage.hasThemes ? ['themes'] : []),
+          ...(scCoverage.hasScenarios ? ['scenarios'] : []),
+        ],
         model: 'claude-haiku-4-5-20251001',
         usage,
       },
