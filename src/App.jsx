@@ -105,6 +105,8 @@ import { ConfirmationPopup } from './components/shared';
 import ErrorBoundary, { CompactErrorFallback } from './components/ErrorBoundary';
 // Money Map screen
 import { MoneyMapScreen } from './components/Research/MoneyMap';
+// Stock Intelligence screen
+import { StockIntelligenceScreen } from './components/StockIntelligence';
 // Research Landing Page (redesigned)
 import ResearchLandingPage from './components/Research/ResearchLandingPage';
 // Dashboard Components
@@ -9023,6 +9025,9 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
   // Money Map state
   const [showMoneyMap, setShowMoneyMap] = useState(false);
 
+  // Stock Intelligence state
+  const [showStockIntelligence, setShowStockIntelligence] = useState(false);
+
   // Technical Research state
   const [showTechnicalScreen, setShowTechnicalScreen] = useState(null); // 'analysis' | 'patterns' | 'insights' | null
   const [technicalSymbol, setTechnicalSymbol] = useState(null);
@@ -9645,6 +9650,19 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
       );
     }
 
+    // Stock Intelligence screen
+    if (showStockIntelligence) {
+      return (
+        <StockIntelligenceScreen
+          onBack={() => setShowStockIntelligence(false)}
+          stocksData={stocksData}
+          cryptoData={cryptoData}
+          colors={c}
+          user={user}
+        />
+      );
+    }
+
     // Money Map screen
     if (showMoneyMap) {
       return (
@@ -9667,6 +9685,7 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
             cryptoData={cryptoData}
             colors={c}
             onBuildThesis={() => setFlowPhase(2)}
+            onStockIntelligence={() => setShowStockIntelligence(true)}
             onOpenMoneyMap={() => setShowMoneyMap(true)}
             onAnalyzeStock={() => setShowStockSearchModal(true)}
             onMyPatterns={() => setShowTechnicalScreen('patterns')}
@@ -9768,14 +9787,14 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
         );
 
       default:
-        return <ResearchLandingPage stocksData={stocksData} cryptoData={cryptoData} colors={c} onBuildThesis={() => setFlowPhase(2)} onOpenMoneyMap={() => setShowMoneyMap(true)} onAnalyzeStock={() => setShowStockSearchModal(true)} onMyPatterns={() => setShowTechnicalScreen('patterns')} onInsights={() => setShowTechnicalScreen('insights')} activePatternCount={patternStats.active || 0} />;
+        return <ResearchLandingPage stocksData={stocksData} cryptoData={cryptoData} colors={c} onBuildThesis={() => setFlowPhase(2)} onStockIntelligence={() => setShowStockIntelligence(true)} onOpenMoneyMap={() => setShowMoneyMap(true)} onAnalyzeStock={() => setShowStockSearchModal(true)} onMyPatterns={() => setShowTechnicalScreen('patterns')} onInsights={() => setShowTechnicalScreen('insights')} activePatternCount={patternStats.active || 0} />;
     }
   };
 
   return (
     <div style={{ minHeight: '100vh', background: '#0d1117' }}>
       {/* Progress indicator */}
-      {!selectedAsset && !showTechnicalScreen && !showMoneyMap && (
+      {!selectedAsset && !showTechnicalScreen && !showMoneyMap && !showStockIntelligence && (
         <div style={{
           display: 'flex',
           justifyContent: 'center',
