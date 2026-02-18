@@ -73,20 +73,64 @@ const ThinkingDots = () => (
   </div>
 );
 
+// ─── Value color helper for data point cards ────────────────
+const getValueColor = (key, value) => {
+  const k = key.toLowerCase();
+  const v = String(value).toLowerCase();
+  if (k.includes('growth') || k.includes('margin') || (k.includes('consensus') && v.includes('buy')))
+    return '#4ade80';
+  if (v.includes('risk') || v.includes('severe') || v.includes('vulnerability'))
+    return '#f87171';
+  if (['rsi', 'macd', 'sma', 'ema', 'atr', 'bollinger', 'volume'].some(t => k.includes(t)))
+    return '#22d3ee';
+  return C.textPrimary;
+};
+
+// ─── Stagger animation helper ────────────────────────────────
+const stagger = (index) => ({
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.3, ease: 'easeOut', delay: index * 0.05 },
+});
+
 // ─── Analysis Response Card ─────────────────────────────────
 const AnalysisCard = ({ analysis, meta }) => {
+  const [isContentExpanded, setIsContentExpanded] = useState(false);
+  const [showAllDataPoints, setShowAllDataPoints] = useState(false);
+
   if (!analysis) return null;
 
+  // Defensive: if analysis is a raw string (fallback), render as plain text
+  if (typeof analysis === 'string') {
+    return (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        style={{ fontSize: '13.5px', lineHeight: 1.65, color: C.textSecondary, whiteSpace: 'pre-wrap' }}>
+        {analysis}
+      </motion.div>
+    );
+  }
+
+  // Normalize dataPoints to entries array — handles object, array, or missing
+  const dpEntries = (() => {
+    if (!analysis.dataPoints) return [];
+    if (Array.isArray(analysis.dataPoints)) return analysis.dataPoints.map((v, i) => [String(i), v]);
+    if (typeof analysis.dataPoints === 'object') return Object.entries(analysis.dataPoints);
+    return [];
+  })();
+
+  const isLongContent = analysis.content && analysis.content.length > 600;
+  const hasBullBear = analysis.bullCase || analysis.bearCase;
+
+  const visibleDpEntries = showAllDataPoints ? dpEntries : dpEntries.slice(0, 6);
+  const hiddenDpCount = dpEntries.length - 6;
+
+  let sectionIdx = 0;
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-      style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
-    >
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 0' }}>
       {/* Stale data warning */}
       {meta?.staleData && (
-        <div style={{
+        <motion.div {...stagger(sectionIdx++)} style={{
           fontSize: '11px',
           color: C.amber,
           background: `${C.amber}10`,
@@ -95,119 +139,216 @@ const AnalysisCard = ({ analysis, meta }) => {
           padding: '8px 12px',
         }}>
           Note: some data may be delayed ({meta.staleFields?.join(', ')})
-        </div>
+        </motion.div>
       )}
 
       {/* Headline */}
       {analysis.headline && (
-        <div style={{ fontSize: '16px', fontWeight: 700, color: C.white }}>
-          {analysis.headline}
-        </div>
-      )}
-
-      {/* Content */}
-      {analysis.content && (
-        <div style={{
-          fontSize: '13px',
-          lineHeight: 1.7,
-          color: C.textSecondary,
-          whiteSpace: 'pre-wrap',
+        <motion.div {...stagger(sectionIdx++)} style={{
+          fontSize: '18px',
+          fontWeight: 700,
+          color: C.textPrimary,
+          paddingBottom: '10px',
+          borderBottom: '1px solid rgba(0,217,255,0.12)',
         }}>
-          {analysis.content}
-        </div>
+          {analysis.headline}
+        </motion.div>
       )}
 
-      {/* Data Points */}
-      {analysis.dataPoints && Object.keys(analysis.dataPoints).length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-          {Object.entries(analysis.dataPoints).map(([key, val]) => {
-            const isObj = val && typeof val === 'object';
-            const displayValue = isObj ? (val.value ?? val.signal ?? JSON.stringify(val)) : val;
-            const explanation = isObj ? val.explanation : null;
+      {/* Content with Read more / Show less */}
+      {analysis.content && (
+        <motion.div {...stagger(sectionIdx++)}>
+          <div style={{ position: 'relative' }}>
+            <div style={{
+              fontSize: '13.5px',
+              lineHeight: 1.65,
+              color: C.textSecondary,
+              whiteSpace: 'pre-wrap',
+              ...(isLongContent && !isContentExpanded ? {
+                maxHeight: '200px',
+                overflow: 'hidden',
+              } : {}),
+            }}>
+              {analysis.content}
+            </div>
+            {/* Fade gradient overlay when collapsed */}
+            {isLongContent && !isContentExpanded && (
+              <div style={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: '60px',
+                background: `linear-gradient(transparent, ${C.bgPrimary})`,
+                pointerEvents: 'none',
+              }} />
+            )}
+          </div>
+          {isLongContent && (
+            <button
+              onClick={() => setIsContentExpanded(prev => !prev)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '4px 0',
+                fontSize: '12px',
+                color: C.cyan,
+                cursor: 'pointer',
+                marginTop: '4px',
+              }}
+            >
+              {isContentExpanded ? 'Show less' : 'Read more'}
+            </button>
+          )}
+        </motion.div>
+      )}
+
+      {/* Data Points — card grid */}
+      {dpEntries.length > 0 && (
+        <motion.div {...stagger(sectionIdx++)} style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+          gap: '8px',
+        }}>
+          {visibleDpEntries.map(([key, val]) => {
+            const isObj = val && typeof val === 'object' && !Array.isArray(val);
+            const displayValue = isObj ? (val.value ?? val.signal ?? JSON.stringify(val)) : String(val);
+            const context = isObj ? (val.context || val.explanation) : null;
 
             return (
               <div key={key} style={{
-                background: C.bgElevated,
-                border: `1px solid ${C.border}`,
-                borderRadius: '10px',
-                padding: '8px 12px',
-                minWidth: '120px',
-                flex: '0 1 auto',
-              }}>
-                <div style={{ fontSize: '10px', fontWeight: 600, color: C.textMuted, letterSpacing: '0.04em', marginBottom: '2px' }}>
-                  {key.replace(/([A-Z])/g, ' $1').toUpperCase()}
+                background: 'rgba(13, 17, 23, 0.8)',
+                border: '1px solid rgba(0,217,255,0.12)',
+                borderRadius: '8px',
+                padding: '10px 12px',
+                transition: 'border-color 0.2s',
+              }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(0,217,255,0.3)'}
+                onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(0,217,255,0.12)'}
+              >
+                <div style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  color: '#6b7280',
+                  marginBottom: '4px',
+                }}>
+                  {key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ')}
                 </div>
-                <div style={{ fontSize: '14px', fontWeight: 700, color: C.cyan }}>
+                <div style={{
+                  fontSize: '20px',
+                  fontWeight: 700,
+                  color: getValueColor(key, displayValue),
+                }}>
                   {String(displayValue)}
                 </div>
-                {explanation && (
-                  <div style={{ fontSize: '11px', color: C.textSecondary, marginTop: '2px', lineHeight: 1.4 }}>
-                    {explanation}
+                {context && (
+                  <div style={{
+                    fontSize: '11px',
+                    color: '#6b7280',
+                    marginTop: '2px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {context}
                   </div>
                 )}
               </div>
             );
           })}
-        </div>
+
+          {/* "+N more" chip */}
+          {!showAllDataPoints && hiddenDpCount > 0 && (
+            <div
+              onClick={() => setShowAllDataPoints(true)}
+              style={{
+                background: 'rgba(0,217,255,0.08)',
+                border: '1px solid rgba(0,217,255,0.2)',
+                borderRadius: '8px',
+                padding: '10px 12px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'border-color 0.2s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(0,217,255,0.4)'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(0,217,255,0.2)'}
+            >
+              <span style={{ fontSize: '13px', color: C.cyan, fontWeight: 600 }}>
+                +{hiddenDpCount} more
+              </span>
+            </div>
+          )}
+        </motion.div>
       )}
 
       {/* Bull / Bear Cases */}
-      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-        {analysis.bullCase && (
-          <div style={{
-            flex: '1 1 200px',
-            background: C.bgElevated,
-            borderLeft: `3px solid ${C.green}`,
-            borderRadius: '0 10px 10px 0',
-            padding: '12px 14px',
-          }}>
-            <div style={{ fontSize: '10px', fontWeight: 700, color: C.green, letterSpacing: '0.06em', marginBottom: '4px' }}>
-              BULL CASE
+      {hasBullBear && (
+        <motion.div {...stagger(sectionIdx++)} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {analysis.bullCase && (
+            <div style={{
+              flex: '1 1 200px',
+              background: 'rgba(74, 222, 128, 0.06)',
+              borderLeft: '3px solid #4ade80',
+              borderRadius: '8px',
+              padding: '12px 14px',
+            }}>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: '#4ade80', marginBottom: '6px' }}>
+                <span style={{ marginRight: '6px' }}>●</span>Bull Case
+              </div>
+              <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#9ca3af' }}>
+                {analysis.bullCase}
+              </div>
             </div>
-            <div style={{ fontSize: '12px', lineHeight: 1.6, color: C.textSecondary }}>
-              {analysis.bullCase}
+          )}
+          {analysis.bearCase && (
+            <div style={{
+              flex: '1 1 200px',
+              background: 'rgba(248, 113, 113, 0.06)',
+              borderLeft: '3px solid #f87171',
+              borderRadius: '8px',
+              padding: '12px 14px',
+            }}>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: '#f87171', marginBottom: '6px' }}>
+                <span style={{ marginRight: '6px' }}>●</span>Bear Case
+              </div>
+              <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#9ca3af' }}>
+                {analysis.bearCase}
+              </div>
             </div>
-          </div>
-        )}
-        {analysis.bearCase && (
-          <div style={{
-            flex: '1 1 200px',
-            background: C.bgElevated,
-            borderLeft: `3px solid ${C.red}`,
-            borderRadius: '0 10px 10px 0',
-            padding: '12px 14px',
-          }}>
-            <div style={{ fontSize: '10px', fontWeight: 700, color: C.red, letterSpacing: '0.06em', marginBottom: '4px' }}>
-              BEAR CASE
-            </div>
-            <div style={{ fontSize: '12px', lineHeight: 1.6, color: C.textSecondary }}>
-              {analysis.bearCase}
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </motion.div>
+      )}
 
       {/* Educational Note */}
       {analysis.educationalNote && (
-        <div style={{
-          background: `${C.cyan}08`,
-          border: `1px solid ${C.cyan}15`,
-          borderRadius: '10px',
+        <motion.div {...stagger(sectionIdx++)} style={{
+          background: 'rgba(139, 92, 246, 0.06)',
+          borderLeft: '3px solid rgba(139, 92, 246, 0.4)',
+          borderRadius: '8px',
           padding: '12px 14px',
           display: 'flex',
           gap: '10px',
           alignItems: 'flex-start',
         }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.cyan} strokeWidth="2" style={{ flexShrink: 0, marginTop: '2px' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" style={{ flexShrink: 0, marginTop: '2px' }}>
             <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
             <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
           </svg>
-          <div style={{ fontSize: '12px', lineHeight: 1.6, color: C.textMuted }}>
-            {analysis.educationalNote}
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: '#8b5cf6', marginBottom: '4px' }}>
+              Key Insight
+            </div>
+            <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#9ca3af', fontStyle: 'italic' }}>
+              {analysis.educationalNote}
+            </div>
           </div>
-        </div>
+        </motion.div>
       )}
-    </motion.div>
+    </div>
   );
 };
 
