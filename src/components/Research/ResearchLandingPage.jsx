@@ -2361,6 +2361,7 @@ const MobileIntelligenceHub = ({
   intelCacheTime,
   onRefresh,
   onBuildThesis,
+  onStockIntelligence,
   onOpenMoneyMap,
   onAnalyzeStock,
   allAssets,
@@ -2643,6 +2644,7 @@ const MobileIntelligenceHub = ({
         borderTop: `1px solid ${C.border}`,
         zIndex: 40,
       }}>
+        {/* === Thesis button (replaced by Ask AI — Phase 3) ===
         <ToolStripButton
           accent={C.green}
           label="Thesis"
@@ -2650,6 +2652,18 @@ const MobileIntelligenceHub = ({
           icon={
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="2">
               <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" />
+            </svg>
+          }
+        />
+        === */}
+        <ToolStripButton
+          accent={C.cyan}
+          label="Ask AI"
+          onClick={onStockIntelligence}
+          icon={
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.cyan} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2a8 8 0 0 1 8 8c0 2.1-.8 4-2.1 5.4A8 8 0 0 1 12 18a8 8 0 0 1-5.9-2.6A8 8 0 0 1 4 10a8 8 0 0 1 8-8z" />
+              <path d="M12 18v4" /><path d="M8 22h8" />
             </svg>
           }
         />
@@ -2699,6 +2713,7 @@ const ResearchLandingPage = ({
   cryptoData = [],
   colors,
   onBuildThesis,
+  onStockIntelligence,
   onOpenMoneyMap,
   onAnalyzeStock,
   onMyPatterns,
@@ -3443,6 +3458,7 @@ const ResearchLandingPage = ({
           intelCacheTime={intelCacheTime}
           onRefresh={() => fetchIntelligence(true)}
           onBuildThesis={onBuildThesis}
+          onStockIntelligence={onStockIntelligence}
           onOpenMoneyMap={onOpenMoneyMap}
           onAnalyzeStock={onAnalyzeStock}
           allAssets={allAssets}
@@ -3628,7 +3644,7 @@ const ResearchLandingPage = ({
         gridTemplateColumns: 'repeat(3, 1fr)',
         gap: '12px',
       }}>
-        {/* Build My Thesis */}
+        {/* === Build My Thesis (replaced by Stock Intelligence — Phase 3) ===
         <PathwayCard
           index={0}
           accent={C.green}
@@ -3641,6 +3657,22 @@ const ResearchLandingPage = ({
           subtitle="AI-guided portfolio construction with risk analysis"
           tags={['Guided Flow', 'Smart Picks', 'Risk Analysis']}
           onClick={onBuildThesis}
+        />
+        === */}
+        {/* Stock Intelligence */}
+        <PathwayCard
+          index={0}
+          accent={C.cyan}
+          icon={
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.cyan} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2a8 8 0 0 1 8 8c0 2.1-.8 4-2.1 5.4A8 8 0 0 1 12 18a8 8 0 0 1-5.9-2.6A8 8 0 0 1 4 10a8 8 0 0 1 8-8z" />
+              <path d="M12 18v4" /><path d="M8 22h8" />
+            </svg>
+          }
+          title="Stock Intelligence"
+          subtitle="AI-powered educational analysis for any stock or crypto"
+          tags={['Ask a Question', 'Compare Stocks', 'Stress Test']}
+          onClick={onStockIntelligence}
         />
 
         {/* Money Map */}

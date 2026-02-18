@@ -35,6 +35,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Market data cache — server-side API cache, populated by Admin SDK
+    match /marketDataCache/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // Verification queue — cron-managed processing queue
     match /verificationQueue/{doc} {
       allow read, write: if false;
