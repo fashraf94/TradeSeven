@@ -313,6 +313,23 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
       });
       const data = await res.json();
 
+      // Safety net: if backend fallback was triggered and analysis.content
+      // contains raw JSON, try to extract structured fields from it
+      if (data.success && data.analysis && typeof data.analysis.content === 'string') {
+        const c = data.analysis.content;
+        if (c.includes('"headline"') && c.includes('"content"')) {
+          try {
+            const cleaned = c.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+            const reparsed = JSON.parse(cleaned.match(/\{[\s\S]*\}/)?.[0] || '{}');
+            if (reparsed.headline && reparsed.content) {
+              data.analysis = reparsed;
+            }
+          } catch {
+            // Keep original analysis — secondary parse failed
+          }
+        }
+      }
+
       if (data.success && data.analysis) {
         setConversation(prev => [...prev, {
           role: 'assistant',

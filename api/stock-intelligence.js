@@ -90,8 +90,8 @@ export default async function handler(req, res) {
       staleData: stockData.staleData,
     });
 
-    // 8. Call Claude API (more tokens for comparison mode)
-    const maxTokens = isComparison ? 1200 : 800;
+    // 8. Call Claude API (1200 base to avoid truncated JSON, 1500 for comparisons)
+    const maxTokens = isComparison ? 1500 : 1200;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -119,20 +119,46 @@ export default async function handler(req, res) {
       });
     }
 
-    // 9. Parse JSON response
-    const text = data.content?.[0]?.text || '';
+    // 9. Parse JSON response — multi-strategy with markdown fence stripping
+    const rawText = data.content?.[0]?.text || '';
     let analysis;
 
     try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON found in response');
-      analysis = JSON.parse(jsonMatch[0]);
+      // Step A: Strip markdown code fences that Claude sometimes adds
+      const cleaned = rawText
+        .replace(/```json\s*/gi, '')
+        .replace(/```\s*/g, '')
+        .trim();
+
+      // Step B: Try parsing the cleaned text directly (pure JSON response)
+      try {
+        analysis = JSON.parse(cleaned);
+      } catch {
+        // Step C: Extract the outermost JSON object via regex
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('No JSON object found in response');
+        analysis = JSON.parse(jsonMatch[0]);
+      }
+
+      // Step D: Validate that we got the expected structure
+      if (!analysis.headline && !analysis.content) {
+        throw new Error('Parsed object missing expected fields');
+      }
     } catch (parseError) {
-      // Fallback: wrap raw text in the expected structure
-      console.warn(`${LOG_PREFIX} JSON parse failed, using fallback structure:`, parseError.message);
+      // All parsing strategies failed — clean up the raw text for display
+      console.warn(`${LOG_PREFIX} JSON parse failed, using fallback:`, parseError.message);
+      const fallbackText = rawText
+        .replace(/```json\s*/gi, '')
+        .replace(/```\s*/g, '')
+        .replace(/^\s*\{/, '')
+        .replace(/\}\s*$/, '')
+        .replace(/"headline"\s*:\s*"[^"]*",?\s*/g, '')
+        .replace(/"(content|bullCase|bearCase|educationalNote|dataPoints)"\s*:/g, '')
+        .replace(/[{}"]/g, '')
+        .trim();
       analysis = {
         headline: `${cleanSymbol} Analysis`,
-        content: text,
+        content: fallbackText || 'Analysis could not be fully parsed. Please try rephrasing your question.',
         dataPoints: {},
         bullCase: '',
         bearCase: '',
