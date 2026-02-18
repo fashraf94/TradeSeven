@@ -5,7 +5,7 @@
 
 import { applySecurityMiddleware } from './_utils/security.js';
 import { getStockAnalysisData } from './_utils/marketDataCache.js';
-import { buildIntelligencePrompt } from './_utils/intelligencePrompt.js';
+import { buildIntelligencePrompt, detectComparisonSymbols } from './_utils/intelligencePrompt.js';
 
 const LOG_PREFIX = '[StockIntelligence]';
 
@@ -47,27 +47,51 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 5. Fetch cached market data
-    const stockData = await getStockAnalysisData(cleanSymbol);
+    // 5. Detect comparison mode — user may be comparing two assets
+    const comparison = detectComparisonSymbols(question);
 
-    // 6. Build prompt (with compound question type detection)
-    const { systemPrompt, userPrompt, questionTypes, estimatedTokens } = buildIntelligencePrompt(
+    // 6. Fetch cached market data (both assets in comparison mode)
+    let stockData;
+    let comparisonData = null;
+
+    if (comparison) {
+      // Fetch both assets in parallel
+      const [dataA, dataB] = await Promise.all([
+        getStockAnalysisData(comparison.symbolA),
+        getStockAnalysisData(comparison.symbolB),
+      ]);
+      stockData = dataA;
+      comparisonData = dataB;
+    } else {
+      stockData = await getStockAnalysisData(cleanSymbol);
+    }
+
+    // 7. Build prompt (with compound question type detection + comparison support)
+    const {
+      systemPrompt, userPrompt, questionTypes, estimatedTokens,
+      isComparison, comparisonSymbols,
+    } = buildIntelligencePrompt(
       question.trim(),
       stockData,
-      context || {}
+      context || {},
+      comparisonData
     );
 
     // Analytics logging
     console.log(`${LOG_PREFIX} Query:`, {
       symbol: cleanSymbol,
       questionTypes,
+      isComparison,
+      comparisonSymbols,
       isCrypto: stockData.isCrypto,
       estimatedInputTokens: estimatedTokens,
       cacheStatus: stockData.cacheStatus,
       staleData: stockData.staleData,
     });
 
-    // 7. Call Claude API
+    // 8. Call Claude API (more tokens for comparison mode)
+    const maxTokens = isComparison ? 1200 : 800;
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -77,7 +101,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 800,
+        max_tokens: maxTokens,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),
@@ -94,7 +118,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // 8. Parse JSON response
+    // 9. Parse JSON response
     const text = data.content?.[0]?.text || '';
     let analysis;
 
@@ -115,7 +139,7 @@ export default async function handler(req, res) {
       };
     }
 
-    // 9. Token usage
+    // 10. Token usage
     const usage = {
       inputTokens: data.usage?.input_tokens || 0,
       outputTokens: data.usage?.output_tokens || 0,
@@ -127,13 +151,15 @@ export default async function handler(req, res) {
       tokens: usage,
     });
 
-    // 10. Return structured response
+    // 11. Return structured response
     return res.status(200).json({
       success: true,
       analysis,
       meta: {
         symbol: cleanSymbol,
         questionTypes,
+        isComparison: isComparison || false,
+        comparisonSymbols: comparisonSymbols || null,
         isCrypto: stockData.isCrypto,
         cacheStatus: stockData.cacheStatus,
         staleData: stockData.staleData || false,
