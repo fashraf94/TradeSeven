@@ -90,10 +90,11 @@ RESPONSE FORMAT: Return valid JSON only (no markdown fences):
 {
   "headline": "Brief 5-8 word snapshot (e.g., 'NVDA Momentum Strong, Nearing Resistance')",
   "content": "2-4 paragraph educational analysis. Lead with the most relevant data for the question asked. Explain indicator concepts inline. Use specific numbers. Balance bullish and bearish perspectives.",
-  "dataPoints": {
-    // Include only the indicators most relevant to the question
-    // Each with: value, context label, and a 1-sentence explanation
-  },
+  "dataPoints": [
+    // Array of 3-5 data points that DIRECTLY support claims made in your content.
+    // Each: { "label": "metric name", "value": "the number or key fact", "context": "brief explanation" }
+    // These must be evidence for your analysis, not generic stock stats.
+  ],
   "bullCase": "1-2 sentences on what the data shows favorably",
   "bearCase": "1-2 sentences on risks, concerns, or warning signals",
   "educationalNote": "1-2 sentences explaining a key concept mentioned in the analysis, including a common mistake beginners make with that concept (e.g., 'RSI measures momentum on a 0-100 scale. Common mistake: RSI above 70 does NOT mean sell — in strong uptrends, RSI can stay elevated for weeks.')"
@@ -168,7 +169,22 @@ RESPONSE FOCUS — Match your emphasis to the question type:
 
 BREADTH vs DEPTH: If the user asks broadly (e.g., "any news?", "what's the latest?", "catalysts?"), cover 3-5 different items at surface level. Users can ask follow-up questions to go deeper. If the user asks about a specific topic (e.g., "tell me about the Berkshire stake reduction"), go deep on that single item.
 
-NO REPETITION: Never repeat information that was covered in a previous response in the same conversation. If the user already asked about catalysts and now asks about news, acknowledge overlap briefly and focus on what is NEW. Do not restate the same data point across multiple sections (headline, content, dataPoints, bullCase, bearCase). Each section should add new information or a new angle.`;
+NO REPETITION: Never repeat information that was covered in a previous response in the same conversation. If the user already asked about catalysts and now asks about news, acknowledge overlap briefly and focus on what is NEW. Do not restate the same data point across multiple sections (headline, content, dataPoints, bullCase, bearCase). Each section should add new information or a new angle.
+
+DATA POINTS RULES: Every data point you return in the dataPoints array MUST directly support or quantify a specific claim made in your headline or content sections. Read back your own content before generating data points — if a data point doesn't connect to something you wrote, don't include it.
+
+Guidelines by question type:
+- NEWS questions: Data points should quantify the stories you discussed. If you wrote about Services ecosystem expansion, show a Services-related metric. If you wrote about institutional positioning, show the institutional move. If no hard number exists for a story, create a qualitative data point (label: "Institutional Signal", value: "Soros trimmed GOOGL, added chip stocks", context: "Mega-cap rotation pattern").
+- TECHNICAL questions: Data points should be the specific indicator readings you analyzed (RSI value, MACD signal, support/resistance levels).
+- FUNDAMENTAL questions: Data points should be the valuation and growth metrics you discussed (P/E, revenue growth, margins).
+- GENERAL questions: Data points should represent one key metric from each data domain you covered.
+
+Quality rules:
+- 3-5 data points is ideal. Never pad to 6+ with loosely related metrics.
+- If your content mentions a percentage, dollar amount, or specific figure, that figure should appear as a data point.
+- Price and volume data points are ONLY appropriate when your content specifically discusses price action or volume events.
+- Never include RSI, MACD, Bollinger, or other technical indicator data points unless your content analyzes those indicators.
+- Data points should feel like "proof cards" for your analysis, not a generic dashboard.`;
 
 // ============================================
 // QUESTION TYPE DETECTION (returns array)
