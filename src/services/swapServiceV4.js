@@ -12,7 +12,6 @@ import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getDailySwapsRemaining, getCurrentTradingDay } from '../constants/battleTimingV4';
 import { calculateAssetScoreV3, isSwapLocked } from '../utils/baggerBombUtils';
-import { CONVICTION_MULTIPLIERS } from '../constants/baggerBombScoring';
 
 // ============================================
 // VALIDATION
@@ -153,12 +152,16 @@ export async function executeSwap(
     if (entryPrice > 0) {
       lockedGainPct = ((exitPrice - entryPrice) / entryPrice) * 100;
       const threshold = liveData.thresholds?.[outSymbol] || {};
-      lockedPoints = calculateAssetScoreV3(
-        lockedGainPct,
-        threshold.threshold || 2.5,
-        outTier,
-        CONVICTION_MULTIPLIERS
-      );
+      // Build an asset-like object matching calculateAssetScoreV3 signature:
+      // calculateAssetScoreV3(asset, priceChange, history, extremes)
+      const assetObj = {
+        symbol: outSymbol,
+        baseATR: threshold.threshold || outAsset.baseATR || 2.5,
+        tier: outTier,
+      };
+      const assetHistory = player.history?.[outSymbol] || { maxMultiplier: 0, minMultiplier: 0 };
+      const scoreResult = calculateAssetScoreV3(assetObj, lockedGainPct, assetHistory);
+      lockedPoints = scoreResult.totalPoints;
     }
 
     // ---- Build closed trade record ----
