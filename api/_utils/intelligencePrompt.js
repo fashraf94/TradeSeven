@@ -156,7 +156,19 @@ SYNTHESIS INSTRUCTIONS — Connect data across sources. Don't present technicals
    - "Volume surged to 2.3x average on the CHIPS Act news. Given TSM's position as the only sub-5nm fab and its 'Supply Chain Critical' classification, institutional players are likely repositioning around this policy catalyst."
    - When volume spikes coincide with supply-chain-relevant news, explain WHY institutions might be moving.
 
-KEY PRINCIPLE: The goal of synthesis is to show users how different data sources CONFIRM or CONTRADICT each other. Confirming signals across sources = stronger evidence. Contradicting signals = important nuance worth highlighting.`;
+KEY PRINCIPLE: The goal of synthesis is to show users how different data sources CONFIRM or CONTRADICT each other. Confirming signals across sources = stronger evidence. Contradicting signals = important nuance worth highlighting.
+
+RESPONSE FOCUS — Match your emphasis to the question type:
+- NEWS questions: Lead with headlines and narrative. Cover 3-5 items with broad context. Only reference technicals if a news event caused a measurable price or volume reaction (e.g., "volume spiked 2x on the Berkshire news"). Do NOT present RSI, MACD, Bollinger, or other indicators unless they directly relate to a news-driven move.
+- TECHNICAL questions: Lead with chart setup and indicator readings. Only mention news if it explains an otherwise unusual technical signal (e.g., a volume spike or gap).
+- FUNDAMENTAL questions: Lead with valuation, growth rates, margins, and analyst views. Only reference technicals when there is a clear price-fundamental divergence worth noting.
+- EARNINGS questions: Lead with earnings history, estimates, and guidance. Include news context about what drove recent results or market reaction.
+- GENERAL questions: Provide a balanced overview across all available data, but keep each section concise.
+- COMPARISON questions: Present both assets side by side on the dimension asked about.
+
+BREADTH vs DEPTH: If the user asks broadly (e.g., "any news?", "what's the latest?", "catalysts?"), cover 3-5 different items at surface level. Users can ask follow-up questions to go deeper. If the user asks about a specific topic (e.g., "tell me about the Berkshire stake reduction"), go deep on that single item.
+
+NO REPETITION: Never repeat information that was covered in a previous response in the same conversation. If the user already asked about catalysts and now asks about news, acknowledge overlap briefly and focus on what is NEW. Do not restate the same data point across multiple sections (headline, content, dataPoints, bullCase, bearCase). Each section should add new information or a new angle.`;
 
 // ============================================
 // QUESTION TYPE DETECTION (returns array)
@@ -194,17 +206,17 @@ const KEYWORD_MAP = {
 const PRICE_MOVEMENT_WORDS = [
   'drop', 'crash', 'down', 'fell', 'rally', 'surge', 'up',
   'spike', 'moon', 'tank', 'plunge', 'soar', 'rip', 'dump',
-  'pump', 'collapse', 'skyrocket',
+  'pump', 'collapse', 'skyrocket', 'rose', 'move', 'pop', 'why',
 ];
 
 // Which data fields each question type needs
 const DATA_FIELDS_BY_TYPE = {
-  technical: ['daily', 'technicals'],
-  fundamental: ['fundamentals'],
-  earnings: ['earnings', 'fundamentals'],
-  news: ['news', 'daily'],
-  comparison: ['daily', 'technicals', 'fundamentals', 'news', 'earnings'],
-  general: ['technicals', 'fundamentals'],
+  technical:   ['daily', 'technicals'],
+  fundamental: ['fundamentals', 'earnings', 'technicals_minimal'],
+  earnings:    ['earnings', 'fundamentals', 'news'],
+  news:        ['news', 'daily'],
+  comparison:  ['daily', 'technicals', 'fundamentals', 'news', 'earnings'],
+  general:     ['technicals_summary', 'fundamentals', 'news_brief'],
 };
 
 /**
@@ -365,6 +377,66 @@ function formatTechnicals(technicals) {
   if (technicals.volumeProfile) {
     const v = technicals.volumeProfile;
     lines.push(`Volume: ${v.ratio}x avg (${v.tier}) | Current: ${formatVolume(v.currentVolume)} | Avg: ${formatVolume(v.avgVolume)}`);
+  }
+
+  return lines.length > 0 ? lines.join('\n') : null;
+}
+
+/**
+ * Condensed technicals for general/overview questions.
+ * RSI zone, MACD direction, volume tier, SMA values — no Bollinger, ATR, EMA detail.
+ */
+function formatTechnicalsSummary(technicals) {
+  if (!technicals) return null;
+  const lines = [];
+
+  if (technicals.rsi) {
+    lines.push(`RSI(14): ${technicals.rsi.value} (${technicals.rsi.zone})`);
+  }
+  if (technicals.macd) {
+    const direction = technicals.macd.histogram > 0 ? 'bullish' : 'bearish';
+    lines.push(`MACD: ${direction} momentum`);
+  }
+  if (technicals.volumeProfile) {
+    lines.push(`Volume: ${technicals.volumeProfile.ratio}x avg (${technicals.volumeProfile.tier})`);
+  }
+  if (technicals.sma) {
+    const parts = [];
+    if (technicals.sma.sma50 != null) parts.push(`SMA50: $${technicals.sma.sma50}`);
+    if (technicals.sma.sma200 != null) parts.push(`SMA200: $${technicals.sma.sma200}`);
+    if (parts.length > 0) lines.push(parts.join(' | '));
+  }
+
+  return lines.length > 0 ? lines.join('\n') : null;
+}
+
+/**
+ * Minimal technicals for fundamental questions — only SMA50/SMA200 with price-relative position.
+ * Provides trend context without injecting RSI, MACD, Bollinger, ATR, volume, or EMA.
+ */
+function formatTechnicalsMinimal(technicals, price) {
+  if (!technicals?.sma) return null;
+  const s = technicals.sma;
+  const lines = [];
+  const current = price?.current;
+
+  if (s.sma50 != null) {
+    let pos = '';
+    if (current) {
+      pos = current > s.sma50
+        ? ` (price ${((current / s.sma50 - 1) * 100).toFixed(1)}% above)`
+        : ` (price ${((1 - current / s.sma50) * 100).toFixed(1)}% below)`;
+    }
+    lines.push(`SMA50: $${s.sma50}${pos}`);
+  }
+  if (s.sma200 != null) {
+    let pos = '';
+    if (current) {
+      pos = current > s.sma200
+        ? ` (price ${((current / s.sma200 - 1) * 100).toFixed(1)}% above)`
+        : ` (price ${((1 - current / s.sma200) * 100).toFixed(1)}% below)`;
+    }
+    lines.push(`SMA200: $${s.sma200}${pos}`);
   }
 
   return lines.length > 0 ? lines.join('\n') : null;
@@ -567,9 +639,9 @@ export function buildIntelligencePrompt(question, stockData, context = {}, compa
 
   // Synthesis hints — tell Claude which data sources are available for cross-referencing
   const synthesisSources = [];
-  if (dataFieldsNeeded.has('technicals') && stockData.technicals) synthesisSources.push('technicals');
+  if ((dataFieldsNeeded.has('technicals') || dataFieldsNeeded.has('technicals_summary')) && stockData.technicals) synthesisSources.push('technicals');
   if (dataFieldsNeeded.has('fundamentals') && stockData.fundamentals && !stockData.isCrypto) synthesisSources.push('fundamentals');
-  if (dataFieldsNeeded.has('news') && stockData.news?.length > 0) synthesisSources.push('news');
+  if ((dataFieldsNeeded.has('news') || dataFieldsNeeded.has('news_brief')) && stockData.news?.length > 0) synthesisSources.push('news');
   if (dataFieldsNeeded.has('earnings') && stockData.earnings && !stockData.isCrypto) synthesisSources.push('earnings');
 
   // Check if supply chain data was injected (appended in appendAssetData)
@@ -648,8 +720,17 @@ function appendAssetData(sections, assetData, dataFieldsNeeded) {
   }
 
   if (dataFieldsNeeded.has('technicals')) {
+    // Full technicals (technical questions, comparison)
     const techStr = formatTechnicals(assetData.technicals);
     if (techStr) sections.push(`\nTECHNICAL INDICATORS:\n${techStr}`);
+  } else if (dataFieldsNeeded.has('technicals_summary')) {
+    // Summary technicals (general questions)
+    const techStr = formatTechnicalsSummary(assetData.technicals);
+    if (techStr) sections.push(`\nTECHNICAL SUMMARY:\n${techStr}`);
+  } else if (dataFieldsNeeded.has('technicals_minimal')) {
+    // Minimal — just SMAs with price position (fundamental questions)
+    const techStr = formatTechnicalsMinimal(assetData.technicals, assetData.price);
+    if (techStr) sections.push(`\nTREND CONTEXT:\n${techStr}`);
   }
 
   if (dataFieldsNeeded.has('fundamentals') && !assetData.isCrypto) {
@@ -658,8 +739,13 @@ function appendAssetData(sections, assetData, dataFieldsNeeded) {
   }
 
   if (dataFieldsNeeded.has('news')) {
+    // Full news (news, earnings, comparison questions)
     const newsStr = formatNews(assetData.news);
     if (newsStr) sections.push(`\nRECENT NEWS:\n${newsStr}`);
+  } else if (dataFieldsNeeded.has('news_brief')) {
+    // Brief news — top 3 only (general questions)
+    const newsStr = formatNews(assetData.news?.slice(0, 3));
+    if (newsStr) sections.push(`\nTOP NEWS:\n${newsStr}`);
   }
 
   if (dataFieldsNeeded.has('earnings') && !assetData.isCrypto) {
