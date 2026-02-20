@@ -315,23 +315,45 @@ function EventItem({ event, index, showNewBadge = false, isOpponent = false, onR
             </div>
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ color: HOLO_COLORS.textPrimary, fontWeight: 500 }}>
-              {event.player || event.username || 'Player'}
-            </span>
-            <span style={{ color: HOLO_COLORS.textMuted }}>{': '}</span>
-            <span style={{ color: HOLO_COLORS.textSecondary }}>
-              {event.symbol}
-            </span>
-            <span style={{ color: HOLO_COLORS.textMuted }}>{' '}</span>
-            <span style={{ color: config.color, fontWeight: 500 }}>
-              {config.label}
-            </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ color: HOLO_COLORS.textPrimary, fontWeight: 500 }}>
+                {event.player || event.username || 'Player'}
+              </span>
+              <span style={{ color: HOLO_COLORS.textMuted }}>{': '}</span>
+              <span style={{ color: HOLO_COLORS.textSecondary }}>
+                {event.symbol}
+              </span>
+              <span style={{ color: HOLO_COLORS.textMuted }}>{' '}</span>
+              <span style={{ color: config.color, fontWeight: 500 }}>
+                {config.label}
+              </span>
 
-            {/* NEW Badge */}
-            <AnimatePresence>
-              {showNewBadge && <NewBadge />}
-            </AnimatePresence>
+              {/* NEW Badge */}
+              <AnimatePresence>
+                {showNewBadge && <NewBadge />}
+              </AnimatePresence>
+            </div>
+            {onRedZoneTap && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onRedZoneTap(event); }}
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '10px',
+                    fontWeight: 600,
+                    color: config.color,
+                    backgroundColor: `${config.color}15`,
+                    border: `1px solid ${config.color}40`,
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  View Chart
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -534,7 +556,7 @@ export default function EventFeed({
                 index={index}
                 showNewBadge={event.isNewEvent}
                 isOpponent={currentUser && event.player !== currentUser}
-                onRedZoneTap={event.type === 'redzone' ? onRedZoneTap : undefined}
+                onRedZoneTap={event.type !== 'swap' ? onRedZoneTap : undefined}
               />
             ))}
           </AnimatePresence>
