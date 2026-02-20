@@ -235,6 +235,43 @@ const TechnicalAnalysisScreen = ({
     }
   };
 
+  // Patch the latest candle's H/L/C with stock.price if the candle is from the current period.
+  // Data is newest-first, so data[0] is the latest candle.
+  const patchLatestCandle = useCallback((data, timeframe) => {
+    const livePrice = stock?.price;
+    if (!data || data.length === 0 || !livePrice || livePrice <= 0) return data;
+
+    const latest = data[0];
+    const dateStr = latest.date || latest.datetime || '';
+
+    if (timeframe === '1d') {
+      const candleDate = new Date(dateStr);
+      candleDate.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (candleDate.getTime() === today.getTime()) {
+        const patched = { ...latest };
+        patched.high = Math.max(Number(patched.high), livePrice);
+        patched.low = Math.min(Number(patched.low), livePrice);
+        patched.close = livePrice;
+        return [patched, ...data.slice(1)];
+      }
+    } else if (timeframe === '1w') {
+      const candleDate = new Date(dateStr);
+      const monday = new Date();
+      monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+      monday.setHours(0, 0, 0, 0);
+      if (candleDate >= monday) {
+        const patched = { ...latest };
+        patched.high = Math.max(Number(patched.high), livePrice);
+        patched.low = Math.min(Number(patched.low), livePrice);
+        patched.close = livePrice;
+        return [patched, ...data.slice(1)];
+      }
+    }
+    return data;
+  }, [stock?.price]);
+
   const loadStockData = async (timeframe = selectedTimeframe) => {
     setIsLoadingData(true);
     setError(null);
@@ -246,7 +283,7 @@ const TechnicalAnalysisScreen = ({
         const data = await fetchOHLCV(stock.symbol, timeframe);
         if (data && data.length > 0) {
           logger.log(`[TechnicalAnalysis] Got ${data.length} ${timeframe} candles for ${stock.symbol}`);
-          setOhlcvData(data);
+          setOhlcvData(patchLatestCandle(data, timeframe));
           handleFallbackMetadata(data, timeframe);
         } else {
           console.warn(`[TechnicalAnalysis] No data returned for ${stock.symbol}`);
@@ -280,7 +317,7 @@ const TechnicalAnalysisScreen = ({
         const data = await fetchOHLCV(stock.symbol, newTimeframe);
         if (data && data.length > 0) {
           logger.log(`[TechnicalAnalysis] Got ${data.length} ${newTimeframe} candles`);
-          setOhlcvData(data);
+          setOhlcvData(patchLatestCandle(data, newTimeframe));
           handleFallbackMetadata(data, newTimeframe);
         } else {
           setError(`No ${newTimeframe} data available`);

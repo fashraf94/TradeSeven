@@ -269,6 +269,13 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
             close: currentPrice,
             volume: 0,
           }];
+        } else if (lastTime) {
+          // Latest candle is within the current hour — patch H/L/C with live price
+          const patched = { ...lastCandle };
+          patched.high = Math.max(Number(patched.high), currentPrice);
+          patched.low = Math.min(Number(patched.low), currentPrice);
+          patched.close = currentPrice;
+          result = [...result.slice(0, -1), patched];
         }
       } else if (timeframe === '1W') {
         // Weekly: append if last candle is from a previous week
@@ -286,6 +293,13 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
             close: currentPrice,
             volume: 0,
           }];
+        } else {
+          // Current week's candle exists — patch H/L/C with live price
+          const patched = { ...lastCandle };
+          patched.high = Math.max(Number(patched.high), currentPrice);
+          patched.low = Math.min(Number(patched.low), currentPrice);
+          patched.close = currentPrice;
+          result = [...result.slice(0, -1), patched];
         }
       } else if (timeframe === '1D') {
         // Daily: append if last candle is from a previous day
@@ -309,6 +323,13 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
             close: currentPrice,
             volume: 0,
           }];
+        } else if (lastDate.getTime() === today.getTime()) {
+          // Today's candle exists but may have stale H/L/C — patch with live price
+          const patched = { ...lastCandle };
+          patched.high = Math.max(Number(patched.high), currentPrice);
+          patched.low = Math.min(Number(patched.low), currentPrice);
+          patched.close = currentPrice;
+          result = [...result.slice(0, -1), patched];
         }
       }
     }
