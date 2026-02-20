@@ -13659,6 +13659,9 @@ export default function PortfolioDuel() {
   useEffect(() => {
     if (screen !== 'battle' || !currentBattle) return;
 
+    // Risk challenges disabled — feature hidden, may re-enable later
+    return;
+
     const battleStatus = battleTimer.getBattleStatus(currentBattle);
     if (battleStatus !== 'active') return;
 
@@ -19587,8 +19590,8 @@ export default function PortfolioDuel() {
           {/* Global Overlays */}
           <ChallengeToast />
           <MidGameChallengePopup />
-          <RiskChallengePopup />
-          <RiskChallengeResultPopup />
+          {false && <RiskChallengePopup />}
+          {false && <RiskChallengeResultPopup />}
           {showSlotMachine && weeklyChallenges.length >= 4 && (
             <SlotMachineContent
               challenges={weeklyChallenges}
