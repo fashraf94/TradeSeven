@@ -856,24 +856,33 @@ export async function fetchTodayOHLC(symbol) {
   }
 
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const todayStr = new Date().toISOString().split('T')[0]; // "2026-02-20"
     const response = await fetchWithTimeout(
-      `${API_BASE}/stocks/historical?symbol=${encodeURIComponent(upper)}&timeframe=1h&from=${today}&to=${today}`,
+      `${API_BASE}/stocks/historical?symbol=${encodeURIComponent(upper)}&timeframe=1h`,
       15000
     );
 
     if (!response.ok) return null;
     const result = await response.json();
-    const bars = result.data || result;
+    const allBars = result.data || result;
 
-    if (!bars || !Array.isArray(bars) || bars.length === 0) return null;
+    if (!allBars || !Array.isArray(allBars) || allBars.length === 0) return null;
+
+    // EODHD intraday returns ~10 days of hourly bars regardless of from/to.
+    // Filter to today's bars only using the date portion of datetime/date fields.
+    const todayBars = allBars.filter(bar => {
+      const barDate = (bar.datetime || bar.date || '').toString().substring(0, 10);
+      return barDate === todayStr;
+    });
+
+    if (todayBars.length === 0) return null; // No bars for today (pre-market or weekend)
 
     const dailyOHLC = {
-      open: Number(bars[0].open),
-      high: Math.max(...bars.map(b => Number(b.high))),
-      low: Math.min(...bars.map(b => Number(b.low))),
-      close: Number(bars[bars.length - 1].close),
-      volume: bars.reduce((sum, b) => sum + (Number(b.volume) || 0), 0),
+      open: Number(todayBars[0].open),
+      high: Math.max(...todayBars.map(b => Number(b.high))),
+      low: Math.min(...todayBars.map(b => Number(b.low))),
+      close: Number(todayBars[todayBars.length - 1].close),
+      volume: todayBars.reduce((sum, b) => sum + (Number(b.volume) || 0), 0),
     };
 
     todayOHLCCache[upper] = { data: dailyOHLC, timestamp: Date.now() };

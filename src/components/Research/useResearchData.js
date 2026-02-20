@@ -295,7 +295,9 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         }
       } else if (timeframe === '1W') {
         // Weekly: append if last candle is from a previous week
+        // Normalize to midnight local time to avoid UTC vs local comparison bugs
         const lastDate = new Date(lastDateStr);
+        lastDate.setHours(0, 0, 0, 0);
         const monday = new Date();
         monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7)); // This Monday
         monday.setHours(0, 0, 0, 0);
