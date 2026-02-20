@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { createChart, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries } from 'lightweight-charts';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { prepareChartData, formatTime, calculateBombLevels, detectBombCrossings, calculateNearestLevel } from './chartUtils';
+import OHLCDisplay from '../shared/OHLCDisplay';
 
 const TIMEFRAMES = [
   { key: '1D', label: '1D' },
@@ -30,7 +31,9 @@ const StockChart = ({
   const levelLinesRef = useRef([]);
   const highlightLineRef = useRef(null);
   const bombPriceLinesRef = useRef([]);
+  const volumeSeriesRef = useRef(null);
 
+  const [ohlcData, setOhlcData] = useState(null);
   const [showSMA, setShowSMA] = useState(false);
   const [showSR, setShowSR] = useState(false);
   const [isSpectateMode, setIsSpectateMode] = useState(false);
@@ -265,6 +268,7 @@ const StockChart = ({
           priceFormat: { type: 'volume' },
           priceScaleId: 'volume',
         });
+        volumeSeriesRef.current = volumeSeries;
         volumeSeries.priceScale().applyOptions({
           scaleMargins: { top: 0.8, bottom: 0 },
         });
@@ -341,6 +345,7 @@ const StockChart = ({
           priceFormat: { type: 'volume' },
           priceScaleId: 'volume',
         });
+        volumeSeriesRef.current = volumeSeries;
 
         volumeSeries.priceScale().applyOptions({
           scaleMargins: { top: 0.8, bottom: 0 },
@@ -375,6 +380,45 @@ const StockChart = ({
       chart.timeScale().fitContent();
     }
 
+    // OHLC: set default to latest candle
+    const lastCandle = chartData[chartData.length - 1];
+    if (lastCandle) {
+      setOhlcData({
+        open: lastCandle.open,
+        high: lastCandle.high,
+        low: lastCandle.low,
+        close: lastCandle.close,
+        volume: lastCandle.volume || 0,
+      });
+    }
+
+    // OHLC: update on crosshair move
+    chart.subscribeCrosshairMove((param) => {
+      if (param.time && candleSeriesRef.current) {
+        const candle = param.seriesData.get(candleSeriesRef.current);
+        if (candle) {
+          const vol = volumeSeriesRef.current
+            ? param.seriesData.get(volumeSeriesRef.current)
+            : null;
+          setOhlcData({
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close,
+            volume: vol?.value || 0,
+          });
+        }
+      } else if (lastCandle) {
+        setOhlcData({
+          open: lastCandle.open,
+          high: lastCandle.high,
+          low: lastCandle.low,
+          close: lastCandle.close,
+          volume: lastCandle.volume || 0,
+        });
+      }
+    });
+
     // ResizeObserver for responsive
     const resizeObserver = new ResizeObserver(() => {
       if (chartRef.current && container) {
@@ -389,6 +433,7 @@ const StockChart = ({
       levelLinesRef.current = [];
       highlightLineRef.current = null;
       bombPriceLinesRef.current = [];
+      volumeSeriesRef.current = null;
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -609,6 +654,9 @@ const StockChart = ({
           ref={chartContainerRef}
           style={{ width: '100%', height: '100%' }}
         />
+
+        {/* OHLC overlay — hidden in spectate view (back button uses same position) */}
+        {!isSpectateView && <OHLCDisplay data={ohlcData} />}
 
         {/* Spectate mode: Back button */}
         {isSpectateView && (

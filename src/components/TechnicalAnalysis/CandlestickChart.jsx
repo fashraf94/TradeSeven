@@ -5,6 +5,7 @@ import React, { useEffect, useRef } from 'react';
 import { createChart, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts';
 import { createSeriesMarkers } from 'lightweight-charts';
 import { isValidNumber, formatTime, isValidRawCandle, isValidFormattedCandle } from '../Research/chartUtils';
+import OHLCDisplay from '../shared/OHLCDisplay';
 
 // Conditional logging - only show debug logs in development
 const DEBUG = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
@@ -33,6 +34,8 @@ const CandlestickChart = ({
   const markersRef = useRef(null);
   const highlightLineRef = useRef(null);
   const highlightMarkersRef = useRef(null);
+  const volumeSeriesRef = useRef(null);
+  const [ohlcData, setOhlcData] = React.useState(null);
   const [chartError, setChartError] = React.useState(null);
 
   useEffect(() => {
@@ -296,6 +299,7 @@ const CandlestickChart = ({
           priceFormat: { type: 'volume' },
           priceScaleId: 'volume',
         });
+        volumeSeriesRef.current = volumeSeries;
 
         volumeSeries.priceScale().applyOptions({
           scaleMargins: {
@@ -340,6 +344,47 @@ const CandlestickChart = ({
         // Non-fatal, continue
       }
 
+      // OHLC: set default to latest candle
+      const lastCandle = sortedData[sortedData.length - 1];
+      // ohlcvData is newest-first, so first element is the latest candle with volume
+      const latestRawVol = Number(validRawCandles[0]?.volume) || 0;
+      if (lastCandle) {
+        setOhlcData({
+          open: lastCandle.open,
+          high: lastCandle.high,
+          low: lastCandle.low,
+          close: lastCandle.close,
+          volume: latestRawVol,
+        });
+      }
+
+      // OHLC: update on crosshair move
+      chart.subscribeCrosshairMove((param) => {
+        if (param.time && candleSeriesRef.current) {
+          const candle = param.seriesData.get(candleSeriesRef.current);
+          if (candle) {
+            const vol = volumeSeriesRef.current
+              ? param.seriesData.get(volumeSeriesRef.current)
+              : null;
+            setOhlcData({
+              open: candle.open,
+              high: candle.high,
+              low: candle.low,
+              close: candle.close,
+              volume: vol?.value || 0,
+            });
+          }
+        } else if (lastCandle) {
+          setOhlcData({
+            open: lastCandle.open,
+            high: lastCandle.high,
+            low: lastCandle.low,
+            close: lastCandle.close,
+            volume: latestRawVol,
+          });
+        }
+      });
+
       // Handle resize
       handleResize = () => {
         if (chartContainerRef.current && chartRef.current) {
@@ -373,6 +418,7 @@ const CandlestickChart = ({
         highlightMarkersRef.current = null;
       }
       highlightLineRef.current = null;
+      volumeSeriesRef.current = null;
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
@@ -607,6 +653,8 @@ const CandlestickChart = ({
           overflow: 'hidden',
         }}
       />
+      {/* OHLC overlay */}
+      <OHLCDisplay data={ohlcData} />
       {/* Price change indicator */}
       {ohlcvData?.length > 0 && (
         <div style={{
