@@ -85,7 +85,7 @@ import {
 // V3-safe portfolio helpers (handles tiered objects and flat arrays)
 import { safePortfolioArray, getUserPortfolioFlat, getOpponentPortfolioFlat, getBothPortfoliosFlat, getAllBattleSymbols } from './utils/portfolioHelpers';
 // BaggerBomb V3 portfolio utilities
-import { flattenPortfolio, flattenBench } from './utils/baggerBombUtils';
+import { flattenPortfolio, flattenBench, calculateAssetScoreV3 } from './utils/baggerBombUtils';
 // Snake Draft asset pools
 import { STEADY_STOCKS, RISKY_STOCKS, DEFENSIVE_STOCKS, STEADY_CRYPTO, RISKY_CRYPTO, DEFENSIVE_CRYPTO } from './services/draftAssets';
 import { createInitialFreeAgents } from './services/freeAgentRotationService';
@@ -13089,6 +13089,22 @@ export default function PortfolioDuel() {
     return () => clearInterval(refreshInterval);
   }, [screen, user]);
 
+  // Helper: calculate training battle score for a portfolio (mirrors ClashCardTrainingV4)
+  function calculateTrainingScore(portfolio, endingPrices, startingPrices) {
+    const flat = flattenPortfolio(portfolio);
+    let total = 0;
+    flat.forEach(asset => {
+      if (!asset) return;
+      const openPrice = startingPrices[asset.symbol] || asset.price || 0;
+      const currentPrice = endingPrices[asset.symbol] || openPrice;
+      if (!openPrice) return;
+      const pctChange = ((currentPrice - openPrice) / openPrice) * 100;
+      const score = calculateAssetScoreV3(asset, pctChange, { maxMultiplier: 0, minMultiplier: 0 });
+      total += score.totalPoints;
+    });
+    return Math.round(total);
+  }
+
   // ⭐ Fetch training battles from Firebase (persists across sessions)
   useEffect(() => {
     if (screen !== 'dashboard') return;
@@ -13130,17 +13146,47 @@ export default function PortfolioDuel() {
           }
         }
 
-        // Auto-complete expired training battles
+        // Auto-complete expired training battles with final scores
         for (const battle of expiredBattles) {
           try {
+            // Calculate final scores using ending prices
+            const endingPrices = await fetchCurrentPricesForBattle(battle);
+            const startingPrices = battle.state?.startingPrices || battle.pricing?.baselinePrices || {};
+
+            const creatorScore = calculateTrainingScore(battle.creator?.portfolio, endingPrices, startingPrices);
+            const opponentScore = calculateTrainingScore(battle.opponent?.portfolio, endingPrices, startingPrices);
+
+            const creatorUsername = battle.creator?.username || 'Player';
+            const opponentUsername = battle.opponent?.username || 'CPU Opponent';
+            const creatorWon = creatorScore >= opponentScore;
+
             await updateDoc(doc(db, 'trainingBattles', battle.id), {
               'state.status': 'completed',
               'timeline.completedAt': now.toISOString(),
+              endingPrices,
+              result: {
+                winner: creatorWon ? creatorUsername : opponentUsername,
+                loser: creatorWon ? opponentUsername : creatorUsername,
+                creatorScore,
+                opponentScore,
+                margin: Math.abs(creatorScore - opponentScore),
+              },
               updatedAt: now.toISOString()
             });
-            console.log('⏰ Auto-completed expired training battle:', battle.id);
+            console.log('⏰ Auto-completed training battle with scores:', battle.id, `${creatorScore}-${opponentScore}`);
           } catch (err) {
-            console.error('Error completing expired battle:', err);
+            // Fallback: complete without scores if price fetch fails
+            try {
+              await updateDoc(doc(db, 'trainingBattles', battle.id), {
+                'state.status': 'completed',
+                'timeline.completedAt': now.toISOString(),
+                updatedAt: now.toISOString()
+              });
+              console.log('⏰ Auto-completed training battle (no scores):', battle.id);
+            } catch (innerErr) {
+              console.error('Error completing expired battle:', innerErr);
+            }
+            console.error('Error calculating training battle scores:', err);
           }
         }
 
@@ -13758,7 +13804,9 @@ export default function PortfolioDuel() {
         const battles = await draftService.getUserCompletedDraftBattles(currentUserId, 50);
 
         // Transform to match expected format and sort by completion date
+        // Filter out training drafts that leak through the query
         const formattedBattles = battles
+          .filter(b => !b.isTraining)
           .map(b => {
             const myStanding = b.finalStandings?.find(s => s.odUserId === currentUserId);
             return {
@@ -13767,10 +13815,12 @@ export default function PortfolioDuel() {
               won: myStanding?.finalRank === 1,
               myRank: myStanding?.finalRank || 0,
               myGain: myStanding?.finalGain || 0,
-              completedAt: b.completedAt?.toDate?.() || new Date(b.completedAt)
+              completedAt: b.completedAt
+                ? (b.completedAt?.toDate?.() || new Date(b.completedAt))
+                : null
             };
           })
-          .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+          .sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0));
 
         setCompletedDraftBattles(formattedBattles);
       } catch (error) {
@@ -13813,7 +13863,11 @@ export default function PortfolioDuel() {
             id: doc.id,
             ...data,
             isTrainingBattle: true,
-            completedAt: data.timeline?.completedAt || data.completedAt
+            completedAt: (() => {
+              const ts = data.timeline?.completedAt || data.completedAt;
+              if (!ts) return null;
+              return ts?.toDate?.() || ts;
+            })()
           };
         });
 

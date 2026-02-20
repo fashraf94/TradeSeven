@@ -37,9 +37,33 @@ const BattleHistoryScreen = ({
       ? completedTrainingBattles
       : mergedBaggerBombBattles;
 
+  // Helper: check if user won a battle (handles training username mismatch)
+  const didUserWin = (b) => {
+    if (b.won === true) return true;
+    if (b.result?.winner === user?.username) return true;
+    // Training/V4 fallback: result.winner stores in-game username, not odUserId
+    if ((b.isTrainingBattle || b._v >= 3) && b.result?.winner) {
+      const isCreator = b.creator?.odUserId === (user?.odUserId || user?.username)
+        || b.creator?.username === user?.username;
+      return isCreator
+        ? b.result.winner === b.creator?.username
+        : b.result.winner === b.opponent?.username;
+    }
+    return false;
+  };
+
+  const didUserLose = (b) => {
+    if (b.won === false) return true;
+    if ((b.isTrainingBattle || b._v >= 3) && b.result?.winner) {
+      return !didUserWin(b);
+    }
+    if (b.result && b.result.winner && b.result.winner !== user?.username) return true;
+    return false;
+  };
+
   // Stats for the current tab
-  const tabWins = completedBattles.filter(b => b.won === true || b.result?.winner === user?.username).length;
-  const tabLosses = completedBattles.filter(b => b.won === false || (b.result && b.result.winner !== user?.username)).length;
+  const tabWins = completedBattles.filter(didUserWin).length;
+  const tabLosses = completedBattles.filter(didUserLose).length;
   // For draft battles, podium (top 3) count can be useful
   const draftPodiums = historyTab === 'draft' ? completedBattles.filter(b => b.myRank && b.myRank <= 3).length : 0;
   // For training battles, count total completed
@@ -397,13 +421,17 @@ const BattleHistoryScreen = ({
                   );
                 }
 
-                // Training battle card (vs AI)
+                // Training battle card (vs AI) — points-based scoring
                 if (historyTab === 'training' && battle.isTrainingBattle) {
-                  const aiOpponent = battle.players?.find(p => p.isAI);
-                  const userPlayer = battle.players?.find(p => !p.isAI);
-                  const userGain = userPlayer?.finalGain ?? userPlayer?.portfolioGain ?? 0;
-                  const aiGain = aiOpponent?.finalGain ?? aiOpponent?.portfolioGain ?? 0;
-                  const won = userGain > aiGain;
+                  const isCreator = battle.creator?.odUserId === (user?.odUserId || user?.username)
+                    || battle.creator?.username === user?.username;
+                  const myScore = isCreator ? (battle.result?.creatorScore ?? 0) : (battle.result?.opponentScore ?? 0);
+                  const oppScore = isCreator ? (battle.result?.opponentScore ?? 0) : (battle.result?.creatorScore ?? 0);
+                  const oppName = isCreator ? (battle.opponent?.username || 'CPU Opponent') : (battle.creator?.username || 'Player');
+                  const won = battle.result?.winner
+                    ? didUserWin(battle)
+                    : myScore > oppScore;
+                  const completedDate = battle.completedAt || battle.timeline?.completedAt;
 
                   return (
                     <div
@@ -437,7 +465,7 @@ const BattleHistoryScreen = ({
                           <span style={{ fontSize: '16px' }}>🤖</span>
                         </div>
                         <span style={{ color: '#6e7681', fontSize: '12px' }}>
-                          {battle.completedAt ? new Date(battle.completedAt).toLocaleDateString() : ''}
+                          {completedDate ? new Date(completedDate).toLocaleDateString() : ''}
                         </span>
                       </div>
 
@@ -455,11 +483,11 @@ const BattleHistoryScreen = ({
                         <div style={{ flex: 1, textAlign: 'center' }}>
                           <div style={{ color: '#00d9ff', fontWeight: 'bold', fontSize: '14px' }}>You</div>
                           <div style={{
-                            color: userGain >= 0 ? '#10b981' : '#ef4444',
+                            color: myScore >= oppScore ? '#10b981' : '#ef4444',
                             fontSize: '20px',
                             fontWeight: 'bold'
                           }}>
-                            {userGain >= 0 ? '+' : ''}{userGain.toFixed(1)}%
+                            {myScore} pts
                           </div>
                         </div>
 
@@ -468,14 +496,14 @@ const BattleHistoryScreen = ({
                         {/* AI */}
                         <div style={{ flex: 1, textAlign: 'center' }}>
                           <div style={{ color: '#9333ea', fontWeight: 'bold', fontSize: '14px' }}>
-                            {aiOpponent?.displayName || 'AI Opponent'}
+                            {oppName}
                           </div>
                           <div style={{
-                            color: aiGain >= 0 ? '#10b981' : '#ef4444',
+                            color: oppScore >= myScore ? '#10b981' : '#ef4444',
                             fontSize: '20px',
                             fontWeight: 'bold'
                           }}>
-                            {aiGain >= 0 ? '+' : ''}{aiGain.toFixed(1)}%
+                            {oppScore} pts
                           </div>
                         </div>
                       </div>
