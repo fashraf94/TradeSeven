@@ -179,9 +179,16 @@ function generateFeedItems(waitingBattles, completedBattles, stocksData, user, l
     const isTraining = isTrainingBattle(battle);
     const gameLabel = isTraining ? `${typeInfo.label} AI` : typeInfo.label;
 
-    const returnStr = winnerInfo.returnPct !== undefined
-      ? `${winnerInfo.returnPct >= 0 ? '+' : ''}${Number(winnerInfo.returnPct).toFixed(1)}% return`
-      : '';
+    // V4 BaggerBomb uses points, not return %
+    const isV4 = battle._v >= 3 || battle.result?.isV4;
+    const winnerScore = winnerInfo.isCreatorWinner
+      ? battle.result?.creatorScore
+      : battle.result?.opponentScore;
+    const returnStr = isV4 && winnerScore != null
+      ? `+${winnerScore} pts`
+      : winnerInfo.returnPct !== undefined
+        ? `${winnerInfo.returnPct >= 0 ? '+' : ''}${Number(winnerInfo.returnPct).toFixed(1)}% return`
+        : '';
 
     items.push({
       id: `win-${battle.id}`,

@@ -6,6 +6,7 @@ const BattleHistoryScreen = ({
   previousBattles,
   completedDraftBattles,
   completedTrainingBattles,
+  completedV4Battles = [],
   historyTab,
   setHistoryTab,
   loadingTrainingBattles,
@@ -20,12 +21,21 @@ const BattleHistoryScreen = ({
   const allCompletedClassicBattles = previousBattles || [];
   const classicBattles = allCompletedClassicBattles.filter(b => b.isDraft !== true && b.battleType !== 'baggerbomb_training');
 
+  // Merge V4 Firestore battles with localStorage classic battles, deduplicate by ID
+  const mergedBaggerBombBattles = (() => {
+    const seen = new Set(classicBattles.map(b => b.id || b.battleId));
+    const v4New = completedV4Battles.filter(b => !seen.has(b.id));
+    return [...classicBattles, ...v4New].sort((a, b) =>
+      new Date(b.completedAt || b.archivedAt || 0) - new Date(a.completedAt || a.archivedAt || 0)
+    );
+  })();
+
   // Select battles based on current tab
   const completedBattles = historyTab === 'draft'
     ? completedDraftBattles
     : historyTab === 'training'
       ? completedTrainingBattles
-      : classicBattles;
+      : mergedBaggerBombBattles;
 
   // Stats for the current tab
   const tabWins = completedBattles.filter(b => b.won === true || b.result?.winner === user?.username).length;
@@ -152,7 +162,7 @@ const BattleHistoryScreen = ({
                 {historyTab === 'training' ? completedBattles.length : tabWins + tabLosses}
               </div>
               <div style={{ fontSize: '13px', color: '#8b949e' }}>
-                {historyTab === 'draft' ? 'Draft' : historyTab === 'training' ? 'Training' : 'Classic'} Battles
+                {historyTab === 'draft' ? 'Draft' : historyTab === 'training' ? 'Training' : 'BaggerBomb'} Battles
               </div>
             </div>
 
@@ -189,7 +199,7 @@ const BattleHistoryScreen = ({
 
           {/* Battle List */}
           <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff', marginBottom: '16px' }}>
-            {historyTab === 'draft' ? 'Past Draft Battles' : historyTab === 'training' ? 'Past Training Battles' : 'Past Classic Battles'}
+            {historyTab === 'draft' ? 'Past Draft Battles' : historyTab === 'training' ? 'Past Training Battles' : 'Past BaggerBomb Battles'}
           </h2>
 
           {loadingTrainingBattles && historyTab === 'training' ? (
@@ -215,14 +225,14 @@ const BattleHistoryScreen = ({
                 {historyTab === 'draft' ? '🎯' : historyTab === 'training' ? '🤖' : '🎮'}
               </div>
               <p style={{ color: '#8b949e', fontSize: '18px', marginBottom: '8px' }}>
-                No {historyTab === 'draft' ? 'draft' : historyTab === 'training' ? 'training' : 'classic'} battles yet
+                No {historyTab === 'draft' ? 'draft' : historyTab === 'training' ? 'training' : 'BaggerBomb'} battles yet
               </p>
               <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '16px' }}>
                 {historyTab === 'draft'
                   ? 'Start a draft battle to build your history!'
                   : historyTab === 'training'
                   ? 'Play against AI opponents to practice your strategy!'
-                  : 'Create your first classic battle to start your history!'
+                  : 'Create your first BaggerBomb battle to start your history!'
                 }
               </p>
               <button
@@ -483,6 +493,107 @@ const BattleHistoryScreen = ({
                         <span>Training Battle</span>
                         <span>{battle.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'}</span>
                         <span>vs AI</span>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // V4 BaggerBomb card (points-based)
+                if ((battle._v === 3 || battle._v === 4) && battle.result) {
+                  const won = battle.result.winner === user?.username;
+                  const isCreator = battle.creator?.username === user?.username ||
+                    battle.creator?.odUserId === (user?.odUserId || user?.username);
+                  const myScore = isCreator ? battle.result.creatorScore : battle.result.opponentScore;
+                  const oppScore = isCreator ? battle.result.opponentScore : battle.result.creatorScore;
+                  const oppName = isCreator ? battle.opponent?.username : battle.creator?.username;
+                  const completedDate = battle.completedAt || battle.timeline?.completedAt;
+
+                  return (
+                    <div
+                      key={battle.id || index}
+                      style={{
+                        background: '#161b22',
+                        borderLeft: won ? '4px solid #10b981' : '4px solid #ef4444',
+                        borderRadius: '12px',
+                        padding: '16px',
+                        marginBottom: '0'
+                      }}
+                    >
+                      {/* Header */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '12px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                            background: won ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                            color: won ? '#10b981' : '#ef4444'
+                          }}>
+                            {won ? '🏆 VICTORY' : '💀 DEFEAT'}
+                          </span>
+                          <span style={{ fontSize: '16px' }}>💣</span>
+                        </div>
+                        <span style={{ color: '#6e7681', fontSize: '12px' }}>
+                          {completedDate ? new Date(completedDate).toLocaleDateString() : ''}
+                        </span>
+                      </div>
+
+                      {/* Matchup: You vs Opponent with points */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '8px',
+                        background: '#0d1117',
+                        borderRadius: '8px',
+                        padding: '12px'
+                      }}>
+                        <div style={{ flex: 1, textAlign: 'center' }}>
+                          <div style={{ color: '#00d9ff', fontWeight: 'bold', fontSize: '14px' }}>You</div>
+                          <div style={{
+                            color: (myScore || 0) >= (oppScore || 0) ? '#10b981' : '#ef4444',
+                            fontSize: '20px',
+                            fontWeight: 'bold'
+                          }}>
+                            {myScore || 0} pts
+                          </div>
+                        </div>
+
+                        <div style={{ color: '#6e7681', fontSize: '18px', fontWeight: 'bold' }}>VS</div>
+
+                        <div style={{ flex: 1, textAlign: 'center' }}>
+                          <div style={{ color: '#f59e0b', fontWeight: 'bold', fontSize: '14px' }}>
+                            {oppName || 'Opponent'}
+                          </div>
+                          <div style={{
+                            color: (oppScore || 0) >= (myScore || 0) ? '#10b981' : '#ef4444',
+                            fontSize: '20px',
+                            fontWeight: 'bold'
+                          }}>
+                            {oppScore || 0} pts
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Battle Info */}
+                      <div style={{
+                        marginTop: '12px',
+                        paddingTop: '12px',
+                        borderTop: '1px solid #21262d',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        color: '#6e7681',
+                        fontSize: '11px'
+                      }}>
+                        <span>BaggerBomb</span>
+                        <span>{battle.timing?.tradingDays || 3} day battle</span>
+                        <span>Margin: {battle.result.margin || 0} pts</span>
                       </div>
                     </div>
                   );
