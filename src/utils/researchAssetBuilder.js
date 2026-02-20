@@ -64,7 +64,7 @@ export function buildResearchAsset(asset, options = {}) {
     ?? asset.dailyChange
     ?? asset.gainPercent
     ?? asset.changePercent
-    ?? 0;
+    ?? null;
 
   // --- Threshold resolution ---
   const thresholdEntry = lookup(thresholds, sym);
@@ -84,12 +84,19 @@ export function buildResearchAsset(asset, options = {}) {
     || asset.startPrice
     || null;
 
+  // --- Computed percent change fallback ---
+  // When no explicit percent change data is provided but both price and lockedPrice
+  // are available (e.g. EventFeed "View Chart" in BaggerBomb), compute it.
+  const finalPctChange = (pctChange == null && price > 0 && lockedPrice > 0)
+    ? ((price - lockedPrice) / lockedPrice) * 100
+    : (pctChange ?? 0);
+
   // --- Core fields ---
   const result = {
     symbol: sym,
     name: asset.name || sym,
     price,
-    percentChange: pctChange,
+    percentChange: finalPctChange,
     threshold,
     lockedPrice,
   };
