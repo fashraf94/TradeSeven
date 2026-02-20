@@ -138,6 +138,7 @@ export default function CardFront({ challenge, state, progress, accentColor, car
         width: '100%',
         textAlign: 'center',
         flexShrink: 0, // Prevent bottom section from shrinking
+        marginTop: isMobileCard ? '4px' : '8px',
       }}>
         {/* Challenge name */}
         <div style={{
