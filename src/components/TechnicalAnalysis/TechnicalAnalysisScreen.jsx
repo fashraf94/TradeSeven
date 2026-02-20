@@ -246,8 +246,9 @@ const TechnicalAnalysisScreen = ({
     const dateStr = latest.date || latest.datetime || '';
 
     if (timeframe === '1d') {
-      const candleDate = new Date(dateStr);
-      candleDate.setHours(0, 0, 0, 0);
+      // Parse as local date to avoid UTC-midnight shift in US timezones
+      const [cy, cm, cd] = dateStr.substring(0, 10).split('-').map(Number);
+      const candleDate = new Date(cy, cm - 1, cd);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       if (candleDate.getTime() === today.getTime()) {

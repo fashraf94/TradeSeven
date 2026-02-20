@@ -295,9 +295,9 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         }
       } else if (timeframe === '1W') {
         // Weekly: append if last candle is from a previous week
-        // Normalize to midnight local time to avoid UTC vs local comparison bugs
-        const lastDate = new Date(lastDateStr);
-        lastDate.setHours(0, 0, 0, 0);
+        // Parse as local date to avoid UTC-midnight shift (same fix as 1D)
+        const [wy, wm, wd] = lastDateStr.substring(0, 10).split('-').map(Number);
+        const lastDate = new Date(wy, wm - 1, wd);
         const monday = new Date();
         monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7)); // This Monday
         monday.setHours(0, 0, 0, 0);
@@ -333,8 +333,10 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         }
       } else if (timeframe === '1D') {
         // Daily: append if last candle is from a previous day
-        const lastDate = new Date(lastDateStr);
-        lastDate.setHours(0, 0, 0, 0);
+        // Parse as local date to avoid UTC-midnight shift
+        // new Date("YYYY-MM-DD") parses as UTC → setHours(0,0,0,0) shifts back a day in US timezones
+        const [ly, lm, ld] = lastDateStr.substring(0, 10).split('-').map(Number);
+        const lastDate = new Date(ly, lm - 1, ld);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
@@ -342,8 +344,6 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         const dayOfWeek = today.getDay();
         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
         const shouldAppend = isCrypto ? true : !isWeekend;
-
-        console.log('[useResearchData 1D]', { lastDateStr, lastDateMs: lastDate.getTime(), todayMs: today.getTime(), shouldAppend, todayIntraday, currentPrice });
 
         if (lastDate < today && shouldAppend) {
           const todayStr = today.toISOString().split('T')[0];
@@ -354,7 +354,6 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
           const synLow = todayIntraday
             ? Math.min(todayIntraday.low, currentPrice)
             : Math.min(currentPrice, lastCandle.close);
-          console.log('[useResearchData 1D append]', { todayStr, synOpen, synHigh, synLow, currentPrice });
           result = [...result, {
             date: todayStr,
             open: synOpen,
@@ -364,7 +363,6 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
             volume: todayIntraday?.volume || 0,
           }];
         } else if (lastDate.getTime() === today.getTime()) {
-          console.log('[useResearchData 1D patch]', { todayIntraday, currentPrice, existingH: lastCandle.high, existingL: lastCandle.low });
           // Today's candle exists but may have stale H/L/C — patch with intraday + live price
           const patched = { ...lastCandle };
           patched.close = currentPrice;
@@ -378,8 +376,6 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
             patched.low = Math.min(Number(patched.low), currentPrice);
           }
           result = [...result.slice(0, -1), patched];
-        } else {
-          console.log('[useResearchData 1D] no patch — lastDate !== today and not < today');
         }
       }
     }
