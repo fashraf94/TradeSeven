@@ -118,7 +118,7 @@ const AnalysisCard = ({ analysis, meta }) => {
     return [];
   })();
 
-  const isLongContent = analysis.content && analysis.content.length > 600;
+  const isLongContent = typeof analysis.content === 'string' && analysis.content.length > 600;
   const hasBullBear = analysis.bullCase || analysis.bearCase;
 
   const visibleDpEntries = showAllDataPoints ? dpEntries : dpEntries.slice(0, 6);
@@ -151,7 +151,7 @@ const AnalysisCard = ({ analysis, meta }) => {
           paddingBottom: '10px',
           borderBottom: '1px solid rgba(0,217,255,0.12)',
         }}>
-          {analysis.headline}
+          {typeof analysis.headline === 'string' ? analysis.headline : JSON.stringify(analysis.headline)}
         </motion.div>
       )}
 
@@ -169,7 +169,7 @@ const AnalysisCard = ({ analysis, meta }) => {
                 overflow: 'hidden',
               } : {}),
             }}>
-              {analysis.content}
+              {typeof analysis.content === 'string' ? analysis.content : JSON.stringify(analysis.content)}
             </div>
             {/* Fade gradient overlay when collapsed */}
             {isLongContent && !isContentExpanded && (
@@ -212,7 +212,7 @@ const AnalysisCard = ({ analysis, meta }) => {
         }}>
           {visibleDpEntries.map(([key, val]) => {
             const isObj = val && typeof val === 'object' && !Array.isArray(val);
-            const displayValue = isObj ? (val.value ?? val.signal ?? JSON.stringify(val)) : String(val);
+            const displayValue = isObj ? (val.value ?? val.signal ?? JSON.stringify(val)) : String(val ?? '—');
             const context = isObj ? (val.context || val.explanation) : null;
 
             return (
@@ -234,7 +234,7 @@ const AnalysisCard = ({ analysis, meta }) => {
                   color: '#6b7280',
                   marginBottom: '4px',
                 }}>
-                  {key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ')}
+                  {(isObj && val.label) || key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ')}
                 </div>
                 <div style={{
                   fontSize: '20px',
@@ -300,7 +300,7 @@ const AnalysisCard = ({ analysis, meta }) => {
                 <span style={{ marginRight: '6px' }}>●</span>Bull Case
               </div>
               <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#9ca3af' }}>
-                {analysis.bullCase}
+                {typeof analysis.bullCase === 'string' ? analysis.bullCase : (analysis.bullCase?.title || JSON.stringify(analysis.bullCase))}
               </div>
             </div>
           )}
@@ -316,7 +316,7 @@ const AnalysisCard = ({ analysis, meta }) => {
                 <span style={{ marginRight: '6px' }}>●</span>Bear Case
               </div>
               <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#9ca3af' }}>
-                {analysis.bearCase}
+                {typeof analysis.bearCase === 'string' ? analysis.bearCase : (analysis.bearCase?.title || JSON.stringify(analysis.bearCase))}
               </div>
             </div>
           )}
@@ -343,7 +343,7 @@ const AnalysisCard = ({ analysis, meta }) => {
               Key Insight
             </div>
             <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#9ca3af', fontStyle: 'italic' }}>
-              {analysis.educationalNote}
+              {typeof analysis.educationalNote === 'string' ? analysis.educationalNote : JSON.stringify(analysis.educationalNote)}
             </div>
           </div>
         </motion.div>

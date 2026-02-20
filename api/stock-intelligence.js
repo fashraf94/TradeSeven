@@ -10,9 +10,20 @@ import { getSupplyChainCoverage } from './_utils/supplyChainLookup.js';
 
 const LOG_PREFIX = '[StockIntelligence]';
 
+// ── Configuration constants ──────────────────────────────────
+const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
+const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
+const ANTHROPIC_API_VERSION = '2023-06-01';
+const MAX_TOKENS_BASE = 1200;
+const MAX_TOKENS_COMPARISON = 1500;
+const RATE_LIMIT = 15;
+const RATE_LIMIT_WINDOW_MS = 60000;
+const MAX_SYMBOL_LENGTH = 10;
+const MAX_QUESTION_LENGTH = 500;
+
 export default async function handler(req, res) {
-  // 1. Security middleware — 15 requests/min per IP
-  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 15, windowMs: 60000 } })) {
+  // 1. Security middleware
+  if (applySecurityMiddleware(req, res, { rateLimit: { limit: RATE_LIMIT, windowMs: RATE_LIMIT_WINDOW_MS } })) {
     return;
   }
 
@@ -35,7 +46,7 @@ export default async function handler(req, res) {
   }
 
   const cleanSymbol = symbol.trim().toUpperCase();
-  if (cleanSymbol.length > 10 || !/^[A-Z0-9.\-]+$/.test(cleanSymbol)) {
+  if (cleanSymbol.length > MAX_SYMBOL_LENGTH || !/^[A-Z0-9.\-]+$/.test(cleanSymbol)) {
     return res.status(400).json({ success: false, error: 'Invalid symbol format' });
   }
 
@@ -43,8 +54,8 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, error: 'Missing required field: question' });
   }
 
-  if (question.length > 500) {
-    return res.status(400).json({ success: false, error: 'Question must be 500 characters or fewer' });
+  if (question.length > MAX_QUESTION_LENGTH) {
+    return res.status(400).json({ success: false, error: `Question must be ${MAX_QUESTION_LENGTH} characters or fewer` });
   }
 
   try {
@@ -78,30 +89,18 @@ export default async function handler(req, res) {
       comparisonData
     );
 
-    // Analytics logging
-    console.log(`${LOG_PREFIX} Query:`, {
-      symbol: cleanSymbol,
-      questionTypes,
-      isComparison,
-      comparisonSymbols,
-      isCrypto: stockData.isCrypto,
-      estimatedInputTokens: estimatedTokens,
-      cacheStatus: stockData.cacheStatus,
-      staleData: stockData.staleData,
-    });
+    // 8. Call Claude API
+    const maxTokens = isComparison ? MAX_TOKENS_COMPARISON : MAX_TOKENS_BASE;
 
-    // 8. Call Claude API (1200 base to avoid truncated JSON, 1500 for comparisons)
-    const maxTokens = isComparison ? 1500 : 1200;
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch(ANTHROPIC_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': API_KEY,
-        'anthropic-version': '2023-06-01',
+        'anthropic-version': ANTHROPIC_API_VERSION,
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: CLAUDE_MODEL,
         max_tokens: maxTokens,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
@@ -197,12 +196,6 @@ export default async function handler(req, res) {
       outputTokens: data.usage?.output_tokens || 0,
     };
 
-    console.log(`${LOG_PREFIX} Complete:`, {
-      symbol: cleanSymbol,
-      questionTypes,
-      tokens: usage,
-    });
-
     // 11. Supply chain coverage check
     const scCoverage = getSupplyChainCoverage(cleanSymbol);
 
@@ -225,7 +218,7 @@ export default async function handler(req, res) {
           ...(scCoverage.hasThemes ? ['themes'] : []),
           ...(scCoverage.hasScenarios ? ['scenarios'] : []),
         ],
-        model: 'claude-haiku-4-5-20251001',
+        model: CLAUDE_MODEL,
         usage,
       },
     });
