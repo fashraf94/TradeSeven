@@ -156,6 +156,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
 
   // Process data based on UI timeframe
   const ohlcvData = useMemo(() => {
+    console.log('[OHLC-DEBUG] useMemo running, todayIntraday:', todayIntraday, 'timeframe:', timeframe);
     if (!rawData) return null;
 
     // Data from API is newest-first, reverse to oldest-first for processing
@@ -346,6 +347,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         const shouldAppend = isCrypto ? true : !isWeekend;
 
         if (lastDate < today && shouldAppend) {
+          console.log('[OHLC-DEBUG] 1D APPEND branch, todayIntraday:', todayIntraday);
           const todayStr = today.toISOString().split('T')[0];
           const synOpen = todayIntraday?.open || lastCandle.close;
           const synHigh = todayIntraday
@@ -363,6 +365,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
             volume: todayIntraday?.volume || 0,
           }];
         } else if (lastDate.getTime() === today.getTime()) {
+          console.log('[OHLC-DEBUG] 1D PATCH branch, todayIntraday:', todayIntraday);
           // Today's candle exists but may have stale H/L/C — patch with intraday + live price
           const patched = { ...lastCandle };
           patched.close = currentPrice;

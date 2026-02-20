@@ -848,10 +848,12 @@ const TODAY_OHLC_CACHE_TTL = 60 * 1000; // 1 minute
  */
 export async function fetchTodayOHLC(symbol) {
   const upper = symbol.toUpperCase();
+  console.log('[OHLC-DEBUG] fetchTodayOHLC called for', upper);
 
   // Check cache
   const cached = todayOHLCCache[upper];
   if (cached && Date.now() - cached.timestamp < TODAY_OHLC_CACHE_TTL) {
+    console.log('[OHLC-DEBUG] fetchTodayOHLC returning cached:', upper, cached.data);
     return cached.data;
   }
 
@@ -903,7 +905,7 @@ export async function fetchTodayOHLC(symbol) {
         }
         return (dt || '').toString().substring(0, 10);
       });
-      logDebug(`[fetchTodayOHLC] No match! Last 5 bar dates: ${JSON.stringify(sampleDates)} vs todayStr: ${todayStr}`);
+      console.log('[OHLC-DEBUG] fetchTodayOHLC NO MATCH:', upper, 'last 5 dates:', sampleDates, 'vs todayStr:', todayStr);
       return null;
     }
 
@@ -924,6 +926,7 @@ export async function fetchTodayOHLC(symbol) {
 
     logDebug(`[fetchTodayOHLC] ${upper} RESULT:`, JSON.stringify(dailyOHLC));
 
+    console.log('[OHLC-DEBUG] fetchTodayOHLC result:', upper, dailyOHLC);
     todayOHLCCache[upper] = { data: dailyOHLC, timestamp: Date.now() };
     return dailyOHLC;
   } catch (err) {
