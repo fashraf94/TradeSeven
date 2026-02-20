@@ -20,6 +20,7 @@ import {
 } from '../../services/technicalIndicators';
 import { analyzeExploreQuestion } from '../../services/technicalAnalysisAI';
 import { getStockPrice } from '../../services/eodhdAPI';
+import { getDailyHL } from '../../services/websocketService';
 
 // Conditional logging - only show debug logs in development
 const DEBUG = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
@@ -252,6 +253,7 @@ const TechnicalAnalysisScreen = ({
   const patchLatestCandle = useCallback((data, timeframe) => {
     if (!data || data.length === 0 || !livePrice || livePrice <= 0) return data;
 
+    const wsHL = getDailyHL(stock?.symbol);
     const latest = data[0];
     const dateStr = latest.date || latest.datetime || '';
 
@@ -263,8 +265,8 @@ const TechnicalAnalysisScreen = ({
       today.setHours(0, 0, 0, 0);
       if (candleDate.getTime() === today.getTime()) {
         const patched = { ...latest };
-        patched.high = Math.max(Number(patched.high), livePrice);
-        patched.low = Math.min(Number(patched.low), livePrice);
+        patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, livePrice) : Math.max(Number(patched.high), livePrice);
+        patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, livePrice) : Math.min(Number(patched.low), livePrice);
         patched.close = livePrice;
         return [patched, ...data.slice(1)];
       }
@@ -275,14 +277,14 @@ const TechnicalAnalysisScreen = ({
       monday.setHours(0, 0, 0, 0);
       if (candleDate >= monday) {
         const patched = { ...latest };
-        patched.high = Math.max(Number(patched.high), livePrice);
-        patched.low = Math.min(Number(patched.low), livePrice);
+        patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, livePrice) : Math.max(Number(patched.high), livePrice);
+        patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, livePrice) : Math.min(Number(patched.low), livePrice);
         patched.close = livePrice;
         return [patched, ...data.slice(1)];
       }
     }
     return data;
-  }, [livePrice]);
+  }, [livePrice, stock?.symbol]);
 
   const loadStockData = async (timeframe = selectedTimeframe) => {
     setIsLoadingData(true);

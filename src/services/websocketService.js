@@ -50,6 +50,10 @@ class WebSocketManager {
     // Track connection status
     this._stockStatus = 'disconnected';
     this._cryptoStatus = 'disconnected';
+
+    // Daily high/low tracker for accurate candle display
+    this._dailyHL = new Map();     // symbol → { high, low, open, date, lastUpdate }
+    this._dailyHLDate = null;      // Track which trading day we're accumulating for
   }
 
   // ==================== EVENT SYSTEM ====================
@@ -352,11 +356,43 @@ class WebSocketManager {
         const price = parseFloat(data.p);
         if (symbol && !isNaN(price) && price > 0) {
           this._emit('price', { symbol, price });
+
+          // --- Daily H/L Tracker ---
+          const today = new Date().toISOString().split('T')[0];
+          if (this._dailyHLDate !== today) {
+            this._dailyHL.clear();
+            this._dailyHLDate = today;
+          }
+          const existing = this._dailyHL.get(symbol);
+          if (existing) {
+            existing.high = Math.max(existing.high, price);
+            existing.low = Math.min(existing.low, price);
+            existing.lastUpdate = Date.now();
+          } else {
+            this._dailyHL.set(symbol, {
+              high: price,
+              low: price,
+              open: price,
+              date: today,
+              lastUpdate: Date.now(),
+            });
+          }
         }
       }
     } catch {
       // Ignore unparseable messages (heartbeat acks, etc.)
     }
+  }
+
+  // ==================== DAILY H/L GETTER ====================
+
+  getDailyHL(symbol) {
+    const today = new Date().toISOString().split('T')[0];
+    const data = this._dailyHL.get(symbol);
+    if (data && data.date === today) {
+      return { high: data.high, low: data.low, open: data.open };
+    }
+    return null;
   }
 
   // ==================== RECONNECT ====================
@@ -449,4 +485,5 @@ class WebSocketManager {
 // ==================== SINGLETON ====================
 
 export const wsManager = new WebSocketManager();
+export function getDailyHL(symbol) { return wsManager.getDailyHL(symbol); }
 export default wsManager;
