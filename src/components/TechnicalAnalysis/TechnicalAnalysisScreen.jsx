@@ -19,6 +19,7 @@ import {
   detectTrend,
 } from '../../services/technicalIndicators';
 import { analyzeExploreQuestion } from '../../services/technicalAnalysisAI';
+import { fetchTodayOHLC } from '../../services/eodhdAPI';
 
 // Conditional logging - only show debug logs in development
 const DEBUG = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
@@ -235,9 +236,9 @@ const TechnicalAnalysisScreen = ({
     }
   };
 
-  // Patch the latest candle's H/L/C with stock.price if the candle is from the current period.
+  // Patch the latest candle's H/L/C with live price + intraday OHLC from EODHD.
   // Data is newest-first, so data[0] is the latest candle.
-  const patchLatestCandle = useCallback((data, timeframe) => {
+  const patchLatestCandle = useCallback(async (data, timeframe) => {
     const livePrice = stock?.price;
     if (!data || data.length === 0 || !livePrice || livePrice <= 0) return data;
 
@@ -250,10 +251,19 @@ const TechnicalAnalysisScreen = ({
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       if (candleDate.getTime() === today.getTime()) {
+        // Fetch real intraday OHLC for accurate H/L
+        const intraday = await fetchTodayOHLC(stock.symbol).catch(() => null);
         const patched = { ...latest };
-        patched.high = Math.max(Number(patched.high), livePrice);
-        patched.low = Math.min(Number(patched.low), livePrice);
         patched.close = livePrice;
+        if (intraday) {
+          patched.open = intraday.open || patched.open;
+          patched.high = Math.max(Number(patched.high), intraday.high, livePrice);
+          patched.low = Math.min(Number(patched.low), intraday.low, livePrice);
+          if (intraday.volume > 0) patched.volume = intraday.volume;
+        } else {
+          patched.high = Math.max(Number(patched.high), livePrice);
+          patched.low = Math.min(Number(patched.low), livePrice);
+        }
         return [patched, ...data.slice(1)];
       }
     } else if (timeframe === '1w') {
@@ -270,7 +280,7 @@ const TechnicalAnalysisScreen = ({
       }
     }
     return data;
-  }, [stock?.price]);
+  }, [stock?.price, stock?.symbol]);
 
   const loadStockData = async (timeframe = selectedTimeframe) => {
     setIsLoadingData(true);
@@ -283,7 +293,7 @@ const TechnicalAnalysisScreen = ({
         const data = await fetchOHLCV(stock.symbol, timeframe);
         if (data && data.length > 0) {
           logger.log(`[TechnicalAnalysis] Got ${data.length} ${timeframe} candles for ${stock.symbol}`);
-          setOhlcvData(patchLatestCandle(data, timeframe));
+          setOhlcvData(await patchLatestCandle(data, timeframe));
           handleFallbackMetadata(data, timeframe);
         } else {
           console.warn(`[TechnicalAnalysis] No data returned for ${stock.symbol}`);
@@ -317,7 +327,7 @@ const TechnicalAnalysisScreen = ({
         const data = await fetchOHLCV(stock.symbol, newTimeframe);
         if (data && data.length > 0) {
           logger.log(`[TechnicalAnalysis] Got ${data.length} ${newTimeframe} candles`);
-          setOhlcvData(patchLatestCandle(data, newTimeframe));
+          setOhlcvData(await patchLatestCandle(data, newTimeframe));
           handleFallbackMetadata(data, newTimeframe);
         } else {
           setError(`No ${newTimeframe} data available`);

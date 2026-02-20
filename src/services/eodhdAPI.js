@@ -833,6 +833,58 @@ export async function fetchHistoricalOHLCV(symbol, timeframe = '1d', { days, fro
 }
 
 // ============================================
+// TODAY'S INTRADAY OHLC (for patching stale daily candles)
+// ============================================
+
+// In-memory cache: { [symbol]: { data, timestamp } }
+const todayOHLCCache = {};
+const TODAY_OHLC_CACHE_TTL = 60 * 1000; // 1 minute
+
+/**
+ * Fetch today's intraday bars (1h) and derive accurate daily OHLC.
+ * Used to patch stale "today" candles on daily charts with real intraday H/L.
+ * @param {string} symbol - Stock ticker
+ * @returns {Promise<{open:number, high:number, low:number, close:number, volume:number}|null>}
+ */
+export async function fetchTodayOHLC(symbol) {
+  const upper = symbol.toUpperCase();
+
+  // Check cache
+  const cached = todayOHLCCache[upper];
+  if (cached && Date.now() - cached.timestamp < TODAY_OHLC_CACHE_TTL) {
+    return cached.data;
+  }
+
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const response = await fetchWithTimeout(
+      `${API_BASE}/stocks/historical?symbol=${encodeURIComponent(upper)}&timeframe=1h&from=${today}&to=${today}`,
+      15000
+    );
+
+    if (!response.ok) return null;
+    const result = await response.json();
+    const bars = result.data || result;
+
+    if (!bars || !Array.isArray(bars) || bars.length === 0) return null;
+
+    const dailyOHLC = {
+      open: Number(bars[0].open),
+      high: Math.max(...bars.map(b => Number(b.high))),
+      low: Math.min(...bars.map(b => Number(b.low))),
+      close: Number(bars[bars.length - 1].close),
+      volume: bars.reduce((sum, b) => sum + (Number(b.volume) || 0), 0),
+    };
+
+    todayOHLCCache[upper] = { data: dailyOHLC, timestamp: Date.now() };
+    return dailyOHLC;
+  } catch (err) {
+    logWarn(`fetchTodayOHLC failed for ${upper}:`, err.message);
+    return null;
+  }
+}
+
+// ============================================
 // UTILITY FUNCTIONS
 // ============================================
 
@@ -1030,6 +1082,7 @@ export const stockAPI = {
   clearEarningsCache,
   // Historical OHLCV data
   fetchHistoricalOHLCV,
+  fetchTodayOHLC,
   // Cache utilities
   getCacheStats,
   printCacheReport,
