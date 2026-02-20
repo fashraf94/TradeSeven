@@ -856,7 +856,9 @@ export async function fetchTodayOHLC(symbol) {
   }
 
   try {
-    const todayStr = new Date().toISOString().split('T')[0]; // "2026-02-20"
+    const todayStr = new Date().toISOString().split('T')[0]; // UTC date "2026-02-20"
+    logDebug(`[fetchTodayOHLC] ${upper} todayStr: ${todayStr}`);
+
     const response = await fetchWithTimeout(
       `${API_BASE}/stocks/historical?symbol=${encodeURIComponent(upper)}&timeframe=1h`,
       15000
@@ -868,14 +870,49 @@ export async function fetchTodayOHLC(symbol) {
 
     if (!allBars || !Array.isArray(allBars) || allBars.length === 0) return null;
 
+    logDebug(`[fetchTodayOHLC] ${upper} total bars: ${allBars.length}`);
+    if (allBars.length > 0) {
+      logDebug('[fetchTodayOHLC] First bar:', JSON.stringify(allBars[0]));
+      logDebug('[fetchTodayOHLC] Last bar:', JSON.stringify(allBars[allBars.length - 1]));
+    }
+
     // EODHD intraday returns ~10 days of hourly bars regardless of from/to.
-    // Filter to today's bars only using the date portion of datetime/date fields.
+    // Filter to today's bars only. Handle both ISO datetime strings and Unix timestamps.
     const todayBars = allBars.filter(bar => {
-      const barDate = (bar.datetime || bar.date || '').toString().substring(0, 10);
-      return barDate === todayStr;
+      const dt = bar.datetime || bar.date;
+      if (typeof dt === 'number') {
+        // Unix timestamp (seconds) — convert to UTC date string
+        return new Date(dt * 1000).toISOString().split('T')[0] === todayStr;
+      }
+      if (bar.timestamp && typeof bar.timestamp === 'number') {
+        // Has numeric timestamp field — use it for reliable comparison
+        return new Date(bar.timestamp * 1000).toISOString().split('T')[0] === todayStr;
+      }
+      // ISO string — extract date portion
+      return (dt || '').toString().substring(0, 10) === todayStr;
     });
 
-    if (todayBars.length === 0) return null; // No bars for today (pre-market or weekend)
+    logDebug(`[fetchTodayOHLC] ${upper} todayBars: ${todayBars.length} of ${allBars.length}`);
+
+    if (todayBars.length === 0) {
+      // Log why no bars matched
+      const sampleDates = allBars.slice(-5).map(b => {
+        const dt = b.datetime || b.date;
+        if (b.timestamp && typeof b.timestamp === 'number') {
+          return new Date(b.timestamp * 1000).toISOString().split('T')[0];
+        }
+        return (dt || '').toString().substring(0, 10);
+      });
+      logDebug(`[fetchTodayOHLC] No match! Last 5 bar dates: ${JSON.stringify(sampleDates)} vs todayStr: ${todayStr}`);
+      return null;
+    }
+
+    // Sort oldest-first so open = first bar of day, close = last bar of day
+    todayBars.sort((a, b) => {
+      const tA = a.timestamp || 0;
+      const tB = b.timestamp || 0;
+      return tA - tB;
+    });
 
     const dailyOHLC = {
       open: Number(todayBars[0].open),
@@ -884,6 +921,8 @@ export async function fetchTodayOHLC(symbol) {
       close: Number(todayBars[todayBars.length - 1].close),
       volume: todayBars.reduce((sum, b) => sum + (Number(b.volume) || 0), 0),
     };
+
+    logDebug(`[fetchTodayOHLC] ${upper} RESULT:`, JSON.stringify(dailyOHLC));
 
     todayOHLCCache[upper] = { data: dailyOHLC, timestamp: Date.now() };
     return dailyOHLC;
