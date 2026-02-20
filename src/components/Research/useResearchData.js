@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { fetchHistoricalOHLCV, fetchTodayOHLC } from '../../services/eodhdAPI';
+import { fetchHistoricalOHLCV } from '../../services/eodhdAPI';
 import { calculateRollingSMA, calculateRSI, calculateMACD, calculateSMA } from '../../services/technicalIndicators';
 import { detectLevels } from '../../services/levelDetection';
 import { aggregateToMonthly } from './chartUtils';
@@ -138,25 +138,8 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     };
   }, [isSpectate, symbol]);
 
-  // Fetch today's intraday OHLC for accurate daily candle patching
-  const [todayIntraday, setTodayIntraday] = useState(null);
-  useEffect(() => {
-    if (!symbol || isCrypto || (timeframe !== '1D' && timeframe !== '1W')) {
-      setTodayIntraday(null);
-      return;
-    }
-
-    let cancelled = false;
-    fetchTodayOHLC(symbol).then(data => {
-      if (!cancelled && data) setTodayIntraday(data);
-    });
-
-    return () => { cancelled = true; };
-  }, [symbol, timeframe, isCrypto]);
-
   // Process data based on UI timeframe
   const ohlcvData = useMemo(() => {
-    console.log('[OHLC-DEBUG] useMemo running, todayIntraday:', todayIntraday, 'timeframe:', timeframe);
     if (!rawData) return null;
 
     // Data from API is newest-first, reverse to oldest-first for processing
@@ -304,32 +287,20 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         monday.setHours(0, 0, 0, 0);
         if (lastDate < monday) {
           const mondayStr = monday.toISOString().split('T')[0];
-          const synHigh = todayIntraday
-            ? Math.max(todayIntraday.high, currentPrice, lastCandle.close)
-            : Math.max(currentPrice, lastCandle.close);
-          const synLow = todayIntraday
-            ? Math.min(todayIntraday.low, currentPrice, lastCandle.close)
-            : Math.min(currentPrice, lastCandle.close);
           result = [...result, {
             date: mondayStr,
             open: lastCandle.close,
-            high: synHigh,
-            low: synLow,
+            high: Math.max(currentPrice, lastCandle.close),
+            low: Math.min(currentPrice, lastCandle.close),
             close: currentPrice,
-            volume: todayIntraday?.volume || 0,
+            volume: 0,
           }];
         } else {
-          // Current week's candle exists — patch H/L/C with intraday + live price
+          // Current week's candle exists — patch H/L/C with live price
           const patched = { ...lastCandle };
+          patched.high = Math.max(Number(patched.high), currentPrice);
+          patched.low = Math.min(Number(patched.low), currentPrice);
           patched.close = currentPrice;
-          if (todayIntraday) {
-            patched.high = Math.max(Number(patched.high), todayIntraday.high, currentPrice);
-            patched.low = Math.min(Number(patched.low), todayIntraday.low, currentPrice);
-            if (todayIntraday.volume > 0) patched.volume = (Number(patched.volume) || 0) + todayIntraday.volume;
-          } else {
-            patched.high = Math.max(Number(patched.high), currentPrice);
-            patched.low = Math.min(Number(patched.low), currentPrice);
-          }
           result = [...result.slice(0, -1), patched];
         }
       } else if (timeframe === '1D') {
@@ -347,44 +318,28 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         const shouldAppend = isCrypto ? true : !isWeekend;
 
         if (lastDate < today && shouldAppend) {
-          console.log('[OHLC-DEBUG] 1D APPEND branch, todayIntraday:', todayIntraday);
           const todayStr = today.toISOString().split('T')[0];
-          const synOpen = todayIntraday?.open || lastCandle.close;
-          const synHigh = todayIntraday
-            ? Math.max(todayIntraday.high, currentPrice)
-            : Math.max(currentPrice, lastCandle.close);
-          const synLow = todayIntraday
-            ? Math.min(todayIntraday.low, currentPrice)
-            : Math.min(currentPrice, lastCandle.close);
           result = [...result, {
             date: todayStr,
-            open: synOpen,
-            high: synHigh,
-            low: synLow,
+            open: lastCandle.close,
+            high: Math.max(currentPrice, lastCandle.close),
+            low: Math.min(currentPrice, lastCandle.close),
             close: currentPrice,
-            volume: todayIntraday?.volume || 0,
+            volume: 0,
           }];
         } else if (lastDate.getTime() === today.getTime()) {
-          console.log('[OHLC-DEBUG] 1D PATCH branch, todayIntraday:', todayIntraday);
-          // Today's candle exists but may have stale H/L/C — patch with intraday + live price
+          // Today's candle exists but may have stale H/L/C — patch with live price
           const patched = { ...lastCandle };
+          patched.high = Math.max(Number(patched.high), currentPrice);
+          patched.low = Math.min(Number(patched.low), currentPrice);
           patched.close = currentPrice;
-          if (todayIntraday) {
-            patched.open = todayIntraday.open || patched.open;
-            patched.high = Math.max(Number(patched.high), todayIntraday.high, currentPrice);
-            patched.low = Math.min(Number(patched.low), todayIntraday.low, currentPrice);
-            if (todayIntraday.volume > 0) patched.volume = todayIntraday.volume;
-          } else {
-            patched.high = Math.max(Number(patched.high), currentPrice);
-            patched.low = Math.min(Number(patched.low), currentPrice);
-          }
           result = [...result.slice(0, -1), patched];
         }
       }
     }
 
     return result;
-  }, [rawData, timeframe, currentPrice, isCrypto, todayIntraday]);
+  }, [rawData, timeframe, currentPrice, isCrypto]);
 
   // Compute closing prices (newest-first, as expected by indicator functions)
   const closingPrices = useMemo(() => {

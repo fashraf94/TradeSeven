@@ -833,109 +833,6 @@ export async function fetchHistoricalOHLCV(symbol, timeframe = '1d', { days, fro
 }
 
 // ============================================
-// TODAY'S INTRADAY OHLC (for patching stale daily candles)
-// ============================================
-
-// In-memory cache: { [symbol]: { data, timestamp } }
-const todayOHLCCache = {};
-const TODAY_OHLC_CACHE_TTL = 60 * 1000; // 1 minute
-
-/**
- * Fetch today's intraday bars (1h) and derive accurate daily OHLC.
- * Used to patch stale "today" candles on daily charts with real intraday H/L.
- * @param {string} symbol - Stock ticker
- * @returns {Promise<{open:number, high:number, low:number, close:number, volume:number}|null>}
- */
-export async function fetchTodayOHLC(symbol) {
-  const upper = symbol.toUpperCase();
-  console.log('[OHLC-DEBUG] fetchTodayOHLC called for', upper);
-
-  // Check cache
-  const cached = todayOHLCCache[upper];
-  if (cached && Date.now() - cached.timestamp < TODAY_OHLC_CACHE_TTL) {
-    console.log('[OHLC-DEBUG] fetchTodayOHLC returning cached:', upper, cached.data);
-    return cached.data;
-  }
-
-  try {
-    const todayStr = new Date().toISOString().split('T')[0]; // UTC date "2026-02-20"
-    logDebug(`[fetchTodayOHLC] ${upper} todayStr: ${todayStr}`);
-
-    const response = await fetchWithTimeout(
-      `${API_BASE}/stocks/historical?symbol=${encodeURIComponent(upper)}&timeframe=1h`,
-      15000
-    );
-
-    if (!response.ok) return null;
-    const result = await response.json();
-    const allBars = result.data || result;
-
-    if (!allBars || !Array.isArray(allBars) || allBars.length === 0) return null;
-
-    logDebug(`[fetchTodayOHLC] ${upper} total bars: ${allBars.length}`);
-    if (allBars.length > 0) {
-      logDebug('[fetchTodayOHLC] First bar:', JSON.stringify(allBars[0]));
-      logDebug('[fetchTodayOHLC] Last bar:', JSON.stringify(allBars[allBars.length - 1]));
-    }
-
-    // EODHD intraday returns ~10 days of hourly bars regardless of from/to.
-    // Filter to today's bars only. Handle both ISO datetime strings and Unix timestamps.
-    const todayBars = allBars.filter(bar => {
-      const dt = bar.datetime || bar.date;
-      if (typeof dt === 'number') {
-        // Unix timestamp (seconds) — convert to UTC date string
-        return new Date(dt * 1000).toISOString().split('T')[0] === todayStr;
-      }
-      if (bar.timestamp && typeof bar.timestamp === 'number') {
-        // Has numeric timestamp field — use it for reliable comparison
-        return new Date(bar.timestamp * 1000).toISOString().split('T')[0] === todayStr;
-      }
-      // ISO string — extract date portion
-      return (dt || '').toString().substring(0, 10) === todayStr;
-    });
-
-    logDebug(`[fetchTodayOHLC] ${upper} todayBars: ${todayBars.length} of ${allBars.length}`);
-
-    if (todayBars.length === 0) {
-      // Log why no bars matched
-      const sampleDates = allBars.slice(-5).map(b => {
-        const dt = b.datetime || b.date;
-        if (b.timestamp && typeof b.timestamp === 'number') {
-          return new Date(b.timestamp * 1000).toISOString().split('T')[0];
-        }
-        return (dt || '').toString().substring(0, 10);
-      });
-      console.log('[OHLC-DEBUG] fetchTodayOHLC NO MATCH:', upper, 'last 5 dates:', sampleDates, 'vs todayStr:', todayStr);
-      return null;
-    }
-
-    // Sort oldest-first so open = first bar of day, close = last bar of day
-    todayBars.sort((a, b) => {
-      const tA = a.timestamp || 0;
-      const tB = b.timestamp || 0;
-      return tA - tB;
-    });
-
-    const dailyOHLC = {
-      open: Number(todayBars[0].open),
-      high: Math.max(...todayBars.map(b => Number(b.high))),
-      low: Math.min(...todayBars.map(b => Number(b.low))),
-      close: Number(todayBars[todayBars.length - 1].close),
-      volume: todayBars.reduce((sum, b) => sum + (Number(b.volume) || 0), 0),
-    };
-
-    logDebug(`[fetchTodayOHLC] ${upper} RESULT:`, JSON.stringify(dailyOHLC));
-
-    console.log('[OHLC-DEBUG] fetchTodayOHLC result:', upper, dailyOHLC);
-    todayOHLCCache[upper] = { data: dailyOHLC, timestamp: Date.now() };
-    return dailyOHLC;
-  } catch (err) {
-    logWarn(`fetchTodayOHLC failed for ${upper}:`, err.message);
-    return null;
-  }
-}
-
-// ============================================
 // UTILITY FUNCTIONS
 // ============================================
 
@@ -1133,7 +1030,6 @@ export const stockAPI = {
   clearEarningsCache,
   // Historical OHLCV data
   fetchHistoricalOHLCV,
-  fetchTodayOHLC,
   // Cache utilities
   getCacheStats,
   printCacheReport,
