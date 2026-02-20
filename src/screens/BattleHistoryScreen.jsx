@@ -6,6 +6,7 @@ const BattleHistoryScreen = ({
   previousBattles,
   completedDraftBattles,
   completedTrainingBattles,
+  completedV4Battles = [],
   historyTab,
   setHistoryTab,
   loadingTrainingBattles,
@@ -20,16 +21,49 @@ const BattleHistoryScreen = ({
   const allCompletedClassicBattles = previousBattles || [];
   const classicBattles = allCompletedClassicBattles.filter(b => b.isDraft !== true && b.battleType !== 'baggerbomb_training');
 
+  // Merge V4 Firestore battles with localStorage classic battles, deduplicate by ID
+  const mergedBaggerBombBattles = (() => {
+    const seen = new Set(classicBattles.map(b => b.id || b.battleId));
+    const v4New = completedV4Battles.filter(b => !seen.has(b.id));
+    return [...classicBattles, ...v4New].sort((a, b) =>
+      new Date(b.completedAt || b.archivedAt || 0) - new Date(a.completedAt || a.archivedAt || 0)
+    );
+  })();
+
   // Select battles based on current tab
   const completedBattles = historyTab === 'draft'
     ? completedDraftBattles
     : historyTab === 'training'
       ? completedTrainingBattles
-      : classicBattles;
+      : mergedBaggerBombBattles;
+
+  // Helper: check if user won a battle (handles training username mismatch)
+  const didUserWin = (b) => {
+    if (b.won === true) return true;
+    if (b.result?.winner === user?.username) return true;
+    // Training/V4 fallback: result.winner stores in-game username, not odUserId
+    if ((b.isTrainingBattle || b._v >= 3) && b.result?.winner) {
+      const isCreator = b.creator?.odUserId === (user?.odUserId || user?.username)
+        || b.creator?.username === user?.username;
+      return isCreator
+        ? b.result.winner === b.creator?.username
+        : b.result.winner === b.opponent?.username;
+    }
+    return false;
+  };
+
+  const didUserLose = (b) => {
+    if (b.won === false) return true;
+    if ((b.isTrainingBattle || b._v >= 3) && b.result?.winner) {
+      return !didUserWin(b);
+    }
+    if (b.result && b.result.winner && b.result.winner !== user?.username) return true;
+    return false;
+  };
 
   // Stats for the current tab
-  const tabWins = completedBattles.filter(b => b.won === true || b.result?.winner === user?.username).length;
-  const tabLosses = completedBattles.filter(b => b.won === false || (b.result && b.result.winner !== user?.username)).length;
+  const tabWins = completedBattles.filter(didUserWin).length;
+  const tabLosses = completedBattles.filter(didUserLose).length;
   // For draft battles, podium (top 3) count can be useful
   const draftPodiums = historyTab === 'draft' ? completedBattles.filter(b => b.myRank && b.myRank <= 3).length : 0;
   // For training battles, count total completed
@@ -152,7 +186,7 @@ const BattleHistoryScreen = ({
                 {historyTab === 'training' ? completedBattles.length : tabWins + tabLosses}
               </div>
               <div style={{ fontSize: '13px', color: '#8b949e' }}>
-                {historyTab === 'draft' ? 'Draft' : historyTab === 'training' ? 'Training' : 'Classic'} Battles
+                {historyTab === 'draft' ? 'Draft' : historyTab === 'training' ? 'Training' : 'BaggerBomb'} Battles
               </div>
             </div>
 
@@ -189,7 +223,7 @@ const BattleHistoryScreen = ({
 
           {/* Battle List */}
           <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff', marginBottom: '16px' }}>
-            {historyTab === 'draft' ? 'Past Draft Battles' : historyTab === 'training' ? 'Past Training Battles' : 'Past Classic Battles'}
+            {historyTab === 'draft' ? 'Past Draft Battles' : historyTab === 'training' ? 'Past Training Battles' : 'Past BaggerBomb Battles'}
           </h2>
 
           {loadingTrainingBattles && historyTab === 'training' ? (
@@ -215,14 +249,14 @@ const BattleHistoryScreen = ({
                 {historyTab === 'draft' ? '🎯' : historyTab === 'training' ? '🤖' : '🎮'}
               </div>
               <p style={{ color: '#8b949e', fontSize: '18px', marginBottom: '8px' }}>
-                No {historyTab === 'draft' ? 'draft' : historyTab === 'training' ? 'training' : 'classic'} battles yet
+                No {historyTab === 'draft' ? 'draft' : historyTab === 'training' ? 'training' : 'BaggerBomb'} battles yet
               </p>
               <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '16px' }}>
                 {historyTab === 'draft'
                   ? 'Start a draft battle to build your history!'
                   : historyTab === 'training'
                   ? 'Play against AI opponents to practice your strategy!'
-                  : 'Create your first classic battle to start your history!'
+                  : 'Create your first BaggerBomb battle to start your history!'
                 }
               </p>
               <button
@@ -387,13 +421,17 @@ const BattleHistoryScreen = ({
                   );
                 }
 
-                // Training battle card (vs AI)
+                // Training battle card (vs AI) — points-based scoring
                 if (historyTab === 'training' && battle.isTrainingBattle) {
-                  const aiOpponent = battle.players?.find(p => p.isAI);
-                  const userPlayer = battle.players?.find(p => !p.isAI);
-                  const userGain = userPlayer?.finalGain ?? userPlayer?.portfolioGain ?? 0;
-                  const aiGain = aiOpponent?.finalGain ?? aiOpponent?.portfolioGain ?? 0;
-                  const won = userGain > aiGain;
+                  const isCreator = battle.creator?.odUserId === (user?.odUserId || user?.username)
+                    || battle.creator?.username === user?.username;
+                  const myScore = isCreator ? (battle.result?.creatorScore ?? 0) : (battle.result?.opponentScore ?? 0);
+                  const oppScore = isCreator ? (battle.result?.opponentScore ?? 0) : (battle.result?.creatorScore ?? 0);
+                  const oppName = isCreator ? (battle.opponent?.username || 'CPU Opponent') : (battle.creator?.username || 'Player');
+                  const won = battle.result?.winner
+                    ? didUserWin(battle)
+                    : myScore > oppScore;
+                  const completedDate = battle.completedAt || battle.timeline?.completedAt;
 
                   return (
                     <div
@@ -427,7 +465,7 @@ const BattleHistoryScreen = ({
                           <span style={{ fontSize: '16px' }}>🤖</span>
                         </div>
                         <span style={{ color: '#6e7681', fontSize: '12px' }}>
-                          {battle.completedAt ? new Date(battle.completedAt).toLocaleDateString() : ''}
+                          {completedDate ? new Date(completedDate).toLocaleDateString() : ''}
                         </span>
                       </div>
 
@@ -445,11 +483,11 @@ const BattleHistoryScreen = ({
                         <div style={{ flex: 1, textAlign: 'center' }}>
                           <div style={{ color: '#00d9ff', fontWeight: 'bold', fontSize: '14px' }}>You</div>
                           <div style={{
-                            color: userGain >= 0 ? '#10b981' : '#ef4444',
+                            color: myScore >= oppScore ? '#10b981' : '#ef4444',
                             fontSize: '20px',
                             fontWeight: 'bold'
                           }}>
-                            {userGain >= 0 ? '+' : ''}{userGain.toFixed(1)}%
+                            {myScore} pts
                           </div>
                         </div>
 
@@ -458,14 +496,14 @@ const BattleHistoryScreen = ({
                         {/* AI */}
                         <div style={{ flex: 1, textAlign: 'center' }}>
                           <div style={{ color: '#9333ea', fontWeight: 'bold', fontSize: '14px' }}>
-                            {aiOpponent?.displayName || 'AI Opponent'}
+                            {oppName}
                           </div>
                           <div style={{
-                            color: aiGain >= 0 ? '#10b981' : '#ef4444',
+                            color: oppScore >= myScore ? '#10b981' : '#ef4444',
                             fontSize: '20px',
                             fontWeight: 'bold'
                           }}>
-                            {aiGain >= 0 ? '+' : ''}{aiGain.toFixed(1)}%
+                            {oppScore} pts
                           </div>
                         </div>
                       </div>
@@ -483,6 +521,107 @@ const BattleHistoryScreen = ({
                         <span>Training Battle</span>
                         <span>{battle.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'}</span>
                         <span>vs AI</span>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // V4 BaggerBomb card (points-based)
+                if ((battle._v === 3 || battle._v === 4) && battle.result) {
+                  const won = battle.result.winner === user?.username;
+                  const isCreator = battle.creator?.username === user?.username ||
+                    battle.creator?.odUserId === (user?.odUserId || user?.username);
+                  const myScore = isCreator ? battle.result.creatorScore : battle.result.opponentScore;
+                  const oppScore = isCreator ? battle.result.opponentScore : battle.result.creatorScore;
+                  const oppName = isCreator ? battle.opponent?.username : battle.creator?.username;
+                  const completedDate = battle.completedAt || battle.timeline?.completedAt;
+
+                  return (
+                    <div
+                      key={battle.id || index}
+                      style={{
+                        background: '#161b22',
+                        borderLeft: won ? '4px solid #10b981' : '4px solid #ef4444',
+                        borderRadius: '12px',
+                        padding: '16px',
+                        marginBottom: '0'
+                      }}
+                    >
+                      {/* Header */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '12px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                            background: won ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                            color: won ? '#10b981' : '#ef4444'
+                          }}>
+                            {won ? '🏆 VICTORY' : '💀 DEFEAT'}
+                          </span>
+                          <span style={{ fontSize: '16px' }}>💣</span>
+                        </div>
+                        <span style={{ color: '#6e7681', fontSize: '12px' }}>
+                          {completedDate ? new Date(completedDate).toLocaleDateString() : ''}
+                        </span>
+                      </div>
+
+                      {/* Matchup: You vs Opponent with points */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '8px',
+                        background: '#0d1117',
+                        borderRadius: '8px',
+                        padding: '12px'
+                      }}>
+                        <div style={{ flex: 1, textAlign: 'center' }}>
+                          <div style={{ color: '#00d9ff', fontWeight: 'bold', fontSize: '14px' }}>You</div>
+                          <div style={{
+                            color: (myScore || 0) >= (oppScore || 0) ? '#10b981' : '#ef4444',
+                            fontSize: '20px',
+                            fontWeight: 'bold'
+                          }}>
+                            {myScore || 0} pts
+                          </div>
+                        </div>
+
+                        <div style={{ color: '#6e7681', fontSize: '18px', fontWeight: 'bold' }}>VS</div>
+
+                        <div style={{ flex: 1, textAlign: 'center' }}>
+                          <div style={{ color: '#f59e0b', fontWeight: 'bold', fontSize: '14px' }}>
+                            {oppName || 'Opponent'}
+                          </div>
+                          <div style={{
+                            color: (oppScore || 0) >= (myScore || 0) ? '#10b981' : '#ef4444',
+                            fontSize: '20px',
+                            fontWeight: 'bold'
+                          }}>
+                            {oppScore || 0} pts
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Battle Info */}
+                      <div style={{
+                        marginTop: '12px',
+                        paddingTop: '12px',
+                        borderTop: '1px solid #21262d',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        color: '#6e7681',
+                        fontSize: '11px'
+                      }}>
+                        <span>BaggerBomb</span>
+                        <span>{battle.timing?.tradingDays || 3} day battle</span>
+                        <span>Margin: {battle.result.margin || 0} pts</span>
                       </div>
                     </div>
                   );

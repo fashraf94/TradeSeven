@@ -269,10 +269,19 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
             close: currentPrice,
             volume: 0,
           }];
+        } else if (lastTime) {
+          // Latest candle is within the current hour — patch H/L/C with live price
+          const patched = { ...lastCandle };
+          patched.high = Math.max(Number(patched.high), currentPrice);
+          patched.low = Math.min(Number(patched.low), currentPrice);
+          patched.close = currentPrice;
+          result = [...result.slice(0, -1), patched];
         }
       } else if (timeframe === '1W') {
         // Weekly: append if last candle is from a previous week
-        const lastDate = new Date(lastDateStr);
+        // Parse as local date to avoid UTC-midnight shift (same fix as 1D)
+        const [wy, wm, wd] = lastDateStr.substring(0, 10).split('-').map(Number);
+        const lastDate = new Date(wy, wm - 1, wd);
         const monday = new Date();
         monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7)); // This Monday
         monday.setHours(0, 0, 0, 0);
@@ -286,11 +295,20 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
             close: currentPrice,
             volume: 0,
           }];
+        } else {
+          // Current week's candle exists — patch H/L/C with live price
+          const patched = { ...lastCandle };
+          patched.high = Math.max(Number(patched.high), currentPrice);
+          patched.low = Math.min(Number(patched.low), currentPrice);
+          patched.close = currentPrice;
+          result = [...result.slice(0, -1), patched];
         }
       } else if (timeframe === '1D') {
         // Daily: append if last candle is from a previous day
-        const lastDate = new Date(lastDateStr);
-        lastDate.setHours(0, 0, 0, 0);
+        // Parse as local date to avoid UTC-midnight shift
+        // new Date("YYYY-MM-DD") parses as UTC → setHours(0,0,0,0) shifts back a day in US timezones
+        const [ly, lm, ld] = lastDateStr.substring(0, 10).split('-').map(Number);
+        const lastDate = new Date(ly, lm - 1, ld);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
@@ -309,6 +327,13 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
             close: currentPrice,
             volume: 0,
           }];
+        } else if (lastDate.getTime() === today.getTime()) {
+          // Today's candle exists but may have stale H/L/C — patch with live price
+          const patched = { ...lastCandle };
+          patched.high = Math.max(Number(patched.high), currentPrice);
+          patched.low = Math.min(Number(patched.low), currentPrice);
+          patched.close = currentPrice;
+          result = [...result.slice(0, -1), patched];
         }
       }
     }

@@ -13,7 +13,7 @@
 import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getEasternTime } from '../constants/battleTiming';
-import { V4_PVP_TIMING } from '../constants/battleTimingV4';
+import { V4_PVP_TIMING, getCurrentTradingDay } from '../constants/battleTimingV4';
 import { calculateAssetScoreV3, flattenPortfolio } from '../utils/baggerBombUtils';
 
 // ============================================
@@ -268,4 +268,53 @@ export async function checkAndBankPreviousDays(battleId, currentDay, currentPric
       }
     }
   }
+}
+
+// ============================================
+// V4 FINAL SCORE CALCULATION (for battle completion)
+// ============================================
+
+/**
+ * Calculate final V4 scores for both players at battle completion.
+ * Total = banked previous days + current day active score + closed trade points.
+ * Mirrors the scoring in useBaggerBombBattleV4 hook but as a standalone function.
+ *
+ * @param {Object} battle - Full V4 battle document
+ * @param {Object} endingPrices - Current/ending prices keyed by symbol
+ * @returns {{ creatorScore: number, opponentScore: number }}
+ */
+export function calculateV4FinalScores(battle, endingPrices) {
+  // 1. Get open prices for the current/final trading day
+  const tradingDayDates = battle.timing?.tradingDayDates;
+  const currentDay = tradingDayDates?.length > 0 ? getCurrentTradingDay(tradingDayDates) : 1;
+  const dayKey = `day${currentDay}`;
+  const openPrices = battle.state?.dailyOpenPrices?.[dayKey]
+    || battle.state?.startingPrices || {};
+
+  // 2. Calculate active day score for each player (reuses existing calculatePlayerActiveScore)
+  const creatorHistory = battle.creator?.history || {};
+  const opponentHistory = battle.opponent?.history || {};
+  const thresholds = battle.thresholds || {};
+
+  const creatorActive = calculatePlayerActiveScore(
+    battle.creator?.portfolio, endingPrices, openPrices, creatorHistory, thresholds
+  );
+  const opponentActive = calculatePlayerActiveScore(
+    battle.opponent?.portfolio, endingPrices, openPrices, opponentHistory, thresholds
+  );
+
+  // 3. Banked previous days
+  const creatorBanked = getBankedScoreTotal(battle.state?.dailyScores, 'creator');
+  const opponentBanked = getBankedScoreTotal(battle.state?.dailyScores, 'opponent');
+
+  // 4. Closed trade points
+  const creatorClosed = (battle.creator?.closedTrades || [])
+    .reduce((sum, t) => sum + (t.lockedPoints || 0), 0);
+  const opponentClosed = (battle.opponent?.closedTrades || [])
+    .reduce((sum, t) => sum + (t.lockedPoints || 0), 0);
+
+  return {
+    creatorScore: Math.round(creatorBanked + creatorActive.activeScore + creatorClosed),
+    opponentScore: Math.round(opponentBanked + opponentActive.activeScore + opponentClosed),
+  };
 }

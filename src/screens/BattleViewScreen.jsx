@@ -287,10 +287,12 @@ const BattleViewScreen = ({
           </div>
         )}
 
-        {/* ⭐ ACTIVE RISK CHALLENGE INDICATOR */}
-        <div style={{ padding: '16px 16px 0 16px' }}>
-          <ActiveRiskChallengeIndicator />
-        </div>
+        {/* ⭐ ACTIVE RISK CHALLENGE INDICATOR — disabled, may re-enable later */}
+        {false && (
+          <div style={{ padding: '16px 16px 0 16px' }}>
+            <ActiveRiskChallengeIndicator />
+          </div>
+        )}
 
         {/* COMPARISON CARD */}
         <div style={{ padding: '16px', backgroundColor: '#0d1117' }}>

@@ -19,6 +19,7 @@ import {
   detectTrend,
 } from '../../services/technicalIndicators';
 import { analyzeExploreQuestion } from '../../services/technicalAnalysisAI';
+import { getStockPrice } from '../../services/eodhdAPI';
 
 // Conditional logging - only show debug logs in development
 const DEBUG = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
@@ -139,6 +140,9 @@ const TechnicalAnalysisScreen = ({
   const [isExploreLoading, setIsExploreLoading] = useState(false);
   const [calculatedIndicators, setCalculatedIndicators] = useState(null);
 
+  // Live price fetched on mount (stock.price may be undefined from StockSearchModal)
+  const [livePrice, setLivePrice] = useState(stock?.price || null);
+
   // Daily anchor data for multi-timeframe confluence detection
   const [dailyAnchorData, setDailyAnchorData] = useState(null);
   const [dailyIndicators, setDailyIndicators] = useState(null);
@@ -197,6 +201,14 @@ const TechnicalAnalysisScreen = ({
     };
   }, []);
 
+  // Fetch live price on mount (stock.price may be undefined from StockSearchModal)
+  useEffect(() => {
+    if (!stock?.symbol) return;
+    getStockPrice(stock.symbol).then(data => {
+      if (data?.price) setLivePrice(data.price);
+    }).catch(() => {});
+  }, [stock?.symbol]);
+
   // Initial data load when symbol changes (H3 fix - proper dependencies)
   useEffect(() => {
     if (stock?.symbol && !initialLoadRef.current) {
@@ -235,6 +247,43 @@ const TechnicalAnalysisScreen = ({
     }
   };
 
+  // Patch the latest candle's H/L/C with live price.
+  // Data is newest-first, so data[0] is the latest candle.
+  const patchLatestCandle = useCallback((data, timeframe) => {
+    if (!data || data.length === 0 || !livePrice || livePrice <= 0) return data;
+
+    const latest = data[0];
+    const dateStr = latest.date || latest.datetime || '';
+
+    if (timeframe === '1d') {
+      // Parse as local date to avoid UTC-midnight shift in US timezones
+      const [cy, cm, cd] = dateStr.substring(0, 10).split('-').map(Number);
+      const candleDate = new Date(cy, cm - 1, cd);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (candleDate.getTime() === today.getTime()) {
+        const patched = { ...latest };
+        patched.high = Math.max(Number(patched.high), livePrice);
+        patched.low = Math.min(Number(patched.low), livePrice);
+        patched.close = livePrice;
+        return [patched, ...data.slice(1)];
+      }
+    } else if (timeframe === '1w') {
+      const candleDate = new Date(dateStr);
+      const monday = new Date();
+      monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+      monday.setHours(0, 0, 0, 0);
+      if (candleDate >= monday) {
+        const patched = { ...latest };
+        patched.high = Math.max(Number(patched.high), livePrice);
+        patched.low = Math.min(Number(patched.low), livePrice);
+        patched.close = livePrice;
+        return [patched, ...data.slice(1)];
+      }
+    }
+    return data;
+  }, [livePrice]);
+
   const loadStockData = async (timeframe = selectedTimeframe) => {
     setIsLoadingData(true);
     setError(null);
@@ -246,7 +295,7 @@ const TechnicalAnalysisScreen = ({
         const data = await fetchOHLCV(stock.symbol, timeframe);
         if (data && data.length > 0) {
           logger.log(`[TechnicalAnalysis] Got ${data.length} ${timeframe} candles for ${stock.symbol}`);
-          setOhlcvData(data);
+          setOhlcvData(patchLatestCandle(data, timeframe));
           handleFallbackMetadata(data, timeframe);
         } else {
           console.warn(`[TechnicalAnalysis] No data returned for ${stock.symbol}`);
@@ -280,7 +329,7 @@ const TechnicalAnalysisScreen = ({
         const data = await fetchOHLCV(stock.symbol, newTimeframe);
         if (data && data.length > 0) {
           logger.log(`[TechnicalAnalysis] Got ${data.length} ${newTimeframe} candles`);
-          setOhlcvData(data);
+          setOhlcvData(patchLatestCandle(data, newTimeframe));
           handleFallbackMetadata(data, newTimeframe);
         } else {
           setError(`No ${newTimeframe} data available`);
@@ -512,6 +561,13 @@ const TechnicalAnalysisScreen = ({
     setExploreConversation([]);
   }, []);
 
+  // Re-patch OHLCV data when live price arrives (initial load may have livePrice=null)
+  useEffect(() => {
+    if (livePrice && ohlcvData && ohlcvData.length > 0) {
+      setOhlcvData(prev => patchLatestCandle(prev, selectedTimeframe));
+    }
+  }, [livePrice]);
+
   // Calculate and store indicators when OHLCV data loads
   useEffect(() => {
     if (ohlcvData && ohlcvData.length > 0) {
@@ -563,7 +619,7 @@ const TechnicalAnalysisScreen = ({
         </div>
         <div style={{ textAlign: 'right' }}>
           <span style={{ fontSize: '18px', fontWeight: '600', color: '#ffffff' }}>
-            ${ohlcvData?.[0]?.close?.toFixed(2) || stock?.price?.toFixed(2) || '--'}
+            ${livePrice?.toFixed(2) || ohlcvData?.[0]?.close?.toFixed(2) || stock?.price?.toFixed(2) || '--'}
           </span>
         </div>
       </div>

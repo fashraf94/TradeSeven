@@ -5,8 +5,9 @@ import { loadBattlesSafe, saveBattlesSafe, isSameBattles } from './services/Loca
 import { useUser } from './contexts/UserContext';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
+import { calculateV4FinalScores } from './services/dailyScoringV4Service';
 // Firebase battle service for PvP battles
-import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, createBaggerBombBattleV4, joinBaggerBombBattle, joinBaggerBombBattleV3, joinBaggerBombBattleV4, subscribeToLobby, subscribeToAllLobbies, getOpenBaggerBombBattles, saveTrackedPattern, getUserTrackedPatterns, getUserPatternStats, cancelTrackedPattern, checkPatternResolution } from './firebase/firebaseService';
+import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, createBaggerBombBattleV4, joinBaggerBombBattle, joinBaggerBombBattleV3, joinBaggerBombBattleV4, subscribeToLobby, subscribeToAllLobbies, getOpenBaggerBombBattles, saveTrackedPattern, getUserTrackedPatterns, getUserPatternStats, cancelTrackedPattern, checkPatternResolution, completeBattle } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings, fetchHistoricalOHLCV } from './services/eodhdAPI';
 // Technical Analysis AI Service
@@ -84,7 +85,7 @@ import {
 // V3-safe portfolio helpers (handles tiered objects and flat arrays)
 import { safePortfolioArray, getUserPortfolioFlat, getOpponentPortfolioFlat, getBothPortfoliosFlat, getAllBattleSymbols } from './utils/portfolioHelpers';
 // BaggerBomb V3 portfolio utilities
-import { flattenPortfolio, flattenBench } from './utils/baggerBombUtils';
+import { flattenPortfolio, flattenBench, calculateAssetScoreV3 } from './utils/baggerBombUtils';
 // Snake Draft asset pools
 import { STEADY_STOCKS, RISKY_STOCKS, DEFENSIVE_STOCKS, STEADY_CRYPTO, RISKY_CRYPTO, DEFENSIVE_CRYPTO } from './services/draftAssets';
 import { createInitialFreeAgents } from './services/freeAgentRotationService';
@@ -11874,6 +11875,7 @@ export default function PortfolioDuel() {
   const [showSlotMachine, setShowSlotMachine] = useState(false);
   const [slotMachineRevealed, setSlotMachineRevealed] = useState(false);
   const slotMachineTriggeredRef = useRef(false); // Session-level guard to prevent multiple triggers
+  const processedV4BattlesRef = useRef(new Set()); // Track V4 battles already sent for completion processing
   const [expandedChallengeId, setExpandedChallengeId] = useState(null);
   const [showChallengeToast, setShowChallengeToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -13087,6 +13089,22 @@ export default function PortfolioDuel() {
     return () => clearInterval(refreshInterval);
   }, [screen, user]);
 
+  // Helper: calculate training battle score for a portfolio (mirrors ClashCardTrainingV4)
+  function calculateTrainingScore(portfolio, endingPrices, startingPrices) {
+    const flat = flattenPortfolio(portfolio);
+    let total = 0;
+    flat.forEach(asset => {
+      if (!asset) return;
+      const openPrice = startingPrices[asset.symbol] || asset.price || 0;
+      const currentPrice = endingPrices[asset.symbol] || openPrice;
+      if (!openPrice) return;
+      const pctChange = ((currentPrice - openPrice) / openPrice) * 100;
+      const score = calculateAssetScoreV3(asset, pctChange, { maxMultiplier: 0, minMultiplier: 0 });
+      total += score.totalPoints;
+    });
+    return Math.round(total);
+  }
+
   // ⭐ Fetch training battles from Firebase (persists across sessions)
   useEffect(() => {
     if (screen !== 'dashboard') return;
@@ -13128,17 +13146,47 @@ export default function PortfolioDuel() {
           }
         }
 
-        // Auto-complete expired training battles
+        // Auto-complete expired training battles with final scores
         for (const battle of expiredBattles) {
           try {
+            // Calculate final scores using ending prices
+            const endingPrices = await fetchCurrentPricesForBattle(battle);
+            const startingPrices = battle.state?.startingPrices || battle.pricing?.baselinePrices || {};
+
+            const creatorScore = calculateTrainingScore(battle.creator?.portfolio, endingPrices, startingPrices);
+            const opponentScore = calculateTrainingScore(battle.opponent?.portfolio, endingPrices, startingPrices);
+
+            const creatorUsername = battle.creator?.username || 'Player';
+            const opponentUsername = battle.opponent?.username || 'CPU Opponent';
+            const creatorWon = creatorScore >= opponentScore;
+
             await updateDoc(doc(db, 'trainingBattles', battle.id), {
               'state.status': 'completed',
               'timeline.completedAt': now.toISOString(),
+              endingPrices,
+              result: {
+                winner: creatorWon ? creatorUsername : opponentUsername,
+                loser: creatorWon ? opponentUsername : creatorUsername,
+                creatorScore,
+                opponentScore,
+                margin: Math.abs(creatorScore - opponentScore),
+              },
               updatedAt: now.toISOString()
             });
-            console.log('⏰ Auto-completed expired training battle:', battle.id);
+            console.log('⏰ Auto-completed training battle with scores:', battle.id, `${creatorScore}-${opponentScore}`);
           } catch (err) {
-            console.error('Error completing expired battle:', err);
+            // Fallback: complete without scores if price fetch fails
+            try {
+              await updateDoc(doc(db, 'trainingBattles', battle.id), {
+                'state.status': 'completed',
+                'timeline.completedAt': now.toISOString(),
+                updatedAt: now.toISOString()
+              });
+              console.log('⏰ Auto-completed training battle (no scores):', battle.id);
+            } catch (innerErr) {
+              console.error('Error completing expired battle:', innerErr);
+            }
+            console.error('Error calculating training battle scores:', err);
           }
         }
 
@@ -13659,6 +13707,9 @@ export default function PortfolioDuel() {
   useEffect(() => {
     if (screen !== 'battle' || !currentBattle) return;
 
+    // Risk challenges disabled — feature hidden, may re-enable later
+    return;
+
     const battleStatus = battleTimer.getBattleStatus(currentBattle);
     if (battleStatus !== 'active') return;
 
@@ -13753,7 +13804,9 @@ export default function PortfolioDuel() {
         const battles = await draftService.getUserCompletedDraftBattles(currentUserId, 50);
 
         // Transform to match expected format and sort by completion date
+        // Filter out training drafts that leak through the query
         const formattedBattles = battles
+          .filter(b => !b.isTraining)
           .map(b => {
             const myStanding = b.finalStandings?.find(s => s.odUserId === currentUserId);
             return {
@@ -13762,10 +13815,12 @@ export default function PortfolioDuel() {
               won: myStanding?.finalRank === 1,
               myRank: myStanding?.finalRank || 0,
               myGain: myStanding?.finalGain || 0,
-              completedAt: b.completedAt?.toDate?.() || new Date(b.completedAt)
+              completedAt: b.completedAt
+                ? (b.completedAt?.toDate?.() || new Date(b.completedAt))
+                : null
             };
           })
-          .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+          .sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0));
 
         setCompletedDraftBattles(formattedBattles);
       } catch (error) {
@@ -13808,7 +13863,11 @@ export default function PortfolioDuel() {
             id: doc.id,
             ...data,
             isTrainingBattle: true,
-            completedAt: data.timeline?.completedAt || data.completedAt
+            completedAt: (() => {
+              const ts = data.timeline?.completedAt || data.completedAt;
+              if (!ts) return null;
+              return ts?.toDate?.() || ts;
+            })()
           };
         });
 
@@ -13937,7 +13996,9 @@ export default function PortfolioDuel() {
       for (const battle of savedBattles) {
         // Skip if already processed or no opponent
         if (battle.result || !battle.opponent) continue;
-        
+        // V4 battles use points-based scoring — handled by dedicated V4 completion processor
+        if (battle._v === 4) continue;
+
         // Check if battle just completed
         if (battleTimer.isJustCompleted(battle)) {
           console.log('🏁 Battle completed!', battle.id);
@@ -13983,6 +14044,24 @@ export default function PortfolioDuel() {
     const interval = setInterval(checkCompletedBattles, 10000); // Every 10 seconds
     return () => clearInterval(interval);
   }, [user]);
+
+  // V4 BaggerBomb completion processor — watches Firestore-subscribed battles for V4 completion
+  useEffect(() => {
+    if (!user) return;
+
+    const pendingV4 = battles.filter(b =>
+      b._v === 4 &&
+      !b.result &&
+      b.opponent &&
+      battleTimer.getBattleStatus(b) === 'completed' &&
+      !processedV4BattlesRef.current.has(b.id)
+    );
+
+    pendingV4.forEach(battle => {
+      processedV4BattlesRef.current.add(battle.id);
+      processV4BattleCompletion(battle);
+    });
+  }, [battles, user]);
 
   // Load previous battles when user logs in or screen changes to dashboard/battleHistory
   useEffect(() => {
@@ -14386,6 +14465,60 @@ export default function PortfolioDuel() {
     }
     
     return prices;
+  }
+
+  // V4 BaggerBomb: process a completed battle with points-based scoring
+  async function processV4BattleCompletion(battle) {
+    try {
+      console.log('🏁 V4 Battle completing...', battle.id);
+
+      // 1. Fetch ending prices
+      const endingPrices = await fetchCurrentPricesForBattle(battle);
+
+      // 2. Calculate V4 final scores (points-based)
+      const { creatorScore, opponentScore } = calculateV4FinalScores(battle, endingPrices);
+
+      // 3. Determine winner
+      const creatorUsername = battle.creator?.username;
+      const opponentUsername = battle.opponent?.username;
+      const creatorWon = creatorScore >= opponentScore;
+      const winner = creatorWon ? creatorUsername : opponentUsername;
+      const loser = creatorWon ? opponentUsername : creatorUsername;
+
+      // 4. Calculate XP (normalize V4 point margin for XP formula)
+      const margin = Math.abs(creatorScore - opponentScore);
+      const normalizedMargin = Math.min(margin / 50, 10);
+      const creatorXP = battleTimer.calculateXP(creatorWon, normalizedMargin);
+      const opponentXP = battleTimer.calculateXP(!creatorWon, normalizedMargin);
+
+      // 5. Build result object (compatible with existing consumers)
+      const result = {
+        winner,
+        loser,
+        creatorScore,
+        opponentScore,
+        creatorReturn: 0,
+        opponentReturn: 0,
+        margin,
+        isV4: true,
+        xpAwarded: {
+          [creatorUsername]: creatorXP,
+          [opponentUsername]: opponentXP,
+        },
+      };
+
+      // 6. Write to Firestore (triggers subscription update for both players + Live Feed)
+      await completeBattle(battle.id, { endingPrices, result });
+
+      // 7. Update local user stats
+      const processedBattle = { ...battle, result, endingPrices, completedAt: new Date().toISOString() };
+      updateUserStatsFromBattle(processedBattle);
+
+      console.log('✅ V4 Battle completed!', battle.id, `${winner} wins ${creatorScore}-${opponentScore}`);
+    } catch (error) {
+      console.error('❌ V4 completion error:', error);
+      processedV4BattlesRef.current.delete(battle.id); // Allow retry
+    }
   }
 
   // Update current user's stats after a battle completes
@@ -16021,6 +16154,9 @@ export default function PortfolioDuel() {
   const completedBattles = userBattles.filter(b =>
     battleTimer.getBattleStatus(b) === 'completed',
     'completedBattles from userBattles'
+  );
+  const completedV4Battles = completedBattles.filter(b =>
+    (b._v === 3 || b._v === 4) && b.result
   );
 
   // ============================================
@@ -19587,8 +19723,8 @@ export default function PortfolioDuel() {
           {/* Global Overlays */}
           <ChallengeToast />
           <MidGameChallengePopup />
-          <RiskChallengePopup />
-          <RiskChallengeResultPopup />
+          {false && <RiskChallengePopup />}
+          {false && <RiskChallengeResultPopup />}
           {showSlotMachine && weeklyChallenges.length >= 4 && (
             <SlotMachineContent
               challenges={weeklyChallenges}
@@ -20023,6 +20159,8 @@ export default function PortfolioDuel() {
               margin: '0 auto',
               boxSizing: 'border-box',
               overflowX: 'hidden',
+              paddingLeft: '16px',
+              paddingRight: '16px',
             }}
           >
             {/* ═══════════════════════════════════════════════════════════
@@ -22485,8 +22623,8 @@ export default function PortfolioDuel() {
           subtitle="Score points with breakout bonuses"
           details={[
             { label: 'Players', value: '2 players' },
-            { label: 'Assets', value: '7-13 picks' },
-            { label: 'Duration', value: '1 hour' },
+            { label: 'Assets', value: '7 picks' },
+            { label: 'Duration', value: '3 days' },
             { label: 'Rewards', value: '+15 XP (win) / +5 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
           ]}
           confirmText="Enter Lobby"
@@ -23154,6 +23292,7 @@ export default function PortfolioDuel() {
         onBack={() => setScreen('dashboard')}
         sendRematchRequest={sendRematchRequest}
         BattleHistoryCard={BattleHistoryCard}
+        completedV4Battles={completedV4Battles}
       />
       </ErrorBoundary>
     );
