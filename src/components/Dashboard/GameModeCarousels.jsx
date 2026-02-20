@@ -73,7 +73,7 @@ export default function GameModeCarousels({
       id: 'baggerbomb-training',
       theme: 'baggerBomb',
       title: 'BaggerBomb',
-      description: 'Practice scoring points with breakout bonuses against CPU',
+      description: '1v1 battle — Practice scoring points with breakout bonuses against CPU',
       duration: '24 hours',
       isTraining: true,
       onClick: () => {

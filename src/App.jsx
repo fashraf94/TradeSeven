@@ -20159,6 +20159,8 @@ export default function PortfolioDuel() {
               margin: '0 auto',
               boxSizing: 'border-box',
               overflowX: 'hidden',
+              paddingLeft: '16px',
+              paddingRight: '16px',
             }}
           >
             {/* ═══════════════════════════════════════════════════════════
@@ -22621,8 +22623,8 @@ export default function PortfolioDuel() {
           subtitle="Score points with breakout bonuses"
           details={[
             { label: 'Players', value: '2 players' },
-            { label: 'Assets', value: '7-13 picks' },
-            { label: 'Duration', value: '1 hour' },
+            { label: 'Assets', value: '7 picks' },
+            { label: 'Duration', value: '3 days' },
             { label: 'Rewards', value: '+15 XP (win) / +5 XP (loss)', highlight: true, highlightColor: '#f59e0b' }
           ]}
           confirmText="Enter Lobby"
