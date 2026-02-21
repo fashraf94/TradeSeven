@@ -508,7 +508,7 @@ Be concise, engaging, and actionable. No bullet points - flowing prose only.`;
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-3-5-haiku-20241022',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 200,
         system: systemPrompt,
         messages: [
@@ -796,7 +796,7 @@ Provide your sentiment score and summary.`;
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-3-5-haiku-20241022',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 400,
         system: systemPrompt,
         messages: [
@@ -899,7 +899,7 @@ Respond with ONLY the JSON, no markdown formatting.`;
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-3-5-haiku-20241022',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 800,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
@@ -994,7 +994,7 @@ export default async function handler(req, res) {
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: mode === 'deep' ? 'claude-sonnet-4-20250514' : 'claude-3-5-haiku-20241022',
+          model: mode === 'deep' ? 'claude-sonnet-4-20250514' : 'claude-haiku-4-5-20251001',
           max_tokens: techMaxTokens || (mode === 'deep' ? 3000 : 800),
           system: systemPrompt,
           messages: [
@@ -1045,7 +1045,7 @@ export default async function handler(req, res) {
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022',
+          model: 'claude-haiku-4-5-20251001',
           max_tokens: maxTokens || 300,
           system: GAMEPLAN_SYSTEM_PROMPT,
           messages: [
@@ -1083,7 +1083,7 @@ export default async function handler(req, res) {
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022',
+          model: 'claude-haiku-4-5-20251001',
           max_tokens: maxTokens || 500,
           system: getResearchSystemPrompt(),
           messages: [
@@ -1195,7 +1195,7 @@ export default async function handler(req, res) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-3-5-haiku-20241022',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
         system: systemPrompt,
         messages: [
