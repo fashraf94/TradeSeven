@@ -559,6 +559,7 @@ const AssetResearchModal = ({
                   activeHighlight={highlightedLevel}
                   height={chartHeight}
                   bombData={bombData}
+                  symbol={asset?.symbol}
                 />
               )}
             </div>
