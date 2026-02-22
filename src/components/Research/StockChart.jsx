@@ -3,6 +3,7 @@ import { createChart, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { prepareChartData, formatTime, calculateBombLevels, detectBombCrossings, calculateNearestLevel } from './chartUtils';
 import OHLCDisplay from '../shared/OHLCDisplay';
+import { getDailyHL } from '../../services/websocketService';
 
 const TIMEFRAMES = [
   { key: '1D', label: '1D' },
@@ -23,6 +24,7 @@ const StockChart = ({
   activeHighlight,   // Optional: { price, type } for highlighted level
   height = 300,
   bombData,          // { threshold: number, baselinePrice: number } | null
+  symbol,            // Stock/crypto ticker for getDailyHL lookup
 }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -106,6 +108,42 @@ const StockChart = ({
     if (!ohlcvData || ohlcvData.length === 0) return [];
     return prepareChartData(ohlcvData);
   }, [ohlcvData]);
+
+  // Bomb view: compute today's daily aggregate OHLC from hourly candles + WS daily H/L
+  const bombDailyOhlc = useMemo(() => {
+    if (!isBombView || !chartData || chartData.length === 0) return null;
+
+    // Find today's candles by filtering to those from local midnight onward
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayStartSec = Math.floor(todayStart.getTime() / 1000);
+
+    const todayCandles = chartData.filter(c => c.time >= todayStartSec);
+    // Fall back to the last candle if no today candles found
+    const candles = todayCandles.length > 0 ? todayCandles : [chartData[chartData.length - 1]];
+
+    let aggHigh = Math.max(...candles.map(c => c.high));
+    let aggLow = Math.min(...candles.map(c => c.low));
+    const aggOpen = candles[0].open;
+    const aggClose = candles[candles.length - 1].close;
+
+    // Enhance with WebSocket daily H/L
+    if (symbol) {
+      const wsHL = getDailyHL(symbol);
+      if (wsHL) {
+        aggHigh = Math.max(aggHigh, wsHL.high);
+        aggLow = Math.min(aggLow, wsHL.low);
+      }
+    }
+
+    return {
+      open: aggOpen,
+      high: aggHigh,
+      low: aggLow,
+      close: aggClose,
+      volume: candles.reduce((sum, c) => sum + (c.volume || 0), 0),
+    };
+  }, [isBombView, chartData, symbol]);
 
   // Main chart setup
   useEffect(() => {
@@ -380,9 +418,11 @@ const StockChart = ({
       chart.timeScale().fitContent();
     }
 
-    // OHLC: set default to latest candle
+    // OHLC: set default to latest candle (bomb view: daily aggregate)
     const lastCandle = chartData[chartData.length - 1];
-    if (lastCandle) {
+    if (isBombView && bombDailyOhlc) {
+      setOhlcData(bombDailyOhlc);
+    } else if (lastCandle) {
       setOhlcData({
         open: lastCandle.open,
         high: lastCandle.high,
@@ -408,6 +448,8 @@ const StockChart = ({
             volume: vol?.value || 0,
           });
         }
+      } else if (isBombView && bombDailyOhlc) {
+        setOhlcData(bombDailyOhlc);
       } else if (lastCandle) {
         setOhlcData({
           open: lastCandle.open,
@@ -438,7 +480,7 @@ const StockChart = ({
       chartRef.current = null;
       candleSeriesRef.current = null;
     };
-  }, [chartData, height, timeframe, isBombView, isSpectateView, bombLevels, triggeredLevels, spectateLevel]);
+  }, [chartData, height, timeframe, isBombView, isSpectateView, bombLevels, triggeredLevels, spectateLevel, bombDailyOhlc, symbol]);
 
   // Bomb view: subtle style enhancement when price is within 0.5% of a threshold
   // No animation — just thicker line + brighter color to signal proximity

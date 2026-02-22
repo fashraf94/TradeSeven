@@ -3,6 +3,7 @@ import { fetchHistoricalOHLCV } from '../../services/eodhdAPI';
 import { calculateRollingSMA, calculateRSI, calculateMACD, calculateSMA } from '../../services/technicalIndicators';
 import { detectLevels } from '../../services/levelDetection';
 import { aggregateToMonthly } from './chartUtils';
+import { getDailyHL } from '../../services/websocketService';
 
 /**
  * Central data hook for the redesigned Research modal.
@@ -247,6 +248,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     // This bridges the gap between EODHD historical data (which only includes completed
     // periods) and the live price shown in the header.
     if (currentPrice && currentPrice > 0 && result && result.length > 0) {
+      const wsHL = getDailyHL(symbol);
       const lastCandle = result[result.length - 1];
       const lastDateStr = lastCandle.date || lastCandle.datetime || '';
 
@@ -264,16 +266,16 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
             datetime: nowHour.toISOString(),
             timestamp: Math.floor(nowHour.getTime() / 1000),
             open: lastCandle.close,
-            high: Math.max(currentPrice, lastCandle.close),
-            low: Math.min(currentPrice, lastCandle.close),
+            high: wsHL ? Math.max(wsHL.high, currentPrice, lastCandle.close) : Math.max(currentPrice, lastCandle.close),
+            low: wsHL ? Math.min(wsHL.low, currentPrice, lastCandle.close) : Math.min(currentPrice, lastCandle.close),
             close: currentPrice,
             volume: 0,
           }];
         } else if (lastTime) {
           // Latest candle is within the current hour — patch H/L/C with live price
           const patched = { ...lastCandle };
-          patched.high = Math.max(Number(patched.high), currentPrice);
-          patched.low = Math.min(Number(patched.low), currentPrice);
+          patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, currentPrice) : Math.max(Number(patched.high), currentPrice);
+          patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, currentPrice) : Math.min(Number(patched.low), currentPrice);
           patched.close = currentPrice;
           result = [...result.slice(0, -1), patched];
         }
@@ -290,16 +292,16 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
           result = [...result, {
             date: mondayStr,
             open: lastCandle.close,
-            high: Math.max(currentPrice, lastCandle.close),
-            low: Math.min(currentPrice, lastCandle.close),
+            high: wsHL ? Math.max(wsHL.high, currentPrice, lastCandle.close) : Math.max(currentPrice, lastCandle.close),
+            low: wsHL ? Math.min(wsHL.low, currentPrice, lastCandle.close) : Math.min(currentPrice, lastCandle.close),
             close: currentPrice,
             volume: 0,
           }];
         } else {
           // Current week's candle exists — patch H/L/C with live price
           const patched = { ...lastCandle };
-          patched.high = Math.max(Number(patched.high), currentPrice);
-          patched.low = Math.min(Number(patched.low), currentPrice);
+          patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, currentPrice) : Math.max(Number(patched.high), currentPrice);
+          patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, currentPrice) : Math.min(Number(patched.low), currentPrice);
           patched.close = currentPrice;
           result = [...result.slice(0, -1), patched];
         }
@@ -322,16 +324,16 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
           result = [...result, {
             date: todayStr,
             open: lastCandle.close,
-            high: Math.max(currentPrice, lastCandle.close),
-            low: Math.min(currentPrice, lastCandle.close),
+            high: wsHL ? Math.max(wsHL.high, currentPrice, lastCandle.close) : Math.max(currentPrice, lastCandle.close),
+            low: wsHL ? Math.min(wsHL.low, currentPrice, lastCandle.close) : Math.min(currentPrice, lastCandle.close),
             close: currentPrice,
             volume: 0,
           }];
         } else if (lastDate.getTime() === today.getTime()) {
           // Today's candle exists but may have stale H/L/C — patch with live price
           const patched = { ...lastCandle };
-          patched.high = Math.max(Number(patched.high), currentPrice);
-          patched.low = Math.min(Number(patched.low), currentPrice);
+          patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, currentPrice) : Math.max(Number(patched.high), currentPrice);
+          patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, currentPrice) : Math.min(Number(patched.low), currentPrice);
           patched.close = currentPrice;
           result = [...result.slice(0, -1), patched];
         }

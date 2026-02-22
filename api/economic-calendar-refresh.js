@@ -174,7 +174,7 @@ async function handleWeekly(req, res, weekOf) {
   const prompt = WEEKLY_PROMPT(fromDate, toDate, weekOf);
 
   const response = await anthropic.messages.create({
-    model: 'claude-3-5-haiku-20241022',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 2000,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -280,7 +280,7 @@ async function handleUpdate(req, res, weekOf) {
   const prompt = UPDATE_PROMPT(pendingEvents);
 
   const response = await anthropic.messages.create({
-    model: 'claude-3-5-haiku-20241022',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 2000,
     tools: [{
       type: 'web_search_20250305',
