@@ -7,6 +7,7 @@ import { applySecurityMiddleware } from './_utils/security.js';
 import { getStockAnalysisData } from './_utils/marketDataCache.js';
 import { buildIntelligencePrompt, detectComparisonSymbols } from './_utils/intelligencePrompt.js';
 import { getSupplyChainCoverage } from './_utils/supplyChainLookup.js';
+import { getStockContext, TICKERS } from './_utils/stockIntelligenceData.js';
 
 const LOG_PREFIX = '[StockIntelligence]';
 
@@ -16,6 +17,8 @@ const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_API_VERSION = '2023-06-01';
 const MAX_TOKENS_BASE = 1200;
 const MAX_TOKENS_COMPARISON = 1500;
+const MAX_TOKENS_QUICK = 400;
+const MAX_TOKENS_DEEP = 1000;
 const RATE_LIMIT = 15;
 const RATE_LIMIT_WINDOW_MS = 60000;
 const MAX_SYMBOL_LENGTH = 10;
@@ -39,7 +42,7 @@ export default async function handler(req, res) {
   }
 
   // 4. Extract and validate request body
-  const { symbol, question, context } = req.body || {};
+  const { symbol, question, context, mode: requestedMode } = req.body || {};
 
   if (!symbol || typeof symbol !== 'string') {
     return res.status(400).json({ success: false, error: 'Missing required field: symbol' });
@@ -76,6 +79,105 @@ export default async function handler(req, res) {
       comparisonData = dataB;
     } else {
       stockData = await getStockAnalysisData(cleanSymbol);
+    }
+
+    // ── Intelligence Bundle path (supported stocks, non-comparison) ──
+    const isSupported = TICKERS.includes(cleanSymbol);
+
+    if (isSupported && !comparison) {
+      const mode = requestedMode === 'deep' ? 'deep' : 'quick';
+
+      // Format live EODHD data as a string for the context builder
+      const latestClose = stockData.daily?.[0]?.close;
+      const prevClose = stockData.daily?.[1]?.close;
+      const changePct = latestClose && prevClose
+        ? (((latestClose - prevClose) / prevClose) * 100).toFixed(2)
+        : 'N/A';
+      const fund = stockData.fundamentals || {};
+      const rsiVal = stockData.technicals?.rsi?.value;
+
+      const eohdString = [
+        `Price: $${latestClose ?? 'N/A'}`,
+        `Change: ${changePct}%`,
+        `52w Low/High: $${fund.week52Low ?? 'N/A'} / $${fund.week52High ?? 'N/A'}`,
+        `Market Cap: ${formatMarketCap(fund.marketCap)}`,
+        `P/E: ${fund.peRatio ?? 'N/A'}`,
+        `RSI(14): ${rsiVal ?? 'N/A'}`,
+        `MA50: $${fund.ma50 ?? 'N/A'}`,
+        `MA200: $${fund.ma200 ?? 'N/A'}`,
+        `Consensus: ${getConsensusLabel(fund.analystRating)}`,
+      ].join(' | ');
+
+      // Build enriched context from the intelligence bundle
+      const bundleContext = getStockContext(cleanSymbol, eohdString, { mode });
+
+      // Mode-specific system prompts
+      const intelligenceSystemPrompt = mode === 'quick'
+        ? `You are a senior equity analyst embedded in a Bloomberg-style terminal app called MarketClash. The user selected ${cleanSymbol}. You will receive a rich context block (knowledge-package, ledger data, deep-research) PLUS live market data. Answer the user's question in 3-4 concise bullet points (≤120 words total). Use **bold** for key metrics. Be specific — cite numbers from the data. End with one forward-looking line. Do NOT use headings. Do NOT output JSON.`
+        : `You are a senior equity analyst embedded in a Bloomberg-style terminal app called MarketClash. The user selected ${cleanSymbol}. You will receive a rich context block (knowledge-package, ledger data, deep-research) PLUS live market data. Answer the user's question in 3-4 focused paragraphs (≤250 words total). Use **bold** for key metrics. Weave in bull/bear perspectives. Be specific — cite numbers. End with a balanced forward-looking outlook. Do NOT use headings. Do NOT output JSON.`;
+
+      const intelligenceUserMessage = `${bundleContext}\n\n---\n\nUser Question: ${question.trim()}`;
+
+      const maxTokens = mode === 'quick' ? MAX_TOKENS_QUICK : MAX_TOKENS_DEEP;
+
+      const intelligenceResponse = await fetch(ANTHROPIC_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_KEY,
+          'anthropic-version': ANTHROPIC_API_VERSION,
+        },
+        body: JSON.stringify({
+          model: CLAUDE_MODEL,
+          max_tokens: maxTokens,
+          system: intelligenceSystemPrompt,
+          messages: [{ role: 'user', content: intelligenceUserMessage }],
+        }),
+      });
+
+      const intelligenceData = await intelligenceResponse.json();
+
+      if (intelligenceData.error || !intelligenceResponse.ok) {
+        console.error(`${LOG_PREFIX} Intelligence API error:`, intelligenceData.error);
+        return res.status(200).json({
+          success: false,
+          error: 'AI analysis unavailable',
+          details: intelligenceData.error?.message || 'Unknown API error',
+        });
+      }
+
+      const rawText = intelligenceData.content?.[0]?.text || '';
+      const usage = {
+        inputTokens: intelligenceData.usage?.input_tokens || 0,
+        outputTokens: intelligenceData.usage?.output_tokens || 0,
+      };
+      const scCoverage = getSupplyChainCoverage(cleanSymbol);
+
+      return res.status(200).json({
+        success: true,
+        analysis: {
+          content: rawText,
+          intelligenceMode: mode,
+        },
+        meta: {
+          symbol: cleanSymbol,
+          questionTypes: [],
+          isComparison: false,
+          comparisonSymbols: null,
+          isCrypto: stockData.isCrypto,
+          cacheStatus: stockData.cacheStatus,
+          staleData: stockData.staleData || false,
+          staleFields: stockData.staleFields || [],
+          hasSupplyChainData: scCoverage.hasCompany,
+          supplyChainCoverage: [
+            ...(scCoverage.hasProducts ? ['products'] : []),
+            ...(scCoverage.hasThemes ? ['themes'] : []),
+            ...(scCoverage.hasScenarios ? ['scenarios'] : []),
+          ],
+          model: CLAUDE_MODEL,
+          usage,
+        },
+      });
     }
 
     // 7. Build prompt (with compound question type detection + comparison support)
@@ -229,4 +331,23 @@ export default async function handler(req, res) {
       error: error.message,
     });
   }
+}
+
+// ── Helper: format market cap for display ────────────────────
+function formatMarketCap(val) {
+  if (!val) return 'N/A';
+  if (val >= 1e12) return (val / 1e12).toFixed(2) + 'T';
+  if (val >= 1e9) return (val / 1e9).toFixed(1) + 'B';
+  if (val >= 1e6) return (val / 1e6).toFixed(0) + 'M';
+  return String(val);
+}
+
+// ── Helper: analyst rating → consensus label ─────────────────
+function getConsensusLabel(analystRating) {
+  if (!analystRating) return 'N/A';
+  if (analystRating >= 4.5) return 'Strong Buy';
+  if (analystRating >= 3.5) return 'Buy';
+  if (analystRating >= 2.5) return 'Hold';
+  if (analystRating >= 1.5) return 'Sell';
+  return 'Strong Sell';
 }
