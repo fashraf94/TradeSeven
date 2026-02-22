@@ -149,18 +149,12 @@ export default async function handler(req, res) {
       const rawText = intelligenceData.content?.[0]?.text || '';
 
       // Parse the JSON response from Haiku
+      const parsed = extractJSON(rawText);
       let analysis;
-      try {
-        // Strip markdown fences, preamble text, and trailing text
-        let cleaned = rawText.trim();
-        cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?\s*```\s*$/i, '');
-        const jsonStart = cleaned.indexOf('{');
-        if (jsonStart > 0) cleaned = cleaned.slice(jsonStart);
-        const jsonEnd = cleaned.lastIndexOf('}');
-        if (jsonEnd >= 0 && jsonEnd < cleaned.length - 1) cleaned = cleaned.slice(0, jsonEnd + 1);
-        analysis = JSON.parse(cleaned);
-      } catch (parseErr) {
-        // Fallback: if JSON parsing fails, return as plain content
+      if (parsed && parsed.headline) {
+        analysis = parsed;
+      } else {
+        // Fallback: wrap raw text as plain content
         analysis = {
           headline: `${cleanSymbol} Analysis`,
           content: rawText,
@@ -355,6 +349,28 @@ export default async function handler(req, res) {
       error: error.message,
     });
   }
+}
+
+// ── Helper: extract JSON from Claude response (fence-agnostic) ─
+function extractJSON(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+
+  // Strategy 1: Try parsing the raw string directly (ideal case — no fences)
+  try {
+    return JSON.parse(raw.trim());
+  } catch (e) { /* continue */ }
+
+  // Strategy 2: Find the first { and last } and try parsing that substring
+  const firstBrace = raw.indexOf('{');
+  const lastBrace = raw.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(raw.slice(firstBrace, lastBrace + 1));
+    } catch (e) { /* continue */ }
+  }
+
+  // Strategy 3: Failed to parse
+  return null;
 }
 
 // ── Helper: format market cap for display ────────────────────
