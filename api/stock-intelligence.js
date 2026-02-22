@@ -18,7 +18,7 @@ const ANTHROPIC_API_VERSION = '2023-06-01';
 const MAX_TOKENS_BASE = 1200;
 const MAX_TOKENS_COMPARISON = 1500;
 const MAX_TOKENS_QUICK = 650;
-const MAX_TOKENS_DEEP = 1000;
+const MAX_TOKENS_DEEP = 1500;
 const RATE_LIMIT = 15;
 const RATE_LIMIT_WINDOW_MS = 60000;
 const MAX_SYMBOL_LENGTH = 10;
@@ -151,8 +151,13 @@ export default async function handler(req, res) {
       // Parse the JSON response from Haiku
       let analysis;
       try {
-        // Strip markdown fences if Haiku wraps it (safety)
-        const cleaned = rawText.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '').trim();
+        // Strip markdown fences, preamble text, and trailing text
+        let cleaned = rawText.trim();
+        cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?\s*```\s*$/i, '');
+        const jsonStart = cleaned.indexOf('{');
+        if (jsonStart > 0) cleaned = cleaned.slice(jsonStart);
+        const jsonEnd = cleaned.lastIndexOf('}');
+        if (jsonEnd >= 0 && jsonEnd < cleaned.length - 1) cleaned = cleaned.slice(0, jsonEnd + 1);
         analysis = JSON.parse(cleaned);
       } catch (parseErr) {
         // Fallback: if JSON parsing fails, return as plain content
