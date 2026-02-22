@@ -87,17 +87,6 @@ const getValueColor = (key, value) => {
   return C.textPrimary;
 };
 
-// ─── Simple markdown renderer (bold + line breaks) ───────────
-const renderMarkdown = (text) => {
-  if (!text) return '';
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br>');
-};
-
 // ─── Stagger animation helper ────────────────────────────────
 const stagger = (index) => ({
   initial: { opacity: 0, y: 8 },
@@ -893,31 +882,20 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
                     {msg.content}
                   </div>
                 </div>
-              ) : msg.intelligenceMode ? (
-                <div style={{ marginBottom: '16px' }}>
-                  {/* Mode badge */}
-                  <div style={{
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.08em',
-                    color: msg.intelligenceMode === 'quick' ? '#67e8f9' : '#a78bfa',
-                    marginBottom: '8px',
-                  }}>
-                    {msg.intelligenceMode === 'quick' ? '\u26A1 QUICK INSIGHT' : '\uD83D\uDD2C DEEP ANALYSIS'}
-                  </div>
-                  {/* Markdown rendered content */}
-                  <div
-                    dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content || '') }}
-                    style={{
-                      fontSize: '13.5px',
-                      lineHeight: 1.65,
-                      color: C.textSecondary,
-                    }}
-                  />
-                </div>
               ) : (
                 <div style={{ marginBottom: '16px' }}>
+                  {msg.intelligenceMode && (
+                    <div style={{
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em',
+                      color: msg.intelligenceMode === 'quick' ? '#67e8f9' : '#a78bfa',
+                      marginBottom: '8px',
+                    }}>
+                      {msg.intelligenceMode === 'quick' ? '\u26A1 QUICK INSIGHT' : '\uD83D\uDD2C DEEP ANALYSIS'}
+                    </div>
+                  )}
                   <AnalysisCard analysis={msg.analysis} meta={msg.meta} />
                 </div>
               )}

@@ -17,7 +17,7 @@ const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_API_VERSION = '2023-06-01';
 const MAX_TOKENS_BASE = 1200;
 const MAX_TOKENS_COMPARISON = 1500;
-const MAX_TOKENS_QUICK = 400;
+const MAX_TOKENS_QUICK = 650;
 const MAX_TOKENS_DEEP = 1000;
 const RATE_LIMIT = 15;
 const RATE_LIMIT_WINDOW_MS = 60000;
@@ -111,10 +111,10 @@ export default async function handler(req, res) {
       // Build enriched context from the intelligence bundle
       const bundleContext = getStockContext(cleanSymbol, eohdString, { mode });
 
-      // Mode-specific system prompts
+      // Mode-specific system prompts — produce structured JSON matching AnalysisCard schema
       const intelligenceSystemPrompt = mode === 'quick'
-        ? `You are a senior equity analyst embedded in a Bloomberg-style terminal app called MarketClash. The user selected ${cleanSymbol}. You will receive a rich context block (knowledge-package, ledger data, deep-research) PLUS live market data. Answer the user's question in 3-4 concise bullet points (≤120 words total). Use **bold** for key metrics. Be specific — cite numbers from the data. End with one forward-looking line. Do NOT use headings. Do NOT output JSON.`
-        : `You are a senior equity analyst embedded in a Bloomberg-style terminal app called MarketClash. The user selected ${cleanSymbol}. You will receive a rich context block (knowledge-package, ledger data, deep-research) PLUS live market data. Answer the user's question in 3-4 focused paragraphs (≤250 words total). Use **bold** for key metrics. Weave in bull/bear perspectives. Be specific — cite numbers. End with a balanced forward-looking outlook. Do NOT use headings. Do NOT output JSON.`;
+        ? `You are the MarketClash Stock Intelligence Agent — an educational tool that helps users understand stocks through data-backed analysis. You are NOT a financial advisor.\n\nMODE: QUICK INSIGHTS\nRespond ONLY with valid JSON, no markdown fences, no preamble.\nSchema:\n{\n  "headline": "Key tension or insight in ≤12 words",\n  "content": "3-4 bullet points. Each bullet: **Metric:** Value — one sentence of context. Keep total under 120 words. Never recommend buying or selling.",\n  "dataPoints": [\n    { "label": "METRIC NAME", "value": "specific number or value", "context": "One sentence explaining what it means" }\n  ],\n  "bullCase": "2-3 sentences. Data-backed reasons for optimism. Cite specific metrics.",\n  "bearCase": "2-3 sentences. Data-backed risks or concerns. Cite specific metrics.",\n  "educationalNote": "Teach one concept that helps the user understand this stock better. 2-3 sentences."\n}\nRules:\n- dataPoints: exactly 3-4 items, each with a concrete number\n- content: use **bold** for metric names in bullets\n- Never recommend buying, selling, or holding\n- Every claim must reference a specific number from the provided data`
+        : `You are the MarketClash Stock Intelligence Agent — an educational tool that helps users understand stocks through data-backed analysis. You are NOT a financial advisor.\n\nMODE: DEEP ANALYSIS\nRespond ONLY with valid JSON, no markdown fences, no preamble.\nSchema:\n{\n  "headline": "Key tension or thesis in ≤15 words",\n  "content": "3-4 paragraphs of analysis. Lead with data, not opinion. Explain concepts — teach what metrics mean, not just their values. Present both sides. Reference cross-company connections when relevant. Use 'the data suggests,' 'bulls would argue / bears would counter.' Keep under 300 words. Never recommend buying or selling.",\n  "dataPoints": [\n    { "label": "METRIC NAME", "value": "specific number or value", "context": "One sentence explaining significance" }\n  ],\n  "bullCase": "3-4 sentences. Comprehensive data-backed bull thesis with specific metrics and cross-company context.",\n  "bearCase": "3-4 sentences. Comprehensive data-backed bear thesis with specific metrics and structural risks.",\n  "educationalNote": "Teach one important concept this data reveals — explain a metric, a pattern, or a structural dynamic that helps the user think about stocks more intelligently. 3-4 sentences."\n}\nRules:\n- dataPoints: exactly 4 items, each with a concrete number\n- content: use **bold** for emphasis on key terms\n- Never recommend buying, selling, or holding\n- Every claim must reference a specific number from the provided data\n- Cross-company connections (e.g., how this stock relates to others) are encouraged in content and bullCase/bearCase`;
 
       const intelligenceUserMessage = `${bundleContext}\n\n---\n\nUser Question: ${question.trim()}`;
 
@@ -147,6 +147,28 @@ export default async function handler(req, res) {
       }
 
       const rawText = intelligenceData.content?.[0]?.text || '';
+
+      // Parse the JSON response from Haiku
+      let analysis;
+      try {
+        // Strip markdown fences if Haiku wraps it (safety)
+        const cleaned = rawText.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '').trim();
+        analysis = JSON.parse(cleaned);
+      } catch (parseErr) {
+        // Fallback: if JSON parsing fails, return as plain content
+        analysis = {
+          headline: `${cleanSymbol} Analysis`,
+          content: rawText,
+          dataPoints: [],
+          bullCase: '',
+          bearCase: '',
+          educationalNote: '',
+        };
+      }
+
+      // Add intelligenceMode to the parsed analysis
+      analysis.intelligenceMode = mode;
+
       const usage = {
         inputTokens: intelligenceData.usage?.input_tokens || 0,
         outputTokens: intelligenceData.usage?.output_tokens || 0,
@@ -155,10 +177,7 @@ export default async function handler(req, res) {
 
       return res.status(200).json({
         success: true,
-        analysis: {
-          content: rawText,
-          intelligenceMode: mode,
-        },
+        analysis,
         meta: {
           symbol: cleanSymbol,
           questionTypes: [],
