@@ -17,8 +17,8 @@ const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_API_VERSION = '2023-06-01';
 const MAX_TOKENS_BASE = 1200;
 const MAX_TOKENS_COMPARISON = 1500;
-const MAX_TOKENS_QUICK = 650;
-const MAX_TOKENS_DEEP = 1500;
+const MAX_TOKENS_QUICK = 1200;
+const MAX_TOKENS_DEEP = 2000;
 const RATE_LIMIT = 15;
 const RATE_LIMIT_WINDOW_MS = 60000;
 const MAX_SYMBOL_LENGTH = 10;
@@ -120,9 +120,6 @@ export default async function handler(req, res) {
 
       const maxTokens = mode === 'quick' ? MAX_TOKENS_QUICK : MAX_TOKENS_DEEP;
 
-      // Log 1: Right before calling Claude API
-      console.log('[INTEL] Calling Haiku for', cleanSymbol, 'mode:', mode);
-
       const intelligenceResponse = await fetch(ANTHROPIC_API_URL, {
         method: 'POST',
         headers: {
@@ -151,14 +148,8 @@ export default async function handler(req, res) {
 
       const rawText = intelligenceData.content?.[0]?.text || '';
 
-      // Log 2: Right after getting rawText from Claude response
-      console.log('[INTEL] Raw response first 100 chars:', rawText.slice(0, 100));
-
       // Parse the JSON response from Haiku
       const parsed = extractJSON(rawText);
-      // Log 3: Right after parsing attempt
-      console.log('[INTEL] Parse result:', parsed ? 'SUCCESS - headline: ' + parsed.headline : 'FAILED - falling back');
-
       let analysis;
       if (parsed && parsed.headline) {
         analysis = parsed;
