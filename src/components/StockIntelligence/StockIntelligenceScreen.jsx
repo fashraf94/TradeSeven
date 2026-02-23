@@ -5,6 +5,7 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
+import { TICKERS } from '@/data/stockIntelligenceData';
 
 // ─── Color Tokens (matches ResearchLandingPage.jsx) ─────────
 const C = {
@@ -208,19 +209,25 @@ const AnalysisCard = ({ analysis, meta }) => {
         <motion.div {...stagger(sectionIdx++)} style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-          gap: '8px',
+          gap: '14px',
         }}>
           {visibleDpEntries.map(([key, val]) => {
             const isObj = val && typeof val === 'object' && !Array.isArray(val);
             const displayValue = isObj ? (val.value ?? val.signal ?? JSON.stringify(val)) : String(val ?? '—');
             const context = isObj ? (val.context || val.explanation) : null;
+            const accentColor = analysis.intelligenceMode === 'deep' ? '#8b5cf6'
+              : analysis.intelligenceMode === 'quick' ? '#22d3ee'
+              : '#22d3ee';
 
             return (
               <div key={key} style={{
-                background: 'rgba(13, 17, 23, 0.8)',
+                background: analysis.intelligenceMode
+                  ? `linear-gradient(135deg, ${accentColor}08, rgba(13, 17, 23, 0.8))`
+                  : 'rgba(13, 17, 23, 0.8)',
                 border: '1px solid rgba(0,217,255,0.12)',
+                borderLeft: `3px solid ${accentColor}60`,
                 borderRadius: '8px',
-                padding: '10px 12px',
+                padding: '12px 16px',
                 transition: 'border-color 0.2s',
               }}
                 onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(0,217,255,0.3)'}
@@ -267,7 +274,7 @@ const AnalysisCard = ({ analysis, meta }) => {
                 background: 'rgba(0,217,255,0.08)',
                 border: '1px solid rgba(0,217,255,0.2)',
                 borderRadius: '8px',
-                padding: '10px 12px',
+                padding: '12px 16px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
@@ -365,6 +372,7 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
   const [isLoading, setIsLoading] = useState(false);
   const [conversation, setConversation] = useState([]);
   const [error, setError] = useState(null);
+  const [mode, setMode] = useState('quick');
 
   const conversationEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -382,6 +390,8 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
       .filter(a => a.symbol.toLowerCase().includes(q) || (a.name && a.name.toLowerCase().includes(q)))
       .slice(0, 8);
   }, [searchQuery, allAssets]);
+
+  const isSupported = selectedSymbol && TICKERS.includes(selectedSymbol.symbol);
 
   const showDropdown = searchFocused && searchResults.length > 0;
 
@@ -423,6 +433,7 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
     setSearchFocused(false);
     setConversation([]);
     setError(null);
+    setMode('quick');
     setTimeout(() => inputRef.current?.focus(), 100);
   }, []);
 
@@ -450,56 +461,60 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
           symbol: selectedSymbol.symbol,
           question: questionText,
           context: { currentScreen: 'stockIntelligence' },
+          ...(isSupported ? { mode } : {}),
         }),
       });
       const data = await res.json();
 
-      // Safety net A: if analysis.content contains raw JSON, try to reparse entirely
-      if (data.success && data.analysis && typeof data.analysis.content === 'string') {
-        const c = data.analysis.content;
-        if (c.includes('"headline"') && c.includes('"content"')) {
-          try {
-            const cleaned = c.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-            const reparsed = JSON.parse(cleaned.match(/\{[\s\S]*\}/)?.[0] || '{}');
-            if (reparsed.headline && reparsed.content) {
-              data.analysis = reparsed;
+      // Safety nets only for non-intelligence mode (JSON responses)
+      if (!data.analysis?.intelligenceMode) {
+        // Safety net A: if analysis.content contains raw JSON, try to reparse entirely
+        if (data.success && data.analysis && typeof data.analysis.content === 'string') {
+          const c = data.analysis.content;
+          if (c.includes('"headline"') && c.includes('"content"')) {
+            try {
+              const cleaned = c.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+              const reparsed = JSON.parse(cleaned.match(/\{[\s\S]*\}/)?.[0] || '{}');
+              if (reparsed.headline && reparsed.content) {
+                data.analysis = reparsed;
+              }
+            } catch {
+              // Keep original analysis — secondary parse failed
             }
-          } catch {
-            // Keep original analysis — secondary parse failed
           }
         }
-      }
 
-      // Safety net B: if dataPoints is empty but content has data-point-like text,
-      // the backend fallback likely dumped structured data into content.
-      // Try to extract key-value pairs from content patterns like "value: 32.4x"
-      if (data.success && data.analysis &&
-          (!data.analysis.dataPoints || Object.keys(data.analysis.dataPoints).length === 0) &&
-          typeof data.analysis.content === 'string' &&
-          data.analysis.content.includes('value:')) {
-        try {
-          const text = data.analysis.content;
-          // Pattern: "MetricName:\n    value: xxx," or "MetricName:\n  value: xxx,"
-          const blockPattern = /([A-Z][A-Za-z_/ ]+?):\s*\n\s*value:\s*([^\n,]+)/g;
-          const extracted = {};
-          let match;
-          while ((match = blockPattern.exec(text)) !== null) {
-            const name = match[1].trim();
-            const value = match[2].trim();
-            // Also try to grab context on the next line
-            const contextMatch = text.slice(match.index + match[0].length).match(/^\s*,?\s*\n?\s*context:\s*([^\n,]+)/);
-            extracted[name] = { value, context: contextMatch ? contextMatch[1].trim() : '' };
+        // Safety net B: if dataPoints is empty but content has data-point-like text,
+        // the backend fallback likely dumped structured data into content.
+        // Try to extract key-value pairs from content patterns like "value: 32.4x"
+        if (data.success && data.analysis &&
+            (!data.analysis.dataPoints || Object.keys(data.analysis.dataPoints).length === 0) &&
+            typeof data.analysis.content === 'string' &&
+            data.analysis.content.includes('value:')) {
+          try {
+            const text = data.analysis.content;
+            // Pattern: "MetricName:\n    value: xxx," or "MetricName:\n  value: xxx,"
+            const blockPattern = /([A-Z][A-Za-z_/ ]+?):\s*\n\s*value:\s*([^\n,]+)/g;
+            const extracted = {};
+            let match;
+            while ((match = blockPattern.exec(text)) !== null) {
+              const name = match[1].trim();
+              const value = match[2].trim();
+              // Also try to grab context on the next line
+              const contextMatch = text.slice(match.index + match[0].length).match(/^\s*,?\s*\n?\s*context:\s*([^\n,]+)/);
+              extracted[name] = { value, context: contextMatch ? contextMatch[1].trim() : '' };
+            }
+            if (Object.keys(extracted).length > 0) {
+              data.analysis.dataPoints = extracted;
+              // Clean the content: strip the extracted data-point blocks
+              data.analysis.content = text
+                .replace(/[A-Z][A-Za-z_/ ]+?:\s*\n\s*value:[^\n]*(?:\n\s*(?:context|explanation):[^\n]*)*/g, '')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+            }
+          } catch {
+            // Extraction failed — keep content as-is
           }
-          if (Object.keys(extracted).length > 0) {
-            data.analysis.dataPoints = extracted;
-            // Clean the content: strip the extracted data-point blocks
-            data.analysis.content = text
-              .replace(/[A-Z][A-Za-z_/ ]+?:\s*\n\s*value:[^\n]*(?:\n\s*(?:context|explanation):[^\n]*)*/g, '')
-              .replace(/\n{3,}/g, '\n\n')
-              .trim();
-          }
-        } catch {
-          // Extraction failed — keep content as-is
         }
       }
 
@@ -509,6 +524,7 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
           content: data.analysis.content,
           analysis: data.analysis,
           meta: data.meta,
+          intelligenceMode: data.analysis.intelligenceMode || null,
         }]);
       } else {
         setError(data.error || 'Analysis unavailable. Please try again.');
@@ -518,7 +534,7 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
     } finally {
       setIsLoading(false);
     }
-  }, [selectedSymbol, isLoading]);
+  }, [selectedSymbol, isLoading, isSupported, mode]);
 
   const handleSubmit = useCallback((e) => {
     e?.preventDefault();
@@ -707,6 +723,61 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
         )}
       </div>
 
+      {/* ═══ Mode Toggle (supported stocks only) ═══ */}
+      {isSupported && selectedSymbol && (
+        <div style={{
+          padding: '8px 20px',
+          borderBottom: `1px solid ${C.border}`,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}>
+          <div style={{
+            display: 'inline-flex',
+            background: 'rgba(255,255,255,0.03)',
+            border: `1px solid ${C.border}`,
+            borderRadius: '10px',
+            padding: '3px',
+          }}>
+            <button
+              onClick={() => setMode('quick')}
+              style={{
+                background: mode === 'quick' ? 'rgba(34,211,238,0.15)' : 'transparent',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '5px 14px',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: mode === 'quick' ? '#67e8f9' : C.textMuted,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              {'\u26A1'} Quick
+            </button>
+            <button
+              onClick={() => setMode('deep')}
+              style={{
+                background: mode === 'deep' ? 'rgba(139,92,246,0.15)' : 'transparent',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '5px 14px',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: mode === 'deep' ? '#c4b5fd' : C.textMuted,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              {'\uD83D\uDD2C'} Deep
+            </button>
+          </div>
+          <span style={{ fontSize: '11px', color: C.textMuted }}>
+            {mode === 'quick' ? 'Concise bullet-point insights' : 'In-depth multi-paragraph analysis'}
+          </span>
+        </div>
+      )}
+
       {/* ═══ Main Content Area (scrollable) ═══ */}
       <div style={{
         flex: 1,
@@ -819,6 +890,18 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
                 </div>
               ) : (
                 <div style={{ marginBottom: '16px' }}>
+                  {msg.intelligenceMode && (
+                    <div style={{
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em',
+                      color: msg.intelligenceMode === 'quick' ? '#67e8f9' : '#a78bfa',
+                      marginBottom: '8px',
+                    }}>
+                      {msg.intelligenceMode === 'quick' ? '\u26A1 QUICK INSIGHT' : '\uD83D\uDD2C DEEP ANALYSIS'}
+                    </div>
+                  )}
                   <AnalysisCard analysis={msg.analysis} meta={msg.meta} />
                 </div>
               )}
