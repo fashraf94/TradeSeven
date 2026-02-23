@@ -209,19 +209,25 @@ const AnalysisCard = ({ analysis, meta }) => {
         <motion.div {...stagger(sectionIdx++)} style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-          gap: '8px',
+          gap: '14px',
         }}>
           {visibleDpEntries.map(([key, val]) => {
             const isObj = val && typeof val === 'object' && !Array.isArray(val);
             const displayValue = isObj ? (val.value ?? val.signal ?? JSON.stringify(val)) : String(val ?? '—');
             const context = isObj ? (val.context || val.explanation) : null;
+            const accentColor = analysis.intelligenceMode === 'deep' ? '#8b5cf6'
+              : analysis.intelligenceMode === 'quick' ? '#22d3ee'
+              : '#22d3ee';
 
             return (
               <div key={key} style={{
-                background: 'rgba(13, 17, 23, 0.8)',
+                background: analysis.intelligenceMode
+                  ? `linear-gradient(135deg, ${accentColor}08, rgba(13, 17, 23, 0.8))`
+                  : 'rgba(13, 17, 23, 0.8)',
                 border: '1px solid rgba(0,217,255,0.12)',
+                borderLeft: `3px solid ${accentColor}60`,
                 borderRadius: '8px',
-                padding: '10px 12px',
+                padding: '12px 16px',
                 transition: 'border-color 0.2s',
               }}
                 onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(0,217,255,0.3)'}
@@ -268,7 +274,7 @@ const AnalysisCard = ({ analysis, meta }) => {
                 background: 'rgba(0,217,255,0.08)',
                 border: '1px solid rgba(0,217,255,0.2)',
                 borderRadius: '8px',
-                padding: '10px 12px',
+                padding: '12px 16px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
