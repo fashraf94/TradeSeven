@@ -176,7 +176,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   // ==================== SCORING ====================
 
-  const calculateScores = useCallback((portfolio, prices, openPriceMap, history) => {
+  const calculateScores = useCallback((portfolio, prices, openPriceMap, history, battleThresholds = {}) => {
     if (!portfolio || portfolio.length === 0) {
       return { totalScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
     }
@@ -194,12 +194,18 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       const assetOpenPrice = asset.swapPrice || openPriceMap[asset.symbol] || asset.price || 0;
       const currentPrice = prices[asset.symbol] || assetOpenPrice;
 
+      // Resolve baseATR: prefer API-computed battle threshold over asset's stored value
+      // (asset.baseATR may be a stale sector default from portfolio builder)
+      // NOTE: battleThresholds is passed as a parameter (not read from closure) to avoid
+      // stale-closure bugs — useCallback's empty dep array would capture battle as null.
+      const resolvedBaseATR = battleThresholds[asset.symbol]?.threshold || asset.baseATR || 2.5;
+
       if (!assetOpenPrice || assetOpenPrice === 0) {
         assetScores.push({
           symbol: asset.symbol,
           priceChange: 0,
           multiplier: 0,
-          baseATR: asset.baseATR || 2.5,
+          baseATR: resolvedBaseATR,
           basePoints: 0,
           bonusPoints: 0,
           totalPoints: 0,
@@ -212,7 +218,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       const priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
       const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
 
-      const score = calculateAssetScoreV3(asset, priceChange, assetHistory);
+      const score = calculateAssetScoreV3({ ...asset, baseATR: resolvedBaseATR }, priceChange, assetHistory);
       assetScores.push(score);
 
       totalBasePoints += score.basePoints;
@@ -234,13 +240,16 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   }, []);
 
   // My scores (continuous, no session accumulation)
+  // Pass battle.thresholds explicitly so both players use the same authoritative
+  // threshold per symbol (fixes BaggerBomb count mismatch)
+  const battleThresholds = battle?.thresholds || {};
   const myScores = useMemo(() => {
-    return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory);
-  }, [myPortfolioFlat, effectivePrices, openPrices, combinedHistory, calculateScores]);
+    return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory, battleThresholds);
+  }, [myPortfolioFlat, effectivePrices, openPrices, combinedHistory, calculateScores, battleThresholds]);
 
   const oppScores = useMemo(() => {
-    return calculateScores(oppPortfolioFlat, effectivePrices, openPrices, oppHistory || {});
-  }, [oppPortfolioFlat, effectivePrices, openPrices, oppHistory, calculateScores]);
+    return calculateScores(oppPortfolioFlat, effectivePrices, openPrices, oppHistory || {}, battleThresholds);
+  }, [oppPortfolioFlat, effectivePrices, openPrices, oppHistory, calculateScores, battleThresholds]);
 
   // V4: Total score = banked previous days + current active score + locked closed trade points
   const closedTradePoints = useMemo(() => {
@@ -411,7 +420,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       if (!assetOpenPrice || !currentPrice) return;
 
       const priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
-      const baseATR = asset.baseATR || battle?.thresholds?.[asset.symbol]?.threshold || 2.5;
+      const baseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
       const currentMultiplier = priceChange / baseATR;
 
       const prevMultiplier = prevMultipliersRef.current[asset.symbol] || 0;
@@ -446,7 +455,14 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
             });
 
             if (battleId && !battleId.startsWith('training_')) {
-              addBaggerBombEvent(battleId, event).catch(console.error);
+              // Dedup: both clients may detect the same crossing independently,
+              // or a page refresh resets prevMultipliersRef causing re-detection.
+              const alreadyInFirebase = (battle?.events || []).some(e =>
+                e.symbol === asset.symbol && e.type === threshold.name
+              );
+              if (!alreadyInFirebase) {
+                addBaggerBombEvent(battleId, event).catch(console.error);
+              }
               updateAssetHistoryInBattle(battleId, isCreator, asset.symbol, newHistory).catch(console.error);
             }
           }
@@ -506,7 +522,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       if (!assetOpenPrice || !currentPrice) return;
 
       const priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
-      const baseATR = asset.baseATR || battle?.thresholds?.[asset.symbol]?.threshold || 2.5;
+      const baseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
       const currentMultiplier = priceChange / baseATR;
 
       const prevMultiplier = prevOppMultipliersRef.current[asset.symbol] || 0;
@@ -604,7 +620,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         if (!assetOpenPrice || !currentPrice) return;
 
         const priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
-        const baseATR = asset.baseATR || battle?.thresholds?.[asset.symbol]?.threshold || 2.5;
+        const baseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
         const currentMultiplier = priceChange / baseATR;
 
         const assetHistory = existingHistory[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };

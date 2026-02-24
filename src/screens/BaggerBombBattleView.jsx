@@ -220,6 +220,10 @@ export default function BaggerBombBattleView({
   onSelectSwapTarget,
   onConfirmSwap,
   isSwapExecuting,
+  // ClashCast props
+  getEventCommentary,
+  clashCastActive = false,
+  syntheticEvents = [],
 }) {
   const isV4 = battleVersion >= 4;
 
@@ -421,7 +425,14 @@ export default function BaggerBombBattleView({
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.2 }}
             >
-              <EventFeed events={events || []} currentUser={player?.username} onRedZoneTap={handleRedZoneTap} />
+              <EventFeed
+                events={events || []}
+                currentUser={player?.username}
+                onRedZoneTap={handleRedZoneTap}
+                getEventCommentary={getEventCommentary}
+                clashCastActive={clashCastActive}
+                syntheticEvents={syntheticEvents}
+              />
             </motion.div>
           ) : (
             <motion.div
@@ -554,6 +565,7 @@ export default function BaggerBombBattleView({
             ).length || 0) * -10,
             totalScore: breakdownAsset.points || 0,
           }}
+          events={events || []}
           onClose={() => setBreakdownAsset(null)}
         />
       )}

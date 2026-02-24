@@ -20193,13 +20193,6 @@ export default function PortfolioDuel() {
                   copyToClipboard={copyToClipboard}
                 />
 
-                {/* Seasonal Banner - EarningsGame Tournament */}
-                <SeasonalBanner
-                  variant="pvp"
-                  setScreen={setScreen}
-                  colors={colors}
-                />
-
                 {/* Enter the Arena - PVP game cards (COMPETE) */}
                 <GameModeCarousels
                   mode="pvp"

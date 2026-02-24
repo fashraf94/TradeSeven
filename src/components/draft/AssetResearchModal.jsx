@@ -119,11 +119,14 @@ const AssetResearchModal = ({
   });
 
   // v2: Bomb chart data — only available when asset has battle context (threshold + baseline price)
+  // Prefer baselinePrice (the actual scoring baseline, e.g. previousClose on day 2+)
+  // over lockedPrice (draft-time price). This ensures chart threshold lines match scoring:
+  // the chart shows "HIT!" only when the scoring system also counts a BaggerBomb.
   const bombData = useMemo(() => {
     const threshold = asset?.threshold;
     const baselinePrice =
-      asset?.lockedPrice ||
       asset?.baselinePrice ||
+      asset?.lockedPrice ||
       asset?.startPrice ||
       asset?.startingPrice ||
       asset?.basePrice ||

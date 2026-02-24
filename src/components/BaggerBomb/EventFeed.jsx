@@ -96,6 +96,29 @@ const EVENT_CONFIG = {
   },
 };
 
+// ClashCast commentary accent colors by event type
+const COMMENTARY_COLORS = {
+  bagger: '#00d9ff',
+  doubleBagger: '#00d9ff',
+  tenBagger: '#00d9ff',
+  bust: '#ff3366',
+  crash: '#ff3366',
+  meltdown: '#ff3366',
+  BREAKOUT: '#00d9ff',
+  RALLY: '#00d9ff',
+  MOONSHOT: '#00d9ff',
+  BUST: '#ff3366',
+  CRASH: '#ff3366',
+  MELTDOWN: '#ff3366',
+  LEAD_CHANGE: '#f59e0b',
+  SESSION_TRANSITION: '#a78bfa',
+  COMEBACK: '#00ff88',
+  SUBSTITUTION: '#94a3b8',
+  BATTLE_START: '#00d9ff',
+  BATTLE_END: '#f59e0b',
+  swap: '#94a3b8',
+};
+
 // Time threshold for "NEW" badge (60 seconds)
 const NEW_THRESHOLD_MS = 60000;
 
@@ -152,8 +175,10 @@ function NewBadge() {
 
 /**
  * Single event item with enhanced animations
+ * Now supports optional ClashCast commentary subtitle
  */
-function EventItem({ event, index, showNewBadge = false, isOpponent = false, onRedZoneTap }) {
+function EventItem({ event, index, showNewBadge = false, isOpponent = false, onRedZoneTap, commentary = null, commentaryLoading = false }) {
+  const isSynthetic = event.isSynthetic;
   const config = EVENT_CONFIG[event.type] || EVENT_CONFIG.bagger;
   const isPositive = (config.points || event.points || 0) > 0;
   const accentColor = isOpponent ? HOLO_COLORS.red : HOLO_COLORS.cyan;
@@ -162,6 +187,60 @@ function EventItem({ event, index, showNewBadge = false, isOpponent = false, onR
   const rzColor = isRedZone
     ? (event.direction === 'negative' ? HOLO_COLORS.red : HOLO_COLORS.amber)
     : null;
+
+  const commentaryColor = COMMENTARY_COLORS[event.type] || HOLO_COLORS.cyan;
+
+  // Synthetic events render as commentary-only rows
+  if (isSynthetic) {
+    const synthCommentary = event.commentary || commentary;
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 8 }}
+        transition={{ duration: 0.4, ease: 'easeOut' }}
+        layout
+        style={{
+          padding: '10px 12px',
+          borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}50`,
+          backgroundColor: 'transparent',
+        }}
+      >
+        <div
+          style={{
+            marginLeft: '62px',
+            paddingRight: '16px',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '6px',
+            borderLeft: `2px solid ${commentaryColor}`,
+            paddingLeft: '10px',
+          }}
+        >
+          <span style={{ fontSize: '12px', flexShrink: 0, marginTop: '1px' }}>{'🎙️'}</span>
+          {!synthCommentary ? (
+            <motion.span
+              animate={{ opacity: [0.3, 1, 0.3] }}
+              transition={{ duration: 1.2, repeat: Infinity }}
+              style={{ fontSize: '12px', color: HOLO_COLORS.textMuted, fontStyle: 'italic' }}
+            >
+              {'···'}
+            </motion.span>
+          ) : (
+            <p style={{
+              fontSize: '12px',
+              color: HOLO_COLORS.textMuted,
+              fontStyle: 'italic',
+              lineHeight: '1.5',
+              margin: 0,
+            }}>
+              {synthCommentary}
+            </p>
+          )}
+        </div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
@@ -185,9 +264,6 @@ function EventItem({ event, index, showNewBadge = false, isOpponent = false, onR
       }}
       layout
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
         padding: '12px',
         borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}50`,
         backgroundColor: isRedZone
@@ -216,168 +292,211 @@ function EventItem({ event, index, showNewBadge = false, isOpponent = false, onR
         />
       )}
 
-      {/* Timestamp */}
-      <span
-        style={{
-          fontSize: '11px',
-          color: HOLO_COLORS.textMuted,
-          minWidth: '50px',
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {formatTime(event.timestamp)}
-      </span>
+      {/* Main Event Row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {/* Timestamp */}
+        <span
+          style={{
+            fontSize: '11px',
+            color: HOLO_COLORS.textMuted,
+            minWidth: '50px',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {formatTime(event.timestamp)}
+        </span>
 
-      {/* Event Icon with subtle pulse for new events */}
-      <motion.span
-        animate={showNewBadge ? {
-          scale: [1, 1.15, 1],
-        } : {}}
-        transition={showNewBadge ? {
-          duration: 1.5,
-          repeat: 2,
-          ease: 'easeInOut',
-        } : {}}
-        style={{ fontSize: '18px' }}
-      >
-        {isSwap ? '🔄' : isRedZone ? (event.direction === 'negative' ? '⚠️' : '🎯') : config.icon}
-      </motion.span>
+        {/* Event Icon with subtle pulse for new events */}
+        <motion.span
+          animate={showNewBadge ? {
+            scale: [1, 1.15, 1],
+          } : {}}
+          transition={showNewBadge ? {
+            duration: 1.5,
+            repeat: 2,
+            ease: 'easeInOut',
+          } : {}}
+          style={{ fontSize: '18px' }}
+        >
+          {isSwap ? '🔄' : isRedZone ? (event.direction === 'negative' ? '⚠️' : '🎯') : config.icon}
+        </motion.span>
 
-      {/* Event Details */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {isSwap ? (
-          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
-            <span style={{ color: HOLO_COLORS.textPrimary, fontWeight: 500, fontSize: '13px' }}>
-              {event.player || 'Player'}
-            </span>
-            <span style={{ color: HOLO_COLORS.textMuted, fontSize: '13px' }}> swapped </span>
-            <span style={{ color: HOLO_COLORS.red, fontWeight: 600, fontSize: '13px' }}>
-              {event.removedSymbol}
-            </span>
-            <span style={{ color: HOLO_COLORS.textMuted, fontSize: '13px' }}> → </span>
-            <span style={{ color: HOLO_COLORS.green, fontWeight: 600, fontSize: '13px' }}>
-              {event.addedSymbol}
-            </span>
-            <AnimatePresence>
-              {showNewBadge && <NewBadge />}
-            </AnimatePresence>
-          </div>
-        ) : isRedZone ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        {/* Event Details */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {isSwap ? (
             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
               <span style={{ color: HOLO_COLORS.textPrimary, fontWeight: 500, fontSize: '13px' }}>
                 {event.player || 'Player'}
               </span>
-              <span style={{ color: HOLO_COLORS.textMuted, fontSize: '13px' }}>{': '}</span>
-              <span style={{ color: HOLO_COLORS.textSecondary, fontWeight: 600, fontSize: '13px' }}>
-                {event.symbol}
+              <span style={{ color: HOLO_COLORS.textMuted, fontSize: '13px' }}> swapped </span>
+              <span style={{ color: HOLO_COLORS.red, fontWeight: 600, fontSize: '13px' }}>
+                {event.removedSymbol}
               </span>
-              <span style={{ color: rzColor, fontWeight: 500, fontSize: '12px' }}>
-                approaching {EVENT_CONFIG[event.targetThreshold]?.label || event.targetThreshold}!
+              <span style={{ color: HOLO_COLORS.textMuted, fontSize: '13px' }}> → </span>
+              <span style={{ color: HOLO_COLORS.green, fontWeight: 600, fontSize: '13px' }}>
+                {event.addedSymbol}
               </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {/* Progress bar */}
-              <div style={{
-                width: '50px', height: '4px', borderRadius: '2px',
-                backgroundColor: `${rzColor}30`,
-                overflow: 'hidden', flexShrink: 0,
-              }}>
-                <div style={{
-                  width: `${event.progress || 0}%`, height: '100%',
-                  backgroundColor: rzColor,
-                  borderRadius: '2px',
-                  transition: 'width 0.3s ease',
-                }} />
-              </div>
-              <span style={{ fontSize: '10px', color: rzColor, fontWeight: 600 }}>
-                {event.progress || 0}%
-              </span>
-              {onRedZoneTap && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); onRedZoneTap(event); }}
-                  style={{
-                    padding: '2px 8px',
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    color: rzColor,
-                    backgroundColor: `${rzColor}15`,
-                    border: `1px solid ${rzColor}40`,
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    marginLeft: 'auto',
-                  }}
-                >
-                  View Chart
-                </button>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ color: HOLO_COLORS.textPrimary, fontWeight: 500 }}>
-                {event.player || event.username || 'Player'}
-              </span>
-              <span style={{ color: HOLO_COLORS.textMuted }}>{': '}</span>
-              <span style={{ color: HOLO_COLORS.textSecondary }}>
-                {event.symbol}
-              </span>
-              <span style={{ color: HOLO_COLORS.textMuted }}>{' '}</span>
-              <span style={{ color: config.color, fontWeight: 500 }}>
-                {config.label}
-              </span>
-
-              {/* NEW Badge */}
               <AnimatePresence>
                 {showNewBadge && <NewBadge />}
               </AnimatePresence>
             </div>
-            {onRedZoneTap && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onRedZoneTap(event); }}
-                  style={{
-                    padding: '2px 8px',
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    color: config.color,
-                    backgroundColor: `${config.color}15`,
-                    border: `1px solid ${config.color}40`,
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  View Chart
-                </button>
+          ) : isRedZone ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                <span style={{ color: HOLO_COLORS.textPrimary, fontWeight: 500, fontSize: '13px' }}>
+                  {event.player || 'Player'}
+                </span>
+                <span style={{ color: HOLO_COLORS.textMuted, fontSize: '13px' }}>{': '}</span>
+                <span style={{ color: HOLO_COLORS.textSecondary, fontWeight: 600, fontSize: '13px' }}>
+                  {event.symbol}
+                </span>
+                <span style={{ color: rzColor, fontWeight: 500, fontSize: '12px' }}>
+                  approaching {EVENT_CONFIG[event.targetThreshold]?.label || event.targetThreshold}!
+                </span>
               </div>
-            )}
-          </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {/* Progress bar */}
+                <div style={{
+                  width: '50px', height: '4px', borderRadius: '2px',
+                  backgroundColor: `${rzColor}30`,
+                  overflow: 'hidden', flexShrink: 0,
+                }}>
+                  <div style={{
+                    width: `${event.progress || 0}%`, height: '100%',
+                    backgroundColor: rzColor,
+                    borderRadius: '2px',
+                    transition: 'width 0.3s ease',
+                  }} />
+                </div>
+                <span style={{ fontSize: '10px', color: rzColor, fontWeight: 600 }}>
+                  {event.progress || 0}%
+                </span>
+                {onRedZoneTap && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onRedZoneTap(event); }}
+                    style={{
+                      padding: '2px 8px',
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      color: rzColor,
+                      backgroundColor: `${rzColor}15`,
+                      border: `1px solid ${rzColor}40`,
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      marginLeft: 'auto',
+                    }}
+                  >
+                    View Chart
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ color: HOLO_COLORS.textPrimary, fontWeight: 500 }}>
+                  {event.player || event.username || 'Player'}
+                </span>
+                <span style={{ color: HOLO_COLORS.textMuted }}>{': '}</span>
+                <span style={{ color: HOLO_COLORS.textSecondary }}>
+                  {event.symbol}
+                </span>
+                <span style={{ color: HOLO_COLORS.textMuted }}>{' '}</span>
+                <span style={{ color: config.color, fontWeight: 500 }}>
+                  {config.label}
+                </span>
+
+                {/* NEW Badge */}
+                <AnimatePresence>
+                  {showNewBadge && <NewBadge />}
+                </AnimatePresence>
+              </div>
+              {onRedZoneTap && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onRedZoneTap(event); }}
+                    style={{
+                      padding: '2px 8px',
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      color: config.color,
+                      backgroundColor: `${config.color}15`,
+                      border: `1px solid ${config.color}40`,
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    View Chart
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Points (hidden for red zone and swap events) */}
+        {!isRedZone && !isSwap && (
+          <motion.span
+            initial={showNewBadge ? { scale: 0.5 } : {}}
+            animate={showNewBadge ? {
+              scale: [1, 1.2, 1],
+            } : { scale: 1 }}
+            transition={{ duration: 0.3, delay: 0.1 }}
+            style={{
+              fontSize: '14px',
+              fontWeight: 700,
+              color: isPositive ? HOLO_COLORS.green : HOLO_COLORS.red,
+              fontVariantNumeric: 'tabular-nums',
+              textShadow: showNewBadge
+                ? `0 0 10px ${isPositive ? HOLO_COLORS.green : HOLO_COLORS.red}60`
+                : 'none',
+            }}
+          >
+            {isPositive ? '+' : ''}{event.points || config.points}
+          </motion.span>
         )}
       </div>
 
-      {/* Points (hidden for red zone and swap events) */}
-      {!isRedZone && !isSwap && (
-        <motion.span
-          initial={showNewBadge ? { scale: 0.5 } : {}}
-          animate={showNewBadge ? {
-            scale: [1, 1.2, 1],
-          } : { scale: 1 }}
-          transition={{ duration: 0.3, delay: 0.1 }}
+      {/* ClashCast Commentary Subtitle */}
+      {(commentary || commentaryLoading) && !isRedZone && (
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
           style={{
-            fontSize: '14px',
-            fontWeight: 700,
-            color: isPositive ? HOLO_COLORS.green : HOLO_COLORS.red,
-            fontVariantNumeric: 'tabular-nums',
-            textShadow: showNewBadge
-              ? `0 0 10px ${isPositive ? HOLO_COLORS.green : HOLO_COLORS.red}60`
-              : 'none',
+            marginTop: '6px',
+            marginLeft: '62px',
+            paddingRight: '16px',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '6px',
+            borderLeft: `2px solid ${commentaryColor}`,
+            paddingLeft: '10px',
           }}
         >
-          {isPositive ? '+' : ''}{event.points || config.points}
-        </motion.span>
+          <span style={{ fontSize: '11px', flexShrink: 0, marginTop: '1px' }}>{'🎙️'}</span>
+          {commentaryLoading ? (
+            <motion.span
+              animate={{ opacity: [0.3, 1, 0.3] }}
+              transition={{ duration: 1.2, repeat: Infinity }}
+              style={{ fontSize: '11px', color: HOLO_COLORS.textMuted, fontStyle: 'italic' }}
+            >
+              {'···'}
+            </motion.span>
+          ) : (
+            <p style={{
+              fontSize: '11px',
+              color: HOLO_COLORS.textMuted,
+              fontStyle: 'italic',
+              lineHeight: '1.4',
+              margin: 0,
+            }}>
+              {commentary}
+            </p>
+          )}
+        </motion.div>
       )}
     </motion.div>
   );
@@ -400,7 +519,7 @@ EventItem.propTypes = {
 };
 
 /**
- * EventFeed - Live event ticker
+ * EventFeed - Live event ticker with ClashCast commentary
  */
 export default function EventFeed({
   events = [],
@@ -408,10 +527,14 @@ export default function EventFeed({
   emptyMessage = 'No explosions yet. Waiting for action...',
   currentUser,
   onRedZoneTap,
+  getEventCommentary,
+  clashCastActive = false,
+  syntheticEvents = [],
 }) {
-  // Sort events by timestamp (newest first), dedup redzone events, and mark new ones
+  // Merge real events with synthetic commentary events, sort by timestamp (newest first)
   const sortedEvents = useMemo(() => {
-    const sorted = [...events]
+    const allEvents = [...events, ...syntheticEvents];
+    const sorted = allEvents
       .sort((a, b) => {
         const timeA = new Date(a.timestamp).getTime();
         const timeB = new Date(b.timestamp).getTime();
@@ -435,7 +558,7 @@ export default function EventFeed({
         ...event,
         isNewEvent: isRecent(event.timestamp),
       }));
-  }, [events, maxDisplay]);
+  }, [events, syntheticEvents, maxDisplay]);
 
   // Count new events for header badge
   const newEventCount = useMemo(() => {
@@ -466,7 +589,7 @@ export default function EventFeed({
           transition={{ duration: 0.5, repeat: newEventCount > 0 ? Infinity : 0, repeatDelay: 2 }}
           style={{ fontSize: '14px' }}
         >
-          🔥
+          {'🔥'}
         </motion.span>
         <span
           style={{
@@ -479,6 +602,36 @@ export default function EventFeed({
         >
           Live Feed
         </span>
+
+        {/* ClashCast LIVE Badge */}
+        {clashCastActive && (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '2px 8px',
+              borderRadius: '9999px',
+              backgroundColor: 'rgba(239, 68, 68, 0.2)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+            }}
+          >
+            <motion.span
+              animate={{ opacity: [1, 0.3, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                backgroundColor: '#ef4444',
+                display: 'inline-block',
+              }}
+            />
+            <span style={{ fontSize: '9px', color: '#ef4444', fontWeight: 600 }}>
+              {'🎙️ LIVE'}
+            </span>
+          </span>
+        )}
 
         {/* New Events Counter Badge */}
         <AnimatePresence>
@@ -543,22 +696,27 @@ export default function EventFeed({
               transition={{ duration: 2, repeat: Infinity }}
               style={{ marginBottom: '8px', fontSize: '24px' }}
             >
-              💤
+              {'💤'}
             </motion.div>
             {emptyMessage}
           </motion.div>
         ) : (
           <AnimatePresence mode="popLayout" initial={false}>
-            {sortedEvents.map((event, index) => (
-              <EventItem
-                key={event.id || `${event.timestamp}-${event.symbol}-${index}`}
-                event={event}
-                index={index}
-                showNewBadge={event.isNewEvent}
-                isOpponent={currentUser && event.player !== currentUser}
-                onRedZoneTap={event.type !== 'swap' ? onRedZoneTap : undefined}
-              />
-            ))}
+            {sortedEvents.map((event, index) => {
+              const commentaryData = getEventCommentary ? getEventCommentary(event.id) : null;
+              return (
+                <EventItem
+                  key={event.id || `${event.timestamp}-${event.symbol}-${index}`}
+                  event={event}
+                  index={index}
+                  showNewBadge={event.isNewEvent}
+                  isOpponent={currentUser && event.player !== currentUser}
+                  onRedZoneTap={event.type !== 'swap' && !event.isSynthetic ? onRedZoneTap : undefined}
+                  commentary={commentaryData?.text || null}
+                  commentaryLoading={commentaryData?.isLoading || false}
+                />
+              );
+            })}
           </AnimatePresence>
         )}
       </div>
@@ -575,7 +733,7 @@ EventFeed.propTypes = {
       type: PropTypes.string.isRequired,
       player: PropTypes.string,
       username: PropTypes.string,
-      symbol: PropTypes.string.isRequired,
+      symbol: PropTypes.string,
       points: PropTypes.number,
     })
   ),
@@ -587,6 +745,12 @@ EventFeed.propTypes = {
   currentUser: PropTypes.string,
   /** Callback when user taps a Red Zone event's "View Chart" button */
   onRedZoneTap: PropTypes.func,
+  /** ClashCast: function(eventId) => { text, isLoading } | null */
+  getEventCommentary: PropTypes.func,
+  /** ClashCast: whether commentary engine is running */
+  clashCastActive: PropTypes.bool,
+  /** ClashCast: synthetic commentary events (lead changes, session transitions) */
+  syntheticEvents: PropTypes.array,
 };
 
 EventFeed.defaultProps = {
@@ -594,6 +758,9 @@ EventFeed.defaultProps = {
   maxDisplay: 20,
   emptyMessage: 'No explosions yet. Waiting for action...',
   currentUser: null,
+  getEventCommentary: null,
+  clashCastActive: false,
+  syntheticEvents: [],
 };
 
 // Export event config for use elsewhere

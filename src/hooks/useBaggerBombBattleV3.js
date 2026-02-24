@@ -117,7 +117,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   }, [battle, isCreator, localHistory]);
 
   // Calculate scores with history
-  const calculateScores = useCallback((portfolio, prices, openPrices, history, extremes = {}) => {
+  const calculateScores = useCallback((portfolio, prices, openPrices, history, extremes = {}, battleThresholds = {}) => {
     if (!portfolio || portfolio.length === 0) {
       return { totalScore: 0, sessionScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
     }
@@ -136,7 +136,9 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
 
       // Resolve baseATR: prefer API-computed battle threshold over asset's stored value
       // (asset.baseATR may be a stale sector default from portfolio builder)
-      const resolvedBaseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
+      // NOTE: battleThresholds is passed as a parameter (not read from closure) to avoid
+      // stale-closure bugs — useCallback's empty dep array would capture battle as null.
+      const resolvedBaseATR = battleThresholds[asset.symbol]?.threshold || asset.baseATR || 2.5;
 
       if (!openPrice || openPrice === 0) {
         assetScores.push({
@@ -190,10 +192,12 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     };
   }, []);
 
-  // My scores
+  // My scores — pass battle.thresholds explicitly so both players use the same
+  // authoritative threshold per symbol (fixes BaggerBomb count mismatch)
+  const battleThresholds = battle?.thresholds || {};
   const myScores = useMemo(() => {
-    return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes);
-  }, [myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores]);
+    return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, battleThresholds);
+  }, [myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores, battleThresholds]);
 
   // Opponent scores — combine Firebase history with local opponent history
   // (mirrors combinedHistory pattern for own data, ensuring opponent badges
@@ -204,8 +208,8 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   }, [battle, isCreator, localOppHistory]);
 
   const oppScores = useMemo(() => {
-    return calculateScores(oppPortfolioFlat, effectivePrices, openPrices, oppHistory || {}, dailyExtremes);
-  }, [oppPortfolioFlat, effectivePrices, openPrices, oppHistory, dailyExtremes, calculateScores]);
+    return calculateScores(oppPortfolioFlat, effectivePrices, openPrices, oppHistory || {}, dailyExtremes, battleThresholds);
+  }, [oppPortfolioFlat, effectivePrices, openPrices, oppHistory, dailyExtremes, calculateScores, battleThresholds]);
 
   // Add completed session scores
   const myTotalScore = useMemo(() => {
@@ -403,7 +407,14 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
 
             // Persist to Firebase (async, don't await)
             if (battleId && !battleId.startsWith('training_')) {
-              addBaggerBombEvent(battleId, event).catch(console.error);
+              // Dedup: both clients may detect the same crossing independently,
+              // or a page refresh resets prevMultipliersRef causing re-detection.
+              const alreadyInFirebase = (battle?.events || []).some(e =>
+                e.symbol === asset.symbol && e.type === threshold.name
+              );
+              if (!alreadyInFirebase) {
+                addBaggerBombEvent(battleId, event).catch(console.error);
+              }
               updateAssetHistoryInBattle(battleId, isCreator, asset.symbol, newHistory).catch(console.error);
             }
           }
