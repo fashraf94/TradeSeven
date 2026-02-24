@@ -13,20 +13,20 @@ export default function CardBack({ challenge, accentColor, onAccept }) {
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      justifyContent: 'center',
-      padding: '24px 16px',
-      gap: '16px',
+      justifyContent: 'space-between',
+      padding: '14px 12px',
+      gap: '10px',
       textAlign: 'center',
     }}>
       {/* Challenge icon */}
-      <span style={{ fontSize: '28px' }}>{challenge.icon}</span>
+      <span style={{ fontSize: '24px' }}>{challenge.icon}</span>
 
       {/* Description */}
       <p style={{
         color: 'rgba(255, 255, 255, 0.85)',
-        fontSize: '13px',
+        fontSize: '12px',
         margin: 0,
-        lineHeight: 1.6,
+        lineHeight: 1.5,
         maxWidth: '140px',
       }}>
         {challenge.description}
@@ -71,7 +71,7 @@ export default function CardBack({ challenge, accentColor, onAccept }) {
           background: `linear-gradient(135deg, ${accentColor}, ${accentColor}cc)`,
           color: '#fff',
           border: 'none',
-          padding: '10px 24px',
+          padding: '8px 20px',
           borderRadius: '8px',
           fontSize: '11px',
           fontWeight: '800',
