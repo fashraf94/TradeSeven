@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { HOLO_COLORS } from '../../constants/holoTheme';
+
+const NEGATIVE_TYPES = ['bust', 'crash', 'meltdown'];
 
 /**
  * ScoreBreakdownPopover - Shows detailed score breakdown when user taps points
@@ -22,7 +24,7 @@ import { HOLO_COLORS } from '../../constants/holoTheme';
  * │                                     │
  * └─────────────────────────────────────┘
  */
-const ScoreBreakdownPopover = ({ asset, onClose }) => {
+const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) => {
   if (!asset) return null;
 
   const {
@@ -37,43 +39,49 @@ const ScoreBreakdownPopover = ({ asset, onClose }) => {
     totalScore = 0,
   } = asset;
 
-  // Generate mock timeline events (in production, this would come from real data)
-  const generateTimeline = () => {
-    const events = [];
-
-    // Generate BaggerBomb events
-    for (let i = 0; i < baggerBombs; i++) {
-      const hour = 9 + Math.floor(Math.random() * 6); // 9 AM to 3 PM
-      const minute = Math.floor(Math.random() * 60);
-      const percentAtHit = threshold * (i + 1) + Math.random() * 0.5;
-      events.push({
-        type: 'baggerbomb',
-        time: `${hour}:${minute.toString().padStart(2, '0')} ${hour >= 12 ? 'PM' : 'AM'}`,
-        percent: percentAtHit,
-        timestamp: hour * 60 + minute,
+  // Build timeline from real persisted events (filtered to this symbol).
+  // Falls back to a badge-only summary for legacy battles without events.
+  const timeline = useMemo(() => {
+    const symbolEvents = (battleEvents || [])
+      .filter(e => e.symbol === symbol)
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+      .map(e => {
+        const isNeg = NEGATIVE_TYPES.includes(e.type);
+        return {
+          type: isNeg ? 'bust' : 'baggerbomb',
+          time: new Date(e.timestamp).toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+            timeZone: 'America/New_York',
+          }),
+          percent: e.multiplier != null ? e.multiplier * threshold : 0,
+          hasRealTime: true,
+        };
       });
+
+    // If no persisted events but badges exist, show badge summary without timestamps
+    if (symbolEvents.length === 0 && (baggerBombs > 0 || busts > 0)) {
+      for (let i = 0; i < baggerBombs; i++) {
+        symbolEvents.push({
+          type: 'baggerbomb',
+          time: null,
+          percent: threshold * (i + 1),
+          hasRealTime: false,
+        });
+      }
+      for (let i = 0; i < busts; i++) {
+        symbolEvents.push({
+          type: 'bust',
+          time: null,
+          percent: -(threshold * (i + 1)),
+          hasRealTime: false,
+        });
+      }
     }
 
-    // Generate Bust events
-    for (let i = 0; i < busts; i++) {
-      const hour = 9 + Math.floor(Math.random() * 6);
-      const minute = Math.floor(Math.random() * 60);
-      const percentAtHit = -(threshold * (i + 1) + Math.random() * 0.5);
-      events.push({
-        type: 'bust',
-        time: `${hour}:${minute.toString().padStart(2, '0')} ${hour >= 12 ? 'PM' : 'AM'}`,
-        percent: percentAtHit,
-        timestamp: hour * 60 + minute,
-      });
-    }
-
-    // Sort by timestamp
-    events.sort((a, b) => a.timestamp - b.timestamp);
-
-    return events;
-  };
-
-  const timeline = generateTimeline();
+    return symbolEvents;
+  }, [battleEvents, symbol, threshold, baggerBombs, busts]);
 
   return ReactDOM.createPortal(
     <>
@@ -327,7 +335,7 @@ const ScoreBreakdownPopover = ({ asset, onClose }) => {
                         : '0 0 8px rgba(255, 100, 100, 0.8), 0 0 16px rgba(255, 100, 100, 0.4)',
                     }}>{event.type === 'baggerbomb' ? '💣' : '📉'}</span>
                     <span style={{ color: HOLO_COLORS.textMuted }}>
-                      Hit at {event.time}
+                      {event.hasRealTime ? `Hit at ${event.time}` : (event.type === 'baggerbomb' ? 'BaggerBomb' : 'Bust')}
                     </span>
                     <span style={{
                       marginLeft: 'auto',

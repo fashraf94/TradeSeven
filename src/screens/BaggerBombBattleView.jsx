@@ -554,6 +554,7 @@ export default function BaggerBombBattleView({
             ).length || 0) * -10,
             totalScore: breakdownAsset.points || 0,
           }}
+          events={events || []}
           onClose={() => setBreakdownAsset(null)}
         />
       )}
