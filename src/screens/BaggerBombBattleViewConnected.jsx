@@ -9,6 +9,7 @@ import { HOLO_COLORS } from '../constants/holoTheme';
 import BaggerBombBattleView from './BaggerBombBattleView';
 import TriggerCelebration from '../components/BaggerBomb/TriggerCelebration';
 import useBaggerBombBattleV3 from '../hooks/useBaggerBombBattleV3';
+import useClashCast from '../hooks/useClashCast';
 import { useWebSocketPrices } from '../hooks/useWebSocketPrices';
 import { SESSION_CONFIG } from '../utils/baggerBombUtils';
 
@@ -91,6 +92,24 @@ export default function BaggerBombBattleViewConnected({
 
   // Auto night mode based on session
   const isNightMode = useNightMode(currentSessionId);
+
+  // ClashCast AI commentary
+  const clashCast = useClashCast(battleId, battle);
+
+  // Feed ClashCast with battle state updates
+  useEffect(() => {
+    if (!battle || (battle.state?.status !== 'active' && battle.status !== 'active')) return;
+    clashCast.processUpdate({
+      creatorScore: player?.totalPoints || 0,
+      opponentScore: opponent?.totalPoints || 0,
+      creatorName: player?.username || 'Player 1',
+      opponentName: opponent?.username || 'Player 2',
+      currentSession: currentSessionId || null,
+      sessionTimeRemaining: sessionTimeRemaining || null,
+      sessionsCompleted: completedSessions || [],
+      events: battle?.events || [],
+    });
+  }, [player?.totalPoints, opponent?.totalPoints, battle?.events?.length, currentSessionId]);
 
   // Build trigger object for TriggerCelebration
   const triggerForCelebration = useMemo(() => {
@@ -197,6 +216,9 @@ export default function BaggerBombBattleViewConnected({
         currentPrices={currentPrices}
         openPrices={openPrices}
         wsStatus={wsStatus}
+        getEventCommentary={clashCast.getEventCommentary}
+        clashCastActive={clashCast.isActive}
+        syntheticEvents={clashCast.syntheticEvents}
       />
 
       {/* Threshold Trigger Celebration Overlay with Chain Support */}

@@ -9,6 +9,7 @@ import { HOLO_COLORS } from '../constants/holoTheme';
 import BaggerBombBattleView from './BaggerBombBattleView';
 import TriggerCelebration from '../components/BaggerBomb/TriggerCelebration';
 import useBaggerBombBattleV4 from '../hooks/useBaggerBombBattleV4';
+import useClashCast from '../hooks/useClashCast';
 import { useWebSocketPrices } from '../hooks/useWebSocketPrices';
 import { stockAPI } from '../services/eodhdAPI';
 
@@ -119,6 +120,24 @@ export default function BaggerBombBattleViewConnectedV4({
       console.error('[V4 PvP] Swap confirm error:', err);
     }
   }, [swapMode, executeSwap, cancelSwapMode]);
+
+  // ClashCast AI commentary
+  const clashCast = useClashCast(battleId, battle);
+
+  // Feed ClashCast with battle state updates
+  useEffect(() => {
+    if (!battle || (battle.state?.status !== 'active' && battle.status !== 'active')) return;
+    clashCast.processUpdate({
+      creatorScore: player?.totalPoints || 0,
+      opponentScore: opponent?.totalPoints || 0,
+      creatorName: player?.username || 'Player 1',
+      opponentName: opponent?.username || 'Player 2',
+      currentSession: null, // V4 doesn't use sessions
+      sessionTimeRemaining: null,
+      sessionsCompleted: [],
+      events: battle?.events || [],
+    });
+  }, [player?.totalPoints, opponent?.totalPoints, battle?.events?.length]);
 
   // Build trigger object for TriggerCelebration
   const triggerForCelebration = useMemo(() => {
@@ -253,6 +272,9 @@ export default function BaggerBombBattleViewConnectedV4({
         openPrices={openPrices}
         wsStatus={wsStatus}
         battleVersion={4}
+        getEventCommentary={clashCast.getEventCommentary}
+        clashCastActive={clashCast.isActive}
+        syntheticEvents={clashCast.syntheticEvents}
         freeAgentConfig={{
           freeAgents,
           nextRotationAt,
