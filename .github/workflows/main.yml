@@ -1,0 +1,62 @@
+# .github/workflows/keep-warm.yml
+# 
+# VERCEL FUNCTION WARMER
+# Pings critical API endpoints every 5 minutes to prevent cold starts.
+# Cold starts add 1-3 seconds to first request — this eliminates that.
+#
+# Cost impact: ~288 pings/day per endpoint = ~864 total
+# Against your 100,000 EODHD daily budget, this is < 1%
+#
+# To adjust frequency: change the cron schedule below
+# Every 5 min = always warm | Every 10 min = mostly warm | Every 15 min = sometimes cold
+
+name: Keep Vercel Functions Warm
+
+on:
+  schedule:
+    # Every 5 minutes, 7 days a week
+    # GitHub Actions cron uses UTC
+    # This covers market hours (9:30 AM - 4 PM ET = 14:30 - 21:00 UTC)
+    # AND evening hours when you/beta testers are likely using the app
+    - cron: '*/5 6-23 * * *'  # Every 5 min from 6AM-11PM UTC (1AM-6PM CT)
+  
+  # Allow manual trigger for testing
+  workflow_dispatch:
+
+jobs:
+  warm-functions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    
+    steps:
+      - name: Warm Stock Prices Endpoint
+        run: |
+          echo "Warming /api/stocks/prices..."
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code} %{time_total}s" \
+            "https://trade-seven-cyan.vercel.app/api/stocks/prices?symbols=AAPL&warmup=true" \
+            -H "User-Agent: MarketClash-Warmer")
+          echo "  Stock prices: $RESPONSE"
+        continue-on-error: true
+
+      - name: Warm Crypto Prices Endpoint
+        run: |
+          echo "Warming /api/crypto/prices..."
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code} %{time_total}s" \
+            "https://trade-seven-cyan.vercel.app/api/crypto/prices?symbols=BTC-USD&warmup=true" \
+            -H "User-Agent: MarketClash-Warmer")
+          echo "  Crypto prices: $RESPONSE"
+        continue-on-error: true
+
+      - name: Warm Health Endpoint
+        run: |
+          echo "Warming /api/health..."
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code} %{time_total}s" \
+            "https://trade-seven-cyan.vercel.app/api/health" \
+            -H "User-Agent: MarketClash-Warmer")
+          echo "  Health: $RESPONSE"
+        continue-on-error: true
+
+      - name: Log warmup complete
+        run: |
+          echo "✅ Warmup complete at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Functions should now respond without cold starts."
