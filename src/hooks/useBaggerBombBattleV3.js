@@ -407,7 +407,14 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
 
             // Persist to Firebase (async, don't await)
             if (battleId && !battleId.startsWith('training_')) {
-              addBaggerBombEvent(battleId, event).catch(console.error);
+              // Dedup: both clients may detect the same crossing independently,
+              // or a page refresh resets prevMultipliersRef causing re-detection.
+              const alreadyInFirebase = (battle?.events || []).some(e =>
+                e.symbol === asset.symbol && e.type === threshold.name
+              );
+              if (!alreadyInFirebase) {
+                addBaggerBombEvent(battleId, event).catch(console.error);
+              }
               updateAssetHistoryInBattle(battleId, isCreator, asset.symbol, newHistory).catch(console.error);
             }
           }

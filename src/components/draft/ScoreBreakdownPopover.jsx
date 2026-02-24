@@ -44,26 +44,38 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
   const timeline = useMemo(() => {
     const symbolEvents = (battleEvents || [])
       .filter(e => e.symbol === symbol)
-      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-      .map(e => {
-        const isNeg = NEGATIVE_TYPES.includes(e.type);
-        return {
-          type: isNeg ? 'bust' : 'baggerbomb',
-          time: new Date(e.timestamp).toLocaleTimeString('en-US', {
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true,
-            timeZone: 'America/New_York',
-          }),
-          percent: e.multiplier != null ? e.multiplier * threshold : 0,
-          hasRealTime: true,
-        };
-      });
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    // Deduplicate: keep only the first (earliest) event per threshold type.
+    // Duplicates arise from multiple clients detecting the same crossing,
+    // page refreshes, or React re-renders — each writes a new event with
+    // a unique id, so Firestore's arrayUnion never deduplicates them.
+    const seen = new Set();
+    const uniqueEvents = symbolEvents.filter(e => {
+      if (seen.has(e.type)) return false;
+      seen.add(e.type);
+      return true;
+    });
+
+    const mapped = uniqueEvents.map(e => {
+      const isNeg = NEGATIVE_TYPES.includes(e.type);
+      return {
+        type: isNeg ? 'bust' : 'baggerbomb',
+        time: new Date(e.timestamp).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+          timeZone: 'America/New_York',
+        }),
+        percent: e.multiplier != null ? e.multiplier * threshold : 0,
+        hasRealTime: true,
+      };
+    });
 
     // If no persisted events but badges exist, show badge summary without timestamps
-    if (symbolEvents.length === 0 && (baggerBombs > 0 || busts > 0)) {
+    if (mapped.length === 0 && (baggerBombs > 0 || busts > 0)) {
       for (let i = 0; i < baggerBombs; i++) {
-        symbolEvents.push({
+        mapped.push({
           type: 'baggerbomb',
           time: null,
           percent: threshold * (i + 1),
@@ -71,7 +83,7 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
         });
       }
       for (let i = 0; i < busts; i++) {
-        symbolEvents.push({
+        mapped.push({
           type: 'bust',
           time: null,
           percent: -(threshold * (i + 1)),
@@ -80,7 +92,7 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
       }
     }
 
-    return symbolEvents;
+    return mapped;
   }, [battleEvents, symbol, threshold, baggerBombs, busts]);
 
   return ReactDOM.createPortal(
