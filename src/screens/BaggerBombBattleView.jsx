@@ -550,19 +550,26 @@ export default function BaggerBombBattleView({
             symbol: breakdownAsset.symbol,
             gain: breakdownAsset.priceChange || 0,
             threshold: thresholds[breakdownAsset.symbol]?.threshold || breakdownAsset.baseATR || 2.5,
+            tierMultiplier: breakdownAsset.tierMultiplier || 1.0,
             baggerBombs: breakdownAsset.badges?.filter(b =>
-              b === 'bagger' || b === 'rally' || b === 'moonshot'
+              b === 'bagger' || b === 'doubleBagger' || b === 'tenBagger'
             ).length || 0,
             busts: breakdownAsset.badges?.filter(b =>
               b === 'bust' || b === 'crash' || b === 'meltdown'
             ).length || 0,
-            basePoints: (breakdownAsset.priceChange || 0) * 10,
-            baggerBombPoints: (breakdownAsset.badges?.filter(b =>
-              b === 'bagger' || b === 'rally' || b === 'moonshot'
-            ).length || 0) * 15,
-            bustPoints: (breakdownAsset.badges?.filter(b =>
-              b === 'bust' || b === 'crash' || b === 'meltdown'
-            ).length || 0) * -10,
+            basePoints: Math.round((breakdownAsset.priceChange || 0) * 10 * (breakdownAsset.tierMultiplier || 1.0)),
+            baggerBombPoints: breakdownAsset.badges?.reduce((sum, b) => {
+              if (b === 'bagger') return sum + 15;
+              if (b === 'doubleBagger') return sum + 30;
+              if (b === 'tenBagger') return sum + 50;
+              return sum;
+            }, 0) || 0,
+            bustPoints: breakdownAsset.badges?.reduce((sum, b) => {
+              if (b === 'bust') return sum - 10;
+              if (b === 'crash') return sum - 20;
+              if (b === 'meltdown') return sum - 35;
+              return sum;
+            }, 0) || 0,
             totalScore: breakdownAsset.points || 0,
           }}
           events={events || []}

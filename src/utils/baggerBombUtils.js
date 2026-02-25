@@ -546,8 +546,12 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}, extremes
 
   // effectiveMax = best positive multiplier reached (for bombs)
   // effectiveMin = worst negative multiplier reached (for busts)
-  const effectiveMax = Math.max(highMultiplier, multiplier);
-  const effectiveMin = Math.min(lowMultiplier, multiplier);
+  // Include persisted history so badges earned from past peaks are never lost,
+  // even if intraday extremes are missing or price has reversed.
+  const historyMax = history.maxMultiplier || 0;
+  const historyMin = history.minMultiplier || 0;
+  const effectiveMax = Math.max(historyMax, highMultiplier, multiplier);
+  const effectiveMin = Math.min(historyMin, lowMultiplier, multiplier);
 
   // Get badges from intraday extremes
   const badges = getBadgesFromHistory({

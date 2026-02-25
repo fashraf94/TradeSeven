@@ -353,7 +353,13 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
         }
       }
 
-      const prevMultiplier = prevMultipliersRef.current[asset.symbol] || 0;
+      // On first tick after mount/refresh, initialize and skip detection to
+      // avoid false threshold crossings (prevMultiplier was 0, not the real state).
+      if (prevMultipliersRef.current[asset.symbol] === undefined) {
+        prevMultipliersRef.current[asset.symbol] = currentMultiplier;
+        return; // Skip this asset on first tick — start detecting from next update
+      }
+      const prevMultiplier = prevMultipliersRef.current[asset.symbol];
       const assetHistory = combinedHistory[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
 
       // Check for threshold crossings using both current price and intraday extremes
@@ -388,12 +394,15 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
               [asset.symbol]: newHistory,
             }));
 
-            // Create event
+            // Create event — use the multiplier that actually triggered this
+            // threshold (intraday extreme), not the current live price.
+            const isNegativeThreshold = ['bust', 'crash', 'meltdown'].includes(threshold.name);
+            const triggerMultiplier = isNegativeThreshold ? effectiveLowMultiplier : effectiveHighMultiplier;
             const event = createThresholdEvent(
               'player',
               asset.symbol,
               threshold.name,
-              currentMultiplier,
+              triggerMultiplier,
               threshold.points
             );
 

@@ -31,6 +31,7 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
     symbol,
     gain = 0,
     threshold = 2.5,  // Default matches BaggerBombTab fallback
+    tierMultiplier = 1,
     baggerBombs = 0,
     busts = 0,
     basePoints = 0,
@@ -187,7 +188,7 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
                 color: HOLO_COLORS.textSecondary,
                 fontSize: '12px',
               }}>
-                Base ({gain >= 0 ? '+' : ''}{gain.toFixed(1)}% × 10)
+                Base ({gain >= 0 ? '+' : ''}{gain.toFixed(1)}% × 10{tierMultiplier > 1 ? ` × ${tierMultiplier}` : ''})
               </span>
               <span style={{
                 fontFamily: 'monospace',
