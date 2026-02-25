@@ -12,6 +12,8 @@ import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattl
 import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings, fetchHistoricalOHLCV } from './services/eodhdAPI';
 // Technical Analysis AI Service
 import { analyzeStockWithAI, generateFallbackAnalysis } from './services/technicalAnalysisAI';
+// WebSocket → Cache bridge (flushes WS prices to cacheService so REST calls are skipped)
+import { startWsCacheBridge } from './services/wsCacheBridge';
 import './firebase/config';
 import { motion } from 'framer-motion';
 // Event watchlist configuration for Week Ahead calendar
@@ -5322,6 +5324,11 @@ const WatchlistNews = ({ colors }) => {
     setHasWatchlist(true);
     return symbolArray.slice(0, 8);
   };
+
+  // Start WebSocket → Cache bridge on mount (flushes WS prices to cache every 60s)
+  useEffect(() => {
+    startWsCacheBridge();
+  }, []);
 
   // Fetch news for watchlist symbols
   useEffect(() => {

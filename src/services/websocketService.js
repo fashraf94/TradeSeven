@@ -9,7 +9,7 @@ import { isCrypto } from '../utils/stockHelpers';
 /** Convert app symbol to EODHD WebSocket format */
 function toWsSymbol(symbol, type) {
   if (type === 'crypto') return `${symbol}-USD`;
-  return `${symbol}.US`;
+  return symbol; // EODHD WebSocket expects bare symbols (e.g., "AAPL"), not "AAPL.US"
 }
 
 /** Convert EODHD WebSocket symbol back to app format */
@@ -54,6 +54,12 @@ class WebSocketManager {
     // Daily high/low tracker for accurate candle display
     this._dailyHL = new Map();     // symbol → { high, low, open, date, lastUpdate }
     this._dailyHLDate = null;      // Track which trading day we're accumulating for
+
+    // Price cache for bridge to cacheService (symbol → { price, timestamp })
+    this._priceCache = new Map();
+
+    // Extended-hours filter: log once per after-hours session
+    this._extendedHoursWarned = false;
   }
 
   // ==================== EVENT SYSTEM ====================
@@ -237,8 +243,7 @@ class WebSocketManager {
       };
 
       this._stockWs.onmessage = (event) => {
-        console.log('[WebSocket] Raw stock message received:', typeof event.data === 'string' ? event.data.slice(0, 200) : event.data);
-        this._handleMessage(event.data);
+        this._handleMessage(event.data, 'stock');
       };
 
       this._stockWs.onclose = () => {
@@ -306,7 +311,7 @@ class WebSocketManager {
       };
 
       this._cryptoWs.onmessage = (event) => {
-        this._handleMessage(event.data);
+        this._handleMessage(event.data, 'crypto');
       };
 
       this._cryptoWs.onclose = () => {
@@ -337,14 +342,14 @@ class WebSocketManager {
     if (ws?.readyState !== WebSocket.OPEN) return;
     const wsSymbols = symbols.map(s => toWsSymbol(s, type)).join(',');
     ws.send(JSON.stringify({ action: 'subscribe', symbols: wsSymbols }));
-    console.log(`[WebSocket] Subscribed to ${type}:`, wsSymbols);
+    console.log(`[WebSocket] Subscribed to ${type} (sent to EODHD):`, wsSymbols);
   }
 
-  _handleMessage(raw) {
+  _handleMessage(raw, type = 'stock') {
     try {
       const data = JSON.parse(raw);
 
-      // EODHD sends: { s: "AAPL.US", p: 185.42, ... } for trades
+      // EODHD sends: { s: "AAPL", p: 185.42, ... } for stock trades
       // or status messages like { status_code, message }
       if (data.status_code !== undefined) {
         // Status/auth message — ignore
@@ -352,10 +357,26 @@ class WebSocketManager {
       }
 
       if (data.s && data.p !== undefined) {
+        // Filter extended-hours ticks for stocks (crypto trades 24/7)
+        if (type === 'stock' && data.ms === 'extended-hours') {
+          if (!this._extendedHoursWarned) {
+            console.log('[WebSocket] Filtering extended-hours ticks (market closed)');
+            this._extendedHoursWarned = true;
+          }
+          return;
+        }
+        // Reset warning flag when regular session resumes
+        if (type === 'stock' && data.ms === 'open' && this._extendedHoursWarned) {
+          this._extendedHoursWarned = false;
+        }
+
         const symbol = fromWsSymbol(data.s);
         const price = parseFloat(data.p);
         if (symbol && !isNaN(price) && price > 0) {
           this._emit('price', { symbol, price });
+
+          // Store latest price for cache bridge
+          this._priceCache.set(symbol, { price, timestamp: Date.now() });
 
           // --- Daily H/L Tracker ---
           const today = new Date().toISOString().split('T')[0];
@@ -464,6 +485,16 @@ class WebSocketManager {
     }
   }
 
+  // ==================== PRICE CACHE (for wsCacheBridge) ====================
+
+  getAllCachedPrices() {
+    const result = {};
+    for (const [symbol, data] of this._priceCache) {
+      result[symbol] = { ...data };
+    }
+    return result;
+  }
+
   /** Force close all connections (e.g., on app unmount) */
   destroy() {
     if (this._stockWs) { this._stockWs.close(); this._stockWs = null; }
@@ -479,6 +510,7 @@ class WebSocketManager {
     this._stockStatus = 'disconnected';
     this._cryptoStatus = 'disconnected';
     this._listeners = { price: new Set(), status: new Set() };
+    this._priceCache.clear();
   }
 }
 
