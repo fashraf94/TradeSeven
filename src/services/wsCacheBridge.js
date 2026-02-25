@@ -23,7 +23,12 @@ function flushWsPricesToCache() {
       //   stocks → cacheService.get('prices', symbol)
       //   crypto → cacheService.get('crypto', symbol)
       const cacheType = isCrypto(symbol) ? 'crypto' : 'prices';
+
+      // Merge WS price into existing cached data to preserve percentChange,
+      // previousClose, change, high, low, etc. from the last REST fetch
+      const existing = cacheService.get(cacheType, symbol);
       cacheService.set(cacheType, symbol, {
+        ...(existing || {}),
         price: data.price,
         source: 'websocket'
       });

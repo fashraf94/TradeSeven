@@ -82,6 +82,27 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
     return result;
   }, [allRosterAssets, currentDraft, livePrices]);
 
+  // Enrich roster assets with gain (% change since draft)
+  const enrichedRoster = useMemo(() => {
+    const lockedPrices = currentDraft?.lockedPrices || {};
+    const enrichCategory = (assets) => assets.map(asset => {
+      const symbol = asset.symbol?.toUpperCase();
+      const liveData = livePrices[symbol];
+      const livePrice = typeof liveData === 'object' ? liveData?.price : liveData;
+      const lockedPrice = lockedPrices[symbol];
+      let gain = 0;
+      if (livePrice && lockedPrice && lockedPrice > 0) {
+        gain = ((livePrice - lockedPrice) / lockedPrice) * 100;
+      }
+      return { ...asset, gain, price: livePrice || 0 };
+    });
+    return {
+      steady: enrichCategory(playerRoster.steady || []),
+      risky: enrichCategory(playerRoster.risky || []),
+      defensive: enrichCategory(playerRoster.defensive || []),
+    };
+  }, [playerRoster, livePrices, currentDraft?.lockedPrices]);
+
   // Get free agents for selected category
   const filteredFreeAgents = useMemo(() => {
     return freeAgents[selectedCategory] || [];
@@ -345,7 +366,7 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
   return {
     // Data
     freeAgents,
-    playerRoster,
+    playerRoster: enrichedRoster,
     allRosterAssets,
     filteredFreeAgents,
     swapHistory,
