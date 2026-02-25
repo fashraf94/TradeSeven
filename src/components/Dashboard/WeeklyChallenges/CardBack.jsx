@@ -13,9 +13,9 @@ export default function CardBack({ challenge, accentColor, onAccept }) {
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '14px 12px',
-      gap: '10px',
+      justifyContent: 'center',
+      padding: '10px 12px',
+      gap: '8px',
       textAlign: 'center',
     }}>
       {/* Challenge icon */}
