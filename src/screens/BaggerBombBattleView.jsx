@@ -537,6 +537,7 @@ export default function BaggerBombBattleView({
           })}
           onClose={() => { setResearchAsset(null); setResearchDefaultTab(null); }}
           showActionButton={false}
+          isGameContext={true}
           version={2}
           defaultTab={researchDefaultTab}
           defaultTimeframe="bomb"

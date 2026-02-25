@@ -84,12 +84,15 @@ const AssetResearchModal = ({
   // actionConfig: { label: string, onClick: fn, variant: 'primary'|'danger'|'secondary', disabled?: boolean }
   actionConfig = null,
   showActionButton = true,
+  isGameContext: isGameContextProp,
   version = 2,
   defaultTab = null,
   defaultTimeframe = null,
 }) => {
   const isCrypto = asset?.isCrypto || asset?.category === 'crypto' || CRYPTO_SYMBOLS.has(asset?.symbol);
-  const isGameContext = onAcquire !== null || showActionButton;
+  const isGameContext = isGameContextProp !== undefined
+    ? isGameContextProp
+    : (onAcquire !== null || showActionButton);
   const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'health' : 'fundamental'));
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -141,11 +144,14 @@ const AssetResearchModal = ({
       asset?.startingPrice ||
       asset?.basePrice ||
       asset?.draftPrice ||
+      asset?.price ||          // Fallback to current price (aligns with BaggerBombTab)
+      asset?.currentPrice ||
       null;
     if (!threshold || threshold <= 0 || !baselinePrice || baselinePrice <= 0) return null;
     return { threshold, baselinePrice };
   }, [asset?.threshold, asset?.lockedPrice, asset?.baselinePrice, asset?.startPrice,
-      asset?.startingPrice, asset?.basePrice, asset?.draftPrice]);
+      asset?.startingPrice, asset?.basePrice, asset?.draftPrice,
+      asset?.price, asset?.currentPrice]);
 
   // v2: Measure container height for drawer snap points
   useEffect(() => {
