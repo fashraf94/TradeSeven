@@ -54,6 +54,9 @@ class WebSocketManager {
     // Daily high/low tracker for accurate candle display
     this._dailyHL = new Map();     // symbol → { high, low, open, date, lastUpdate }
     this._dailyHLDate = null;      // Track which trading day we're accumulating for
+
+    // Price cache for bridge to cacheService (symbol → { price, timestamp })
+    this._priceCache = new Map();
   }
 
   // ==================== EVENT SYSTEM ====================
@@ -357,6 +360,9 @@ class WebSocketManager {
         if (symbol && !isNaN(price) && price > 0) {
           this._emit('price', { symbol, price });
 
+          // Store latest price for cache bridge
+          this._priceCache.set(symbol, { price, timestamp: Date.now() });
+
           // --- Daily H/L Tracker ---
           const today = new Date().toISOString().split('T')[0];
           if (this._dailyHLDate !== today) {
@@ -464,6 +470,16 @@ class WebSocketManager {
     }
   }
 
+  // ==================== PRICE CACHE (for wsCacheBridge) ====================
+
+  getAllCachedPrices() {
+    const result = {};
+    for (const [symbol, data] of this._priceCache) {
+      result[symbol] = { ...data };
+    }
+    return result;
+  }
+
   /** Force close all connections (e.g., on app unmount) */
   destroy() {
     if (this._stockWs) { this._stockWs.close(); this._stockWs = null; }
@@ -479,6 +495,7 @@ class WebSocketManager {
     this._stockStatus = 'disconnected';
     this._cryptoStatus = 'disconnected';
     this._listeners = { price: new Set(), status: new Set() };
+    this._priceCache.clear();
   }
 }
 
