@@ -9,7 +9,7 @@ import { isCrypto } from '../utils/stockHelpers';
 /** Convert app symbol to EODHD WebSocket format */
 function toWsSymbol(symbol, type) {
   if (type === 'crypto') return `${symbol}-USD`;
-  return `${symbol}.US`;
+  return symbol; // EODHD WebSocket expects bare symbols (e.g., "AAPL"), not "AAPL.US"
 }
 
 /** Convert EODHD WebSocket symbol back to app format */
@@ -337,14 +337,14 @@ class WebSocketManager {
     if (ws?.readyState !== WebSocket.OPEN) return;
     const wsSymbols = symbols.map(s => toWsSymbol(s, type)).join(',');
     ws.send(JSON.stringify({ action: 'subscribe', symbols: wsSymbols }));
-    console.log(`[WebSocket] Subscribed to ${type}:`, wsSymbols);
+    console.log(`[WebSocket] Subscribed to ${type} (sent to EODHD):`, wsSymbols);
   }
 
   _handleMessage(raw) {
     try {
       const data = JSON.parse(raw);
 
-      // EODHD sends: { s: "AAPL.US", p: 185.42, ... } for trades
+      // EODHD sends: { s: "AAPL", p: 185.42, ... } for stock trades
       // or status messages like { status_code, message }
       if (data.status_code !== undefined) {
         // Status/auth message — ignore
