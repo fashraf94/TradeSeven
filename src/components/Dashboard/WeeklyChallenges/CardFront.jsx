@@ -34,9 +34,9 @@ export default function CardFront({ challenge, state, progress, accentColor, car
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      justifyContent: 'flex-start',
-      gap: isMobileCard ? '12px' : '16px',
-      padding: isMobileCard ? '18px 10px 12px' : '24px 14px 16px',
+      justifyContent: 'center',
+      gap: '8px',
+      padding: '10px 12px',
       filter: isLocked ? 'grayscale(0.7)' : 'none',
       opacity: isLocked ? 0.5 : 1,
       transition: 'filter 0.3s, opacity 0.3s',
@@ -138,7 +138,6 @@ export default function CardFront({ challenge, state, progress, accentColor, car
         width: '100%',
         textAlign: 'center',
         flexShrink: 0, // Prevent bottom section from shrinking
-        marginTop: isMobileCard ? '4px' : '8px',
       }}>
         {/* Challenge name */}
         <div style={{

@@ -347,8 +347,11 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
 
   const player = draft.players[playerIndex];
 
-  // Validate it's their turn (unless autopick)
-  if (!isAutopick && draft.currentPlayerId !== userId) {
+  // Validate it's their turn — always enforced, even for autopick.
+  // This prevents the race condition where multiple clients fire autopick
+  // simultaneously and a stale userId bypasses the turn check.
+  if (draft.currentPlayerId !== userId) {
+    console.log(`[DRAFT] Pick rejected: not ${userId}'s turn (current: ${draft.currentPlayerId}), isAutopick=${isAutopick}`);
     throw new Error('Not your turn');
   }
 
@@ -411,6 +414,8 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
     nextPlayerId = updatedPlayers[nextPlayerIndex].odUserId;
     nextDeadline = Timestamp.fromDate(new Date(Date.now() + 2 * 60 * 1000));
   }
+
+  console.log(`[DRAFT] Pick #${draft.currentPickIndex + 1}: ${player.displayName} (${userId}) picked ${asset.symbol}${isAutopick ? ' [autopick]' : ''}. Next: ${nextPlayerId || 'COMPLETE'} (pickIndex=${nextPickIndex})`);
 
   // Build update object
   // Create lastPick data for display in draft room
@@ -485,6 +490,8 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
     updateData.swapHistory = [];
     updateData.dailySwaps = {};
     updateData.thresholds = draftThresholds;
+
+    console.log(`[DRAFT] Draft ${draftId} complete after 36 picks`);
   }
 
   await updateDoc(doc(db, 'drafts', draftId), removeUndefined(updateData));
@@ -514,6 +521,13 @@ export async function handleAutopick(draftId, userId) {
   const draft = await getDraft(draftId);
   if (!draft || draft.status !== 'active') {
     console.log(`[AUTOPICK] Skipped - draft ${draftId} not active (status: ${draft?.status})`);
+    return;
+  }
+
+  // Verify it's still this player's turn (prevents race condition
+  // where another client already made this pick)
+  if (draft.currentPlayerId !== userId) {
+    console.log(`[AUTOPICK] Skipped: turn already advanced past ${userId} (current: ${draft.currentPlayerId})`);
     return;
   }
 
