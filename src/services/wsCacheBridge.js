@@ -24,14 +24,22 @@ function flushWsPricesToCache() {
       //   crypto → cacheService.get('crypto', symbol)
       const cacheType = isCrypto(symbol) ? 'crypto' : 'prices';
 
-      // Merge WS price into existing cached data to preserve percentChange,
-      // previousClose, change, high, low, etc. from the last REST fetch
+      // Merge WS price into existing cached data to preserve previousClose,
+      // high, low, etc. from the last REST fetch
       const existing = cacheService.get(cacheType, symbol);
-      cacheService.set(cacheType, symbol, {
+      const merged = {
         ...(existing || {}),
         price: data.price,
         source: 'websocket'
-      });
+      };
+
+      // Recalculate daily change using fresh WS price + cached previousClose
+      if (merged.previousClose && merged.previousClose > 0) {
+        merged.percentChange = ((data.price - merged.previousClose) / merged.previousClose) * 100;
+        merged.change = data.price - merged.previousClose;
+      }
+
+      cacheService.set(cacheType, symbol, merged);
       count++;
     }
   }

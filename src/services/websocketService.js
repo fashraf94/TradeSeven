@@ -57,6 +57,9 @@ class WebSocketManager {
 
     // Price cache for bridge to cacheService (symbol → { price, timestamp })
     this._priceCache = new Map();
+
+    // Extended-hours filter: log once per after-hours session
+    this._extendedHoursWarned = false;
   }
 
   // ==================== EVENT SYSTEM ====================
@@ -240,8 +243,7 @@ class WebSocketManager {
       };
 
       this._stockWs.onmessage = (event) => {
-        console.log('[WebSocket] Raw stock message received:', typeof event.data === 'string' ? event.data.slice(0, 200) : event.data);
-        this._handleMessage(event.data);
+        this._handleMessage(event.data, 'stock');
       };
 
       this._stockWs.onclose = () => {
@@ -309,7 +311,7 @@ class WebSocketManager {
       };
 
       this._cryptoWs.onmessage = (event) => {
-        this._handleMessage(event.data);
+        this._handleMessage(event.data, 'crypto');
       };
 
       this._cryptoWs.onclose = () => {
@@ -343,7 +345,7 @@ class WebSocketManager {
     console.log(`[WebSocket] Subscribed to ${type} (sent to EODHD):`, wsSymbols);
   }
 
-  _handleMessage(raw) {
+  _handleMessage(raw, type = 'stock') {
     try {
       const data = JSON.parse(raw);
 
@@ -355,6 +357,19 @@ class WebSocketManager {
       }
 
       if (data.s && data.p !== undefined) {
+        // Filter extended-hours ticks for stocks (crypto trades 24/7)
+        if (type === 'stock' && data.ms === 'extended-hours') {
+          if (!this._extendedHoursWarned) {
+            console.log('[WebSocket] Filtering extended-hours ticks (market closed)');
+            this._extendedHoursWarned = true;
+          }
+          return;
+        }
+        // Reset warning flag when regular session resumes
+        if (type === 'stock' && data.ms === 'open' && this._extendedHoursWarned) {
+          this._extendedHoursWarned = false;
+        }
+
         const symbol = fromWsSymbol(data.s);
         const price = parseFloat(data.p);
         if (symbol && !isNaN(price) && price > 0) {
