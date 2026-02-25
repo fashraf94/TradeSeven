@@ -663,7 +663,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   }, []);
 
   // Build asset data for TacticalRow
-  const buildTacticalAsset = useCallback((asset, scores, history) => {
+  const buildTacticalAsset = useCallback((asset, scores, history, bThresholds = {}) => {
     if (!asset) return null;
 
     const scoreData = scores.assetScores.find((s) => s.symbol === asset.symbol);
@@ -673,7 +673,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       symbol: asset.symbol,
       name: asset.name,
       priceChange: scoreData?.priceChange || 0,
-      baseATR: asset.baseATR || scoreData?.baseATR || 2.5,
+      baseATR: bThresholds[asset.symbol]?.threshold || scoreData?.baseATR || asset.baseATR || 2.5,
       history: assetHistory,
       points: scoreData?.totalPoints || 0,
       badges: scoreData?.badges || getBadgesFromHistory(assetHistory),
@@ -688,22 +688,22 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     if (!portfolio) return { star: [], core: [], support: [] };
 
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory)),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory)),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory)),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds)),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds)),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds)),
     };
-  }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset]);
+  }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset, battleThresholds]);
 
   const opponentPortfolio = useMemo(() => {
     const portfolio = oppData?.portfolio;
     if (!portfolio) return { star: [], core: [], support: [] };
 
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {})),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {})),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {})),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds)),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds)),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds)),
     };
-  }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset]);
+  }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset, battleThresholds]);
 
   // Build bench data
   const playerBench = useMemo(() => {
@@ -711,20 +711,20 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     if (!bench) return { stocks: [], crypto: null };
 
     return {
-      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory)),
-      crypto: bench.crypto ? buildTacticalAsset(bench.crypto, myScores, combinedHistory) : null,
+      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds)),
+      crypto: bench.crypto ? buildTacticalAsset(bench.crypto, myScores, combinedHistory, battleThresholds) : null,
     };
-  }, [myData?.bench, myScores, combinedHistory, buildTacticalAsset]);
+  }, [myData?.bench, myScores, combinedHistory, buildTacticalAsset, battleThresholds]);
 
   const opponentBench = useMemo(() => {
     const bench = oppData?.bench;
     if (!bench) return { stocks: [], crypto: null };
 
     return {
-      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {})),
-      crypto: bench.crypto ? buildTacticalAsset(bench.crypto, oppScores, oppHistory || {}) : null,
+      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds)),
+      crypto: bench.crypto ? buildTacticalAsset(bench.crypto, oppScores, oppHistory || {}, battleThresholds) : null,
     };
-  }, [oppData?.bench, oppScores, oppHistory, buildTacticalAsset]);
+  }, [oppData?.bench, oppScores, oppHistory, buildTacticalAsset, battleThresholds]);
 
   return {
     // Battle data
