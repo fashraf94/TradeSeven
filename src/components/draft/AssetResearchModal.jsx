@@ -118,6 +118,16 @@ const AssetResearchModal = ({
     initialTimeframe: defaultTimeframe,
   });
 
+  // Enrich asset with daily change computed from OHLCV data when the parent
+  // doesn't provide a real percentChange (e.g., BaggerBomb portfolio builder).
+  const enrichedAsset = useMemo(() => {
+    if (asset?.percentChange || asset?.change) return asset;
+    if (researchData.dailyChange != null) {
+      return { ...asset, percentChange: researchData.dailyChange };
+    }
+    return asset;
+  }, [asset, researchData.dailyChange]);
+
   // v2: Bomb chart data — only available when asset has battle context (threshold + baseline price)
   // Prefer baselinePrice (the actual scoring baseline, e.g. previousClose on day 2+)
   // over lockedPrice (draft-time price). This ensures chart threshold lines match scoring:
@@ -176,7 +186,7 @@ const AssetResearchModal = ({
 
   const sectorColor = getSectorColor(sector);
   const fundamentals = getMockFundamentals(asset.symbol);
-  const priceChange = asset.percentChange || asset.change || 0;
+  const priceChange = enrichedAsset.percentChange || enrichedAsset.change || 0;
 
   // Use real rating from API if available, fall back to mock
   const displayRating = profile?.ratingText || fundamentals.rating;
@@ -348,7 +358,7 @@ const AssetResearchModal = ({
 
         {/* Header: v2 compact header vs v1 original header */}
         {version >= 2 ? (
-          <ChartHeader asset={asset} sector={sector} category={category} onClose={onClose} />
+          <ChartHeader asset={enrichedAsset} sector={sector} category={category} onClose={onClose} />
         ) : (
           <div
             style={{

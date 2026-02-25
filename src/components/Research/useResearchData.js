@@ -20,6 +20,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   const [timeframe, setTimeframe] = useState(initialTimeframe || '1D');  // UI timeframe: '1D' | '1W' | '1M' | 'bomb' | 'spectate'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [dailyChange, setDailyChange] = useState(null); // Daily % change computed from OHLCV
 
   const abortRef = useRef(null);
   const cacheRef = useRef({});  // In-memory cache keyed by `${symbol}_${apiTimeframe}`
@@ -79,6 +80,15 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         } else {
           if (!isSpectate) cacheRef.current[cacheKey] = data;
           setRawData(data);
+
+          // Compute daily change from daily data (rawData is newest-first)
+          if (apiTimeframe === '1d' && data.length >= 2) {
+            const prevClose = Number(data[1].close);
+            const currClose = currentPrice > 0 ? currentPrice : Number(data[0].close);
+            if (prevClose > 0 && currClose > 0) {
+              setDailyChange(((currClose - prevClose) / prevClose) * 100);
+            }
+          }
         }
       })
       .catch(err => {
@@ -138,6 +148,18 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       }
     };
   }, [isSpectate, symbol]);
+
+  // Update daily change when live price changes (uses cached daily data)
+  useEffect(() => {
+    if (!currentPrice || currentPrice <= 0) return;
+    const dailyCacheKey = `${symbol}_1d`;
+    const dailyData = cacheRef.current[dailyCacheKey];
+    if (!dailyData || dailyData.length < 2) return;
+    const prevClose = Number(dailyData[1].close);
+    if (prevClose > 0) {
+      setDailyChange(((currentPrice - prevClose) / prevClose) * 100);
+    }
+  }, [currentPrice, symbol]);
 
   // Process data based on UI timeframe
   const ohlcvData = useMemo(() => {
@@ -418,5 +440,6 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     loading,
     error,
     retry,
+    dailyChange,     // Daily % change computed from OHLCV (null until data loads)
   };
 }
