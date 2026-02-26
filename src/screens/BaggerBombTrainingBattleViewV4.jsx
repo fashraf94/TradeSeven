@@ -10,7 +10,7 @@ import PropTypes from 'prop-types';
 import BaggerBombBattleView from './BaggerBombBattleView';
 import { HOLO_COLORS } from '../constants/holoTheme';
 import { motion } from 'framer-motion';
-import { stockAPI, POPULAR_CRYPTO, fetchHistoricalOHLCV } from '../services/eodhdAPI';
+import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
 import { useWebSocketPrices } from '../hooks/useWebSocketPrices';
 import { getVolatilityThresholds } from '../services/volatilityService';
 import {
@@ -267,6 +267,18 @@ export default function BaggerBombTrainingBattleViewV4({
         if (data?.price) prices[symbol] = data.price;
       });
 
+      // Extract daily open prices from batch API (used for FreeAgentBar % display)
+      const apiDailyOpens = {};
+      Object.entries(stockData).forEach(([symbol, data]) => {
+        if (data?.open && data.open > 0) apiDailyOpens[symbol] = data.open;
+      });
+      Object.entries(cryptoData).forEach(([symbol, data]) => {
+        if (data?.open && data.open > 0) apiDailyOpens[symbol] = data.open;
+      });
+      if (Object.keys(apiDailyOpens).length > 0) {
+        setFreeAgentDailyOpens(prev => ({ ...prev, ...apiDailyOpens }));
+      }
+
       // Fill in startingPrices fallback for any symbols not returned by batch
       for (const symbol of allSymbols) {
         if (!prices[symbol] && startingPrices[symbol]) {
@@ -333,31 +345,8 @@ export default function BaggerBombTrainingBattleViewV4({
     return () => clearInterval(interval);
   }, [fetchPrices]);
 
-  // Fetch daily open prices for free agents (OHLCV) — used for card % display
-  const freeAgentSymbolsKey = useMemo(() => freeAgents.map(a => a.symbol).sort().join(','), [freeAgents]);
-  useEffect(() => {
-    if (freeAgents.length === 0) return;
-    let cancelled = false;
-
-    const fetchDailyOpens = async () => {
-      const opens = {};
-      await Promise.all(freeAgents.map(async (agent) => {
-        try {
-          const candles = await fetchHistoricalOHLCV(agent.symbol, '1d', isCryptoSymbol(agent.symbol) ? { type: 'crypto' } : undefined);
-          if (candles && candles.length > 0) {
-            const todayCandle = candles[candles.length - 1];
-            if (todayCandle?.open) opens[agent.symbol] = todayCandle.open;
-          }
-        } catch (err) {
-          // Silent — fallback to current price display
-        }
-      }));
-      if (!cancelled) setFreeAgentDailyOpens(opens);
-    };
-
-    fetchDailyOpens();
-    return () => { cancelled = true; };
-  }, [freeAgentSymbolsKey]); // Re-fetch when free agent pool rotates
+  // Daily opens for free agents are now extracted from the batch stock/crypto API
+  // response in fetchPrices() above — no separate OHLCV fetch needed.
 
   // Enrich asset with live data and scoring
   const enrichAsset = useCallback((asset, tier) => {

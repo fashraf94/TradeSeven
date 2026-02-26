@@ -1,7 +1,7 @@
 // BattleHeader - Sleeper-style battle header with scores and tug-of-war
 // Shows avatars, points, session progress, and bomb/bust counts
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
@@ -267,6 +267,121 @@ BombBustCounts.propTypes = {
 };
 
 /**
+ * SwapMarketButton - Animated button to open the Swap Market
+ */
+function SwapMarketButton({ swapsRemaining = 0, onClick, disabled = false }) {
+  // Inject shimmer keyframe once
+  useEffect(() => {
+    const id = 'swap-market-btn-styles';
+    if (document.getElementById(id)) return;
+    const style = document.createElement('style');
+    style.id = id;
+    style.textContent = `
+      @keyframes swapShimmer {
+        0% { left: -100%; }
+        50% { left: 100%; }
+        100% { left: 100%; }
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
+
+  const hasSwaps = swapsRemaining > 0;
+
+  return (
+    <motion.button
+      whileHover={!disabled ? { scale: 1.03 } : {}}
+      whileTap={!disabled ? { scale: 0.97 } : {}}
+      onClick={!disabled ? onClick : undefined}
+      style={{
+        position: 'relative',
+        width: '100%',
+        maxWidth: '320px',
+        margin: '0 auto',
+        padding: '14px 24px',
+        borderRadius: '14px',
+        border: 'none',
+        background: hasSwaps
+          ? `linear-gradient(135deg, rgba(0,217,255,0.15) 0%, rgba(139,92,246,0.15) 50%, rgba(0,217,255,0.15) 100%)`
+          : 'rgba(255,255,255,0.05)',
+        boxShadow: hasSwaps
+          ? `0 0 0 1px rgba(0,217,255,0.4), 0 0 20px rgba(0,217,255,0.1), 0 4px 12px rgba(0,0,0,0.3)`
+          : `0 0 0 1px rgba(255,255,255,0.1), 0 2px 8px rgba(0,0,0,0.2)`,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.6 : 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '10px',
+        overflow: 'hidden',
+        transition: 'opacity 0.2s',
+      }}
+    >
+      {/* Shimmer overlay */}
+      {hasSwaps && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: '-100%',
+            width: '60%',
+            height: '100%',
+            background: 'linear-gradient(90deg, transparent, rgba(0,217,255,0.08), transparent)',
+            transform: 'skewX(-20deg)',
+            animation: 'swapShimmer 3s ease-in-out infinite',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      {/* Icon */}
+      <span style={{ fontSize: '18px', lineHeight: 1 }}>🔄</span>
+
+      {/* Label */}
+      <span
+        style={{
+          fontSize: '15px',
+          fontWeight: 700,
+          color: hasSwaps ? HOLO_COLORS.textPrimary : HOLO_COLORS.textMuted,
+          textTransform: 'uppercase',
+          letterSpacing: '1px',
+        }}
+      >
+        Swap Market
+      </span>
+
+      {/* Counter Badge */}
+      <span
+        style={{
+          minWidth: '24px',
+          height: '24px',
+          borderRadius: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '12px',
+          fontWeight: 700,
+          color: '#fff',
+          backgroundColor: hasSwaps ? HOLO_COLORS.cyan : HOLO_COLORS.red,
+          boxShadow: hasSwaps
+            ? `0 0 8px ${HOLO_COLORS.cyan}60`
+            : `0 0 8px ${HOLO_COLORS.red}40`,
+          padding: '0 6px',
+        }}
+      >
+        {swapsRemaining}
+      </span>
+    </motion.button>
+  );
+}
+
+SwapMarketButton.propTypes = {
+  swapsRemaining: PropTypes.number,
+  onClick: PropTypes.func,
+  disabled: PropTypes.bool,
+};
+
+/**
  * BattleHeader - Main header component
  */
 export default function BattleHeader({
@@ -361,7 +476,7 @@ export default function BattleHeader({
       {/* Bomb/Bust Counts */}
       <BombBustCounts player={player} opponent={opponent} />
 
-      {/* V4: Swap Button (between bomb/bust and free agent bar) */}
+      {/* Swap Market Button (V4+) */}
       {battleVersion >= 4 && (
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           {swapMode?.active ? (
@@ -387,40 +502,12 @@ export default function BattleHeader({
             >
               Cancel Swap
             </motion.button>
-          ) : swapsRemaining > 0 ? (
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={onEnterSwapMode}
-              style={{
-                padding: '8px 20px',
-                borderRadius: '20px',
-                border: 'none',
-                background: 'linear-gradient(135deg, rgba(0, 217, 255, 0.2), rgba(139, 92, 246, 0.2))',
-                color: HOLO_COLORS.cyan,
-                fontSize: '13px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                boxShadow: `0 0 15px rgba(0, 217, 255, 0.2), 0 2px 8px rgba(0, 0, 0, 0.3)`,
-                letterSpacing: '0.5px',
-              }}
-            >
-              <span style={{ fontSize: '14px' }}>🔄</span>
-              Swap ({swapsRemaining} left)
-            </motion.button>
           ) : (
-            <span
-              style={{
-                fontSize: '11px',
-                fontWeight: 600,
-                color: HOLO_COLORS.textMuted,
-              }}
-            >
-              No swaps today
-            </span>
+            <SwapMarketButton
+              swapsRemaining={swapsRemaining}
+              onClick={onEnterSwapMode}
+              disabled={swapsRemaining <= 0}
+            />
           )}
         </div>
       )}
