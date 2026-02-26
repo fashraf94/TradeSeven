@@ -536,7 +536,13 @@ export default function BaggerBombBattleView({
       </div>
 
       {/* Research Modal - opens when stock symbol is tapped */}
-      {researchAsset && (
+      {researchAsset && (() => {
+        const dailyOpen = freeAgentDailyOpens?.[researchAsset.symbol];
+        const livePrice = currentPrices[researchAsset.symbol];
+        const dailyChange = (dailyOpen && livePrice)
+          ? ((livePrice - dailyOpen) / dailyOpen) * 100
+          : undefined;
+        return (
         <AssetResearchModal
           asset={buildResearchAsset(researchAsset, {
             livePrices: currentPrices,
@@ -544,6 +550,7 @@ export default function BaggerBombBattleView({
             openPrices,
             startingPrices: battle?.state?.startingPrices,
             useDefaultThreshold: true,
+            percentChange: dailyChange,
           })}
           onClose={() => { setResearchAsset(null); setResearchDefaultTab(null); }}
           showActionButton={false}
@@ -552,7 +559,8 @@ export default function BaggerBombBattleView({
           defaultTab={researchDefaultTab}
           defaultTimeframe="bomb"
         />
-      )}
+        );
+      })()}
 
       {/* Score Breakdown Modal - opens when points are tapped */}
       {breakdownAsset && (

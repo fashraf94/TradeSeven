@@ -40,9 +40,11 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
     totalScore = 0,
     startingPrice = 0,
     currentPrice = 0,
+    lockedPrice = 0,
   } = asset;
 
-  const hasEntryPrice = startingPrice > 0 && currentPrice > 0;
+  const entryPrice = startingPrice || lockedPrice;
+  const hasEntryPrice = entryPrice > 0 && currentPrice > 0;
 
   // Build timeline from real persisted events (filtered to this symbol).
   // Falls back to a badge-only summary for legacy battles without events.
@@ -189,7 +191,7 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
                   Entry Price
                 </span>
                 <span style={{ fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
-                  ${startingPrice.toFixed(2)}
+                  ${entryPrice.toFixed(2)}
                 </span>
               </div>
               <div style={{ width: '1px', height: '30px', backgroundColor: 'rgba(255,255,255,0.1)' }} />
