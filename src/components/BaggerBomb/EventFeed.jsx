@@ -270,6 +270,14 @@ const getAvatarColor = (name) => {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 };
 
+// ── Timestamp formatter ──────────────────────────────────────
+const formatEventTime = (event) => {
+  const ts = event.timestamp || event.triggeredAt || event.createdAt;
+  if (!ts) return '';
+  const date = ts.toDate ? ts.toDate() : new Date(ts);
+  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+};
+
 // ── Sub-Components ──────────────────────────────────────────
 
 /**
@@ -393,6 +401,11 @@ function EventRow({ event, tier, commentary, commentaryLoading }) {
         }}>
           {pointsDisplay}
         </span>
+
+        {/* Timestamp */}
+        <span style={{ fontSize: '10px', color: COLORS.textMuted, fontWeight: '400', flexShrink: 0 }}>
+          {formatEventTime(event)}
+        </span>
       </div>
 
       {/* Commentary Row (conditional) */}
@@ -467,6 +480,11 @@ function LeadChangeDivider({ event }) {
         {'\u2726'} {playerName.toUpperCase()} TAKES THE LEAD {'\u2726'}
       </span>
 
+      {/* Timestamp */}
+      <span style={{ fontSize: '10px', color: `${COLORS.amber}80`, fontWeight: '400', flexShrink: 0, whiteSpace: 'nowrap' }}>
+        {formatEventTime(event)}
+      </span>
+
       {/* Right gradient line */}
       <div style={{
         flex: 1,
@@ -508,6 +526,11 @@ function SessionTransitionPill({ event }) {
         letterSpacing: '1px',
       }}>
         {label}
+        {formatEventTime(event) && (
+          <span style={{ fontSize: '9px', color: `${COLORS.purple}99`, fontWeight: '400', marginLeft: '8px' }}>
+            {formatEventTime(event)}
+          </span>
+        )}
       </div>
     </motion.div>
   );
@@ -554,6 +577,11 @@ function BattleBanner({ event, commentary, commentaryLoading }) {
       }}>
         {bannerText}
       </div>
+      {formatEventTime(event) && (
+        <div style={{ fontSize: '10px', color: COLORS.textMuted, fontWeight: '400', marginTop: '4px' }}>
+          {formatEventTime(event)}
+        </div>
+      )}
       {(synthCommentary || commentaryLoading) && (
         <div style={{ marginTop: '8px' }}>
           {commentaryLoading ? (
@@ -649,6 +677,10 @@ function ApproachingAlertCard({ event, onRedZoneTap, currentUser }) {
             Chart
           </button>
         )}
+        {/* Timestamp */}
+        <span style={{ fontSize: '10px', color: COLORS.textMuted, fontWeight: '400', flexShrink: 0 }}>
+          {formatEventTime(event)}
+        </span>
       </div>
       {/* Progress bar */}
       <div style={{
@@ -706,6 +738,11 @@ function SwapEventCard({ event }) {
         <span style={{ color: COLORS.green, fontWeight: 600, fontSize: '13px' }}>
           {event.addedSymbol}
         </span>
+        <div style={{ flex: 1 }} />
+        {/* Timestamp */}
+        <span style={{ fontSize: '10px', color: COLORS.textMuted, fontWeight: '400', flexShrink: 0 }}>
+          {formatEventTime(event)}
+        </span>
       </div>
     </motion.div>
   );
@@ -737,7 +774,7 @@ function SyntheticFallbackCard({ event, commentary, commentaryLoading }) {
           <motion.span
             animate={{ opacity: [0.3, 1, 0.3] }}
             transition={{ duration: 1.2, repeat: Infinity }}
-            style={{ fontSize: '12px', color: COLORS.textMuted, fontStyle: 'italic' }}
+            style={{ fontSize: '12px', color: COLORS.textMuted, fontStyle: 'italic', flex: 1 }}
           >
             {'\u00B7\u00B7\u00B7'}
           </motion.span>
@@ -748,10 +785,15 @@ function SyntheticFallbackCard({ event, commentary, commentaryLoading }) {
             fontStyle: 'italic',
             lineHeight: '1.4',
             margin: 0,
+            flex: 1,
           }}>
             {synthCommentary}
           </p>
         )}
+        {/* Timestamp */}
+        <span style={{ fontSize: '10px', color: COLORS.textMuted, fontWeight: '400', flexShrink: 0, whiteSpace: 'nowrap' }}>
+          {formatEventTime(event)}
+        </span>
       </div>
     </motion.div>
   );
@@ -889,9 +931,6 @@ export default function EventFeed({
 
   return (
     <div style={{
-      backgroundColor: COLORS.bgDeep,
-      border: `1px solid ${COLORS.cardBorder}`,
-      borderRadius: '12px',
       overflow: 'hidden',
       width: '100%',
     }}>
