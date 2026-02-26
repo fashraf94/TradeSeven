@@ -83,14 +83,15 @@ function AssetRow({ asset, isSelected, isDisabled, onSelect, onShowResearch, cry
       <div
         style={{
           width: '100%',
-          padding: '12px 16px',
+          boxSizing: 'border-box',
+          padding: '12px 0',
           borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}50`,
           opacity: isDisabled ? 0.4 : 1,
           textAlign: 'left',
         }}
       >
         {/* Row 1: Symbol + Name + Info button + ATR */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', overflow: 'hidden' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '14px', fontWeight: 600, color: HOLO_COLORS.textPrimary }}>
@@ -125,8 +126,8 @@ function AssetRow({ asset, isSelected, isDisabled, onSelect, onShowResearch, cry
               <Info size={14} color={HOLO_COLORS.textMuted} />
             </button>
           )}
-          <div style={{ textAlign: 'right', flexShrink: 0 }}>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: accentColor }}>
+          <div style={{ textAlign: 'right', flexShrink: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: accentColor, whiteSpace: 'nowrap' }}>
               {asset.baseATR?.toFixed(1)}% ATR
             </div>
           </div>
@@ -188,7 +189,7 @@ function AssetRow({ asset, isSelected, isDisabled, onSelect, onShowResearch, cry
         display: 'flex',
         alignItems: 'center',
         gap: '12px',
-        padding: '12px 16px',
+        padding: '12px 0',
         backgroundColor: isSelected ? `${accentColor}15` : 'transparent',
         border: 'none',
         borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}50`,
@@ -623,6 +624,9 @@ export default function AssetPickerModal({
                 flex: 1,
                 overflowY: 'auto',
                 overflowX: 'hidden',
+                paddingLeft: '16px',
+                paddingRight: '16px',
+                boxSizing: 'border-box',
                 minHeight: 0, // Important for flex child to scroll properly
               }}
             >
