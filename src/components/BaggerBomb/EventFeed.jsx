@@ -944,7 +944,7 @@ export default function EventFeed({
 
       {/* Scroll Container with mask */}
       <div style={{
-        maxHeight: '400px',
+        maxHeight: '60vh',
         overflowY: 'auto',
         padding: '8px',
         WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 3%, black 97%, transparent)',
