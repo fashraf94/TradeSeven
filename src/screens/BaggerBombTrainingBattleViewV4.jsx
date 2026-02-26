@@ -25,6 +25,7 @@ import {
 import { generateFreeAgentPool } from '../services/freeAgentRotationService';
 import { getFreeAgentConfig } from '../constants/battleTimingV4';
 import { DEFAULT_THRESHOLD } from '../utils/researchAssetBuilder';
+import { BAGGERBOMB_CRYPTO_POOL, CRYPTO_POOL_SYMBOLS, CASH_POSITION } from '../constants/cryptoPool';
 
 const PRICE_POLL_INTERVAL = 60000; // 60 seconds
 
@@ -100,26 +101,30 @@ export default function BaggerBombTrainingBattleViewV4({
   const rotationCountRef = useRef(battle?.freeAgents?.rotationCount || 0);
 
   // --- Swap state: initialize from battle data for persistence ---
+  // V5: 3 swaps for training (up from 1)
+  const TRAINING_SWAPS = 3;
   const battleSwapHistory = myData?.swaps?.history || [];
-  const battleSwapsRemaining = myData?.swaps?.remaining?.day1 ?? 1;
-  const [swapUsed, setSwapUsed] = useState(battleSwapHistory.length > 0 || battleSwapsRemaining === 0);
+  const battleSwapsRemaining = myData?.swaps?.remaining?.day1 ?? TRAINING_SWAPS;
+  const [swapsRemaining, setSwapsRemaining] = useState(battleSwapsRemaining);
   const [closedTrades, setClosedTrades] = useState(myData?.closedTrades || []);
   const [localPortfolio, setLocalPortfolio] = useState(null);
 
-  // Swap mode state (multi-step flow)
+  // V5: Swap Market modal state (replaces old multi-step swap mode)
+  const [showSwapMarket, setShowSwapMarket] = useState(false);
   const [swapMode, setSwapMode] = useState({
     active: false,
     selectedFreeAgent: null,
     step: 'idle',
     targetAsset: null,
+    swapType: null,    // 'stock' | 'crypto' | 'cash'
+    direction: null,   // 'long' | 'short' | null
   });
   const [isSwapExecuting, setIsSwapExecuting] = useState(false);
 
   // Reset swap/trade state when switching between training battles
   useEffect(() => {
-    const history = myData?.swaps?.history || [];
-    const remaining = myData?.swaps?.remaining?.day1 ?? 1;
-    setSwapUsed(history.length > 0 || remaining === 0);
+    const remaining = myData?.swaps?.remaining?.day1 ?? TRAINING_SWAPS;
+    setSwapsRemaining(remaining);
     setClosedTrades(myData?.closedTrades || []);
     setLocalPortfolio(null);
   }, [battle?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -135,17 +140,19 @@ export default function BaggerBombTrainingBattleViewV4({
   // Use local portfolio if swap has occurred in this session, otherwise use battle portfolio
   const myPortfolioRaw = localPortfolio || myData?.portfolio;
 
-  // Collect all symbols for price fetching (roster + free agents)
+  // Collect all symbols for price fetching (roster + free agents + crypto pool)
   const allSymbols = useMemo(() => {
     const myPortfolio = flattenPortfolio(myPortfolioRaw);
     const oppPortfolio = flattenPortfolio(oppData?.portfolio);
     const freeAgentSymbols = freeAgents.map(a => a.symbol);
+    const cryptoPoolSymbols = BAGGERBOMB_CRYPTO_POOL.map(c => c.symbol);
 
     const symbols = [
       ...myPortfolio.map(a => a?.symbol),
       ...oppPortfolio.map(a => a?.symbol),
       ...freeAgentSymbols,
-    ].filter(Boolean);
+      ...cryptoPoolSymbols,
+    ].filter(s => s && s !== 'CASH'); // V5: Don't fetch price for CASH
 
     return [...new Set(symbols)];
   }, [myPortfolioRaw, oppData, freeAgents]);
@@ -340,11 +347,31 @@ export default function BaggerBombTrainingBattleViewV4({
   // Enrich asset with live data and scoring
   const enrichAsset = useCallback((asset, tier) => {
     if (!asset) return null;
+
+    // V5: Cash positions earn 0 points, no scoring
+    if (asset.isCash) {
+      return {
+        ...asset,
+        priceChange: 0,
+        baseATR: 0,
+        points: 0,
+        badges: [],
+        history: { maxMultiplier: 0, minMultiplier: 0 },
+        tierMultiplier: 1,
+      };
+    }
+
     const openPrice = asset.swapPrice || startingPrices[asset.symbol] || asset.price || 0;
     const currentPrice = currentPrices[asset.symbol] || openPrice;
     const threshold = thresholds[asset.symbol] || {};
     const baseATR = threshold.threshold || DEFAULT_THRESHOLD;
-    const priceChange = openPrice > 0 ? ((currentPrice - openPrice) / openPrice) * 100 : 0;
+    let priceChange = openPrice > 0 ? ((currentPrice - openPrice) / openPrice) * 100 : 0;
+
+    // V5: Invert for short positions
+    if (asset.direction === 'short') {
+      priceChange = -priceChange;
+    }
+
     const multiplier = baseATR > 0 ? priceChange / baseATR : 0;
 
     const history = {
@@ -378,11 +405,19 @@ export default function BaggerBombTrainingBattleViewV4({
       const flat = flattenPortfolio(portfolioRaw);
       flat.forEach((asset) => {
         if (!asset) return;
+        // V5: Skip cash positions entirely — no thresholds, no events
+        if (asset.isCash) return;
+
         const openPrice = asset.swapPrice || startingPrices[asset.symbol] || asset.price || 0;
         const currentPrice = currentPrices[asset.symbol] || openPrice;
         if (!openPrice || !currentPrice) return;
 
-        const priceChange = openPrice > 0 ? ((currentPrice - openPrice) / openPrice) * 100 : 0;
+        let priceChange = openPrice > 0 ? ((currentPrice - openPrice) / openPrice) * 100 : 0;
+        // V5: Invert for short positions
+        if (asset.direction === 'short') {
+          priceChange = -priceChange;
+        }
+
         const baseATR = thresholds[asset.symbol]?.threshold || DEFAULT_THRESHOLD;
         const currentMultiplier = baseATR > 0 ? priceChange / baseATR : 0;
         const prevMultiplier = prevMultRef.current[asset.symbol] || 0;
@@ -400,7 +435,8 @@ export default function BaggerBombTrainingBattleViewV4({
                 asset.symbol,
                 threshold.name,
                 currentMultiplier,
-                threshold.points
+                threshold.points,
+                asset.direction
               );
               setTrainingEvents(prev => [event, ...prev].slice(0, 50));
             }
@@ -505,140 +541,251 @@ export default function BaggerBombTrainingBattleViewV4({
     return { baggerBombs, busts };
   }, []);
 
-  // Swap mode handlers
-  const enterSwapMode = useCallback(() => {
-    if (swapUsed) return;
-    setSwapMode({ active: true, selectedFreeAgent: null, step: 'selectAgent', targetAsset: null });
-  }, [swapUsed]);
+  // V5 Swap Market handlers
+  const handleSwapMarketOpen = useCallback(() => {
+    if (swapsRemaining <= 0) return;
+    setShowSwapMarket(true);
+  }, [swapsRemaining]);
 
-  const selectFreeAgent = useCallback((agent) => {
-    setSwapMode(prev => ({ ...prev, selectedFreeAgent: agent, step: 'selectTarget' }));
+  // Called when user picks a stock from free agent bar in swap market
+  const handleSwapStock = useCallback((stockAgent) => {
+    setShowSwapMarket(false);
+    setSwapMode({
+      active: true,
+      selectedFreeAgent: stockAgent,
+      step: 'selectTarget',
+      targetAsset: null,
+      swapType: 'stock',
+      direction: null,
+    });
   }, []);
 
-  const selectSwapTarget = useCallback((asset, tier, slotIndex) => {
-    if (swapMode.selectedFreeAgent?.isCrypto && !asset.isCrypto) return;
-    if (!swapMode.selectedFreeAgent?.isCrypto && asset.isCrypto) return;
+  // Called when user picks a crypto from crypto pool with direction
+  const handleSwapCryptoLong = useCallback((crypto) => {
+    setShowSwapMarket(false);
+    setSwapMode({
+      active: true,
+      selectedFreeAgent: crypto,
+      step: 'selectTarget',
+      targetAsset: null,
+      swapType: 'crypto',
+      direction: 'long',
+    });
+  }, []);
 
-    // Orange zone swap lock — safety net (UI also blocks in BaggerBombBattleView)
-    const oPrice = asset.swapPrice || startingPrices[asset.symbol] || asset.price || 0;
-    const cPrice = currentPrices[asset.symbol] || oPrice;
-    const bATR = thresholds[asset.symbol]?.threshold || DEFAULT_THRESHOLD;
-    const mult = oPrice > 0 ? ((cPrice - oPrice) / oPrice) * 100 / bATR : 0;
-    if (isSwapLocked(mult, bATR).locked) return;
+  const handleSwapCryptoShort = useCallback((crypto) => {
+    setShowSwapMarket(false);
+    setSwapMode({
+      active: true,
+      selectedFreeAgent: crypto,
+      step: 'selectTarget',
+      targetAsset: null,
+      swapType: 'crypto',
+      direction: 'short',
+    });
+  }, []);
+
+  // Called when user taps "Go to Cash"
+  const handleGoToCash = useCallback(() => {
+    setShowSwapMarket(false);
+    setSwapMode({
+      active: true,
+      selectedFreeAgent: CASH_POSITION,
+      step: 'selectTarget',
+      targetAsset: null,
+      swapType: 'cash',
+      direction: null,
+    });
+  }, []);
+
+  // V5: Select which roster slot to swap (target picker)
+  const selectSwapTarget = useCallback((asset, tier, slotIndex) => {
+    if (!swapMode.active || swapMode.step !== 'selectTarget') return;
+
+    const { swapType, selectedFreeAgent } = swapMode;
+
+    // Type restriction for stocks: can only target stock slots (not crypto slot)
+    if (swapType === 'stock') {
+      if (!asset.isCash && asset.isCrypto) return; // Can't put stock into active crypto slot
+      if (asset.isCash && tier === 'support' && slotIndex === 2) return; // Can't fill crypto-slot cash with stock
+    }
+    // Type restriction for crypto: can only target crypto slot (support[2])
+    if (swapType === 'crypto') {
+      if (!asset.isCash && !asset.isCrypto) {
+        // Can only go into support[2] (crypto slot)
+        if (!(tier === 'support' && slotIndex === 2)) return;
+      }
+      if (asset.isCash && !(tier === 'support' && slotIndex === 2)) return;
+    }
+    // Cash: any slot allowed (but not if already cash)
+    if (swapType === 'cash' && asset.isCash) return;
+
+    // Orange zone swap lock (skip for cash slots)
+    if (!asset.isCash) {
+      const oPrice = asset.swapPrice || startingPrices[asset.symbol] || asset.price || 0;
+      const cPrice = currentPrices[asset.symbol] || oPrice;
+      const bATR = thresholds[asset.symbol]?.threshold || DEFAULT_THRESHOLD;
+      let mult = oPrice > 0 ? ((cPrice - oPrice) / oPrice) * 100 / bATR : 0;
+      if (asset.direction === 'short') mult = -mult;
+      if (isSwapLocked(mult, bATR).locked) return;
+    }
 
     setSwapMode(prev => ({
       ...prev,
-      targetAsset: { symbol: asset.symbol, name: asset.name, tier, slotIndex, isCrypto: asset.isCrypto },
+      targetAsset: {
+        symbol: asset.symbol,
+        name: asset.name,
+        tier,
+        slotIndex,
+        isCrypto: asset.isCrypto,
+        isCash: asset.isCash,
+        direction: asset.direction,
+      },
       step: 'confirming',
     }));
-  }, [swapMode.selectedFreeAgent, startingPrices, currentPrices, thresholds]);
+  }, [swapMode, startingPrices, currentPrices, thresholds]);
 
   const cancelSwapMode = useCallback(() => {
-    setSwapMode({ active: false, selectedFreeAgent: null, step: 'idle', targetAsset: null });
+    setSwapMode({ active: false, selectedFreeAgent: null, step: 'idle', targetAsset: null, swapType: null, direction: null });
   }, []);
 
-  // Execute swap with Firebase persistence + local optimistic update
-  const executeSwap = useCallback(({ outTier, outSlotIndex, inSymbol, selectedAgent, displayedPoints }) => {
-    if (swapUsed) return;
+  // V5: Execute swap with Firebase persistence + local optimistic update
+  // Handles all swap types: stock, crypto (with direction), cash, fill-cash
+  const executeSwapV5 = useCallback(({ outTier, outSlotIndex, selectedAgent, swapType, direction, displayedPoints }) => {
+    if (swapsRemaining <= 0) return;
 
     setIsSwapExecuting(true);
 
     try {
       const portfolio = localPortfolio || { ...myData?.portfolio };
-      // Deep copy the specific tier
       const portfolioClone = {
         star: [...(portfolio.star || [])],
         core: [...(portfolio.core || [])],
         support: [...(portfolio.support || [])],
       };
       const outAsset = portfolioClone[outTier]?.[outSlotIndex];
-      const inAgent = selectedAgent || freeAgents.find(a => a.symbol === inSymbol);
-      if (!outAsset || !inAgent) throw new Error('Asset not found');
+      if (!outAsset) throw new Error('No asset in selected slot');
 
-      // Type check
-      const outIsCrypto = Boolean(outAsset.isCrypto);
-      const inIsCrypto = Boolean(inAgent.isCrypto);
-      if (outIsCrypto !== inIsCrypto) throw new Error('Type mismatch');
-
-      // Calculate locked points — use DISPLAYED points from enriched portfolio (includes conviction multiplier)
-      const openPrice = outAsset.swapPrice || startingPrices[outAsset.symbol] || outAsset.price || 0;
-      const exitPrice = currentPrices[outAsset.symbol] || openPrice;
-      const lockedGainPct = openPrice > 0 ? ((exitPrice - openPrice) / openPrice) * 100 : 0;
-
-      // Use the displayed points (from enriched portfolio with conviction multiplier),
-      // NOT a raw recalculation. This is what the user sees on screen.
-      const lockedPoints = displayedPoints != null
-        ? Math.round(displayedPoints * 10) / 10
-        : Math.round(lockedGainPct * 10) / 10; // fallback
-
-      const swapPrice = currentPrices[inSymbol] || 0;
       const now = new Date().toISOString();
+      let closedTrade = null;
+      let incomingAsset;
+      let updatedAgents = freeAgents;
+      const inSymbol = selectedAgent?.symbol;
 
-      const closedTrade = {
-        symbol: outAsset.symbol,
-        name: outAsset.name || outAsset.symbol,
-        tier: outTier,
-        slotIndex: outSlotIndex,
-        entryPrice: openPrice,
-        exitPrice,
-        lockedPoints,
-        lockedGainPct: Math.round(lockedGainPct * 1000) / 1000,
-        swappedOutAt: now,
-      };
+      // Calculate locked points for outgoing asset (skip if cash slot)
+      if (!outAsset.isCash) {
+        const openPrice = outAsset.swapPrice || startingPrices[outAsset.symbol] || outAsset.price || 0;
+        const exitPrice = currentPrices[outAsset.symbol] || openPrice;
+        let lockedGainPct = openPrice > 0 ? ((exitPrice - openPrice) / openPrice) * 100 : 0;
+
+        // Invert for short positions
+        if (outAsset.direction === 'short') {
+          lockedGainPct = -lockedGainPct;
+        }
+
+        const lockedPoints = displayedPoints != null
+          ? Math.round(displayedPoints * 10) / 10
+          : Math.round(lockedGainPct * 10) / 10;
+
+        closedTrade = {
+          symbol: outAsset.symbol,
+          name: outAsset.name || outAsset.symbol,
+          tier: outTier,
+          slotIndex: outSlotIndex,
+          entryPrice: openPrice,
+          exitPrice,
+          lockedPoints,
+          lockedGainPct: Math.round(lockedGainPct * 1000) / 1000,
+          swappedOutAt: now,
+          isCrypto: outAsset.isCrypto || false,
+          direction: outAsset.direction || null,
+          closedToCash: swapType === 'cash',
+        };
+      }
 
       // Build incoming asset
-      const incomingAsset = {
-        symbol: inAgent.symbol,
-        name: inAgent.name,
-        isCrypto: inAgent.isCrypto,
-        swapPrice,
-        swappedInAt: now,
-      };
+      if (swapType === 'cash') {
+        incomingAsset = {
+          symbol: 'CASH',
+          name: 'Cash',
+          baseATR: 0,
+          isCrypto: false,
+          isCash: true,
+          cashedAt: now,
+          previousAsset: outAsset.symbol,
+        };
+      } else {
+        const swapPrice = currentPrices[inSymbol] || 0;
+        incomingAsset = {
+          symbol: selectedAgent.symbol,
+          name: selectedAgent.name,
+          isCrypto: selectedAgent.isCrypto || false,
+          baseATR: selectedAgent.baseATR || (selectedAgent.isCrypto ? 5.0 : 2.5),
+          swapPrice,
+          swappedInAt: now,
+        };
+        if (selectedAgent.isCrypto && direction) {
+          incomingAsset.direction = direction;
+        }
+      }
 
       // Update portfolio slot
       portfolioClone[outTier] = [...portfolioClone[outTier]];
       portfolioClone[outTier][outSlotIndex] = incomingAsset;
 
-      // Replace free agent with swapped-out stock
-      const agentIndex = freeAgents.findIndex(a => a.symbol === inAgent.symbol);
-      let updatedAgents = freeAgents;
-      if (agentIndex >= 0) {
-        updatedAgents = [...freeAgents];
-        updatedAgents[agentIndex] = {
-          symbol: outAsset.symbol,
-          name: outAsset.name || outAsset.symbol,
-          isCrypto: outAsset.isCrypto,
-          appearedAt: now,
-        };
-        setFreeAgents(updatedAgents);
+      // Free agent bar updates (only for stock swaps from free agent bar)
+      if (swapType === 'stock') {
+        const agentIndex = freeAgents.findIndex(a => a.symbol === inSymbol);
+        if (agentIndex >= 0) {
+          updatedAgents = [...freeAgents];
+          if (outAsset.isCash || outAsset.isCrypto) {
+            // Filling cash slot or crossing types: picked stock removed, no replacement
+            updatedAgents.splice(agentIndex, 1);
+          } else {
+            // Stock → Stock: dropped stock replaces picked stock's position
+            updatedAgents[agentIndex] = {
+              symbol: outAsset.symbol,
+              name: outAsset.name || outAsset.symbol,
+              isCrypto: false,
+              appearedAt: now,
+            };
+          }
+          setFreeAgents(updatedAgents);
+        }
       }
 
-      const newClosedTrades = [...closedTrades, closedTrade];
+      const newClosedTrades = closedTrade
+        ? [...closedTrades, closedTrade]
+        : [...closedTrades];
 
-      // --- Optimistic local state update (immediate UI) ---
+      // Optimistic local state update
       setLocalPortfolio(portfolioClone);
       setClosedTrades(newClosedTrades);
-      setSwapUsed(true);
+      setSwapsRemaining(prev => Math.max(0, prev - 1));
 
-      // --- Persist to Firebase (trainingBattles collection) ---
+      // Persist to Firebase
       if (battle?.id) {
         const swapRecord = {
           timestamp: now,
           day: 1,
-          removedSymbol: outAsset.symbol,
+          removedSymbol: outAsset.isCash ? 'CASH' : outAsset.symbol,
           removedTier: outTier,
           removedSlotIndex: outSlotIndex,
-          addedSymbol: inSymbol,
-          swapPrice,
-          lockedPoints,
+          addedSymbol: swapType === 'cash' ? 'CASH' : inSymbol,
+          swapType,
+          direction: direction || null,
+          swapPrice: swapType === 'cash' ? 0 : (currentPrices[inSymbol] || 0),
+          lockedPoints: closedTrade?.lockedPoints || 0,
         };
 
         const swapHistory = [...(myData?.swaps?.history || []), swapRecord];
-        const newRemaining = { day1: 0 };
+        const newRemainingVal = Math.max(0, swapsRemaining - 1);
+        const newRemaining = { day1: newRemainingVal };
 
-        // Add starting price for new stock so scoring works on re-entry
         const updatedStartingPrices = { ...startingPrices };
-        updatedStartingPrices[inSymbol] = swapPrice;
+        if (swapType !== 'cash' && inSymbol) {
+          updatedStartingPrices[inSymbol] = currentPrices[inSymbol] || 0;
+        }
 
         const updates = {
           [`${playerId}.portfolio`]: portfolioClone,
@@ -653,30 +800,30 @@ export default function BaggerBombTrainingBattleViewV4({
         persistSwapToFirebase(battle.id, playerId, updates);
       }
     } catch (error) {
-      console.error('[TrainingV4] Swap error:', error);
+      console.error('[TrainingV5] Swap error:', error);
     } finally {
       setIsSwapExecuting(false);
     }
-  }, [swapUsed, localPortfolio, myData, freeAgents, startingPrices, currentPrices, closedTrades, battle, playerId]);
+  }, [swapsRemaining, localPortfolio, myData, freeAgents, startingPrices, currentPrices, closedTrades, battle, playerId]);
 
-  // Confirm swap from swap mode flow — captures DISPLAYED points from enriched portfolio
+  // V5: Confirm swap from swap mode flow
   const confirmSwap = useCallback(() => {
     if (!swapMode.targetAsset || !swapMode.selectedFreeAgent) return;
 
-    // Get the displayed points from the enriched portfolio (includes conviction multiplier)
     const enrichedPortfolio = buildEnrichedPortfolio(myPortfolioRaw);
     const enrichedAsset = enrichedPortfolio[swapMode.targetAsset.tier]?.[swapMode.targetAsset.slotIndex];
     const displayedPoints = enrichedAsset?.points ?? null;
 
-    executeSwap({
+    executeSwapV5({
       outTier: swapMode.targetAsset.tier,
       outSlotIndex: swapMode.targetAsset.slotIndex,
-      inSymbol: swapMode.selectedFreeAgent.symbol,
       selectedAgent: swapMode.selectedFreeAgent,
+      swapType: swapMode.swapType,
+      direction: swapMode.direction,
       displayedPoints,
     });
     cancelSwapMode();
-  }, [swapMode, executeSwap, cancelSwapMode, buildEnrichedPortfolio, myPortfolioRaw]);
+  }, [swapMode, executeSwapV5, cancelSwapMode, buildEnrichedPortfolio, myPortfolioRaw]);
 
   // Build player data
   const player = useMemo(() => {
@@ -775,20 +922,27 @@ export default function BaggerBombTrainingBattleViewV4({
       isTraining={true}
       thresholds={thresholds}
       currentPrices={currentPrices}
-      battleVersion={4}
+      battleVersion={5}
       freeAgentConfig={{
         freeAgents,
         nextRotationAt: null,
         freeAgentDailyOpens,
-        swapsRemaining: swapUsed ? 0 : 1,
+        swapsRemaining,
         currentDay: 1,
         totalDays: 1,
         rotationCountdown,
         swapMode,
-        onEnterSwapMode: enterSwapMode,
-        onSelectFreeAgent: selectFreeAgent,
+        onEnterSwapMode: handleSwapMarketOpen,
         onCancelSwapMode: cancelSwapMode,
       }}
+      // V5: Swap Market props
+      showSwapMarket={showSwapMarket}
+      onCloseSwapMarket={() => setShowSwapMarket(false)}
+      onSwapStock={handleSwapStock}
+      onSwapCryptoLong={handleSwapCryptoLong}
+      onSwapCryptoShort={handleSwapCryptoShort}
+      onGoToCash={handleGoToCash}
+      rosterAssets={flattenPortfolio(myPortfolioRaw)}
       closedTrades={closedTrades}
       onSelectSwapTarget={selectSwapTarget}
       onConfirmSwap={confirmSwap}

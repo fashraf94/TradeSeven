@@ -213,6 +213,7 @@ export default function SlotBasedBuilder({
         price: cryptoPrices[coin.symbol] || 0,
         baseATR: coin.baseATR || SECTOR_DEFAULT_ATR['Crypto'] || 5.0,
         isCrypto: true,
+        direction: 'long', // V5: Default crypto to long in builder (short is a gameplay decision via swaps)
       }));
   }, [cryptoPrices]);
 

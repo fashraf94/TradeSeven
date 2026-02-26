@@ -15800,14 +15800,31 @@ export default function PortfolioDuel() {
       support: (portfolio.support || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price } : null),
     });
 
-    const battleId = `training_baggerbomb_v4_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const battleId = `training_baggerbomb_v5_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const odUserId = user.odUserId || user.username;
+
+    // V5: Build initial crypto pool state
+    const cryptoPoolState = {};
+    const cryptoPoolSymbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'BNB'];
+    cryptoPoolSymbols.forEach(s => { cryptoPoolState[s] = { inRoster: false }; });
+
+    // Check if any roster crypto is in the pool
+    const allRosterAssets = [
+      ...(portfolioData.star || []),
+      ...(portfolioData.core || []),
+      ...(portfolioData.support || []),
+    ].filter(Boolean);
+    allRosterAssets.forEach(a => {
+      if (a.isCrypto && cryptoPoolState[a.symbol]) {
+        cryptoPoolState[a.symbol] = { inRoster: true };
+      }
+    });
 
     const trainingBattle = {
       id: battleId,
       challengeCode: 'TRAINING',
-      _v: 4,
-      type: 'baggerbomb_v4',
+      _v: 5,
+      type: 'baggerbomb_v5',
 
       creator: {
         uid: odUserId,
@@ -15815,7 +15832,7 @@ export default function PortfolioDuel() {
         username: user.username,
         portfolioName: 'Training Battle',
         portfolio: updatePrices(portfolioData),
-        swaps: { remaining: { day1: 1 }, history: [] },
+        swaps: { remaining: { day1: 3 }, history: [] }, // V5: 3 swaps for training
         closedTrades: [],
         history: {},
       },
@@ -15830,6 +15847,8 @@ export default function PortfolioDuel() {
         closedTrades: [],
         history: {},
       },
+
+      cryptoPool: cryptoPoolState,
 
       timing: {
         createdAt: now.toISOString(),
@@ -15935,13 +15954,16 @@ export default function PortfolioDuel() {
     ).slice(0, 8);
     const mainCrypto = eligibleCrypto[Math.floor(Math.random() * eligibleCrypto.length)];
 
+    // V5: Random crypto direction for CPU (70% long, 30% short)
+    const cpuCryptoDirection = Math.random() < 0.7 ? 'long' : 'short';
+
     return {
       star: [formatAsset(cpuStocks[0]), formatAsset(cpuStocks[1])],
       core: [formatAsset(cpuStocks[2]), formatAsset(cpuStocks[3])],
       support: [
         formatAsset(cpuStocks[4]),
         formatAsset(cpuStocks[5]),
-        mainCrypto ? formatAsset(mainCrypto, true) : null,
+        mainCrypto ? { ...formatAsset(mainCrypto, true), direction: cpuCryptoDirection } : null,
       ],
     };
   };

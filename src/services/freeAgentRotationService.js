@@ -3,6 +3,7 @@
 
 import { STOCKS, CRYPTO } from '../data/assets';
 import { FREE_AGENT_CONFIG, getFreeAgentConfig } from '../constants/battleTimingV4';
+import { CRYPTO_POOL_SYMBOLS } from '../constants/cryptoPool';
 import { doc, updateDoc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
@@ -37,62 +38,31 @@ export function generateFreeAgentPool(rotationCount = 0, mode = 'mixed') {
   const poolSize = FREE_AGENT_CONFIG.POOL_SIZE;
   const now = new Date().toISOString();
 
-  // Filter out symbols with dots (e.g. BRK.B) — causes API proxy 500 errors
-  const eligibleStocks = STOCKS.filter(s => !s.symbol.includes('.'));
+  // V5: Free agent bar is STOCKS ONLY — crypto is always available in the Swap Market crypto pool
+  // Filter out: symbols with dots (API issues), all crypto symbols, and CASH
+  const eligibleStocks = STOCKS.filter(s =>
+    !s.symbol.includes('.') &&
+    !CRYPTO_POOL_SYMBOLS.has(s.symbol) &&
+    s.symbol !== 'CASH'
+  );
 
   if (mode === 'crypto_only') {
-    // After hours: all 4 are crypto
-    const filteredCrypto = CRYPTO.filter(c => c.category !== 'Stablecoin');
-    const shuffled = shuffleArray(filteredCrypto);
-    return shuffled.slice(0, poolSize).map(c => ({
-      symbol: c.symbol,
-      name: c.name,
-      isCrypto: true,
-      appearedAt: now,
-    }));
+    // After hours: still show stocks in V5 (crypto pool is always available separately)
+    // Fall through to stock generation below
   }
 
-  // Mixed mode (market hours)
-  const includeCrypto = rotationCount % FREE_AGENT_CONFIG.CRYPTO_ROTATION_INTERVAL === 0;
+  // All 4 are stocks
+  const shuffledStocks = shuffleArray(eligibleStocks);
   const pool = [];
-
-  if (includeCrypto) {
-    // 3 stocks + 1 crypto
-    const filteredCrypto = CRYPTO.filter(c => c.category !== 'Stablecoin');
-    const shuffledCrypto = shuffleArray(filteredCrypto);
-    if (shuffledCrypto.length > 0) {
-      pool.push({
-        symbol: shuffledCrypto[0].symbol,
-        name: shuffledCrypto[0].name,
-        isCrypto: true,
-        appearedAt: now,
-      });
-    }
-
-    const shuffledStocks = shuffleArray(eligibleStocks);
-    const stocksNeeded = poolSize - pool.length;
-    for (let i = 0; i < Math.min(stocksNeeded, shuffledStocks.length); i++) {
-      pool.push({
-        symbol: shuffledStocks[i].symbol,
-        name: shuffledStocks[i].name,
-        isCrypto: false,
-        appearedAt: now,
-      });
-    }
-  } else {
-    // All 4 stocks
-    const shuffledStocks = shuffleArray(eligibleStocks);
-    for (let i = 0; i < Math.min(poolSize, shuffledStocks.length); i++) {
-      pool.push({
-        symbol: shuffledStocks[i].symbol,
-        name: shuffledStocks[i].name,
-        isCrypto: false,
-        appearedAt: now,
-      });
-    }
+  for (let i = 0; i < Math.min(poolSize, shuffledStocks.length); i++) {
+    pool.push({
+      symbol: shuffledStocks[i].symbol,
+      name: shuffledStocks[i].name,
+      isCrypto: false,
+      appearedAt: now,
+    });
   }
 
-  // Shuffle final pool so crypto isn't always first
   return shuffleArray(pool);
 }
 

@@ -42,6 +42,63 @@ function AssetSide({
     );
   }
 
+  // V5: Cash position — dormant slot rendering
+  if (asset.isCash) {
+    return (
+      <div
+        onClick={() => {
+          if (highlighted && onAssetSelect) onAssetSelect(asset);
+        }}
+        style={{
+          flex: 1,
+          padding: '12px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+          textAlign: isRight ? 'right' : 'left',
+          opacity: 0.5,
+          borderStyle: 'dashed',
+          borderColor: HOLO_COLORS.borderSubtle,
+          borderWidth: '1px',
+          borderRadius: '8px',
+          ...(highlighted ? {
+            opacity: 0.8,
+            borderColor: 'rgba(0, 217, 255, 0.4)',
+            background: 'rgba(0, 217, 255, 0.05)',
+            cursor: 'pointer',
+          } : {}),
+        }}
+      >
+        <div style={{ fontSize: '20px', textAlign: 'center' }}>💵</div>
+        <div style={{
+          fontSize: '13px',
+          fontWeight: 700,
+          color: HOLO_COLORS.textMuted,
+          textAlign: 'center',
+        }}>
+          CASH
+        </div>
+        <div style={{
+          fontSize: '11px',
+          color: HOLO_COLORS.textMuted,
+          textAlign: 'center',
+        }}>
+          0 pts
+        </div>
+        {asset.previousAsset && (
+          <div style={{
+            fontSize: '9px',
+            color: HOLO_COLORS.textMuted,
+            textAlign: 'center',
+            fontStyle: 'italic',
+          }}>
+            Was: {asset.previousAsset}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const {
     symbol,
     priceChange = 0,
@@ -122,6 +179,24 @@ function AssetSide({
             }}
           >
             {symbol}
+            {/* V5: Direction badge for crypto */}
+            {asset.isCrypto && asset.direction && (
+              <span style={{
+                fontSize: '9px',
+                fontWeight: 700,
+                color: asset.direction === 'short' ? HOLO_COLORS.red : HOLO_COLORS.green,
+                backgroundColor: asset.direction === 'short'
+                  ? `${HOLO_COLORS.red}15`
+                  : `${HOLO_COLORS.green}15`,
+                padding: '1px 5px',
+                borderRadius: '4px',
+                marginLeft: '4px',
+                verticalAlign: 'middle',
+                letterSpacing: '0.5px',
+              }}>
+                {asset.direction === 'short' ? 'SHORT ↓' : 'LONG ↑'}
+              </span>
+            )}
           </div>
           <div
             style={{

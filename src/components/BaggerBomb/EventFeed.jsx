@@ -358,6 +358,9 @@ function EventRow({ event, tier, commentary, commentaryLoading }) {
           ...(tier.strikethrough ? { textDecoration: 'line-through', textDecorationColor: COLORS.crimsonBright } : {}),
         }}>
           {event.symbol}
+          {/* V5: Direction label for crypto events */}
+          {event.direction === 'short' && ' (SHORT)'}
+          {event.direction === 'long' && ' (LONG)'}
         </span>
 
         {/* Event badge */}
@@ -733,10 +736,19 @@ function SwapEventCard({ event }) {
         <span style={{ color: COLORS.textMuted, fontSize: '13px' }}>swapped</span>
         <span style={{ color: COLORS.red, fontWeight: 600, fontSize: '13px' }}>
           {event.removedSymbol}
+          {event.direction && event.swapType !== 'cash' && (
+            <span style={{ fontSize: '10px', opacity: 0.8 }}>
+              {event.direction === 'short' ? ' (SHORT)' : ' (LONG)'}
+            </span>
+          )}
         </span>
         <span style={{ color: COLORS.textMuted, fontSize: '13px' }}>{'\u2192'}</span>
-        <span style={{ color: COLORS.green, fontWeight: 600, fontSize: '13px' }}>
-          {event.addedSymbol}
+        <span style={{
+          color: event.swapType === 'cash' ? COLORS.textMuted : COLORS.green,
+          fontWeight: 600,
+          fontSize: '13px',
+        }}>
+          {event.addedSymbol === 'CASH' ? '💵 CASH' : event.addedSymbol}
         </span>
         <div style={{ flex: 1 }} />
         {/* Timestamp */}
