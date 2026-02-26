@@ -96,6 +96,31 @@ export default function BaggerBombBattleViewConnected({
   // ClashCast AI commentary
   const clashCast = useClashCast(battleId, battle);
 
+  // Compute enriched battle stats for ClashCast context (points-based counting)
+  const battleStats = useMemo(() => {
+    const evts = battle?.events || [];
+    const pName = player?.username || 'Player 1';
+    const oName = opponent?.username || 'Player 2';
+
+    const allScoringEvents = evts.filter(e => e.type !== 'swap' && e.type !== 'redzone');
+    const biggestEvent = allScoringEvents.reduce((best, e) =>
+      (Math.abs(e.points || 0) > Math.abs(best?.points || 0) ? e : best), null);
+
+    return {
+      creatorBaggerBombs: evts.filter(e => e.playerName === pName && (e.points || 0) > 0).length,
+      opponentBaggerBombs: evts.filter(e => e.playerName === oName && (e.points || 0) > 0).length,
+      creatorBusts: evts.filter(e => e.playerName === pName && (e.points || 0) < 0).length,
+      opponentBusts: evts.filter(e => e.playerName === oName && (e.points || 0) < 0).length,
+      totalEventCount: allScoringEvents.length,
+      biggestEvent: biggestEvent ? {
+        type: biggestEvent.thresholdName || biggestEvent.type,
+        asset: biggestEvent.symbol,
+        playerName: biggestEvent.playerName,
+        points: biggestEvent.points,
+      } : null,
+    };
+  }, [battle?.events, player?.username, opponent?.username]);
+
   // Feed ClashCast with battle state updates
   useEffect(() => {
     if (!battle || (battle.state?.status !== 'active' && battle.status !== 'active')) return;
@@ -108,6 +133,7 @@ export default function BaggerBombBattleViewConnected({
       sessionTimeRemaining: sessionTimeRemaining || null,
       sessionsCompleted: completedSessions || [],
       events: battle?.events || [],
+      ...battleStats,
     });
   }, [player?.totalPoints, opponent?.totalPoints, battle?.events?.length, currentSessionId]);
 
