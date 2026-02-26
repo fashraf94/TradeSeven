@@ -3,13 +3,14 @@
 // Adds: free agent rotation, swap handling, closed trades, multi-day trading, dailyOpenPrices
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { doc, onSnapshot, runTransaction } from 'firebase/firestore';
+import { doc, onSnapshot, runTransaction, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
 import {
   addBaggerBombEvent,
   updateAssetHistoryInBattle,
 } from '../firebase/firebaseService';
+import { getVolatilityThresholds } from '../services/volatilityService';
 import {
   updateAssetHistory,
   detectThresholdCross,
@@ -243,6 +244,49 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   // Pass battle.thresholds explicitly so both players use the same authoritative
   // threshold per symbol (fixes BaggerBomb count mismatch)
   const battleThresholds = battle?.thresholds || {};
+
+  // One-time migration: backfill thresholds for old battles that lack them.
+  // Without this, both players fall through to asset.baseATR (stale per-player value).
+  useEffect(() => {
+    if (!battle?.id || battle.status !== 'active') return;
+    const thresholds = battle.thresholds || {};
+    const allSymbols = [...myPortfolioFlat, ...oppPortfolioFlat]
+      .filter(Boolean)
+      .map(a => a.symbol);
+    const uniqueSymbols = [...new Set(allSymbols)];
+    const missing = uniqueSymbols.filter(s => !thresholds[s]);
+    if (missing.length === 0) return;
+
+    (async () => {
+      try {
+        const stockSyms = missing.filter(s => !isCrypto(s));
+        const cryptoSyms = missing.filter(s => isCrypto(s));
+        const [stockResults, cryptoResults] = await Promise.all([
+          stockSyms.length > 0 ? getVolatilityThresholds(stockSyms, 'stock') : {},
+          cryptoSyms.length > 0 ? getVolatilityThresholds(cryptoSyms, 'crypto') : {},
+        ]);
+        const fetched = { ...stockResults, ...cryptoResults };
+        if (!fetched || Object.keys(fetched).length === 0) return;
+
+        const merged = { ...thresholds };
+        for (const [sym, data] of Object.entries(fetched)) {
+          merged[sym] = {
+            threshold: Number(data.threshold) || 2.5,
+            rallyThreshold: Number(data.rallyThreshold) || 3.75,
+            moonshotThreshold: Number(data.moonshotThreshold) || 5.0,
+          };
+        }
+
+        const battleRef = doc(db, 'battles', battle.id);
+        await updateDoc(battleRef, { thresholds: merged });
+        console.log(`[V4] Backfilled thresholds for ${missing.length} symbols in battle ${battle.id}`);
+      } catch (err) {
+        console.warn('⚠️ Threshold backfill failed:', err.message);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [battle?.id, battle?.status]);
+
   const myScores = useMemo(() => {
     return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory, battleThresholds);
   }, [myPortfolioFlat, effectivePrices, openPrices, combinedHistory, calculateScores, battleThresholds]);
@@ -281,7 +325,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   // ==================== BUILD PLAYER/OPPONENT OBJECTS ====================
 
-  const buildTacticalAsset = useCallback((asset, scores, history) => {
+  const buildTacticalAsset = useCallback((asset, scores, history, bThresholds = {}) => {
     if (!asset) return null;
     const scoreData = scores.assetScores.find((s) => s.symbol === asset.symbol);
     const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
@@ -290,7 +334,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       symbol: asset.symbol,
       name: asset.name,
       priceChange: scoreData?.priceChange || 0,
-      baseATR: asset.baseATR || scoreData?.baseATR || 2.5,
+      baseATR: bThresholds[asset.symbol]?.threshold || scoreData?.baseATR || asset.baseATR || 2.5,
       history: assetHistory,
       points: scoreData?.totalPoints || 0,
       badges: scoreData?.badges || getBadgesFromHistory(assetHistory),
@@ -303,21 +347,21 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     const portfolio = myData?.portfolio;
     if (!portfolio) return { star: [], core: [], support: [] };
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory)),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory)),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory)),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds)),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds)),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds)),
     };
-  }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset]);
+  }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset, battleThresholds]);
 
   const opponentPortfolio = useMemo(() => {
     const portfolio = oppData?.portfolio;
     if (!portfolio) return { star: [], core: [], support: [] };
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {})),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {})),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {})),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds)),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds)),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds)),
     };
-  }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset]);
+  }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset, battleThresholds]);
 
   const player = useMemo(() => ({
     id: myData?.uid,

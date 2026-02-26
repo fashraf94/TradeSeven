@@ -23,9 +23,10 @@ const MAX_TRADING_DAY = 5;
  * @param {object} openPrices - Baseline prices keyed by symbol
  * @param {object} currentPrices - Current/close prices keyed by symbol
  * @param {object} thresholds - Volatility thresholds keyed by symbol
+ * @param {object} draftHistory - Optional persisted history { SYMBOL: { maxMultiplier, minMultiplier } }
  * @returns {object} Close scores keyed by player odUserId
  */
-function calculatePlayerScores(players, openPrices, currentPrices, thresholds) {
+function calculatePlayerScores(players, openPrices, currentPrices, thresholds, draftHistory = {}) {
   const closeScores = {};
 
   for (const player of (players || [])) {
@@ -50,8 +51,9 @@ function calculatePlayerScores(players, openPrices, currentPrices, thresholds) {
       // Get threshold (default to 3%)
       const threshold = thresholds[upperSymbol]?.threshold || thresholds[symbol]?.threshold || DEFAULT_VOLATILITY_THRESHOLD;
 
-      // Calculate BaggerBomb score for this asset
-      const assetScore = calculateSnakeDraftAssetScore(dailyGain, threshold);
+      // Pass persisted history so badges survive price reversals
+      const symbolHistory = draftHistory[upperSymbol] || draftHistory[symbol] || null;
+      const assetScore = calculateSnakeDraftAssetScore(dailyGain, threshold, null, null, symbolHistory);
 
       playerAssets.push({
         symbol,
@@ -284,8 +286,9 @@ export async function recordDailyCloseScores(draftId, currentPrices, thresholds 
       ? (draft.lockedPrices || {})
       : (dailyData[dayKey]?.openPrices || draft.lockedPrices || {});
 
-    // Calculate scores for each player
-    const closeScores = calculatePlayerScores(draft.players, openPrices, currentPrices, thresholds);
+    // Calculate scores for each player (pass history for persistent badge tracking)
+    const draftHistory = draft.history || {};
+    const closeScores = calculatePlayerScores(draft.players, openPrices, currentPrices, thresholds, draftHistory);
 
     // Update Firebase with daily scores
     dailyData[dayKey] = {
@@ -352,8 +355,9 @@ export async function recalculateDayScores(draftId, targetDay, currentPrices, th
       return false;
     }
 
-    // Calculate scores for each player
-    const closeScores = calculatePlayerScores(draft.players, openPrices, currentPrices, thresholds);
+    // Calculate scores for each player (pass history for persistent badge tracking)
+    const draftHistory = draft.history || {};
+    const closeScores = calculatePlayerScores(draft.players, openPrices, currentPrices, thresholds, draftHistory);
 
     // Update Firebase with recalculated scores
     dailyData[dayKey] = {

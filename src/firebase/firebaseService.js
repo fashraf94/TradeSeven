@@ -1263,6 +1263,28 @@ export async function updateAssetHistoryInBattle(battleId, isCreator, symbol, hi
 }
 
 /**
+ * Batch-update BaggerBomb history for a Snake Draft document.
+ * Used by DraftBattleScreenV2's debounced persistence to avoid write storms.
+ *
+ * @param {string} draftId - Draft document ID
+ * @param {Object} historyUpdates - { SYMBOL: { maxMultiplier, minMultiplier, ... }, ... }
+ * @returns {Promise<void>}
+ */
+export async function updateDraftHistory(draftId, historyUpdates) {
+  try {
+    const draftRef = doc(db, 'drafts', draftId);
+    const updates = { updatedAt: new Date().toISOString() };
+    for (const [symbol, history] of Object.entries(historyUpdates)) {
+      updates[`history.${symbol}`] = history;
+    }
+    await updateDoc(draftRef, updates);
+  } catch (error) {
+    console.error('❌ Error updating draft history:', error);
+    throw error;
+  }
+}
+
+/**
  * Join a BaggerBomb Scoring V2 battle
  *
  * @param {string} challengeCode - 4-character challenge code

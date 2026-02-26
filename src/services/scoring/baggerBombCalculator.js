@@ -110,6 +110,32 @@ export const calculateAssetScore = (
 };
 
 /**
+ * Count positive threshold levels crossed based on a max multiplier.
+ * @param {number} maxMultiplier - Highest multiplier ever reached
+ * @returns {number} Number of positive thresholds crossed (0-3)
+ */
+const countPositiveThresholds = (maxMultiplier) => {
+  let count = 0;
+  if (maxMultiplier >= 1.0) count++;  // bagger
+  if (maxMultiplier >= 1.5) count++;  // doubleBagger
+  if (maxMultiplier >= 2.0) count++;  // tenBagger
+  return count;
+};
+
+/**
+ * Count negative threshold levels crossed based on a min multiplier.
+ * @param {number} minMultiplier - Lowest multiplier ever reached (negative)
+ * @returns {number} Number of negative thresholds crossed (0-3)
+ */
+const countNegativeThresholds = (minMultiplier) => {
+  let count = 0;
+  if (minMultiplier <= -1.0) count++;  // bust
+  if (minMultiplier <= -1.5) count++;  // crash
+  if (minMultiplier <= -2.0) count++;  // meltdown
+  return count;
+};
+
+/**
  * Calculate asset score for Snake Draft mode
  * Uses daily % return * 10 as base, plus breakout bonuses
  * No conviction multipliers (equal weight assets)
@@ -118,25 +144,38 @@ export const calculateAssetScore = (
  * @param {number} threshold - The asset's volatility threshold
  * @param {number} intradayHigh - Highest % gain reached during day (for BaggerBomb detection)
  * @param {number} intradayLow - Lowest % loss reached during day (for Bust detection)
+ * @param {Object|null} history - Optional persisted history { maxMultiplier, minMultiplier }.
+ *   When provided, badges are counted from the historical peak (never lost on reversal).
+ *   When null, falls back to current price / intraday extremes (legacy behavior).
  * @returns {object} Complete scoring breakdown
  */
 export const calculateSnakeDraftAssetScore = (
   percentChange,
   threshold,
   intradayHigh = null,
-  intradayLow = null
+  intradayLow = null,
+  history = null
 ) => {
   // Base points: % return * 10 (so 3.5% = 35 points)
   const basePoints = percentChange * SNAKE_DRAFT.PERCENT_MULTIPLIER;
 
-  // For BaggerBombs, use intraday high if available, otherwise closing %
-  const baggerBombPercent = intradayHigh !== null ? intradayHigh : Math.max(0, percentChange);
-  const baggerBombs = calculateBaggerBombs(baggerBombPercent, threshold);
-  const baggerBombPoints = baggerBombs * BAGGERBOMB.POINTS_PER_THRESHOLD;
+  let baggerBombs, busts;
 
-  // For Busts, use intraday low if available, otherwise closing %
-  const bustPercent = intradayLow !== null ? intradayLow : Math.min(0, percentChange);
-  const busts = calculateBusts(bustPercent, threshold);
+  if (history && (history.maxMultiplier != null || history.minMultiplier != null)) {
+    // History-based counting: use the persisted peak multipliers so badges
+    // are never lost when price reverses.
+    baggerBombs = countPositiveThresholds(history.maxMultiplier || 0);
+    busts = countNegativeThresholds(history.minMultiplier || 0);
+  } else {
+    // Legacy fallback: count from current price / intraday extremes
+    const baggerBombPercent = intradayHigh !== null ? intradayHigh : Math.max(0, percentChange);
+    baggerBombs = calculateBaggerBombs(baggerBombPercent, threshold);
+
+    const bustPercent = intradayLow !== null ? intradayLow : Math.min(0, percentChange);
+    busts = calculateBusts(bustPercent, threshold);
+  }
+
+  const baggerBombPoints = baggerBombs * BAGGERBOMB.POINTS_PER_THRESHOLD;
   const bustPoints = busts * BAGGERBOMB.BUST_POINTS_PER_THRESHOLD;
 
   const totalScore = basePoints + baggerBombPoints + bustPoints;

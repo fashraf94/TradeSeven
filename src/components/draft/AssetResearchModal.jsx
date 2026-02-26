@@ -84,12 +84,15 @@ const AssetResearchModal = ({
   // actionConfig: { label: string, onClick: fn, variant: 'primary'|'danger'|'secondary', disabled?: boolean }
   actionConfig = null,
   showActionButton = true,
+  isGameContext: isGameContextProp,
   version = 2,
   defaultTab = null,
   defaultTimeframe = null,
 }) => {
   const isCrypto = asset?.isCrypto || asset?.category === 'crypto' || CRYPTO_SYMBOLS.has(asset?.symbol);
-  const isGameContext = onAcquire !== null || showActionButton;
+  const isGameContext = isGameContextProp !== undefined
+    ? isGameContextProp
+    : (onAcquire !== null || showActionButton);
   const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'health' : 'fundamental'));
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -118,6 +121,16 @@ const AssetResearchModal = ({
     initialTimeframe: defaultTimeframe,
   });
 
+  // Enrich asset with daily change computed from OHLCV data when the parent
+  // doesn't provide a real percentChange (e.g., BaggerBomb portfolio builder).
+  const enrichedAsset = useMemo(() => {
+    if (asset?.percentChange || asset?.change) return asset;
+    if (researchData.dailyChange != null) {
+      return { ...asset, percentChange: researchData.dailyChange };
+    }
+    return asset;
+  }, [asset, researchData.dailyChange]);
+
   // v2: Bomb chart data — only available when asset has battle context (threshold + baseline price)
   // Prefer baselinePrice (the actual scoring baseline, e.g. previousClose on day 2+)
   // over lockedPrice (draft-time price). This ensures chart threshold lines match scoring:
@@ -131,11 +144,14 @@ const AssetResearchModal = ({
       asset?.startingPrice ||
       asset?.basePrice ||
       asset?.draftPrice ||
+      asset?.price ||          // Fallback to current price (aligns with BaggerBombTab)
+      asset?.currentPrice ||
       null;
     if (!threshold || threshold <= 0 || !baselinePrice || baselinePrice <= 0) return null;
     return { threshold, baselinePrice };
   }, [asset?.threshold, asset?.lockedPrice, asset?.baselinePrice, asset?.startPrice,
-      asset?.startingPrice, asset?.basePrice, asset?.draftPrice]);
+      asset?.startingPrice, asset?.basePrice, asset?.draftPrice,
+      asset?.price, asset?.currentPrice]);
 
   // v2: Measure container height for drawer snap points
   useEffect(() => {
@@ -176,7 +192,7 @@ const AssetResearchModal = ({
 
   const sectorColor = getSectorColor(sector);
   const fundamentals = getMockFundamentals(asset.symbol);
-  const priceChange = asset.percentChange || asset.change || 0;
+  const priceChange = enrichedAsset.percentChange || enrichedAsset.change || 0;
 
   // Use real rating from API if available, fall back to mock
   const displayRating = profile?.ratingText || fundamentals.rating;
@@ -348,7 +364,7 @@ const AssetResearchModal = ({
 
         {/* Header: v2 compact header vs v1 original header */}
         {version >= 2 ? (
-          <ChartHeader asset={asset} sector={sector} category={category} onClose={onClose} />
+          <ChartHeader asset={enrichedAsset} sector={sector} category={category} onClose={onClose} />
         ) : (
           <div
             style={{

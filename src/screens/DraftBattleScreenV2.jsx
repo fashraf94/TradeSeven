@@ -26,6 +26,8 @@ import {
   calculateCumulativeScores,
 } from '../services/snakeDraftDailyService';
 import { isMarketOpen, getNextTradingDay } from '../utils/marketHolidays';
+import { getHistoryUpdateIfChanged } from '../utils/baggerBombUtils';
+import { updateDraftHistory } from '../firebase/firebaseService';
 
 /**
  * Utility to refresh draft data from Firebase
@@ -94,6 +96,11 @@ const DraftBattleScreenV2 = ({
   const [dailyData, setDailyData] = useState(null);
   const [dailyOpenPricesCaptured, setDailyOpenPricesCaptured] = useState(false);
 
+  // BaggerBomb history tracking — persists maxMultiplier/minMultiplier per symbol
+  // so threshold crossings are never lost when price reverses.
+  const [draftHistory, setDraftHistory] = useState({});
+  const pendingHistoryRef = useRef({});
+
   // Refs for cleanup and tracking
   const refreshIntervalRef = useRef(null);
   const timerIntervalRef = useRef(null);
@@ -118,6 +125,35 @@ const DraftBattleScreenV2 = ({
       wsPricesRef.current = { ...wsPricesRef.current, ...wsPrices };
     }
   }, [wsPrices]);
+
+  // Load persisted history from Firebase on mount
+  useEffect(() => {
+    if (currentDraft?.history) {
+      setDraftHistory(currentDraft.history);
+    }
+  }, [currentDraft?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Debounced Firebase write: flush pending history every 30s
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const pending = pendingHistoryRef.current;
+      if (Object.keys(pending).length === 0 || !currentDraft?.id) return;
+      updateDraftHistory(currentDraft.id, pending).catch(console.error);
+      pendingHistoryRef.current = {};
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [currentDraft?.id]);
+
+  // Flush pending history on unmount
+  useEffect(() => {
+    const draftId = currentDraft?.id;
+    return () => {
+      const pending = pendingHistoryRef.current;
+      if (Object.keys(pending).length > 0 && draftId) {
+        updateDraftHistory(draftId, pending).catch(console.error);
+      }
+    };
+  }, [currentDraft?.id]);
 
   // ============================================
   // DERIVED VALUES - Preserved from original
@@ -516,6 +552,9 @@ const DraftBattleScreenV2 = ({
         })),
       });
 
+      // Collect history updates across all players' scoring loops
+      const historyUpdates = {};
+
       const playerPerformances = currentDraft.players.map((player) => {
         let totalPoints = 0;
         let totalBaggerBombs = 0;
@@ -584,13 +623,23 @@ const DraftBattleScreenV2 = ({
           // Get threshold for this symbol (default 3% for stocks)
           const threshold = symbolThresholds[symbol.toUpperCase()]?.threshold || 3.0;
 
-          // Calculate BaggerBomb score for this asset
-          // For now using close price as both high and low (intraday data could be added later)
+          // Track BaggerBomb history: update maxMultiplier/minMultiplier per symbol
+          const multiplier = threshold > 0 ? percentGain / threshold : 0;
+          const symbolKey = symbol.toUpperCase();
+          const symbolHistory = draftHistory[symbolKey] || { maxMultiplier: 0, minMultiplier: 0 };
+          const historyUpdate = getHistoryUpdateIfChanged(multiplier, symbolHistory);
+          if (historyUpdate) {
+            historyUpdates[symbolKey] = historyUpdate;
+          }
+
+          // Use persisted history for scoring so badges survive price reversals
+          const effectiveHistory = historyUpdate || symbolHistory;
           const assetScore = calculateSnakeDraftAssetScore(
             percentGain,
             threshold,
             percentGain > 0 ? percentGain : null,  // intradayHigh
-            percentGain < 0 ? percentGain : null   // intradayLow
+            percentGain < 0 ? percentGain : null,   // intradayLow
+            effectiveHistory
           );
 
           portfolioWithScores.push({
@@ -649,6 +698,12 @@ const DraftBattleScreenV2 = ({
           previousRank: player.previousRank || 0
         };
       });
+
+      // Flush history updates to local state + mark pending for debounced Firebase write
+      if (Object.keys(historyUpdates).length > 0) {
+        setDraftHistory(prev => ({ ...prev, ...historyUpdates }));
+        Object.assign(pendingHistoryRef.current, historyUpdates);
+      }
 
       // Sort by total POINTS (descending) - this is the key change!
       const sorted = playerPerformances.sort((a, b) => b.totalPoints - a.totalPoints);
